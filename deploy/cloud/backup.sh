@@ -10,21 +10,24 @@ fail() {
 root_path="/opt/orbbec-agent-platform"
 current_path="$root_path/current"
 private_path="$root_path/private"
+backup_path=/data/orbbec-agent-platform/backups
 environment_path="$private_path/platform.env"
 compose_path="$current_path/deploy/cloud/compose.yaml"
 recovery_public="$private_path/backup-recovery-x25519.pub"
-backup_path=/data/orbbec-agent-platform/backups
 attachment_path=/data/orbbec-agent-platform/attachments
 [[ -f "$compose_path" && -f "$environment_path" && -f "$recovery_public" && ! -L "$recovery_public" ]] || fail
 [[ "$(/usr/bin/stat -c '%a %U %s' "$recovery_public")" == "600 root 32" ]] || fail
 
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$compose_path")
+platform_image="$(/usr/bin/sed -n 's/^PLATFORM_IMAGE=//p' "$environment_path")"
+[[ "$platform_image" =~ ^orbbec-agent-platform:[0-9a-f]{40}$ ]] || fail
 /usr/bin/docker volume create orbbec-agent-platform-backup-secrets >/dev/null
+[[ -d "$backup_path" && ! -L "$backup_path" ]] || fail
+[[ "$(/usr/bin/docker volume inspect --format '{{index .Options "device"}}' orbbec-agent-platform-backups 2>/dev/null || true)" == "$backup_path" ]] || fail
 /usr/bin/docker run --rm --network none \
   -v orbbec-agent-platform-backup-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 \
   sh -ceu 'cp /source/backup-recovery-x25519.pub /target/recovery-public-key; chown 10001:10001 /target/recovery-public-key; chmod 600 /target/recovery-public-key'
-/usr/bin/install -d -o 10001 -g 10001 -m 700 "$backup_path"
 [[ -d "$attachment_path" && ! -L "$attachment_path" ]] || fail
 
 timestamp="$(/usr/bin/date -u +%Y%m%dT%H%M%SZ)"
@@ -32,12 +35,14 @@ backup_name="replica-$timestamp.orb"
 if ! result="$(
   "${compose[@]}" exec -T platform-postgres \
     pg_dump -U platform_owner -d agent_platform --format=custom --no-password \
-  | "${compose[@]}" run --rm --no-deps -T \
+  | /usr/bin/docker run --rm -i --user 10001:10001 --read-only \
+      --security-opt no-new-privileges:true --network none \
       -v orbbec-agent-platform-backup-secrets:/run/backup-secrets:ro \
-      -v "$backup_path:/backups" \
+      -v orbbec-agent-platform-backups:/backups \
+      -e TMPDIR=/backups \
       -e PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE=/run/backup-secrets/recovery-public-key \
       -e "PLATFORM_REPLICA_BACKUP_PATH=/backups/$backup_name" \
-      platform-api python -m app.cloud_replica.cli backup
+      "$platform_image" python -m app.cloud_replica.cli backup
 )"; then
   fail
 fi
@@ -47,12 +52,14 @@ control_backup_name="control-$timestamp.orb"
 if ! control_result="$(
   "${compose[@]}" exec -T platform-postgres \
     pg_dump -U platform_owner -d agent_platform_control --format=custom --no-password \
-  | "${compose[@]}" run --rm --no-deps -T \
+  | /usr/bin/docker run --rm -i --user 10001:10001 --read-only \
+      --security-opt no-new-privileges:true --network none \
       -v orbbec-agent-platform-backup-secrets:/run/backup-secrets:ro \
-      -v "$backup_path:/backups" \
+      -v orbbec-agent-platform-backups:/backups \
+      -e TMPDIR=/backups \
       -e PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE=/run/backup-secrets/recovery-public-key \
       -e "PLATFORM_REPLICA_BACKUP_PATH=/backups/$control_backup_name" \
-      platform-api python -m app.cloud_replica.cli backup
+      "$platform_image" python -m app.cloud_replica.cli backup
 )"; then
   fail
 fi
@@ -62,23 +69,28 @@ object_backup_name="attachments-$timestamp.orb"
 if ! object_result="$(
   /usr/bin/docker run --rm --network none -v "$attachment_path:/source:ro" alpine:3.22 \
     tar -C /source -cf - . \
-  | "${compose[@]}" run --rm --no-deps -T \
+  | /usr/bin/docker run --rm -i --user 10001:10001 --read-only \
+      --security-opt no-new-privileges:true --network none \
       -v orbbec-agent-platform-backup-secrets:/run/backup-secrets:ro \
-      -v "$backup_path:/backups" \
+      -v orbbec-agent-platform-backups:/backups \
+      -e TMPDIR=/backups \
       -e PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE=/run/backup-secrets/recovery-public-key \
       -e "PLATFORM_REPLICA_BACKUP_PATH=/backups/$object_backup_name" \
-      platform-api python -m app.cloud_replica.cli backup
+      "$platform_image" python -m app.cloud_replica.cli backup
 )"; then
   fail
 fi
 /usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); assert value.get("status")=="backed_up" and value.get("encrypted_size",-1)>0 and value.get("plaintext_size",-1)>0' <<< "$object_result" || fail
 
 if ! retention_result="$(
-  "${compose[@]}" run --rm --no-deps -T \
+  /usr/bin/docker run --rm --user 10001:10001 --read-only \
+    --security-opt no-new-privileges:true \
+    --network orbbec-agent-platform-internal \
+    --tmpfs /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700 \
     -v orbbec-agent-platform-import-secrets:/run/import-secrets:ro \
     -e PLATFORM_REPLICA_DATABASE_URL_FILE=/run/import-secrets/replica-database-url \
     -e PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key \
-    platform-api python -m app.cloud_replica.cli retention
+    "$platform_image" python -m app.cloud_replica.cli retention
 )"; then
   fail
 fi

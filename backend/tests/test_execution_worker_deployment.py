@@ -3953,6 +3953,13 @@ def test_cloud_deploy_stages_keyring_without_mutating_canonical(
     assert _mode(paths["staged"]) == 0o600
 
 
+def test_cloud_keyring_staging_requires_the_data_mount() -> None:
+    source = CLOUD_KEYRING_INSTALLER.read_text(encoding="utf-8")
+
+    assert 'STAGING_ROOT = Path("/data/staging/orbbec-agent-platform")' in source
+    assert 'not os.path.ismount("/data")' in source
+
+
 def test_cloud_deploy_cutover_holds_shared_lock_and_fails_on_active_state(
     tmp_path: Path,
 ) -> None:

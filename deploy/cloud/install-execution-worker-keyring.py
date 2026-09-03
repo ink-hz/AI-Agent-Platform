@@ -153,6 +153,10 @@ def _stage(release_sha: str, deployment_id: str) -> None:
             for path in (STATE, DEPLOY_STATE, DEPLOY_STATE_PART, DEPLOY_BACKUP)
         ):
             raise InstallError
+        if STAGING_ROOT == Path(
+            "/data/staging/orbbec-agent-platform"
+        ) and not os.path.ismount("/data"):
+            raise InstallError
         STAGING_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(STAGING_ROOT, 0o700)
         _directory(STAGING_ROOT, {0o700})
@@ -213,6 +217,8 @@ def _discard(release_sha: str, deployment_id: str) -> None:
         except FileNotFoundError:
             pass
         _fsync_directory(release_root)
+        release_root.rmdir()
+        _fsync_directory(STAGING_ROOT)
     finally:
         os.close(descriptor)
 

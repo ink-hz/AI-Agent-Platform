@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import sys
 
+import psycopg
+
 from app.config import load_config
 from app.local_secrets import SecretFileUnavailable, read_secret_file
 from app.review.database import resolve_review_database_url
@@ -30,6 +32,21 @@ HANDOFF_STATES = (
     "blocked",
     "terminal_failed",
 )
+
+
+def required_admin_schema_available(
+    database_url: str, *, connection_factory=psycopg.connect
+) -> bool:
+    """Fail closed without exposing database or SQL error details."""
+    try:
+        with connection_factory(database_url, autocommit=True) as connection:
+            row = connection.execute(
+                "select to_regclass("
+                "'platform_identity.session_subject_links') is not null"
+            ).fetchone()
+        return row == (True,)
+    except Exception:
+        return False
 
 
 def sync_feedback_closure_outbox(directory: Path, importer) -> dict[str, int]:
@@ -84,6 +101,15 @@ def main(argv: list[str] | None = None) -> int:
                 print("sync_database_unavailable", file=sys.stderr)
                 return 1
         review_database_url = resolve_review_database_url(config)
+
+    if (
+        not args.export_only
+        and "admin" in selected
+        and database_url is not None
+        and not required_admin_schema_available(database_url)
+    ):
+        print("admin: schema_preflight_failed", file=sys.stderr)
+        return 1
 
     failed = False
     for kind in selected:

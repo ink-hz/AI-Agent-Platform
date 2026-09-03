@@ -3,6 +3,7 @@ import { useState } from "react";
 import { fetchTrace } from "../api";
 import { formatMessageTime } from "../messageTime";
 import { formatSenderIdentity } from "../senderIdentity";
+import { turnAnswerPresentation } from "../turnAnswerPresentation";
 import type { TraceDetail, TurnClosureSummary, TurnDetail } from "../types";
 import { AttachmentList } from "./AttachmentList";
 import { MessageMarkdown } from "./MessageMarkdown";
@@ -72,11 +73,16 @@ export function TurnCard({ turn, closureSummary, governanceHref }: {
     negative: "负向反馈", positive: "正向反馈", other: "其他反馈",
   };
   const governedClosureSummary = closureSummary && closureSummary.issue_id !== null ? closureSummary : undefined;
+  const answerPresentation = turnAnswerPresentation(turn);
   return <article className="turn-card">
     <header className="turn-head"><span>第 {String(turn.turn_index).padStart(2, "0")} 轮</span><div>{turn.outcome && <b>{turn.outcome}</b>}{turn.fallback_used && <b className="turn-fallback">fallback</b>}{duration(turn.duration_ms) && <time>{duration(turn.duration_ms)}</time>}</div></header>
     <section className="message-block question-block"><div className="message-label"><span>用户提问</span><time className="message-time" {...(questionTime.dateTime ? { dateTime: questionTime.dateTime } : {})}>{questionTime.label}</time></div><div>{turn.source_kind === "metabot" && <small className="question-sender">{formatSenderIdentity(turn.sender_name, turn.sender_department)}</small>}{turn.question ? <MessageMarkdown content={turn.question} /> : <p>未记录用户提问</p>}</div></section>
     <AttachmentList attachments={turn.input_attachments} label="用户输入附件" />
-    <section className="message-block answer-block"><div className="message-label"><span>Agent 回答</span><time className="message-time" {...(answerTime.dateTime ? { dateTime: answerTime.dateTime } : {})}>{answerTime.label}</time></div>{turn.answer ? <MessageMarkdown content={turn.answer} /> : <p>未记录 Agent 回答</p>}</section>
+    <section className="message-block answer-block"><div className="message-label"><span>Agent 回答</span><time className="message-time" {...(answerTime.dateTime ? { dateTime: answerTime.dateTime } : {})}>{answerTime.label}</time></div>{answerPresentation.kind === "answer"
+      ? <MessageMarkdown content={answerPresentation.content} />
+      : answerPresentation.kind === "failed"
+        ? <p className="answer-failed"><strong>{answerPresentation.label}</strong>{answerPresentation.classification && <> · {answerPresentation.classification}</>}</p>
+        : <p>{answerPresentation.label}</p>}</section>
     <AttachmentList attachments={turn.output_attachments} label="Agent 输出附件" />
     {turn.evidence.length > 0 && <section className="turn-evidence"><h3>证据</h3><div>{turn.evidence.map((item, index) => <article key={`${item.title}-${index}`}><span>{item.kind}</span><strong>{item.title}</strong>{item.reference && <p>{item.reference}</p>}</article>)}</div></section>}
     {turn.evidence.length === 0 && turn.evidence_availability !== "available" && <p className="availability-note">证据详情：{availabilityLabel(turn.evidence_availability)}</p>}

@@ -459,6 +459,8 @@ def test_handoff_and_backfill_collect_all_feedback_for_negative_turns():
     assert "filter (where feedback.sentiment='negative')" not in handoff
     assert "negative_turns" in backfill
     assert "join platform_read.feedback all_feedback" in backfill
+    assert "all_turns as materialized" in backfill
+    assert "left join all_turns t" in backfill
 
 
 @pytest.mark.parametrize("operation", ["move", "merge"])
