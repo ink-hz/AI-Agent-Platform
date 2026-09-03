@@ -230,7 +230,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 64
+    assert max(versions) == 65
 
 
 def migration_sql(filename: str) -> str:
