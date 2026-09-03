@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
 NGINX = CLOUD / "agent-domain.basic-auth.nginx.conf"
+FORMAL_NGINX = CLOUD / "agent-domain.nginx.conf"
 INSTALLER = CLOUD / "install-agent-domain.sh"
 PUBLISHER = CLOUD / "publish-agent-domain.sh"
 RUNBOOK = ROOT / "docs" / "runbooks" / "cloud-platform.md"
@@ -139,3 +140,46 @@ def test_runbook_covers_private_credential_rotation_acceptance_and_rollback():
         "five-minute synchronization",
     ):
         assert required in value
+
+
+def test_formal_nginx_routes_voc_without_exposing_health_or_credentials():
+    value = _text(FORMAL_NGINX)
+    selectors = (
+        "location = /voc {",
+        "location = /voc/health {",
+        "location ^~ /voc/assets/ {",
+        "location ^~ /voc/ {",
+    )
+
+    positions = [value.index(selector) for selector in selectors]
+    assert positions == sorted(positions)
+    assert value.index("location ^~ /voc/ {") < value.index(
+        "location / {", positions[-1]
+    )
+    assert "return 308 /voc/$is_args$args;" in value
+    health = value[positions[1] : positions[2]]
+    assert "return 404;" in health
+    assets = value[positions[2] : positions[3]]
+    assert "proxy_pass http://172.29.0.3:18130;" in assets
+    assert 'add_header Cache-Control "public, max-age=31536000, immutable" always;' in assets
+    application = value[positions[3] : value.index("location / {", positions[3])]
+    assert "proxy_pass http://172.29.0.3:18130;" in application
+    assert "proxy_buffering off;" in application
+    assert "proxy_cache off;" in application
+    assert 'add_header Cache-Control "private, no-store" always;' in application
+
+    for block in (assets, application):
+        for directive in (
+            "client_max_body_size 1m;",
+            "proxy_set_header X-Forwarded-For $remote_addr;",
+            'proxy_set_header Forwarded "";',
+            'proxy_set_header Authorization "";',
+            'add_header Strict-Transport-Security "max-age=31536000" always;',
+            'add_header X-Content-Type-Options "nosniff" always;',
+            'add_header X-Frame-Options "DENY" always;',
+            'add_header Referrer-Policy "no-referrer" always;',
+            "add_header Content-Security-Policy",
+            'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
+        ):
+            assert directive in block
+        assert "$proxy_add_x_forwarded_for" not in block
