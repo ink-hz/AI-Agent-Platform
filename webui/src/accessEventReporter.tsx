@@ -55,19 +55,21 @@ export function AccessEventReporter({ account, route }: { account: Account; rout
 
   useEffect(() => {
     if (!workspaceKey || !pageKey) return;
-    const body = {
-      access_event_id: crypto.randomUUID(),
-      workspace_key: workspaceKey,
-      page_key: pageKey,
-      ...(agentId ? { agent_id: agentId } : {}),
-    };
-    void Promise.resolve().then(() => fetch(platformPath("/api/v1/access-events/page-view"), {
-      method: "POST",
-      credentials: "include",
-      keepalive: true,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })).catch(() => undefined);
+    void Promise.resolve().then(() => {
+      const body = {
+        access_event_id: crypto.randomUUID(),
+        workspace_key: workspaceKey,
+        page_key: pageKey,
+        ...(agentId ? { agent_id: agentId } : {}),
+      };
+      return fetch(platformPath("/api/v1/access-events/page-view"), {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }).catch(() => undefined);
   }, [account.internal_user_id, agentId, pageKey, workspaceKey]);
   return null;
 }

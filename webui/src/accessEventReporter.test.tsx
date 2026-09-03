@@ -82,4 +82,12 @@ describe("page access reporter", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(container.textContent).toBe("");
   });
+
+  it("cannot break the product when event id generation is unavailable", async () => {
+    vi.stubGlobal("crypto", { randomUUID: vi.fn(() => { throw new Error("unsupported"); }) });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(act(async () => root.render(<AccessEventReporter account={account} route={{ name: "brain" }} />))).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
