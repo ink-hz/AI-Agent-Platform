@@ -257,6 +257,53 @@ begin
     state='confirmed',resolved_position_id=selected.position_id,
     row_version=row_version+1,updated_at=now()
   where draft_id=selected_draft_id;
+  if draft.source_conversation_id is not null then
+    insert into platform_hr.position_conversations(
+      conversation_id,owner_internal_user_id,position_id,
+      client_request_id,binding_kind
+    ) values (
+      draft.source_conversation_id,selected_owner_internal_user_id,
+      selected.position_id,client_request_id,'draft_confirmed'
+    );
+  end if;
+  return selected;
+end
+$function$;
+
+create function platform_hr.propose_position_draft_v65(
+  selected_draft_id uuid,
+  selected_owner_internal_user_id uuid,
+  client_request_id uuid,
+  selected_source_kind text,
+  selected_source_key text,
+  selected_source_conversation_id uuid,
+  selected_title text,
+  selected_proposal jsonb,
+  selected_evidence jsonb,
+  selected_discovery_rule_version text
+) returns platform_hr.position_drafts
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.position_drafts%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.position_drafts
+  where owner_internal_user_id=selected_owner_internal_user_id
+    and (position_drafts.client_request_id=propose_position_draft_v65.client_request_id
+      or (source_kind=selected_source_kind and source_key=selected_source_key));
+  if found then return selected; end if;
+  insert into platform_hr.position_drafts(
+    draft_id,owner_internal_user_id,client_request_id,source_kind,source_key,
+    source_conversation_id,title,proposal,evidence,discovery_rule_version
+  ) values (
+    selected_draft_id,selected_owner_internal_user_id,client_request_id,
+    selected_source_kind,selected_source_key,selected_source_conversation_id,
+    btrim(selected_title),selected_proposal,selected_evidence,
+    selected_discovery_rule_version
+  ) returning * into selected;
   return selected;
 end
 $function$;
@@ -370,6 +417,9 @@ revoke all on function platform_hr.create_position_v65(
 revoke all on function platform_hr.confirm_position_draft_v65(
   uuid,uuid,uuid,uuid,bigint
 ) from public;
+revoke all on function platform_hr.propose_position_draft_v65(
+  uuid,uuid,uuid,text,text,uuid,text,jsonb,jsonb,text
+) from public;
 revoke all on function platform_hr.bind_conversation_v65(
   uuid,uuid,uuid,uuid,text
 ) from public;
@@ -405,6 +455,10 @@ begin
   execute format(
     'grant execute on function platform_hr.confirm_position_draft_v65('
     'uuid,uuid,uuid,uuid,bigint) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.propose_position_draft_v65('
+    'uuid,uuid,uuid,text,text,uuid,text,jsonb,jsonb,text) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.bind_conversation_v65('

@@ -5,7 +5,11 @@ from uuid import uuid4
 import psycopg
 import pytest
 
-from app.hr.models import CreateManualPosition
+from app.hr.models import (
+    ConfirmPositionDraft,
+    CreateManualPosition,
+    ProposePositionDraft,
+)
 from app.hr.repository import HrNotFound, HrPositionRepository
 from test_control_plane_migration import control_database
 
@@ -19,6 +23,19 @@ def _owner(admin: psycopg.Connection, name: str):
     )
     admin.commit()
     return owner_id
+
+
+def _hr_conversation(admin: psycopg.Connection, owner_id):
+    conversation_id = uuid4()
+    admin.execute(
+        "insert into platform_control.conversations "
+        "(conversation_id,owner_internal_user_id,started_by_client_request_id,"
+        "mode,direct_agent_id,title,status) values "
+        "(%s,%s,%s,'direct_agent','hr-bot','岗位草拟','active')",
+        (conversation_id, owner_id, uuid4()),
+    )
+    admin.commit()
+    return conversation_id
 
 
 @pytest.mark.postgres
@@ -80,3 +97,36 @@ def test_repository_position_cursor_is_stable_and_exclusive(control_database) ->
     assert {item.position_id for item in first.items}.isdisjoint(
         item.position_id for item in second.items
     )
+
+
+@pytest.mark.postgres
+def test_repository_confirms_draft_and_binds_origin_conversation_atomically(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Draft HR Owner")
+        conversation_id = _hr_conversation(admin, owner_id)
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    draft = repository.propose_draft(ProposePositionDraft(
+        owner_id=owner_id, draft_id=uuid4(), client_request_id=uuid4(),
+        source_kind="new_conversation", source_key=f"conversation:{conversation_id}",
+        source_conversation_id=conversation_id, title="机器人算法工程师",
+        proposal={"mission": "机器人感知"}, evidence={"message_seq": 1},
+        discovery_rule_version="interactive-v1",
+    ))
+    command = ConfirmPositionDraft(
+        owner_id, draft.draft_id, uuid4(), uuid4(), draft.row_version
+    )
+
+    position = repository.confirm_draft(command)
+    replay = repository.confirm_draft(command)
+
+    assert replay.position_id == position.position_id
+    with psycopg.connect(environment["admin"]) as admin:
+        binding = admin.execute(
+            "select position_id,binding_kind from platform_hr.position_conversations "
+            "where conversation_id=%s",
+            (conversation_id,),
+        ).fetchone()
+    assert binding == (position.position_id, "draft_confirmed")

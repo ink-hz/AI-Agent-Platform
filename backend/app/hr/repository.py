@@ -11,7 +11,14 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
-from .models import CreateManualPosition, PositionDetail, PositionRecord
+from .models import (
+    ConfirmPositionDraft,
+    CreateManualPosition,
+    PositionDetail,
+    PositionDraftRecord,
+    PositionRecord,
+    ProposePositionDraft,
+)
 
 
 class HrRepositoryError(RuntimeError):
@@ -53,6 +60,25 @@ def _record(row: dict[str, Any]) -> PositionRecord:
         official_status=row["official_status"],
         internal_status=row["internal_status"],
         source_version=row["source_version"],
+        row_version=row["row_version"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _draft(row: dict[str, Any]) -> PositionDraftRecord:
+    return PositionDraftRecord(
+        draft_id=row["draft_id"],
+        owner_id=row["owner_internal_user_id"],
+        source_kind=row["source_kind"],
+        source_key=row["source_key"],
+        source_conversation_id=row["source_conversation_id"],
+        title=row["title"],
+        proposal=row["proposal"],
+        evidence=row["evidence"],
+        discovery_rule_version=row["discovery_rule_version"],
+        state=row["state"],
+        resolved_position_id=row["resolved_position_id"],
         row_version=row["row_version"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -133,6 +159,67 @@ class HrPositionRepository:
             raise
         except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
             raise HrConflict("position mutation conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def propose_draft(
+        self, command: ProposePositionDraft
+    ) -> PositionDraftRecord:
+        if not isinstance(command, ProposePositionDraft):
+            raise ValueError("position draft command required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.propose_position_draft_v65("
+                    "%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)).*",
+                    (
+                        command.draft_id,
+                        command.owner_id,
+                        command.client_request_id,
+                        command.source_kind,
+                        command.source_key,
+                        command.source_conversation_id,
+                        command.title,
+                        json.dumps(command.proposal, ensure_ascii=False),
+                        json.dumps(command.evidence, ensure_ascii=False),
+                        command.discovery_rule_version,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position draft unavailable")
+            return _draft(row)
+        except HrRepositoryError:
+            raise
+        except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
+            raise HrConflict("position draft conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def confirm_draft(self, command: ConfirmPositionDraft) -> PositionRecord:
+        if not isinstance(command, ConfirmPositionDraft):
+            raise ValueError("position draft confirmation required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.confirm_position_draft_v65("
+                    "%s,%s,%s,%s,%s)).*",
+                    (
+                        command.draft_id,
+                        command.owner_id,
+                        command.position_id,
+                        command.client_request_id,
+                        command.expected_row_version,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position draft confirmation unavailable")
+            return _record(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position draft not found") from None
+        except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
+            raise HrConflict("position draft conflict") from None
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrUnavailable("position repository unavailable") from None
 
