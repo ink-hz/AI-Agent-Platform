@@ -76,6 +76,17 @@ it("rejects malformed UUIDs, enums, timestamps, and unexpected response fields",
 });
 
 
+it("rejects malformed draft list envelopes before reading items", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    items: [draft], next_cursor: null,
+  }), { status: 200 })));
+
+  await expect(createHrApi("csrf").listDrafts("proposed")).rejects.toThrow(
+    "HR position draft response invalid",
+  );
+});
+
+
 it("sends CSRF and replay-stable request IDs for every mutation", async () => {
   const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
     const path = String(input);

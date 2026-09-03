@@ -192,7 +192,14 @@ export function createHrApi(csrfToken: string) {
       return parseDetail(await request(`/api/hr/positions/${encodeURIComponent(positionId)}`, { signal }));
     },
     async listDrafts(state?: HrPositionDraft["state"], signal?: AbortSignal) {
-      return (object(await request(`/api/hr/position-drafts${state ? `?state=${encodeURIComponent(state)}` : ""}`, { signal }), "HR position draft response invalid").items as unknown[]).map(parseDraft);
+      const raw = object(
+        await request(`/api/hr/position-drafts${state ? `?state=${encodeURIComponent(state)}` : ""}`, { signal }),
+        "HR position draft response invalid",
+      );
+      if (!exact(raw, new Set(["items"])) || !Array.isArray(raw.items)) {
+        throw new Error("HR position draft response invalid");
+      }
+      return raw.items.map(parseDraft);
     },
     async proposeDraft(input: ProposePositionDraftInput, requestId: string) {
       return parseDraft(await write("/api/hr/position-drafts", requestId, {
