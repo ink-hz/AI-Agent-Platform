@@ -78,7 +78,7 @@ describe("cloud replica mode", () => {
       const path = String(input);
       if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify({
         internal_user_id: "member", display_name: "成员", role: "member",
-        departments: [], gender: null, observation_agent_ids: [],
+        departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [],
         directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
       if (path.endsWith("/api/v1/ai-notes")) return new Response(JSON.stringify({
@@ -108,7 +108,7 @@ describe("cloud replica mode", () => {
     document.head.append(identityMeta);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       internal_user_id: "member", display_name: "成员", role: "member",
-      departments: [], gender: null, observation_agent_ids: [],
+      departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [],
       directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
@@ -130,7 +130,7 @@ describe("cloud replica mode", () => {
       if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
         internal_user_id: "member", display_name: "成员", role: "member",
         departments: [], gender: null,
-        observation_agent_ids: [], directory_freshness: "fresh",
+        observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh",
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
       if (url.includes("/api/v1/conversations")) return new Response(JSON.stringify({
@@ -178,7 +178,7 @@ describe("cloud replica mode", () => {
       if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
         internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
         departments: [], gender: null,
-        observation_agent_ids: [], directory_freshness: "fresh",
+        observation_agent_ids: [], workspace_scopes: ["fae_workbench"], directory_freshness: "fresh",
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
       if (url.endsWith("/api/v1/manage/users")) return new Response(JSON.stringify({ users: [] }), {
@@ -220,7 +220,7 @@ describe("cloud replica mode", () => {
         return new Response(JSON.stringify({
           internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
           departments: [], gender: null,
-          observation_agent_ids: [], directory_freshness: "fresh",
+          observation_agent_ids: [], workspace_scopes: ["fae_workbench"], directory_freshness: "fresh",
           hard_stale_read_only: false, csrf_token: "csrf",
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
@@ -391,7 +391,7 @@ describe("cloud replica mode", () => {
       if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
         internal_user_id: "admin", display_name: "管理员", role: "platform_admin",
         departments: [], gender: null,
-        observation_agent_ids: [], directory_freshness: "fresh",
+        observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh",
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
       if (url.endsWith("/api/v1/manage/users")) return new Response(JSON.stringify({ users: [] }), {
