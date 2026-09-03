@@ -7,15 +7,19 @@ from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from ipaddress import ip_network
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urljoin, urlsplit
 from uuid import uuid4
 
 import pytest
 from app.control_plane.authorization import AuthorizationService
+from app.control_plane.fae_access import FaeWorkbenchAccessUnavailable
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.models import AuthContext, IdentityMode, IssuedWebSession, Role
 from app.control_plane.routes_auth import build_auth_router
 from app.main import create_app
+from app.voc_extension.client import VocUpstreamResponse
+from app.voc_extension.internal_identity import capabilities_for
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
@@ -44,6 +48,73 @@ AI_ADMIN_ACCOUNT_CONTRACT_ROLES = {
 class _NoObservationGrants:
     def permits(self, *_args):
         return False
+
+
+class _NoFaeAccess:
+    def allows(self, context):
+        return context.role is Role.PLATFORM_OWNER
+
+
+class _GrantingFaeAccess:
+    def __init__(self, allowed_user_id):
+        self.allowed_user_id = allowed_user_id
+
+    def allows(self, context):
+        return context.role is Role.PLATFORM_OWNER or (
+            context.internal_user_id == self.allowed_user_id
+        )
+
+
+class _FailingFaeAccess:
+    def allows(self, _context):
+        raise FaeWorkbenchAccessUnavailable("fae grant repository unavailable")
+
+
+class _MutableFaeAccess:
+    def __init__(self) -> None:
+        self.allowed_user_ids = set()
+
+    def allows(self, context):
+        return context.role is Role.PLATFORM_OWNER or (
+            context.internal_user_id in self.allowed_user_ids
+        )
+
+
+class _FaeOverview:
+    async def overview(self, _now):
+        return {"agent_id": "ai-fae-agent"}
+
+
+class _VocUpstream:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def request(self, method, path, **kwargs):
+        self.calls.append((method, path, kwargs))
+        return VocUpstreamResponse(
+            200,
+            json.dumps({"items": [], "next_cursor": None}).encode(),
+        )
+
+
+class _VocDirectory:
+    def names_for(self, _ids):
+        return {}
+
+
+class _FaeLaunch:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def issue(self, context, agent_id):
+        self.calls.append((context.internal_user_id, agent_id))
+        return SimpleNamespace(
+            launch_url=(
+                "https://agent.orbbec.com.cn/fae/"
+                f"#platform_launch={'l' * 43}"
+            ),
+            expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        )
 
 
 @pytest.mark.parametrize("role", list(Role))
@@ -258,6 +329,7 @@ def _app(
     agent_launch_service=None,
     partner_service=None,
     partner_provider=None,
+    fae_access=None,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -282,7 +354,7 @@ def _app(
     monkeypatch.setenv(
         "PLATFORM_AGENT_BRAIN_ENABLED", "1" if brain_enabled else "0"
     )
-    return create_app(
+    app = create_app(
         registry_path=str(registry),
         cluster_contract_path=str(contract),
         start_poller=False,
@@ -292,6 +364,8 @@ def _app(
         partner_service=partner_service,
         partner_provider=partner_provider,
     )
+    app.state.fae_access = fae_access if fae_access is not None else _NoFaeAccess()
+    return app
 
 
 def _app_with_static(
@@ -495,6 +569,51 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
+    "path",
+    [
+        "/hr",
+        "/hr/",
+        "/hr/conversations/hr%3Aone",
+        "/marketing",
+        "/marketing/",
+        "/marketing/prospecting",
+        "/marketing/inbound",
+        "/marketing/voice",
+        "/marketing/intelligence",
+        "/marketing/gtm",
+        "/marketing/voice/conversations/mkt%3Aone",
+    ],
+)
+def test_public_hr_and_marketing_shells_bootstrap_enterprise_login(
+    tmp_path, monkeypatch, path: str
+) -> None:
+    client = TestClient(_app(tmp_path, monkeypatch, FakeAuth()))
+
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert "LOGIN SHELL" in response.text
+    assert 'name="platform-identity-mode" content="enabled"' in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/hr/unknown/path",
+        "/marketing/unknown",
+        "/marketing/voice/unknown",
+    ],
+)
+def test_nearby_unknown_workspace_shells_remain_protected(
+    tmp_path, monkeypatch, path: str
+) -> None:
+    client = TestClient(_app(tmp_path, monkeypatch, FakeAuth()))
+
+    assert client.get(path).status_code == 401
+
+
+@pytest.mark.parametrize(
     "query",
     (
         "return_path=%2Fvoc%2F&return_path=%2Foffice%2F",
@@ -531,6 +650,9 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
     assert "platform-agent-brain-mode" not in root.text
     for path in (
         "/account", "/agents", "/agents/hr-bot", "/missions", "/conversations",
+        "/hr", "/hr/", "/hr/conversations/hr%3Aone",
+        "/marketing", "/marketing/", "/marketing/voice/conversations/mkt%3Aone",
+        "/fae/manage", "/fae/manage/", "/fae/manage/reports/weekly-1",
         "/ai-notes", "/ai-notes/foundations/handbook",
         "/missions/00000000-0000-0000-0000-000000000001", "/admin",
         "/conversations/00000000-0000-0000-0000-000000000001",
@@ -542,6 +664,8 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
         assert response.status_code == 200, path
         assert "LOGIN SHELL" in response.text
         assert 'name="platform-identity-mode" content="enabled"' in response.text
+    for path in ("/fae/", "/fae/conversations/fae%3Aone", "/voc/", "/voc/manage/"):
+        assert client.get(path, cookies=cookies).status_code in {403, 404}, path
     assert client.get("/unknown", cookies=cookies).status_code in {403, 404}
 
 
@@ -984,6 +1108,167 @@ def test_account_serializes_every_ai_admin_contract_role_with_exact_fields(
     assert response.status_code == 200
     assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
     assert response.json()["role"] == role.value
+
+
+def test_account_projects_only_bounded_fae_workspace_scope(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    granted_user_id = uuid4()
+    fae_access = _GrantingFaeAccess(granted_user_id)
+    client = TestClient(_app(tmp_path, monkeypatch, auth, fae_access=fae_access))
+
+    auth.context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+    owner = client.get(
+        "/api/v1/account",
+        headers={"X-Platform-Account-Contract": "2"},
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+    auth.context = AuthContext(granted_user_id, Role.MEMBER, uuid4(), False)
+    granted_member = client.get(
+        "/api/v1/account",
+        headers={"X-Platform-Account-Contract": "2"},
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+    for role in (Role.MEMBER, Role.MANAGEMENT_VIEWER, Role.PLATFORM_ADMIN):
+        auth.context = AuthContext(uuid4(), role, uuid4(), False)
+        denied = client.get(
+            "/api/v1/account",
+            headers={"X-Platform-Account-Contract": "2"},
+            cookies={auth.cookie_name: "valid-cookie"},
+        )
+        assert denied.status_code == 200
+        assert denied.json()["workspace_scopes"] == []
+
+    assert owner.status_code == 200
+    assert owner.json()["workspace_scopes"] == ["fae_workbench"]
+    assert granted_member.status_code == 200
+    assert granted_member.json()["workspace_scopes"] == ["fae_workbench"]
+
+
+@pytest.mark.parametrize(
+    ("role", "has_fae_grant", "fae_status", "voc_status"),
+    (
+        (Role.PLATFORM_OWNER, False, 200, 200),
+        (Role.MEMBER, True, 200, 403),
+        (Role.MANAGEMENT_VIEWER, False, 403, 200),
+        (Role.PLATFORM_ADMIN, False, 403, 200),
+        (Role.MEMBER, False, 403, 403),
+    ),
+)
+def test_fae_and_voc_management_scopes_are_independent(
+    tmp_path,
+    monkeypatch,
+    role,
+    has_fae_grant,
+    fae_status,
+    voc_status,
+) -> None:
+    auth = FakeAuth()
+    access = _MutableFaeAccess()
+    auth.context = AuthContext(uuid4(), role, uuid4(), False)
+    if has_fae_grant:
+        access.allowed_user_ids.add(auth.context.internal_user_id)
+    app = _app(tmp_path, monkeypatch, auth, fae_access=access)
+    app.state.fae_workbench_service = _FaeOverview()
+    voc_upstream = _VocUpstream()
+    app.state.voc_extension_client = voc_upstream
+    app.state.voc_submitter_directory = _VocDirectory()
+    client = TestClient(app)
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    fae_response = client.get("/api/fae/overview", cookies=cookies)
+    voc_response = client.get(
+        "/api/v1/extensions/voc/admin/vocs",
+        cookies=cookies,
+    )
+
+    assert fae_response.status_code == fae_status
+    assert voc_response.status_code == voc_status
+    assert ("voc.read_all" in capabilities_for(auth.context)) is (
+        voc_status == 200
+    )
+    assert len(voc_upstream.calls) == (1 if voc_status == 200 else 0)
+    if fae_status == 403:
+        assert fae_response.json() == {
+            "detail": "fae workbench access required"
+        }
+
+
+def test_revoked_fae_grant_denies_the_next_request_without_breaking_direct_use(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    auth.context = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
+    access = _MutableFaeAccess()
+    access.allowed_user_ids.add(auth.context.internal_user_id)
+    launch = _FaeLaunch()
+    app = _app(
+        tmp_path,
+        monkeypatch,
+        auth,
+        fae_access=access,
+        agent_launch_service=launch,
+    )
+    app.state.fae_workbench_service = _FaeOverview()
+    client = TestClient(app)
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    assert client.get("/api/fae/overview", cookies=cookies).status_code == 200
+    access.allowed_user_ids.remove(auth.context.internal_user_id)
+    revoked = client.get("/api/fae/overview", cookies=cookies)
+    direct_use = client.post(
+        "/api/v1/agents/ai-fae-agent/launch",
+        cookies={**cookies, auth.csrf_cookie_name: auth.csrf},
+        headers={
+            "Origin": auth.public_base_url,
+            "X-CSRF-Token": auth.csrf,
+        },
+    )
+
+    assert revoked.status_code == 403
+    assert revoked.json() == {"detail": "fae workbench access required"}
+    assert direct_use.status_code == 200
+    assert direct_use.json()["launch_url"] == (
+        "https://agent.orbbec.com.cn/fae/"
+        f"#platform_launch={'l' * 43}"
+    )
+    assert launch.calls == [(auth.context.internal_user_id, "ai-fae-agent")]
+
+
+def test_account_v1_remains_available_when_fae_scope_repository_fails(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    response = TestClient(
+        _app(tmp_path, monkeypatch, auth, fae_access=_FailingFaeAccess())
+    ).get(
+        "/api/v1/account",
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+
+    assert response.status_code == 200
+    assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
+
+
+def test_account_v2_fails_closed_when_fae_scope_repository_fails(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    response = TestClient(
+        _app(tmp_path, monkeypatch, auth, fae_access=_FailingFaeAccess())
+    ).get(
+        "/api/v1/account",
+        headers={"X-Platform-Account-Contract": "2"},
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "account unavailable"}
 
 
 def test_account_returns_null_gender_without_changing_private_cache_contract(

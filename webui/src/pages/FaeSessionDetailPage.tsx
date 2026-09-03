@@ -7,6 +7,7 @@ import { sourceFreshnessLabel } from "../copy";
 import { faeWorkbenchApi } from "../faeWorkbenchApi";
 import type { SessionDetail } from "../types";
 import { sessionReturnTarget } from "../navigationContext";
+import { FAE_MANAGEMENT_PATH } from "../platform/workspaces";
 
 
 const loadFaeSession = (sessionKey: string, signal: AbortSignal) => faeWorkbenchApi.session(sessionKey, signal);
@@ -22,7 +23,7 @@ function identityLabel(session: SessionDetail): string {
 
 function governanceHref(sessionKey: string, turnKey: string): string {
   const params = new URLSearchParams({ session_key: sessionKey, turn_key: turnKey });
-  return `/admin/fae/issues?${params}`;
+  return `${FAE_MANAGEMENT_PATH}/issues?${params}`;
 }
 
 
@@ -53,7 +54,7 @@ export function FaeSessionDetailPage({ sessionKey }: { sessionKey: string }) {
   else {
     const returnTarget = sessionReturnTarget(window.history.state);
     content = <>
-    <PlatformLink className="back-link" href={returnTarget ?? "/admin/fae/sessions"} onClick={(event) => {
+    <PlatformLink className="back-link" href={returnTarget ?? `${FAE_MANAGEMENT_PATH}/sessions`} onClick={(event) => {
       if (!returnTarget || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
       window.history.back();

@@ -338,16 +338,9 @@ begin
   );
   perform platform_control.require_platform_owner(selected_actor_id);
 
-  request_fingerprint := encode(sha256(convert_to(
-    jsonb_build_object(
-      'display_name', selected_display_name,
-      'new_user_id', selected_new_user_id::text,
-      'corporate_identity_id', selected_corporate_identity_id::text,
-      'union_identity_id', selected_union_identity_id::text,
-      'member_key', selected_expected_member_key::text
-    )::text,
-    'UTF8'
-  )), 'hex');
+  request_fingerprint := encode(
+    sha256(convert_to(selected_display_name, 'UTF8')), 'hex'
+  );
   select * into stored_mutation
   from platform_control.management_mutations
   where operation_id = selected_operation_id;
@@ -504,6 +497,94 @@ exception
 end
 $function$;
 
+create function platform_control.replay_fae_workbench_grant_v63(
+  selected_operation_id uuid,
+  selected_actor_id uuid,
+  selected_display_name text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+declare
+  stored_mutation platform_control.management_mutations%rowtype;
+  requested_audit platform_control.audit_events%rowtype;
+  request_fingerprint text;
+begin
+  if selected_operation_id is null or selected_actor_id is null
+     or selected_display_name is null
+     or selected_display_name <> btrim(selected_display_name)
+     or length(selected_display_name) not between 1 and 256
+     or selected_display_name ~ '[[:cntrl:]]'
+  then
+    raise check_violation using message = 'directory_member_not_found';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(selected_operation_id::text, 0)
+  );
+  perform platform_control.require_platform_owner(selected_actor_id);
+
+  select * into stored_mutation
+  from platform_control.management_mutations
+  where operation_id = selected_operation_id;
+  if not found then
+    return null;
+  end if;
+
+  request_fingerprint := encode(
+    sha256(convert_to(selected_display_name, 'UTF8')), 'hex'
+  );
+  if stored_mutation.action is distinct from 'grant_fae_workbench'
+     or stored_mutation.actor_internal_user_id
+        is distinct from selected_actor_id
+     or stored_mutation.agent_id is distinct from request_fingerprint
+     or stored_mutation.generation_id is null
+     or stored_mutation.expected_target_row_version <> 0
+     or stored_mutation.expected_causal_row_version <> 0
+     or stored_mutation.expected_owner_internal_user_id is not null
+     or stored_mutation.requested_audit_id_copy is null
+  then
+    raise unique_violation using message = 'operation identity collision';
+  end if;
+
+  select * into requested_audit
+  from platform_control.audit_events
+  where audit_event_id = stored_mutation.requested_audit_id_copy;
+  if not found
+     or requested_audit.actor_internal_user_id
+        is distinct from selected_actor_id
+     or requested_audit.event_type
+        is distinct from 'fae_workbench_grant_requested'
+     or requested_audit.target_type is distinct from 'directory_member'
+     or requested_audit.request_id is distinct from selected_operation_id
+     or requested_audit.result is distinct from 'requested'
+     or requested_audit.reason_code
+        is distinct from 'fae_workbench_access_approved'
+     or requested_audit.sanitized_before_after->>'operation_id'
+        is distinct from selected_operation_id::text
+     or requested_audit.sanitized_before_after->>'expected_generation_id'
+        is distinct from stored_mutation.generation_id::text
+     or requested_audit.sanitized_before_after->>'expected_member_key'
+        is distinct from requested_audit.target_internal_id
+  then
+    raise check_violation using message = 'matching_audit_intent_required';
+  end if;
+
+  begin
+    perform requested_audit.target_internal_id::uuid;
+  exception when invalid_text_representation then
+    raise check_violation using message = 'matching_audit_intent_required';
+  end;
+
+  return jsonb_build_object(
+    'generation_id', stored_mutation.generation_id::text,
+    'member_key', requested_audit.target_internal_id,
+    'result', stored_mutation.applied_result
+  );
+end
+$function$;
+
 create function platform_control.revoke_fae_workbench_access_v63(
   selected_operation_id uuid,
   selected_actor_id uuid,
@@ -649,6 +730,9 @@ revoke all on function platform_control.validate_fae_workbench_audit_v63(
 revoke all on function platform_control.grant_fae_workbench_access_v63(
   uuid,uuid,text,uuid,uuid,uuid,uuid,uuid,uuid
 ) from public;
+revoke all on function platform_control.replay_fae_workbench_grant_v63(
+  uuid,uuid,text
+) from public;
 revoke all on function platform_control.revoke_fae_workbench_access_v63(
   uuid,uuid,uuid,bigint,uuid
 ) from public;
@@ -697,6 +781,10 @@ begin
       'uuid,uuid,text,uuid,uuid,uuid,uuid,uuid,uuid) from %I', role_name
     );
     execute format(
+      'revoke all on function platform_control.replay_fae_workbench_grant_v63('
+      'uuid,uuid,text) from %I', role_name
+    );
+    execute format(
       'revoke all on function platform_control.revoke_fae_workbench_access_v63('
       'uuid,uuid,uuid,bigint,uuid) from %I', role_name
     );
@@ -713,6 +801,10 @@ begin
   execute format(
     'grant execute on function platform_control.grant_fae_workbench_access_v63('
     'uuid,uuid,text,uuid,uuid,uuid,uuid,uuid,uuid) to %I', selected_app
+  );
+  execute format(
+    'grant execute on function platform_control.replay_fae_workbench_grant_v63('
+    'uuid,uuid,text) to %I', selected_app
   );
   execute format(
     'grant execute on function platform_control.revoke_fae_workbench_access_v63('

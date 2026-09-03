@@ -16,6 +16,7 @@ const owner: Account = {
   gender: null,
   role: "platform_owner",
   observation_agent_ids: [],
+  workspace_scopes: ["fae_workbench"],
   directory_freshness: "fresh",
   hard_stale_read_only: false,
   csrf_token: "csrf",

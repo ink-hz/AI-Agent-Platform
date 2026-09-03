@@ -23,6 +23,7 @@ import {
   storePendingAdministratorReplay,
   type PendingAdministratorState,
 } from "../pendingAdministrator";
+import { FaeAccessPanel } from "../components/FaeAccessPanel";
 import { PartnerAccessPanel } from "./PartnerAccessPanel";
 
 
@@ -362,6 +363,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
         </article>)}
       </div>
     </section>
+    <FaeAccessPanel account={account} />
     {account.role === "platform_owner" && <PartnerAccessPanel account={account} />}
   </>);
 }

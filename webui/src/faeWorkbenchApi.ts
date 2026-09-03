@@ -1,6 +1,7 @@
 import { platformPath } from "./auth";
 import type { ReviewApi } from "./components/review/ReviewWorkspace";
 import { parseFaeOverview, type FaeOverview, type FaeSessionQuery } from "./faeWorkbenchTypes";
+import { FAE_WORKBENCH_API_PATH } from "./platform/workspaces";
 import type {
   FeedbackIssueDetail,
   FeedbackIssueSummary,
@@ -39,6 +40,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
 }
 
 const getJson = <T>(path: string, signal?: AbortSignal) => requestJson<T>(path, { signal });
+const faeApiPath = (suffix: string) => `${FAE_WORKBENCH_API_PATH}${suffix}`;
 
 function withoutFaeScope(payload: Record<string, unknown>): Record<string, unknown> {
   const { agent_id: _agentId, source_kind: _sourceKind, ...scoped } = payload;
@@ -225,8 +227,8 @@ function normalizeDetail(value: unknown): FeedbackIssueDetail {
 
 function reviewApi(csrfToken: string): ReviewApi {
   return {
-    overview: async (signal) => normalizeOverview(await getJson<unknown>("/api/admin/fae/issue-overview", signal)),
-    inbox: async (signal) => normalizeInbox(await getJson<unknown>("/api/admin/fae/issue-inbox?limit=20", signal)),
+    overview: async (signal) => normalizeOverview(await getJson<unknown>(faeApiPath("/issue-overview"), signal)),
+    inbox: async (signal) => normalizeInbox(await getJson<unknown>(faeApiPath("/issue-inbox?limit=20"), signal)),
     issues: async (signal, filters) => {
       const params = new URLSearchParams({ limit: String(filters?.limit ?? 20) });
       if ((filters?.offset ?? 0) > 0) params.set("offset", String(filters?.offset));
@@ -237,31 +239,31 @@ function reviewApi(csrfToken: string): ReviewApi {
       if (filters?.owner) params.set("owner", filters.owner);
       if (filters?.query) params.set("q", filters.query);
       if (filters?.created_after) params.set("created_after", filters.created_after);
-      return normalizeIssues(await getJson<unknown>(`/api/admin/fae/issues?${params}`, signal));
+      return normalizeIssues(await getJson<unknown>(faeApiPath(`/issues?${params}`), signal));
     },
     turnSummaries(turnKeys, signal) {
       const params = new URLSearchParams();
       turnKeys.forEach((turnKey) => params.append("turn_key", turnKey));
-      return getJson<TurnClosureSummary[]>(`/api/admin/fae/turn-summaries?${params}`, signal);
+      return getJson<TurnClosureSummary[]>(faeApiPath(`/turn-summaries?${params}`), signal);
     },
-    issue: async (id, signal) => normalizeDetail(await getJson<unknown>(`/api/admin/fae/issues/${encodeURIComponent(id)}`, signal)),
-    create: (payload, actor) => writeJson<FeedbackIssueDetail>("/api/admin/fae/issues", payload, actor, csrfToken),
-    link: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}/links`, payload, actor, csrfToken),
-    update: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}`, payload, actor, csrfToken, "PATCH"),
-    move: (issueId, linkId, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(issueId)}/links/${encodeURIComponent(linkId)}/move`, payload, actor, csrfToken),
-    fixReady: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}/fix-ready`, payload, actor, csrfToken),
-    merge: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}/merge`, payload, actor, csrfToken),
-    addEvidence: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}/evidence`, payload, actor, csrfToken),
-    verifyEvidence: (evidenceId, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/evidence/${encodeURIComponent(evidenceId)}/verify`, { reason: "machine verification requested" }, actor, csrfToken),
-    replay: (issueId, payload, actor) => writeJson<ReplayRun>(`/api/admin/fae/issues/${encodeURIComponent(issueId)}/replays`, payload, actor, csrfToken),
-    semanticReview: (replayId, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/replays/${encodeURIComponent(replayId)}/semantic-review`, payload, actor, csrfToken),
-    disposition: (issueId, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(issueId)}/disposition`, payload, actor, csrfToken),
+    issue: async (id, signal) => normalizeDetail(await getJson<unknown>(faeApiPath(`/issues/${encodeURIComponent(id)}`), signal)),
+    create: (payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath("/issues"), payload, actor, csrfToken),
+    link: (id, payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/issues/${encodeURIComponent(id)}/links`), payload, actor, csrfToken),
+    update: (id, payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/issues/${encodeURIComponent(id)}`), payload, actor, csrfToken, "PATCH"),
+    move: (issueId, linkId, payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/issues/${encodeURIComponent(issueId)}/links/${encodeURIComponent(linkId)}/move`), payload, actor, csrfToken),
+    fixReady: (id, payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/issues/${encodeURIComponent(id)}/fix-ready`), payload, actor, csrfToken),
+    merge: (id, payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/issues/${encodeURIComponent(id)}/merge`), payload, actor, csrfToken),
+    addEvidence: (id, payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/issues/${encodeURIComponent(id)}/evidence`), payload, actor, csrfToken),
+    verifyEvidence: (evidenceId, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/evidence/${encodeURIComponent(evidenceId)}/verify`), { reason: "machine verification requested" }, actor, csrfToken),
+    replay: (issueId, payload, actor) => writeJson<ReplayRun>(faeApiPath(`/issues/${encodeURIComponent(issueId)}/replays`), payload, actor, csrfToken),
+    semanticReview: (replayId, payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/replays/${encodeURIComponent(replayId)}/semantic-review`), payload, actor, csrfToken),
+    disposition: (issueId, payload, actor) => writeJson<FeedbackIssueDetail>(faeApiPath(`/issues/${encodeURIComponent(issueId)}/disposition`), payload, actor, csrfToken),
   };
 }
 
 export const faeWorkbenchApi: FaeWorkbenchApi = {
   async overview(signal) {
-    return parseFaeOverview(await getJson<unknown>("/api/admin/fae/overview", signal));
+    return parseFaeOverview(await getJson<unknown>(faeApiPath("/overview"), signal));
   },
 
   async listSessions(query, signal) {
@@ -271,11 +273,11 @@ export const faeWorkbenchApi: FaeWorkbenchApi = {
       if (value !== undefined && value !== "") params.set(key, String(value));
     });
     const suffix = params.size ? `?${params}` : "";
-    return sessionPage(await getJson<unknown>(`/api/admin/fae/sessions${suffix}`, signal));
+    return sessionPage(await getJson<unknown>(faeApiPath(`/sessions${suffix}`), signal));
   },
 
   async session(sessionKey, signal) {
-    return sessionDetail(await getJson<unknown>(`/api/admin/fae/sessions/${encodeURIComponent(sessionKey)}`, signal));
+    return sessionDetail(await getJson<unknown>(faeApiPath(`/sessions/${encodeURIComponent(sessionKey)}`), signal));
   },
 
   review: reviewApi,

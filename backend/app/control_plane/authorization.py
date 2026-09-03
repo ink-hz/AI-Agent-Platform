@@ -83,6 +83,12 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/missions/{client_path:path}"),
     ("GET", "/conversations"),
     ("GET", "/conversations/{client_path:path}"),
+    ("GET", "/hr"),
+    ("GET", "/hr/"),
+    ("GET", "/hr/{client_path:path}"),
+    ("GET", "/marketing"),
+    ("GET", "/marketing/"),
+    ("GET", "/marketing/{client_path:path}"),
     ("GET", "/ai-notes"),
     ("GET", "/ai-notes/{client_path:path}"),
     ("GET", "/sessions"),
@@ -135,33 +141,48 @@ _PARTNER_OWNER_ROUTES = frozenset({
     ),
 })
 
-_FAE_WORKBENCH_READ_ROUTES = frozenset({
-    ("GET", "/api/admin/fae/overview"),
-    ("GET", "/api/admin/fae/sessions"),
-    ("GET", "/api/admin/fae/sessions/{session_key}"),
-    ("GET", "/api/admin/fae/issue-overview"),
-    ("GET", "/api/admin/fae/issue-inbox"),
-    ("GET", "/api/admin/fae/issues"),
-    ("GET", "/api/admin/fae/issues/{issue_id}"),
-    ("GET", "/api/admin/fae/turn-summaries"),
-    ("GET", "/api/admin/fae/reports"),
-    ("GET", "/api/admin/fae/reports/latest"),
-    ("GET", "/api/admin/fae/reports/{report_id}"),
-})
+def _fae_routes(prefix: str) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+    read_routes = {
+        ("GET", f"{prefix}/overview"),
+        ("GET", f"{prefix}/sessions"),
+        ("GET", f"{prefix}/sessions/{{session_key}}"),
+        ("GET", f"{prefix}/issue-overview"),
+        ("GET", f"{prefix}/issue-inbox"),
+        ("GET", f"{prefix}/issues"),
+        ("GET", f"{prefix}/issues/{{issue_id}}"),
+        ("GET", f"{prefix}/turn-summaries"),
+        ("GET", f"{prefix}/reports"),
+        ("GET", f"{prefix}/reports/latest"),
+        ("GET", f"{prefix}/reports/{{report_id}}"),
+    }
+    mutation_routes = {
+        ("POST", f"{prefix}/issues"),
+        ("PATCH", f"{prefix}/issues/{{issue_id}}"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/links"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/links/{{link_id}}/move"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/merge"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/fix-ready"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/evidence"),
+        ("POST", f"{prefix}/evidence/{{evidence_id}}/verify"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/replays"),
+        ("POST", f"{prefix}/replays/{{replay_id}}/semantic-review"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/disposition"),
+    }
+    return read_routes, mutation_routes
 
-_FAE_WORKBENCH_MUTATION_ROUTES = frozenset({
-    ("POST", "/api/admin/fae/issues"),
-    ("PATCH", "/api/admin/fae/issues/{issue_id}"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/links"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/links/{link_id}/move"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/merge"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/fix-ready"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/evidence"),
-    ("POST", "/api/admin/fae/evidence/{evidence_id}/verify"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/replays"),
-    ("POST", "/api/admin/fae/replays/{replay_id}/semantic-review"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/disposition"),
-})
+
+_CANONICAL_FAE_READ_ROUTES, _CANONICAL_FAE_MUTATION_ROUTES = _fae_routes(
+    "/api/fae"
+)
+_COMPAT_FAE_READ_ROUTES, _COMPAT_FAE_MUTATION_ROUTES = _fae_routes(
+    "/api/admin/fae"
+)
+_FAE_WORKBENCH_READ_ROUTES = frozenset(
+    _CANONICAL_FAE_READ_ROUTES | _COMPAT_FAE_READ_ROUTES
+)
+_FAE_WORKBENCH_MUTATION_ROUTES = frozenset(
+    _CANONICAL_FAE_MUTATION_ROUTES | _COMPAT_FAE_MUTATION_ROUTES
+)
 
 _OWNER_ROUTES = frozenset({
     *(route for route in VIEWER_R1_ROUTES),
@@ -205,6 +226,9 @@ _OWNER_ROUTES = frozenset({
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}"),
     ("POST", "/api/v1/manage/admins/{internal_user_id}"),
     ("DELETE", "/api/v1/manage/admins/{internal_user_id}"),
+    ("GET", "/api/v1/manage/fae-workbench/grants"),
+    ("POST", "/api/v1/manage/fae-workbench/grants"),
+    ("DELETE", "/api/v1/manage/fae-workbench/grants/{internal_user_id}"),
     ("PUT", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
 }) | (
@@ -257,15 +281,15 @@ class AuthorizationService:
             if auth.hard_stale_read_only and key in _HARD_STALE_SELF_MUTATION_ROUTES:
                 return self._deny(503, "hard_stale_read_only")
             return AuthorizationDecision(True, 200, "self_service", None)
+        if key in (_FAE_WORKBENCH_READ_ROUTES | _FAE_WORKBENCH_MUTATION_ROUTES):
+            # The independent FAE grant is resolved by the router dependency.
+            # Freshness/cloud mutation guards run there only after that grant is
+            # proven, so an ungranted identity is never misreported as stale.
+            return AuthorizationDecision(True, 200, "fae_workbench_route", None)
         if key not in _OWNER_ROUTES:
             return self._deny(403, "route_not_authorized")
         if key in _PARTNER_OWNER_ROUTES and auth.role is not Role.PLATFORM_OWNER:
             return self._deny(403, "platform_owner_required")
-        if (
-            key in (_FAE_WORKBENCH_READ_ROUTES | _FAE_WORKBENCH_MUTATION_ROUTES)
-            and auth.role not in {Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN}
-        ):
-            return self._deny(403, "management_role_required")
         if auth.role is Role.MEMBER:
             return self._deny(403, "member_management_denied")
         if auth.hard_stale_read_only and selected_method not in {

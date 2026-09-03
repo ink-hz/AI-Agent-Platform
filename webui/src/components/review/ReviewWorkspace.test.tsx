@@ -85,7 +85,7 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     />));
   };
 
-  const renderInboxWorkspace = async (api: ReviewApi, basePath: "/admin/review" | "/admin/fae/issues") => {
+  const renderInboxWorkspace = async (api: ReviewApi, basePath: "/admin/review" | "/fae/manage/issues") => {
     const query = basePath === "/admin/review"
       ? "?agent_id=ai-fae-agent&turn_key=fae%3Aturn-a"
       : "?session_key=fae%3Asession-a&turn_key=fae%3Aturn-a";
@@ -139,13 +139,14 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     await act(async () => root.render(<ReviewWorkspace
       api={api}
       agentId="ai-fae-agent"
-      basePath="/admin/fae/issues"
+      basePath="/fae/manage/issues"
       initialIssueId={null}
       initialTurn={null}
       actor="corp:owner"
       showActorField={false}
       showAgentFilter={false}
       presentation="fae-governance"
+      enforceDeploymentReadOnly
       statusFilter="open"
       onStatusFilterChange={vi.fn()}
       replicaStatus={{ freshness: "current", lastSuccessAt: "2026-09-01T06:00:00Z" }}
@@ -161,6 +162,7 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     expect(container.textContent).not.toContain("Feedback Repair Ledger");
     expect(container.textContent).not.toContain("生命周期状态暂不可用");
     expect(container.querySelector(".fae-governance-readonly")?.textContent).toContain("只读副本");
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "创建事项并纳管")).toBe(false);
   });
 
   it("does not present unavailable lifecycle totals as zero", async () => {
@@ -174,7 +176,7 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     await act(async () => root.render(<ReviewWorkspace
       api={api}
       agentId="ai-fae-agent"
-      basePath="/admin/fae/issues"
+      basePath="/fae/manage/issues"
       initialIssueId={null}
       initialTurn={null}
       actor="corp:owner"
@@ -249,12 +251,12 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     api.overview = vi.fn()
       .mockResolvedValueOnce(overview)
       .mockResolvedValueOnce({ ...overview, feedback_rows: 3, issue_total: 3 });
-    await renderInboxWorkspace(api, "/admin/fae/issues");
+    await renderInboxWorkspace(api, "/fae/manage/issues");
     const pushState = vi.spyOn(window.history, "pushState");
 
     await clickMutation("创建事项并纳管");
 
-    expect(window.location.pathname).toBe("/admin/fae/issues/issue-new");
+    expect(window.location.pathname).toBe("/fae/manage/issues/issue-new");
     expect(container.textContent).toContain("新建事项根因");
     expect(container.querySelector(".review-issue-list")?.textContent).toContain("新建事项");
     expect(container.textContent).toContain("负反馈回答已纳入闭环");
@@ -277,13 +279,13 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
       .mockResolvedValueOnce(summaries)
       .mockResolvedValueOnce([{ ...linkedA.issue, progress: linkedA.progress }, summaries[1]]);
     api.overview = vi.fn().mockResolvedValue(overview);
-    await renderInboxWorkspace(api, "/admin/fae/issues");
+    await renderInboxWorkspace(api, "/fae/manage/issues");
     await chooseExistingIssue();
     const pushState = vi.spyOn(window.history, "pushState");
 
     await clickMutation("关联到已有事项");
 
-    expect(window.location.pathname).toBe("/admin/fae/issues/issue-a");
+    expect(window.location.pathname).toBe("/fae/manage/issues/issue-a");
     expect(container.textContent).toContain("事项 A（已关联）");
     expect(container.textContent).toContain("负反馈回答已关联到已有事项");
     expect(api.link).toHaveBeenCalledTimes(1);
@@ -301,13 +303,13 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     api.inbox = vi.fn().mockResolvedValue([inboxA, inboxB]);
     api.create = vi.fn().mockReturnValue(pending.promise);
     api.link = vi.fn().mockResolvedValue(issueNew);
-    await renderInboxWorkspace(api, "/admin/fae/issues");
+    await renderInboxWorkspace(api, "/fae/manage/issues");
 
     await clickMutation("创建事项并纳管");
     await chooseB();
     await act(async () => pending.resolve(issueNew));
 
-    expect(window.location.pathname).toBe("/admin/fae/issues/issue-b");
+    expect(window.location.pathname).toBe("/fae/manage/issues/issue-b");
     expect(container.textContent).toContain("B 的根因");
     expect(container.textContent).not.toContain("负反馈回答已纳入闭环");
     expect(api.link).toHaveBeenCalledTimes(1);
@@ -451,9 +453,9 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
         items: [], total: 200, limit: 200, offset: 200, has_more: false,
       });
     const changePage = vi.fn();
-    window.history.replaceState({}, "", "/admin/fae/issues/issue-a?page=2");
+    window.history.replaceState({}, "", "/fae/manage/issues/issue-a?page=2");
     await act(async () => root.render(<ReviewWorkspace
-      api={api} agentId="ai-fae-agent" basePath="/admin/fae/issues" initialIssueId="issue-a"
+      api={api} agentId="ai-fae-agent" basePath="/fae/manage/issues" initialIssueId="issue-a"
       initialTurn={null} actor="codex" showActorField={false} showAgentFilter={false}
       issueFilters={{ limit: 200, offset: 200 }} onIssuePageChange={changePage}
       collectionSearch="page=2"
@@ -471,9 +473,9 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     api.inbox = vi.fn().mockResolvedValue([inboxA]);
     api.create = vi.fn().mockReturnValue(pendingCreate.promise);
     api.link = vi.fn().mockResolvedValue(issueNew);
-    await renderInboxWorkspace(api, "/admin/fae/issues");
+    await renderInboxWorkspace(api, "/fae/manage/issues");
     await clickMutation("创建事项并纳管");
-    window.history.replaceState({}, "", "/admin/fae/reports");
+    window.history.replaceState({}, "", "/fae/manage/reports");
     await act(async () => root.render(<main>分析报告页</main>));
     const pushState = vi.spyOn(window.history, "pushState");
     const readCounts = [api.overview, api.inbox, api.issues, api.issue].map((method) => vi.mocked(method).mock.calls.length);
@@ -481,7 +483,7 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     await act(async () => pendingCreate.resolve(issueNew));
 
     expect(api.link).toHaveBeenCalledTimes(1);
-    expect(window.location.pathname).toBe("/admin/fae/reports");
+    expect(window.location.pathname).toBe("/fae/manage/reports");
     expect(pushState).not.toHaveBeenCalled();
     expect([api.overview, api.inbox, api.issues, api.issue].map((method) => vi.mocked(method).mock.calls.length)).toEqual(readCounts);
     expect(container.textContent).toBe("分析报告页");

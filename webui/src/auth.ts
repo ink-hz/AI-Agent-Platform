@@ -1,3 +1,6 @@
+import { FAE_MANAGEMENT_PATH } from "./platform/workspaces";
+
+
 export type PlatformRole =
   | "member"
   | "management_viewer"
@@ -5,6 +8,7 @@ export type PlatformRole =
   | "platform_owner";
 export type DirectoryFreshness = "fresh" | "warning" | "hard_stale";
 export type TrustedGender = "male" | "female" | null;
+export type WorkspaceScope = "fae_workbench";
 
 export interface Account {
   internal_user_id: string;
@@ -13,6 +17,7 @@ export interface Account {
   departments: string[];
   gender: TrustedGender;
   observation_agent_ids: string[];
+  workspace_scopes: WorkspaceScope[];
   directory_freshness: DirectoryFreshness;
   hard_stale_read_only: boolean;
   csrf_token: string;
@@ -73,6 +78,7 @@ export class IdentityDisabled extends PlatformApiError {
 const PREVIEW_PREFIX = "/_preview/dingtalk-r1";
 const ACCOUNT_KEYS = new Set([
   "internal_user_id", "display_name", "role", "departments", "gender", "observation_agent_ids",
+  "workspace_scopes",
   "real_name", "mobile", "primary_department",
   "directory_freshness", "hard_stale_read_only", "csrf_token",
 ]);
@@ -123,32 +129,48 @@ export type LoginReturnPath =
   | `/ai-notes/${string}/${string}`
   | "/office/"
   | "/voc/"
+  | `/voc/${string}`
+  | "/fae/"
+  | `/fae/${string}`
+  | "/hr"
+  | "/hr/"
+  | `/hr/${string}`
+  | "/marketing"
+  | "/marketing/"
+  | `/marketing/${string}`
   | "/admin"
   | "/admin/"
   | `/admin/${string}`;
 
 
-function canonicalEncodedFaeDetailPath(value: string): boolean {
-  const matched = /^\/admin\/fae\/(sessions|reports)\/([^/]+)$/.exec(value);
+function canonicalEncodedDetailPath(value: string): boolean {
+  const matched = /^(\/admin\/fae\/(?:sessions|reports)|\/fae\/conversations|\/fae\/manage\/(?:sessions|issues|reports)|\/hr\/conversations|\/marketing\/(?:prospecting|inbound|voice|intelligence|gtm)\/conversations)\/([^/]+)$/.exec(value);
   if (!matched) return false;
   let detailId: string;
   try { detailId = decodeURIComponent(matched[2]); } catch { return false; }
-  const pattern = matched[1] === "sessions" ? /^[A-Za-z0-9:._-]+$/ : /^[A-Za-z0-9._:-]+$/;
-  return pattern.test(detailId) && encodeURIComponent(detailId) === matched[2];
+  return /^[A-Za-z0-9:._-]+$/.test(detailId)
+    && `${matched[1]}/${encodeURIComponent(detailId)}` === value;
 }
 
 
 function safeLoginReturnPath(value: string): boolean {
   if (!value.startsWith("/") || value.startsWith("//") || /[?#\\\u0000-\u001f\u007f]/.test(value)) return false;
-  const canonicalFaeDetail = canonicalEncodedFaeDetailPath(value);
-  if (value.includes("%") && !canonicalFaeDetail) return false;
-  if (canonicalFaeDetail) return true;
+  const canonicalDetail = canonicalEncodedDetailPath(value);
+  if (value.includes("%") && !canonicalDetail) return false;
+  if (canonicalDetail) return true;
   if (value === "/" || value === "/account" || value === "/missions" || value === "/conversations" || value === "/agents" || value === "/agents/voc/workspace" || value === "/ai-notes" || value === "/voc/") return true;
   if (/^\/missions\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/conversations\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
   if (/^\/ai-notes\/[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,127}$/.test(value)) return true;
-  return value === "/office/" || value === "/admin/" || value === "/admin"
+  return value === "/office/" || value === "/admin/" || value === "/admin" || value === "/fae/"
+    || value === `${FAE_MANAGEMENT_PATH}/` || value === "/hr" || value === "/hr/"
+    || value === "/marketing" || value === "/marketing/"
+    || /^\/fae\/conversations\/[A-Za-z0-9:._-]+$/.test(value)
+    || /^\/fae\/manage\/(?:sessions|issues|reports)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)
+    || /^\/voc\/(?:records|manage\/records)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)
+    || /^\/hr\/conversations\/[A-Za-z0-9:._-]+$/.test(value)
+    || /^\/marketing\/(?:prospecting|inbound|voice|intelligence|gtm)(?:\/conversations\/[A-Za-z0-9:._-]+)?$/.test(value)
     || /^\/admin\/fae(?:\/(?:sessions(?:\/[A-Za-z0-9:._-]+)?|issues(?:\/[0-9a-fA-F-]{36})?|reports(?:\/[A-Za-z0-9._:-]+)?))?$/.test(value)
     || /^\/admin\/(?:overview|review|activity|operations|identity|governance|voc|agents(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\/runtime)?)?|sessions(?:\/[A-Za-z0-9:._-]+)?)$/.test(value);
 }
@@ -186,6 +208,7 @@ function parseAccount(value: unknown): Account {
   const departments = value.departments;
   const gender = value.gender;
   const scopes = value.observation_agent_ids;
+  const workspaceScopes = value.workspace_scopes;
   if (
     typeof value.internal_user_id !== "string" || !value.internal_user_id
     || typeof value.display_name !== "string" || !value.display_name
@@ -197,6 +220,9 @@ function parseAccount(value: unknown): Account {
     || (value.mobile !== undefined && value.mobile !== null && typeof value.mobile !== "string")
     || (value.primary_department !== undefined && value.primary_department !== null && typeof value.primary_department !== "string")
     || !Array.isArray(scopes) || scopes.some((scope) => typeof scope !== "string" || !scope)
+    || !Array.isArray(workspaceScopes)
+    || workspaceScopes.some((scope) => scope !== "fae_workbench")
+    || workspaceScopes.length !== new Set(workspaceScopes).size
     || !["fresh", "warning", "hard_stale"].includes(String(freshness))
     || typeof value.hard_stale_read_only !== "boolean"
     || typeof value.csrf_token !== "string"
@@ -210,6 +236,7 @@ function parseAccount(value: unknown): Account {
     departments: [...departments] as string[],
     gender: gender as TrustedGender,
     observation_agent_ids: [...scopes] as string[],
+    workspace_scopes: [...workspaceScopes] as WorkspaceScope[],
     directory_freshness: freshness as DirectoryFreshness,
     hard_stale_read_only: value.hard_stale_read_only,
     csrf_token: value.csrf_token,
@@ -274,7 +301,10 @@ async function fetchAccount(prefix: string): Promise<Account> {
   try {
     const response = await fetch(platformPath("/api/v1/account", prefix), {
       credentials: "include",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Platform-Account-Contract": "2",
+      },
       signal: controller.signal,
     });
     await checked(response);

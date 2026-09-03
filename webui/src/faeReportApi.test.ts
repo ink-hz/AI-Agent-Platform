@@ -53,7 +53,7 @@ describe("FAE report API", () => {
     await faeReportApi.detail(reportFixture.report_id, 2);
 
     expect(String(fetchMock.mock.calls[0][0])).toBe(
-      `/api/admin/fae/reports/${reportFixture.report_id}?version=2`,
+      `/api/fae/reports/${reportFixture.report_id}?version=2`,
     );
   });
 

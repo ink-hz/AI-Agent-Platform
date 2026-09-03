@@ -11,7 +11,7 @@ NGINX = (
 def test_agent_identity_backchannel_is_hidden_before_the_platform_proxy() -> None:
     value = NGINX.read_text(encoding="utf-8")
     exchange = "location = /api/v1/internal/agent-launch/exchange"
-    binding = "location ~ ^/api/v1/internal/agent-bindings/"
+    binding = 'location ~ "^/api/v1/internal/agent-bindings/'
     fallback = "location / {"
 
     assert exchange in value
@@ -22,4 +22,5 @@ def test_agent_identity_backchannel_is_hidden_before_the_platform_proxy() -> Non
     binding_block = value[value.index(binding) : value.index("\n    }", value.index(binding))]
     assert "return 404;" in exchange_block
     assert "return 404;" in binding_block
+    assert '/validate$" {' in binding_block
     assert "/office/" in value

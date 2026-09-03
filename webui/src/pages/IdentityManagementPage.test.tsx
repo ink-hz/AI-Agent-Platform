@@ -11,7 +11,7 @@ import { IdentityManagementPage } from "./IdentityManagementPage";
 const owner: Account = {
   internal_user_id: "62a31b32-2a92-47d4-9f79-f0c61bca12aa", display_name: "苍渊",
   departments: [], gender: null,
-  role: "platform_owner", observation_agent_ids: [], directory_freshness: "fresh",
+  role: "platform_owner", observation_agent_ids: [], workspace_scopes: ["fae_workbench"], directory_freshness: "fresh",
   hard_stale_read_only: false, csrf_token: "csrf",
 };
 const pendingAdministratorStorageKey = `platform.identity.pending-administrator.v1:${owner.internal_user_id}`;
@@ -77,6 +77,11 @@ function withPartnerReads(fetchMock: ReturnType<typeof vi.fn>): ReturnType<typeo
           status: 200, headers: { "Content-Type": "application/json" },
         }));
       }
+      if (path.endsWith("/api/v1/manage/fae-workbench/grants")) {
+        return Promise.resolve(new Response(JSON.stringify({ grants: [] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
     }
     return fetchMock(input, init);
   });
@@ -121,6 +126,22 @@ describe("IdentityManagementPage", () => {
     container.remove();
     sessionStorage.clear();
     vi.unstubAllGlobals();
+  });
+
+  it("places the FAE workspace grant panel only on the owner identity page", async () => {
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await act(async () => { await Promise.resolve(); });
+    expect(container.textContent).toContain("FAE 工作台访问");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(
+      <IdentityManagementPage account={administrator} />,
+    ));
+    await act(async () => { await Promise.resolve(); });
+    expect(container.textContent).not.toContain("FAE 工作台访问");
   });
 
   it("is owner-only and requires a reason before changing viewer access", async () => {

@@ -18,6 +18,7 @@ from app.spa import (
 )
 
 from .auth import AuthenticationError, CompletedLogin, cookie_policy
+from .fae_access import FaeWorkbenchAccessUnavailable
 from .models import AuthContext, IssuedWebSession, Role
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable
 
@@ -221,6 +222,15 @@ def build_auth_router(
     @router.get("/missions/{client_path:path}", include_in_schema=False)
     @router.get("/conversations", include_in_schema=False)
     @router.get("/conversations/{client_path:path}", include_in_schema=False)
+    @router.get("/hr", include_in_schema=False)
+    @router.get("/hr/", include_in_schema=False)
+    @router.get("/hr/{client_path:path}", include_in_schema=False)
+    @router.get("/marketing", include_in_schema=False)
+    @router.get("/marketing/", include_in_schema=False)
+    @router.get("/marketing/{client_path:path}", include_in_schema=False)
+    @router.get("/fae/manage", include_in_schema=False)
+    @router.get("/fae/manage/", include_in_schema=False)
+    @router.get("/fae/manage/{client_path:path}", include_in_schema=False)
     @router.get("/ai-notes", include_in_schema=False)
     @router.get("/ai-notes/{client_path:path}", include_in_schema=False)
     @router.get("/admin", include_in_schema=False)
@@ -374,11 +384,23 @@ def build_auth_router(
     @router.get("/api/v1/account")
     async def account(request: Request):
         context: AuthContext = request.state.auth_context
+        account_contract_v2 = (
+            request.headers.get("X-Platform-Account-Contract") == "2"
+        )
         try:
             snapshot = auth.account_snapshot(context)
+            if account_contract_v2:
+                fae_access = getattr(request.app.state, "fae_access", None)
+                workspace_scopes = (
+                    ["fae_workbench"]
+                    if fae_access is not None and fae_access.allows(context)
+                    else []
+                )
         except AuthenticationError:
             raise HTTPException(503, "account unavailable") from None
-        return {
+        except FaeWorkbenchAccessUnavailable:
+            raise HTTPException(503, "account unavailable") from None
+        payload = {
             "internal_user_id": str(context.internal_user_id),
             "display_name": snapshot["display_name"],
             "role": context.role.value,
@@ -392,6 +414,9 @@ def build_auth_router(
             "hard_stale_read_only": context.hard_stale_read_only,
             "csrf_token": request.state.csrf_token,
         }
+        if account_contract_v2:
+            payload["workspace_scopes"] = workspace_scopes
+        return payload
 
     @router.get("/api/v1/internal/session/subject")
     async def internal_session_subject(request: Request):

@@ -22,7 +22,8 @@ from .partner_models import PartnerIdentityError
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 _FAE_AGENT_ID = "ai-fae-agent"
-_FAE_LAUNCH_BASE = "https://fae.orbbec.com.cn/app/"
+_FAE_LAUNCH_BASE = "https://agent.orbbec.com.cn/fae/"
+_FAE_PARTNER_LAUNCH_BASE = "https://fae.orbbec.com.cn/app/"
 _LAUNCH_CODE = re.compile(r"[A-Za-z0-9_-]{32,256}\Z")
 # The frozen private back-channel contract, checked in under
 # contracts/fae_identity_v1. Adding the marker is rolling-deploy safe: an older
@@ -268,6 +269,7 @@ class AgentLaunchService:
             subject_type="enterprise_member",
             source_session_id=context.session_id,
             internal_user_id=context.internal_user_id,
+            launch_base=_FAE_LAUNCH_BASE,
             launch_parameter="platform_launch",
         )
 
@@ -280,6 +282,7 @@ class AgentLaunchService:
             subject_type="partner_operator",
             source_session_id=None,
             internal_user_id=None,
+            launch_base=_FAE_PARTNER_LAUNCH_BASE,
             launch_parameter="partner_launch",
         )
 
@@ -290,6 +293,7 @@ class AgentLaunchService:
         subject_type: Literal["enterprise_member", "partner_operator"],
         source_session_id: UUID | None,
         internal_user_id: UUID | None,
+        launch_base: str,
         launch_parameter: str,
     ) -> IssuedAgentLaunch:
         code = self._secrets.random_token()
@@ -308,9 +312,7 @@ class AgentLaunchService:
             ttl_seconds=60,
         )
         return IssuedAgentLaunch(
-            launch_url=(
-                f"{_FAE_LAUNCH_BASE}#{launch_parameter}={quote(code, safe='')}"
-            ),
+            launch_url=f"{launch_base}#{launch_parameter}={quote(code, safe='')}",
             expires_at=expires_at,
             binding_id=binding_id,
             code=code,

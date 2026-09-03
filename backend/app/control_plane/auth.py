@@ -38,6 +38,62 @@ class AuthenticationError(RuntimeError):
 
 
 _IN_CLIENT_APP_ID = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+_SAFE_RETURN_ID = r"[A-Za-z0-9:._-]+"
+_SAFE_RETURN_EXACT = frozenset(
+    {
+        "/", "/account", "/missions", "/conversations", "/agents",
+        "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
+        "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
+        "/marketing/", "/admin", "/admin/",
+    }
+)
+_SAFE_RETURN_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"/missions/[0-9a-fA-F-]{36}",
+        r"/conversations/[0-9a-fA-F-]{36}",
+        rf"/agents/[A-Za-z0-9][A-Za-z0-9._-]{{0,127}}",
+        r"/ai-notes/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,127}",
+        rf"/fae/conversations/{_SAFE_RETURN_ID}",
+        rf"/fae/manage/(?:sessions|issues|reports)(?:/{_SAFE_RETURN_ID})?",
+        rf"/voc/(?:records|manage/records)(?:/{_SAFE_RETURN_ID})?",
+        rf"/hr/conversations/{_SAFE_RETURN_ID}",
+        rf"/marketing/(?:prospecting|inbound|voice|intelligence|gtm)"
+        rf"(?:/conversations/{_SAFE_RETURN_ID})?",
+        rf"/admin/fae(?:/(?:sessions(?:/{_SAFE_RETURN_ID})?"
+        rf"|issues(?:/[0-9a-fA-F-]{{36}})?"
+        rf"|reports(?:/{_SAFE_RETURN_ID})?))?",
+        rf"/admin/(?:overview|review|activity|operations|identity|governance|voc"
+        rf"|agents(?:/[A-Za-z0-9][A-Za-z0-9._-]{{0,127}}(?:/runtime)?)?"
+        rf"|sessions(?:/{_SAFE_RETURN_ID})?)",
+    )
+)
+_CANONICAL_ENCODED_DETAIL = re.compile(
+    rf"(?P<prefix>/admin/fae/(?:sessions|reports)|/fae/conversations"
+    rf"|/fae/manage/(?:sessions|issues|reports)|/hr/conversations"
+    rf"|/marketing/(?:prospecting|inbound|voice|intelligence|gtm)/conversations)"
+    rf"/(?P<detail>[^/]+)"
+)
+
+
+def _safe_local_return_path(path: str) -> bool:
+    return path in _SAFE_RETURN_EXACT or any(
+        pattern.fullmatch(path) for pattern in _SAFE_RETURN_PATTERNS
+    )
+
+
+def _canonical_encoded_return_path(path: str) -> bool:
+    matched = _CANONICAL_ENCODED_DETAIL.fullmatch(path)
+    if matched is None:
+        return False
+    try:
+        detail = unquote(matched.group("detail"), errors="strict")
+    except (UnicodeError, ValueError):
+        return False
+    return (
+        re.fullmatch(_SAFE_RETURN_ID, detail) is not None
+        and f'{matched.group("prefix")}/{quote(detail, safe="")}' == path
+    )
 
 
 @dataclass(frozen=True)
@@ -264,7 +320,6 @@ def validate_return_path(value: str | None, *, route_prefix: str) -> str:
         or parsed.query
         or parsed.fragment
         or "\\" in selected
-        or "%" in selected
         or any(ord(character) < 0x20 or ord(character) == 0x7F for character in decoded)
         or any(character in {"\u2028", "\u2029"} for character in decoded)
         or any(segment in {".", ".."} for segment in segments)
@@ -272,17 +327,18 @@ def validate_return_path(value: str | None, *, route_prefix: str) -> str:
     ):
         raise ValueError("return path invalid")
     normalized_prefix = route_prefix if route_prefix.endswith("/") else route_prefix + "/"
-    if (
-        selected == "/office" or selected.startswith("/office/")
-    ) and selected != "/office/":
+    if normalized_prefix == "/":
+        local = selected
+    elif selected == normalized_prefix[:-1]:
+        local = "/"
+    elif selected.startswith(normalized_prefix):
+        local = "/" + selected[len(normalized_prefix):]
+    else:
         raise ValueError("return path invalid")
-    if (
-        selected == "/voc" or selected.startswith("/voc/")
-    ) and selected != "/voc/":
-        raise ValueError("return path invalid")
-    if normalized_prefix != "/" and not (
-        selected == normalized_prefix[:-1] or selected.startswith(normalized_prefix)
-    ):
+    if "%" in local:
+        if not _canonical_encoded_return_path(local):
+            raise ValueError("return path invalid")
+    elif not _safe_local_return_path(local):
         raise ValueError("return path invalid")
     return selected
 

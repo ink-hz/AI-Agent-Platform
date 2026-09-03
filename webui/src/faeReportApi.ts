@@ -5,6 +5,7 @@ import {
   type FaeAnalysisReport,
   type FaeReportSummary,
 } from "./faeReportTypes";
+import { FAE_WORKBENCH_API_PATH } from "./platform/workspaces";
 
 
 export class FaeReportApiError extends Error {
@@ -34,10 +35,10 @@ async function list(path: string, signal?: AbortSignal): Promise<FaeReportSummar
 }
 
 export const faeReportApi = {
-  list: (signal?: AbortSignal) => list("/api/admin/fae/reports", signal),
-  latest: (signal?: AbortSignal) => get("/api/admin/fae/reports/latest", signal),
+  list: (signal?: AbortSignal) => list(`${FAE_WORKBENCH_API_PATH}/reports`, signal),
+  latest: (signal?: AbortSignal) => get(`${FAE_WORKBENCH_API_PATH}/reports/latest`, signal),
   detail: (reportId: string, version?: number, signal?: AbortSignal) => get(
-    `/api/admin/fae/reports/${encodeURIComponent(reportId)}${version === undefined ? "" : `?version=${encodeURIComponent(String(version))}`}`,
+    `${FAE_WORKBENCH_API_PATH}/reports/${encodeURIComponent(reportId)}${version === undefined ? "" : `?version=${encodeURIComponent(String(version))}`}`,
     signal,
   ),
 };

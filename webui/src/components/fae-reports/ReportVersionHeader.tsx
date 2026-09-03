@@ -1,5 +1,6 @@
 import type { FaeAnalysisReport, FaeReportSummary } from "../../faeReportTypes";
 import { PlatformLink } from "../PlatformLink";
+import { FAE_MANAGEMENT_PATH } from "../../platform/workspaces";
 
 
 const DAY = new Intl.DateTimeFormat("zh-CN", {
@@ -23,7 +24,7 @@ export function ReportVersionHeader({ report, summaries = [] }: { report: FaeAna
           {report.currentness === "source_updated" ? "生产数据已有更新" : "冻结报告"}
         </b>
       </div>
-      {report.currentness === "source_updated" && <PlatformLink className="fae-outcome-currentness-link" href="/admin/fae">查看最新运营数据 →</PlatformLink>}
+      {report.currentness === "source_updated" && <PlatformLink className="fae-outcome-currentness-link" href={`${FAE_MANAGEMENT_PATH}/`}>查看最新运营数据 →</PlatformLink>}
     </div>
     <dl>
       <div><dt>统计周期</dt><dd>{DAY.format(new Date(report.period.start_at))}—{DAY.format(new Date(report.period.end_at))}</dd></div>
@@ -33,7 +34,7 @@ export function ReportVersionHeader({ report, summaries = [] }: { report: FaeAna
       {versions.map((item) => <PlatformLink
         aria-current={item.report_version === report.report_version ? "page" : undefined}
         className={item.report_version === report.report_version ? "is-current" : undefined}
-        href={`/admin/fae/reports/${encodeURIComponent(item.report_id)}?version=${item.report_version}`}
+        href={`${FAE_MANAGEMENT_PATH}/reports/${encodeURIComponent(item.report_id)}?version=${item.report_version}`}
         key={`${item.report_id}:${item.report_version}`}
       >版本 {item.report_version}{item.status === "failed" ? " · 发布失败" : ""}</PlatformLink>)}
     </nav>}

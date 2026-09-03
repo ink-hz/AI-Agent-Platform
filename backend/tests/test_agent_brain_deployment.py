@@ -18,6 +18,19 @@ LATEST_AGENT_BRAIN_MIGRATION = (
 )
 
 
+def _nginx_location_block(value: str, selector: str) -> str:
+    start = value.index(selector)
+    depth = 0
+    for index in range(start, len(value)):
+        if value[index] == "{":
+            depth += 1
+        elif value[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return value[start : index + 1]
+    raise AssertionError(f"unterminated nginx location: {selector}")
+
+
 def test_cloud_acceptance_uses_only_named_agentops_control_commands() -> None:
     source = (CLOUD / "accept.sh").read_text(encoding="utf-8")
 
@@ -459,9 +472,7 @@ def test_formal_nginx_keeps_platform_root_and_proxies_office_safely() -> None:
     assert "location ^~ /office/knowledge-assets/" in nginx
     assert "location ^~ /office/" in nginx
     assert "location ^~ /assets/" in nginx
-    asset_start = nginx.index("location ^~ /assets/")
-    next_location = nginx.index("location = /voc", asset_start)
-    asset_boundary = nginx[asset_start:next_location]
+    asset_boundary = _nginx_location_block(nginx, "location ^~ /assets/ {")
     for directive in (
         "proxy_pass http://127.0.0.1:8080;",
         "proxy_hide_header Set-Cookie;",

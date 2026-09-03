@@ -59,6 +59,10 @@ from .control_plane.authorization import (
     AuthorizationRepository,
     AuthorizationService,
 )
+from .control_plane.fae_access import (
+    FaeWorkbenchAccessRepository,
+    FaeWorkbenchAccessService,
+)
 from .control_plane import routes_manage, routes_partner
 from .control_plane.audit import AuditWriter
 from .control_plane.routes_manage import ManagementRepository, ManagementService
@@ -107,7 +111,6 @@ from .fae_workbench.repository import (
     ReplicaFaeWorkbenchRepository,
 )
 from .fae_workbench.service import FaeWorkbenchService
-from .fae_reports import routes as fae_report_routes
 from .fae_reports.repository import PsycopgFaeReportRepository
 from .fae_reports.service import FaeReportService
 from .health import routes as health_routes
@@ -1132,6 +1135,7 @@ def create_app(
     app.state.partner_auth_broker = partner_auth_broker
     app.state.fae_workbench_service = fae_workbench_service
     app.state.fae_report_service = fae_report_service
+    app.state.fae_access = None
     app.state.fae_session_read_audit = None
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
@@ -1148,6 +1152,11 @@ def create_app(
             ManagementRepository(control_database_url),
             audit_writer,
             hard_stale_audit=identity_auth.hard_stale_audit,
+        )
+        app.state.fae_access = FaeWorkbenchAccessService(
+            FaeWorkbenchAccessRepository(control_database_url),
+            audit_writer,
+            cloud_mode=cloud_mode,
         )
         authorization_service = AuthorizationService(
             AuthorizationRepository(control_database_url),
@@ -1188,9 +1197,12 @@ def create_app(
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
-    app.include_router(fae_workbench_routes.router)
-    if fae_report_service is not None:
-        app.include_router(fae_report_routes.router)
+    app.include_router(fae_workbench_routes.router, prefix="/api/fae")
+    app.include_router(
+        fae_workbench_routes.router,
+        prefix="/api/admin/fae",
+        include_in_schema=False,
+    )
     app.include_router(build_voc_extension_router())
     if voc_internal_router is not None:
         app.include_router(voc_internal_router)

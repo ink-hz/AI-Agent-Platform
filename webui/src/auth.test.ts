@@ -51,6 +51,7 @@ function accountResponse(): Response {
     departments: ["项目管理部"],
     gender: "male",
     observation_agent_ids: [],
+    workspace_scopes: ["fae_workbench"],
     directory_freshness: "fresh",
     hard_stale_read_only: false,
     csrf_token: "csrf",
@@ -59,10 +60,54 @@ function accountResponse(): Response {
 
 
 describe("login return path", () => {
+  it("accepts canonical workspace paths and rejects malformed variants", () => {
+    expect(loginReturnPath("?return_path=%2Ffae%2Fconversations%2Fc-1")).toBe("/fae/conversations/c-1");
+    expect(loginReturnPath("?return_path=%2Ffae%2Fmanage%2Freports%2Fr-1")).toBe("/fae/manage/reports/r-1");
+    expect(loginReturnPath("?return_path=%2Fmarketing%2Fvoice%2Fconversations%2Fc-1")).toBe("/marketing/voice/conversations/c-1");
+    expect(loginReturnPath("?return_path=%2Fmarketing%2Funknown")).toBe("/");
+    expect(loginReturnPath("?return_path=%2F%2Fevil.example")).toBe("/");
+  });
+
   it.each([
-    routePath({ name: "admin-fae-session", sessionKey: "fae:session-1" }),
-    routePath({ name: "admin-fae-report", reportId: "weekly:2026-08-31" }),
-  ])("round-trips a canonical encoded FAE detail path through the login query: %s", (path) => {
+    "/fae/",
+    "/fae/conversations/fae:one",
+    "/fae/manage/",
+    "/fae/manage/sessions",
+    "/fae/manage/sessions/fae:one",
+    "/fae/manage/issues/00000000-0000-4000-8000-000000000001",
+    "/fae/manage/reports/weekly-1",
+    "/voc/records",
+    "/voc/records/VOC-1",
+    "/voc/manage/records",
+    "/voc/manage/records/VOC-1",
+    "/hr",
+    "/hr/",
+    "/hr/conversations/hr:one",
+    "/marketing",
+    "/marketing/",
+    "/marketing/prospecting",
+    "/marketing/intelligence/conversations/mkt:one",
+  ])("accepts canonical workspace login return path %s", (path) => {
+    expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe(path);
+  });
+
+  it.each([
+    "/fae/conversations/unsafe/path",
+    "/fae/manage/unknown",
+    "/voc/unknown",
+    "/hr/conversations/unsafe/path",
+    "/marketing/unknown",
+    "/marketing/voice/conversations/unsafe/path",
+  ])("rejects malformed workspace login return path %s", (path) => {
+    expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe("/");
+  });
+
+  it.each([
+    routePath({ name: "hr-conversation", conversationId: "hr:session-1" }),
+    routePath({ name: "marketing-conversation", agentSlug: "voice", conversationId: "mkt:session-1" }),
+    routePath({ name: "fae-manage-session", sessionKey: "fae:session-1" }),
+    routePath({ name: "fae-manage-report", reportId: "weekly:2026-08-31" }),
+  ])("round-trips a canonical encoded detail path through the login query: %s", (path) => {
     const search = `?${new URLSearchParams({ return_path: path })}`;
     expect(loginReturnPath(search)).toBe(path);
   });
@@ -126,6 +171,7 @@ describe("authenticated account bootstrap", () => {
       mobile: "13800138000",
       primary_department: "总经办",
       observation_agent_ids: [],
+      workspace_scopes: ["fae_workbench"],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -139,12 +185,19 @@ describe("authenticated account bootstrap", () => {
   });
 
   it("accepts and projects trusted DingTalk departments and gender", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(accountResponse()));
+    const fetch = vi.fn().mockResolvedValue(accountResponse());
+    vi.stubGlobal("fetch", fetch);
 
     await expect(loadAccount("")).resolves.toMatchObject({
       departments: ["项目管理部"],
       gender: "male",
     });
+    expect(fetch).toHaveBeenCalledWith("/api/v1/account", expect.objectContaining({
+      headers: {
+        Accept: "application/json",
+        "X-Platform-Account-Contract": "2",
+      },
+    }));
   });
 
   it("accepts a nullable trusted gender", async () => {
@@ -155,6 +208,7 @@ describe("authenticated account bootstrap", () => {
       departments: [],
       gender: null,
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -174,6 +228,7 @@ describe("authenticated account bootstrap", () => {
       departments,
       gender,
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -234,6 +289,7 @@ describe("authenticated account bootstrap", () => {
       departments: ["行政部"],
       gender: "female",
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -250,6 +306,7 @@ describe("authenticated account bootstrap", () => {
       departments: [],
       gender: null,
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -267,6 +324,7 @@ describe("authenticated account bootstrap", () => {
       departments: ["项目管理部"],
       gender: "male",
       observation_agent_ids: [],
+      workspace_scopes: ["fae_workbench"],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "memory-only-csrf",
@@ -302,10 +360,28 @@ describe("authenticated account bootstrap", () => {
       departments: ["项目管理部"],
       gender: "male",
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
       provider_user_id: "must-not-cross-boundary",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(loadAccount("")).rejects.toThrow("account response invalid");
+  });
+
+  it("rejects unknown workspace scopes from the account API", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "user",
+      display_name: "苍渊",
+      role: "member",
+      departments: ["项目管理部"],
+      gender: "male",
+      observation_agent_ids: [],
+      workspace_scopes: ["fae_workbench", "admin_everything"],
+      directory_freshness: "fresh",
+      hard_stale_read_only: false,
+      csrf_token: "csrf",
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
 
     await expect(loadAccount("")).rejects.toThrow("account response invalid");
@@ -353,7 +429,8 @@ describe("identity management contract", () => {
   const owner: Account = {
     internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
     departments: ["项目管理部"], gender: "male",
-    observation_agent_ids: [], directory_freshness: "fresh",
+    observation_agent_ids: [], workspace_scopes: ["fae_workbench"],
+    directory_freshness: "fresh",
     hard_stale_read_only: false, csrf_token: "owner-csrf",
   };
   const member: ManagedUser = {
