@@ -40,11 +40,13 @@ const messages: ConversationMessage[] = [
     message_id: "message-1", conversation_id: conversationId, seq: 1, role: "user",
     content: "帮我找候选人", turn_id: "turn-1", delivery_status: "completed",
     created_at: "2026-08-23T10:00:00Z", completed_at: "2026-08-23T10:00:00Z",
+    input_attachments: [], output_attachments: [], active_attachment_ids: [],
   },
   {
     message_id: "message-2", conversation_id: conversationId, seq: 2, role: "assistant",
     content: "## 第一轮结果\n\n- 建议从 GitHub 开始", turn_id: "turn-1", delivery_status: "completed",
     created_at: "2026-08-23T10:01:00Z", completed_at: "2026-08-23T10:01:00Z",
+    input_attachments: [], output_attachments: [], active_attachment_ids: [],
   },
 ];
 const event: ConversationEvent = {
@@ -61,6 +63,7 @@ function submissionResult(text: string): ConversationSubmissionResult {
       message_id: "message-3", conversation_id: conversationId, seq: 3, role: "user", content: text,
       turn_id: "turn-2", delivery_status: "accepted",
       created_at: "2026-08-23T10:02:00Z", completed_at: null,
+      input_attachments: [], output_attachments: [], active_attachment_ids: [],
     },
     turn: {
       turn_id: "turn-2", conversation_id: conversationId, user_message_id: "message-3",
@@ -378,6 +381,7 @@ describe("ConversationPage", () => {
         message_id: "message-3", conversation_id: conversationId, seq: 3, role: "user",
         content: "把范围改成深圳", turn_id: "turn-1", delivery_status: "accepted",
         created_at: "2026-08-25T10:02:00Z", completed_at: null,
+        input_attachments: [], output_attachments: [], active_attachment_ids: [],
       },
       turn: active,
     };

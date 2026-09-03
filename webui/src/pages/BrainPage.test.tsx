@@ -27,6 +27,7 @@ const result: ConversationSubmissionResult = {
     message_id: "message", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", seq: 1,
     role: "user", content: "找视觉人才", turn_id: "turn",
     delivery_status: "accepted", created_at: "2026-08-22T10:00:00Z", completed_at: null,
+    input_attachments: [], output_attachments: [], active_attachment_ids: [],
   },
   turn: {
     turn_id: "turn", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", user_message_id: "message",

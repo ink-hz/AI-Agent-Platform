@@ -49,6 +49,7 @@ const hrCard: AgentCapabilityCard = {
   output_types: ["text"],
   supports_attachments_in: false,
   supports_attachments_out: false,
+  attachment_limits: null,
   supports_evidence: true,
   supports_streaming: true,
   supports_cancellation: true,

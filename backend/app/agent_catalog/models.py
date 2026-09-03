@@ -14,6 +14,7 @@ from pydantic import (
 )
 
 InteractionMode = Literal["direct_chat", "brain_delegation", "external_workspace"]
+AgentContentType = Literal["text", "image", "pdf", "office"]
 
 CANONICAL_AGENT_IDS = (
     "hr-bot",
@@ -32,6 +33,26 @@ _WORKSPACE_URLS = {
     "ai-fae-agent": "/fae/",
     "voc": "/voc/",
 }
+
+
+class AgentAttachmentLimits(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_file_bytes: int = Field(gt=0, le=50 * 1024 * 1024)
+    max_files_per_message: int = Field(gt=0, le=5)
+    max_bytes_per_message: int = Field(gt=0, le=50 * 1024 * 1024)
+    max_files_per_conversation: int = Field(gt=0, le=50)
+    max_bytes_per_conversation: int = Field(gt=0, le=500 * 1024 * 1024)
+
+    @model_validator(mode="after")
+    def _validate_totals(self) -> AgentAttachmentLimits:
+        if (
+            self.max_bytes_per_message < self.max_file_bytes
+            or self.max_files_per_conversation < self.max_files_per_message
+            or self.max_bytes_per_conversation < self.max_bytes_per_message
+        ):
+            raise ValueError("attachment limits invalid")
+        return self
 
 
 class AgentCatalogCard(BaseModel):
@@ -53,10 +74,15 @@ class AgentCatalogCard(BaseModel):
     adapter_config_version: int = Field(default=1, gt=0)
     execution_pool: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     pool_concurrency: int | None = Field(default=None, ge=1, le=16)
-    accepted_input_types: tuple[Literal["text"], ...] = ("text",)
-    output_types: tuple[Literal["text"], ...] = ("text",)
+    accepted_input_types: tuple[AgentContentType, ...] = Field(
+        default=("text",), min_length=1, max_length=4
+    )
+    output_types: tuple[AgentContentType, ...] = Field(
+        default=("text",), min_length=1, max_length=4
+    )
     supports_attachments_in: bool = False
     supports_attachments_out: bool = False
+    attachment_limits: AgentAttachmentLimits | None = None
     supports_evidence: bool = True
     supports_streaming: bool = True
     supports_cancellation: bool = True
@@ -80,6 +106,8 @@ class AgentCatalogCard(BaseModel):
         "required_inputs",
         "example_tasks",
         "interaction_modes",
+        "accepted_input_types",
+        "output_types",
     )
     @classmethod
     def _unique_values(cls, values: tuple[str, ...]) -> tuple[str, ...]:
@@ -92,6 +120,20 @@ class AgentCatalogCard(BaseModel):
 
     @model_validator(mode="after")
     def _validate_delivery_contract(self) -> AgentCatalogCard:
+        if self.accepted_input_types[0] != "text" or self.output_types[0] != "text":
+            raise ValueError("text must be the first content type")
+        has_attachment_input = any(
+            value != "text" for value in self.accepted_input_types
+        )
+        has_attachment_output = any(value != "text" for value in self.output_types)
+        if (
+            self.supports_attachments_in is not has_attachment_input
+            or self.supports_attachments_out is not has_attachment_output
+            or self.supports_attachments
+            is not (has_attachment_input or has_attachment_output)
+            or (self.attachment_limits is None) is not (not has_attachment_input)
+        ):
+            raise ValueError("attachment capability contract invalid")
         modes = set(self.interaction_modes)
         external_only = modes == {"external_workspace"}
         has_external_workspace = "external_workspace" in modes

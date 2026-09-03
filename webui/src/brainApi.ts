@@ -1,5 +1,13 @@
 import { platformPath } from "./auth";
-import type { AgentCapabilityCard, Mission, MissionEvent, MissionPage, MissionStatus } from "./brainTypes";
+import type {
+  AgentAttachmentLimits,
+  AgentCapabilityCard,
+  AgentContentType,
+  Mission,
+  MissionEvent,
+  MissionPage,
+  MissionStatus,
+} from "./brainTypes";
 
 
 const MISSION_STATUSES = new Set<MissionStatus>([
@@ -56,6 +64,34 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0);
 }
 
+const CONTENT_TYPES = new Set<AgentContentType>(["text", "image", "pdf", "office"]);
+const ATTACHMENT_LIMIT_KEYS = new Set([
+  "max_file_bytes", "max_files_per_message", "max_bytes_per_message",
+  "max_files_per_conversation", "max_bytes_per_conversation",
+]);
+
+function hasExactKeys(value: Record<string, unknown>, expected: ReadonlySet<string>): boolean {
+  const keys = Object.keys(value);
+  return keys.length === expected.size && keys.every((key) => expected.has(key));
+}
+
+function contentTypes(value: unknown): value is AgentContentType[] {
+  return Array.isArray(value)
+    && value.length > 0
+    && value[0] === "text"
+    && value.length === new Set(value).size
+    && value.every((item) => typeof item === "string" && CONTENT_TYPES.has(item as AgentContentType));
+}
+
+function attachmentLimits(value: unknown): value is AgentAttachmentLimits {
+  if (!isObject(value) || !hasExactKeys(value, ATTACHMENT_LIMIT_KEYS)) return false;
+  const integers = Object.values(value);
+  return integers.every((item) => Number.isSafeInteger(item) && Number(item) > 0)
+    && Number(value.max_bytes_per_message) >= Number(value.max_file_bytes)
+    && Number(value.max_files_per_conversation) >= Number(value.max_files_per_message)
+    && Number(value.max_bytes_per_conversation) >= Number(value.max_bytes_per_message);
+}
+
 async function responseDetail(response: Response): Promise<unknown> {
   try { return await response.json(); } catch { return null; }
 }
@@ -110,6 +146,12 @@ function parseCapabilityCard(value: unknown): AgentCapabilityCard {
   const hasExternalWorkspace = modes.includes("external_workspace");
   const isCallable = modes.includes("direct_chat") || modes.includes("brain_delegation");
   const externalOnly = modes.length === 1 && modes[0] === "external_workspace";
+  const acceptedTypes = isObject(value) ? value.accepted_input_types : null;
+  const outputTypes = isObject(value) ? value.output_types : null;
+  const hasAttachmentInput = contentTypes(acceptedTypes)
+    && acceptedTypes.some((item) => item !== "text");
+  const hasAttachmentOutput = contentTypes(outputTypes)
+    && outputTypes.some((item) => item !== "text");
   if (!isObject(value)
     || typeof value.agent_id !== "string" || !value.agent_id
     || typeof value.display_name !== "string" || !value.display_name
@@ -119,9 +161,10 @@ function parseCapabilityCard(value: unknown): AgentCapabilityCard {
     || typeof value.mission !== "string" || !value.mission
     || !isStringArray(value.capabilities) || !isStringArray(value.exclusions)
     || !isStringArray(value.example_tasks) || !isStringArray(value.required_inputs)
-    || !Array.isArray(value.accepted_input_types) || value.accepted_input_types.length !== 1 || value.accepted_input_types[0] !== "text"
-    || !Array.isArray(value.output_types) || value.output_types.length !== 1 || value.output_types[0] !== "text"
-    || value.supports_attachments_in !== false || value.supports_attachments_out !== false
+    || !contentTypes(value.accepted_input_types) || !contentTypes(value.output_types)
+    || value.supports_attachments_in !== hasAttachmentInput
+    || value.supports_attachments_out !== hasAttachmentOutput
+    || (hasAttachmentInput ? !attachmentLimits(value.attachment_limits) : value.attachment_limits !== null)
     || typeof value.supports_evidence !== "boolean" || typeof value.supports_streaming !== "boolean"
     || typeof value.supports_cancellation !== "boolean" || typeof value.supports_idempotency !== "boolean"
     || !Number.isSafeInteger(value.max_duration_seconds) || Number(value.max_duration_seconds) <= 0

@@ -49,6 +49,9 @@ const message = {
   delivery_status: "accepted",
   created_at: "2026-08-23T10:00:00Z",
   completed_at: null,
+  input_attachments: [],
+  output_attachments: [],
+  active_attachment_ids: [],
 };
 
 const turn = {
@@ -119,10 +122,91 @@ describe("continuous Conversation API", () => {
       expect(url).toBe(`/api/v1/conversations/${CONVERSATION_ID}/messages`);
       expect(init).toMatchObject({
         method: "POST",
-        body: JSON.stringify({ text: "继续" }),
+        body: JSON.stringify({ text: "继续", attachment_ids: [], active_attachment_ids: [] }),
         headers: { "Idempotency-Key": "58df615d-dfd1-4b02-87f7-9a1d7a04f7fa" },
       });
     }
+  });
+
+  it("serializes attachment selection and keeps it stable across retries", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("58df615d-dfd1-4b02-87f7-9a1d7a04f7fa");
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValueOnce(jsonResponse(submissionResult, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      text: "评估候选人",
+      attachmentIds: ["attachment-new"],
+      activeAttachmentIds: ["attachment-old", "attachment-new"],
+    };
+    const submission = createConversationMessageSubmission(CONVERSATION_ID, input, "csrf");
+
+    await expect(submission.send()).rejects.toThrow("offline");
+    input.attachmentIds.push("mutated-after-creation");
+    await expect(submission.send()).resolves.toEqual(submissionResult);
+
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init.body).toBe(JSON.stringify({
+        text: "评估候选人",
+        attachment_ids: ["attachment-new"],
+        active_attachment_ids: ["attachment-old", "attachment-new"],
+      }));
+      expect(init.headers["Idempotency-Key"]).toBe("58df615d-dfd1-4b02-87f7-9a1d7a04f7fa");
+    }
+  });
+
+  it("parses strict attachment and recovery projections without internal fields", async () => {
+    const attachment = {
+      attachment_id: "attachment-1",
+      conversation_id: CONVERSATION_ID,
+      source: "user",
+      display_name: "candidate.pdf",
+      detected_mime: "application/pdf",
+      size_bytes: 4096,
+      state: "ready",
+      created_at: "2026-09-03T10:00:00Z",
+      retained_until: "2027-09-03T10:00:00Z",
+      processing_coverage: { coverage: "first_page", download: true, inline_preview: true },
+      availability_reason: null,
+    };
+    const recovered = {
+      ...message,
+      role: "assistant",
+      delivery_status: "completed",
+      input_attachments: [attachment],
+      active_attachment_ids: ["attachment-1"],
+      search_recovery: {
+        status: "partial",
+        attempt_count: 2,
+        last_attempt_at: "2026-09-03T10:01:00Z",
+        resumable: true,
+        coverage_note: "部分外部来源暂不可用",
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ items: [recovered] })));
+
+    await expect(fetchConversationMessages(CONVERSATION_ID)).resolves.toEqual([
+      expect.objectContaining({
+        input_attachments: [expect.objectContaining({
+          attachmentId: "attachment-1",
+          displayName: "candidate.pdf",
+          preview: { attachmentId: "attachment-1", detectedMime: "application/pdf" },
+        })],
+        search_recovery: {
+          status: "partial",
+          attemptCount: 2,
+          lastAttemptAt: "2026-09-03T10:01:00Z",
+          resumable: true,
+          coverageNote: "部分外部来源暂不可用",
+        },
+      }),
+    ]);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      items: [{ ...recovered, input_attachments: [{ ...attachment, object_ref: "private" }] }],
+    })));
+    await expect(fetchConversationMessages(CONVERSATION_ID))
+      .rejects.toThrow("Attachment response invalid");
   });
 
   it("provides the direct append convenience function", async () => {

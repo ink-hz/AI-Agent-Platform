@@ -132,3 +132,53 @@ def test_delegated_agents_declare_the_executor_they_contend_for() -> None:
     for agent_id in ("ai-admin-agent", "ai-fae-agent", "voc"):
         assert cards[agent_id].execution_pool is None
         assert cards[agent_id].pool_concurrency is None
+
+
+def test_only_hr_declares_the_shared_attachment_limits_and_file_contract() -> None:
+    cards = {card.agent_id: card for card in load_agent_catalog()}
+    hr = cards["hr-bot"]
+
+    assert hr.accepted_input_types == ("text", "image", "pdf", "office")
+    assert hr.output_types == ("text", "image", "pdf", "office")
+    assert hr.supports_attachments_in is True
+    assert hr.supports_attachments_out is True
+    assert hr.supports_attachments is True
+    assert hr.capability_version == 3
+    assert hr.attachment_limits is not None
+    assert hr.attachment_limits.model_dump() == {
+        "max_file_bytes": 50 * 1024 * 1024,
+        "max_files_per_message": 5,
+        "max_bytes_per_message": 50 * 1024 * 1024,
+        "max_files_per_conversation": 50,
+        "max_bytes_per_conversation": 500 * 1024 * 1024,
+    }
+
+    for agent_id, card in cards.items():
+        if agent_id == "hr-bot":
+            continue
+        assert card.accepted_input_types == ("text",)
+        assert card.output_types == ("text",)
+        assert card.supports_attachments_in is False
+        assert card.supports_attachments_out is False
+        assert card.supports_attachments is False
+        assert card.attachment_limits is None
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"supports_attachments_in": False},
+        {"accepted_input_types": ["text"]},
+        {"attachment_limits": {"max_file_bytes": 1}},
+        {"supports_attachments_out": False},
+        {"output_types": ["text"]},
+    ],
+)
+def test_attachment_contract_mismatches_fail_closed(tmp_path: Path, updates) -> None:
+    payload = _payload()
+    payload["agents"][0].update(updates)
+    path = tmp_path / "catalog.yaml"
+    path.write_text(yaml.safe_dump(payload, allow_unicode=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Agent Catalog invalid"):
+        load_agent_catalog(path)

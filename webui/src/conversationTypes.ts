@@ -2,6 +2,67 @@ export type ConversationMode = "brain" | "direct_agent";
 export type ConversationStatus = "active" | "archived";
 export type ConversationMessageRole = "user" | "assistant" | "system";
 export type ConversationDeliveryStatus = "accepted" | "streaming" | "completed" | "failed";
+export type AttachmentState = "uploading" | "validating" | "scanning" |
+  "ready" | "quarantined" | "rejected" | "deleted";
+
+export interface ConversationAttachment {
+  attachmentId: string;
+  conversationId: string | null;
+  source: "user" | "agent";
+  displayName: string;
+  detectedMime: string | null;
+  sizeBytes: number;
+  sha256: string | null;
+  state: AttachmentState;
+  stateReason: string | null;
+  createdAt: string;
+  retainedUntil: string;
+  preview: { attachmentId: string; detectedMime: string } | null;
+  coverage: {
+    pages: number | null;
+    sheets: number | null;
+    slides: number | null;
+    ocrComplete: boolean | null;
+  } | null;
+}
+
+export interface ConversationCitation {
+  citationKey: string;
+  title: string;
+  url: string;
+  site: string;
+  retrievedAt: string;
+  supports: string[];
+}
+
+export interface ArtifactVersion {
+  artifactKey: string;
+  versionNo: number;
+  producerVersionId: string;
+  current: boolean;
+  status: "processing" | "ready" | "failed";
+  attachment: ConversationAttachment | null;
+}
+
+export interface ConversationReadState {
+  conversationId: string;
+  lastReadMessageSeq: number;
+  lastReadAt: string;
+}
+
+export interface SearchRecovery {
+  status: "unavailable" | "no_results" | "partial";
+  attemptCount: number;
+  lastAttemptAt: string;
+  resumable: boolean;
+  coverageNote: string | null;
+}
+
+export interface TurnSubmission {
+  text: string;
+  attachmentIds: string[];
+  activeAttachmentIds: string[];
+}
 export type ConversationTurnStatus =
   | "accepted"
   | "running"
@@ -36,6 +97,10 @@ export interface ConversationMessage {
   delivery_status: ConversationDeliveryStatus;
   created_at: string;
   completed_at: string | null;
+  input_attachments: ConversationAttachment[];
+  output_attachments: ConversationAttachment[];
+  active_attachment_ids: string[];
+  search_recovery?: SearchRecovery;
 }
 
 export interface ConversationTurn {

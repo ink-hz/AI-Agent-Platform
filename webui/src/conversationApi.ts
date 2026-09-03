@@ -1,4 +1,5 @@
 import { platformPath } from "./auth";
+import { parseConversationAttachment, parseSearchRecovery } from "./attachmentApi";
 import type { WorkroomAction } from "./workroomTypes";
 import type {
   Conversation,
@@ -19,6 +20,7 @@ import type {
   ConversationTaskDetail,
   ConversationTurn,
   ConversationTurnStatus,
+  TurnSubmission,
 } from "./conversationTypes";
 
 
@@ -28,8 +30,10 @@ const CONVERSATION_KEYS = new Set([
 ]);
 const MESSAGE_KEYS = new Set([
   "message_id", "conversation_id", "seq", "role", "content", "turn_id",
-  "delivery_status", "created_at", "completed_at",
+  "delivery_status", "created_at", "completed_at", "input_attachments",
+  "output_attachments", "active_attachment_ids",
 ]);
+const MESSAGE_OPTIONAL_KEYS = new Set([...MESSAGE_KEYS, "search_recovery"]);
 const TURN_KEYS = new Set([
   "turn_id", "conversation_id", "user_message_id", "assistant_message_id",
   "retry_of_turn_id", "status", "created_at", "updated_at",
@@ -156,7 +160,8 @@ function parseConversation(value: unknown): Conversation {
 
 
 function parseMessage(value: unknown): ConversationMessage {
-  if (!isObject(value) || !hasExactKeys(value, MESSAGE_KEYS)
+  if (!isObject(value)
+    || !(hasExactKeys(value, MESSAGE_KEYS) || hasExactKeys(value, MESSAGE_OPTIONAL_KEYS))
     || !isNonEmptyString(value.message_id)
     || !isNonEmptyString(value.conversation_id)
     || !isPositiveInteger(value.seq)
@@ -166,8 +171,27 @@ function parseMessage(value: unknown): ConversationMessage {
     || !DELIVERY_STATUSES.has(value.delivery_status as ConversationDeliveryStatus)
     || !isNonEmptyString(value.created_at)
     || !isNullableString(value.completed_at)
+    || !Array.isArray(value.input_attachments)
+    || !Array.isArray(value.output_attachments)
+    || !stringArray(value.active_attachment_ids)
+    || value.active_attachment_ids.length !== new Set(value.active_attachment_ids).size
   ) throw new Error("Message response invalid");
-  return value as unknown as ConversationMessage;
+  const inputAttachments = value.input_attachments.map(parseConversationAttachment);
+  const outputAttachments = value.output_attachments.map(parseConversationAttachment);
+  if (inputAttachments.some((item) => item.conversationId !== value.conversation_id || item.source !== "user")
+    || outputAttachments.some((item) => item.conversationId !== value.conversation_id || item.source !== "agent")) {
+    throw new Error("Message response invalid");
+  }
+  const recovery = Object.prototype.hasOwnProperty.call(value, "search_recovery")
+    ? parseSearchRecovery(value.search_recovery)
+    : undefined;
+  return {
+    ...value,
+    input_attachments: inputAttachments,
+    output_attachments: outputAttachments,
+    active_attachment_ids: [...value.active_attachment_ids],
+    ...(recovery === undefined ? {} : { search_recovery: recovery }),
+  } as ConversationMessage;
 }
 
 
@@ -396,11 +420,45 @@ export function conversationInputTooLarge(text: string): boolean {
 }
 
 
-function normalizedInput(text: string): string {
+function normalizedInput(text: string, allowEmpty = false): string {
   const selected = text.trim();
-  if (!selected) throw new Error("Conversation text required");
+  if (!selected && !allowEmpty) throw new Error("Conversation text required");
   if (conversationInputTooLarge(selected)) throw new Error("Conversation text exceeds 32 KiB");
   return selected;
+}
+
+
+function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
+  if (typeof value === "string") {
+    return { text: normalizedInput(value), attachmentIds: [], activeAttachmentIds: [] };
+  }
+  if (!isObject(value)
+    || !hasExactKeys(value, new Set(["text", "attachmentIds", "activeAttachmentIds"]))
+    || typeof value.text !== "string"
+    || !stringArray(value.attachmentIds)
+    || !stringArray(value.activeAttachmentIds)
+    || value.attachmentIds.some((item) => !item)
+    || value.activeAttachmentIds.some((item) => !item)
+    || value.attachmentIds.length !== new Set(value.attachmentIds).size
+    || value.activeAttachmentIds.length !== new Set(value.activeAttachmentIds).size
+    || value.attachmentIds.some((item) => !value.activeAttachmentIds.includes(item))) {
+    throw new Error("Conversation submission invalid");
+  }
+  const text = normalizedInput(value.text, value.attachmentIds.length > 0);
+  return {
+    text,
+    attachmentIds: [...value.attachmentIds],
+    activeAttachmentIds: [...value.activeAttachmentIds],
+  };
+}
+
+
+function submissionBody(value: TurnSubmission): string {
+  return JSON.stringify({
+    text: value.text,
+    attachment_ids: value.attachmentIds,
+    active_attachment_ids: value.activeAttachmentIds,
+  });
 }
 
 
@@ -410,8 +468,9 @@ export interface ConversationSubmission<TResult = ConversationSubmissionResult> 
 }
 
 
-function submission(path: string, text: string, csrfToken: string): ConversationSubmission {
-  const selectedText = normalizedInput(text);
+function submission(path: string, input: string | TurnSubmission, csrfToken: string): ConversationSubmission {
+  const selected = normalizedSubmission(input);
+  const body = submissionBody(selected);
   const idempotencyKey = crypto.randomUUID();
   return Object.freeze({
     idempotencyKey,
@@ -426,7 +485,7 @@ function submission(path: string, text: string, csrfToken: string): Conversation
           "X-CSRF-Token": csrfToken,
           "Idempotency-Key": idempotencyKey,
         },
-        body: JSON.stringify({ text: selectedText }),
+        body,
       }));
       return parseSubmission(await response.json());
     },
@@ -434,20 +493,25 @@ function submission(path: string, text: string, csrfToken: string): Conversation
 }
 
 
-export function startConversation(text: string, csrfToken: string, agentId?: string): ConversationSubmission {
+export function startConversation(
+  input: string | TurnSubmission,
+  csrfToken: string,
+  agentId?: string,
+): ConversationSubmission {
   const path = agentId
     ? `/api/v1/agents/${encodeURIComponent(agentId)}/conversations`
     : "/api/v1/conversations";
-  return submission(path, text, csrfToken);
+  return submission(path, input, csrfToken);
 }
 
 
 export function createConversationMessageSubmission(
   conversationId: string,
-  text: string,
+  input: string | TurnSubmission,
   csrfToken: string,
 ): ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult> {
-  const selectedText = normalizedInput(text);
+  const selected = normalizedSubmission(input);
+  const body = submissionBody(selected);
   const idempotencyKey = crypto.randomUUID();
   return Object.freeze({
     idempotencyKey,
@@ -460,7 +524,7 @@ export function createConversationMessageSubmission(
           Accept: "application/json", "Content-Type": "application/json",
           "X-CSRF-Token": csrfToken, "Idempotency-Key": idempotencyKey,
         },
-        body: JSON.stringify({ text: selectedText }),
+        body,
       }));
       return parseMessageWrite(await response.json());
     },
@@ -470,11 +534,11 @@ export function createConversationMessageSubmission(
 
 export function appendConversationMessage(
   conversationId: string,
-  text: string,
+  input: string | TurnSubmission,
   csrfToken: string,
   signal?: AbortSignal,
 ): Promise<ConversationSubmissionResult | ConversationInterventionResult> {
-  return createConversationMessageSubmission(conversationId, text, csrfToken).send(signal);
+  return createConversationMessageSubmission(conversationId, input, csrfToken).send(signal);
 }
 
 

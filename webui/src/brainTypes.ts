@@ -39,6 +39,16 @@ export interface MissionEvent {
   created_at: string;
 }
 
+export type AgentContentType = "text" | "image" | "pdf" | "office";
+
+export interface AgentAttachmentLimits {
+  max_file_bytes: number;
+  max_files_per_message: number;
+  max_bytes_per_message: number;
+  max_files_per_conversation: number;
+  max_bytes_per_conversation: number;
+}
+
 export interface AgentCapabilityCard {
   agent_id: string;
   display_name: string;
@@ -49,10 +59,11 @@ export interface AgentCapabilityCard {
   exclusions: string[];
   example_tasks: string[];
   required_inputs: string[];
-  accepted_input_types: ["text"];
-  output_types: ["text"];
-  supports_attachments_in: false;
-  supports_attachments_out: false;
+  accepted_input_types: AgentContentType[];
+  output_types: AgentContentType[];
+  supports_attachments_in: boolean;
+  supports_attachments_out: boolean;
+  attachment_limits: AgentAttachmentLimits | null;
   supports_evidence: boolean;
   supports_streaming: boolean;
   supports_cancellation: boolean;
