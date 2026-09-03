@@ -444,31 +444,42 @@ class ConversationAttachmentAccessRepository:
             raise DownloadConflict() from None
 
     def cancel_upload(self, owner_id: UUID, upload_id: UUID) -> None:
+        job_id = uuid4()
         try:
             with self._connection() as connection:
-                row = connection.execute(
-                    "select attachment_id,state,write_attempt_id from "
-                    "platform_attachments.uploads "
+                selected = connection.execute(
+                    "select attachment_id from platform_attachments.uploads "
                     "where upload_id=%s and owner_internal_user_id=%s",
                     (upload_id, owner_id),
                 ).fetchone()
-            if row is None:
+            if selected is None:
                 raise DownloadNotFound()
-            if row["state"] == "uploading" and row["write_attempt_id"] is not None:
-                try:
-                    with self._connection() as connection:
-                        connection.execute(
-                            "select platform_attachments.abandon_upload_write_v64("
-                            "%s,%s,%s)",
-                            (upload_id, owner_id, row["write_attempt_id"]),
-                        ).fetchone()
-                except psycopg.errors.NoDataFound:
-                    # Completion may win this race. In that case its canonical
-                    # attempt belongs to Task 3 and must not be abandoned.
-                    pass
-            self.request_erasure(owner_id, row["attachment_id"])
+            subject = (
+                f"attachment:{selected['attachment_id']}:erasure:{job_id}:reason"
+            )
+            reason = self._content_codec.seal_json(
+                subject, {"reason": "owner_requested"}
+            )
+            digest = hashlib.sha256(b"owner_requested").digest()
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_attachments.cancel_upload_v64("
+                    "%s,%s,%s,%s,%s,%s) as attachment_id",
+                    (
+                        upload_id,
+                        owner_id,
+                        job_id,
+                        reason.ciphertext,
+                        reason.key_version,
+                        digest,
+                    ),
+                ).fetchone()
+            if row is None or row["attachment_id"] is None:
+                raise DownloadNotFound()
         except DownloadError:
             raise
+        except psycopg.errors.NoDataFound:
+            raise DownloadNotFound() from None
         except Exception:  # noqa: BLE001 - database boundary is intentionally opaque
             raise DownloadConflict() from None
 
@@ -640,6 +651,12 @@ class ConversationAttachmentDownloadService:
             UUID(document["jti"])
             digest = hashlib.sha256(ticket.encode("ascii")).digest()
             with self._ticket_lock:
+                now = self._clock()
+                self._tickets = {
+                    key: value
+                    for key, value in self._tickets.items()
+                    if value.expires_at > now
+                }
                 claim = self._tickets.get(digest)
                 if claim is None:
                     raise ValueError
@@ -651,7 +668,7 @@ class ConversationAttachmentDownloadService:
                     )
                     and document["purpose"] == claim.purpose
                     and document["exp"] == int(claim.expires_at.timestamp())
-                    and claim.expires_at > self._clock()
+                    and claim.expires_at > now
                 )
                 if not valid:
                     raise ValueError

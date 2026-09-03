@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import threading
+import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -14,7 +16,10 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 from app.attachments.conversation_models import AttachmentRecord, UploadRecord
-from app.attachments.conversation_repository import ConversationAttachmentRepository
+from app.attachments.conversation_repository import (
+    ConversationAttachmentConflict,
+    ConversationAttachmentRepository,
+)
 from app.attachments.conversation_routes import build_conversation_attachment_router
 from app.attachments.download_service import (
     ConversationAttachmentAccessRepository,
@@ -31,6 +36,7 @@ from app.control_plane.models import AuthContext, Role
 from app.execution_relay.content_crypto import ContentCodec
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from test_control_plane_migration import control_database  # noqa: F401
 
 OWNER_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
@@ -247,6 +253,61 @@ def test_upload_content_rejects_missing_or_mismatched_content_length() -> None:
     assert uploads.calls[-1][0:3] == ("write", OWNER_ID, UPLOAD_ID)
 
 
+@pytest.mark.asyncio
+async def test_upload_storage_write_does_not_block_event_loop() -> None:
+    sync_client, uploads, _ = api_client()
+    app = sync_client.app
+    started, release = threading.Event(), threading.Event()
+
+    def blocking_write(owner_id, upload_id, body, content_length):
+        started.set()
+        release.wait(timeout=2)
+        return upload(state="validating")
+
+    uploads.write = blocking_write
+    timer = threading.Timer(0.5, release.set)
+    timer.start()
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="https://agent.example.test",
+            headers={"Cookie": "session=owner; csrf=csrf-token"},
+        ) as client:
+            headers = {
+                "Cookie": "session=owner; csrf=csrf-token",
+                "Origin": "https://agent.example.test",
+                "X-CSRF-Token": "csrf-token",
+                "Content-Length": "7",
+            }
+            upload_task = asyncio.create_task(
+                client.put(
+                    f"/api/v1/attachments/uploads/{UPLOAD_ID}/content",
+                    content=b"payload",
+                    headers=headers,
+                )
+            )
+            probe_task = asyncio.create_task(
+                _delayed_probe(client, delay_seconds=0.05)
+            )
+            before = time.monotonic()
+            probe = await probe_task
+            elapsed = time.monotonic() - before
+            release.set()
+            response = await upload_task
+        assert started.is_set()
+        assert probe.status_code == 200
+        assert elapsed < 0.3
+        assert response.status_code == 200
+    finally:
+        release.set()
+        timer.cancel()
+
+
+async def _delayed_probe(client: AsyncClient, *, delay_seconds: float):
+    await asyncio.sleep(delay_seconds)
+    return await client.get(f"/api/v1/attachments/{ATTACHMENT_ID}")
+
+
 def test_lifecycle_routes_are_owner_scoped() -> None:
     client, uploads, downloads = api_client()
     headers = authenticate(client)
@@ -451,6 +512,7 @@ def test_ticket_expiry_owner_change_and_delete_fail_as_not_found() -> None:
     expiring._clock = lambda: NOW + timedelta(seconds=2)
     with pytest.raises(DownloadNotFound):
         expiring.open_content(OWNER_ID, expired.ticket, None)
+    assert expiring._tickets == {}
 
 
 def test_download_consumes_locator_rechecks_digest_and_supports_range() -> None:
@@ -759,8 +821,11 @@ def test_cancel_upload_abandons_claimed_write_before_requesting_erasure(
         environment["urls"]["platform_control_app"], content_codec=codec
     )
 
+    access.request_erasure(owner_id, created.attachment_id)
     access.cancel_upload(owner_id, created.upload_id)
 
+    with pytest.raises(ConversationAttachmentConflict):
+        uploads.claim_write(owner_id, created.upload_id)
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
             "select state from platform_attachments.upload_write_attempts "

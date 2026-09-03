@@ -692,6 +692,10 @@ begin
   where upload.upload_id=selected_upload_id
     and upload.owner_internal_user_id=selected_owner_internal_user_id
     and upload.state='uploading' and upload.expires_at > now()
+    and not exists (
+      select 1 from platform_attachments.erasure_jobs erasure
+      where erasure.attachment_id=upload.attachment_id
+    )
     and selected_write_lease_expires_at <= upload.expires_at
     and (upload.write_attempt_id is null or upload.write_lease_expires_at <= now())
     and attachment.state='uploading'
@@ -764,6 +768,72 @@ begin
 end
 $function$;
 
+create function platform_attachments.cancel_upload_v64(
+  selected_upload_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_erasure_job_id uuid,
+  selected_reason_ciphertext bytea,
+  selected_reason_key_version integer,
+  selected_reason_sha256 bytea
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare selected_upload platform_attachments.uploads%rowtype;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Attachment upload canceller invalid'; end if;
+  if selected_upload_id is null or selected_owner_internal_user_id is null
+     or selected_erasure_job_id is null
+     or selected_reason_ciphertext is null
+     or octet_length(selected_reason_ciphertext) not between 29 and 1048576
+     or selected_reason_key_version is null or selected_reason_key_version <= 0
+     or selected_reason_sha256 is null
+     or octet_length(selected_reason_sha256) <> 32
+  then raise check_violation using message='Attachment upload cancellation invalid'; end if;
+  select upload.* into selected_upload
+  from platform_attachments.uploads upload
+  join platform_attachments.attachments attachment
+    on attachment.attachment_id=upload.attachment_id
+   and attachment.owner_internal_user_id=upload.owner_internal_user_id
+   and attachment.conversation_id is not distinct from upload.conversation_id
+  where upload.upload_id=selected_upload_id
+    and upload.owner_internal_user_id=selected_owner_internal_user_id
+  for update of upload,attachment;
+  if not found then raise no_data_found using message='Attachment upload unavailable'; end if;
+  if selected_upload.state='uploading'
+     and selected_upload.write_attempt_id is not null then
+    update platform_attachments.upload_write_attempts set state='abandoned'
+    where attempt_id=selected_upload.write_attempt_id
+      and upload_id=selected_upload.upload_id
+      and attachment_id=selected_upload.attachment_id
+      and owner_internal_user_id=selected_upload.owner_internal_user_id
+      and state='claimed';
+    if found then
+      update platform_attachments.uploads set
+        write_attempt_id=null,write_lease_expires_at=null
+      where upload_id=selected_upload.upload_id
+        and write_attempt_id=selected_upload.write_attempt_id;
+    end if;
+  end if;
+  if exists (
+    select 1 from platform_attachments.erasure_jobs erasure
+    where erasure.attachment_id=selected_upload.attachment_id
+  ) then return selected_upload.attachment_id; end if;
+  insert into platform_attachments.erasure_jobs(
+    erasure_job_id,attachment_id,requested_by_internal_user_id,
+    reason_ciphertext,reason_key_version,reason_sha256
+  ) values (
+    selected_erasure_job_id,selected_upload.attachment_id,
+    selected_owner_internal_user_id,selected_reason_ciphertext,
+    selected_reason_key_version,selected_reason_sha256
+  );
+  return selected_upload.attachment_id;
+end
+$function$;
+
 create function platform_attachments.finalize_upload_v64(
   selected_upload_id uuid,
   selected_owner_internal_user_id uuid,
@@ -811,6 +881,10 @@ begin
     and upload.declared_mime=selected_declared_mime
     and upload.size_bytes=selected_size_bytes
     and upload.state='uploading' and upload.expires_at > now()
+    and not exists (
+      select 1 from platform_attachments.erasure_jobs erasure
+      where erasure.attachment_id=upload.attachment_id
+    )
     and attachment.state='uploading'
   for update;
   if not found then raise no_data_found using message='Upload unavailable'; end if;
@@ -1747,6 +1821,8 @@ begin
     'platform_attachments.claim_upload_write_v64('
     'uuid,uuid,uuid,bytea,integer,timestamptz), '
     'platform_attachments.abandon_upload_write_v64(uuid,uuid,uuid), '
+    'platform_attachments.cancel_upload_v64('
+    'uuid,uuid,uuid,bytea,integer,bytea), '
     'platform_attachments.finalize_upload_v64('
     'uuid,uuid,uuid,text,bigint,bytea), '
     'platform_attachments.acknowledge_upload_write_cleanup_v64(uuid), '

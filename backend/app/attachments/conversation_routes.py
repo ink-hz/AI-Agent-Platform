@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict
+from starlette.concurrency import run_in_threadpool
 
 from .conversation_models import (
     MAX_FILE_BYTES,
@@ -213,8 +214,12 @@ def build_conversation_attachment_router() -> APIRouter:
                 )
             staged.seek(0)
             try:
-                result = _upload_service(request).write(
-                    _owner(request), upload_id, staged, size
+                result = await run_in_threadpool(
+                    _upload_service(request).write,
+                    _owner(request),
+                    upload_id,
+                    staged,
+                    size,
                 )
                 return _upload_response(result)
             except RuntimeError as error:
