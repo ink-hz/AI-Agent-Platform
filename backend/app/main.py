@@ -142,6 +142,9 @@ from .agent_brain.orchestrator import MissionOrchestrator
 from .agent_brain.repository import MissionRepository
 from .agent_brain.routes import MissionCursorCodec, build_agent_brain_router
 from .agent_catalog.routes import build_agent_catalog_router
+from .hr.repository import HrPositionRepository
+from .hr.routes import build_hr_position_router
+from .hr.service import HrPositionService
 from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
 from .observability.repository import (
@@ -715,6 +718,8 @@ def create_app(
     partner_provider: PartnerIdentityProvider | None = None,
     fae_workbench_service=None,
     fae_report_service=None,
+    hr_position_service=None,
+    agent_use_authorization=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -755,7 +760,6 @@ def create_app(
     conversation_repository = None
     conversation_command_service = None
     action_command_service = None
-    agent_use_authorization = None
     office_recipient_router = None
     voc_internal_router = None
     voc_service_authorizer = None
@@ -1191,6 +1195,7 @@ def create_app(
     app.state.partner_auth_broker = partner_auth_broker
     app.state.fae_workbench_service = fae_workbench_service
     app.state.fae_report_service = fae_report_service
+    app.state.hr_position_service = hr_position_service
     app.state.fae_access = None
     app.state.fae_session_read_audit = None
     authorization_service = None
@@ -1222,6 +1227,18 @@ def create_app(
         if agent_use_authorization is None:
             agent_use_authorization = AgentUseAuthorization(control_database_url)
             app.state.agent_use_authorization = agent_use_authorization
+
+    if (
+        hr_position_service is None
+        and identity_enabled
+        and control_database_url is not None
+        and agent_use_authorization is not None
+    ):
+        hr_position_service = HrPositionService(
+            HrPositionRepository(control_database_url)
+        )
+    app.state.hr_position_service = hr_position_service
+    app.state.agent_use_authorization = agent_use_authorization
 
     if not identity_enabled:
         @app.get("/api/health")
@@ -1272,6 +1289,10 @@ def create_app(
         app.include_router(execution_relay_router)
     if agent_use_authorization is not None:
         app.include_router(build_agent_catalog_router(agent_use_authorization))
+    if hr_position_service is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_hr_position_router(hr_position_service, agent_use_authorization)
+        )
     if mission_repository is not None and agent_use_authorization is not None:
         app.include_router(
             build_conversation_router(

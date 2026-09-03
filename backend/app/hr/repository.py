@@ -427,6 +427,33 @@ class HrPositionRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrUnavailable("position repository unavailable") from None
 
+    def list_drafts(
+        self, owner_id: UUID, *, state: str | None = None, limit: int = 100
+    ) -> tuple[PositionDraftRecord, ...]:
+        if not isinstance(owner_id, UUID):
+            raise ValueError("position owner required")
+        if state not in {None, "proposed", "confirmed", "merged", "dismissed"}:
+            raise ValueError("position draft state invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("position draft limit invalid")
+        clauses = ["owner_internal_user_id=%s"]
+        values: list[object] = [owner_id]
+        if state is not None:
+            clauses.append("state=%s")
+            values.append(state)
+        values.append(limit)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from platform_hr.position_drafts where "
+                    + " and ".join(clauses)
+                    + " order by updated_at desc,draft_id desc limit %s",
+                    values,
+                ).fetchall()
+            return tuple(_draft(row) for row in rows)
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
     def list_positions(
         self,
         owner_id: UUID,

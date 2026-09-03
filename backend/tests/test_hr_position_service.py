@@ -34,6 +34,18 @@ class RecordingRepository:
         self.draft = draft
         self.commands = []
 
+    def list_positions(self, owner_id, **filters):
+        self.commands.append((owner_id, filters))
+        return ()
+
+    def position_for_owner(self, owner_id, position_id):
+        self.commands.append((owner_id, position_id))
+        return self.position
+
+    def list_drafts(self, owner_id, *, state=None, limit=100):
+        self.commands.append((owner_id, state, limit))
+        return (self.draft,)
+
     def create_manual(self, command):
         self.commands.append(command)
         return self.position

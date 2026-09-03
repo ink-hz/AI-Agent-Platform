@@ -632,6 +632,41 @@ def test_create_app_registers_injected_fae_workbench_service(tmp_path):
     )
 
 
+def test_create_app_registers_injected_hr_position_service(tmp_path):
+    registry, contract = _fae_app_paths(tmp_path)
+    methods = (
+        "list_positions", "position", "list_drafts", "propose_draft",
+        "confirm_draft", "merge_draft", "dismiss_draft", "bind_conversation",
+    )
+    service = SimpleNamespace(**{name: Mock() for name in methods})
+    authorization = SimpleNamespace(
+        decide_for_user_id=Mock(), permitted_catalog_for_user_id=Mock()
+    )
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        hr_position_service=service,
+        agent_use_authorization=authorization,
+    )
+
+    assert app.state.hr_position_service is service
+    routes = [
+        context
+        for route in app.router.routes
+        for context in (
+            route.effective_route_contexts()
+            if callable(getattr(route, "effective_route_contexts", None))
+            else (route,)
+        )
+    ]
+    assert any(
+        getattr(route, "path", None) == "/api/hr/positions"
+        for route in routes
+    )
+
+
 def test_create_app_builds_local_fae_workbench_from_analyst_boundary(
     tmp_path, monkeypatch
 ):

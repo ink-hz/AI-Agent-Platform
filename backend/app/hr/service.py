@@ -16,9 +16,20 @@ from .models import (
     PositionRecord,
     ProposePositionDraft,
 )
+from .repository import PositionPage
 
 
 class PositionCommandRepository(Protocol):
+    def list_positions(self, owner_id: UUID, **filters) -> PositionPage: ...
+
+    def position_for_owner(
+        self, owner_id: UUID, position_id: UUID
+    ) -> object: ...
+
+    def list_drafts(
+        self, owner_id: UUID, *, state: str | None = None, limit: int = 100
+    ) -> tuple[PositionDraftRecord, ...]: ...
+
     def create_manual(self, command: CreateManualPosition) -> PositionRecord: ...
 
     def propose_draft(
@@ -48,6 +59,9 @@ class HrPositionService:
         uuid_factory: Callable[[], UUID] = uuid4,
     ) -> None:
         for method in (
+            "list_positions",
+            "position_for_owner",
+            "list_drafts",
             "create_manual",
             "propose_draft",
             "confirm_draft",
@@ -62,6 +76,17 @@ class HrPositionService:
             raise ValueError("HR UUID factory invalid")
         self._repository = repository
         self._uuid_factory = uuid_factory
+
+    def list_positions(self, owner_id: UUID, **filters) -> PositionPage:
+        return self._repository.list_positions(owner_id, **filters)
+
+    def position(self, owner_id: UUID, position_id: UUID):
+        return self._repository.position_for_owner(owner_id, position_id)
+
+    def list_drafts(
+        self, owner_id: UUID, *, state: str | None = None, limit: int = 100
+    ) -> tuple[PositionDraftRecord, ...]:
+        return self._repository.list_drafts(owner_id, state=state, limit=limit)
 
     def create_manual(
         self,
