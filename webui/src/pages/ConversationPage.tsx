@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Account } from "../auth";
 import {
+  deleteConversationAttachment,
+  issueAttachmentTicket,
+  listConversationAttachments,
+} from "../attachmentApi";
+import {
   cancelCurrentTurn,
   confirmConversationAction,
   createConversationMessageSubmission,
@@ -27,12 +32,16 @@ import type {
   ConversationMessage,
   ConversationSubmissionResult,
   ConversationTaskDetail,
+  ConversationAttachment,
+  TurnSubmission,
 } from "../conversationTypes";
 import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
 import type { WorkroomAction } from "../workroomTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
+import { AttachmentUploader, type UploadQueueItem } from "../components/conversation/AttachmentUploader";
+import { SessionMaterialsDrawer } from "../components/conversation/SessionMaterialsDrawer";
 import { MultiAgentWorkroom } from "../components/conversation/MultiAgentWorkroom";
 import { PublicProgress } from "../components/conversation/PublicProgress";
 import { UserInputRequest } from "../components/conversation/UserInputRequest";
@@ -42,7 +51,7 @@ import { projectWorkroom } from "../workroomProjection";
 export interface ConversationPageClient {
   fetchConversation(conversationId: string, signal?: AbortSignal): Promise<ConversationDetail>;
   fetchMessages(conversationId: string, signal?: AbortSignal): Promise<ConversationMessage[]>;
-  createMessageSubmission(conversationId: string, text: string, csrfToken: string): ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
+  createMessageSubmission(conversationId: string, input: string | TurnSubmission, csrfToken: string): ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
   fetchTaskDetail(conversationId: string, turnId: string, taskId: string, signal?: AbortSignal): Promise<ConversationTaskDetail>;
   streamEvents(conversationId: string, options: ConversationStreamOptions): Promise<void>;
   cancelCurrentTurn(conversationId: string, csrfToken: string, signal?: AbortSignal): Promise<ConversationCancelResult>;
@@ -51,6 +60,9 @@ export interface ConversationPageClient {
   submitFeedback(messageId: string, rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null, csrfToken: string, signal?: AbortSignal): Promise<ConversationFeedback>;
   retryTurn(conversationId: string, turnId: string, csrfToken: string): ConversationSubmission;
   reconnectDelay(signal: AbortSignal): Promise<void>;
+  listAttachments?(conversationId: string, signal?: AbortSignal): Promise<ConversationAttachment[]>;
+  issueAttachmentTicket?(attachmentId: string, purpose: "preview" | "download", csrfToken: string, signal?: AbortSignal): Promise<{ contentPath: string }>;
+  deleteAttachment?(attachmentId: string, csrfToken: string, signal?: AbortSignal): Promise<void>;
 }
 
 const DEFAULT_CLIENT: ConversationPageClient = {
@@ -65,6 +77,9 @@ const DEFAULT_CLIENT: ConversationPageClient = {
   submitFeedback: submitConversationFeedback,
   retryTurn: retryConversationTurn,
   reconnectDelay,
+  listAttachments: listConversationAttachments,
+  issueAttachmentTicket,
+  deleteAttachment: deleteConversationAttachment,
 };
 
 
@@ -94,6 +109,7 @@ export function ConversationPage({
   expectedAgentId,
   assistantLabel = "Agent 大脑",
   personaSubtitle,
+  attachmentLimits,
 }: {
   conversationId: string;
   account: Account;
@@ -102,6 +118,7 @@ export function ConversationPage({
   expectedAgentId?: string;
   assistantLabel?: string;
   personaSubtitle?: string | null;
+  attachmentLimits?: { max_file_bytes: number; max_files_per_message: number; max_bytes_per_message: number; max_files_per_conversation: number; max_bytes_per_conversation: number } | null;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -116,6 +133,11 @@ export function ConversationPage({
   const [cancelRequested, setCancelRequested] = useState(false);
   const [feedback, setFeedback] = useState<Record<string, ConversationFeedbackRating | "pending" | "error">>({});
   const [streamEpoch, setStreamEpoch] = useState(0);
+  const [attachments, setAttachments] = useState<ConversationAttachment[]>([]);
+  const [activeAttachmentIds, setActiveAttachmentIds] = useState<string[]>([]);
+  const [newAttachmentIds, setNewAttachmentIds] = useState<string[]>([]);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const retained = useRef<{
     text: string;
     submission: ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
@@ -134,24 +156,29 @@ export function ConversationPage({
     const controller = new AbortController();
     setDetail(null); setMessages([]); setEvents([]); setLoading(true); setLoadFailure(false);
     setText(""); setSendFailure(false); setCancelFailure(false); setCancelRequested(false);
-    setFeedback({});
+    setFeedback({}); setAttachments([]); setActiveAttachmentIds([]); setNewAttachmentIds([]); setUploadQueue([]); setAttachmentError(null);
     retained.current = null; eventCursor.current = 0;
     void Promise.all([
       client.fetchConversation(conversationId, controller.signal),
       client.fetchMessages(conversationId, controller.signal),
-    ]).then(([snapshot, loadedMessages]) => {
+      attachmentLimits && client.listAttachments ? client.listAttachments(conversationId, controller.signal) : Promise.resolve([]),
+    ]).then(([snapshot, loadedMessages, loadedAttachments]) => {
       if (controller.signal.aborted) return;
       if (expectedAgentId && (
         snapshot.conversation.mode !== "direct_agent"
         || snapshot.conversation.direct_agent_id !== expectedAgentId
       )) throw new Error("Conversation Agent scope mismatch");
+      const projected = loadedMessages.flatMap((message) => [...message.input_attachments, ...message.output_attachments]);
+      const materialMap = new Map([...loadedAttachments, ...projected].map((item) => [item.attachmentId, item]));
+      const lastUser = [...loadedMessages].reverse().find((message) => message.role === "user");
+      setAttachments([...materialMap.values()]); setActiveAttachmentIds(lastUser?.active_attachment_ids ?? []);
       setDetail(snapshot); setMessages(loadedMessages); setLoading(false); setStreamEpoch((value) => value + 1);
       onConversationUpdated?.(snapshot.conversation);
     }).catch(() => {
       if (!controller.signal.aborted) { setLoadFailure(true); setLoading(false); }
     });
     return () => { controller.abort(); writeController.current?.abort(); };
-  }, [client, conversationId, expectedAgentId, onConversationUpdated]);
+  }, [attachmentLimits, client, conversationId, expectedAgentId, onConversationUpdated]);
 
   useEffect(() => {
     if (!streamEpoch || !detail) return;
@@ -210,13 +237,23 @@ export function ConversationPage({
   const sendValue = async (value: string) => {
     const normalized = value.trim();
     const waitingUser = detail?.current_turn?.status === "waiting_user";
-    if (!normalized || inFlight.current || account.hard_stale_read_only
+    if ((!normalized && newAttachmentIds.length === 0) || inFlight.current || account.hard_stale_read_only
       || (turnIsActive(detail) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
+    const submissionInput: TurnSubmission = {
+      text: normalized,
+      attachmentIds: [...newAttachmentIds],
+      activeAttachmentIds: [...activeAttachmentIds],
+    };
+    const submissionKey = JSON.stringify(submissionInput);
     let selected = retained.current;
-    if (!selected || selected.text !== normalized) {
+    if (!selected || selected.text !== submissionKey) {
       selected = {
-        text: normalized,
-        submission: client.createMessageSubmission(conversationId, normalized, account.csrf_token),
+        text: submissionKey,
+        submission: client.createMessageSubmission(
+          conversationId,
+          attachmentLimits || newAttachmentIds.length > 0 || activeAttachmentIds.length > 0 ? submissionInput : normalized,
+          account.csrf_token,
+        ),
       };
       retained.current = selected;
     }
@@ -228,6 +265,7 @@ export function ConversationPage({
       if (controller.signal.aborted) return;
       retained.current = null;
       setText("");
+      setNewAttachmentIds([]); setUploadQueue([]);
       setMessages((current) => mergeMessages(current, [result.message]));
       if ("conversation" in result) {
         setDetail({ conversation: result.conversation, current_turn: result.turn });
@@ -300,6 +338,36 @@ export function ConversationPage({
     }
   };
 
+  const addReadyAttachment = (attachment: ConversationAttachment) => {
+    setAttachments((current) => [...new Map([...current, attachment].map((item) => [item.attachmentId, item])).values()]);
+    setNewAttachmentIds((current) => current.includes(attachment.attachmentId) ? current : [...current, attachment.attachmentId]);
+    setActiveAttachmentIds((current) => current.includes(attachment.attachmentId) ? current : [...current, attachment.attachmentId]);
+    setAttachmentError(null); retained.current = null;
+  };
+  const toggleAttachment = (attachmentId: string, enabled: boolean) => {
+    setActiveAttachmentIds((current) => enabled
+      ? current.includes(attachmentId) ? current : [...current, attachmentId]
+      : current.filter((value) => value !== attachmentId));
+    retained.current = null;
+  };
+  const openAttachment = async (attachment: ConversationAttachment, purpose: "preview" | "download") => {
+    if (!client.issueAttachmentTicket) return;
+    try {
+      const ticket = await client.issueAttachmentTicket(attachment.attachmentId, purpose, account.csrf_token);
+      if (!/^\/api\/v1\/attachments\/content\/[A-Za-z0-9_-]+$/.test(ticket.contentPath)) throw new Error("invalid ticket path");
+      window.open(ticket.contentPath, "_blank", "noopener,noreferrer"); setAttachmentError(null);
+    } catch { setAttachmentError("附件暂时无法打开，请重试"); }
+  };
+  const removeAttachment = async (attachment: ConversationAttachment) => {
+    if (!client.deleteAttachment) return;
+    try {
+      await client.deleteAttachment(attachment.attachmentId, account.csrf_token);
+      setAttachments((current) => current.filter((item) => item.attachmentId !== attachment.attachmentId));
+      setActiveAttachmentIds((current) => current.filter((id) => id !== attachment.attachmentId));
+      setNewAttachmentIds((current) => current.filter((id) => id !== attachment.attachmentId));
+    } catch { setAttachmentError("附件删除失败，请重试"); }
+  };
+
   if (loading) return <section className="conversation-load-state" aria-live="polite"><h1>正在打开对话</h1><p>正在读取已保存的消息与执行记录。</p></section>;
   if (loadFailure || !detail) return <section className="conversation-load-state" role="alert"><h1>暂时无法读取对话</h1><p>对话仍安全保存在平台，请稍后刷新。</p></section>;
   const active = turnIsActive(detail);
@@ -326,7 +394,8 @@ export function ConversationPage({
       return workroom ? [[turnId, workroom] as const] : [];
     }));
   })();
-  return <div className="conversation-page">
+  const uploadPending = uploadQueue.some((item) => item.state === "queued" || item.state === "uploading" || item.state === "processing");
+  const conversationContent = <div className="conversation-page">
     <header className="conversation-header">
       <div>
         <h1>{assistantLabel}</h1>
@@ -371,6 +440,14 @@ export function ConversationPage({
     {detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
       && <button className="conversation-turn-retry" disabled={pending || account.hard_stale_read_only} onClick={() => void retryTurn()} type="button">重试本轮</button>}
     <ConversationComposer
+      attachmentControls={attachmentLimits ? <AttachmentUploader
+        conversationId={conversationId} csrfToken={account.csrf_token}
+        disabled={account.hard_stale_read_only || (active && detail.conversation.mode === "direct_agent")}
+        conversationBytes={attachments.filter((item) => item.source === "user").reduce((sum, item) => sum + item.sizeBytes, 0)}
+        conversationFileCount={attachments.filter((item) => item.source === "user").length} onError={setAttachmentError}
+        onQueueChange={setUploadQueue} onReady={addReadyAttachment}
+      /> : undefined}
+      attachmentPending={uploadPending}
       disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || account.hard_stale_read_only}
       label={active && detail.conversation.mode === "brain" ? "补充当前任务" : "继续对话"}
       onChange={(value) => {
@@ -379,6 +456,7 @@ export function ConversationPage({
       }}
       onSubmit={() => void send()}
       pending={pending}
+      hasReadyAttachment={newAttachmentIds.length > 0}
       placeholder={active && detail.conversation.mode === "brain"
         ? "补充范围、修改优先级，或给正在协作的 Agent 新指令…"
         : undefined}
@@ -386,5 +464,10 @@ export function ConversationPage({
     />
     {account.hard_stale_read_only && <p className="conversation-read-only" role="status">当前为只读状态，已有对话仍可查看。</p>}
     {sendFailure && <div className="conversation-action-error" role="alert"><span>消息暂未发送成功，可以使用同一次请求安全重试。</span><button className="conversation-retry" disabled={pending} onClick={() => void send()} type="button">重新发送</button></div>}
+    {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
   </div>;
+  return attachmentLimits ? <div className="conversation-workspace-grid">{conversationContent}<SessionMaterialsDrawer
+    activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
+    onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
+  /></div> : conversationContent;
 }

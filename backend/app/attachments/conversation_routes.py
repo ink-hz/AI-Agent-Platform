@@ -58,7 +58,7 @@ class ConversationAttachmentRoute(APIRoute):
 
 class BeginUploadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    conversation_id: UUID
+    conversation_id: UUID | None = None
     original_name: str
     declared_mime: str
     declared_size: int

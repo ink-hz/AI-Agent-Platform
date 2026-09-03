@@ -286,12 +286,12 @@ function writeHeaders(csrfToken: string, json = false): Record<string, string> {
 }
 
 export async function beginAttachmentUpload(
-  conversationId: string,
+  conversationId: string | null,
   file: File,
   csrfToken: string,
   signal?: AbortSignal,
 ): Promise<AttachmentUpload> {
-  if (!isString(conversationId) || !(file instanceof File) || file.size <= 0) {
+  if ((conversationId !== null && !isString(conversationId)) || !(file instanceof File) || file.size <= 0) {
     throw new Error("Attachment upload request invalid");
   }
   const response = await checked(await fetch(platformPath("/api/v1/attachments/uploads"), {
@@ -351,6 +351,18 @@ export async function listConversationAttachments(
   if (result.some((item) => item.conversationId !== conversationId)) {
     throw new Error("Attachment list response invalid");
   }
+  return result;
+}
+
+export async function fetchConversationAttachment(
+  attachmentId: string,
+  signal?: AbortSignal,
+): Promise<ConversationAttachment> {
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/attachments/${encodeURIComponent(attachmentId)}`,
+  ), { credentials: "include", signal, headers: { Accept: "application/json" } }));
+  const result = parseConversationAttachment(await response.json());
+  if (result.attachmentId !== attachmentId) throw new Error("Attachment response invalid");
   return result;
 }
 

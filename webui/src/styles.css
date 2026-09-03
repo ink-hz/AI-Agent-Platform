@@ -1580,6 +1580,41 @@ body {
 .conversation-history-list time { color: var(--ink-faint); font-size: 11.5px; }
 .conversation-load-more { display: block; margin: 18px auto 0; }
 
+.conversation-workspace-grid { display: grid; grid-template-columns: minmax(0, 860px) minmax(270px, 330px); gap: 24px; align-items: start; width: min(1240px, 100%); margin: 0 auto; }
+.conversation-workspace-grid .conversation-page { width: 100%; min-width: 0; }
+.session-materials-drawer { position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: #f8fafc; }
+.session-materials-drawer > header, .session-materials-group > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.session-materials-drawer > header span { color: var(--brand-bright); font-size: 10px; font-weight: 850; letter-spacing: .12em; }
+.session-materials-drawer h2 { margin: 3px 0 0; font-size: 19px; }
+.session-materials-drawer > header small { color: var(--ink-faint); }
+.session-materials-group { margin-top: 18px; }
+.session-materials-group > header { margin-bottom: 8px; }
+.session-materials-group h3 { margin: 0; font-size: 12px; }
+.session-materials-group > header span { display: grid; min-width: 22px; height: 22px; border-radius: 11px; background: #e7eef6; color: var(--ink-soft); font-size: 11px; place-items: center; }
+.session-materials-group > p { margin: 0; padding: 13px; border: 1px dashed var(--line); border-radius: 10px; color: var(--ink-faint); font-size: 11.5px; text-align: center; }
+.conversation-attachment-card { display: grid; gap: 9px; margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.conversation-attachment-card[data-state="quarantined"], .conversation-attachment-card[data-state="rejected"] { border-color: #eac4bf; background: #fff8f7; }
+.conversation-attachment-select { display: flex; align-items: center; gap: 7px; color: var(--ink-soft); font-size: 11px; }
+.conversation-attachment-main { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: center; gap: 9px; }
+.conversation-attachment-icon { display: grid; width: 38px; height: 38px; border-radius: 9px; background: #e9f1fb; color: var(--brand); font-size: 9px; font-weight: 850; place-items: center; }
+.conversation-attachment-main strong { display: block; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-attachment-main p { margin: 4px 0 0; color: var(--ink-faint); font-size: 10.5px; line-height: 1.5; }
+.conversation-attachment-main small { display: block; margin-top: 4px; color: var(--down); }
+.conversation-attachment-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.conversation-attachment-actions button { min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--brand); font: inherit; font-size: 10.5px; cursor: pointer; }
+.conversation-attachment-actions button.is-danger { color: var(--down); }
+.conversation-uploader { margin-bottom: 10px; padding: 10px; border: 1px dashed #a9bdd3; border-radius: 11px; background: #f7faff; }
+.conversation-upload-button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 7px 10px; border-radius: 8px; background: #e8f1fb; color: var(--brand); font-size: 11.5px; font-weight: 760; cursor: pointer; }
+.conversation-upload-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.conversation-uploader > small { margin-left: 9px; color: var(--ink-faint); font-size: 10.5px; }
+.conversation-upload-queue { display: grid; gap: 7px; margin: 9px 0 0; padding: 0; list-style: none; }
+.conversation-upload-queue li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; padding: 8px 9px; border-radius: 8px; background: #fff; }
+.conversation-upload-queue li > div { min-width: 0; }
+.conversation-upload-queue strong, .conversation-upload-queue span { display: block; overflow: hidden; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-upload-queue span { margin-top: 2px; color: var(--ink-faint); }
+.conversation-upload-queue progress { grid-column: 1; width: 100%; height: 5px; }
+.conversation-upload-queue button { grid-column: 2; grid-row: 1 / 3; border: 0; background: transparent; color: var(--ink-soft); font: inherit; font-size: 10.5px; cursor: pointer; }
+
 .voc-workspace { position: relative; max-width: 1160px; margin: 0 auto; padding: 42px 0 70px; }
 .voc-hero { max-width: 760px; }
 .voc-hero p, .voc-records header p, .voc-draft-panel header p, .voc-detail header p { margin: 0 0 7px; color: var(--brand-bright); font-size: 11.5px; font-weight: 850; letter-spacing: .13em; }
@@ -1728,6 +1763,11 @@ body {
   .conversation-feedback button { min-height: 44px; }
   .conversation-feedback-detail { grid-template-columns: 1fr; }
   .conversation-feedback-detail > button, .conversation-feedback-detail textarea { grid-column: 1; }
+}
+
+@media (max-width: 1120px) {
+  .conversation-workspace-grid { grid-template-columns: minmax(0, 1fr); }
+  .session-materials-drawer { position: static; max-height: none; margin-bottom: 24px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

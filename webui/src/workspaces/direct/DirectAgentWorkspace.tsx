@@ -4,6 +4,8 @@ import type { Account } from "../../auth";
 import { fetchAgentCatalog } from "../../brainApi";
 import type { AgentCapabilityCard } from "../../brainTypes";
 import { ConversationSidebar } from "../../components/conversation/ConversationSidebar";
+import { AttachmentUploader, type UploadQueueItem } from "../../components/conversation/AttachmentUploader";
+import { AttachmentCard } from "../../components/conversation/AttachmentCard";
 import { ErrorState, LoadingState } from "../../components/DataState";
 import { PlatformLink } from "../../components/PlatformLink";
 import {
@@ -15,7 +17,7 @@ import {
   startConversation,
   type ConversationSubmission,
 } from "../../conversationApi";
-import type { Conversation, ConversationPage } from "../../conversationTypes";
+import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmission } from "../../conversationTypes";
 import { ConversationPage as ConversationThread, type ConversationPageClient } from "../../pages/ConversationPage";
 import { workspaceLaunchPath } from "../../platform/workspaces";
 import { navigate } from "../../router";
@@ -35,7 +37,7 @@ export interface AgentHistoryClient {
 
 interface DirectAgentWorkspaceDependencies {
   loadCatalog?: (signal?: AbortSignal) => Promise<AgentCapabilityCard[]>;
-  createSubmission?: (text: string, csrfToken: string, agentId?: string) => ConversationSubmission;
+  createSubmission?: (input: string | TurnSubmission, csrfToken: string, agentId?: string) => ConversationSubmission;
   historyClient?: AgentHistoryClient;
   conversationClient?: ConversationPageClient;
   onOpenConversation?: (path: string) => void;
@@ -78,6 +80,9 @@ export function DirectAgentWorkspace({
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState(false);
+  const [attachments, setAttachments] = useState<ConversationAttachment[]>([]);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
   const inFlight = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
@@ -161,10 +166,16 @@ export function DirectAgentWorkspace({
 
   const send = async () => {
     const normalized = text.trim();
-    if (!card || !normalized || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
+    const readyIds = attachments.filter((item) => item.state === "ready").map((item) => item.attachmentId);
+    const uploadPending = uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state));
+    if (!card || (!normalized && readyIds.length === 0) || uploadPending || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
+    const input: string | TurnSubmission = card.attachment_limits ? {
+      text: normalized, attachmentIds: readyIds, activeAttachmentIds: readyIds,
+    } : normalized;
+    const requestKey = typeof input === "string" ? input : JSON.stringify(input);
     let selected = retained.current;
-    if (!selected || selected.text !== normalized) {
-      selected = { text: normalized, submission: createSubmission(normalized, account.csrf_token, card.agent_id) };
+    if (!selected || selected.text !== requestKey) {
+      selected = { text: requestKey, submission: createSubmission(input, account.csrf_token, card.agent_id) };
       retained.current = selected;
     }
     const controller = new AbortController();
@@ -224,6 +235,7 @@ export function DirectAgentWorkspace({
           client={conversationClient}
           conversationId={conversationId}
           expectedAgentId={agentId}
+          attachmentLimits={card.attachment_limits}
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
         />
@@ -242,12 +254,21 @@ export function DirectAgentWorkspace({
               type="button"
             >{example}</button>)}
           </section>
+          {card.attachment_limits && <section className="agent-new-conversation-files" aria-label="新对话附件">
+            <AttachmentUploader acceptedInputTypes={card.accepted_input_types} conversationId={null}
+              csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
+              limits={card.attachment_limits} onChange={setUploadQueue} onError={setAttachmentError}
+              onReady={(attachment) => { setAttachments((current) => [...current, attachment]); setFailure(false); retained.current = null; }} />
+            {attachments.map((attachment) => <AttachmentCard active attachment={attachment} key={attachment.attachmentId}
+              onActiveChange={() => undefined} />)}
+            {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
+          </section>}
           <form className="agent-direct-composer" onSubmit={submit}>
             <label htmlFor="direct-agent-request">直接交给 {card.display_name}</label>
             <textarea id="direct-agent-request" rows={5} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
               placeholder={card.example_tasks[0] ?? "描述任务目标和背景…"}
               onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }} />
-            <div><span>对话会持续保留在当前 Agent 的左侧历史中。</span><button disabled={!text.trim() || inputTooLarge || pending || account.hard_stale_read_only} type="submit">{pending ? "正在创建…" : "开始对话"}</button></div>
+            <div><span>对话会持续保留在当前 Agent 的左侧历史中。</span><button disabled={(!text.trim() && attachments.length === 0) || uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state)) || inputTooLarge || pending || account.hard_stale_read_only} type="submit">{pending ? "正在创建…" : "开始对话"}</button></div>
           </form>
           {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
           {failure && <div className="brain-submit-error" role="alert"><span>对话暂未创建成功，可安全重试。</span><button onClick={() => void send()} type="button">重新提交</button></div>}
