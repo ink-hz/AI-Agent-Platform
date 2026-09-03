@@ -504,11 +504,19 @@ function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
 }
 
 
-function submissionBody(value: TurnSubmission): string {
+export interface ConversationStartScope {
+  positionId?: string;
+  positionDraftId?: string;
+}
+
+
+function submissionBody(value: TurnSubmission, scope?: ConversationStartScope): string {
   return JSON.stringify({
     text: value.text,
     attachment_ids: value.attachmentIds,
     active_attachment_ids: value.activeAttachmentIds,
+    ...(scope?.positionId ? { position_id: scope.positionId } : {}),
+    ...(scope?.positionDraftId ? { position_draft_id: scope.positionDraftId } : {}),
   });
 }
 
@@ -519,9 +527,13 @@ export interface ConversationSubmission<TResult = ConversationSubmissionResult> 
 }
 
 
-function submission(path: string, input: string | TurnSubmission, csrfToken: string): ConversationSubmission {
+function submission(
+  path: string, input: string | TurnSubmission, csrfToken: string,
+  scope?: ConversationStartScope,
+): ConversationSubmission {
   const selected = normalizedSubmission(input);
-  const body = submissionBody(selected);
+  if (scope?.positionId && scope.positionDraftId) throw new Error("Conversation position scope invalid");
+  const body = submissionBody(selected, scope);
   const idempotencyKey = crypto.randomUUID();
   return Object.freeze({
     idempotencyKey,
@@ -548,11 +560,12 @@ export function startConversation(
   input: string | TurnSubmission,
   csrfToken: string,
   agentId?: string,
+  scope?: ConversationStartScope,
 ): ConversationSubmission {
   const path = agentId
     ? `/api/v1/agents/${encodeURIComponent(agentId)}/conversations`
     : "/api/v1/conversations";
-  return submission(path, input, csrfToken);
+  return submission(path, input, csrfToken, scope);
 }
 
 
