@@ -3860,6 +3860,10 @@ def _cloud_keyring_installer_environment(tmp_path: Path):
         'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")',
         f"PLATFORM_ROOT = Path({str(platform)!r})",
     )
+    source = source.replace(
+        'STAGING_ROOT = Path("/data/staging/orbbec-agent-platform")',
+        f"STAGING_ROOT = Path({str(platform / 'staging')!r})",
+    )
     remote = tmp_path / "remote-stage.sh"
     ready = tmp_path / "cutover-ready"
     release = tmp_path / "cutover-release"
@@ -3914,7 +3918,7 @@ def _cloud_keyring_installer_environment(tmp_path: Path):
         "state": private / "execution-worker-key-rotation-state.json",
         "deploy_state": private / "execution-worker-keyring-deploy-state.json",
         "lock": private / "execution-worker-key-rotation.lock",
-        "staged": platform / "staging" / ("b" * 40) / "execution-worker-public-keyring.json",
+        "staged": platform / "staging" / deployment_id / "execution-worker-public-keyring.json",
         "ready": ready,
         "release": release,
         "deployment_id": deployment_id,
@@ -3946,6 +3950,13 @@ def test_cloud_deploy_stages_keyring_without_mutating_canonical(
     assert paths["keyring"].read_bytes() == b"old\n"
     assert paths["staged"].read_bytes() == paths["document"]
     assert _mode(paths["staged"]) == 0o600
+
+
+def test_cloud_keyring_staging_requires_the_data_mount() -> None:
+    source = CLOUD_KEYRING_INSTALLER.read_text(encoding="utf-8")
+
+    assert 'STAGING_ROOT = Path("/data/staging/orbbec-agent-platform")' in source
+    assert 'not os.path.ismount("/data")' in source
 
 
 def test_cloud_deploy_cutover_holds_shared_lock_and_fails_on_active_state(

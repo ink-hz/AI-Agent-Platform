@@ -311,6 +311,37 @@ def test_remote_stage_requires_consecutive_loopback_health_checks():
     ) not in script
 
 
+def test_remote_stage_enforces_data_disk_and_bounded_release_retention():
+    script = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    assert 'data_path="/data/orbbec-agent-platform"' in script
+    assert 'staging_root="/data/staging/orbbec-agent-platform"' in script
+    assert 'archive_releases="/data/archive/orbbec-agent-platform/releases"' in script
+    assert 'stage_path="$staging_root/$deployment_id"' in script
+    assert 'staging_path="$root_path/staging"' not in script
+    assert 'cleanup_stage' in script
+    assert 'find "$stage_path" -depth -delete' in script
+    assert 'df -B1 / /data' in script
+    assert "26843545600" in script  # 25 GiB preflight floor
+    assert "21474836480" in script  # 20 GiB projected floor
+    assert "root_used_percent" in script
+    assert '"$root_used_percent" -le 75' in script
+    assert "retain_release_history" in script
+    assert "retain_platform_images" in script
+    assert "docker system prune" not in script
+
+
+def test_platform_growing_volumes_are_bound_to_data_disk():
+    stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+    backup = (CLOUD / "backup.sh").read_text(encoding="utf-8")
+
+    assert 'postgres_data="$data_path/postgres"' in stage
+    assert 'ensure_bind_volume orbbec-agent-platform-postgres-data "$postgres_data"' in stage
+    assert 'backup_data="$data_path/backups"' in stage
+    assert 'ensure_bind_volume orbbec-agent-platform-backups "$backup_data"' in stage
+    assert '/data/orbbec-agent-platform/backups' in backup
+
+
 def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():
     stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
 

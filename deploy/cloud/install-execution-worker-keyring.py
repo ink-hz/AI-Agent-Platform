@@ -14,7 +14,7 @@ import sys
 REQUIRED_UID = 0
 PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")
 PRIVATE_ROOT = PLATFORM_ROOT / "private"
-STAGING_ROOT = PLATFORM_ROOT / "staging"
+STAGING_ROOT = Path("/data/staging/orbbec-agent-platform")
 REMOTE_STAGE = Path("/opt/orbbec-agent-platform/bin/remote-stage.sh")
 STATE = PRIVATE_ROOT / "execution-worker-key-rotation-state.json"
 DEPLOY_STATE = PRIVATE_ROOT / "execution-worker-keyring-deploy-state.json"
@@ -153,10 +153,14 @@ def _stage(release_sha: str, deployment_id: str) -> None:
             for path in (STATE, DEPLOY_STATE, DEPLOY_STATE_PART, DEPLOY_BACKUP)
         ):
             raise InstallError
-        STAGING_ROOT.mkdir(mode=0o700, exist_ok=True)
+        if STAGING_ROOT == Path(
+            "/data/staging/orbbec-agent-platform"
+        ) and not os.path.ismount("/data"):
+            raise InstallError
+        STAGING_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(STAGING_ROOT, 0o700)
         _directory(STAGING_ROOT, {0o700})
-        release_root = STAGING_ROOT / release_sha
+        release_root = STAGING_ROOT / deployment_id
         release_root.mkdir(mode=0o700, exist_ok=True)
         os.chmod(release_root, 0o700)
         _directory(release_root, {0o700})
@@ -198,7 +202,7 @@ def _discard(release_sha: str, deployment_id: str) -> None:
             for path in (STATE, DEPLOY_STATE, DEPLOY_STATE_PART, DEPLOY_BACKUP)
         ):
             raise InstallError
-        release_root = STAGING_ROOT / release_sha
+        release_root = STAGING_ROOT / deployment_id
         target = release_root / "execution-worker-public-keyring.json"
         part = release_root / ".execution-worker-public-keyring.json.part"
         if not (release_root.exists() or release_root.is_symlink()):
@@ -213,12 +217,14 @@ def _discard(release_sha: str, deployment_id: str) -> None:
         except FileNotFoundError:
             pass
         _fsync_directory(release_root)
+        release_root.rmdir()
+        _fsync_directory(STAGING_ROOT)
     finally:
         os.close(descriptor)
 
 
 def _cutover(release_sha: str, digest: str, deployment_id: str) -> None:
-    staged = STAGING_ROOT / release_sha / "execution-worker-public-keyring.json"
+    staged = STAGING_ROOT / deployment_id / "execution-worker-public-keyring.json"
     descriptor = _lock()
     try:
         _validate_deploy_input(release_sha, deployment_id)

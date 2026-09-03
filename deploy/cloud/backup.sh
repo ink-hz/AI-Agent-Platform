@@ -10,6 +10,7 @@ fail() {
 root_path="/opt/orbbec-agent-platform"
 current_path="$root_path/current"
 private_path="$root_path/private"
+backup_data="/data/orbbec-agent-platform/backups"
 environment_path="$private_path/platform.env"
 compose_path="$current_path/deploy/cloud/compose.yaml"
 recovery_public="$private_path/backup-recovery-x25519.pub"
@@ -18,7 +19,8 @@ recovery_public="$private_path/backup-recovery-x25519.pub"
 
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$compose_path")
 /usr/bin/docker volume create orbbec-agent-platform-backup-secrets >/dev/null
-/usr/bin/docker volume create orbbec-agent-platform-backups >/dev/null
+[[ -d "$backup_data" && ! -L "$backup_data" ]] || fail
+[[ "$(/usr/bin/docker volume inspect --format '{{index .Options "device"}}' orbbec-agent-platform-backups 2>/dev/null || true)" == "$backup_data" ]] || fail
 /usr/bin/docker run --rm --network none \
   -v orbbec-agent-platform-backup-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 \

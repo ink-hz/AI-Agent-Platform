@@ -5,7 +5,9 @@ umask 077
 root_path="/opt/orbbec-agent-platform"
 private_path="$root_path/private"
 releases_path="$root_path/releases"
-staging_path="$root_path/staging"
+data_path="/data/orbbec-agent-platform"
+staging_root="/data/staging/orbbec-agent-platform"
+archive_releases="/data/archive/orbbec-agent-platform/releases"
 environment_path="$private_path/platform.env"
 rotation_lock="$private_path/execution-worker-key-rotation.lock"
 rotation_state="$private_path/execution-worker-key-rotation-state.json"
@@ -28,8 +30,120 @@ expected_digest="$2"
 deployment_id="$3"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ && "$expected_digest" =~ ^[0-9a-f]{64}$ && "$deployment_id" =~ ^[0-9a-f]{32}$ ]] || fail
 release_path="$releases_path/$release_sha"
-stage_path="$staging_path/$release_sha"
+stage_path="$staging_root/$deployment_id"
 archive_path="$stage_path/release.tar.gz"
+postgres_data="$data_path/postgres"
+backup_data="$data_path/backups"
+
+cleanup_stage() {
+  case "$stage_path" in
+    /data/staging/orbbec-agent-platform/[0-9a-f][0-9a-f]*) ;;
+    *) return 1 ;;
+  esac
+  if [[ -e "$stage_path" || -L "$stage_path" ]]; then
+    [[ -d "$stage_path" && ! -L "$stage_path" ]] || return 1
+    /usr/bin/find "$stage_path" -depth -delete
+  fi
+}
+trap cleanup_stage EXIT
+
+/usr/bin/df -B1 / /data >&2
+read -r root_size_before root_used_before root_available_before root_percent_before < <(
+  /usr/bin/df -B1 --output=size,used,avail,pcent / | /usr/bin/tail -1 | /usr/bin/tr -d '%'
+)
+read -r data_size_before data_used_before data_available_before data_percent_before < <(
+  /usr/bin/df -B1 --output=size,used,avail,pcent /data | /usr/bin/tail -1 | /usr/bin/tr -d '%'
+)
+[[ "$root_available_before" =~ ^[0-9]+$ && "$root_available_before" -ge 26843545600 ]] || fail
+projected_root_available=$((root_available_before - 1073741824))
+[[ "$projected_root_available" -ge 21474836480 ]] || fail
+[[ "$root_percent_before" =~ ^[0-9]+$ && "$root_percent_before" -le 75 ]] || fail
+[[ "$data_available_before" =~ ^[0-9]+$ && "$data_available_before" -ge 21474836480 ]] || fail
+/usr/bin/printf 'PLATFORM_DISK_BEFORE root_used=%s root_available=%s root_percent=%s data_used=%s data_available=%s data_percent=%s\n' \
+  "$root_used_before" "$root_available_before" "$root_percent_before" \
+  "$data_used_before" "$data_available_before" "$data_percent_before" >&2
+
+ensure_bind_volume() {
+  local volume_name="$1" target="$2" configured_device source_mount
+  case "$target" in "$data_path"/*) ;; *) fail ;; esac
+  [[ -d "$target" && ! -L "$target" ]] || fail
+  configured_device="$(/usr/bin/docker volume inspect --format '{{index .Options "device"}}' "$volume_name" 2>/dev/null || true)"
+  if [[ "$configured_device" == "$target" ]]; then
+    return
+  fi
+  [[ -z "$(/usr/bin/docker ps -aq --filter "volume=$volume_name")" ]] || fail
+  if /usr/bin/docker volume inspect "$volume_name" >/dev/null 2>&1; then
+    [[ -z "$configured_device" ]] || fail
+    source_mount="$(/usr/bin/docker volume inspect --format '{{.Mountpoint}}' "$volume_name")"
+    [[ "$source_mount" == /var/lib/docker/volumes/*/_data && -d "$source_mount" && ! -L "$source_mount" ]] || fail
+    [[ -z "$(/usr/bin/find "$target" -mindepth 1 -print -quit)" ]] || fail
+    /usr/bin/docker run --rm --network none \
+      -v "$volume_name:/source:ro" -v "$target:/target" alpine:3.22 \
+      sh -ceu 'cp -a /source/. /target/; sync'
+    /usr/bin/docker volume rm "$volume_name" >/dev/null
+  fi
+  /usr/bin/docker volume create --driver local --opt type=none --opt o=bind \
+    --opt "device=$target" "$volume_name" >/dev/null
+  [[ "$(/usr/bin/docker volume inspect --format '{{index .Options "device"}}' "$volume_name")" == "$target" ]] || fail
+}
+
+retain_release_history() {
+  local previous_sha second_previous second_sha candidate archive_target index mtime now
+  previous_sha="$(/usr/bin/basename "$previous_release")"
+  second_previous=""
+  if [[ -f "$previous_release/PREVIOUS_RELEASE" && ! -L "$previous_release/PREVIOUS_RELEASE" ]]; then
+    second_previous="$(cat "$previous_release/PREVIOUS_RELEASE")"
+  fi
+  if [[ ! "$second_previous" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ || ! -d "$second_previous" || -L "$second_previous" ]]; then
+    second_previous="$(/usr/bin/find "$releases_path" -mindepth 1 -maxdepth 1 -type d \
+      ! -path "$release_path" ! -path "$previous_release" -printf '%T@ %p\n' | /usr/bin/sort -nr | /usr/bin/head -1 | /usr/bin/cut -d' ' -f2-)"
+  fi
+  [[ -n "$second_previous" ]] || fail
+  second_sha="$(/usr/bin/basename "$second_previous")"
+  [[ "$previous_sha" =~ ^[0-9a-f]{40}$ && "$second_sha" =~ ^[0-9a-f]{40}$ ]] || fail
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    case "$candidate" in "$release_path"|"$previous_release"|"$second_previous") continue ;; esac
+    [[ "$candidate" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ && -d "$candidate" && ! -L "$candidate" ]] || fail
+    archive_target="$archive_releases/$(/usr/bin/basename "$candidate")"
+    [[ ! -e "$archive_target" && ! -L "$archive_target" ]] || fail
+    /bin/mv "$candidate" "$archive_target"
+  done < <(/usr/bin/find "$releases_path" -mindepth 1 -maxdepth 1 -type d -print)
+  now="$(/usr/bin/date +%s)"
+  index=0
+  while read -r mtime candidate; do
+    [[ -n "$candidate" ]] || continue
+    index=$((index + 1))
+    [[ "$candidate" =~ ^/data/archive/orbbec-agent-platform/releases/[0-9a-f]{40}$ && -d "$candidate" && ! -L "$candidate" ]] || fail
+    if [[ "$index" -gt 10 || $((now - ${mtime%.*})) -gt 2592000 ]]; then
+      /usr/bin/find "$candidate" -depth -delete
+    fi
+  done < <(/usr/bin/find "$archive_releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | /usr/bin/sort -nr)
+  [[ "$(/usr/bin/find "$releases_path" -mindepth 1 -maxdepth 1 -type d | /usr/bin/wc -l)" -le 3 ]] || fail
+  RETAINED_PREVIOUS_SHA="$previous_sha"
+  RETAINED_SECOND_SHA="$second_sha"
+}
+
+retain_platform_images() {
+  local previous_sha="$1" second_sha="$2" tag image_id referenced release_marker
+  while read -r tag image_id; do
+    [[ -n "$tag" && -n "$image_id" ]] || continue
+    case "$tag" in "$release_sha"|"$previous_sha"|"$second_sha") continue ;; esac
+    [[ "$tag" =~ ^[0-9a-f]{40}$ ]] || fail
+    referenced="$(/usr/bin/docker ps -aq --filter "ancestor=$image_id")"
+    [[ -z "$referenced" ]] || continue
+    /usr/bin/docker image rm "orbbec-agent-platform:$tag" >/dev/null
+  done < <(/usr/bin/docker image ls orbbec-agent-platform --no-trunc --format '{{.Tag}} {{.ID}}')
+  while IFS= read -r image_id; do
+    [[ -n "$image_id" ]] || continue
+    release_marker="$(/usr/bin/docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$image_id" 2>/dev/null \
+      | /usr/bin/sed -n 's/^PLATFORM_RELEASE_SHA=//p' | /usr/bin/head -1)"
+    [[ "$release_marker" =~ ^[0-9a-f]{40}$ ]] || continue
+    case "$release_marker" in "$release_sha"|"$previous_sha"|"$second_sha") continue ;; esac
+    [[ -z "$(/usr/bin/docker ps -aq --filter "ancestor=$image_id")" ]] || continue
+    /usr/bin/docker image rm "$image_id" >/dev/null
+  done < <(/usr/bin/docker image ls --filter dangling=true -q --no-trunc | /usr/bin/sort -u)
+}
 
 /usr/bin/python3 - "$deploy_input_root" "$deploy_input_state" "$release_sha" "$deployment_id" <<'PY' || fail
 import json
@@ -61,7 +175,8 @@ if (
 ):
     raise SystemExit(1)
 PY
-/usr/bin/install -d -m 700 "$private_path" "$releases_path" "$stage_path"
+/usr/bin/install -d -m 700 "$private_path" "$releases_path" "$data_path" \
+  "$staging_root" "$archive_releases" "$postgres_data" "$backup_data" "$stage_path"
 staged_worker_keyring="$stage_path/execution-worker-public-keyring.json"
 [[ "${PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD:-}" =~ ^[0-9]+$ ]] || fail
 /usr/bin/python3 - "$rotation_lock" "$PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD" <<'PY' || fail
@@ -334,13 +449,16 @@ if /usr/bin/tar -tzf "$archive_path" | /usr/bin/grep -Eq '(^/|(^|/)\.\.(/|$))'; 
 fi
 /usr/bin/install -d -m 700 "$release_path"
 rollback() {
-  if [[ "$rollback_required" -ne 1 ]]; then
-    return
+  local exit_status=$?
+  trap - EXIT
+  if [[ "$rollback_required" -eq 1 ]]; then
+    if ! restore_worker_keyring; then
+      echo "EXECUTION_WORKER_KEYRING_DEPLOY_ROLLBACK_FAILED" >&2
+      exit_status=1
+    fi
   fi
-  if ! restore_worker_keyring; then
-    echo "EXECUTION_WORKER_KEYRING_DEPLOY_ROLLBACK_FAILED" >&2
-  fi
-  if [[ "$api_stopped" -eq 1 ]]; then
+  if [[ "$rollback_required" -eq 1 ]]; then
+    if [[ "$api_stopped" -eq 1 ]]; then
     if [[ -f "$release_path/deploy/cloud/compose.yaml" && -f "$environment_path" ]]; then
       candidate_services="$(/usr/bin/docker compose --env-file "$environment_path" \
         -f "$release_path/deploy/cloud/compose.yaml" config --services 2>/dev/null || true)"
@@ -378,10 +496,13 @@ rollback() {
         /usr/bin/unlink "$root_path/current" || true
       fi
     fi
+    fi
+    if [[ -d "$release_path" && "$release_path" != "$previous_release" ]]; then
+      /bin/mv "$release_path" "$stage_path/failed-release-$BASHPID" >/dev/null 2>&1 || true
+    fi
   fi
-  if [[ -d "$release_path" && "$release_path" != "$previous_release" ]]; then
-    /bin/mv "$release_path" "$stage_path/failed-release-$BASHPID" >/dev/null 2>&1 || true
-  fi
+  cleanup_stage || exit_status=1
+  exit "$exit_status"
 }
 trap rollback EXIT
 /usr/bin/tar -xzf "$archive_path" -C "$release_path"
@@ -459,7 +580,7 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
   previous_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml")
   previous_services="$("${previous_compose[@]}" config --services)"
   previous_control_consumers=()
-  for service_name in "${control_secret_consumer_services[@]}" platform-loopback platform-loopback-preview; do
+  for service_name in "${control_secret_consumer_services[@]}" platform-loopback platform-loopback-preview platform-postgres; do
     if /usr/bin/grep -Fxq "$service_name" <<<"$previous_services"; then
       previous_control_consumers+=("$service_name")
     fi
@@ -468,7 +589,10 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
     "${previous_compose[@]}" stop "${previous_control_consumers[@]}" >/dev/null
     api_stopped=1
   fi
+  "${previous_compose[@]}" rm -f platform-postgres >/dev/null
 fi
+ensure_bind_volume orbbec-agent-platform-postgres-data "$postgres_data"
+ensure_bind_volume orbbec-agent-platform-backups "$backup_data"
 read_previous_feature() {
   local name="$1"
   local fallback="$2"
@@ -696,5 +820,22 @@ fi
 write_deploy_state completed
 restore_worker_keyring
 rollback_required=0
-trap - EXIT
+retain_release_history
+retain_platform_images "$RETAINED_PREVIOUS_SHA" "$RETAINED_SECOND_SHA"
+/usr/bin/df -B1 / /data >&2
+read -r root_size_after root_used_after root_available_after root_used_percent < <(
+  /usr/bin/df -B1 --output=size,used,avail,pcent / | /usr/bin/tail -1 | /usr/bin/tr -d '%'
+)
+read -r data_size_after data_used_after data_available_after data_used_percent < <(
+  /usr/bin/df -B1 --output=size,used,avail,pcent /data | /usr/bin/tail -1 | /usr/bin/tr -d '%'
+)
+[[ "$root_used_percent" =~ ^[0-9]+$ && "$root_used_percent" -le 75 ]] || fail
+root_growth_bytes=$((root_used_after - root_used_before))
+if [[ "$root_growth_bytes" -gt 1073741824 ]]; then
+  /usr/bin/printf 'PLATFORM_DISK_GROWTH_EXPLANATION bytes=%s cause=platform_release_and_docker_image\n' "$root_growth_bytes" >&2
+fi
+/usr/bin/printf 'PLATFORM_DISK_AFTER root_used=%s root_available=%s root_percent=%s data_used=%s data_available=%s data_percent=%s root_growth=%s rollback_1=%s rollback_2=%s\n' \
+  "$root_used_after" "$root_available_after" "$root_used_percent" \
+  "$data_used_after" "$data_available_after" "$data_used_percent" "$root_growth_bytes" \
+  "$RETAINED_PREVIOUS_SHA" "$RETAINED_SECOND_SHA" >&2
 echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=dingtalk"
