@@ -564,6 +564,7 @@ set search_path = pg_catalog, platform_attachments
 as $function$
 declare
   selected_job platform_attachments.processing_jobs%rowtype;
+  selected_current_state text;
   next_job_kind text;
   next_derivative_kind text;
 begin
@@ -575,6 +576,13 @@ begin
   where processing_job_id=selected_processing_job_id and state='running'
   for update;
   if not found then raise no_data_found using message='Processing job unavailable'; end if;
+  select state into selected_current_state
+  from platform_attachments.attachments
+  where attachment_id=selected_job.attachment_id
+  for update;
+  if not found or selected_current_state='deleted' then
+    raise check_violation using message='Attachment deleted or unavailable';
+  end if;
 
   if selected_attachment_state='retry' then
     if selected_job.attempt_count < selected_job.max_attempts then
@@ -590,6 +598,14 @@ begin
         update platform_attachments.attachments set
           state='rejected',state_reason='processing_retries_exhausted'
         where attachment_id=selected_job.attachment_id;
+        update platform_attachments.uploads set
+          state='rejected',state_reason='processing_retries_exhausted'
+        where attachment_id=selected_job.attachment_id;
+        update platform_attachments.artifact_versions set
+          state='rejected',state_reason='processing_retries_exhausted',
+          result_status='failed'
+        where attachment_id=selected_job.attachment_id
+          and result_status='pending';
       end if;
     end if;
     return;
@@ -619,6 +635,25 @@ begin
   update platform_attachments.uploads set
     state=selected_attachment_state,state_reason=selected_state_reason
   where attachment_id=selected_job.attachment_id;
+  if selected_attachment_state in ('ready','quarantined','rejected') then
+    update platform_attachments.artifact_versions version set
+      original_name_ciphertext=attachment.original_name_ciphertext,
+      original_name_key_version=attachment.original_name_key_version,
+      object_ref_ciphertext=attachment.object_ref_ciphertext,
+      object_ref_key_version=attachment.object_ref_key_version,
+      detected_mime=attachment.detected_mime,
+      size_bytes=attachment.size_bytes,
+      sha256=attachment.sha256,
+      retained_until=attachment.retained_until,
+      state=selected_attachment_state,
+      state_reason=selected_state_reason,
+      result_status=case when selected_attachment_state='ready'
+        then 'succeeded' else 'failed' end
+    from platform_attachments.attachments attachment
+    where version.attachment_id=selected_job.attachment_id
+      and attachment.attachment_id=version.attachment_id
+      and version.result_status='pending';
+  end if;
   if next_job_kind is not null then
     insert into platform_attachments.processing_jobs(
       processing_job_id,attachment_id,job_kind,derivative_kind
@@ -644,7 +679,9 @@ create function platform_attachments.record_attachment_derivative_v64(
 language plpgsql security definer
 set search_path = pg_catalog, platform_attachments
 as $function$
-declare selected_job platform_attachments.processing_jobs%rowtype;
+declare
+  selected_job platform_attachments.processing_jobs%rowtype;
+  selected_current_state text;
 begin
   if current_user not in ('platform_control_owner','platform_control_owner_preview')
      or session_user not in ('platform_brain_worker','platform_brain_worker_preview')
@@ -655,6 +692,13 @@ begin
     and job_kind='derive' and derivative_kind=selected_kind
   for update;
   if not found then raise no_data_found using message='Derivative job unavailable'; end if;
+  select state into selected_current_state
+  from platform_attachments.attachments
+  where attachment_id=selected_job.attachment_id
+  for update;
+  if not found or selected_current_state <> 'ready' then
+    raise check_violation using message='Derivative attachment unavailable';
+  end if;
   if octet_length(selected_object_ref_ciphertext) < 29
      or selected_object_ref_key_version <= 0 or selected_detected_mime is null
      or selected_size_bytes < 0 or octet_length(selected_sha256) <> 32
@@ -870,6 +914,10 @@ create function platform_attachments.bind_artifact_version_v64(
 language plpgsql security definer
 set search_path = pg_catalog, platform_attachments
 as $function$
+declare
+  selected_artifact platform_attachments.artifacts%rowtype;
+  selected_attachment platform_attachments.attachments%rowtype;
+  existing_version platform_attachments.artifact_versions%rowtype;
 begin
   if current_user not in ('platform_control_owner','platform_control_owner_preview')
      or session_user not in ('platform_brain_worker','platform_brain_worker_preview')
@@ -879,28 +927,134 @@ begin
      or char_length(selected_producer_version_id) not between 1 and 160 then
     raise check_violation using message='Artifact version invalid';
   end if;
+
+  select * into selected_artifact
+  from platform_attachments.artifacts
+  where artifact_id=selected_artifact_id
+  for update;
+  if not found then raise check_violation using message='Artifact invalid'; end if;
+
+  select * into existing_version
+  from platform_attachments.artifact_versions
+  where artifact_id=selected_artifact_id
+    and producer_version_id=selected_producer_version_id;
+  if found then
+    if existing_version.artifact_version_id=selected_artifact_version_id
+       and existing_version.attachment_id=selected_attachment_id
+       and existing_version.version_no=selected_version_no then
+      return existing_version.artifact_version_id;
+    end if;
+    raise check_violation using message='Artifact version replay conflict';
+  end if;
+
+  select * into selected_attachment
+  from platform_attachments.attachments
+  where attachment_id=selected_attachment_id
+  for update;
+  if not found
+     or selected_attachment.owner_internal_user_id <>
+       selected_artifact.owner_internal_user_id
+     or selected_attachment.conversation_id <> selected_artifact.conversation_id
+  then raise check_violation using message='Artifact attachment invalid'; end if;
+  if selected_attachment.source_kind <> 'agent_output' then
+    raise check_violation using message='Artifact attachment must be agent_output';
+  end if;
+  if selected_attachment.state not in ('uploading','validating','scanning','ready') then
+    raise check_violation using message='Artifact attachment terminal';
+  end if;
+  if not exists (
+    select 1 from platform_attachments.bindings binding
+    where binding.attachment_id=selected_attachment_id
+      and binding.kind='task_output'
+      and binding.owner_internal_user_id=selected_artifact.owner_internal_user_id
+      and binding.conversation_id=selected_artifact.conversation_id
+      and binding.task_id=selected_artifact.task_id
+      and binding.agent_id=selected_artifact.agent_id
+  ) then
+    raise check_violation using message='Artifact task_output binding invalid';
+  end if;
+
   insert into platform_attachments.artifact_versions(
     artifact_version_id,artifact_id,attachment_id,version_no,
     producer_version_id,
     original_name_ciphertext,original_name_key_version,
     object_ref_ciphertext,object_ref_key_version,detected_mime,size_bytes,
     sha256,retained_until,state,state_reason,result_status
-  ) select
-    selected_artifact_version_id,selected_artifact_id,attachment.attachment_id,
+  ) values (
+    selected_artifact_version_id,selected_artifact_id,selected_attachment.attachment_id,
     selected_version_no,selected_producer_version_id,
-    attachment.original_name_ciphertext,
-    attachment.original_name_key_version,attachment.object_ref_ciphertext,
-    attachment.object_ref_key_version,attachment.detected_mime,
-    attachment.size_bytes,attachment.sha256,attachment.retained_until,
-    attachment.state,attachment.state_reason,
-    case when attachment.state='ready' then 'succeeded' else 'pending' end
-  from platform_attachments.attachments attachment
-  join platform_attachments.artifacts artifact
-    on artifact.artifact_id=selected_artifact_id
-  where attachment.attachment_id=selected_attachment_id
-    and attachment.owner_internal_user_id=artifact.owner_internal_user_id
-    and attachment.conversation_id=artifact.conversation_id;
-  if not found then raise check_violation using message='Artifact attachment invalid'; end if;
+    selected_attachment.original_name_ciphertext,
+    selected_attachment.original_name_key_version,
+    selected_attachment.object_ref_ciphertext,
+    selected_attachment.object_ref_key_version,selected_attachment.detected_mime,
+    selected_attachment.size_bytes,selected_attachment.sha256,
+    selected_attachment.retained_until,selected_attachment.state,
+    selected_attachment.state_reason,
+    case when selected_attachment.state='ready' then 'succeeded' else 'pending' end
+  );
+  return selected_artifact_version_id;
+end
+$function$;
+
+create function platform_attachments.fail_artifact_version_v64(
+  selected_artifact_version_id uuid,
+  selected_failure_state text,
+  selected_state_reason text
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_attachment_id uuid;
+  selected_result_status text;
+  selected_current_state text;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_brain_worker','platform_brain_worker_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_brain_worker')
+  then raise insufficient_privilege using message='Artifact failure caller invalid'; end if;
+  if selected_failure_state not in ('quarantined','rejected')
+     or selected_state_reason is null or char_length(selected_state_reason) > 512
+  then raise check_violation using message='Artifact failure invalid'; end if;
+
+  select attachment_id into selected_attachment_id
+  from platform_attachments.artifact_versions
+  where artifact_version_id=selected_artifact_version_id;
+  if not found then raise no_data_found using message='Artifact version unavailable'; end if;
+  perform 1 from platform_attachments.processing_jobs
+  where attachment_id=selected_attachment_id and state in ('queued','running')
+  order by processing_job_id
+  for update;
+  select state into selected_current_state
+  from platform_attachments.attachments
+  where attachment_id=selected_attachment_id
+  for update;
+  if not found or selected_current_state='deleted' then
+    raise check_violation using message='Artifact attachment deleted or unavailable';
+  end if;
+  select result_status into selected_result_status
+  from platform_attachments.artifact_versions
+  where artifact_version_id=selected_artifact_version_id
+  for update;
+  if selected_result_status='failed' then return selected_artifact_version_id; end if;
+  if selected_result_status <> 'pending' then
+    raise check_violation using message='Artifact version already succeeded';
+  end if;
+
+  update platform_attachments.attachments set
+    state=selected_failure_state,state_reason=selected_state_reason
+  where attachment_id=selected_attachment_id;
+  update platform_attachments.uploads set
+    state=selected_failure_state,state_reason=selected_state_reason
+  where attachment_id=selected_attachment_id;
+  update platform_attachments.processing_jobs set
+    state='failed',state_reason=selected_state_reason,completed_at=now()
+  where attachment_id=selected_attachment_id
+    and state in ('queued','running');
+  update platform_attachments.artifact_versions set
+    state=selected_failure_state,state_reason=selected_state_reason,
+    result_status='failed'
+  where artifact_version_id=selected_artifact_version_id;
   return selected_artifact_version_id;
 end
 $function$;
@@ -1015,22 +1169,42 @@ begin
   if selected_state not in ('completed','partial','failed')
      or jsonb_typeof(selected_downstream_cleanup_status) <> 'object'
   then raise check_violation using message='Attachment erasure result invalid'; end if;
+  select attachment_id into selected_attachment_id
+  from platform_attachments.erasure_jobs
+  where erasure_job_id=selected_erasure_job_id and state='running'
+  for update;
+  if not found then raise no_data_found using message='Erasure job unavailable'; end if;
+  perform 1 from platform_attachments.processing_jobs
+  where attachment_id=selected_attachment_id and state in ('queued','running')
+  order by processing_job_id
+  for update;
+  perform 1 from platform_attachments.attachments
+  where attachment_id=selected_attachment_id
+  for update;
+  if not found then raise no_data_found using message='Erasure attachment unavailable'; end if;
   update platform_attachments.erasure_jobs set state=selected_state,
     state_reason=selected_state_reason,
     downstream_cleanup_status=selected_downstream_cleanup_status,
     completed_at=now()
-  where erasure_job_id=selected_erasure_job_id and state='running'
-  returning attachment_id into selected_attachment_id;
-  if not found then raise no_data_found using message='Erasure job unavailable'; end if;
+  where erasure_job_id=selected_erasure_job_id;
   if selected_state in ('completed','partial') then
     update platform_attachments.attachments set
       state='deleted',state_reason=selected_state_reason,deleted_at=now()
     where attachment_id=selected_attachment_id;
+    update platform_attachments.uploads set
+      state='deleted',state_reason=selected_state_reason
+    where attachment_id=selected_attachment_id;
     update platform_attachments.task_grants set revoked_at=now()
     where attachment_id=selected_attachment_id and revoked_at is null;
+    update platform_attachments.processing_jobs set
+      state='failed',state_reason='attachment_erased',completed_at=now()
+    where attachment_id=selected_attachment_id
+      and state in ('queued','running');
     update platform_attachments.artifact_versions set
-      state='deleted',state_reason=selected_state_reason
-    where attachment_id=selected_attachment_id and state <> 'deleted';
+      state='deleted',state_reason=selected_state_reason,
+      result_status=case when result_status='pending'
+        then 'failed' else result_status end
+    where attachment_id=selected_attachment_id;
     update platform_attachments.derivatives set
       state='deleted',state_reason=selected_state_reason
     where attachment_id=selected_attachment_id and state <> 'deleted';
@@ -1144,7 +1318,9 @@ begin
     'platform_attachments.consume_output_write_grant_v64('
     'bytea,uuid,text,bigint), '
     'platform_attachments.bind_artifact_version_v64('
-    'uuid,uuid,uuid,integer,text) to %I',selected_brain
+    'uuid,uuid,uuid,integer,text), '
+    'platform_attachments.fail_artifact_version_v64('
+    'uuid,text,text) to %I',selected_brain
   );
   execute format(
     'grant execute on function '

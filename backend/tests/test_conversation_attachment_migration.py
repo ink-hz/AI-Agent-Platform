@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-# Pytest fixtures are imported into this module's namespace for discovery.
-# ruff: noqa: F401,F811
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+# Pytest fixtures are imported into this module's namespace for discovery.
+# ruff: noqa: F401,F811
 import psycopg
 import pytest
 from psycopg.types.json import Jsonb
@@ -117,6 +119,7 @@ def _insert_attachment(
     context: dict[str, object],
     *,
     state: str = "ready",
+    source_kind: str = "user_input",
 ) -> object:
     attachment_id = uuid4()
     connection.execute(
@@ -124,12 +127,13 @@ def _insert_attachment(
         "(attachment_id,owner_internal_user_id,conversation_id,source_kind,"
         "original_name_ciphertext,original_name_key_version,"
         "object_ref_ciphertext,object_ref_key_version,detected_mime,size_bytes,"
-        "sha256,state,ready_at) values (%s,%s,%s,'user_input',%s,1,%s,1,"
+        "sha256,state,ready_at) values (%s,%s,%s,%s,%s,1,%s,1,"
         "'application/pdf',128,%s,%s,case when %s='ready' then now() end)",
         (
             attachment_id,
             context["owner_id"],
             context["conversation_id"],
+            source_kind,
             b"n" * 29,
             b"r" * 29,
             b"h" * 32,
@@ -160,6 +164,83 @@ def _insert_task_input_binding(
         ),
     )
     connection.commit()
+
+
+def _insert_task_output_binding(
+    connection: psycopg.Connection,
+    context: dict[str, object],
+    attachment_id: object,
+) -> None:
+    connection.execute(
+        "insert into platform_attachments.bindings "
+        "(binding_id,attachment_id,owner_internal_user_id,kind,conversation_id,"
+        "task_id,agent_id) values (%s,%s,%s,'task_output',%s,%s,%s)",
+        (
+            uuid4(),
+            attachment_id,
+            context["owner_id"],
+            context["conversation_id"],
+            context["task_id"],
+            context["agent_id"],
+        ),
+    )
+    connection.commit()
+
+
+def _insert_artifact(
+    connection: psycopg.Connection,
+    context: dict[str, object],
+    artifact_key: str,
+) -> object:
+    artifact_id = uuid4()
+    connection.execute(
+        "insert into platform_attachments.artifacts "
+        "(artifact_id,artifact_key,owner_internal_user_id,conversation_id,"
+        "task_id,agent_id) values (%s,%s,%s,%s,%s,%s)",
+        (
+            artifact_id,
+            artifact_key,
+            context["owner_id"],
+            context["conversation_id"],
+            context["task_id"],
+            context["agent_id"],
+        ),
+    )
+    connection.commit()
+    return artifact_id
+
+
+def _insert_related_task(
+    connection: psycopg.Connection,
+    context: dict[str, object],
+    *,
+    agent_id: str | None = None,
+) -> object:
+    mission_id = uuid4()
+    task_id = uuid4()
+    connection.execute(
+        "insert into platform_control.missions "
+        "(mission_id,owner_internal_user_id,client_request_id,mode,status,"
+        "conversation_id,turn_id,triggering_message_id) "
+        "values (%s,%s,%s,'brain','planning',%s,%s,%s)",
+        (
+            mission_id,
+            context["owner_id"],
+            uuid4(),
+            context["conversation_id"],
+            context["turn_id"],
+            context["message_id"],
+        ),
+    )
+    connection.execute(
+        "insert into platform_control.mission_tasks "
+        "(task_id,mission_id,agent_id,objective_ciphertext,"
+        "encryption_key_version,status,started_at) "
+        "values (%s,%s,%s,%s,1,'running',now())",
+        (task_id, mission_id, agent_id or context["agent_id"], b"o" * 29),
+    )
+    connection.commit()
+    return task_id
 
 
 def _columns(
@@ -386,6 +467,7 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
             "consume_task_grant_v64",
             "consume_output_write_grant_v64",
             "bind_artifact_version_v64",
+            "fail_artifact_version_v64",
         },
         "audit_append": {"append_attachment_access_event_v64"},
         "control_maintenance": {
@@ -550,6 +632,20 @@ def test_v64_processing_retry_is_bounded_without_worker_table_dml(
     with psycopg.connect(environment["admin"]) as admin:
         context = _seed_task(admin)
         attachment_id = _insert_attachment(admin, context, state="validating")
+        upload_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.uploads "
+            "(upload_id,attachment_id,owner_internal_user_id,conversation_id,"
+            "object_ref_ciphertext,object_ref_key_version,state) "
+            "values (%s,%s,%s,%s,%s,1,'validating')",
+            (
+                upload_id,
+                attachment_id,
+                context["owner_id"],
+                context["conversation_id"],
+                b"r" * 29,
+            ),
+        )
         admin.execute(
             "insert into platform_attachments.processing_jobs "
             "(processing_job_id,attachment_id,job_kind,max_attempts) "
@@ -584,6 +680,11 @@ def test_v64_processing_retry_is_bounded_without_worker_table_dml(
             "select state from platform_attachments.attachments where attachment_id=%s",
             (attachment_id,),
         ).fetchone() == ("rejected",)
+        assert admin.execute(
+            "select state,state_reason from platform_attachments.uploads "
+            "where upload_id=%s",
+            (upload_id,),
+        ).fetchone() == ("rejected", "processing_retries_exhausted")
     with (
         psycopg.connect(brain_url) as brain,
         pytest.raises(psycopg.errors.InsufficientPrivilege),
@@ -778,65 +879,12 @@ def test_v64_owner_and_conversation_integrity_rejects_cross_owner_rows(
 
 
 @pytest.mark.postgres
-def test_v64_artifact_idempotency_and_citation_claim_locations(
+def test_v64_citation_requires_site_and_supported_claim_locations(
     control_database,
 ) -> None:
     environment = control_database["environments"]["production"]
     with psycopg.connect(environment["admin"]) as admin:
         context = _seed_task(admin)
-        attachment_id = _insert_attachment(admin, context)
-        artifact_id = uuid4()
-        admin.execute(
-            "insert into platform_attachments.artifacts "
-            "(artifact_id,artifact_key,owner_internal_user_id,conversation_id,"
-            "task_id,agent_id) values (%s,'candidate-report',%s,%s,%s,%s)",
-            (
-                artifact_id,
-                context["owner_id"],
-                context["conversation_id"],
-                context["task_id"],
-                context["agent_id"],
-            ),
-        )
-        version_values = (
-            uuid4(),
-            artifact_id,
-            attachment_id,
-            "producer-version-1",
-            b"n" * 29,
-            b"r" * 29,
-            b"h" * 32,
-        )
-        admin.execute(
-            "insert into platform_attachments.artifact_versions "
-            "(artifact_version_id,artifact_id,attachment_id,version_no,"
-            "producer_version_id,original_name_ciphertext,original_name_key_version,"
-            "object_ref_ciphertext,object_ref_key_version,detected_mime,size_bytes,"
-            "sha256,state,result_status) values (%s,%s,%s,1,%s,%s,1,%s,1,"
-            "'application/pdf',128,%s,'ready','succeeded')",
-            version_values,
-        )
-        with pytest.raises(psycopg.errors.UniqueViolation):
-            admin.execute(
-                "insert into platform_attachments.artifact_versions "
-                "(artifact_version_id,artifact_id,attachment_id,version_no,"
-                "producer_version_id,original_name_ciphertext,"
-                "original_name_key_version,object_ref_ciphertext,"
-                "object_ref_key_version,detected_mime,size_bytes,sha256,state,"
-                "result_status) values (%s,%s,%s,2,%s,%s,1,%s,1,"
-                "'application/pdf',128,%s,'ready','succeeded')",
-                (
-                    uuid4(),
-                    artifact_id,
-                    uuid4(),
-                    "producer-version-1",
-                    b"n" * 29,
-                    b"r" * 29,
-                    b"h" * 32,
-                ),
-            )
-        admin.rollback()
-
         admin.execute(
             "insert into platform_attachments.message_citations "
             "(citation_id,conversation_id,message_id,ordinal,url_ciphertext,"
@@ -870,6 +918,470 @@ def test_v64_artifact_idempotency_and_citation_claim_locations(
 
 
 @pytest.mark.postgres
+def test_v64_artifact_binding_is_idempotent_and_provenance_checked(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        artifact_id = _insert_artifact(admin, context, "candidate-report")
+        ready_output_id = _insert_attachment(
+            admin, context, source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, context, ready_output_id)
+        other_output_id = _insert_attachment(
+            admin, context, source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, context, other_output_id)
+        user_input_id = _insert_attachment(admin, context)
+        _insert_task_output_binding(admin, context, user_input_id)
+        related_task_id = _insert_related_task(admin, context)
+        related_context = {**context, "task_id": related_task_id}
+        unrelated_output_id = _insert_attachment(
+            admin, related_context, source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, related_context, unrelated_output_id)
+        other_agent_task_id = _insert_related_task(
+            admin, context, agent_id="other-agent"
+        )
+        other_agent_context = {
+            **context,
+            "task_id": other_agent_task_id,
+            "agent_id": "other-agent",
+        }
+        other_agent_output_id = _insert_attachment(
+            admin, other_agent_context, source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, other_agent_context, other_agent_output_id)
+        cross_owner = _seed_task(admin)
+        cross_owner_output_id = _insert_attachment(
+            admin, cross_owner, source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, cross_owner, cross_owner_output_id)
+
+    brain_url = environment["urls"]["platform_brain_worker"]
+    version_id = uuid4()
+    with psycopg.connect(brain_url) as brain:
+        bind_sql = (
+            "select platform_attachments.bind_artifact_version_v64("
+            "%s,%s,%s,%s,%s)"
+        )
+        args = (version_id, artifact_id, ready_output_id, 1, "producer-version-1")
+        assert brain.execute(bind_sql, args).fetchone() == (version_id,)
+        assert brain.execute(bind_sql, args).fetchone() == (version_id,)
+        brain.commit()
+
+    with (
+        psycopg.connect(brain_url) as brain,
+        pytest.raises(psycopg.errors.CheckViolation, match="replay conflict"),
+    ):
+        brain.execute(
+            bind_sql,
+            (uuid4(), artifact_id, other_output_id, 2, "producer-version-1"),
+        )
+
+    with (
+        psycopg.connect(brain_url) as brain,
+        pytest.raises(psycopg.errors.CheckViolation, match="agent_output"),
+    ):
+        brain.execute(
+            bind_sql,
+            (uuid4(), artifact_id, user_input_id, 2, "user-input-version"),
+        )
+
+    with (
+        psycopg.connect(brain_url) as brain,
+        pytest.raises(psycopg.errors.CheckViolation, match="task_output"),
+    ):
+        brain.execute(
+            bind_sql,
+            (uuid4(), artifact_id, unrelated_output_id, 2, "unrelated-version"),
+        )
+
+    with (
+        psycopg.connect(brain_url) as brain,
+        pytest.raises(psycopg.errors.CheckViolation, match="task_output"),
+    ):
+        brain.execute(
+            bind_sql,
+            (uuid4(), artifact_id, other_agent_output_id, 2, "other-agent-version"),
+        )
+
+    with (
+        psycopg.connect(brain_url) as brain,
+        pytest.raises(psycopg.errors.CheckViolation, match="attachment invalid"),
+    ):
+        brain.execute(
+            bind_sql,
+            (uuid4(), artifact_id, cross_owner_output_id, 2, "cross-owner-version"),
+        )
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_attachments.artifact_versions "
+            "where artifact_id=%s",
+            (artifact_id,),
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_v64_artifact_versions_have_protected_success_and_failure_paths(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        artifact_id = _insert_artifact(admin, context, "determined-report")
+        ready_output_id = _insert_attachment(
+            admin, context, source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, context, ready_output_id)
+        pending_output_id = _insert_attachment(
+            admin, context, state="scanning", source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, context, pending_output_id)
+        pending_job_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind,state,attempt_count) "
+            "values (%s,%s,'scan','running',1)",
+            (pending_job_id, pending_output_id),
+        )
+        admin.commit()
+
+    brain_url = environment["urls"]["platform_brain_worker"]
+    ready_version_id = uuid4()
+    failed_version_id = uuid4()
+    with psycopg.connect(brain_url) as brain:
+        assert brain.execute(
+            "select platform_attachments.bind_artifact_version_v64("
+            "%s,%s,%s,1,'ready-producer')",
+            (ready_version_id, artifact_id, ready_output_id),
+        ).fetchone() == (ready_version_id,)
+        assert brain.execute(
+            "select platform_attachments.bind_artifact_version_v64("
+            "%s,%s,%s,2,'failed-producer')",
+            (failed_version_id, artifact_id, pending_output_id),
+        ).fetchone() == (failed_version_id,)
+        assert brain.execute(
+            "select platform_attachments.fail_artifact_version_v64("
+            "%s,'rejected','output_processing_failed')",
+            (failed_version_id,),
+        ).fetchone() == (failed_version_id,)
+        brain.commit()
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state,result_status from "
+            "platform_attachments.artifact_versions where artifact_version_id=%s",
+            (ready_version_id,),
+        ).fetchone() == ("ready", "succeeded")
+        assert admin.execute(
+            "select state,result_status,state_reason from "
+            "platform_attachments.artifact_versions where artifact_version_id=%s",
+            (failed_version_id,),
+        ).fetchone() == ("rejected", "failed", "output_processing_failed")
+        assert admin.execute(
+            "select count(*) from platform_attachments.artifact_versions "
+            "where artifact_id=%s and result_status='pending'",
+            (artifact_id,),
+        ).fetchone() == (0,)
+        assert admin.execute(
+            "select state,state_reason from platform_attachments.processing_jobs "
+            "where processing_job_id=%s",
+            (pending_job_id,),
+        ).fetchone() == ("failed", "output_processing_failed")
+
+
+@pytest.mark.postgres
+def test_v64_processing_rejection_determines_bound_artifact_version(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        artifact_id = _insert_artifact(admin, context, "rejected-report")
+        attachment_id = _insert_attachment(
+            admin, context, state="scanning", source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, context, attachment_id)
+        job_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind,state,attempt_count) "
+            "values (%s,%s,'scan','running',1)",
+            (job_id, attachment_id),
+        )
+        admin.commit()
+
+    version_id = uuid4()
+    with psycopg.connect(
+        environment["urls"]["platform_brain_worker"]
+    ) as brain:
+        brain.execute(
+            "select platform_attachments.bind_artifact_version_v64("
+            "%s,%s,%s,1,'rejected-producer')",
+            (version_id, artifact_id, attachment_id),
+        )
+        brain.execute(
+            "select platform_attachments.record_attachment_processing_result_v64("
+            "%s,'rejected','malware_detected')",
+            (job_id,),
+        )
+        brain.commit()
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state,result_status,state_reason from "
+            "platform_attachments.artifact_versions where artifact_version_id=%s",
+            (version_id,),
+        ).fetchone() == ("rejected", "failed", "malware_detected")
+
+
+@pytest.mark.postgres
+def test_v64_deleted_attachment_is_terminal_for_stale_processing_results(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        attachment_id = _insert_attachment(admin, context, state="scanning")
+        processing_job_id = uuid4()
+        erasure_job_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind,state,attempt_count) "
+            "values (%s,%s,'scan','running',1)",
+            (processing_job_id, attachment_id),
+        )
+        admin.execute(
+            "insert into platform_attachments.erasure_jobs "
+            "(erasure_job_id,attachment_id,requested_by_internal_user_id,"
+            "reason_ciphertext,reason_key_version,reason_sha256) "
+            "values (%s,%s,%s,%s,1,%s)",
+            (
+                erasure_job_id,
+                attachment_id,
+                context["owner_id"],
+                b"e" * 29,
+                b"e" * 32,
+            ),
+        )
+        admin.commit()
+
+    with psycopg.connect(
+        environment["urls"]["platform_control_maintenance"]
+    ) as maintenance:
+        claimed_id = maintenance.execute(
+            "select (platform_attachments."
+            "claim_attachment_erasure_job_v64('terminal-worker')).erasure_job_id"
+        ).fetchone()[0]
+        assert claimed_id == erasure_job_id
+        maintenance.execute(
+            "select platform_attachments.record_attachment_erasure_result_v64("
+            "%s,'completed','owner_erased','{}'::jsonb)",
+            (erasure_job_id,),
+        )
+        maintenance.commit()
+
+    with (
+        psycopg.connect(environment["urls"]["platform_brain_worker"]) as brain,
+        pytest.raises(
+            (psycopg.errors.CheckViolation, psycopg.errors.NoDataFound),
+            match="deleted|unavailable",
+        ),
+    ):
+        brain.execute(
+            "select platform_attachments.record_attachment_processing_result_v64("
+            "%s,'ready',null)",
+            (processing_job_id,),
+        )
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state,deleted_at is not null from "
+            "platform_attachments.attachments where attachment_id=%s",
+            (attachment_id,),
+        ).fetchone() == ("deleted", True)
+        assert admin.execute(
+            "select count(*) from platform_attachments.processing_jobs "
+            "where attachment_id=%s and job_kind='derive'",
+            (attachment_id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_v64_erasure_serializes_against_inflight_derivative_persistence(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        attachment_id = _insert_attachment(admin, context)
+        processing_job_id = uuid4()
+        erasure_job_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind,derivative_kind,state,"
+            "attempt_count) values (%s,%s,'derive','preview','running',1)",
+            (processing_job_id, attachment_id),
+        )
+        admin.execute(
+            "insert into platform_attachments.erasure_jobs "
+            "(erasure_job_id,attachment_id,requested_by_internal_user_id,"
+            "reason_ciphertext,reason_key_version,reason_sha256) "
+            "values (%s,%s,%s,%s,1,%s)",
+            (
+                erasure_job_id,
+                attachment_id,
+                context["owner_id"],
+                b"e" * 29,
+                b"e" * 32,
+            ),
+        )
+        admin.commit()
+
+    brain_url = environment["urls"]["platform_brain_worker"]
+    with psycopg.connect(brain_url) as brain:
+        brain.execute("set transaction isolation level repeatable read")
+        assert brain.execute(
+            "select state from platform_attachments.attachments "
+            "where attachment_id=%s",
+            (attachment_id,),
+        ).fetchone() == ("ready",)
+
+        with psycopg.connect(
+            environment["urls"]["platform_control_maintenance"]
+        ) as maintenance:
+            assert maintenance.execute(
+                "select (platform_attachments."
+                "claim_attachment_erasure_job_v64('derivative-eraser'))."
+                "erasure_job_id"
+            ).fetchone() == (erasure_job_id,)
+            maintenance.execute(
+                "select platform_attachments.record_attachment_erasure_result_v64("
+                "%s,'completed','owner_erased','{}'::jsonb)",
+                (erasure_job_id,),
+            )
+            maintenance.commit()
+
+        with pytest.raises(
+            (
+                psycopg.errors.SerializationFailure,
+                psycopg.errors.CheckViolation,
+                psycopg.errors.NoDataFound,
+            )
+        ):
+            brain.execute(
+                "select platform_attachments.record_attachment_derivative_v64("
+                "%s,%s,'preview',%s,1,'application/pdf',64,%s,null)",
+                (processing_job_id, uuid4(), b"d" * 29, b"p" * 32),
+            )
+        brain.rollback()
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_attachments.derivatives "
+            "where attachment_id=%s and state='ready'",
+            (attachment_id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_v64_claim_result_and_erasure_use_deadlock_free_lock_order(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        attachment_id = _insert_attachment(admin, context, state="scanning")
+        processing_job_id = uuid4()
+        erasure_job_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind) values (%s,%s,'scan')",
+            (processing_job_id, attachment_id),
+        )
+        admin.execute(
+            "insert into platform_attachments.erasure_jobs "
+            "(erasure_job_id,attachment_id,requested_by_internal_user_id,"
+            "reason_ciphertext,reason_key_version,reason_sha256) "
+            "values (%s,%s,%s,%s,1,%s)",
+            (
+                erasure_job_id,
+                attachment_id,
+                context["owner_id"],
+                b"e" * 29,
+                b"e" * 32,
+            ),
+        )
+        admin.commit()
+
+    maintenance_url = environment["urls"]["platform_control_maintenance"]
+    with psycopg.connect(maintenance_url) as maintenance:
+        assert maintenance.execute(
+            "select (platform_attachments."
+            "claim_attachment_erasure_job_v64('lock-order-eraser')).erasure_job_id"
+        ).fetchone() == (erasure_job_id,)
+        maintenance.commit()
+
+    marker = f"attachment-erasure-{uuid4()}"
+
+    def erase_attachment() -> None:
+        with psycopg.connect(maintenance_url, application_name=marker) as maintenance:
+            maintenance.execute(
+                "select platform_attachments.record_attachment_erasure_result_v64("
+                "%s,'completed','owner_erased','{}'::jsonb)",
+                (erasure_job_id,),
+            )
+            maintenance.commit()
+
+    brain_url = environment["urls"]["platform_brain_worker"]
+    with psycopg.connect(brain_url) as brain:
+        assert brain.execute(
+            "select (platform_attachments."
+            "claim_attachment_processing_job_v64('lock-order-worker'))."
+            "processing_job_id"
+        ).fetchone() == (processing_job_id,)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            erasure_future = executor.submit(erase_attachment)
+            deadline = time.monotonic() + 3
+            with psycopg.connect(environment["admin"]) as admin:
+                while time.monotonic() < deadline:
+                    wait_event_type = admin.execute(
+                        "select wait_event_type from pg_stat_activity "
+                        "where application_name=%s",
+                        (marker,),
+                    ).fetchone()
+                    if wait_event_type == ("Lock",):
+                        break
+                    time.sleep(0.01)
+                else:
+                    pytest.fail("erasure did not block on the claimed processing job")
+
+            brain.execute(
+                "select platform_attachments.record_attachment_processing_result_v64("
+                "%s,'ready',null)",
+                (processing_job_id,),
+            )
+            brain.commit()
+            erasure_future.result(timeout=3)
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state,deleted_at is not null from "
+            "platform_attachments.attachments where attachment_id=%s",
+            (attachment_id,),
+        ).fetchone() == ("deleted", True)
+        assert admin.execute(
+            "select count(*) from platform_attachments.derivatives "
+            "where attachment_id=%s and state='ready'",
+            (attachment_id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
 def test_v64_erasure_removes_deleted_version_from_current_view(
     control_database,
 ) -> None:
@@ -877,6 +1389,20 @@ def test_v64_erasure_removes_deleted_version_from_current_view(
     with psycopg.connect(environment["admin"]) as admin:
         context = _seed_task(admin)
         attachment_id = _insert_attachment(admin, context)
+        upload_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.uploads "
+            "(upload_id,attachment_id,owner_internal_user_id,conversation_id,"
+            "object_ref_ciphertext,object_ref_key_version,state) "
+            "values (%s,%s,%s,%s,%s,1,'ready')",
+            (
+                upload_id,
+                attachment_id,
+                context["owner_id"],
+                context["conversation_id"],
+                b"r" * 29,
+            ),
+        )
         artifact_id = uuid4()
         version_id = uuid4()
         admin.execute(
@@ -945,10 +1471,77 @@ def test_v64_erasure_removes_deleted_version_from_current_view(
             is None
         )
         assert admin.execute(
-            "select state from platform_attachments.artifact_versions "
+            "select state,result_status from platform_attachments.artifact_versions "
             "where artifact_version_id=%s",
             (version_id,),
-        ).fetchone() == ("deleted",)
+        ).fetchone() == ("deleted", "succeeded")
+        assert admin.execute(
+            "select state,state_reason from platform_attachments.uploads "
+            "where upload_id=%s",
+            (upload_id,),
+        ).fetchone() == ("deleted", None)
+
+
+@pytest.mark.postgres
+def test_v64_erasure_determines_pending_artifact_version_as_failed(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        artifact_id = _insert_artifact(admin, context, "pending-erasure-report")
+        attachment_id = _insert_attachment(
+            admin, context, state="scanning", source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, context, attachment_id)
+        erasure_job_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.erasure_jobs "
+            "(erasure_job_id,attachment_id,requested_by_internal_user_id,"
+            "reason_ciphertext,reason_key_version,reason_sha256) "
+            "values (%s,%s,%s,%s,1,%s)",
+            (
+                erasure_job_id,
+                attachment_id,
+                context["owner_id"],
+                b"e" * 29,
+                b"e" * 32,
+            ),
+        )
+        admin.commit()
+
+    version_id = uuid4()
+    with psycopg.connect(
+        environment["urls"]["platform_brain_worker"]
+    ) as brain:
+        brain.execute(
+            "select platform_attachments.bind_artifact_version_v64("
+            "%s,%s,%s,1,'pending-erasure-producer')",
+            (version_id, artifact_id, attachment_id),
+        )
+        brain.commit()
+
+    with psycopg.connect(
+        environment["urls"]["platform_control_maintenance"]
+    ) as maintenance:
+        assert maintenance.execute(
+            "select (platform_attachments."
+            "claim_attachment_erasure_job_v64('pending-version-eraser'))."
+            "erasure_job_id"
+        ).fetchone() == (erasure_job_id,)
+        maintenance.execute(
+            "select platform_attachments.record_attachment_erasure_result_v64("
+            "%s,'completed','owner_erased','{}'::jsonb)",
+            (erasure_job_id,),
+        )
+        maintenance.commit()
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state,result_status,state_reason from "
+            "platform_attachments.artifact_versions where artifact_version_id=%s",
+            (version_id,),
+        ).fetchone() == ("deleted", "failed", "owner_erased")
 
 
 def _seed_feedback_target(connection: psycopg.Connection) -> dict[str, object]:
