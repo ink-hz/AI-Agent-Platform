@@ -1000,7 +1000,7 @@ def create_app(
         attachment_service = build_attachment_service(config)
     if (
         identity_enabled
-        and config.attachment_enabled
+        and config.conversation_attachment_enabled
         and all(
             service is None
             for service in (
@@ -1011,7 +1011,6 @@ def create_app(
                 citation_service,
             )
         )
-        and not cloud_mode
     ):
         (
             conversation_attachment_upload_service,

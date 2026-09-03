@@ -55,7 +55,7 @@ class ClamAVScanner:
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
-        if host not in {"127.0.0.1", "::1", "localhost"}:
+        if host not in {"127.0.0.1", "::1", "localhost", "platform-clamav"}:
             raise ValueError("attachment scanner host invalid")
         if (
             isinstance(port, bool)
@@ -85,6 +85,10 @@ class ClamAVScanner:
         self._connect = connect
         self._now = now
         self._monotonic = monotonic
+
+    def database_version(self) -> int:
+        """Return the current signature version only when the database is fresh."""
+        return self._fresh_database_version(self._monotonic() + self._timeout_seconds)
 
     def __repr__(self) -> str:
         return "ClamAVScanner(address=<redacted>)"

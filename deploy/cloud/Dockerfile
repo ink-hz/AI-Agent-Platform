@@ -12,6 +12,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 WORKDIR /app/backend
 COPY backend/requirements.cloud.txt ./requirements.cloud.txt
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+      bubblewrap \
+      clamav \
+      libmagic1 \
+      poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir --requirement requirements.cloud.txt \
     && groupadd --gid 10001 platform \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin platform

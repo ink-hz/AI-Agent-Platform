@@ -2377,7 +2377,7 @@ begin
   if selected_worker_id is null or char_length(selected_worker_id) not between 1 and 128
   then raise check_violation using message='Erasure worker invalid'; end if;
   select * into selected_job from platform_attachments.erasure_jobs
-  where state='queued' and available_at <= now()
+  where state in ('queued','partial') and available_at <= now()
   order by available_at,created_at for update skip locked limit 1;
   if not found then return null; end if;
   update platform_attachments.erasure_jobs set
@@ -2385,6 +2385,86 @@ begin
     attempt_count=attempt_count+1
   where erasure_job_id=selected_job.erasure_job_id returning * into selected_job;
   return selected_job;
+end
+$function$;
+
+create function platform_attachments.schedule_attachment_retention_v64(
+  selected_erasure_job_id uuid,
+  selected_attachment_id uuid,
+  selected_reason_ciphertext bytea,
+  selected_reason_key_version integer,
+  selected_reason_sha256 bytea
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare selected_owner_internal_user_id uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_maintenance','platform_control_maintenance_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_maintenance')
+  then raise insufficient_privilege using message='Attachment retention caller invalid'; end if;
+  if selected_erasure_job_id is null or selected_attachment_id is null
+     or octet_length(selected_reason_ciphertext) not between 29 and 1048576
+     or selected_reason_key_version <= 0
+     or octet_length(selected_reason_sha256) <> 32
+  then raise check_violation using message='Attachment retention request invalid'; end if;
+  select attachment.owner_internal_user_id into selected_owner_internal_user_id
+  from platform_attachments.attachments attachment
+  where attachment.attachment_id=selected_attachment_id
+    and attachment.state <> 'deleted'
+    and (
+      attachment.retained_until <= now()
+      or exists (
+        select 1 from platform_attachments.uploads upload
+        where upload.attachment_id=attachment.attachment_id
+          and upload.state='uploading' and upload.expires_at <= now()
+      )
+    )
+  for update;
+  if selected_owner_internal_user_id is null then
+    raise no_data_found using message='Attachment retention target unavailable';
+  end if;
+  if exists (
+    select 1 from platform_attachments.erasure_jobs erasure
+    where erasure.attachment_id=selected_attachment_id
+      and erasure.state in ('queued','running','partial')
+  ) then return selected_attachment_id; end if;
+  insert into platform_attachments.erasure_jobs(
+    erasure_job_id,attachment_id,requested_by_internal_user_id,
+    reason_ciphertext,reason_key_version,reason_sha256
+  ) values (
+    selected_erasure_job_id,selected_attachment_id,selected_owner_internal_user_id,
+    selected_reason_ciphertext,selected_reason_key_version,selected_reason_sha256
+  );
+  return selected_attachment_id;
+end
+$function$;
+
+create function platform_attachments.expire_task_grants_v64(
+  selected_limit integer
+) returns integer
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare affected integer;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_maintenance','platform_control_maintenance_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_maintenance')
+  then raise insufficient_privilege using message='Attachment grant expiry caller invalid'; end if;
+  if selected_limit is null or selected_limit not between 1 and 500 then
+    raise check_violation using message='Attachment grant expiry limit invalid';
+  end if;
+  with selected as (
+    select grant_id from platform_attachments.task_grants
+    where revoked_at is null and expires_at <= now()
+    order by expires_at,grant_id for update skip locked limit selected_limit
+  )
+  update platform_attachments.task_grants grant_row set revoked_at=now()
+  from selected where grant_row.grant_id=selected.grant_id;
+  get diagnostics affected = row_count;
+  return affected;
 end
 $function$;
 
@@ -2422,14 +2502,32 @@ begin
   update platform_attachments.erasure_jobs set state=selected_state,
     state_reason=selected_state_reason,
     downstream_cleanup_status=selected_downstream_cleanup_status,
-    completed_at=now()
+    reason_ciphertext=case when selected_state='completed'
+      then decode(repeat('00',29),'hex') else reason_ciphertext end,
+    reason_key_version=case when selected_state='completed'
+      then 1 else reason_key_version end,
+    available_at=case when selected_state='partial'
+      then now() + interval '5 minutes' else available_at end,
+    completed_at=case when selected_state='partial' then null else now() end
   where erasure_job_id=selected_erasure_job_id;
-  if selected_state in ('completed','partial') then
+  if selected_state='completed' then
     update platform_attachments.attachments set
-      state='deleted',state_reason=selected_state_reason,deleted_at=now()
+      state='deleted',state_reason=selected_state_reason,deleted_at=now(),
+      original_name_ciphertext=decode(repeat('00',29),'hex'),
+      original_name_key_version=1,
+      object_ref_ciphertext=decode(repeat('00',29),'hex'),
+      object_ref_key_version=1,declared_mime=null,detected_mime=null,
+      immutable_locator=null,coverage_metadata=null
     where attachment_id=selected_attachment_id;
     update platform_attachments.uploads set
-      state='deleted',state_reason=selected_state_reason
+      state='deleted',state_reason=selected_state_reason,
+      object_ref_ciphertext=decode(repeat('00',29),'hex'),
+      object_ref_key_version=1,declared_mime=null,detected_mime=null,
+      immutable_locator=null,coverage_metadata=null
+    where attachment_id=selected_attachment_id;
+    update platform_attachments.upload_write_attempts set
+      object_ref_ciphertext=decode(repeat('00',29),'hex'),
+      object_ref_key_version=1
     where attachment_id=selected_attachment_id;
     update platform_attachments.task_grants set revoked_at=now()
     where attachment_id=selected_attachment_id and revoked_at is null;
@@ -2439,11 +2537,18 @@ begin
       and state in ('queued','running');
     update platform_attachments.artifact_versions set
       state='deleted',state_reason=selected_state_reason,
+      original_name_ciphertext=decode(repeat('00',29),'hex'),
+      original_name_key_version=1,
+      object_ref_ciphertext=decode(repeat('00',29),'hex'),
+      object_ref_key_version=1,detected_mime=null,immutable_locator=null,
+      coverage_metadata=null,
       result_status=case when result_status='pending'
         then 'failed' else result_status end
     where attachment_id=selected_attachment_id;
     update platform_attachments.derivatives set
-      state='deleted',state_reason=selected_state_reason
+      state='deleted',state_reason=selected_state_reason,
+      object_ref_ciphertext=decode(repeat('00',29),'hex'),
+      object_ref_key_version=1,detected_mime=null
     where attachment_id=selected_attachment_id and state <> 'deleted';
   end if;
 end
@@ -2904,6 +3009,9 @@ begin
   );
   execute format(
     'grant execute on function '
+    'platform_attachments.expire_task_grants_v64(integer), '
+    'platform_attachments.schedule_attachment_retention_v64('
+    'uuid,uuid,bytea,integer,bytea), '
     'platform_attachments.claim_attachment_erasure_job_v64(text), '
     'platform_attachments.record_attachment_erasure_result_v64('
     'uuid,text,text,jsonb) to %I',selected_maintenance

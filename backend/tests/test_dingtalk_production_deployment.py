@@ -175,13 +175,16 @@ def _run_release_harness(
     release = platform_root / "releases" / ("a" * 40)
     previous = platform_root / "releases" / ("b" * 40)
     private = platform_root / "private"
+    data_root = tmp_path / "data" / "orbbec-agent-platform"
+    release_metadata = data_root / "release-metadata" / ("a" * 40)
     nginx_available = tmp_path / "etc" / "nginx" / "sites-available" / "agent-domain.conf"
     nginx_enabled = tmp_path / "etc" / "nginx" / "sites-enabled" / "agent-domain.conf"
-    backup_root = tmp_path / "root" / "nginx-backups"
+    backup_root = tmp_path / "data" / "archive" / "orbbec-agent-platform" / "nginx"
     for path in (
         release / "deploy" / "cloud",
         previous / "deploy" / "cloud",
         private,
+        release_metadata,
         nginx_available.parent,
         nginx_enabled.parent,
         backup_root,
@@ -227,8 +230,12 @@ def _run_release_harness(
         (root / "deploy" / "cloud" / "compose.yaml").write_text(
             "services: {}\n", encoding="utf-8"
         )
-    (release / "PREVIOUS_RELEASE").write_text(str(previous) + "\n", encoding="utf-8")
-    (release / "PREVIOUS_PLATFORM_ENV").write_text("safe\n", encoding="utf-8")
+    (release_metadata / "PREVIOUS_RELEASE").write_text(
+        str(previous) + "\n", encoding="utf-8"
+    )
+    (release_metadata / "PREVIOUS_PLATFORM_ENV").write_text(
+        "safe\n", encoding="utf-8"
+    )
     (release / "deploy" / "cloud" / "dingtalk_nginx_transaction.py").write_text(
         "from pathlib import Path\nimport sys\nPath(sys.argv[2]).write_text(Path(sys.argv[1]).read_text())\n",
         encoding="utf-8",
@@ -247,7 +254,7 @@ def _run_release_harness(
                 f"BACKUP_PATH={backup_root / 'prior'}",
                 f"RELEASE_PATH={release}",
                 f"PREVIOUS_RELEASE={previous}",
-                f"PREVIOUS_ENVIRONMENT={release / 'PREVIOUS_PLATFORM_ENV'}",
+                f"PREVIOUS_ENVIRONMENT={release_metadata / 'PREVIOUS_PLATFORM_ENV'}",
                 "FAE_ID=fae-id",
                 "FAE_STARTED_AT=fae-start",
                 f"OWNER_BOOTSTRAP={1 if owner_bootstrap else 0}",
@@ -395,6 +402,8 @@ def _run_release_harness(
     script = (CLOUD / script_name).read_text(encoding="utf-8")
     replacements = {
         "/opt/orbbec-agent-platform": str(platform_root),
+        "/data/orbbec-agent-platform": str(data_root),
+        "/data/archive/orbbec-agent-platform/nginx": str(backup_root),
         "/etc/nginx/sites-available/agent-domain.conf": str(nginx_available),
         "/etc/nginx/sites-enabled/agent-domain.conf": str(nginx_enabled),
         "/root/nginx-backups": str(backup_root),
@@ -562,6 +571,10 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert set(services) == {
         "platform-postgres",
         "platform-api",
+        "platform-minio",
+        "platform-attachment-storage-init",
+        "platform-clamav",
+        "platform-attachments",
         "platform-loopback",
         "platform-directory",
         "platform-dingtalk-stream",

@@ -43,7 +43,11 @@ def test_compose_is_isolated_loopback_only_and_hardened():
 
     assert set(services) == {
         "platform-api",
+        "platform-attachment-storage-init",
+        "platform-attachments",
+        "platform-clamav",
         "platform-loopback",
+        "platform-minio",
         "platform-postgres",
         "platform-directory",
         "platform-dingtalk-stream",
@@ -96,6 +100,16 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert services["platform-api"]["environment"]["PLATFORM_HOST"] == "127.0.0.1"
     assert services["platform-api"]["environment"]["PLATFORM_REVIEW_ENABLED"] == "0"
     assert services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_ENABLED"] == "0"
+    assert (
+        services["platform-api"]["environment"][
+            "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED"
+        ]
+        == "1"
+    )
+    assert (
+        services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_S3_ENDPOINT"]
+        == "http://platform-minio:9000"
+    )
     assert (
         services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_ENABLED"] == "1"
     )
@@ -155,8 +169,29 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         "platform-api-secrets:/run/secrets:ro"
     ]
     assert services["platform-postgres"]["volumes"] == [
-        "platform-postgres-data:/var/lib/postgresql/data",
+        "/data/orbbec-agent-platform/postgres:/var/lib/postgresql/data",
         "platform-postgres-secrets:/run/secrets:ro",
+    ]
+    assert "ports" not in services["platform-minio"]
+    assert services["platform-minio"]["networks"] == {
+        "platform-internal": {"ipv4_address": "172.30.0.8"}
+    }
+    assert services["platform-minio"]["volumes"] == [
+        "/data/orbbec-agent-platform/attachments:/data",
+        "platform-attachment-storage-secrets:/run/secrets:ro",
+    ]
+    assert "ports" not in services["platform-clamav"]
+    assert services["platform-clamav"]["networks"] == {
+        "platform-internal": {"ipv4_address": "172.30.0.9"}
+    }
+    worker = services["platform-attachments"]
+    assert worker["command"] == [
+        "python", "-m", "app.attachments.worker_runtime", "all"
+    ]
+    assert set(worker["networks"]) == {"platform-internal"}
+    assert "platform-edge" not in worker["networks"]
+    assert worker["healthcheck"]["test"] == [
+        "CMD", "python", "-m", "app.attachments.worker_runtime", "healthcheck"
     ]
     serialized = (CLOUD / "compose.yaml").read_text(encoding="utf-8").lower()
     for forbidden in ("langfuse", "nginx", "ai-fae", "fae-backend"):
@@ -187,6 +222,8 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
     assert "uvicorn" in dockerfile
     assert '"--no-proxy-headers"' in dockerfile
     assert "brain-model.release.json" in dockerfile
+    for runtime_package in ("bubblewrap", "clamav", "libmagic1", "poppler-utils"):
+        assert runtime_package in dockerfile
     for forbidden in (
         "copy .git",
         "copy backend/tests",
@@ -194,6 +231,39 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
         "identity-hmac",
     ):
         assert forbidden not in dockerfile
+
+
+def test_release_scripts_enforce_data_disk_and_bounded_retention() -> None:
+    deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
+    stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    for required in (
+        "df -B1 / /data",
+        "26843545600",  # 25 GiB pre-deploy root availability
+        "21474836480",  # 20 GiB predicted post-staging availability
+        "/data/staging/orbbec-agent-platform/",
+        "/data/archive/orbbec-agent-platform/releases",
+        "deployment_id",
+    ):
+        assert required in deploy or required in stage
+    assert "current + two rollback" in stage
+    assert "archive retention: ten releases or thirty days" in stage
+    assert "docker system prune" not in deploy
+    assert "docker system prune" not in stage
+    assert "rm -rf /data/staging" not in deploy
+    assert "rm -rf /data/staging" not in stage
+    assert '"$release_path/PREVIOUS_RELEASE"' not in stage
+    assert '"$release_path/PREVIOUS_PLATFORM_ENV"' not in stage
+
+
+def test_backups_cover_control_database_and_attachment_objects_on_data_disk() -> None:
+    backup = (CLOUD / "backup.sh").read_text(encoding="utf-8")
+
+    assert "backup_path=/data/orbbec-agent-platform/backups" in backup
+    assert "attachment_path=/data/orbbec-agent-platform/attachments" in backup
+    assert "agent_platform_control" in backup
+    assert 'object_backup_name="attachments-$timestamp.orb"' in backup
+    assert "docker volume create orbbec-agent-platform-backups" not in backup
 
 
 def test_cloud_registry_and_contract_have_no_source_coordinates():

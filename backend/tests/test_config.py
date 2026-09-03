@@ -264,6 +264,7 @@ def test_review_writer_config_defaults(monkeypatch) -> None:
 
 ATTACHMENT_ENV = (
     "PLATFORM_ATTACHMENT_ENABLED",
+    "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED",
     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
     "PLATFORM_ATTACHMENT_S3_BUCKET",
     "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
@@ -297,6 +298,7 @@ def test_attachment_defaults_are_disabled_and_need_no_secret_files(monkeypatch) 
     config = load_config()
 
     assert config.attachment_enabled is False
+    assert config.conversation_attachment_enabled is False
     assert config.attachment_s3_bucket == "orbbec-agent-attachments"
     assert config.attachment_ticket_seconds == 300
     assert config.attachment_upload_ttl_seconds == 24 * 60 * 60
@@ -355,6 +357,24 @@ def test_enabled_attachment_config_accepts_loopback_and_mode_0600_files(
     assert config.attachment_control_database_url_file == str(control)
     assert "archive-access" not in repr(config)
     assert "archive-secret" not in repr(config)
+
+
+def test_conversation_attachment_config_accepts_exact_private_storage_without_flywheel(
+    monkeypatch, tmp_path
+) -> None:
+    access, secret, _analyst, control = _enable_attachments(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_ENABLED", "0")
+    monkeypatch.setenv("PLATFORM_CONVERSATION_ATTACHMENT_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://platform-minio:9000")
+    monkeypatch.setenv("PLATFORM_FLYWHEEL_DATABASE_URL_FILE", str(tmp_path / "absent"))
+
+    config = load_config()
+
+    assert config.attachment_enabled is False
+    assert config.conversation_attachment_enabled is True
+    assert config.attachment_s3_access_key_file == str(access)
+    assert config.attachment_s3_secret_key_file == str(secret)
+    assert config.attachment_control_database_url_file == str(control)
 
 
 @pytest.mark.parametrize(

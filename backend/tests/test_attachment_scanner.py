@@ -108,6 +108,13 @@ def scanner_with(
     return scanner, factory
 
 
+def test_clamav_allows_only_loopback_or_the_private_compose_service() -> None:
+    ClamAVScanner(host="platform-clamav")
+
+    with pytest.raises(ValueError, match="attachment scanner host invalid"):
+        ClamAVScanner(host="clamav.example.com")
+
+
 def test_clamav_uses_bounded_instream_protocol_for_clean_content() -> None:
     scanner, factory = scanner_with(FRESH_VERSION, b"stream: OK\0")
     chunks = bounded(b"abc", b"def")

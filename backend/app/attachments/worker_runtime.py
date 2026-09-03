@@ -5,8 +5,10 @@ import hashlib
 import json
 import os
 import secrets
+import sys
 from collections.abc import Callable
 from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -21,7 +23,9 @@ from app.local_secrets import read_secret_file
 
 from .conversation_repository import attachment_object_subject
 from .derivatives import BubblewrapPdfSandbox, Derivative, DerivativeBuilder
+from .erasure import AttachmentErasureRepository, AttachmentErasureService
 from .object_writer import _credential
+from .retention import AttachmentRetentionRepository, AttachmentRetentionService
 from .scanner import ClamAVScanner
 from .validation import AttachmentValidator, OpenedObject, ValidationResult
 from .worker import (
@@ -409,24 +413,13 @@ def _required_absolute_path(name: str) -> Path:
     return path
 
 
-def build_processor() -> AttachmentProcessor:
+def _build_s3_client():
     import boto3
     from botocore.config import Config as BotoConfig
 
-    database_file = _required_absolute_path(
-        "PLATFORM_ATTACHMENT_WORKER_DATABASE_URL_FILE"
-    )
-    keyring_file = _required_absolute_path("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE")
     access_file = _required_absolute_path("PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE")
     secret_file = _required_absolute_path("PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE")
-    database_url = read_secret_file(str(database_file))
-    keyring = IdentityKeyring.from_file(
-        str(keyring_file),
-        expected_purpose="platform-content-encryption",
-        expected_key_length=32,
-    )
-    codec = ContentCodec(keyring)
-    client = boto3.client(
+    return boto3.client(
         "s3",
         endpoint_url=os.getenv("PLATFORM_ATTACHMENT_S3_ENDPOINT", "").strip(),
         region_name="us-east-1",
@@ -439,6 +432,34 @@ def build_processor() -> AttachmentProcessor:
             retries={"max_attempts": 2},
         ),
     )
+
+
+def _build_content_codec() -> ContentCodec:
+    keyring_file = _required_absolute_path("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE")
+    keyring = IdentityKeyring.from_file(
+        str(keyring_file),
+        expected_purpose="platform-content-encryption",
+        expected_key_length=32,
+    )
+    return ContentCodec(keyring)
+
+
+def _scanner() -> ClamAVScanner:
+    return ClamAVScanner(
+        host=os.getenv("PLATFORM_ATTACHMENT_CLAMAV_HOST", "127.0.0.1").strip(),
+        port=int(os.getenv("PLATFORM_ATTACHMENT_CLAMAV_PORT", "3310")),
+    )
+
+
+def build_processor(
+    *, content_codec: ContentCodec | None = None, client=None
+) -> AttachmentProcessor:
+    database_file = _required_absolute_path(
+        "PLATFORM_ATTACHMENT_WORKER_DATABASE_URL_FILE"
+    )
+    database_url = read_secret_file(str(database_file))
+    codec = content_codec or _build_content_codec()
+    client = client or _build_s3_client()
     worker_id = os.getenv(
         "PLATFORM_ATTACHMENT_WORKER_ID",
         f"platform-attachments.{secrets.token_hex(4)}",
@@ -452,7 +473,7 @@ def build_processor() -> AttachmentProcessor:
             os.getenv("PLATFORM_ATTACHMENT_S3_BUCKET", "orbbec-agent-attachments"),
         ),
         validator=AttachmentValidator(),
-        scanner=ClamAVScanner(),
+        scanner=_scanner(),
         derivatives=DerivativeBuilder(
             sandbox_runner=BubblewrapPdfSandbox(
                 bubblewrap_path=bubblewrap,
@@ -460,6 +481,23 @@ def build_processor() -> AttachmentProcessor:
             )
         ),
         worker_id=worker_id,
+    )
+
+
+def build_maintenance_services(*, content_codec: ContentCodec, object_store):
+    database_file = _required_absolute_path(
+        "PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE"
+    )
+    database_url = read_secret_file(str(database_file))
+    return (
+        AttachmentRetentionService(
+            AttachmentRetentionRepository(database_url, content_codec=content_codec),
+            clock=lambda: datetime.now(UTC),
+        ),
+        AttachmentErasureService(
+            AttachmentErasureRepository(database_url, content_codec=content_codec),
+            object_store,
+        ),
     )
 
 
@@ -487,12 +525,94 @@ async def run(
             await sleep(1.0)
 
 
-def main() -> None:
+async def run_all(
+    *,
+    sleep: Callable[[float], Any] = asyncio.sleep,
+    max_iterations: int | None = None,
+) -> None:
+    codec = _build_content_codec()
+    client = _build_s3_client()
+    object_store = S3ProcessingObjectStore(
+        client, os.getenv("PLATFORM_ATTACHMENT_S3_BUCKET", "orbbec-agent-attachments")
+    )
+    processor = build_processor(content_codec=codec, client=client)
+    retention, erasure = build_maintenance_services(
+        content_codec=codec, object_store=object_store
+    )
+    worker_id = os.getenv(
+        "PLATFORM_ATTACHMENT_WORKER_ID", f"platform-attachments.{secrets.token_hex(4)}"
+    ).strip()
+    failures = 0
+    iterations = 0
+    next_retention = 0.0
     try:
-        asyncio.run(run())
+        while max_iterations is None or iterations < max_iterations:
+            iterations += 1
+            changed = False
+            try:
+                changed = await processor.process_next()
+                now = asyncio.get_running_loop().time()
+                if now >= next_retention:
+                    changed = bool(retention.run_once()) or changed
+                    next_retention = now + 60.0
+                changed = erasure.process_next(worker_id) or changed
+                failures = 0
+            except Exception:  # noqa: BLE001 - jobs remain retryable after failures
+                failures += 1
+                await sleep(min(30.0, float(2 ** min(failures - 1, 5))))
+                continue
+            await sleep(0.05 if changed else 1.0)
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
+
+def healthcheck() -> int:
+    client = None
+    try:
+        for name, purpose in (
+            ("PLATFORM_ATTACHMENT_WORKER_DATABASE_URL_FILE", "brain"),
+            ("PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE", "maintenance"),
+        ):
+            database_url = read_secret_file(str(_required_absolute_path(name)))
+            validate_control_dsn(database_url, purpose=purpose)
+            with psycopg.connect(
+                database_url,
+                connect_timeout=3,
+                options="-c statement_timeout=3000 -c timezone=UTC",
+            ) as connection:
+                connection.execute("select 1").fetchone()
+        client = _build_s3_client()
+        client.head_bucket(
+            Bucket=os.getenv(
+                "PLATFORM_ATTACHMENT_S3_BUCKET", "orbbec-agent-attachments"
+            )
+        )
+        _scanner().database_version()
+        return 0
+    except Exception:  # noqa: BLE001 - healthcheck is intentionally fail closed
+        return 1
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
+
+def main(argv: list[str] | None = None) -> int:
+    selected = list(sys.argv[1:] if argv is None else argv)
+    if selected == ["healthcheck"]:
+        return healthcheck()
+    if selected != ["all"]:
+        return 1
+    try:
+        asyncio.run(run_all())
     except KeyboardInterrupt:
-        return
+        return 0
+    except Exception:  # noqa: BLE001 - CLI exposes only a fail-closed status
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

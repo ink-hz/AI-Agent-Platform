@@ -22,6 +22,7 @@ transaction="$release_path/deploy/cloud/dingtalk_nginx_transaction.py"
 [[ -f "$transaction" && ! -L "$transaction" ]] || fail
 
 platform_root=/opt/orbbec-agent-platform
+release_metadata_path="/data/orbbec-agent-platform/release-metadata/$release_sha"
 cutover_lock_token="${PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN:-}"
 [[ "$cutover_lock_token" =~ ^[0-9a-f-]{36}$ \
   && -d "$platform_root/private/agent-brain-action.lock" \
@@ -35,8 +36,8 @@ agent_enabled=/etc/nginx/sites-enabled/agent-domain.conf
 state_path="$platform_root/private/dingtalk-production-cutover"
 [[ -f "$environment_path" && -f "$compose_path" && -f "$agent_available" ]] || fail
 [[ ! -e "$state_path" ]] || fail
-[[ -f "$release_path/PREVIOUS_RELEASE" && -f "$release_path/PREVIOUS_PLATFORM_ENV" ]] || fail
-previous_release="$(/usr/bin/tr -d '\n' < "$release_path/PREVIOUS_RELEASE")"
+[[ -f "$release_metadata_path/PREVIOUS_RELEASE" && -f "$release_metadata_path/PREVIOUS_PLATFORM_ENV" ]] || fail
+previous_release="$(/usr/bin/tr -d '\n' < "$release_metadata_path/PREVIOUS_RELEASE")"
 [[ "$previous_release" == /opt/orbbec-agent-platform/releases/* ]] || fail
 [[ -f "$previous_release/deploy/cloud/compose.yaml" ]] || fail
 
@@ -115,12 +116,12 @@ fi
   && "$heartbeat_count" == "1" ]] || fail
 
 timestamp="$(/usr/bin/date -u +%Y%m%dT%H%M%SZ)"
-backup_path="/root/nginx-backups/agent-platform-dingtalk-$timestamp"
+backup_path="/data/archive/orbbec-agent-platform/nginx/agent-platform-dingtalk-$timestamp"
 /usr/bin/install -d -o root -g root -m 700 "$backup_path"
 /bin/cp -a "$agent_available" "$backup_path/agent-domain.conf"
 /usr/bin/printf 'BACKUP_PATH=%q\nRELEASE_PATH=%q\nPREVIOUS_RELEASE=%q\nPREVIOUS_ENVIRONMENT=%q\nFAE_ID=%q\nFAE_STARTED_AT=%q\nOWNER_BOOTSTRAP=%q\n' \
   "$backup_path" "$release_path" "$previous_release" \
-  "$release_path/PREVIOUS_PLATFORM_ENV" "$fae_id" "$fae_started_at" \
+  "$release_metadata_path/PREVIOUS_PLATFORM_ENV" "$fae_id" "$fae_started_at" \
   "$owner_bootstrap" > "$state_path.part"
 /bin/chown root:root "$state_path.part"
 /bin/chmod 600 "$state_path.part"

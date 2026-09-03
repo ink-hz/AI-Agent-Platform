@@ -59,6 +59,7 @@ class Config:
     operations_execution_interval_seconds: float
     operations_lifecycle_interval_seconds: float
     attachment_enabled: bool
+    conversation_attachment_enabled: bool
     attachment_s3_endpoint: str
     attachment_s3_bucket: str
     attachment_s3_access_key_file: str
@@ -163,13 +164,13 @@ _INLINE_ATTACHMENT_STORAGE_CREDENTIALS = (
 
 
 def _validate_attachment_config(config: Config) -> None:
-    if not config.attachment_enabled:
+    if not (config.attachment_enabled or config.conversation_attachment_enabled):
         return
     endpoint = urlparse(config.attachment_s3_endpoint)
     if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
         raise RuntimeError("attachment S3 endpoint must be a loopback URL")
-    if not _loopback(endpoint.hostname):
-        raise RuntimeError("attachment S3 endpoint must be loopback")
+    if not _loopback(endpoint.hostname) and endpoint.hostname != "platform-minio":
+        raise RuntimeError("attachment S3 endpoint must be loopback or private storage")
     if config.attachment_s3_bucket != "orbbec-agent-attachments":
         raise RuntimeError("attachment S3 bucket must be orbbec-agent-attachments")
     if any(name in os.environ for name in _INLINE_ATTACHMENT_STORAGE_CREDENTIALS):
@@ -199,6 +200,8 @@ def _validate_attachment_config(config: Config) -> None:
         raise RuntimeError(
             "non-loopback Platform host requires a trusted attachment proxy"
         )
+    if not config.attachment_enabled:
+        return
     if config.flywheel_database_url:
         raise RuntimeError(
             "attachment database credentials must use a mode 0600 file"
@@ -902,6 +905,9 @@ def load_config() -> Config:
             os.getenv("PLATFORM_OPERATIONS_LIFECYCLE_INTERVAL", "600")
         ),
         attachment_enabled=_enabled("PLATFORM_ATTACHMENT_ENABLED"),
+        conversation_attachment_enabled=_enabled(
+            "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED"
+        ),
         attachment_s3_endpoint=os.getenv(
             "PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://127.0.0.1:9000"
         ),

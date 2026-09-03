@@ -504,6 +504,8 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
         },
         "audit_append": {"append_attachment_access_event_v64"},
         "control_maintenance": {
+            "expire_task_grants_v64",
+            "schedule_attachment_retention_v64",
             "claim_attachment_erasure_job_v64",
             "record_attachment_erasure_result_v64",
         },
@@ -2177,6 +2179,11 @@ def test_v64_erasure_removes_deleted_version_from_current_view(
             "where artifact_version_id=%s",
             (version_id,),
         ).fetchone() == ("deleted", "succeeded")
+        assert admin.execute(
+            "select reason_ciphertext,reason_key_version,reason_sha256 from "
+            "platform_attachments.erasure_jobs where erasure_job_id=%s",
+            (erasure_job_id,),
+        ).fetchone() == (bytes(29), 1, b"e" * 32)
         assert admin.execute(
             "select state,state_reason from platform_attachments.uploads "
             "where upload_id=%s",
