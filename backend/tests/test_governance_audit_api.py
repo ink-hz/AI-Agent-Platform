@@ -45,6 +45,7 @@ class FakeManagementRepository:
         self.generation_id = uuid4()
         self.fae_grant_id = uuid4()
         self.fae_internal_user_id = uuid4()
+        self.fae_grant_replays = {}
         self.users = [
             {
                 "internal_user_id": uuid4(),
@@ -236,6 +237,9 @@ class FakeManagementRepository:
             "member_key": self.member_key,
         }
 
+    def fae_workbench_grant_replay(self, actor, display_name, operation_id):
+        return self.fae_grant_replays.get((actor, display_name, operation_id))
+
     def list_fae_workbench_grants(self):
         return self.fae_grants
 
@@ -263,13 +267,19 @@ class FakeManagementRepository:
             union_identity_id,
             audit_event_id,
         ))
-        return {
+        result = {
             "operation_id": str(operation_id),
             "grant_id": str(self.fae_grant_id),
             "internal_user_id": str(self.fae_internal_user_id),
             "permission": "manager",
             "row_version": 0,
         }
+        self.fae_grant_replays[(actor, display_name, operation_id)] = {
+            "generation_id": expected_generation_id,
+            "member_key": expected_member_key,
+            "result": result,
+        }
+        return result
 
     def revoke_fae_workbench(
         self,
@@ -489,6 +499,29 @@ def test_fae_workbench_grant_request_id_derives_replay_stable_identity_ids() -> 
     first = repository.mutations[-2]
     second = repository.mutations[-1]
     assert first[6:9] == second[6:9]
+
+
+def test_fae_grant_replays_before_directory_state_is_resolved_again() -> None:
+    client, repository, _ = _client(OWNER)
+    request_id = uuid4()
+    payload = {
+        "display_name": "花名一",
+        "reason": "fae_workbench_access_approved",
+        "request_id": str(request_id),
+    }
+
+    first = client.post("/api/v1/manage/fae-workbench/grants", json=payload)
+    assert first.status_code == 200
+
+    def changed_directory(_display_name):
+        raise ValueError("directory_name_not_unique")
+
+    repository.active_fae_workbench_member = changed_directory
+    replay = client.post("/api/v1/manage/fae-workbench/grants", json=payload)
+
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert len([entry for entry in repository.mutations if entry[0] == "grant_fae"]) == 2
 
 
 def test_owner_revokes_fae_workbench_access_with_expected_grant_row_version() -> None:

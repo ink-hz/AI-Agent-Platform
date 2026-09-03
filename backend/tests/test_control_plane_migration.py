@@ -239,6 +239,7 @@ def test_fae_workbench_access_migration_is_function_only_for_app_role() -> None:
     assert "create table platform_control.fae_workbench_grants" in sql
     assert "create unique index one_active_fae_workbench_grant" in sql
     assert "create function platform_control.grant_fae_workbench_access_v63" in sql
+    assert "create function platform_control.replay_fae_workbench_grant_v63" in sql
     assert "create function platform_control.revoke_fae_workbench_access_v63" in sql
     assert "create function platform_control.has_fae_workbench_access_v63" in sql
     assert "create function platform_control.read_fae_workbench_grants_v63" in sql
@@ -2048,6 +2049,15 @@ def test_fae_workbench_grant_provisions_identity_and_normal_login_reuses_it(
             parameters,
         ).fetchone()[0]
         assert replay == result
+        replay_context = connection.execute(
+            "select platform_control.replay_fae_workbench_grant_v63(%s,%s,%s)",
+            (granted["operation_id"], seeded["owner_id"], seeded["unique_name"]),
+        ).fetchone()[0]
+        assert replay_context == {
+            "generation_id": str(seeded["generation_id"]),
+            "member_key": str(seeded["unique_member_key"]),
+            "result": result,
+        }
         assert result["internal_user_id"] == str(new_user_id)
         assert result["permission"] == "manager"
         assert connection.execute(
@@ -2494,6 +2504,9 @@ def test_fae_workbench_table_has_no_runtime_direct_mutation_rights(
                     "'platform_control.grant_fae_workbench_access_v63("
                     "uuid,uuid,text,uuid,uuid,uuid,uuid,uuid,uuid)','execute'),"
                     "has_function_privilege(%s,"
+                    "'platform_control.replay_fae_workbench_grant_v63("
+                    "uuid,uuid,text)','execute'),"
+                    "has_function_privilege(%s,"
                     "'platform_control.revoke_fae_workbench_access_v63("
                     "uuid,uuid,uuid,bigint,uuid)','execute'),"
                     "has_function_privilege(%s,"
@@ -2501,8 +2514,8 @@ def test_fae_workbench_table_has_no_runtime_direct_mutation_rights(
                     "'execute'),has_function_privilege(%s,"
                     "'platform_control.read_fae_workbench_grants_v63()',"
                     "'execute')",
-                    (runtime_role,) * 4,
-                ).fetchone() == (expected_execute,) * 4
+                    (runtime_role,) * 5,
+                ).fetchone() == (expected_execute,) * 5
         app_url = environment["urls"][app_role]
         _assert_denied(
             app_url,

@@ -102,6 +102,49 @@ class FaeWorkbenchAccessRepository:
                 "fae workbench access unavailable"
             ) from None
 
+    def fae_workbench_grant_replay(
+        self,
+        actor: UUID,
+        display_name: str,
+        operation_id: UUID,
+    ) -> dict[str, Any] | None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_control.replay_fae_workbench_grant_v63("
+                    "%s,%s,%s) as replay",
+                    (operation_id, actor, display_name),
+                ).fetchone()
+            replay = None if row is None else row["replay"]
+            if replay is None:
+                return None
+            if not isinstance(replay, dict) or not isinstance(
+                replay.get("result"), dict
+            ):
+                raise FaeWorkbenchAccessUnavailable(
+                    "fae workbench access unavailable"
+                )
+            return {
+                "generation_id": UUID(replay["generation_id"]),
+                "member_key": UUID(replay["member_key"]),
+                "result": replay["result"],
+            }
+        except (psycopg.errors.CheckViolation, psycopg.errors.UniqueViolation) as error:
+            message = getattr(error.diag, "message_primary", "")
+            if message == "operation identity collision":
+                raise ValueError(message) from None
+            raise FaeWorkbenchAccessUnavailable(
+                "fae workbench access unavailable"
+            ) from None
+        except (KeyError, TypeError, ValueError):
+            raise FaeWorkbenchAccessUnavailable(
+                "fae workbench access unavailable"
+            ) from None
+        except psycopg.Error:
+            raise FaeWorkbenchAccessUnavailable(
+                "fae workbench access unavailable"
+            ) from None
+
     def _mutate(
         self, query: str, parameters: tuple[Any, ...], operation_id: UUID
     ) -> dict[str, Any]:
@@ -302,7 +345,14 @@ class FaeWorkbenchAccessService:
     ) -> dict[str, Any]:
         selected_reason = self._reason(reason, "fae_workbench_access_approved")
         try:
-            member = self.repository.active_fae_workbench_member(display_name)
+            replay = self.repository.fae_workbench_grant_replay(
+                context.internal_user_id,
+                display_name,
+                request_id,
+            )
+            member = replay or self.repository.active_fae_workbench_member(
+                display_name
+            )
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from None
         except FaeWorkbenchAccessUnavailable:
