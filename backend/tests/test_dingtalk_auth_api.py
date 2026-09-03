@@ -1164,9 +1164,14 @@ def test_platform_app_mounts_access_history_routes_with_fail_closed_backend(
         },
     )
     assert page.status_code == 503
-    assert client.get(
+    assert page.headers["cache-control"] == "no-store"
+    assert page.headers["pragma"] == "no-cache"
+    query = client.get(
         "/api/v1/manage/access-events", cookies=cookies
-    ).status_code == 503
+    )
+    assert query.status_code == 503
+    assert query.headers["cache-control"] == "no-store"
+    assert query.headers["pragma"] == "no-cache"
 
     auth.context = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), False)
     assert client.get(
