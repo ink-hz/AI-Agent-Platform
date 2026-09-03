@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID, uuid4
 
 import psycopg
 from psycopg.rows import dict_row
 
-from .models import AuthContext, Role
 from .dsn import validate_control_dsn
-
+from .models import AuthContext, Role
 
 _AGENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
@@ -45,6 +44,7 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/conversations/{conversation_id}"),
     ("PATCH", "/api/v1/conversations/{conversation_id}"),
     ("GET", "/api/v1/conversations/{conversation_id}/messages"),
+    ("POST", "/api/v1/conversations/{conversation_id}/read-state"),
     ("POST", "/api/v1/conversations/{conversation_id}/messages"),
     ("GET", "/api/v1/conversations/{conversation_id}/events"),
     ("GET", "/api/v1/conversations/{conversation_id}/actions"),

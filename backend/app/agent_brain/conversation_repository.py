@@ -22,6 +22,7 @@ from app.agent_brain.conversation_models import (
     ConversationInterventionResult,
     ConversationMessageRecord,
     ConversationMetrics,
+    ConversationReadStateRecord,
     ConversationRecord,
     ConversationTurnRecord,
     ConversationTurnSubmission,
@@ -263,6 +264,8 @@ class ConversationRepository:
             archived_at=row["archived_at"],
             summary=summary,
             summary_key_version=key_version,
+            activity_status=row.get("activity_status"),
+            unread=bool(row.get("unread", False)),
         )
 
     def _attachment_projection_from_row(
@@ -2699,17 +2702,30 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 query = (
-                    "select * from platform_control.conversations "
-                    "where owner_internal_user_id=%s and status=%s "
+                    "select conversation.*,latest_turn.status as activity_status,"
+                    "coalesce((select max(event.seq) from "
+                    "platform_control.conversation_events event where "
+                    "event.conversation_id=conversation.conversation_id and "
+                    "event.event_type in ('brain.answer_submitted','brain.failed',"
+                    "'brain.user_input_requested')),0)>coalesce("
+                    "read_state.last_read_message_seq,0) as unread from "
+                    "platform_control.conversations conversation left join lateral "
+                    "(select turn.status from platform_control.conversation_turns turn "
+                    "where turn.conversation_id=conversation.conversation_id order by "
+                    "turn.created_at desc,turn.turn_id desc limit 1) latest_turn on true "
+                    "left join platform_attachments.conversation_read_state read_state "
+                    "on read_state.owner_internal_user_id=conversation.owner_internal_user_id "
+                    "and read_state.conversation_id=conversation.conversation_id where "
+                    "conversation.owner_internal_user_id=%s and conversation.status=%s "
                 )
                 base_parameters: tuple[object, ...] = (internal_user_id, status)
                 if direct_agent_id is not None:
-                    query += "and mode='direct_agent' and direct_agent_id=%s "
+                    query += "and conversation.mode='direct_agent' and conversation.direct_agent_id=%s "
                     base_parameters += (direct_agent_id,)
                 if before is None:
                     parameters = (*base_parameters, limit)
                 else:
-                    query += "and (updated_at,conversation_id)<(%s,%s) "
+                    query += "and (conversation.updated_at,conversation.conversation_id)<(%s,%s) "
                     parameters = (
                         *base_parameters,
                         before[0],
@@ -2717,13 +2733,54 @@ class ConversationRepository:
                         limit,
                     )
                 rows = cursor.execute(
-                    query + "order by updated_at desc,conversation_id desc limit %s",
+                    query + "order by conversation.updated_at desc,conversation.conversation_id desc limit %s",
                     parameters,
                 ).fetchall()
             return tuple(self._conversation_from_row(row) for row in rows)
         except ConversationRepositoryError:
             raise
         except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def mark_read(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        last_seen_event_seq: int,
+    ) -> ConversationReadStateRecord:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        if (
+            isinstance(last_seen_event_seq, bool)
+            or not isinstance(last_seen_event_seq, int)
+            or last_seen_event_seq < 0
+        ):
+            raise ValueError("Conversation read-state sequence invalid")
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                persisted = cursor.execute(
+                    "select platform_attachments.upsert_conversation_read_state_v64("
+                    "%s,%s,%s) as last_read_message_seq",
+                    (internal_user_id, conversation_id, last_seen_event_seq),
+                ).fetchone()
+                row = cursor.execute(
+                    "select conversation_id,last_read_message_seq,last_read_at from "
+                    "platform_attachments.conversation_read_state where "
+                    "owner_internal_user_id=%s and conversation_id=%s",
+                    (internal_user_id, conversation_id),
+                ).fetchone()
+            if persisted is None or row is None:
+                raise ConversationRepositoryNotFound()
+            return ConversationReadStateRecord(
+                conversation_id=row["conversation_id"],
+                last_read_message_seq=int(row["last_read_message_seq"]),
+                last_read_at=row["last_read_at"],
+            )
+        except ConversationRepositoryError:
+            raise
+        except psycopg.errors.CheckViolation:
+            raise ConversationRepositoryNotFound() from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
 
     def rename(

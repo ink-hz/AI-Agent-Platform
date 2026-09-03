@@ -5,8 +5,9 @@ import base64
 import binascii
 import hmac
 import json
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
-from typing import Annotated, AsyncIterator, Callable, Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response
@@ -145,7 +146,7 @@ class ConversationFeedbackBody(BaseModel):
         return selected
 
     @model_validator(mode="after")
-    def _valid_detail(self) -> "ConversationFeedbackBody":
+    def _valid_detail(self) -> ConversationFeedbackBody:
         if self.rating == "helpful" and (self.reason is not None or self.comment is not None):
             raise ValueError("Helpful feedback cannot include detail")
         if self.rating == "unhelpful" and self.reason is None:
@@ -165,6 +166,12 @@ class ConversationRenameBody(BaseModel):
         if not selected:
             raise ValueError("Conversation title required")
         return selected
+
+
+class ConversationReadStateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    last_seen_event_seq: int = Field(ge=0)
 
 
 class ActionConfirmBody(BaseModel):
@@ -368,7 +375,7 @@ def _repository_http_error(error: ConversationRepositoryError) -> HTTPException:
 
 
 def _conversation_payload(record: ConversationRecord) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "conversation_id": str(record.conversation_id),
         "mode": record.mode,
         "direct_agent_id": record.direct_agent_id,
@@ -379,6 +386,10 @@ def _conversation_payload(record: ConversationRecord) -> dict[str, object]:
         "updated_at": record.updated_at.isoformat(),
         "archived_at": record.archived_at.isoformat() if record.archived_at else None,
     }
+    if record.activity_status is not None:
+        payload["activity_status"] = record.activity_status
+        payload["unread"] = record.unread
+    return payload
 
 
 def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
@@ -874,6 +885,31 @@ def build_conversation_router(
         return {
             "conversation": _conversation_payload(conversation),
             "current_turn": _turn_payload(latest_turn),
+        }
+
+    @router.post("/api/v1/conversations/{conversation_id}/read-state")
+    async def mark_conversation_read(
+        conversation_id: UUID,
+        body: ConversationReadStateBody,
+        request: Request,
+        response: Response,
+    ):
+        context = _auth_context(request)
+        _ensure_writable(context)
+        try:
+            record = await asyncio.to_thread(
+                repository.mark_read,
+                context.internal_user_id,
+                conversation_id,
+                body.last_seen_event_seq,
+            )
+        except ConversationRepositoryError as error:
+            raise _repository_http_error(error) from None
+        response.headers.update(_NO_STORE)
+        return {
+            "conversation_id": str(record.conversation_id),
+            "last_read_message_seq": record.last_read_message_seq,
+            "last_read_at": record.last_read_at.isoformat(),
         }
 
     @router.get("/api/v1/conversations/{conversation_id}/messages")

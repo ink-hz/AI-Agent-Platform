@@ -123,6 +123,7 @@ export function BrainWorkspacePage({
     />}
     <ConversationSidebar
       archivedConversations={archivedConversations}
+      conversationHref={(selected) => `/conversations/${encodeURIComponent(selected)}`}
       conversations={conversations}
       selectedConversationId={conversationId}
       loading={loading}
@@ -138,7 +139,7 @@ export function BrainWorkspacePage({
       onRename={account.hard_stale_read_only ? undefined : renameHistory}
       onRestore={account.hard_stale_read_only ? undefined : restoreHistory}
       onRetry={() => setAttempt((value) => value + 1)}
-      onSelect={(selected) => onNavigate(`/conversations/${encodeURIComponent(selected)}`)}
+      onOpenConversation={(selected) => onNavigate(`/conversations/${encodeURIComponent(selected)}`)}
     />
     <section className="brain-workspace-main">
       {conversationId

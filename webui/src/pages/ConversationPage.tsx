@@ -14,6 +14,7 @@ import {
   fetchConversation,
   fetchConversationMessages,
   fetchConversationTaskDetail,
+  markConversationRead,
   rejectConversationAction,
   retryConversationTurn,
   resumeConversationSearch,
@@ -67,6 +68,7 @@ export interface ConversationPageClient {
   deleteAttachment?(attachmentId: string, csrfToken: string, signal?: AbortSignal): Promise<void>;
   downloadArtifacts?(conversationId: string, csrfToken: string, signal?: AbortSignal): Promise<void>;
   resumeSearch?(conversationId: string, turnId: string, csrfToken: string): ConversationSubmission;
+  markRead?(conversationId: string, lastSeenEventSeq: number, csrfToken: string, signal?: AbortSignal): Promise<unknown>;
 }
 
 const DEFAULT_CLIENT: ConversationPageClient = {
@@ -86,6 +88,7 @@ const DEFAULT_CLIENT: ConversationPageClient = {
   deleteAttachment: deleteConversationAttachment,
   downloadArtifacts: downloadConversationArtifacts,
   resumeSearch: resumeConversationSearch,
+  markRead: markConversationRead,
 };
 
 
@@ -210,6 +213,13 @@ export function ConversationPage({
               eventCursor.current = event.seq;
               setEvents((current) => mergeEvent(current, event));
               setConnection("live");
+              if (!account.hard_stale_read_only && client.markRead && [
+                "brain.answer_submitted", "brain.failed", "brain.user_input_requested",
+              ].includes(event.event_type)) {
+                void client.markRead(
+                  conversationId, event.seq, account.csrf_token, controller.signal,
+                ).catch(() => undefined);
+              }
             },
           });
           const snapshot = await refreshSnapshot();
@@ -238,7 +248,7 @@ export function ConversationPage({
     return () => controller.abort();
   // streamEpoch deliberately starts a fresh stream after a newly accepted Turn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, conversationId, streamEpoch]);
+  }, [account.csrf_token, account.hard_stale_read_only, client, conversationId, streamEpoch]);
 
   const sendValue = async (value: string) => {
     const normalized = value.trim();

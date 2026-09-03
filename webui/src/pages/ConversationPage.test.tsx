@@ -155,6 +155,7 @@ describe("ConversationPage", () => {
     expect(container.textContent).not.toContain("执行过程");
     expect(container.textContent).not.toContain("诊断详情");
     expect(container.querySelector("textarea[aria-label='继续对话']")).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>(".conversation-send")?.textContent).toBe("✨ 发送");
 
     await setTextarea(container, "继续给出搜索式");
     await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());

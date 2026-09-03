@@ -85,6 +85,8 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  activity_status?: ConversationTurnStatus;
+  unread?: boolean;
 }
 
 export interface ConversationMessage {

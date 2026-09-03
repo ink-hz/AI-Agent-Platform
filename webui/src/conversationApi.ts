@@ -3,6 +3,7 @@ import {
   parseArtifactVersion,
   parseConversationAttachment,
   parseConversationCitation,
+  parseConversationReadState,
   parseSearchRecovery,
 } from "./attachmentApi";
 import type { WorkroomAction } from "./workroomTypes";
@@ -33,6 +34,7 @@ const CONVERSATION_KEYS = new Set([
   "conversation_id", "mode", "direct_agent_id", "title", "status",
   "summary_through_seq", "created_at", "updated_at", "archived_at",
 ]);
+const CONVERSATION_OPTIONAL_FIELDS = new Set(["activity_status", "unread"]);
 const MESSAGE_KEYS = new Set([
   "message_id", "conversation_id", "seq", "role", "content", "turn_id",
   "delivery_status", "created_at", "completed_at", "input_attachments",
@@ -145,7 +147,10 @@ async function checked(response: Response): Promise<Response> {
 
 
 function parseConversation(value: unknown): Conversation {
-  if (!isObject(value) || !hasExactKeys(value, CONVERSATION_KEYS)
+  const keysValid = isObject(value)
+    && [...CONVERSATION_KEYS].every((key) => Object.prototype.hasOwnProperty.call(value, key))
+    && Object.keys(value).every((key) => CONVERSATION_KEYS.has(key) || CONVERSATION_OPTIONAL_FIELDS.has(key));
+  if (!isObject(value) || !keysValid
     || !isNonEmptyString(value.conversation_id)
     || !CONVERSATION_MODES.has(value.mode as ConversationMode)
     || !isNullableString(value.direct_agent_id)
@@ -159,8 +164,36 @@ function parseConversation(value: unknown): Conversation {
     || (value.mode === "direct_agent" && !isNonEmptyString(value.direct_agent_id))
     || (value.status === "active" && value.archived_at !== null)
     || (value.status === "archived" && !isNonEmptyString(value.archived_at))
+    || (Object.prototype.hasOwnProperty.call(value, "activity_status")
+      && !TURN_STATUSES.has(value.activity_status as ConversationTurnStatus))
+    || (Object.prototype.hasOwnProperty.call(value, "unread") && typeof value.unread !== "boolean")
+    || (Object.prototype.hasOwnProperty.call(value, "activity_status")
+      !== Object.prototype.hasOwnProperty.call(value, "unread"))
   ) throw new Error("Conversation response invalid");
   return value as unknown as Conversation;
+}
+
+export async function markConversationRead(
+  conversationId: string,
+  lastSeenEventSeq: number,
+  csrfToken: string,
+  signal?: AbortSignal,
+) {
+  if (!isNonNegativeInteger(lastSeenEventSeq)) throw new Error("Read state sequence invalid");
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/read-state`,
+  ), {
+    method: "POST", credentials: "include", signal,
+    headers: {
+      Accept: "application/json", "Content-Type": "application/json", "X-CSRF-Token": csrfToken,
+    },
+    body: JSON.stringify({ last_seen_event_seq: lastSeenEventSeq }),
+  }));
+  const result = parseConversationReadState(await response.json());
+  if (result.conversationId !== conversationId || result.lastReadMessageSeq < lastSeenEventSeq) {
+    throw new Error("Read state response invalid");
+  }
+  return result;
 }
 
 

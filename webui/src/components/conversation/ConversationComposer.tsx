@@ -50,7 +50,7 @@ export function ConversationComposer({
         className="conversation-send"
         disabled={disabled || pending || attachmentPending || (!value.trim() && !hasReadyAttachment) || inputTooLarge}
         type="submit"
-      >{pending ? "正在发送…" : attachmentPending ? "等待文件处理" : "发送"}</button>
+      >{pending ? "正在发送…" : attachmentPending ? "等待文件处理" : "✨ 发送"}</button>
     </div>
     {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再发送。</p>}
   </form>;

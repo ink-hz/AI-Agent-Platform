@@ -208,6 +208,7 @@ export function DirectAgentWorkspace({
     {mobileOpen && <button aria-label="关闭对话列表" className="conversation-sidebar-backdrop" onClick={() => setMobileOpen(false)} type="button" />}
     <ConversationSidebar
       archivedConversations={archivedConversations}
+      conversationHref={conversationPath}
       title={card.display_name}
       conversations={conversations}
       selectedConversationId={conversationId}
@@ -224,7 +225,10 @@ export function DirectAgentWorkspace({
       onRename={account.hard_stale_read_only ? undefined : renameHistory}
       onRestore={account.hard_stale_read_only ? undefined : restoreHistory}
       onRetry={() => setHistoryAttempt((value) => value + 1)}
-      onSelect={(selected) => onOpenConversation(conversationPath(selected))}
+      onOpenConversation={(selected) => {
+        setConversations((current) => current.map((item) => item.conversation_id === selected ? { ...item, unread: false } : item));
+        onOpenConversation(conversationPath(selected));
+      }}
     />
     <section className="brain-workspace-main">
       {header}
@@ -240,11 +244,9 @@ export function DirectAgentWorkspace({
           personaSubtitle={card.persona_subtitle}
         />
         : <div className="agent-use-page"><PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>
-          <section className="agent-use-profile"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
+          <section className="agent-use-profile is-compact"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
             {card.persona_subtitle && <p className="agent-persona-subtitle">{card.persona_subtitle}</p>}
             <p>{card.mission}</p>
-            <div><section><h2>可以完成</h2><ul>{card.capabilities.map((item) => <li key={item}>{item}</li>)}</ul></section>
-              <section><h2>能力边界</h2><ul>{card.exclusions.map((item) => <li key={item}>{item}</li>)}</ul></section></div>
           </section>
           <section aria-label="常用任务" className="agent-task-starters">
             {card.example_tasks.slice(0, 4).map((example) => <button

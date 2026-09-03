@@ -13,6 +13,7 @@ import {
   fetchConversationTaskDetail,
   listConversationActions,
   listConversations,
+  markConversationRead,
   renameConversation,
   rejectConversationAction,
   restoreConversation,
@@ -83,6 +84,29 @@ afterEach(() => {
 
 
 describe("continuous Conversation API", () => {
+  it("persists the last visible terminal event for unread state", async () => {
+    const payload = {
+      conversation_id: CONVERSATION_ID,
+      last_read_message_seq: 7,
+      last_read_at: "2026-09-03T12:00:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(payload));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(markConversationRead(CONVERSATION_ID, 7, "csrf")).resolves.toEqual({
+      conversationId: CONVERSATION_ID,
+      lastReadMessageSeq: 7,
+      lastReadAt: payload.last_read_at,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/conversations/${CONVERSATION_ID}/read-state`,
+      expect.objectContaining({
+        method: "POST", body: JSON.stringify({ last_seen_event_seq: 7 }),
+        headers: expect.objectContaining({ "X-CSRF-Token": "csrf" }),
+      }),
+    );
+  });
+
   it("starts brain and direct-Agent conversations using the exact endpoints", async () => {
     vi.spyOn(crypto, "randomUUID").mockReturnValue("58df615d-dfd1-4b02-87f7-9a1d7a04f7fa");
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(submissionResult, 201)));

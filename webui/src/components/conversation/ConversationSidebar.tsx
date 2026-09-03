@@ -16,7 +16,8 @@ export interface ConversationSidebarProps {
   onLoadMore(): void;
   onNewConversation(): void;
   onRetry(): void;
-  onSelect(conversationId: string): void;
+  conversationHref(conversationId: string): string;
+  onOpenConversation(conversationId: string): void;
   archivedConversations?: Conversation[];
   onArchive?(conversationId: string): void | Promise<void>;
   onLoadArchived?(): void | Promise<void>;
@@ -36,10 +37,18 @@ function normalClick(event: MouseEvent<HTMLAnchorElement>): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
+function activityLabel(status: Conversation["activity_status"]): string | null {
+  if (["accepted", "running", "waiting_agents", "completing"].includes(status ?? "")) return "处理中";
+  if (status === "waiting_user") return "需要补充";
+  if (["failed", "cancelled", "interrupted"].includes(status ?? "")) return "未完成";
+  if (status === "completed") return "已完成";
+  return null;
+}
+
 export function ConversationSidebar({
   title = "Agent 大脑",
   conversations, selectedConversationId, loading, error, hasMore, loadingMore, mobileOpen,
-  onCloseMobile, onLoadMore, onNewConversation, onRetry, onSelect,
+  onCloseMobile, onLoadMore, onNewConversation, onRetry, conversationHref, onOpenConversation,
   archivedConversations = [], onArchive, onLoadArchived, onRename, onRestore,
 }: ConversationSidebarProps) {
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -76,7 +85,8 @@ export function ConversationSidebar({
       {!loading && !error && conversations.length === 0 && <p className="conversation-sidebar-state">还没有对话</p>}
       <div className="conversation-sidebar-list">{conversations.map((conversation) => {
         const selected = conversation.conversation_id === selectedConversationId;
-        const href = `/conversations/${encodeURIComponent(conversation.conversation_id)}`;
+        const href = conversationHref(conversation.conversation_id);
+        const activity = activityLabel(conversation.activity_status);
         return <div className="conversation-sidebar-row" key={conversation.conversation_id}>
           <a
             aria-current={selected ? "page" : undefined}
@@ -84,11 +94,12 @@ export function ConversationSidebar({
             href={platformPath(href)}
             onClick={(event) => {
               if (!normalClick(event)) return;
-              event.preventDefault(); onSelect(conversation.conversation_id); onCloseMobile();
+              event.preventDefault(); onOpenConversation(conversation.conversation_id); onCloseMobile();
             }}
           >
             <strong>{conversation.title}</strong>
-            <time dateTime={conversation.updated_at}>{timeLabel(conversation.updated_at)}</time>
+            <span className="conversation-session-meta"><time dateTime={conversation.updated_at}>{timeLabel(conversation.updated_at)}</time>
+              {activity && <small>{activity}</small>}{conversation.unread && <b aria-label="有未读更新">未读</b>}</span>
           </a>
           {selected && (onRename || onArchive) && <div className="conversation-row-actions">
             <button aria-expanded={menuId === conversation.conversation_id} aria-label="打开对话操作" onClick={() => setMenuId((current) => current === conversation.conversation_id ? null : conversation.conversation_id)} type="button">•••</button>

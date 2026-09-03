@@ -139,6 +139,15 @@ class ConversationRecord:
     archived_at: datetime | None
     summary: str | None = field(repr=False)
     summary_key_version: int | None = field(repr=False)
+    activity_status: str | None = None
+    unread: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationReadStateRecord:
+    conversation_id: UUID
+    last_read_message_seq: int
+    last_read_at: datetime
 
 
 @dataclass(frozen=True)
