@@ -59,4 +59,44 @@ describe("SessionMaterialsDrawer", () => {
     expect(localStorage.getItem("platform.session-materials.open")).toBe("false");
     expect(container.querySelector(".session-materials-panel")).toBeNull();
   });
+
+  it("promotes only user uploads to position materials and supports explicit removal", async () => {
+    const onPositionMaterialChange = vi.fn();
+    await act(async () => root.render(<SessionMaterialsDrawer
+      attachments={[user, generated]}
+      limits={limits}
+      positionMaterialIds={[]}
+      onPositionMaterialChange={onPositionMaterialChange}
+    />));
+
+    let buttons = [...container.querySelectorAll<HTMLButtonElement>(".session-material-position-action")];
+    expect(buttons.map((button) => button.textContent)).toEqual(["设为岗位材料"]);
+    expect(container.textContent).not.toContain("将面试方案.docx设为岗位材料");
+    await act(async () => buttons[0].click());
+    expect(onPositionMaterialChange).toHaveBeenCalledWith(user, true);
+
+    await act(async () => root.render(<SessionMaterialsDrawer
+      attachments={[user, generated]}
+      limits={limits}
+      positionMaterialIds={["user-1"]}
+      onPositionMaterialChange={onPositionMaterialChange}
+    />));
+    buttons = [...container.querySelectorAll<HTMLButtonElement>(".session-material-position-action")];
+    expect(buttons.map((button) => button.textContent)).toEqual(["移出岗位材料"]);
+    await act(async () => buttons[0].click());
+    expect(onPositionMaterialChange).toHaveBeenCalledWith(user, false);
+  });
+
+  it("keeps generated position results downloadable", async () => {
+    const onOpen = vi.fn();
+    await act(async () => root.render(<SessionMaterialsDrawer
+      attachments={[generated]} limits={limits} onOpen={onOpen}
+    />));
+
+    const card = [...container.querySelectorAll<HTMLElement>(".conversation-attachment-card")]
+      .find((item) => item.textContent?.includes("面试方案.docx"));
+    await act(async () => [...(card?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+      .find((button) => button.textContent === "下载")?.click());
+    expect(onOpen).toHaveBeenCalledWith(generated, "download");
+  });
 });

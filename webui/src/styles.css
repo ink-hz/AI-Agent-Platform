@@ -2059,6 +2059,37 @@ body {
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea { min-height: 110px; background: #f2f5f3; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea:focus { background: #fff; box-shadow: inset 0 0 0 2px rgba(52,127,105,.3); }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer button { background: #1f6a55; }
+.hr-position-workspace { height: 100%; min-height: 0; overflow: hidden; background: #f4f7f5; color: #18372e; }
+.hr-position-workspace > .agent-use-workspace { height: 100%; }
+.hr-position-context {
+  position: sticky;
+  z-index: 7;
+  top: 0;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 14px 24px;
+  padding: 17px clamp(24px,4vw,52px);
+  border-bottom: 1px solid #cfddd6;
+  background: rgba(251,252,251,.97);
+  box-shadow: 0 8px 28px rgba(31,74,58,.06);
+  backdrop-filter: blur(12px);
+}
+.hr-position-context-main { display: grid; min-width: 0; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 18px; }
+.hr-position-context-main > a { color: #2c6c58; font-size: 12px; font-weight: 760; text-decoration: none; white-space: nowrap; }
+.hr-position-context-main h1 { overflow: hidden; margin: 3px 0 2px; font-size: 20px; line-height: 1.2; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
+.hr-position-context-main p { overflow: hidden; margin: 0; color: #657970; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.hr-position-context-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.hr-position-context-tags span,.hr-position-context-tags strong { display: inline-flex; min-height: 26px; align-items: center; padding: 4px 9px; border-radius: 999px; background: #e5f1ec; color: #28624f; font-size: 11.5px; font-weight: 760; }
+.hr-position-context-tags strong { background: #fff1d7; color: #7d560e; }
+.hr-position-context-metrics { display: grid; min-width: 330px; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin: 0; overflow: hidden; border: 1px solid #d4e0da; border-radius: 10px; background: #d4e0da; }
+.hr-position-context-metrics div { padding: 8px 11px; background: #f6f9f7; }
+.hr-position-context-metrics dt { color: #72837c; font-size: 11.5px; }
+.hr-position-context-metrics dd { margin: 3px 0 0; color: #234f40; font-size: 12px; font-weight: 780; white-space: nowrap; }
+.hr-position-scope-error { grid-column: 1 / -1; margin: 0; padding: 8px 10px; border: 1px solid #e1c885; border-radius: 8px; background: #fff8e6; color: #725110; font-size: 12px; }
+.hr-position-workspace .conversation-header { position: static; }
+.session-material-entry { display: grid; gap: 6px; }
+.session-material-position-action { min-height: 34px; padding: 6px 9px; border: 1px solid #b9d3c8; border-radius: 8px; background: #eef6f2; color: #23614d; font: inherit; font-size: 11.5px; font-weight: 760; cursor: pointer; }
+.session-material-position-action:hover,.session-material-position-action:focus-visible { border-color: #6ea18e; background: #deeee7; outline: none; }
 
 @media (max-width: 1260px) {
   .agent-use-workspace[data-agent-id="hr-bot"] .conversation-workspace-grid { grid-template-columns: minmax(0, 1fr); }
@@ -2079,6 +2110,12 @@ body {
   .agent-use-workspace[data-agent-id="hr-bot"] .session-materials-drawer { width: calc(100% - 28px); }
   .agent-use-workspace[data-agent-id="hr-bot"] .agent-use-page { padding: 0 14px 30px; }
   .agent-use-workspace[data-agent-id="hr-bot"] .agent-use-profile.is-compact { margin-top: 54px; text-align: left; }
+  .hr-position-context { position: relative; grid-template-columns: 1fr; padding: 16px 14px; }
+  .hr-position-context-main { grid-template-columns: 1fr; gap: 8px; padding-left: 48px; }
+  .hr-position-context-main > a { padding-left: 2px; }
+  .hr-position-context-main h1,.hr-position-context-main p { overflow: visible; text-overflow: clip; white-space: normal; }
+  .hr-position-context-tags { justify-content: flex-start; }
+  .hr-position-context-metrics { grid-template-columns: 1fr; min-width: 0; }
 }
 
 .hr-position-index { min-height: 100%; padding: clamp(26px,4vw,54px); background: #f4f7f5; color: #18372e; }

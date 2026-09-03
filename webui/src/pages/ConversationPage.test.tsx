@@ -313,6 +313,24 @@ describe("ConversationPage", () => {
     expect(container.textContent).toContain("当前为只读状态");
   });
 
+  it("keeps an archived conversation readable but disables every write path", async () => {
+    const archivedConversation: Conversation = {
+      ...conversation, status: "archived", archived_at: "2026-08-24T10:00:00Z",
+    };
+    const pageClient = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: archivedConversation, current_turn: completedTurn }),
+    });
+    await act(async () => root.render(<ConversationPage
+      account={account} client={pageClient} conversationId={conversationId}
+    />));
+
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>(".conversation-send")?.disabled).toBe(true);
+    expect(container.textContent).toContain("当前为只读状态");
+    expect(container.querySelector("button[aria-label='这个回答有帮助']")).toBeNull();
+  });
+
   it("labels a direct-Agent answer as the selected professional Agent", async () => {
     const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
     const pageClient = client({

@@ -92,6 +92,15 @@ describe("Executive Operations visual contract", () => {
     expect(styles).toContain('@media (max-width: 1260px)');
   });
 
+  it("keeps the position context visible across the three-column HR workspace", () => {
+    expect(rule(".hr-position-workspace")).toContain("height: 100%");
+    expect(rule(".hr-position-context")).toContain("position: sticky");
+    expect(rule(".hr-position-context-metrics")).toContain("grid-template-columns: repeat(3,minmax(0,1fr))");
+    expect(rule(".session-material-position-action")).toContain("min-height: 34px");
+    const mobile = lastBlock("@media screen and (max-width: 720px)");
+    expect(mobile).toContain(".hr-position-context-metrics { grid-template-columns: 1fr;");
+  });
+
   it("keeps compact FAE workbench navigation in one keyboard-scrollable row", () => {
     const compact = block("@media (max-width: 900px)");
     expect(compact).toContain(".fae-workbench__sidebar nav { display: flex; flex-wrap: nowrap; overflow-x: auto; }");

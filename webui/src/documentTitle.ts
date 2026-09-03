@@ -26,6 +26,7 @@ export function routeDocumentTitle(route: Route): string {
     case "hr": return `HR Agent · ${PLATFORM_TITLE}`;
     case "hr-chat": return `HR Agent · ${PLATFORM_TITLE}`;
     case "hr-position": return `岗位智能工作台 · ${PLATFORM_TITLE}`;
+    case "hr-position-conversation": return `岗位智能工作台 · ${PLATFORM_TITLE}`;
     case "hr-conversation": return `HR Agent · ${PLATFORM_TITLE}`;
     case "marketing": return `${MARKETING_TITLE_BY_SLUG[route.agentSlug]} · ${PLATFORM_TITLE}`;
     case "marketing-conversation": return `${MARKETING_TITLE_BY_SLUG[route.agentSlug]} · ${PLATFORM_TITLE}`;

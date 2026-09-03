@@ -3,6 +3,7 @@ import { directConversationPath } from "../../platform/workspaces";
 import { WorkspaceErrorBoundary } from "../../shared/WorkspaceErrorBoundary";
 import { DirectAgentWorkspace } from "../direct/DirectAgentWorkspace";
 import { HrPositionIndex } from "./HrPositionIndex";
+import { HrPositionWorkspace } from "./HrPositionWorkspace";
 
 
 function hrConversationPath(conversationId: string): string {
@@ -19,7 +20,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   }
   if (props.positionId) {
     return <WorkspaceErrorBoundary title="HR Agent">
-      <section className="hr-position-state"><h1>正在打开岗位工作区</h1><p>岗位上下文加载中。</p></section>
+      <HrPositionWorkspace account={props.account} conversationId={props.conversationId} positionId={props.positionId} />
     </WorkspaceErrorBoundary>;
   }
   return <WorkspaceErrorBoundary title="HR Agent">
