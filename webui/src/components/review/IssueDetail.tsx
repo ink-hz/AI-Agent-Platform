@@ -9,6 +9,7 @@ import type {
 import { GATE_LABELS, STATUS_LABELS } from "./IssueList";
 import { ReplayMatrix } from "./ReplayMatrix";
 import { PlatformLink } from "../PlatformLink";
+import { FAE_MANAGEMENT_PATH } from "../../platform/workspaces";
 
 type EvidencePayload = {
   evidence_type: "merge" | "deployment";
@@ -136,7 +137,7 @@ export function IssueDetail({
               <code>{link.source_turn_key}</code>
             </div>
             {link.source_session_key && (
-              <PlatformLink href={`/admin/fae/sessions/${encodeURIComponent(link.source_session_key)}`}>
+              <PlatformLink href={`${FAE_MANAGEMENT_PATH}/sessions/${encodeURIComponent(link.source_session_key)}`}>
                 查看原始 Session
               </PlatformLink>
             )}

@@ -1,3 +1,6 @@
+import { FAE_MANAGEMENT_PATH } from "./platform/workspaces";
+
+
 export type PlatformRole =
   | "member"
   | "management_viewer"
@@ -157,7 +160,8 @@ function safeLoginReturnPath(value: string): boolean {
   if (/^\/conversations\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
   if (/^\/ai-notes\/[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,127}$/.test(value)) return true;
-  return value === "/office/" || value === "/admin/" || value === "/admin" || value === "/fae/" || value === "/hr/"
+  return value === "/office/" || value === "/admin/" || value === "/admin" || value === "/fae/"
+    || value === `${FAE_MANAGEMENT_PATH}/` || value === "/hr/"
     || /^\/fae\/conversations\/[A-Za-z0-9:._-]+$/.test(value)
     || /^\/fae\/manage\/(?:sessions|issues|reports)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)
     || /^\/voc\/(?:records|manage\/records)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)

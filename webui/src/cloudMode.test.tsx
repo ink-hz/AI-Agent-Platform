@@ -268,19 +268,70 @@ describe("cloud replica mode", () => {
     expect(container.querySelector(".cloud-replica-banner")?.className).toContain("is-current");
   });
 
-  it("lets the FAE governance cockpit own replica status without hiding it elsewhere", async () => {
+  it("keeps the generic replica banner out of every FAE management route", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       mode: "cloud-replica", read_only: true, auth: "ssh-tunnel",
       freshness: "current", last_success_at: "2026-09-01T06:00:00Z",
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     await act(async () => root.render(
-      <AppShell route={{ name: "admin-fae-issues" }}><p>驾驶舱内部状态</p></AppShell>,
+      <AppShell route={{ name: "fae-manage-overview" }}><p>工作区内部状态</p></AppShell>,
     ));
     await act(async () => await Promise.resolve());
 
     expect(container.querySelector(".cloud-replica-banner")).toBeNull();
-    expect(container.textContent).toContain("驾驶舱内部状态");
+    expect(container.textContent).toContain("工作区内部状态");
+  });
+
+  it.each(["member", "platform_admin"] as const)(
+    "renders a stable FAE-specific 403 without reading FAE data for an unscoped %s",
+    async (role) => {
+      const meta = document.createElement("meta");
+      meta.name = "platform-identity-mode";
+      meta.content = "enabled";
+      document.head.append(meta);
+      window.history.replaceState({}, "", "/fae/manage/issues");
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const path = String(input);
+        if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify({
+          internal_user_id: role, display_name: "未授权账号", role,
+          departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [],
+          directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+        return new Response("{}", { status: 500 });
+      });
+
+      await act(async () => root.render(<App />));
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+      expect(container.querySelector('[data-status-code="403"] h1')?.textContent).toBe("无权访问 FAE 管理");
+      expect(container.textContent).toContain("当前账号没有 FAE 工作台权限");
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/fae"))).toBe(false);
+    },
+  );
+
+  it("admits a scoped member to the FAE management workspace", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "platform-identity-mode";
+    meta.content = "enabled";
+    document.head.append(meta);
+    window.history.replaceState({}, "", "/fae/manage/");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify({
+        internal_user_id: "fae-manager", display_name: "FAE 管理员", role: "member",
+        departments: [], gender: null, observation_agent_ids: [], workspace_scopes: ["fae_workbench"],
+        directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response("{}", { status: 500 });
+    });
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(container.querySelector(".fae-workbench")).not.toBeNull();
+    expect(container.textContent).not.toContain("无权访问 FAE 管理");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/fae/overview"))).toBe(true);
   });
 
   it("keeps cloud replica status out of the Agent Brain workspace", async () => {

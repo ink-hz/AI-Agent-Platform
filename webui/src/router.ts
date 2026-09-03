@@ -45,17 +45,10 @@ export type Route =
   | { name: "admin-identity" }
   | { name: "admin-governance" }
   | { name: "admin-voc" }
-  | { name: "admin-fae-overview" }
-  | { name: "admin-fae-sessions" }
-  | { name: "admin-fae-session"; sessionKey: string }
-  | { name: "admin-fae-issues" }
-  | { name: "admin-fae-issue"; issueId: string }
-  | { name: "admin-fae-reports" }
-  | { name: "admin-fae-report"; reportId: string }
   | { name: "legacy-redirect"; to: string; navigation: "spa" | "document" }
   | { name: "not-found" };
 
-export type RouteSection = "brain" | "conversations" | "agents" | "missions" | "ai-notes" | "account" | "admin";
+export type RouteSection = "brain" | "conversations" | "agents" | "missions" | "ai-notes" | "account" | "fae" | "admin";
 
 export type NavigateOptions = {
   replace?: boolean;
@@ -426,13 +419,6 @@ export function routePath(route: Route): string {
     case "admin-identity": return "/admin/identity";
     case "admin-governance": return "/admin/governance";
     case "admin-voc": return "/admin/voc";
-    case "admin-fae-overview": return "/admin/fae";
-    case "admin-fae-sessions": return "/admin/fae/sessions";
-    case "admin-fae-session": return `/admin/fae/sessions/${encodeURIComponent(route.sessionKey)}`;
-    case "admin-fae-issues": return "/admin/fae/issues";
-    case "admin-fae-issue": return `/admin/fae/issues/${encodeURIComponent(route.issueId)}`;
-    case "admin-fae-reports": return "/admin/fae/reports";
-    case "admin-fae-report": return `/admin/fae/reports/${encodeURIComponent(route.reportId)}`;
     case "legacy-redirect": return route.to;
     default: return "/404";
   }
@@ -447,7 +433,7 @@ export function routeSection(route: Route): RouteSection | null {
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "ai-notes" || route.name === "ai-note") return "ai-notes";
   if (route.name === "account") return "account";
-  if (route.name.startsWith("fae-manage-")) return "admin";
+  if (route.name.startsWith("fae-manage-")) return "fae";
   if (route.name.startsWith("admin-")) return "admin";
   return null;
 }

@@ -6,6 +6,7 @@ import { navigate, routeSection, type Route } from "./router";
 import type { DeploymentInfo } from "./types";
 import { platformPath, type Account } from "./auth";
 import { DeploymentProvider } from "./deploymentContext";
+import { FAE_MANAGEMENT_PATH } from "./platform/workspaces";
 
 
 const USE_NAVIGATION = [
@@ -17,7 +18,6 @@ const ADMIN_NAVIGATION = [
   { label: "总览", path: "/admin", section: "admin" },
   { label: "Agent", path: "/admin/agents", section: "admin" },
   { label: "Session", path: "/admin/sessions", section: "admin" },
-  { label: "FAE 工作台", path: "/admin/fae", section: "admin" },
   { label: "复审闭环", path: "/admin/review", section: "admin" },
   { label: "运行记录", path: "/admin/activity", section: "admin" },
   { label: "身份管理", path: "/admin/identity", section: "admin" },
@@ -29,12 +29,15 @@ const ADMIN_NAVIGATION = [
 interface NavigationItem {
   label: string;
   path: string;
-  section: "brain" | "conversations" | "agents" | "missions" | "ai-notes" | "account" | "admin";
+  section: "brain" | "conversations" | "agents" | "missions" | "ai-notes" | "account" | "fae" | "admin";
 }
 
 
 function navigationFor(account?: Account | null): NavigationItem[] {
   const base: NavigationItem[] = [...USE_NAVIGATION];
+  if (account && (account.role === "platform_owner" || account.workspace_scopes.includes("fae_workbench"))) {
+    base.push({ label: "FAE 工作台", path: `${FAE_MANAGEMENT_PATH}/`, section: "fae" });
+  }
   if (!account || account.role === "platform_owner" || account.role === "platform_admin") {
     base.push({ label: "管理中心", path: "/admin", section: "admin" });
   } else if (account.role === "management_viewer") {
@@ -58,12 +61,17 @@ export function AppShell({ route, children, account }: { route: Route; children:
     || route.name === "hr" || route.name === "hr-conversation"
     || route.name === "marketing" || route.name === "marketing-conversation";
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
-  const faeWorkspace = route.name.startsWith("admin-fae-");
-  const faeGovernanceWorkspace = route.name === "admin-fae-issues" || route.name === "admin-fae-issue";
+  const faeWorkspace = route.name.startsWith("fae-manage-");
+  const faeGovernanceWorkspace = route.name === "fae-manage-issues" || route.name === "fae-manage-issue";
+  const accountCanReadDeployment = account?.role === "platform_owner" || account?.role === "platform_admin";
+  const hasFaeManagement = account?.role === "platform_owner"
+    || account?.workspace_scopes.includes("fae_workbench") === true;
+  const shouldLoadDeployment = (current === "admin" && (!account || accountCanReadDeployment))
+    || (faeWorkspace && accountCanReadDeployment && hasFaeManagement);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
-  const [deploymentResolved, setDeploymentResolved] = useState(current !== "admin");
+  const [deploymentResolved, setDeploymentResolved] = useState(!shouldLoadDeployment);
   useEffect(() => {
-    if (current !== "admin" || (account && account.role !== "platform_owner" && account.role !== "platform_admin")) {
+    if (!shouldLoadDeployment) {
       setDeployment(null);
       setDeploymentResolved(true);
       return;
@@ -78,7 +86,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
       if (!controller.signal.aborted) setDeploymentResolved(true);
     });
     return () => controller.abort();
-  }, [account, current]);
+  }, [shouldLoadDeployment]);
   const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
   const roleNavigation = navigationFor(account);
   const navigation = roleNavigation;

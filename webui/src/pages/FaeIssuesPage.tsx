@@ -10,11 +10,17 @@ import { FaeWorkbenchApiError, faeWorkbenchApi } from "../faeWorkbenchApi";
 import { issueFilterFromSearch, navigate, safeIssueCollectionParams } from "../router";
 import type { ReviewInboxItem } from "../types";
 import { STATUS_LABELS } from "../components/review/IssueList";
+import { FAE_MANAGEMENT_PATH } from "../platform/workspaces";
+
+
+const FAE_ISSUES_PATH = `${FAE_MANAGEMENT_PATH}/issues`;
 
 
 function pathIssueId(): string | null {
-  const match = /^\/admin\/fae\/issues\/([0-9a-fA-F-]{36})$/.exec(localPathname());
-  return match?.[1] ?? null;
+  const path = localPathname();
+  const prefix = `${FAE_ISSUES_PATH}/`;
+  const issueId = path.startsWith(prefix) ? path.slice(prefix.length) : "";
+  return /^[0-9a-fA-F-]{36}$/.test(issueId) ? issueId : null;
 }
 
 const LOCAL_LIFECYCLE_STATUSES = Object.keys(STATUS_LABELS).filter((status) => status !== "unknown");
@@ -153,7 +159,8 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   else content = <ReviewWorkspace
     api={reviewApi}
     agentId="ai-fae-agent"
-    basePath="/admin/fae/issues"
+    basePath={FAE_ISSUES_PATH}
+    enforceDeploymentReadOnly
     initialIssueId={issueId ?? pathIssueId()}
     initialTurn={initialTurn}
     actor={`corp:${account.internal_user_id}`}

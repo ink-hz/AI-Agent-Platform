@@ -1,3 +1,6 @@
+import { FAE_MANAGEMENT_PATH } from "./platform/workspaces";
+
+
 export type SessionSource = "" | "metabot" | "fae" | "admin";
 export type SessionSentiment = "" | "positive" | "negative" | "other";
 
@@ -112,7 +115,7 @@ export function sessionsPath(filters: SessionFilters, basePath = "/admin/session
   if (filters.agent_id) params.set("agent_id", filters.agent_id);
   if (filters.source_kind) params.set("source_kind", filters.source_kind);
   if (filters.q) params.set("q", filters.q);
-  if (basePath === "/admin/fae/sessions") {
+  if (basePath === `${FAE_MANAGEMENT_PATH}/sessions`) {
     if (filters.channel) params.set("channel", filters.channel);
     if (filters.sentiment) params.set("sentiment", filters.sentiment);
     if (filters.review_status) params.set("review_status", filters.review_status);

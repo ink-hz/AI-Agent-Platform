@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  FAE_DIRECT_PATH,
+  FAE_MANAGEMENT_PATH,
+  FAE_WORKBENCH_API_PATH,
   MARKETING_AGENT_ID_BY_SLUG,
   directConversationPath,
   workspaceForAgent,
@@ -7,6 +10,12 @@ import {
 } from "./workspaces";
 
 describe("workspace route registry", () => {
+  it("publishes one canonical FAE browser and API contract", () => {
+    expect(FAE_DIRECT_PATH).toBe("/fae/");
+    expect(FAE_MANAGEMENT_PATH).toBe("/fae/manage");
+    expect(FAE_WORKBENCH_API_PATH).toBe("/api/fae");
+  });
+
   it.each([
     ["ai-admin-agent", "/office/?view=services"],
     ["ai-fae-agent", "/fae/"],

@@ -63,7 +63,7 @@ const detail: FeedbackIssueDetail = {
 
 function RouteHarness({ account = owner }: { account?: Account }) {
   const route = useRoute();
-  return route.name === "admin-fae-issue"
+  return route.name === "fae-manage-issue"
     ? <FaeIssuesPage account={account} issueId={route.issueId} />
     : <FaeIssuesPage account={account} />;
 }
@@ -102,13 +102,13 @@ describe("FaeIssuesPage", () => {
   });
 
   it("opens the action queue with exactly 20 rows per server page", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?page=2");
+    window.history.replaceState({}, "", "/fae/manage/issues?page=2");
     const issueRequests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) {
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) {
         issueRequests.push(path);
         return Promise.resolve(response({ items: [], total: 21, limit: 20, offset: 20, has_more: false }));
       }
@@ -117,17 +117,17 @@ describe("FaeIssuesPage", () => {
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
-    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20&offset=20&status=open");
+    expect(issueRequests[0]).toBe("/api/fae/issues?limit=20&offset=20&status=open");
   });
 
   it("persists the all queue explicitly and requests an unfiltered bounded page", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?status=all");
+    window.history.replaceState({}, "", "/fae/manage/issues?status=all");
     const issueRequests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path === "/api/admin/fae/issue-inbox?limit=20") return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) {
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path === "/api/fae/issue-inbox?limit=20") return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) {
         issueRequests.push(path);
         return Promise.resolve(response({ items: [], total: 87, limit: 20, offset: 0, has_more: true }));
       }
@@ -136,24 +136,24 @@ describe("FaeIssuesPage", () => {
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
-    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20");
+    expect(issueRequests[0]).toBe("/api/fae/issues?limit=20");
     expect(container.querySelector<HTMLButtonElement>('.fae-governance-queues button[aria-pressed="true"]')?.textContent).toBe("全部");
   });
 
   it("creates governance from the exact deep-linked real Turn and opens its stable Issue URL", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
+    window.history.replaceState({}, "", "/fae/manage/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
     const writes: { path: string; body: Record<string, unknown>; headers: Headers }[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/admin/fae/sessions/fae%3Asession-1") return response(session);
-      if (path === "/api/admin/fae/issue-overview") return response(overview(true));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return response([]);
-      if (path.startsWith("/api/admin/fae/issues?")) return response([]);
+      if (path === "/api/fae/sessions/fae%3Asession-1") return response(session);
+      if (path === "/api/fae/issue-overview") return response(overview(true));
+      if (path.startsWith("/api/fae/issue-inbox")) return response([]);
+      if (path.startsWith("/api/fae/issues?")) return response([]);
       if (init?.method === "POST") {
         writes.push({ path, body: JSON.parse(String(init.body)), headers: new Headers(init.headers) });
         return response(detail);
       }
-      if (path === `/api/admin/fae/issues/${ISSUE_ID}`) return response(detail);
+      if (path === `/api/fae/issues/${ISSUE_ID}`) return response(detail);
       throw new Error(`Unexpected request: ${path}`);
     }));
 
@@ -180,23 +180,23 @@ describe("FaeIssuesPage", () => {
     expect(writes[0].body).not.toHaveProperty("agent_id");
     expect(linkRequest?.body).not.toHaveProperty("agent_id");
     expect(writes.every((item) => item.headers.get("X-CSRF-Token") === owner.csrf_token)).toBe(true);
-    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.pathname).toBe(`/fae/manage/issues/${ISSUE_ID}`);
   });
 
   it("binds writes to a rotated account CSRF token", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
+    window.history.replaceState({}, "", "/fae/manage/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
     const writeHeaders: Headers[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/admin/fae/sessions/fae%3Asession-1") return response(session);
-      if (path === "/api/admin/fae/issue-overview") return response(overview(true));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return response([]);
-      if (path.startsWith("/api/admin/fae/issues?")) return response([]);
+      if (path === "/api/fae/sessions/fae%3Asession-1") return response(session);
+      if (path === "/api/fae/issue-overview") return response(overview(true));
+      if (path.startsWith("/api/fae/issue-inbox")) return response([]);
+      if (path.startsWith("/api/fae/issues?")) return response([]);
       if (init?.method === "POST") {
         writeHeaders.push(new Headers(init.headers));
         return response(detail);
       }
-      if (path === `/api/admin/fae/issues/${ISSUE_ID}`) return response(detail);
+      if (path === `/api/fae/issues/${ISSUE_ID}`) return response(detail);
       throw new Error(`Unexpected request: ${path}`);
     }));
 
@@ -210,15 +210,15 @@ describe("FaeIssuesPage", () => {
   });
 
   it("keeps FAE inbox URL state fixed-scope without an agent query", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues");
+    window.history.replaceState({}, "", "/fae/manage/issues");
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([{
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([{
         agent_id: "ai-fae-agent", turn_key: ordinaryTurn.turn_key, question: ordinaryTurn.question,
         answer: ordinaryTurn.answer, feedback_keys: [], first_feedback_at: ordinaryTurn.created_at,
       }]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) return Promise.resolve(response([]));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
@@ -232,53 +232,53 @@ describe("FaeIssuesPage", () => {
   });
 
   it("pushes stable FAE issue routes and restores list/detail through browser history", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues");
+    window.history.replaceState({}, "", "/fae/manage/issues");
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
-      if (path === `/api/admin/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
+      if (path === `/api/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
     await act(async () => root.render(<RouteHarness />));
     const issueRow = container.querySelector<HTMLButtonElement>(".review-issue-list button")!;
     await act(async () => issueRow.click());
-    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.pathname).toBe(`/fae/manage/issues/${ISSUE_ID}`);
     expect(container.textContent).toContain("回答缺少约束");
 
     await act(async () => {
       window.history.back();
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
-    expect(window.location.pathname).toBe("/admin/fae/issues");
+    expect(window.location.pathname).toBe("/fae/manage/issues");
     expect(container.textContent).not.toContain("回答缺少约束");
 
     await act(async () => {
       window.history.forward();
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
-    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.pathname).toBe(`/fae/manage/issues/${ISSUE_ID}`);
     expect(container.textContent).toContain("回答缺少约束");
   });
 
   it("preserves the preview prefix when opening a stable FAE issue", async () => {
     const prefix = "/_preview/dingtalk-r1";
-    window.history.replaceState({}, "", `${prefix}/admin/fae/issues`);
+    window.history.replaceState({}, "", `${prefix}/fae/manage/issues`);
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === `${prefix}/api/admin/fae/issue-overview`) return Promise.resolve(response(overview(true)));
-      if (path.startsWith(`${prefix}/api/admin/fae/issue-inbox`)) return Promise.resolve(response([]));
-      if (path.startsWith(`${prefix}/api/admin/fae/issues?`)) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
-      if (path === `${prefix}/api/admin/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
+      if (path === `${prefix}/api/fae/issue-overview`) return Promise.resolve(response(overview(true)));
+      if (path.startsWith(`${prefix}/api/fae/issue-inbox`)) return Promise.resolve(response([]));
+      if (path.startsWith(`${prefix}/api/fae/issues?`)) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
+      if (path === `${prefix}/api/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
     await act(async () => root.render(<RouteHarness />));
     await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
 
-    expect(window.location.pathname).toBe(`${prefix}/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.pathname).toBe(`${prefix}/fae/manage/issues/${ISSUE_ID}`);
     expect(container.textContent).toContain("回答缺少约束");
   });
 
@@ -291,17 +291,17 @@ describe("FaeIssuesPage", () => {
       progress: { ...detail.progress, issue_id: triageId, status: "pending_triage" },
     };
     const fixing = { ...detail.issue, progress: detail.progress };
-    window.history.replaceState({}, "", "/admin/fae/issues?status=pending_triage");
+    window.history.replaceState({}, "", "/fae/manage/issues?status=pending_triage");
     const issueRequests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) {
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) {
         issueRequests.push(path);
         return Promise.resolve(response(path.includes("status=fixing") ? [fixing] : [triage]));
       }
-      if (path === `/api/admin/fae/issues/${triageId}`) return Promise.resolve(response({
+      if (path === `/api/fae/issues/${triageId}`) return Promise.resolve(response({
         ...detail, issue: { ...detail.issue, id: triageId, title: triage.title }, progress: triage.progress,
       }));
       throw new Error(`Unexpected request: ${path}`);
@@ -313,16 +313,16 @@ describe("FaeIssuesPage", () => {
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
     expect(container.textContent).toContain("待归因事项");
     expect(container.textContent).not.toContain("普通回答治理事项");
-    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=20&status=pending_triage");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/fae/issues?limit=20&status=pending_triage");
 
     await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
-    expect(window.location.pathname).toBe(`/admin/fae/issues/${triageId}`);
+    expect(window.location.pathname).toBe(`/fae/manage/issues/${triageId}`);
     expect(window.location.search).toBe("?status=pending_triage");
     await act(async () => {
       window.history.back();
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
-    expect(window.location.pathname).toBe("/admin/fae/issues");
+    expect(window.location.pathname).toBe("/fae/manage/issues");
     expect(window.location.search).toBe("?status=pending_triage");
     expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("pending_triage");
 
@@ -335,7 +335,7 @@ describe("FaeIssuesPage", () => {
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
     expect(container.textContent).toContain("普通回答治理事项");
     expect(container.textContent).not.toContain("待归因事项");
-    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=20&status=fixing");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/fae/issues?limit=20&status=fixing");
 
     await act(async () => {
       window.history.back();
@@ -351,20 +351,20 @@ describe("FaeIssuesPage", () => {
   });
 
   it("normalizes a cloud-only status bookmark in local mode without sending it to the API", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?status=actionable");
+    window.history.replaceState({}, "", "/fae/manage/issues?status=actionable");
     const requests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
       requests.push(path);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(false)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, replica_read_only: true, progress: { status: "actionable", missing_gates: [] } }]));
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(false)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, replica_read_only: true, progress: { status: "actionable", missing_gates: [] } }]));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
-    expect(requests).toContain("/api/admin/fae/issues?limit=20&status=open");
+    expect(requests).toContain("/api/fae/issues?limit=20&status=open");
     expect(requests.every((path) => !path.includes("actionable"))).toBe(true);
     expect(requests.every((path) => !path.includes("agent_id"))).toBe(true);
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
@@ -376,20 +376,20 @@ describe("FaeIssuesPage", () => {
     "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy", "awaiting_replay",
     "awaiting_review", "closed", "duplicate", "not_actionable", "wont_fix",
   ])("sends local lifecycle filter %s as status and never offers unknown", async (lifecycle) => {
-    window.history.replaceState({}, "", `/admin/fae/issues?status=${lifecycle}`);
+    window.history.replaceState({}, "", `/fae/manage/issues?status=${lifecycle}`);
     const requests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
       requests.push(path);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, progress: { ...detail.progress, status: lifecycle } }]));
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, progress: { ...detail.progress, status: lifecycle } }]));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
-    expect(requests).toContain(`/api/admin/fae/issues?limit=20&status=${lifecycle}`);
+    expect(requests).toContain(`/api/fae/issues?limit=20&status=${lifecycle}`);
     const options = [...container.querySelectorAll<HTMLOptionElement>('select[aria-label="状态"] option')].map((option) => option.value);
     expect(options).not.toContain("actionable");
     expect(options).not.toContain("unknown");
@@ -416,18 +416,18 @@ describe("FaeIssuesPage", () => {
       if (path.endsWith("/api/deployment")) return response({
         mode: "cloud-replica", read_only: true, auth: "ssh-tunnel", freshness: "current", last_success_at: null,
       });
-      if (path.endsWith("/api/admin/fae/issue-overview")) return response({
+      if (path.endsWith("/api/fae/issue-overview")) return response({
         feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
         feedback_totals_status: "unavailable", issue_total: 1,
         statuses: { [lifecycle]: 1 }, dispositions: { [disposition]: 1 },
         lifecycle_status_available: true, write_available: false,
       });
-      if (path.includes("/api/admin/fae/issue-inbox")) return response([]);
-      if (path.includes("/api/admin/fae/issues?")) return response([{
+      if (path.includes("/api/fae/issue-inbox")) return response([]);
+      if (path.includes("/api/fae/issues?")) return response([{
         ...detail.issue, disposition, detail_schema_version: 1, replica_read_only: true,
         progress: { status: lifecycle, missing_gates: [] },
       }]);
-      if (path.endsWith(`/api/admin/fae/issues/${ISSUE_ID}`)) return response({
+      if (path.endsWith(`/api/fae/issues/${ISSUE_ID}`)) return response({
         ...detail,
         issue: { ...detail.issue, disposition, detail_schema_version: 1, replica_read_only: true },
         progress: { ...detail.progress, status: lifecycle, missing_gates: [] },
@@ -446,7 +446,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(requests).toContain(`/api/admin/fae/issues?limit=20&disposition=${disposition}`);
+    expect(requests).toContain(`/api/fae/issues?limit=20&disposition=${disposition}`);
     const options = [...container.querySelectorAll<HTMLOptionElement>('select[aria-label="状态"] option')].map((option) => option.value);
     expect(options).toEqual([
       "", "open", "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy",
@@ -474,13 +474,13 @@ describe("FaeIssuesPage", () => {
       if (path.endsWith("/api/deployment")) return response({
         mode: "cloud-replica", read_only: true, auth: "ssh-tunnel", freshness: "current", last_success_at: null,
       });
-      if (path.endsWith("/api/admin/fae/issue-overview")) return response({
+      if (path.endsWith("/api/fae/issue-overview")) return response({
         feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
         feedback_totals_status: "unavailable", issue_total: 0,
         statuses: {}, dispositions: {}, write_available: false,
       });
-      if (path.includes("/api/admin/fae/issue-inbox")) return response([]);
-      if (path.includes("/api/admin/fae/issues?")) return response([]);
+      if (path.includes("/api/fae/issue-inbox")) return response([]);
+      if (path.includes("/api/fae/issues?")) return response([]);
       throw new Error(`Unexpected request: ${path}`);
     }));
 
@@ -488,7 +488,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
     expect(`${window.location.pathname}${window.location.search}`).toBe("/fae/manage/issues");
-    expect(requests).toContain("/api/admin/fae/issues?limit=20&status=open");
+    expect(requests).toContain("/api/fae/issues?limit=20&status=open");
     expect(requests.every((path) => !path.includes("status=unknown"))).toBe(true);
     expect(container.textContent).toContain("反馈与修复");
 
@@ -497,7 +497,7 @@ describe("FaeIssuesPage", () => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(status, "open");
       status.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(requests).toContain("/api/admin/fae/issues?limit=20&status=open");
+    expect(requests).toContain("/api/fae/issues?limit=20&status=open");
   });
 
   it("waits for delayed cloud mode and canonicalizes locally-valid status before the first Issue request", async () => {
@@ -513,13 +513,13 @@ describe("FaeIssuesPage", () => {
       const path = String(input);
       if (path.endsWith("/api/v1/account")) return Promise.resolve(response(owner));
       if (path.endsWith("/api/deployment")) return deployment;
-      if (path.endsWith("/api/admin/fae/issue-overview")) return Promise.resolve(response({
+      if (path.endsWith("/api/fae/issue-overview")) return Promise.resolve(response({
         feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
         feedback_totals_status: "unavailable", issue_total: 0,
         statuses: {}, dispositions: {}, write_available: false,
       }));
-      if (path.includes("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.includes("/api/admin/fae/issues?")) {
+      if (path.includes("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.includes("/api/fae/issues?")) {
         issueRequests.push(path);
         return Promise.resolve(response([]));
       }
@@ -539,15 +539,15 @@ describe("FaeIssuesPage", () => {
       await Promise.resolve();
     });
 
-    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20&status=fixing");
+    expect(issueRequests[0]).toBe("/api/fae/issues?limit=20&status=fixing");
     expect(issueRequests).toHaveLength(1);
     expect(`${window.location.pathname}${window.location.search}`).toBe("/fae/manage/issues?status=fixing");
   });
 
   it.each([
-    ["cloud disposition", "cloud-replica", "?disposition=actionable", "/api/admin/fae/issues?limit=20&disposition=actionable"],
-    ["cloud open", "cloud-replica", "?status=open", "/api/admin/fae/issues?limit=20&status=open"],
-    ["local lifecycle", "local", "?status=fixing", "/api/admin/fae/issues?limit=20&status=fixing"],
+    ["cloud disposition", "cloud-replica", "?disposition=actionable", "/api/fae/issues?limit=20&disposition=actionable"],
+    ["cloud open", "cloud-replica", "?status=open", "/api/fae/issues?limit=20&status=open"],
+    ["local lifecycle", "local", "?status=fixing", "/api/fae/issues?limit=20&status=fixing"],
   ])("issues exactly one initial request for valid %s after mode resolves", async (_label, mode, search, expected) => {
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
@@ -561,13 +561,13 @@ describe("FaeIssuesPage", () => {
       const path = String(input);
       if (path.endsWith("/api/v1/account")) return Promise.resolve(response(owner));
       if (path.endsWith("/api/deployment")) return deployment;
-      if (path.endsWith("/api/admin/fae/issue-overview")) return Promise.resolve(response(
+      if (path.endsWith("/api/fae/issue-overview")) return Promise.resolve(response(
         mode === "cloud-replica"
           ? { feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null, feedback_totals_status: "unavailable", issue_total: 0, statuses: {}, dispositions: {}, write_available: false }
           : overview(true),
       ));
-      if (path.includes("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.includes("/api/admin/fae/issues?")) {
+      if (path.includes("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.includes("/api/fae/issues?")) {
         issueRequests.push(path);
         return Promise.resolve(response([]));
       }
@@ -594,12 +594,12 @@ describe("FaeIssuesPage", () => {
 
   it("preserves the preview prefix while changing an overview-backed Issue status", async () => {
     const prefix = "/_preview/dingtalk-r1";
-    window.history.replaceState({}, "", `${prefix}/admin/fae/issues?status=open`);
+    window.history.replaceState({}, "", `${prefix}/fae/manage/issues?status=open`);
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === `${prefix}/api/admin/fae/issue-overview`) return Promise.resolve(response(overview(true)));
-      if (path.startsWith(`${prefix}/api/admin/fae/issue-inbox`)) return Promise.resolve(response([]));
-      if (path.startsWith(`${prefix}/api/admin/fae/issues?`)) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
+      if (path === `${prefix}/api/fae/issue-overview`) return Promise.resolve(response(overview(true)));
+      if (path.startsWith(`${prefix}/api/fae/issue-inbox`)) return Promise.resolve(response([]));
+      if (path.startsWith(`${prefix}/api/fae/issues?`)) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
@@ -610,14 +610,14 @@ describe("FaeIssuesPage", () => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(status, "fixing");
       status.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(`${window.location.pathname}${window.location.search}`).toBe(`${prefix}/admin/fae/issues?status=fixing`);
+    expect(`${window.location.pathname}${window.location.search}`).toBe(`${prefix}/fae/manage/issues?status=fixing`);
   });
 
   it("rejects a deep link whose Turn is absent from the scoped Session", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Amissing");
+    window.history.replaceState({}, "", "/fae/manage/issues?session_key=fae%3Asession-1&turn_key=fae%3Amissing");
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/sessions/fae%3Asession-1") return Promise.resolve(response(session));
+      if (path === "/api/fae/sessions/fae%3Asession-1") return Promise.resolve(response(session));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
@@ -632,7 +632,7 @@ describe("FaeIssuesPage", () => {
     [403, "无权读取原始回答"],
     [503, "原始回答暂不可用"],
   ])("distinguishes Session operational failure %s from a missing Turn", async (status, expected) => {
-    window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
+    window.history.replaceState({}, "", "/fae/manage/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(errorResponse(status)));
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
@@ -643,7 +643,7 @@ describe("FaeIssuesPage", () => {
   });
 
   it("treats a malformed Session response as operationally unavailable", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
+    window.history.replaceState({}, "", "/fae/manage/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ turns: "invalid" })));
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
@@ -653,22 +653,22 @@ describe("FaeIssuesPage", () => {
   });
 
   it("does not retain a loaded Turn when the FAE deep-link URL changes", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
+    window.history.replaceState({}, "", "/fae/manage/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
     const pendingSession = new Promise<Response>(() => undefined);
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/sessions/fae%3Asession-1") return Promise.resolve(response(session));
-      if (path === "/api/admin/fae/sessions/fae%3Asession-pending") return pendingSession;
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([]));
+      if (path === "/api/fae/sessions/fae%3Asession-1") return Promise.resolve(response(session));
+      if (path === "/api/fae/sessions/fae%3Asession-pending") return pendingSession;
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) return Promise.resolve(response([]));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
     expect(container.textContent).toContain("普通回答");
 
-    window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-pending&turn_key=fae%3Aturn-pending");
+    window.history.replaceState({}, "", "/fae/manage/issues?session_key=fae%3Asession-pending&turn_key=fae%3Aturn-pending");
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
     expect(container.textContent).toContain("正在加载原始回答");
@@ -676,7 +676,7 @@ describe("FaeIssuesPage", () => {
   });
 
   it("renders the complete projected repair chain without mutation controls in a cloud replica", async () => {
-    window.history.replaceState({}, "", `/admin/fae/issues/${ISSUE_ID}`);
+    window.history.replaceState({}, "", `/fae/manage/issues/${ISSUE_ID}`);
     const projectedOverview = {
       feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
       feedback_totals_status: "unavailable", issue_total: 1,
@@ -715,10 +715,10 @@ describe("FaeIssuesPage", () => {
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const path = String(input);
       if (init?.method && init.method !== "GET") throw new Error(`Unexpected mutation: ${path}`);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(projectedOverview));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([projectedIssue]));
-      if (path === `/api/admin/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(projectedDetail));
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(projectedOverview));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) return Promise.resolve(response([projectedIssue]));
+      if (path === `/api/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(projectedDetail));
       throw new Error(`Unexpected request: ${path}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -733,7 +733,7 @@ describe("FaeIssuesPage", () => {
     expect(container.textContent).toContain("修复提交");
     expect(container.textContent).toContain("修复后回答");
     expect(container.textContent).toContain("复审通过");
-    expect(container.querySelector('a[href="/admin/fae/sessions/' + "s".repeat(52) + '"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/fae/manage/sessions/' + "s".repeat(52) + '"]')).not.toBeNull();
     expect(container.textContent).not.toContain("undefined");
     expect(container.textContent).not.toContain("0/0");
     const buttonLabels = [...container.querySelectorAll("button")].map((button) => button.textContent);
@@ -743,14 +743,14 @@ describe("FaeIssuesPage", () => {
   });
 
   it("hides mutations and shows paused governance when directory data is hard stale", async () => {
-    window.history.replaceState({}, "", `/admin/fae/issues/${ISSUE_ID}`);
+    window.history.replaceState({}, "", `/fae/manage/issues/${ISSUE_ID}`);
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const path = String(input);
       if (init?.method && init.method !== "GET") throw new Error(`Unexpected mutation: ${path}`);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
-      if (path === `/api/admin/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
+      if (path === `/api/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
       throw new Error(`Unexpected request: ${path}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -766,13 +766,13 @@ describe("FaeIssuesPage", () => {
   });
 
   it("restores server-side Issue filters and page two with accessible pagination", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout&page=2");
+    window.history.replaceState({}, "", "/fae/manage/issues?priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout&page=2");
     const issueRequests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) {
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) {
         issueRequests.push(path);
         return Promise.resolve(response({
           items: [{ ...detail.issue, priority: "P1", owner: "corp:one", failure_layer: "model", progress: detail.progress }],
@@ -785,7 +785,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
     expect(issueRequests).toContain(
-      "/api/admin/fae/issues?limit=20&offset=20&status=open&priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout",
+      "/api/fae/issues?limit=20&offset=20&status=open&priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout",
     );
     expect(container.querySelector('nav[aria-label="Issue 分页"]')?.textContent).toContain("第 2 页 · 共 205 项");
     expect(container.querySelector<HTMLInputElement>('input[aria-label="事项搜索"]')?.value).toBe("timeout");
@@ -793,23 +793,23 @@ describe("FaeIssuesPage", () => {
   });
 
   it("keeps exact safe page and filters on Issue detail URLs and history", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?status=fixing&q=timeout&page=2&unknown=drop");
+    window.history.replaceState({}, "", "/fae/manage/issues?status=fixing&q=timeout&page=2&unknown=drop");
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response({
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) return Promise.resolve(response({
         items: [{ ...detail.issue, progress: detail.progress }],
         total: 205, limit: 20, offset: 20, has_more: false,
       }));
-      if (path === `/api/admin/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
+      if (path === `/api/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
       throw new Error(`Unexpected request: ${path}`);
     }));
 
     await act(async () => root.render(<RouteHarness />));
     await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
 
-    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.pathname).toBe(`/fae/manage/issues/${ISSUE_ID}`);
     expect(window.location.search).toBe("?status=fixing&q=timeout&page=2");
     expect(window.location.search).not.toContain("session_key");
     expect(window.location.search).not.toContain("turn_key");
@@ -820,24 +820,24 @@ describe("FaeIssuesPage", () => {
       window.history.back();
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
-    expect(window.location.pathname).toBe("/admin/fae/issues");
+    expect(window.location.pathname).toBe("/fae/manage/issues");
     expect(window.location.search).toBe("?status=fixing&q=timeout&page=2&unknown=drop");
     await act(async () => {
       window.history.forward();
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
-    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.pathname).toBe(`/fae/manage/issues/${ISSUE_ID}`);
     expect(window.location.search).toBe("?status=fixing&q=timeout&page=2");
   });
 
   it("resets page before a status request and clamps an empty out-of-range page", async () => {
-    window.history.replaceState({}, "", "/admin/fae/issues?status=pending_triage&page=3");
+    window.history.replaceState({}, "", "/fae/manage/issues?status=pending_triage&page=3");
     const issueRequests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
-      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) {
+      if (path === "/api/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/fae/issues?")) {
         issueRequests.push(path);
         if (path.includes("offset=40")) return Promise.resolve(response({
           items: [], total: 25, limit: 20, offset: 40, has_more: false,
@@ -854,7 +854,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
     expect(window.location.search).toBe("?status=pending_triage&page=2");
     expect(issueRequests[issueRequests.length - 1]).toBe(
-      "/api/admin/fae/issues?limit=20&offset=20&status=pending_triage",
+      "/api/fae/issues?limit=20&offset=20&status=pending_triage",
     );
 
     const status = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
@@ -863,6 +863,6 @@ describe("FaeIssuesPage", () => {
       status.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(window.location.search).toBe("?status=fixing");
-    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=20&status=fixing");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/fae/issues?limit=20&status=fixing");
   });
 });

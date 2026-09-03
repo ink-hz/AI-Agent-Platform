@@ -37,13 +37,6 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "admin-session", sessionKey: "one" })).toBe("Session 回放 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-activity" })).toBe("运行记录 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-voc" })).toBe("VOC 管理 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-overview" })).toBe("FAE 工作台 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-sessions" })).toBe("FAE Sessions · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-session", sessionKey: "fae:one" })).toBe("FAE Session · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-issues" })).toBe("FAE 反馈与修复 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-issue", issueId: "00000000-0000-0000-0000-000000000001" })).toBe("FAE 问题 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-reports" })).toBe("FAE Agent 生产成果 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-report", reportId: "weekly:one" })).toBe("FAE Agent 生产成果 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "hr" })).toBe("HR Agent · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "hr-conversation", conversationId: "one" })).toBe("HR Agent · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "marketing", agentSlug: "inbound" })).toBe("Marketing Inbound · Orbbec Agent Platform");

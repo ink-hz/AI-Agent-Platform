@@ -26,13 +26,18 @@ describe("FAE workbench shell", () => {
     const shell = container.querySelector(".fae-workbench");
     expect(shell?.firstElementChild?.classList.contains("fae-workbench__sidebar")).toBe(true);
     expect(shell?.lastElementChild?.classList.contains("fae-workbench__content")).toBe(true);
-    expect([...container.querySelectorAll<HTMLAnchorElement>(".fae-workbench__sidebar a")].map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
-      ["概览", "/admin/fae"],
-      ["Sessions", "/admin/fae/sessions"],
-      ["反馈与修复", "/admin/fae/issues"],
-      ["分析报告", "/admin/fae/reports"],
+    expect([...container.querySelectorAll<HTMLAnchorElement>('.fae-workbench__workspace-nav a')].map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["Agent", "/fae/"],
+      ["管理", "/fae/manage/"],
     ]);
-    expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/fae/sessions"]')?.getAttribute("aria-current")).toBe("page");
+    expect([...container.querySelectorAll<HTMLAnchorElement>(".fae-workbench__sections a")].map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["概览", "/fae/manage/"],
+      ["Sessions", "/fae/manage/sessions"],
+      ["反馈与修复", "/fae/manage/issues"],
+      ["分析报告", "/fae/manage/reports"],
+    ]);
+    expect(container.querySelector<HTMLAnchorElement>('.fae-workbench__workspace-nav a[href="/fae/"]')?.onclick).toBeNull();
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/fae/manage/sessions"]')?.getAttribute("aria-current")).toBe("page");
     expect(container.querySelector(".fae-workbench__content")?.textContent).toContain("Session detail");
     expect(container.querySelector(".fae-workbench__content")?.tagName).toBe("DIV");
     expect(container.querySelectorAll("main")).toHaveLength(1);

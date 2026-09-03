@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 
 import { currentLocationPath } from "./router";
 import { platformPath } from "./auth";
+import { FAE_MANAGEMENT_PATH } from "./platform/workspaces";
 
 
 export type SessionOrigin = {
@@ -28,7 +29,7 @@ function supportedPlatformPath(path: string): boolean {
     if (url.origin !== window.location.origin || `${url.pathname}${url.search}` !== path) return false;
     return /^\/admin\/agents(?:\/[^/]+)?$/.test(url.pathname)
       || /^\/admin\/sessions(?:\/[^/]+)?$/.test(url.pathname)
-      || url.pathname === "/admin/fae/sessions"
+      || url.pathname === `${FAE_MANAGEMENT_PATH}/sessions`
       || url.pathname === "/admin/activity";
   } catch {
     return false;

@@ -65,7 +65,7 @@ describe("FaeSessionDetailPage", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
-    window.history.replaceState({}, "", "/admin/fae/sessions/fae%3Asession-1");
+    window.history.replaceState({}, "", "/fae/manage/sessions/fae%3Asession-1");
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   });
 
@@ -80,7 +80,7 @@ describe("FaeSessionDetailPage", () => {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
       const local = path.replace(/^\/_preview\/dingtalk-r1/, "");
-      if (local === `/api/admin/fae/sessions/${encodeURIComponent(value.session_key)}`) {
+      if (local === `/api/fae/sessions/${encodeURIComponent(value.session_key)}`) {
         return Promise.resolve(response(value));
       }
       if (local.startsWith("/api/review/turn-summaries?")) return Promise.resolve(response(summaries));
@@ -110,7 +110,7 @@ describe("FaeSessionDetailPage", () => {
     const actions = [...container.querySelectorAll<HTMLAnchorElement>(".review-entry a")];
     expect(actions).toHaveLength(2);
     expect(actions[0].getAttribute("href")).toBe(
-      "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1",
+      "/fae/manage/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1",
     );
     expect(actions[1].textContent).toBe("创建或查看问题");
     const unmanagedEntry = actions[0].closest(".review-entry")!;
@@ -135,11 +135,11 @@ describe("FaeSessionDetailPage", () => {
   });
 
   it("restores a filtered FAE page-two origin through the visible back link", async () => {
-    const origin = "/admin/fae/sessions?sentiment=negative&page=2&q=335";
+    const origin = "/fae/manage/sessions?sentiment=negative&page=2&q=335";
     window.history.replaceState(
       { sessionOrigin: { path: origin, scrollY: 640 } },
       "",
-      "/admin/fae/sessions/fae%3Asession-1",
+      "/fae/manage/sessions/fae%3Asession-1",
     );
     const back = vi.spyOn(window.history, "back").mockImplementation(() => undefined);
 
@@ -152,11 +152,11 @@ describe("FaeSessionDetailPage", () => {
   });
 
   it("keeps the preview prefix on a restored FAE collection back link", async () => {
-    const origin = "/admin/fae/sessions?abnormal=true&page=2";
+    const origin = "/fae/manage/sessions?abnormal=true&page=2";
     window.history.replaceState(
       { sessionOrigin: { path: origin, scrollY: 320 } },
       "",
-      "/_preview/dingtalk-r1/admin/fae/sessions/fae%3Asession-1",
+      "/_preview/dingtalk-r1/fae/manage/sessions/fae%3Asession-1",
     );
 
     await renderFaeSession({ ...session, turns: [] });
@@ -174,7 +174,7 @@ describe("FaeSessionDetailPage", () => {
     const requests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path.startsWith("/api/admin/fae/sessions/")) {
+      if (path.startsWith("/api/fae/sessions/")) {
         return Promise.resolve(response({ ...session, turn_count: turns.length, turns }));
       }
       if (path.startsWith("/api/review/turn-summaries?")) {

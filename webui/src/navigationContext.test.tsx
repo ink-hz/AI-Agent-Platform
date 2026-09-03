@@ -59,7 +59,7 @@ describe("Session navigation context", () => {
   });
 
   it("accepts exact FAE Session collection origins including preview-local URLs", () => {
-    const path = "/admin/fae/sessions?sentiment=negative&page=2&q=335";
+    const path = "/fae/manage/sessions?sentiment=negative&page=2&q=335";
     expect(sessionReturnTarget({ sessionOrigin: { path, scrollY: 512 } })).toBe(path);
 
     window.history.replaceState({}, "", `/_preview/dingtalk-r1${path}`);
@@ -69,9 +69,9 @@ describe("Session navigation context", () => {
   });
 
   it("rejects malformed FAE detail and external-looking collection origins", () => {
-    expect(sessionReturnTarget({ sessionOrigin: { path: "/admin/fae/sessions/one", scrollY: 1 } })).toBeNull();
-    expect(sessionReturnTarget({ sessionOrigin: { path: "/admin/fae/sessions#bad", scrollY: 1 } })).toBeNull();
-    expect(sessionReturnTarget({ sessionOrigin: { path: "//admin/fae/sessions", scrollY: 1 } })).toBeNull();
+    expect(sessionReturnTarget({ sessionOrigin: { path: "/fae/manage/sessions/one", scrollY: 1 } })).toBeNull();
+    expect(sessionReturnTarget({ sessionOrigin: { path: "/fae/manage/sessions#bad", scrollY: 1 } })).toBeNull();
+    expect(sessionReturnTarget({ sessionOrigin: { path: "//fae/manage/sessions", scrollY: 1 } })).toBeNull();
   });
 
   it("waits for content readiness before restoring a matching source entry", async () => {

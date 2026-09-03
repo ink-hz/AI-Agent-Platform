@@ -71,6 +71,7 @@ describe("login return path", () => {
   it.each([
     "/fae/",
     "/fae/conversations/fae:one",
+    "/fae/manage/",
     "/fae/manage/sessions",
     "/fae/manage/sessions/fae:one",
     "/fae/manage/issues/00000000-0000-4000-8000-000000000001",
@@ -99,8 +100,6 @@ describe("login return path", () => {
   });
 
   it.each([
-    routePath({ name: "admin-fae-session", sessionKey: "fae:session-1" }),
-    routePath({ name: "admin-fae-report", reportId: "weekly:2026-08-31" }),
     routePath({ name: "hr-conversation", conversationId: "hr:session-1" }),
     routePath({ name: "marketing-conversation", agentSlug: "voice", conversationId: "mkt:session-1" }),
     routePath({ name: "fae-manage-session", sessionKey: "fae:session-1" }),

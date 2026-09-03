@@ -76,6 +76,5 @@ describe("Agent Brain route boundary", () => {
     expect(routePath({ name: "admin-review" })).toBe("/admin/review");
     expect(routePath({ name: "admin-voc" })).toBe("/admin/voc");
     expect(routePath({ name: "admin-agent-runtime", agentId: "fae/a" })).toBe("/admin/agents/fae%2Fa/runtime");
-    expect(routePath({ name: "admin-fae-reports" })).toBe("/admin/fae/reports");
   });
 });

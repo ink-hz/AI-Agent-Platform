@@ -38,6 +38,7 @@ vi.mock("../../pages/ConversationPage", async (importOriginal) => ({
 const account: Account = {
   internal_user_id: "member", display_name: "磐德", role: "member",
   departments: [], gender: null, observation_agent_ids: [], directory_freshness: "fresh",
+  workspace_scopes: [],
   hard_stale_read_only: false, csrf_token: "csrf",
 };
 

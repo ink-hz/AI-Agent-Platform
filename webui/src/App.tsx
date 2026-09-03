@@ -7,9 +7,6 @@ import { AgentsPage } from "./pages/AgentsPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { AgentRuntimePage } from "./pages/AgentRuntimePage";
 import { SessionsPage } from "./pages/SessionsPage";
-import { FaeSessionsPage } from "./pages/FaeSessionsPage";
-import { FaeSessionDetailPage } from "./pages/FaeSessionDetailPage";
-import { FaeIssuesPage } from "./pages/FaeIssuesPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { ReviewPage } from "./pages/ReviewPage";
@@ -36,11 +33,9 @@ import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AgentUsePage } from "./pages/AgentUsePage";
 import { AiNotesPage } from "./pages/AiNotesPage";
-import { FaeReportsPage } from "./pages/FaeReportsPage";
-import { FaeOverviewPage } from "./pages/FaeOverviewPage";
-import { FaeWorkbenchShell, type FaeSection } from "./components/fae-workbench/FaeWorkbenchShell";
 import { HrWorkspacePage } from "./workspaces/hr/HrWorkspacePage";
 import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspacePage";
+import { FaeManagementWorkspace } from "./workspaces/fae/FaeManagementWorkspace";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -51,13 +46,6 @@ function PendingPage({ title, description }: { title: string; description: strin
       <p>{description}</p>
     </section>
   );
-}
-
-
-function FaeWorkbenchPendingPage({ section }: { section: FaeSection }) {
-  return <FaeWorkbenchShell currentSection={section}>
-    <PendingPage title="FAE 工作台" description="该工作区正在接入真实 FAE 运营数据。" />
-  </FaeWorkbenchShell>;
 }
 
 
@@ -146,28 +134,15 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
     case "admin-voc": return <LegacyRedirect to="/voc/manage/" navigation="document" />;
-    case "admin-fae-overview": return <FaeOverviewPage />;
-    case "admin-fae-sessions": return <FaeSessionsPage />;
-    case "admin-fae-session": return <FaeSessionDetailPage sessionKey={route.sessionKey} />;
-    case "admin-fae-issues": return account
-      ? <FaeIssuesPage account={account} />
-      : <FaeWorkbenchPendingPage section="issues" />;
-    case "admin-fae-issue": return account
-      ? <FaeIssuesPage account={account} issueId={route.issueId} />
-      : <FaeWorkbenchPendingPage section="issues" />;
-    case "admin-fae-reports": return <FaeReportsPage />;
-    case "admin-fae-report": return <FaeReportsPage reportId={route.reportId} />;
-    case "fae-manage-overview": return <FaeOverviewPage />;
-    case "fae-manage-sessions": return <FaeSessionsPage />;
-    case "fae-manage-session": return <FaeSessionDetailPage sessionKey={route.sessionKey} />;
-    case "fae-manage-issues": return account
-      ? <FaeIssuesPage account={account} />
-      : <FaeWorkbenchPendingPage section="issues" />;
-    case "fae-manage-issue": return account
-      ? <FaeIssuesPage account={account} issueId={route.issueId} />
-      : <FaeWorkbenchPendingPage section="issues" />;
-    case "fae-manage-reports": return <FaeReportsPage />;
-    case "fae-manage-report": return <FaeReportsPage reportId={route.reportId} />;
+    case "fae-manage-overview":
+    case "fae-manage-sessions":
+    case "fae-manage-session":
+    case "fae-manage-issues":
+    case "fae-manage-issue":
+    case "fae-manage-reports":
+    case "fae-manage-report": return account
+      ? <FaeManagementWorkspace account={account} route={route} />
+      : <PendingPage title="FAE 工作台" description="请启用企业身份后使用。" />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} navigation={route.navigation} />;
     default: return <PendingPage title="页面不存在" description="请返回 Agent 大脑。" />;
   }
@@ -215,7 +190,8 @@ export default function App() {
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
   if (!legacyMode && account) {
     const usageRoute = ["brain", "conversations", "conversation", "missions", "mission", "agents", "agent", "agent-conversation", "voc-workspace", "hr", "hr-conversation", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
-    const allowed = usageRoute || account.role === "platform_owner" || account.role === "platform_admin"
+    const faeManagementRoute = route.name.startsWith("fae-manage-");
+    const allowed = usageRoute || faeManagementRoute || account.role === "platform_owner" || account.role === "platform_admin"
       || (account.role === "management_viewer" && viewerRouteAllowed(account, route));
     if (!allowed) {
       return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;

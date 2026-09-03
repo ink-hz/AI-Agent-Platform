@@ -76,8 +76,8 @@ const freshOverview: FaeOverview = {
   reports: { state: unavailableState("reports_not_integrated"), report_id: null, title: null, data_cutoff_at: null, currentness: null },
 };
 
-const periodSessionsHref = "/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00";
-const negativeSessionsHref = "/admin/fae/sessions?sentiment=negative&date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00";
+const periodSessionsHref = "/fae/manage/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00";
+const negativeSessionsHref = "/fae/manage/sessions?sentiment=negative&date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00";
 
 
 describe("FaeOverviewPage", () => {
@@ -88,7 +88,7 @@ describe("FaeOverviewPage", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
-    window.history.replaceState({}, "", "/admin/fae");
+    window.history.replaceState({}, "", "/fae/manage/");
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   });
 
@@ -130,12 +130,12 @@ describe("FaeOverviewPage", () => {
     expect(container.querySelector('[data-metric="active-subjects"] a')?.getAttribute("href")).toContain("has_subject=true");
     expect(container.querySelector('[data-metric="abnormal-sessions"] a')?.getAttribute("href")).toContain("abnormal=true");
     expect(container.querySelector('a[href*="outcome=failed"]')).toBeNull();
-    expect(container.querySelector('[data-metric="open-issues"] a[href="/admin/fae/issues?status=open"]')).not.toBeNull();
-    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=pending_triage"]')).not.toBeNull();
-    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=fixing"]')).not.toBeNull();
-    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=awaiting_review"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/admin/fae/sessions/fae%3Asession-1"]')).not.toBeNull();
-    expect(container.querySelector('.fae-report-preview > a[href="/admin/fae/reports"]')?.textContent).toContain("查看报告");
+    expect(container.querySelector('[data-metric="open-issues"] a[href="/fae/manage/issues?status=open"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/fae/manage/issues?status=pending_triage"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/fae/manage/issues?status=fixing"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/fae/manage/issues?status=awaiting_review"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/fae/manage/sessions/fae%3Asession-1"]')).not.toBeNull();
+    expect(container.querySelector('.fae-report-preview > a[href="/fae/manage/reports"]')?.textContent).toContain("查看报告");
 
     const bars = [...container.querySelectorAll<HTMLElement>(".fae-trend-bar")];
     expect(bars).toHaveLength(14);
@@ -151,8 +151,8 @@ describe("FaeOverviewPage", () => {
       issues: { ...freshOverview.issues, statuses: { actionable: 5, duplicate: 2, not_actionable: 1, wont_fix: 1 } },
     });
 
-    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=actionable"]')).toBeNull();
-    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?disposition=actionable"]')).toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/fae/manage/issues?status=actionable"]')).toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/fae/manage/issues?disposition=actionable"]')).toBeNull();
   });
 
   it("renders nullable metrics as unavailable instead of zero", async () => {
@@ -208,14 +208,14 @@ describe("FaeOverviewPage", () => {
   });
 
   it("preserves the preview prefix on all platform links", async () => {
-    window.history.replaceState({}, "", "/_preview/dingtalk-r1/admin/fae");
+    window.history.replaceState({}, "", "/_preview/dingtalk-r1/fae/manage");
     await renderOverview(freshOverview);
 
     const links = [...container.querySelectorAll<HTMLAnchorElement>(".fae-overview a")];
     expect(links.length).toBeGreaterThan(0);
-    expect(links.every((link) => link.getAttribute("href")?.startsWith("/_preview/dingtalk-r1/admin/fae"))).toBe(true);
+    expect(links.every((link) => link.getAttribute("href")?.startsWith("/_preview/dingtalk-r1/fae/manage"))).toBe(true);
     expect(container.querySelector('[data-metric="negative-turns"] a')?.getAttribute("href")).toBe(`/_preview/dingtalk-r1${negativeSessionsHref}`);
-    expect(container.querySelector('.fae-overview-list a[href="/_preview/dingtalk-r1/admin/fae/issues?status=pending_triage"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/_preview/dingtalk-r1/fae/manage/issues?status=pending_triage"]')).not.toBeNull();
   });
 });
 
@@ -232,7 +232,7 @@ describe("FAE overview routing and authorization", () => {
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
     document.head.append(identityMeta);
-    window.history.replaceState({}, "", "/admin/fae");
+    window.history.replaceState({}, "", "/fae/manage/");
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   });
 
@@ -252,7 +252,7 @@ describe("FAE overview routing and authorization", () => {
     departments: [],
     gender: null,
     observation_agent_ids: ["ai-fae-agent"],
-    workspace_scopes: ["fae_workbench"],
+    workspace_scopes: role === "platform_owner" ? ["fae_workbench"] : [],
     directory_freshness: "fresh",
     hard_stale_read_only: false,
     csrf_token: "csrf",
@@ -264,7 +264,7 @@ describe("FAE overview routing and authorization", () => {
       if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify(account("platform_owner")), {
         headers: { "Content-Type": "application/json" },
       });
-      if (path.endsWith("/api/admin/fae/overview")) return new Response(JSON.stringify({
+      if (path.endsWith("/api/fae/overview")) return new Response(JSON.stringify({
         ...freshOverview,
         issues: { ...freshOverview.issues, statuses: { actionable: 5, duplicate: 2 } },
       }));
@@ -287,7 +287,7 @@ describe("FAE overview routing and authorization", () => {
       if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify(account("platform_owner")), {
         headers: { "Content-Type": "application/json" },
       });
-      if (path.endsWith("/api/admin/fae/overview")) return new Response(JSON.stringify({
+      if (path.endsWith("/api/fae/overview")) return new Response(JSON.stringify({
         ...freshOverview,
         issues: { ...freshOverview.issues, statuses: { actionable: 5, duplicate: 2 } },
       }));
@@ -304,7 +304,7 @@ describe("FAE overview routing and authorization", () => {
     expect(metric?.textContent).toContain("2 个负向 Turn");
     expect(metric?.textContent).toContain("3 条负向反馈");
     expect(metric?.querySelector("a")?.getAttribute("href")).toContain("sentiment=negative");
-    expect(container.querySelector('a[href="/admin/fae/issues?disposition=actionable"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/fae/manage/issues?disposition=actionable"]')).not.toBeNull();
     expect(container.querySelector('a[href*="status=actionable"]')).toBeNull();
   });
 
@@ -321,7 +321,7 @@ describe("FAE overview routing and authorization", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container.textContent).toContain("无权访问");
-    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/admin/fae/overview"))).toBe(false);
+    expect(container.textContent).toContain("无权访问 FAE 管理");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/fae/overview"))).toBe(false);
   });
 });

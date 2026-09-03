@@ -50,13 +50,6 @@ export function routeDocumentTitle(route: Route): string {
     case "admin-identity": return `身份管理 · ${PLATFORM_TITLE}`;
     case "admin-governance": return `治理审计 · ${PLATFORM_TITLE}`;
     case "admin-voc": return `VOC 管理 · ${PLATFORM_TITLE}`;
-    case "admin-fae-overview": return `FAE 工作台 · ${PLATFORM_TITLE}`;
-    case "admin-fae-sessions": return `FAE Sessions · ${PLATFORM_TITLE}`;
-    case "admin-fae-session": return `FAE Session · ${PLATFORM_TITLE}`;
-    case "admin-fae-issues": return `FAE 反馈与修复 · ${PLATFORM_TITLE}`;
-    case "admin-fae-issue": return `FAE 问题 · ${PLATFORM_TITLE}`;
-    case "admin-fae-reports": return `FAE Agent 生产成果 · ${PLATFORM_TITLE}`;
-    case "admin-fae-report": return `FAE Agent 生产成果 · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }
 }
