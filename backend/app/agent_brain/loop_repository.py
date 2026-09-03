@@ -1039,6 +1039,12 @@ class BrainLoopRepository:
                 loop["turn_id"],
             ),
         )
+        if call.attachment_refs:
+            connection.execute(
+                "select platform_attachments.bind_brain_answer_artifacts_v64("
+                "%s,%s,%s)",
+                (loop["loop_id"], message_id, list(call.attachment_refs)),
+            )
         connection.execute(
             "update platform_control.conversation_turns set assistant_message_id=%s,"
             "status='completed',updated_at=clock_timestamp() where turn_id=%s",
@@ -1735,6 +1741,58 @@ class BrainLoopRepository:
                         (loop_id,),
                     )
                 )
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def active_attachment_ids_for_loop(self, loop_id: UUID) -> tuple[UUID, ...]:
+        """Return the ready attachments explicitly activated for this Turn.
+
+        The model can request only a subset of these IDs for a child task.  Keeping
+        the authoritative set in the repository prevents a guessed attachment UUID
+        from becoming a Task Grant merely because it appeared in a tool call.
+        """
+
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select attachment.attachment_id "
+                    "from platform_brain.brain_loops loop "
+                    "join platform_attachments.bindings binding "
+                    "on binding.conversation_id=loop.conversation_id "
+                    "and binding.turn_id=loop.turn_id and binding.kind='turn_input' "
+                    "join platform_attachments.attachments attachment "
+                    "on attachment.attachment_id=binding.attachment_id "
+                    "where loop.loop_id=%s and attachment.state='ready' "
+                    "and attachment.retained_until>clock_timestamp() "
+                    "and attachment.deleted_at is null "
+                    "order by attachment.attachment_id",
+                    (loop_id,),
+                ).fetchall()
+            return tuple(row["attachment_id"] for row in rows)
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def ready_artifact_ids_for_loop(self, loop_id: UUID) -> tuple[UUID, ...]:
+        """Return only retained Agent outputs that completed the artifact pipeline."""
+
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select version.attachment_id from "
+                    "platform_attachments.current_artifact_versions version "
+                    "join platform_attachments.artifacts artifact "
+                    "on artifact.artifact_id=version.artifact_id "
+                    "join platform_brain.agent_tasks task "
+                    "on task.task_id=artifact.task_id "
+                    "join platform_attachments.attachments attachment "
+                    "on attachment.attachment_id=version.attachment_id "
+                    "where task.loop_id=%s and attachment.retained_until>now() "
+                    "and attachment.deleted_at is null order by version.attachment_id",
+                    (loop_id,),
+                ).fetchall()
+            return tuple(row["attachment_id"] for row in rows)
         except psycopg.Error:
             raise BrainRepositoryError() from None
 

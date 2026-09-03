@@ -126,6 +126,25 @@ class ConversationCommandService:
             max_duration_seconds=self._max_duration_seconds,
         )
 
+    def resume_search(
+        self,
+        owner: UUID,
+        conversation_id: UUID,
+        source_turn_id: UUID,
+        request_id: UUID,
+    ) -> ConversationCreateResult:
+        conversation = self._repository.conversation_for_owner(
+            owner, conversation_id
+        )
+        if conversation.mode != "direct_agent":
+            raise ValueError("Search recovery is only available for direct Agents")
+        return self._repository.resume_search_turn(
+            owner,
+            conversation_id,
+            source_turn_id,
+            request_id,
+        )
+
     def resume_waiting_user(
         self,
         owner: UUID,

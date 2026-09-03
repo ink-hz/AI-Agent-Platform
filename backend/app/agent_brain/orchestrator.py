@@ -2,14 +2,22 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
+from dataclasses import asdict, dataclass
 import json
 import logging
 from typing import Any
 from uuid import UUID
 
 import psycopg
+from pydantic import ValidationError
 
-from app.execution_relay.models import RelayEvent, RelayJobPayload
+from app.execution_relay.models import (
+    CollaborationV4Result,
+    OutputWriteGrantPayload,
+    RelayEvent,
+    RelayJobPayload,
+    TaskAttachmentGrantPayload,
+)
 from app.execution_relay.repository import (
     ExecutionRelayConflict,
     ExecutionRelayError,
@@ -218,6 +226,12 @@ _PUBLIC_PROTOCOL_PREFIXES = (
 )
 
 
+@dataclass(frozen=True)
+class _TerminalDelivery:
+    text: str
+    collaboration: dict[str, object] | None = None
+
+
 def _validated_terminal_text(text: object, *, public: bool) -> str:
     if type(text) is not str or not text.strip():
         if public:
@@ -238,17 +252,61 @@ def _validated_terminal_text(text: object, *, public: bool) -> str:
     return selected
 
 
-def _terminal_text(
+def _terminal_delivery(
     events: tuple[RelayEvent, ...], status: str, *, require_public: bool = False
-) -> str:
+) -> _TerminalDelivery:
     expected_type = "agent.complete" if status == "completed" else "agent.error"
-    if not events or events[-1].event_type != expected_type:
+    if not events or (
+        events[-1].event_type != expected_type
+        and not (
+            status == "completed" and events[-1].event_type == "agent.result"
+        )
+    ):
         raise ExecutionRelayError("execution relay unavailable")
     payload = events[-1].payload
     if status != "completed":
-        return _validated_terminal_text(payload.get("text", ""), public=False)
+        return _TerminalDelivery(
+            _validated_terminal_text(payload.get("text", ""), public=False)
+        )
     result = payload.get("result")
-    if type(result) is not dict or result.get("success") is not True:
+    if type(result) is not dict:
+        if require_public:
+            raise PublicAnswerContractError("public answer contract invalid")
+        raise ExecutionRelayError("execution relay unavailable")
+    if result.get("contractVersion") == "core_chat_collaboration_v4":
+        if not require_public:
+            raise ExecutionRelayError("execution relay unavailable")
+        try:
+            parsed = CollaborationV4Result.model_validate_json(
+                json.dumps(
+                    {
+                        key: value
+                        for key, value in result.items()
+                        if key != "contractVersion"
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                strict=True,
+            )
+        except (TypeError, ValueError, ValidationError):
+            raise PublicAnswerContractError("public answer contract invalid") from None
+        if parsed.completion == "failed":
+            raise PublicAnswerContractError("public answer contract invalid")
+        text = _validated_terminal_text(
+            parsed.public_answer_markdown, public=True
+        )
+        collaboration = parsed.model_dump(mode="json", by_alias=True)
+        collaboration.pop("publicAnswerMarkdown")
+        return _TerminalDelivery(
+            text,
+            {
+                "contract_version": "core_chat_collaboration_v4",
+                **collaboration,
+            },
+        )
+    if result.get("success") is not True:
         if require_public:
             raise PublicAnswerContractError("public answer contract invalid")
         raise ExecutionRelayError("execution relay unavailable")
@@ -257,7 +315,15 @@ def _terminal_text(
             raise PublicAnswerContractError("public answer contract invalid")
         raise ExecutionRelayError("execution relay unavailable")
     key = "publicAnswerMarkdown" if require_public else "outputText"
-    return _validated_terminal_text(result.get(key), public=require_public)
+    return _TerminalDelivery(
+        _validated_terminal_text(result.get(key), public=require_public)
+    )
+
+
+def _terminal_text(
+    events: tuple[RelayEvent, ...], status: str, *, require_public: bool = False
+) -> str:
+    return _terminal_delivery(events, status, require_public=require_public).text
 
 
 def _is_visible_text(value: str | None) -> bool:
@@ -281,6 +347,7 @@ class MissionOrchestrator:
         conversation_context_builder: ConversationContextBuilder | None = None,
         conversation_projection: ConversationProjection | None = None,
         mission_modes: tuple[str, ...] = ("brain", "direct_agent"),
+        attachment_grants: object | None = None,
     ) -> None:
         if not callable(capability_provider):
             raise ValueError("capability provider required")
@@ -309,6 +376,7 @@ class MissionOrchestrator:
         self._conversation_context_builder = conversation_context_builder
         self._conversation_projection = conversation_projection
         self._mission_modes = mission_modes
+        self._attachment_grants = attachment_grants
 
     def check_ready(self) -> None:
         """Fail closed unless every Mission table and app privilege exists."""
@@ -647,6 +715,52 @@ class MissionOrchestrator:
         return True
 
     def _enqueue(self, mission: MissionRecord, run: MissionRun, prompt: str) -> bool:
+        try:
+            existing_state = self.relay.job_state(run.run_id)
+        except (ExecutionRelayNotFound, KeyError):
+            existing_state = None
+        if existing_state is not None:
+            return False
+
+        input_attachment_grants: tuple[TaskAttachmentGrantPayload, ...] = ()
+        output_write_grant: OutputWriteGrantPayload | None = None
+        collaboration_contract = None
+        task_session_id = None
+        if self._attachment_grants is not None and run.task_id is not None:
+            card = self._pinned_card(run)
+            request = self._request(mission)
+            active_attachment_ids = (
+                request.active_attachment_ids
+                if isinstance(request, ConversationContext)
+                else ()
+            )
+            if card.supports_attachments_in:
+                input_attachment_grants = tuple(
+                    TaskAttachmentGrantPayload.model_validate(
+                        asdict(
+                            self._attachment_grants.issue_attachment(
+                                run.task_id,
+                                attachment_id,
+                                run.agent_id,
+                            )
+                        )
+                    )
+                    for attachment_id in active_attachment_ids
+                )
+            if card.supports_attachments_out:
+                output_write_grant = OutputWriteGrantPayload.model_validate(
+                    asdict(
+                        self._attachment_grants.issue_output(
+                            run.task_id,
+                            run.agent_id,
+                        )
+                    )
+                )
+            if input_attachment_grants or output_write_grant is not None:
+                collaboration_contract = "core_chat_collaboration_v4"
+                task_session_id = (
+                    f"direct:{run.task_id}:{mission.mission_id}:{run.agent_id}"
+                )
         payload = RelayJobPayload(
             run_id=run.run_id,
             conversation_id=mission.mission_id,
@@ -660,21 +774,19 @@ class MissionOrchestrator:
                 if run.phase in {"direct", "synthesis"}
                 else "internal"
             ),
+            collaboration_contract=collaboration_contract,
+            task_session_id=task_session_id,
+            input_attachment_grants=input_attachment_grants,
+            output_write_grant=output_write_grant,
         )
         try:
-            existing_state = self.relay.job_state(run.run_id)
-        except (ExecutionRelayNotFound, KeyError):
-            existing_state = None
-        if existing_state is None:
-            try:
-                self.relay.enqueue(payload)
-            except ExecutionRelayConflict:
-                if self._state_name(self.relay.job_state(run.run_id)) not in (
-                    _ACTIVE_RELAY_STATES | _TERMINAL_RELAY_STATES
-                ):
-                    raise
-            return True
-        return False
+            self.relay.enqueue(payload)
+        except ExecutionRelayConflict:
+            if self._state_name(self.relay.job_state(run.run_id)) not in (
+                _ACTIVE_RELAY_STATES | _TERMINAL_RELAY_STATES
+            ):
+                raise
+        return True
 
     @staticmethod
     def _state_name(state: object) -> str:
@@ -1170,9 +1282,35 @@ class MissionOrchestrator:
             return False
         if state == "completed":
             try:
-                result = _terminal_text(events, state, require_public=True)
+                delivery = _terminal_delivery(events, state, require_public=True)
             except PublicAnswerContractError:
                 return self._complete_public_answer_invalid(mission, run)
+            result = delivery.text
+            artifacts = (
+                tuple(delivery.collaboration.get("artifacts", ()))
+                if delivery.collaboration is not None
+                else ()
+            )
+            if artifacts:
+                try:
+                    artifact_state = (
+                        self._attachment_grants.classify_result_artifacts(
+                            run.task_id,
+                            run.agent_id,
+                            artifacts,
+                        )
+                        if self._attachment_grants is not None
+                        and run.task_id is not None
+                        else "invalid"
+                    )
+                except Exception:
+                    artifact_state = "invalid"
+                if artifact_state == "pending":
+                    return False
+                if artifact_state != "ready":
+                    return self._complete_artifact_registration_failed(
+                        mission, run
+                    )
             if not _is_visible_text(result):
                 return self._complete_output_too_large(
                     mission, run, partial=False
@@ -1182,7 +1320,14 @@ class MissionOrchestrator:
                 mission.mission_id,
                 run.run_id,
                 status="completed",
-                output_payload={"text": result},
+                output_payload={
+                    "text": result,
+                    **(
+                        {"collaboration": delivery.collaboration}
+                        if delivery.collaboration is not None
+                        else {}
+                    ),
+                },
                 event_type="mission.completed",
                 event_payload={"text": result},
                 mission_status="completed",
@@ -1191,6 +1336,26 @@ class MissionOrchestrator:
             )
             return True
         return self._complete_terminal(mission, run, state, events)
+
+    def _complete_artifact_registration_failed(
+        self, mission: MissionRecord, run: MissionRun
+    ) -> bool:
+        self.missions.complete_run(
+            mission.owner_internal_user_id,
+            mission.mission_id,
+            run.run_id,
+            status="failed",
+            output_payload={"reason_code": "result_file_registration_failed"},
+            event_type="mission.failed",
+            event_payload={
+                "text": "结果文件登记失败，请重试本轮。",
+                "reason_code": "result_file_registration_failed",
+            },
+            mission_status="failed",
+            expected_mission_status=mission.status,
+            expected_row_version=mission.row_version,
+        )
+        return True
 
     def _advance_professional(self, mission: MissionRecord, run: MissionRun) -> bool:
         state, events = self._run_state(mission, run)

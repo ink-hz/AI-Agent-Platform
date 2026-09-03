@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -15,15 +15,20 @@ from app.attachments.grant_service import (
     AttachmentGrantService,
     OutputWriteGrant,
     TaskAttachmentGrant,
+    TaskGrantRepository,
     TaskGrantUnavailable,
 )
+from app.control_plane.crypto import IdentityKeyring
 from app.control_plane.middleware import IdentitySecurityMiddleware
+from app.execution_relay.content_crypto import ContentCodec
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from test_control_plane_migration import control_database
 from test_conversation_attachment_migration import (
     _insert_attachment,
+    _insert_artifact,
     _insert_task_input_binding,
+    _insert_task_output_binding,
     _seed_task,
 )
 
@@ -54,6 +59,7 @@ class GrantRepository:
     def __init__(self) -> None:
         self.issued = []
         self.consumed = []
+        self.classified = []
 
     def issue_read(self, **values):
         self.issued.append(("read", values))
@@ -65,6 +71,10 @@ class GrantRepository:
     def consume_read(self, **values):
         self.consumed.append(values)
         return _asset()
+
+    def classify_result_artifacts(self, **values):
+        self.classified.append(values)
+        return "ready"
 
 
 class Store:
@@ -193,6 +203,96 @@ def test_grant_lifetime_and_quotas_cannot_exceed_product_caps() -> None:
         )
     with pytest.raises(ValueError):
         service.issue_output(TASK_ID, "hr-bot", max_files=21)
+
+
+def test_result_artifact_classification_is_task_and_agent_bound() -> None:
+    repository = GrantRepository()
+    service = AttachmentGrantService(repository, Store())
+    artifacts = (
+        {
+            "attachmentId": str(ATTACHMENT_ID),
+            "artifactKey": "candidate-report",
+            "producerVersionId": "report-v1",
+            "displayName": "candidate-report.pdf",
+            "status": "ready",
+        },
+    )
+
+    assert service.classify_result_artifacts(TASK_ID, "hr-bot", artifacts) == "ready"
+    assert repository.classified == [
+        {"task_id": TASK_ID, "agent_id": "hr-bot", "artifacts": artifacts}
+    ]
+
+
+@pytest.mark.postgres
+def test_result_artifact_classification_requires_registered_ready_version(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin, agent_id="hr-bot")
+        artifact_id = _insert_artifact(admin, context, "candidate-report")
+        attachment_id = _insert_attachment(
+            admin, context, source_kind="agent_output"
+        )
+        _insert_task_output_binding(admin, context, attachment_id)
+        admin.execute(
+            "update platform_attachments.attachments set "
+            "immutable_locator='version:artifact-v1' where attachment_id=%s",
+            (attachment_id,),
+        )
+        admin.execute(
+            "insert into platform_attachments.artifact_versions("
+            "artifact_version_id,artifact_id,attachment_id,version_no,"
+            "producer_version_id,original_name_ciphertext,original_name_key_version,"
+            "object_ref_ciphertext,object_ref_key_version,size_bytes,state,result_status) "
+            "values (%s,%s,%s,1,'report-v1',%s,1,%s,1,128,'ready','succeeded')",
+            (uuid4(), artifact_id, attachment_id, b"n" * 29, b"r" * 29),
+        )
+        admin.commit()
+
+    codec = ContentCodec(
+        IdentityKeyring(
+            active_version=1,
+            purpose="platform-content-encryption",
+            _keys={1: b"k" * 32},
+        )
+    )
+    service = AttachmentGrantService(
+        TaskGrantRepository(
+            environment["urls"]["platform_control_app"], content_codec=codec
+        ),
+        Store(),
+    )
+    artifacts = (
+        {
+            "attachmentId": str(attachment_id),
+            "artifactKey": "candidate-report",
+            "producerVersionId": "report-v1",
+            "displayName": "candidate-report.pdf",
+            "status": "ready",
+        },
+    )
+
+    assert (
+        service.classify_result_artifacts(
+            context["task_id"], "hr-bot", artifacts
+        )
+        == "ready"
+    )
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_attachments.artifact_versions set "
+            "state='scanning',result_status='pending' where attachment_id=%s",
+            (attachment_id,),
+        )
+        admin.commit()
+    assert (
+        service.classify_result_artifacts(
+            context["task_id"], "hr-bot", artifacts
+        )
+        == "pending"
+    )
 
 
 def test_worker_media_gateway_requires_header_bearer_and_never_caches() -> None:

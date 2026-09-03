@@ -355,8 +355,22 @@ def test_v64_tables_constraints_foreign_keys_and_indexes(control_database) -> No
                 "platform_control.conversations",
                 "platform_control.conversation_messages",
                 "platform_control.conversation_turns",
-                "platform_control.mission_tasks",
             } <= referenced_tables
+            assert "platform_control.mission_tasks" not in referenced_tables
+            task_context_triggers = {
+                row[0]
+                for row in connection.execute(
+                    "select trigger_name from information_schema.triggers "
+                    "where event_object_schema in ('platform_attachments',"
+                    "'platform_control','platform_brain')"
+                )
+            }
+            assert {
+                "enforce_binding_task_context_v64",
+                "enforce_artifact_task_context_v64",
+                "revoke_terminal_mission_task_grants_v64",
+                "revoke_terminal_brain_task_grants_v64",
+            } <= task_context_triggers
 
             indexes = "\n".join(
                 row[0]
@@ -476,6 +490,7 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
             "upsert_conversation_read_state_v64",
         },
         "brain_worker": {
+            "issue_task_grant_v64",
             "claim_attachment_processing_job_v64",
             "record_attachment_processing_result_v64",
             "record_attachment_derivative_v64",

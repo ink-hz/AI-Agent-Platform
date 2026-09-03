@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 from uuid import UUID, uuid4
 
 import psycopg
@@ -89,9 +90,10 @@ class TaskGrantRepository:
         control_database_url: str,
         *,
         content_codec: ContentCodec,
+        dsn_purpose: Literal["app", "brain"] = "app",
         connect: Callable[..., object] = psycopg.connect,
     ) -> None:
-        validate_control_dsn(control_database_url, purpose="app")
+        validate_control_dsn(control_database_url, purpose=dsn_purpose)
         if not isinstance(content_codec, ContentCodec):
             raise TypeError("content codec required")
         self._database_url = control_database_url
@@ -265,6 +267,74 @@ class TaskGrantRepository:
         except Exception:  # noqa: BLE001 - authorization failures are intentionally opaque
             raise TaskGrantUnavailable() from None
 
+    def classify_result_artifacts(
+        self,
+        *,
+        task_id: UUID,
+        agent_id: str,
+        artifacts: tuple[dict[str, object], ...],
+    ) -> Literal["ready", "pending", "invalid"]:
+        attachment_ids = tuple(
+            UUID(value["attachmentId"])
+            for value in artifacts
+            if isinstance(value.get("attachmentId"), str)
+        )
+        if len(attachment_ids) != len(artifacts):
+            return "invalid"
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select artifact.artifact_key,artifact.task_id,artifact.agent_id,"
+                    "version.attachment_id,version.producer_version_id,"
+                    "version.state as version_state,version.result_status,"
+                    "attachment.state as attachment_state,attachment.immutable_locator "
+                    "from platform_attachments.artifact_versions version "
+                    "join platform_attachments.artifacts artifact "
+                    "on artifact.artifact_id=version.artifact_id "
+                    "join platform_attachments.attachments attachment "
+                    "on attachment.attachment_id=version.attachment_id "
+                    "where artifact.task_id=%s and artifact.agent_id=%s "
+                    "and version.attachment_id=any(%s)",
+                    (task_id, agent_id, list(attachment_ids)),
+                ).fetchall()
+        except Exception:  # noqa: BLE001 - storage failures are intentionally opaque
+            return "invalid"
+        by_attachment = {row["attachment_id"]: row for row in rows}
+        if len(by_attachment) != len(artifacts):
+            return "invalid"
+        pending = False
+        for expected, attachment_id in zip(artifacts, attachment_ids, strict=True):
+            row = by_attachment[attachment_id]
+            if (
+                row["task_id"] != task_id
+                or row["agent_id"] != agent_id
+                or row["artifact_key"] != expected.get("artifactKey")
+                or row["producer_version_id"] != expected.get("producerVersionId")
+            ):
+                return "invalid"
+            ready = (
+                row["version_state"] == "ready"
+                and row["result_status"] == "succeeded"
+                and row["attachment_state"] == "ready"
+                and row["immutable_locator"] is not None
+            )
+            rejected = (
+                row["version_state"] == "rejected"
+                or row["result_status"] == "failed"
+                or row["attachment_state"] in {"quarantined", "rejected", "deleted"}
+            )
+            if expected.get("status") == "ready":
+                if rejected:
+                    return "invalid"
+                pending = pending or not ready
+            elif expected.get("status") == "rejected":
+                if ready:
+                    return "invalid"
+                pending = pending or not rejected
+            else:
+                return "invalid"
+        return "pending" if pending else "ready"
+
 
 class AttachmentGrantService:
     def __init__(
@@ -397,6 +467,23 @@ class AttachmentGrantService:
             max_total_bytes=max_total_bytes,
         )
 
+    def classify_result_artifacts(
+        self,
+        task_id: UUID,
+        agent_id: str,
+        artifacts: tuple[dict[str, object], ...],
+    ) -> Literal["ready", "pending", "invalid"]:
+        self._identity(task_id, agent_id)
+        if not isinstance(artifacts, tuple) or len(artifacts) > MAX_TASK_OUTPUT_FILES:
+            raise ValueError("result artifacts invalid")
+        if not artifacts:
+            return "ready"
+        return self._repository.classify_result_artifacts(
+            task_id=task_id,
+            agent_id=agent_id,
+            artifacts=artifacts,
+        )
+
     @staticmethod
     def _stream_file(path: Path, directory: Path) -> Iterator[bytes]:
         try:
@@ -408,6 +495,8 @@ class AttachmentGrantService:
 
     def open_attachment(self, bearer_token: str, attachment_id: UUID) -> OpenedDownload:
         if not isinstance(attachment_id, UUID):
+            raise TaskGrantUnavailable()
+        if self._store is None:
             raise TaskGrantUnavailable()
         token_sha256 = bearer_token_sha256(bearer_token)
         asset = self._repository.consume_read(

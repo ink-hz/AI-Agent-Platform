@@ -147,7 +147,7 @@ create table platform_attachments.bindings (
     references platform_control.conversations(conversation_id),
   message_id uuid,
   turn_id uuid,
-  task_id uuid references platform_control.mission_tasks(task_id),
+  task_id uuid,
   agent_id text check (
     agent_id is null or agent_id ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
   ),
@@ -188,7 +188,7 @@ create table platform_attachments.artifacts (
     references platform_control.internal_users(internal_user_id),
   conversation_id uuid not null
     references platform_control.conversations(conversation_id),
-  task_id uuid not null references platform_control.mission_tasks(task_id),
+  task_id uuid not null,
   agent_id text not null
     check (agent_id ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'),
   label_ciphertext bytea
@@ -286,7 +286,7 @@ create table platform_attachments.derivatives (
 create table platform_attachments.task_grants (
   grant_id uuid primary key,
   token_sha256 bytea not null unique check (octet_length(token_sha256) = 32),
-  task_id uuid not null references platform_control.mission_tasks(task_id),
+  task_id uuid not null,
   attachment_id uuid
     references platform_attachments.attachments(attachment_id),
   agent_id text not null
@@ -322,7 +322,7 @@ create table platform_attachments.access_events (
   grant_id uuid references platform_attachments.task_grants(grant_id),
   actor_internal_user_id uuid
     references platform_control.internal_users(internal_user_id),
-  task_id uuid references platform_control.mission_tasks(task_id),
+  task_id uuid,
   agent_id text,
   operation text not null check (operation in (
     'preview','download','agent_read','agent_write','erase'
@@ -505,6 +505,31 @@ on platform_control.conversation_feedback
 for each row execute function
   platform_control.default_conversation_feedback_triage_v64();
 
+create function platform_attachments.task_context_v64(
+  selected_task_id uuid,
+  selected_agent_id text
+) returns table (
+  task_status text,
+  owner_internal_user_id uuid,
+  conversation_id uuid
+)
+language sql security definer stable
+set search_path = pg_catalog, platform_attachments
+as $function$
+  select task.status,mission.owner_internal_user_id,mission.conversation_id
+  from platform_control.mission_tasks task
+  join platform_control.missions mission on mission.mission_id=task.mission_id
+  where task.task_id=selected_task_id and task.agent_id=selected_agent_id
+  union all
+  select task.status,conversation.owner_internal_user_id,loop.conversation_id
+  from platform_brain.agent_tasks task
+  join platform_brain.brain_loops loop on loop.loop_id=task.loop_id
+  join platform_control.conversations conversation
+    on conversation.conversation_id=loop.conversation_id
+  where task.task_id=selected_task_id and task.agent_id=selected_agent_id
+  limit 1
+$function$;
+
 create function platform_attachments.enforce_binding_task_context_v64()
 returns trigger
 language plpgsql security definer
@@ -513,11 +538,9 @@ as $function$
 begin
   if new.kind in ('task_input','task_output') and not exists (
     select 1
-    from platform_control.mission_tasks task
-    join platform_control.missions mission on mission.mission_id=task.mission_id
-    where task.task_id=new.task_id and task.agent_id=new.agent_id
-      and mission.owner_internal_user_id=new.owner_internal_user_id
-      and mission.conversation_id=new.conversation_id
+    from platform_attachments.task_context_v64(new.task_id,new.agent_id) task
+    where task.owner_internal_user_id=new.owner_internal_user_id
+      and task.conversation_id=new.conversation_id
   ) then
     raise foreign_key_violation using message='Attachment binding task context invalid';
   end if;
@@ -538,11 +561,9 @@ as $function$
 begin
   if not exists (
     select 1
-    from platform_control.mission_tasks task
-    join platform_control.missions mission on mission.mission_id=task.mission_id
-    where task.task_id=new.task_id and task.agent_id=new.agent_id
-      and mission.owner_internal_user_id=new.owner_internal_user_id
-      and mission.conversation_id=new.conversation_id
+    from platform_attachments.task_context_v64(new.task_id,new.agent_id) task
+    where task.owner_internal_user_id=new.owner_internal_user_id
+      and task.conversation_id=new.conversation_id
   ) then
     raise foreign_key_violation using message='Artifact task context invalid';
   end if;
@@ -1342,8 +1363,12 @@ declare
   selected_conversation_id uuid;
 begin
   if current_user not in ('platform_control_owner','platform_control_owner_preview')
-     or session_user not in ('platform_control_app','platform_control_app_preview')
-     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+     or session_user not in (
+       'platform_control_app','platform_control_app_preview',
+       'platform_brain_worker','platform_brain_worker_preview'
+     )
+     or (current_database()='agent_platform_control') <>
+       (session_user in ('platform_control_app','platform_brain_worker'))
   then raise insufficient_privilege using message='Attachment grant issuer invalid'; end if;
   if octet_length(selected_token_sha256) <> 32
      or selected_scope not in ('read','write_output')
@@ -1360,15 +1385,35 @@ begin
        or selected_max_file_bytes > 52428800
      ))
   then raise check_violation using message='Attachment grant invalid'; end if;
-  select task.status,mission.owner_internal_user_id,mission.conversation_id
+  select task.task_status,task.owner_internal_user_id,task.conversation_id
     into selected_task_status,selected_owner_internal_user_id,
          selected_conversation_id
-  from platform_control.mission_tasks task
-  join platform_control.missions mission on mission.mission_id=task.mission_id
-  where task.task_id=selected_task_id and task.agent_id=selected_agent_id
-  for update of task;
-  if not found or selected_task_status not in ('queued','running') then
+  from platform_attachments.task_context_v64(
+    selected_task_id,selected_agent_id
+  ) task;
+  if not found or selected_task_status not in (
+    'queued','dispatched','running','waiting_input','waiting_confirmation'
+  ) then
     raise check_violation using message='Attachment grant requires active task';
+  end if;
+  if selected_scope='read' then
+    insert into platform_attachments.bindings(
+      binding_id,attachment_id,owner_internal_user_id,kind,
+      conversation_id,task_id,agent_id
+    )
+    select gen_random_uuid(),turn_binding.attachment_id,
+      selected_owner_internal_user_id,'task_input',selected_conversation_id,
+      selected_task_id,selected_agent_id
+    from platform_attachments.bindings turn_binding
+    join platform_attachments.attachments attachment
+      on attachment.attachment_id=turn_binding.attachment_id
+    where turn_binding.attachment_id=selected_attachment_id
+      and turn_binding.owner_internal_user_id=selected_owner_internal_user_id
+      and turn_binding.conversation_id=selected_conversation_id
+      and turn_binding.kind='turn_input'
+      and attachment.state='ready' and attachment.retained_until>now()
+      and attachment.deleted_at is null
+    on conflict do nothing;
   end if;
   if selected_scope='read' and not exists (
     select 1
@@ -1421,10 +1466,14 @@ begin
   then raise insufficient_privilege using message='Attachment grant consumer invalid'; end if;
   if octet_length(selected_token_sha256) <> 32 or selected_byte_count < 0
   then raise check_violation using message='Attachment grant consumption invalid'; end if;
-  if exists (
-    select 1 from platform_control.mission_tasks task
-    where task.task_id=selected_task_id and task.agent_id=selected_agent_id
-      and task.status not in ('queued','running')
+  if not exists (
+    select 1
+    from platform_attachments.task_context_v64(
+      selected_task_id,selected_agent_id
+    ) task
+    where task.task_status in (
+      'queued','dispatched','running','waiting_input','waiting_confirmation'
+    )
   ) then
     raise insufficient_privilege using message='Attachment task terminal';
   end if;
@@ -1471,9 +1520,13 @@ begin
   if octet_length(selected_token_sha256) <> 32 or selected_file_size_bytes < 0
   then raise check_violation using message='Output grant consumption invalid'; end if;
   if not exists (
-    select 1 from platform_control.mission_tasks task
-    where task.task_id=selected_task_id and task.agent_id=selected_agent_id
-      and task.status in ('queued','running')
+    select 1
+    from platform_attachments.task_context_v64(
+      selected_task_id,selected_agent_id
+    ) task
+    where task.task_status in (
+      'queued','dispatched','running','waiting_input','waiting_confirmation'
+    )
   ) then raise insufficient_privilege using message='Output task terminal'; end if;
   update platform_attachments.task_grants set
     file_count=file_count+1,bytes_read=bytes_read+selected_file_size_bytes
@@ -1515,36 +1568,41 @@ begin
   if exists (
     select 1
     from platform_attachments.task_grants grant_row
-    join platform_control.mission_tasks task on task.task_id=grant_row.task_id
+    cross join lateral platform_attachments.task_context_v64(
+      grant_row.task_id,grant_row.agent_id
+    ) task
     where grant_row.token_sha256=selected_token_sha256
       and grant_row.attachment_id=selected_attachment_id
       and grant_row.scope='read'
-      and task.agent_id=grant_row.agent_id
-      and task.status not in ('queued','running')
+      and task.task_status not in (
+        'queued','dispatched','running','waiting_input','waiting_confirmation'
+      )
   ) then
     raise insufficient_privilege using message='Attachment task terminal';
   end if;
   update platform_attachments.task_grants grant_row set
     read_count=grant_row.read_count+1,
     bytes_read=grant_row.bytes_read+selected_byte_count
-  from platform_attachments.attachments attachment,
-       platform_control.mission_tasks task,
-       platform_control.missions mission
+  from platform_attachments.attachments attachment
   where grant_row.token_sha256=selected_token_sha256
     and grant_row.attachment_id=selected_attachment_id
     and grant_row.scope='read'
     and grant_row.revoked_at is null and grant_row.expires_at > now()
     and grant_row.read_count < grant_row.max_reads
     and grant_row.bytes_read+selected_byte_count <= grant_row.max_bytes
-    and task.task_id=grant_row.task_id
-    and task.agent_id=grant_row.agent_id
-    and task.status in ('queued','running')
-    and mission.mission_id=task.mission_id
     and attachment.attachment_id=grant_row.attachment_id
-    and attachment.owner_internal_user_id=mission.owner_internal_user_id
-    and attachment.conversation_id=mission.conversation_id
     and attachment.state='ready' and attachment.retained_until > now()
     and selected_byte_count=attachment.size_bytes
+    and exists (
+      select 1 from platform_attachments.task_context_v64(
+        grant_row.task_id,grant_row.agent_id
+      ) task
+      where task.task_status in (
+        'queued','dispatched','running','waiting_input','waiting_confirmation'
+      )
+        and task.owner_internal_user_id=attachment.owner_internal_user_id
+        and task.conversation_id=attachment.conversation_id
+    )
     and exists (
       select 1 from platform_attachments.bindings binding
       where binding.attachment_id=attachment.attachment_id
@@ -1641,14 +1699,14 @@ begin
      or selected_expires_at > now() + interval '24 hours'
   then raise check_violation using message='Artifact upload reservation invalid'; end if;
 
-  select mission.owner_internal_user_id,mission.conversation_id
+  select task.owner_internal_user_id,task.conversation_id
     into selected_owner_internal_user_id,selected_conversation_id
-  from platform_control.mission_tasks task
-  join platform_control.missions mission on mission.mission_id=task.mission_id
-  where task.task_id=selected_task_id
-    and task.agent_id=selected_agent_id
-    and task.status in ('queued','running')
-  for update of task;
+  from platform_attachments.task_context_v64(
+    selected_task_id,selected_agent_id
+  ) task
+  where task.task_status in (
+    'queued','dispatched','running','waiting_input','waiting_confirmation'
+  );
   if not found then
     raise insufficient_privilege using message='Artifact task unavailable';
   end if;
@@ -1814,13 +1872,16 @@ begin
     on artifact.artifact_id=version.artifact_id
   join platform_attachments.task_grants grant_row
     on grant_row.task_id=artifact.task_id and grant_row.agent_id=artifact.agent_id
-  join platform_control.mission_tasks task
-    on task.task_id=artifact.task_id and task.agent_id=artifact.agent_id
+  cross join lateral platform_attachments.task_context_v64(
+    artifact.task_id,artifact.agent_id
+  ) task
   where upload.upload_id=selected_upload_id
     and grant_row.token_sha256=selected_token_sha256
     and grant_row.scope='write_output'
     and grant_row.revoked_at is null and grant_row.expires_at > now()
-    and task.status in ('queued','running')
+    and task.task_status in (
+      'queued','dispatched','running','waiting_input','waiting_confirmation'
+    )
     and attachment.source_kind='agent_output';
   if not found then
     raise insufficient_privilege using message='Artifact upload unavailable';
@@ -1906,13 +1967,16 @@ begin
     on artifact.artifact_id=version.artifact_id
   join platform_attachments.task_grants grant_row
     on grant_row.task_id=artifact.task_id and grant_row.agent_id=artifact.agent_id
-  join platform_control.mission_tasks task
-    on task.task_id=artifact.task_id and task.agent_id=artifact.agent_id
+  cross join lateral platform_attachments.task_context_v64(
+    artifact.task_id,artifact.agent_id
+  ) task
   where upload.upload_id=selected_upload_id
     and grant_row.token_sha256=selected_token_sha256
     and grant_row.scope='write_output'
     and grant_row.revoked_at is null and grant_row.expires_at > now()
-    and task.status in ('queued','running')
+    and task.task_status in (
+      'queued','dispatched','running','waiting_input','waiting_confirmation'
+    )
     and attachment.source_kind='agent_output';
   if not found then
     raise insufficient_privilege using message='Artifact upload unavailable';
@@ -1951,6 +2015,30 @@ begin
   return found;
 end
 $function$;
+
+create function platform_attachments.revoke_terminal_task_grants_v64()
+returns trigger
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+begin
+  if old.terminal_at is null and new.terminal_at is not null then
+    update platform_attachments.task_grants set revoked_at=clock_timestamp()
+    where task_id=new.task_id and revoked_at is null;
+  end if;
+  return new;
+end
+$function$;
+
+create trigger revoke_terminal_mission_task_grants_v64
+after update of terminal_at on platform_control.mission_tasks
+for each row execute function
+  platform_attachments.revoke_terminal_task_grants_v64();
+
+create trigger revoke_terminal_brain_task_grants_v64
+after update of terminal_at on platform_brain.agent_tasks
+for each row execute function
+  platform_attachments.revoke_terminal_task_grants_v64();
 
 create function platform_attachments.bind_artifact_version_v64(
   selected_artifact_version_id uuid,
@@ -2487,6 +2575,87 @@ begin
 end
 $function$;
 
+create function platform_attachments.bind_brain_answer_artifacts_v64(
+  selected_loop_id uuid,
+  selected_message_id uuid,
+  selected_attachment_ids uuid[]
+) returns integer
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_owner_internal_user_id uuid;
+  selected_conversation_id uuid;
+  selected_turn_id uuid;
+  selected_count integer;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_brain_worker','platform_brain_worker_preview')
+     or (current_database()='agent_platform_control') <>
+       (session_user='platform_brain_worker')
+  then raise insufficient_privilege using message='Brain answer artifact binder invalid'; end if;
+  if selected_loop_id is null or selected_message_id is null
+     or selected_attachment_ids is null
+     or cardinality(selected_attachment_ids) not between 1 and 32
+     or cardinality(selected_attachment_ids)<>(
+       select count(distinct value) from unnest(selected_attachment_ids) value
+     )
+  then raise check_violation using message='Brain answer artifacts invalid'; end if;
+
+  select conversation.owner_internal_user_id,loop.conversation_id,loop.turn_id
+    into selected_owner_internal_user_id,selected_conversation_id,selected_turn_id
+  from platform_brain.brain_loops loop
+  join platform_control.conversations conversation
+    on conversation.conversation_id=loop.conversation_id
+  where loop.loop_id=selected_loop_id;
+  if not found then raise no_data_found using message='Brain answer Loop unavailable'; end if;
+  if not exists (
+    select 1 from platform_control.conversation_messages message
+    where message.message_id=selected_message_id
+      and message.conversation_id=selected_conversation_id
+      and message.turn_id=selected_turn_id and message.role='assistant'
+  ) then raise check_violation using message='Brain answer message invalid'; end if;
+
+  select count(*) into selected_count
+  from unnest(selected_attachment_ids) selected(attachment_id)
+  join platform_attachments.current_artifact_versions version
+    on version.attachment_id=selected.attachment_id
+  join platform_attachments.artifacts artifact
+    on artifact.artifact_id=version.artifact_id
+  join platform_brain.agent_tasks task on task.task_id=artifact.task_id
+  join platform_attachments.attachments attachment
+    on attachment.attachment_id=version.attachment_id
+  where task.loop_id=selected_loop_id
+    and artifact.owner_internal_user_id=selected_owner_internal_user_id
+    and artifact.conversation_id=selected_conversation_id
+    and attachment.owner_internal_user_id=selected_owner_internal_user_id
+    and attachment.conversation_id=selected_conversation_id
+    and attachment.state='ready' and attachment.ready_at is not null
+    and attachment.immutable_locator is not null
+    and attachment.retained_until>now() and attachment.deleted_at is null;
+  if selected_count<>cardinality(selected_attachment_ids) then
+    raise check_violation using message='Brain answer artifact unavailable';
+  end if;
+
+  insert into platform_attachments.bindings(
+    binding_id,attachment_id,owner_internal_user_id,kind,
+    conversation_id,message_id,agent_id
+  )
+  select gen_random_uuid(),selected.attachment_id,
+    selected_owner_internal_user_id,'message_output',selected_conversation_id,
+    selected_message_id,artifact.agent_id
+  from unnest(selected_attachment_ids) selected(attachment_id)
+  join platform_attachments.current_artifact_versions version
+    on version.attachment_id=selected.attachment_id
+  join platform_attachments.artifacts artifact
+    on artifact.artifact_id=version.artifact_id
+  join platform_brain.agent_tasks task on task.task_id=artifact.task_id
+  where task.loop_id=selected_loop_id
+  on conflict do nothing;
+  return cardinality(selected_attachment_ids);
+end
+$function$;
+
 revoke all on all tables in schema platform_attachments from public;
 revoke all on all functions in schema platform_attachments from public;
 
@@ -2607,6 +2776,8 @@ begin
   );
   execute format(
     'grant execute on function '
+    'platform_attachments.issue_task_grant_v64('
+    'uuid,bytea,uuid,uuid,text,text,timestamptz,integer,bigint,integer,bigint), '
     'platform_attachments.claim_attachment_processing_job_v64(text), '
     'platform_attachments.record_attachment_processing_result_v64('
     'uuid,uuid,text,text,text,jsonb,text),'
@@ -2619,7 +2790,9 @@ begin
     'platform_attachments.bind_artifact_version_v64('
     'uuid,uuid,uuid,integer,text), '
     'platform_attachments.fail_artifact_version_v64('
-    'uuid,text,text) to %I',selected_brain
+    'uuid,text,text), '
+    'platform_attachments.bind_brain_answer_artifacts_v64('
+    'uuid,uuid,uuid[]) to %I',selected_brain
   );
   execute format(
     'grant execute on function '

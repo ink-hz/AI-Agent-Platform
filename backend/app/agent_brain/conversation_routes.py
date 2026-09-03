@@ -374,7 +374,7 @@ def _conversation_payload(record: ConversationRecord) -> dict[str, object]:
 
 
 def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "message_id": str(record.message_id),
         "conversation_id": str(record.conversation_id),
         "seq": record.seq,
@@ -394,6 +394,9 @@ def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
             str(attachment_id) for attachment_id in record.active_attachment_ids
         ],
     }
+    if record.search_recovery is not None:
+        payload["search_recovery"] = record.search_recovery.public_payload()
+    return payload
 
 
 def _attachment_payload(
@@ -1081,6 +1084,52 @@ def build_conversation_router(
             )
         except ValueError:
             raise HTTPException(404, "Conversation not found", headers=_NO_STORE)
+        except ConversationRepositoryError as error:
+            raise _repository_http_error(error) from None
+        response.status_code = 201 if result.created else 200
+        response.headers.update(_NO_STORE)
+        return _create_payload(result)
+
+    @router.post(
+        "/api/v1/conversations/{conversation_id}/turns/{turn_id}/resume",
+        status_code=201,
+    )
+    async def resume_search_turn(
+        conversation_id: UUID,
+        turn_id: UUID,
+        request: Request,
+        response: Response,
+        idempotency_key: Annotated[
+            str | None, Header(alias="Idempotency-Key")
+        ] = None,
+    ):
+        context = _auth_context(request)
+        _ensure_writable(context)
+        request_id = _parse_idempotency_key(idempotency_key)
+        try:
+            conversation = await asyncio.to_thread(
+                repository.conversation_for_owner,
+                context.internal_user_id,
+                conversation_id,
+            )
+            if conversation.mode != "direct_agent":
+                raise HTTPException(
+                    409, "Search recovery unavailable", headers=_NO_STORE
+                )
+            await require_direct_agent(
+                context.internal_user_id, conversation.direct_agent_id
+            )
+            result = await asyncio.to_thread(
+                commands.resume_search,
+                context.internal_user_id,
+                conversation_id,
+                turn_id,
+                request_id,
+            )
+        except ValueError:
+            raise HTTPException(
+                409, "Search recovery unavailable", headers=_NO_STORE
+            ) from None
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
         response.status_code = 201 if result.created else 200

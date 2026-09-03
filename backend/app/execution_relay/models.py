@@ -272,7 +272,7 @@ class RelayJobPayload(BaseModel):
             self.task_session_id,
             self.parent_run_id,
         )
-        if self.job_kind != "metabot_local":
+        if self.job_kind == "legacy_brain":
             if (
                 any(value is not None for value in collaboration_values)
                 or self.input_attachment_grants
@@ -282,6 +282,20 @@ class RelayJobPayload(BaseModel):
             ):
                 raise ValueError("collaboration command requires metabot_local")
             return self
+        if self.job_kind == "direct_agent" and (
+            all(value is None for value in collaboration_values)
+            and not self.input_attachment_grants
+            and self.output_write_grant is None
+            and self.message_kind == "initial"
+            and self.message_seq == 1
+        ):
+            return self
+        if self.job_kind == "direct_agent" and (
+            self.message_kind != "initial"
+            or self.message_seq != 1
+            or self.parent_run_id is not None
+        ):
+            raise ValueError("direct collaboration command invalid")
         if (
             self.agent_id == "agent-brain-bot"
             or self.collaboration_contract is None
@@ -306,8 +320,11 @@ class RelayJobPayload(BaseModel):
         if len(set(attachment_ids)) != len(attachment_ids):
             raise ValueError("attachment grants must be unique")
         if self.output_write_grant is not None and (
-            self.output_write_grant.task_id != self.run_id
-            or self.output_write_grant.agent_id != self.agent_id
+            self.output_write_grant.agent_id != self.agent_id
+            or (
+                self.job_kind == "metabot_local"
+                and self.output_write_grant.task_id != self.run_id
+            )
         ):
             raise ValueError("output write grant subject mismatch")
         return self

@@ -29,6 +29,7 @@ from .attachments.download_service import (
 )
 from .attachments.grant_service import AttachmentGrantService, TaskGrantRepository
 from .attachments.object_writer import AttachmentObjectWriter
+from .attachments.result_projection import ConversationResultProjection
 from .attachments.repository import AttachmentRepository
 from .attachments.service import AttachmentService
 from .attachments.store import AttachmentStore
@@ -819,27 +820,6 @@ def create_app(
         v1_mission_modes.append("direct_agent")
     if config.agent_brain_enabled and not config.agent_brain_v2_enabled:
         v1_mission_modes.append("brain")
-    if v1_mission_modes:
-        if (
-            mission_repository is None
-            or conversation_repository is None
-            or execution_relay_repository is None
-            or agent_use_authorization is None
-        ):
-            raise RuntimeError("Agent Brain unavailable")
-        agent_brain_orchestrator = MissionOrchestrator(
-            mission_repository,
-            execution_relay_repository,
-            capability_provider=agent_use_authorization.permitted_agents_for_user_id,
-            conversation_context_builder=ConversationContextBuilder(
-                conversation_repository
-            ),
-            conversation_projection=ConversationProjection(
-                conversation_repository
-            ),
-            mission_modes=tuple(v1_mission_modes),
-        )
-        agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
         identity_auth = build_identity_auth(config)
     if config.partner_provider_kind and (
@@ -1051,6 +1031,34 @@ def create_app(
         service is not None for service in attachment_services
     ):
         raise RuntimeError("conversation attachment services unavailable")
+    if v1_mission_modes:
+        if (
+            mission_repository is None
+            or conversation_repository is None
+            or execution_relay_repository is None
+            or agent_use_authorization is None
+        ):
+            raise RuntimeError("Agent Brain unavailable")
+        agent_brain_orchestrator = MissionOrchestrator(
+            mission_repository,
+            execution_relay_repository,
+            capability_provider=agent_use_authorization.permitted_agents_for_user_id,
+            conversation_context_builder=ConversationContextBuilder(
+                conversation_repository
+            ),
+            conversation_projection=ConversationProjection(
+                conversation_repository,
+                result_projection=(
+                    ConversationResultProjection(content_codec=content_codec)
+                    if task_attachment_grant_service is not None
+                    and citation_service is not None
+                    else None
+                ),
+            ),
+            mission_modes=tuple(v1_mission_modes),
+            attachment_grants=task_attachment_grant_service,
+        )
+        agent_brain_orchestrator.check_ready()
     if (
         attachment_service is not None
         or conversation_attachment_download_service is not None

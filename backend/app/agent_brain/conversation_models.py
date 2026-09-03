@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from app.agent_brain.recovery import SearchRecoveryState
 from app.agent_brain.repository import MissionRecord
 
 ConversationMode = Literal["brain", "direct_agent"]
@@ -127,6 +128,7 @@ class ConversationMessageRecord:
     input_attachments: tuple[ConversationAttachmentProjection, ...] = ()
     output_attachments: tuple[ConversationAttachmentProjection, ...] = ()
     active_attachment_ids: tuple[UUID, ...] = ()
+    search_recovery: SearchRecoveryState | None = None
 
 
 @dataclass(frozen=True)

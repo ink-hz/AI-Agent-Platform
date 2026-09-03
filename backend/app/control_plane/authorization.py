@@ -52,6 +52,7 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("POST", "/api/v1/conversations/{conversation_id}/actions/{action_id}/reject"),
     ("POST", "/api/v1/conversations/{conversation_id}/turns/current/cancel"),
     ("POST", "/api/v1/conversations/{conversation_id}/turns/{turn_id}/retry"),
+    ("POST", "/api/v1/conversations/{conversation_id}/turns/{turn_id}/resume"),
     ("POST", "/api/v1/conversations/{conversation_id}/archive"),
     ("POST", "/api/v1/conversations/{conversation_id}/restore"),
     ("POST", "/api/v1/attachments/uploads"),

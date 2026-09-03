@@ -83,13 +83,30 @@ class BrainContextPolicy:
             omissions = (ContextOmission("conversation", "context_truncated"),)
         return BrainContext(tuple(kept), omissions)
 
-    def build_task_context(self, call: DelegateTaskCall) -> TaskContext:
+    def build_task_context(
+        self,
+        call: DelegateTaskCall,
+        *,
+        active_attachment_ids: tuple[UUID, ...] | None = None,
+    ) -> TaskContext:
         if not isinstance(call, DelegateTaskCall):
             raise ValueError("delegate task call required")
+        if active_attachment_ids is not None and (
+            not isinstance(active_attachment_ids, tuple)
+            or any(not isinstance(value, UUID) for value in active_attachment_ids)
+        ):
+            raise ValueError("active attachment IDs invalid")
+        active = (
+            frozenset(active_attachment_ids)
+            if active_attachment_ids is not None
+            else None
+        )
         accepted: list[UUID] = []
         omissions: list[ContextOmission] = []
         for attachment_ref in call.attachment_refs:
-            if self._attachment_authorized(attachment_ref):
+            if active is not None and attachment_ref not in active:
+                omissions.append(ContextOmission("attachment", "not_active"))
+            elif self._attachment_authorized(attachment_ref):
                 accepted.append(attachment_ref)
             else:
                 omissions.append(ContextOmission("attachment", "not_authorized"))

@@ -26,6 +26,11 @@ from app.agent_brain.conversation_models import (
     normalize_turn_submission,
 )
 from app.agent_brain.models import AgentCapabilityCard, load_capability_cards
+from app.agent_brain.recovery import (
+    SearchRecoveryError,
+    SearchRecoveryState,
+    search_recovery_from_collaboration,
+)
 from app.agent_brain.repository import (
     MissionRecord,
     MissionRepository,
@@ -356,6 +361,14 @@ class ConversationRepository:
             if cursor is not None
             else ((), (), ())
         )
+        search_recovery = (
+            self._search_recovery_locked(cursor, row)
+            if cursor is not None
+            and row["role"] == "assistant"
+            and row["delivery_status"] == "completed"
+            and row["mission_id"] is not None
+            else None
+        )
         return ConversationMessageRecord(
             message_id=row["message_id"],
             conversation_id=row["conversation_id"],
@@ -370,7 +383,24 @@ class ConversationRepository:
             input_attachments=inputs,
             output_attachments=outputs,
             active_attachment_ids=active,
+            search_recovery=search_recovery,
         )
+
+    def _search_recovery_locked(
+        self, cursor: Any, message_row: dict[str, Any]
+    ) -> SearchRecoveryState | None:
+        try:
+            delivery = self._missions.terminal_delivery_for_projection(
+                cursor, message_row["mission_id"]
+            )
+            collaboration = (
+                delivery.output_payload.get("collaboration")
+                if delivery.output_payload is not None
+                else None
+            )
+            return search_recovery_from_collaboration(collaboration)
+        except (MissionRepositoryError, SearchRecoveryError):
+            raise ConversationRepositoryError() from None
 
     def _event_from_row(self, row: dict[str, Any]) -> ConversationEventRecord:
         value = self.content_codec.unseal_json(
@@ -666,6 +696,7 @@ class ConversationRepository:
         submission: ConversationTurnSubmission,
         *,
         message_seq: int,
+        retry_of_turn_id: UUID | None = None,
     ) -> tuple[
         ConversationRecord,
         ConversationMessageRecord,
@@ -700,13 +731,15 @@ class ConversationRepository:
         turn_row = cursor.execute(
             "insert into platform_control.conversation_turns "
             "(turn_id,conversation_id,user_message_id,client_request_id,"
-            "mission_id,status) values (%s,%s,%s,%s,%s,'accepted') returning *",
+            "mission_id,status,retry_of_turn_id) "
+            "values (%s,%s,%s,%s,%s,'accepted',%s) returning *",
             (
                 turn_id,
                 conversation_id,
                 message_id,
                 client_request_id,
                 mission_id,
+                retry_of_turn_id,
             ),
         ).fetchone()
         mission = self._missions.insert_for_conversation(
@@ -1012,6 +1045,136 @@ class ConversationRepository:
                         client_request_id,
                         submission,
                         message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise ConversationRepositoryError() from None
+
+    def resume_search_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        source_turn_id: UUID,
+        client_request_id: UUID,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(source_turn_id)
+        _require_uuid(client_request_id)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                if (
+                    conversation_row["status"] != "active"
+                    or conversation_row["mode"] != "direct_agent"
+                ):
+                    raise ConversationRepositoryConflict()
+                source_turn = cursor.execute(
+                    "select * from platform_control.conversation_turns "
+                    "where conversation_id=%s and turn_id=%s for update",
+                    (conversation_id, source_turn_id),
+                ).fetchone()
+                if source_turn is None:
+                    raise ConversationRepositoryNotFound()
+                source_message = cursor.execute(
+                    "select * from platform_control.conversation_messages "
+                    "where conversation_id=%s and message_id=%s",
+                    (conversation_id, source_turn["user_message_id"]),
+                ).fetchone()
+                if source_message is None:
+                    raise ConversationRepositoryError()
+                source_record = self._message_from_row(source_message, cursor)
+                submission = ConversationTurnSubmission(
+                    source_record.content,
+                    tuple(
+                        item.attachment_id
+                        for item in source_record.input_attachments
+                    ),
+                    source_record.active_attachment_ids,
+                )
+                existing = cursor.execute(
+                    "select 1 from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        expected_mode="direct_agent",
+                        expected_direct_agent_id=conversation_row[
+                            "direct_agent_id"
+                        ],
+                    )
+                    if turn.retry_of_turn_id != source_turn_id:
+                        raise ConversationRepositoryConflict()
+                    mission = None
+                    created = False
+                else:
+                    if (
+                        source_turn["status"] != "completed"
+                        or source_turn["assistant_message_id"] is None
+                    ):
+                        raise ConversationRepositoryConflict()
+                    assistant = cursor.execute(
+                        "select * from platform_control.conversation_messages "
+                        "where conversation_id=%s and message_id=%s",
+                        (conversation_id, source_turn["assistant_message_id"]),
+                    ).fetchone()
+                    if assistant is None:
+                        raise ConversationRepositoryError()
+                    recovery = self._search_recovery_locked(cursor, assistant)
+                    if recovery is None or not recovery.can_resume:
+                        raise ConversationRepositoryConflict()
+                    if self._active_turn_locked(cursor, conversation_id) is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                        retry_of_turn_id=source_turn_id,
                     )
                     mission_id = mission.mission_id
                     created = True
