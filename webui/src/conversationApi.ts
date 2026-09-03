@@ -1,5 +1,10 @@
 import { platformPath } from "./auth";
-import { parseConversationAttachment, parseSearchRecovery } from "./attachmentApi";
+import {
+  parseArtifactVersion,
+  parseConversationAttachment,
+  parseConversationCitation,
+  parseSearchRecovery,
+} from "./attachmentApi";
 import type { WorkroomAction } from "./workroomTypes";
 import type {
   Conversation,
@@ -33,7 +38,7 @@ const MESSAGE_KEYS = new Set([
   "delivery_status", "created_at", "completed_at", "input_attachments",
   "output_attachments", "active_attachment_ids",
 ]);
-const MESSAGE_OPTIONAL_KEYS = new Set([...MESSAGE_KEYS, "search_recovery"]);
+const MESSAGE_OPTIONAL_FIELDS = new Set(["search_recovery", "citations", "artifact_versions"]);
 const TURN_KEYS = new Set([
   "turn_id", "conversation_id", "user_message_id", "assistant_message_id",
   "retry_of_turn_id", "status", "created_at", "updated_at",
@@ -160,8 +165,11 @@ function parseConversation(value: unknown): Conversation {
 
 
 function parseMessage(value: unknown): ConversationMessage {
+  const keysValid = isObject(value)
+    && [...MESSAGE_KEYS].every((key) => Object.prototype.hasOwnProperty.call(value, key))
+    && Object.keys(value).every((key) => MESSAGE_KEYS.has(key) || MESSAGE_OPTIONAL_FIELDS.has(key));
   if (!isObject(value)
-    || !(hasExactKeys(value, MESSAGE_KEYS) || hasExactKeys(value, MESSAGE_OPTIONAL_KEYS))
+    || !keysValid
     || !isNonEmptyString(value.message_id)
     || !isNonEmptyString(value.conversation_id)
     || !isPositiveInteger(value.seq)
@@ -185,12 +193,22 @@ function parseMessage(value: unknown): ConversationMessage {
   const recovery = Object.prototype.hasOwnProperty.call(value, "search_recovery")
     ? parseSearchRecovery(value.search_recovery)
     : undefined;
+  const citations = Object.prototype.hasOwnProperty.call(value, "citations")
+    && Array.isArray(value.citations) ? value.citations.map(parseConversationCitation) : undefined;
+  const artifactVersions = Object.prototype.hasOwnProperty.call(value, "artifact_versions")
+    && Array.isArray(value.artifact_versions) ? value.artifact_versions.map(parseArtifactVersion) : undefined;
+  if ((Object.prototype.hasOwnProperty.call(value, "citations") && citations === undefined)
+    || (Object.prototype.hasOwnProperty.call(value, "artifact_versions") && artifactVersions === undefined)) {
+    throw new Error("Message response invalid");
+  }
   return {
     ...value,
     input_attachments: inputAttachments,
     output_attachments: outputAttachments,
     active_attachment_ids: [...value.active_attachment_ids],
     ...(recovery === undefined ? {} : { search_recovery: recovery }),
+    ...(citations === undefined ? {} : { citations }),
+    ...(artifactVersions === undefined ? {} : { artifact_versions: artifactVersions }),
   } as ConversationMessage;
 }
 
@@ -710,6 +728,30 @@ export function retryConversationTurn(
         method: "POST",
         credentials: "include",
         signal,
+        headers: {
+          Accept: "application/json",
+          "X-CSRF-Token": csrfToken,
+          "Idempotency-Key": idempotencyKey,
+        },
+      }));
+      return parseSubmission(await response.json());
+    },
+  });
+}
+
+export function resumeConversationSearch(
+  conversationId: string,
+  turnId: string,
+  csrfToken: string,
+): ConversationSubmission {
+  const idempotencyKey = crypto.randomUUID();
+  return Object.freeze({
+    idempotencyKey,
+    async send(signal?: AbortSignal): Promise<ConversationSubmissionResult> {
+      const response = await checked(await fetch(platformPath(
+        `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/resume`,
+      ), {
+        method: "POST", credentials: "include", signal,
         headers: {
           Accept: "application/json",
           "X-CSRF-Token": csrfToken,

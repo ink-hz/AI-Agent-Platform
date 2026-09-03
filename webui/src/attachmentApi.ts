@@ -398,6 +398,32 @@ export async function deleteConversationAttachment(
   }));
 }
 
+export async function downloadConversationArtifacts(
+  conversationId: string,
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/artifacts/download`,
+  ), {
+    method: "POST", credentials: "include", signal, headers: writeHeaders(csrfToken),
+  }));
+  const blob = await response.blob();
+  if (blob.size === 0) throw new Error("Artifact archive empty");
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = "conversation-results.zip";
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
+}
+
 export async function cancelAttachmentUpload(
   uploadId: string,
   csrfToken: string,

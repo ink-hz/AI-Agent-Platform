@@ -12,7 +12,9 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.agent_brain.conversation_models import (
+    ConversationArtifactVersionProjection,
     ConversationAttachmentProjection,
+    ConversationCitationProjection,
     ConversationCreateResult,
     ConversationEventRecord,
     ConversationFeedbackRecord,
@@ -344,6 +346,98 @@ class ConversationRepository:
             tuple(item["attachment_id"] for item in active_rows),
         )
 
+    def _message_citations_locked(
+        self, cursor: Any, row: dict[str, Any]
+    ) -> tuple[ConversationCitationProjection, ...]:
+        records = cursor.execute(
+            "select * from platform_attachments.message_citations where "
+            "conversation_id=%s and message_id=%s order by ordinal",
+            (row["conversation_id"], row["message_id"]),
+        ).fetchall()
+        projected = []
+        for record in records:
+            values: dict[str, str] = {}
+            for field_name in ("title", "url", "site"):
+                ciphertext = record[f"{field_name}_ciphertext"]
+                key_version = record[f"{field_name}_key_version"]
+                if ciphertext is None or key_version is None:
+                    values[field_name] = ""
+                    continue
+                document = self.content_codec.unseal_json(
+                    f"citation:{record['citation_id']}:{field_name}",
+                    SealedContent(bytes(ciphertext), int(key_version)),
+                )
+                if set(document) != {field_name} or not isinstance(
+                    document[field_name], str
+                ):
+                    raise ConversationRepositoryError()
+                values[field_name] = document[field_name]
+            projected.append(
+                ConversationCitationProjection(
+                    citation_key=record["citation_key"],
+                    title=values["title"] or values["site"],
+                    url=values["url"],
+                    site=values["site"],
+                    retrieved_at=record["retrieved_at"],
+                    supports=tuple(record["supported_claim_locations"]),
+                )
+            )
+        return tuple(projected)
+
+    def _message_artifact_versions_locked(
+        self, cursor: Any, row: dict[str, Any]
+    ) -> tuple[ConversationArtifactVersionProjection, ...]:
+        records = cursor.execute(
+            "select attachment.*,artifact.artifact_key,version.version_no,"
+            "version.producer_version_id,version.state as version_state,"
+            "version.result_status,exists(select 1 from "
+            "platform_attachments.current_artifact_versions current_version "
+            "where current_version.artifact_version_id=version.artifact_version_id) "
+            "as is_current,exists(select 1 from platform_attachments.erasure_jobs "
+            "erasure where erasure.attachment_id=attachment.attachment_id) "
+            "as erasure_pending from platform_attachments.artifacts artifact "
+            "join platform_attachments.artifact_versions version using (artifact_id) "
+            "join platform_attachments.attachments attachment using (attachment_id) "
+            "where artifact.owner_internal_user_id=(select owner_internal_user_id "
+            "from platform_control.conversations where conversation_id=%s) and "
+            "artifact.conversation_id=%s and artifact.artifact_id in (select "
+            "bound_version.artifact_id from platform_attachments.bindings binding "
+            "join platform_attachments.artifact_versions bound_version "
+            "using (attachment_id) where binding.conversation_id=%s and "
+            "binding.message_id=%s and binding.kind='message_output') "
+            "order by artifact.artifact_key,version.version_no desc",
+            (
+                row["conversation_id"],
+                row["conversation_id"],
+                row["conversation_id"],
+                row["message_id"],
+            ),
+        ).fetchall()
+        projected = []
+        for record in records:
+            attachment = self._attachment_projection_from_row(record)
+            ready = (
+                record["version_state"] == "ready"
+                and record["result_status"] == "succeeded"
+                and attachment.availability_reason is None
+            )
+            failed = (
+                record["result_status"] == "failed"
+                or record["version_state"] in {"rejected", "quarantined", "deleted"}
+                or attachment.state in {"rejected", "quarantined", "deleted"}
+            )
+            projected.append(
+                ConversationArtifactVersionProjection(
+                    artifact_key=record["artifact_key"],
+                    version_no=int(record["version_no"]),
+                    producer_version_id=record["producer_version_id"],
+                    current=bool(record["is_current"] and ready),
+                    status="ready" if ready else "failed" if failed else "processing",
+                    attachment=attachment if ready else None,
+                )
+            )
+        return tuple(projected)
+
     def _message_from_row(
         self, row: dict[str, Any], cursor: Any | None = None
     ) -> ConversationMessageRecord:
@@ -369,6 +463,12 @@ class ConversationRepository:
             and row["mission_id"] is not None
             else None
         )
+        citations = self._message_citations_locked(cursor, row) if cursor is not None else ()
+        artifact_versions = (
+            self._message_artifact_versions_locked(cursor, row)
+            if cursor is not None and row["role"] == "assistant"
+            else ()
+        )
         return ConversationMessageRecord(
             message_id=row["message_id"],
             conversation_id=row["conversation_id"],
@@ -384,6 +484,8 @@ class ConversationRepository:
             output_attachments=outputs,
             active_attachment_ids=active,
             search_recovery=search_recovery,
+            citations=citations,
+            artifact_versions=artifact_versions,
         )
 
     def _search_recovery_locked(

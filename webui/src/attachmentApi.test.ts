@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginAttachmentUpload,
   completeAttachmentUpload,
+  downloadConversationArtifacts,
   issueAttachmentTicket,
   listConversationAttachments,
   parseArtifactVersion,
@@ -161,5 +162,29 @@ describe("conversation attachment API", () => {
       artifact_key: "x", version_no: 1, producer_version_id: "v1",
       current: false, status: "processing", attachment: null, extra: true,
     })).toThrow("Artifact version response invalid");
+  });
+
+  it("downloads the server-built artifact archive without exposing a durable URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Blob(["zip"]), {
+      headers: { "Content-Type": "application/zip" },
+    }));
+    const createObjectURL = vi.fn().mockReturnValue("blob:temporary-result");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await downloadConversationArtifacts(CONVERSATION_ID, "csrf");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/conversations/${CONVERSATION_ID}/artifacts/download`,
+      expect.objectContaining({
+        method: "POST", credentials: "include",
+        headers: expect.objectContaining({ "X-CSRF-Token": "csrf" }),
+      }),
+    );
+    expect(click).toHaveBeenCalledOnce();
+    expect(document.querySelector("a[download]")).toBeNull();
   });
 });

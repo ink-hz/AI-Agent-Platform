@@ -25,7 +25,15 @@ TurnStatus = Literal[
     "interrupted",
 ]
 FeedbackRating = Literal["helpful", "unhelpful"]
-FeedbackReason = Literal["inaccurate", "incomplete", "unclear", "unresolved", "other"]
+FeedbackReason = Literal[
+    "inaccurate",
+    "incomplete",
+    "unclear",
+    "unresolved",
+    "file_format",
+    "source_timeliness",
+    "other",
+]
 
 
 def _normalized_text(value: object) -> str:
@@ -96,6 +104,26 @@ class ConversationAttachmentProjection:
     availability_reason: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class ConversationCitationProjection:
+    citation_key: str
+    title: str
+    url: str = field(repr=False)
+    site: str
+    retrieved_at: datetime
+    supports: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationArtifactVersionProjection:
+    artifact_key: str
+    version_no: int
+    producer_version_id: str
+    current: bool
+    status: Literal["processing", "ready", "failed"]
+    attachment: ConversationAttachmentProjection | None = None
+
+
 @dataclass(frozen=True)
 class ConversationRecord:
     conversation_id: UUID
@@ -129,6 +157,8 @@ class ConversationMessageRecord:
     output_attachments: tuple[ConversationAttachmentProjection, ...] = ()
     active_attachment_ids: tuple[UUID, ...] = ()
     search_recovery: SearchRecoveryState | None = None
+    citations: tuple[ConversationCitationProjection, ...] = ()
+    artifact_versions: tuple[ConversationArtifactVersionProjection, ...] = ()
 
 
 @dataclass(frozen=True)

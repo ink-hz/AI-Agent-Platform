@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Account } from "../auth";
 import {
   deleteConversationAttachment,
+  downloadConversationArtifacts,
   issueAttachmentTicket,
   listConversationAttachments,
 } from "../attachmentApi";
@@ -15,6 +16,7 @@ import {
   fetchConversationTaskDetail,
   rejectConversationAction,
   retryConversationTurn,
+  resumeConversationSearch,
   streamConversationEvents,
   submitConversationFeedback,
   type ConversationStreamOptions,
@@ -63,6 +65,8 @@ export interface ConversationPageClient {
   listAttachments?(conversationId: string, signal?: AbortSignal): Promise<ConversationAttachment[]>;
   issueAttachmentTicket?(attachmentId: string, purpose: "preview" | "download", csrfToken: string, signal?: AbortSignal): Promise<{ contentPath: string }>;
   deleteAttachment?(attachmentId: string, csrfToken: string, signal?: AbortSignal): Promise<void>;
+  downloadArtifacts?(conversationId: string, csrfToken: string, signal?: AbortSignal): Promise<void>;
+  resumeSearch?(conversationId: string, turnId: string, csrfToken: string): ConversationSubmission;
 }
 
 const DEFAULT_CLIENT: ConversationPageClient = {
@@ -80,6 +84,8 @@ const DEFAULT_CLIENT: ConversationPageClient = {
   listAttachments: listConversationAttachments,
   issueAttachmentTicket,
   deleteAttachment: deleteConversationAttachment,
+  downloadArtifacts: downloadConversationArtifacts,
+  resumeSearch: resumeConversationSearch,
 };
 
 
@@ -312,6 +318,30 @@ export function ConversationPage({
     }
   };
 
+  const resumeSearch = async (message: ConversationMessage) => {
+    if (!message.turn_id || !message.search_recovery?.resumable || !client.resumeSearch
+      || inFlight.current || account.hard_stale_read_only) return;
+    const controller = new AbortController();
+    writeController.current?.abort(); writeController.current = controller;
+    inFlight.current = true; setPending(true); setSendFailure(false);
+    try {
+      const result = await client.resumeSearch(
+        conversationId, message.turn_id, account.csrf_token,
+      ).send(controller.signal);
+      if (controller.signal.aborted) return;
+      setMessages((current) => mergeMessages(current, [result.message]));
+      setDetail({ conversation: result.conversation, current_turn: result.turn });
+      setStreamEpoch((value) => value + 1);
+    } catch {
+      if (!controller.signal.aborted) setSendFailure(true);
+    } finally {
+      if (writeController.current === controller) {
+        inFlight.current = false;
+        if (!controller.signal.aborted) setPending(false);
+      }
+    }
+  };
+
   const stop = async () => {
     const controller = new AbortController();
     writeController.current?.abort(); writeController.current = controller;
@@ -367,6 +397,15 @@ export function ConversationPage({
       setNewAttachmentIds((current) => current.filter((id) => id !== attachment.attachmentId));
     } catch { setAttachmentError("附件删除失败，请重试"); }
   };
+  const downloadAllArtifacts = async () => {
+    if (!client.downloadArtifacts) return;
+    try {
+      await client.downloadArtifacts(conversationId, account.csrf_token);
+      setAttachmentError(null);
+    } catch {
+      setAttachmentError("结果文件暂时无法打包下载，请重试");
+    }
+  };
 
   if (loading) return <section className="conversation-load-state" aria-live="polite"><h1>正在打开对话</h1><p>正在读取已保存的消息与执行记录。</p></section>;
   if (loadFailure || !detail) return <section className="conversation-load-state" role="alert"><h1>暂时无法读取对话</h1><p>对话仍安全保存在平台，请稍后刷新。</p></section>;
@@ -408,7 +447,10 @@ export function ConversationPage({
       assistantLabel={assistantLabel}
       messages={messages}
       feedback={feedback}
+      onDownloadAll={() => void downloadAllArtifacts()}
       onFeedback={account.hard_stale_read_only ? undefined : (messageId, rating, reason, comment) => void rate(messageId, rating, reason, comment)}
+      onOpenAttachment={(attachment, purpose) => void openAttachment(attachment, purpose)}
+      onRetry={account.hard_stale_read_only ? undefined : (message) => void resumeSearch(message)}
       renderAfterUserTurn={(turnId) => {
         const workroom = workrooms.get(turnId);
         return workroom ? <MultiAgentWorkroom

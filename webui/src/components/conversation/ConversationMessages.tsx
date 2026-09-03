@@ -1,12 +1,17 @@
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, useRef, type ReactNode } from "react";
 
 import type {
+  ArtifactVersion,
+  ConversationAttachment,
+  ConversationCitation,
   ConversationFeedbackReason,
   ConversationFeedbackRating,
   ConversationMessage,
 } from "../../conversationTypes";
 import { MessageMarkdown } from "../MessageMarkdown";
-
+import { ArtifactVersionList } from "./ArtifactVersionList";
+import { CitationList } from "./CitationList";
+import { MessageActions } from "./MessageActions";
 
 function timeLabel(value: string): string {
   const date = new Date(value);
@@ -16,71 +21,99 @@ function timeLabel(value: string): string {
   }).format(date);
 }
 
+function projectedVersions(message: ConversationMessage): ArtifactVersion[] {
+  return message.output_attachments.map((attachment) => ({
+    artifactKey: attachment.attachmentId,
+    versionNo: 1,
+    producerVersionId: attachment.attachmentId,
+    current: attachment.state === "ready",
+    status: attachment.state === "ready" ? "ready" : attachment.state === "rejected" || attachment.state === "quarantined"
+      ? "failed" : "processing",
+    attachment: attachment.state === "ready" ? attachment : null,
+  }));
+}
+
+function SearchRecoveryNotice({ message, onRetry }: { message: ConversationMessage; onRetry?: () => void }) {
+  const recovery = message.search_recovery;
+  if (!recovery) return null;
+  const time = timeLabel(recovery.lastAttemptAt);
+  if (recovery.status === "unavailable") return <aside className="conversation-search-recovery" role="status">
+    <strong>联网检索暂时不可用</strong><span>已尝试 {recovery.attemptCount} 次{time ? `，最后一次 ${time}` : ""}。本轮已保留，可以从原进度继续。</span>
+    {recovery.resumable && onRetry && <button onClick={onRetry} type="button">继续重试</button>}
+  </aside>;
+  if (recovery.status === "no_results") return <aside className="conversation-search-recovery" role="status"><strong>检索完成，未找到结果</strong>{recovery.coverageNote && <span>{recovery.coverageNote}</span>}</aside>;
+  return <aside className="conversation-search-recovery is-partial" role="status"><strong>已返回部分检索结果</strong>{recovery.coverageNote && <span>{recovery.coverageNote}</span>}</aside>;
+}
+
+function AssistantMessage({ message, assistantLabel, feedbackState, citations, versions, onFeedback, onOpenAttachment, onDownloadAll, onRetry }: {
+  message: ConversationMessage;
+  assistantLabel: string;
+  feedbackState?: ConversationFeedbackRating | "pending" | "error";
+  citations: ConversationCitation[];
+  versions: ArtifactVersion[];
+  onFeedback?: (messageId: string, rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null) => void;
+  onOpenAttachment?: (attachment: ConversationAttachment, purpose: "preview" | "download") => void;
+  onDownloadAll?: () => void;
+  onRetry?: () => void;
+}) {
+  const visible = useRef<HTMLDivElement>(null);
+  return <article className="conversation-message conversation-assistant" data-message-id={message.message_id}>
+    <header><strong>{assistantLabel}</strong><time dateTime={message.created_at}>{timeLabel(message.created_at)}</time></header>
+    <div ref={visible}><MessageMarkdown content={message.content} /></div>
+    <ArtifactVersionList onDownloadAll={onDownloadAll} onOpen={onOpenAttachment} versions={versions} />
+    <CitationList citations={citations} />
+    <SearchRecoveryNotice message={message} onRetry={onRetry} />
+    {message.delivery_status === "completed" && <MessageActions
+      copyText={() => visible.current?.innerText || visible.current?.textContent || message.content}
+      feedbackState={feedbackState}
+      onFeedback={onFeedback ? (rating, reason, comment) => onFeedback(message.message_id, rating, reason, comment) : undefined}
+      onRetry={onRetry}
+    />}
+  </article>;
+}
 
 export function ConversationMessages({
   messages,
   assistantLabel = "Agent 大脑",
   feedback = {},
+  citations = {},
+  artifactVersions = {},
   onFeedback,
+  onOpenAttachment,
+  onDownloadAll,
+  onRetry,
   renderAfterUserTurn,
 }: {
   messages: ConversationMessage[];
   assistantLabel?: string;
   feedback?: Record<string, ConversationFeedbackRating | "pending" | "error">;
-  onFeedback?: (
-    messageId: string,
-    rating: ConversationFeedbackRating,
-    reason: ConversationFeedbackReason | null,
-    comment: string | null,
-  ) => void;
+  citations?: Record<string, ConversationCitation[]>;
+  artifactVersions?: Record<string, ArtifactVersion[]>;
+  onFeedback?: (messageId: string, rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null) => void;
+  onOpenAttachment?: (attachment: ConversationAttachment, purpose: "preview" | "download") => void;
+  onDownloadAll?: (messageId: string) => void;
+  onRetry?: (message: ConversationMessage) => void;
   renderAfterUserTurn?: (turnId: string) => ReactNode;
 }) {
-  const [improving, setImproving] = useState<string | null>(null);
-  const [reasons, setReasons] = useState<Record<string, ConversationFeedbackReason | null>>({});
-  const [comments, setComments] = useState<Record<string, string>>({});
   const ordered = [...new Map(messages.map((message) => [message.message_id, message])).values()]
     .sort((left, right) => left.seq - right.seq);
   return <section className="conversation-messages" aria-label="对话内容" aria-live="polite">
-    {ordered.map((message) => <Fragment key={message.message_id}><article
-      className={`conversation-message conversation-${message.role}`}
-      data-message-id={message.message_id}
-    >
-      <header>
-        <strong>{message.role === "user" ? "你" : message.role === "assistant" ? assistantLabel : "系统"}</strong>
-        <time dateTime={message.created_at}>{timeLabel(message.created_at)}</time>
-      </header>
-      {message.role === "user"
-        ? <p className="conversation-user-copy">{message.content}</p>
-        : <MessageMarkdown content={message.content} />}
-      {message.role === "assistant" && message.delivery_status === "completed" && onFeedback && <footer className="conversation-feedback">
-        <span>{feedback[message.message_id] === "helpful" || feedback[message.message_id] === "unhelpful" ? "已记录你的反馈" : "这个回答怎么样？"}</span>
-        <button
-          aria-label="这个回答有帮助"
-          className={feedback[message.message_id] === "helpful" ? "is-selected" : ""}
-          disabled={Boolean(feedback[message.message_id] && feedback[message.message_id] !== "error")}
-          onClick={() => onFeedback(message.message_id, "helpful", null, null)}
-          type="button"
-        >有帮助</button>
-        <button
-          aria-label="这个回答需改进"
-          className={feedback[message.message_id] === "unhelpful" ? "is-selected" : ""}
-          disabled={Boolean(feedback[message.message_id] && feedback[message.message_id] !== "error")}
-          onClick={() => setImproving(message.message_id)}
-          type="button"
-        >需改进</button>
-        {improving === message.message_id && !feedback[message.message_id] && <div className="conversation-feedback-detail">
-          <div>{([
-            ["inaccurate", "信息不准确"], ["incomplete", "信息不完整"], ["unclear", "表达不清楚"],
-            ["unresolved", "没有解决问题"], ["other", "其他"],
-          ] as const).map(([value, label]) => <button className={reasons[message.message_id] === value ? "is-selected" : ""} key={value} onClick={() => setReasons((current) => ({ ...current, [message.message_id]: value }))} type="button">{label}</button>)}</div>
-          <textarea aria-label="补充改进建议" maxLength={1000} onChange={(event) => setComments((current) => ({ ...current, [message.message_id]: event.target.value }))} placeholder="可选：补充哪里需要改进" value={comments[message.message_id] ?? ""} />
-          <button disabled={!reasons[message.message_id]} onClick={() => onFeedback(message.message_id, "unhelpful", reasons[message.message_id] ?? null, comments[message.message_id]?.trim() || null)} type="button">提交反馈</button>
-          <button onClick={() => setImproving(null)} type="button">取消</button>
-        </div>}
-        {feedback[message.message_id] === "error" && <small role="alert">反馈暂未保存，请重试。</small>}
-      </footer>}
-    </article>
-    {message.role === "user" && message.turn_id && renderAfterUserTurn?.(message.turn_id)}
+    {ordered.map((message) => <Fragment key={message.message_id}>
+      {message.role === "assistant" ? <AssistantMessage
+        assistantLabel={assistantLabel}
+        citations={citations[message.message_id] ?? message.citations ?? []}
+        feedbackState={feedback[message.message_id]}
+        message={message}
+        onDownloadAll={message.output_attachments.length > 1 && onDownloadAll ? () => onDownloadAll(message.message_id) : undefined}
+        onFeedback={onFeedback}
+        onOpenAttachment={onOpenAttachment}
+        onRetry={onRetry && message.search_recovery?.resumable ? () => onRetry(message) : undefined}
+        versions={artifactVersions[message.message_id] ?? message.artifact_versions ?? projectedVersions(message)}
+      /> : <article className={`conversation-message conversation-${message.role}`} data-message-id={message.message_id}>
+        <header><strong>{message.role === "user" ? "你" : "系统"}</strong><time dateTime={message.created_at}>{timeLabel(message.created_at)}</time></header>
+        <p className="conversation-user-copy">{message.content}</p>
+      </article>}
+      {message.role === "user" && message.turn_id && renderAfterUserTurn?.(message.turn_id)}
     </Fragment>)}
   </section>;
 }

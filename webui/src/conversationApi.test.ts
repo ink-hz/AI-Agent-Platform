@@ -182,6 +182,14 @@ describe("continuous Conversation API", () => {
         resumable: true,
         coverage_note: "部分外部来源暂不可用",
       },
+      citations: [{
+        citation_key: "source-1", title: "公开招聘页", url: "https://example.com/jobs",
+        site: "example.com", retrieved_at: "2026-09-03T10:01:00Z", supports: ["研发岗位"],
+      }],
+      artifact_versions: [{
+        artifact_key: "candidate-report", version_no: 1, producer_version_id: "report-v1",
+        current: true, status: "ready", attachment: { ...attachment, source: "agent" },
+      }],
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ items: [recovered] })));
 
@@ -199,6 +207,11 @@ describe("continuous Conversation API", () => {
           resumable: true,
           coverageNote: "部分外部来源暂不可用",
         },
+        citations: [expect.objectContaining({ citationKey: "source-1" })],
+        artifact_versions: [expect.objectContaining({
+          artifactKey: "candidate-report", current: true,
+          attachment: expect.objectContaining({ source: "agent" }),
+        })],
       }),
     ]);
 

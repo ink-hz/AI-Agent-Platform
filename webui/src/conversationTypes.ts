@@ -101,6 +101,8 @@ export interface ConversationMessage {
   output_attachments: ConversationAttachment[];
   active_attachment_ids: string[];
   search_recovery?: SearchRecovery;
+  citations?: ConversationCitation[];
+  artifact_versions?: ArtifactVersion[];
 }
 
 export interface ConversationTurn {
@@ -184,7 +186,8 @@ export interface ConversationCancelResult {
 }
 
 export type ConversationFeedbackRating = "helpful" | "unhelpful";
-export type ConversationFeedbackReason = "inaccurate" | "incomplete" | "unclear" | "unresolved" | "other";
+export type ConversationFeedbackReason = "inaccurate" | "incomplete" | "unclear" | "unresolved" |
+  "file_format" | "source_timeliness" | "other";
 
 export interface ConversationFeedback {
   feedback_id: string;

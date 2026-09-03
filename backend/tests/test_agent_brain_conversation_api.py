@@ -850,3 +850,18 @@ def test_feedback_api_binds_only_the_owned_assistant_message(
         json={"rating": "helpful"},
     )
     assert denied.status_code == 404
+
+
+def test_feedback_detail_accepts_new_reasons_and_counts_unicode_code_points() -> None:
+    from app.agent_brain.conversation_routes import ConversationFeedbackBody
+
+    assert ConversationFeedbackBody(
+        rating="unhelpful", reason="file_format", comment="😀" * 1000
+    ).comment == "😀" * 1000
+    assert ConversationFeedbackBody(
+        rating="unhelpful", reason="source_timeliness"
+    ).reason == "source_timeliness"
+    with pytest.raises(ValueError):
+        ConversationFeedbackBody(
+            rating="unhelpful", reason="other", comment="字" * 1001
+        )

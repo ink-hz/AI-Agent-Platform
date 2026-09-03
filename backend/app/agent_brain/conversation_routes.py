@@ -121,7 +121,15 @@ class ConversationFeedbackBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     rating: Literal["helpful", "unhelpful"]
-    reason: Literal["inaccurate", "incomplete", "unclear", "unresolved", "other"] | None = None
+    reason: Literal[
+        "inaccurate",
+        "incomplete",
+        "unclear",
+        "unresolved",
+        "file_format",
+        "source_timeliness",
+        "other",
+    ] | None = None
     comment: str | None = None
 
     @field_validator("comment")
@@ -132,7 +140,7 @@ class ConversationFeedbackBody(BaseModel):
         selected = value.strip()
         if not selected:
             return None
-        if len(selected.encode("utf-8")) > 1000:
+        if len(selected) > 1000:
             raise ValueError("Feedback comment too long")
         return selected
 
@@ -396,6 +404,34 @@ def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
     }
     if record.search_recovery is not None:
         payload["search_recovery"] = record.search_recovery.public_payload()
+    if record.citations:
+        payload["citations"] = [
+            {
+                "citation_key": citation.citation_key,
+                "title": citation.title,
+                "url": citation.url,
+                "site": citation.site,
+                "retrieved_at": citation.retrieved_at.isoformat(),
+                "supports": list(citation.supports),
+            }
+            for citation in record.citations
+        ]
+    if record.artifact_versions:
+        payload["artifact_versions"] = [
+            {
+                "artifact_key": version.artifact_key,
+                "version_no": version.version_no,
+                "producer_version_id": version.producer_version_id,
+                "current": version.current,
+                "status": version.status,
+                "attachment": (
+                    _attachment_payload(version.attachment)
+                    if version.attachment is not None
+                    else None
+                ),
+            }
+            for version in record.artifact_versions
+        ]
     return payload
 
 
