@@ -2034,11 +2034,14 @@ class PsycopgReviewRepository:
         with self._connection() as connection, connection.cursor() as cursor:
             rows = cursor.execute(
                 """
-                with negative_turns as (
+                with negative_turns as materialized (
                   select agent_id, turn_key, min(created_at) as first_negative_at
                   from platform_read.feedback
                   where sentiment='negative'
                   group by agent_id, turn_key
+                ), all_turns as materialized (
+                  select agent_id, turn_key, question
+                  from platform_read.turns
                 )
                 select negative.agent_id, negative.turn_key,
                   coalesce(max(t.question), '') as question,
@@ -2048,7 +2051,7 @@ class PsycopgReviewRepository:
                 join platform_read.feedback all_feedback
                   on all_feedback.agent_id=negative.agent_id
                  and all_feedback.turn_key=negative.turn_key
-                left join platform_read.turns t
+                left join all_turns t
                   on t.agent_id=negative.agent_id and t.turn_key=negative.turn_key
                 group by negative.agent_id, negative.turn_key,
                          negative.first_negative_at
