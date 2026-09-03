@@ -168,6 +168,24 @@ def test_uvicorn_access_filter_handles_preformatted_fallback() -> None:
     assert "/api/attachments/content/[REDACTED]" in stream.getvalue()
 
 
+def test_uvicorn_access_filter_redacts_member_attachment_ticket() -> None:
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:123", "GET", "/api/v1/attachments/content/member-secret", "1.1", 200),
+        None,
+    )
+
+    AttachmentTicketRedactionFilter().filter(record)
+    emitted = record.getMessage()
+
+    assert "member-secret" not in emitted
+    assert "/api/v1/attachments/content/[REDACTED]" in emitted
+
+
 def _app_paths(tmp_path):
     registry = tmp_path / "registry.yaml"
     registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
@@ -232,3 +250,8 @@ def test_enabled_attachment_construction_failure_aborts_app_startup(
         assert str(error) == "storage unavailable"
     else:
         raise AssertionError("enabled attachment startup did not fail closed")
+
+
+def test_legacy_owner_router_remains_outside_member_v1_namespace() -> None:
+    assert router.prefix == "/api/attachments"
+    assert all(not route.path.startswith("/api/v1/") for route in router.routes)

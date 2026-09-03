@@ -2,8 +2,8 @@ import logging
 import re
 
 
-CONTENT_PATH = re.compile(r"/api/attachments/content/[^?\s]+")
-REDACTED_PATH = "/api/attachments/content/[REDACTED]"
+CONTENT_PATH = re.compile(r"(/api(?:/v1)?/attachments/content/)[^?\s]+")
+REDACTED_PATH = r"\1[REDACTED]"
 
 
 class AttachmentTicketRedactionFilter(logging.Filter):

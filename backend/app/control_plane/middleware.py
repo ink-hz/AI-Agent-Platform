@@ -115,6 +115,17 @@ def _is_ai_notes_response_path(path: str | None) -> bool:
     )
 
 
+def _is_conversation_attachment_response_path(path: str | None) -> bool:
+    return isinstance(path, str) and (
+        path == "/api/v1/attachments"
+        or path.startswith("/api/v1/attachments/")
+        or (
+            path.startswith("/api/v1/conversations/")
+            and path.endswith(("/attachments", "/artifacts/download"))
+        )
+    )
+
+
 def is_execution_worker_request(method: str, path: str) -> bool:
     return method == "POST" and (
         path
@@ -313,6 +324,7 @@ class IdentitySecurityMiddleware:
             )
             or _is_agent_brain_response_path(local_path)
             or _is_ai_notes_response_path(local_path)
+            or _is_conversation_attachment_response_path(local_path)
             or (
                 isinstance(local_path, str)
                 and is_office_recipient_directory_request(method, local_path)
@@ -329,6 +341,7 @@ class IdentitySecurityMiddleware:
                 response_headers["Cache-Control"] = (
                     "private, no-store"
                     if local_path == "/api/v1/account"
+                    or _is_conversation_attachment_response_path(local_path)
                     else "no-store"
                 )
                 response_headers["Pragma"] = "no-cache"

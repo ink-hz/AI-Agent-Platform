@@ -11,6 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .attachments import routes as attachment_routes
+from .attachments.conversation_routes import build_conversation_attachment_router
 from .ai_notes.repository import AiNotesContentError, AiNotesRepository
 from .ai_notes.routes import (
     AiNotesReader,
@@ -18,9 +19,17 @@ from .ai_notes.routes import (
     build_ai_notes_router,
 )
 from .attachments.logging import install_attachment_ticket_redaction
+from .attachments.conversation_repository import ConversationAttachmentRepository
+from .attachments.download_service import (
+    ConversationAttachmentAccessRepository,
+    ConversationAttachmentDownloadService,
+    S3ImmutableAttachmentStore,
+)
+from .attachments.object_writer import AttachmentObjectWriter
 from .attachments.repository import AttachmentRepository
 from .attachments.service import AttachmentService
 from .attachments.store import AttachmentStore
+from .attachments.upload_service import AttachmentUploadService
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
 from .config import Config, is_cloud_mode, load_config
@@ -402,6 +411,31 @@ def build_attachment_service(config: Config) -> AttachmentService:
     )
 
 
+def build_conversation_attachment_services(config: Config):
+    keyring = IdentityKeyring.from_file(
+        config.content_encryption_keyring_file,
+        expected_purpose="platform-content-encryption",
+        expected_key_length=32,
+    )
+    codec = ContentCodec(keyring)
+    database_url = read_secret_file(config.attachment_control_database_url_file)
+    repository = ConversationAttachmentRepository.from_config(
+        config, content_codec=codec
+    )
+    upload_service = AttachmentUploadService(
+        repository,
+        AttachmentObjectWriter.from_config(config),
+        max_file_bytes=config.attachment_max_file_bytes,
+    )
+    download_service = ConversationAttachmentDownloadService(
+        ConversationAttachmentAccessRepository(database_url, content_codec=codec),
+        S3ImmutableAttachmentStore.from_config(config),
+        ticket_secret=keyring.active_key,
+        ticket_seconds=config.attachment_ticket_seconds,
+    )
+    return upload_service, download_service
+
+
 def build_review_service(
     config: Config,
     registry: YamlRepository,
@@ -638,6 +672,8 @@ def create_app(
     control_room_service: ControlRoomService | None = None,
     review_service=None,
     attachment_service=None,
+    conversation_attachment_upload_service=None,
+    conversation_attachment_download_service=None,
     identity_auth=None,
     voc_extension_client=None,
     voc_submitter_directory=None,
@@ -951,7 +987,25 @@ def create_app(
         fae_workbench_service.attach_report_service(fae_report_service)
     if attachment_service is None and config.attachment_enabled and not cloud_mode:
         attachment_service = build_attachment_service(config)
-    if attachment_service is not None:
+    if (
+        identity_enabled
+        and config.attachment_enabled
+        and conversation_attachment_upload_service is None
+        and conversation_attachment_download_service is None
+        and not cloud_mode
+    ):
+        (
+            conversation_attachment_upload_service,
+            conversation_attachment_download_service,
+        ) = build_conversation_attachment_services(config)
+    if (conversation_attachment_upload_service is None) != (
+        conversation_attachment_download_service is None
+    ):
+        raise RuntimeError("conversation attachment services unavailable")
+    if (
+        attachment_service is not None
+        or conversation_attachment_download_service is not None
+    ):
         install_attachment_ticket_redaction()
     if owns_voc_extension_client:
         voc_extension_client = VocExtensionClient(
@@ -1053,6 +1107,12 @@ def create_app(
     app.state.control_room_service = control_room_service
     app.state.review_service = review_service
     app.state.attachment_service = attachment_service
+    app.state.conversation_attachment_upload_service = (
+        conversation_attachment_upload_service
+    )
+    app.state.conversation_attachment_download_service = (
+        conversation_attachment_download_service
+    )
     app.state.replica_repository = replica_repository
     app.state.identity_auth = identity_auth
     app.state.execution_relay_repository = execution_relay_repository
@@ -1214,6 +1274,11 @@ def create_app(
         )
     if attachment_service is not None:
         app.include_router(attachment_routes.router)
+    if (
+        conversation_attachment_upload_service is not None
+        and conversation_attachment_download_service is not None
+    ):
+        app.include_router(build_conversation_attachment_router())
 
     if os.path.isdir(config.static_dir) and not identity_enabled:
         app.mount("/", SpaStaticFiles(directory=config.static_dir, html=True), name="portal")
