@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.control_plane.audit import AuditCommand, AuditUnavailableError
-from app.control_plane.models import AuthContext, Role
+from app.control_plane.fae_access import fae_workbench_context
 from app.observability.models import SessionFilters
 from app.observability.repository import ObservabilityReadError
 from app.review.http_models import (
@@ -53,19 +53,9 @@ IssueDispositionFilter = Literal[
 ]
 
 
-def _management_context(request: Request) -> AuthContext:
-    context = getattr(request.state, "auth_context", None)
-    if context is None:
-        raise HTTPException(status_code=401, detail="authentication required")
-    if context.role not in {Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN}:
-        raise HTTPException(status_code=403, detail="management role required")
-    return context
-
-
 router = APIRouter(
-    prefix="/api/admin/fae",
     tags=["fae-workbench"],
-    dependencies=[Depends(_management_context)],
+    dependencies=[Depends(fae_workbench_context)],
 )
 
 
@@ -453,3 +443,37 @@ async def set_disposition(
             issue_id, payload, actor=actor
         )
     )
+
+
+@router.get("/reports")
+def reports(request: Request, status: str | None = None):
+    service = getattr(request.app.state, "fae_report_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="fae report unavailable")
+    return service.list_summaries(status=status)
+
+
+@router.get("/reports/latest")
+def latest_report(request: Request):
+    service = getattr(request.app.state, "fae_report_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="fae report unavailable")
+    result = service.latest()
+    if result is None:
+        raise HTTPException(status_code=404, detail="fae report not found")
+    return result
+
+
+@router.get("/reports/{report_id}")
+def report_detail(
+    report_id: str,
+    request: Request,
+    version: int | None = Query(default=None, ge=1),
+):
+    service = getattr(request.app.state, "fae_report_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="fae report unavailable")
+    result = service.detail(report_id, version)
+    if result is None:
+        raise HTTPException(status_code=404, detail="fae report not found")
+    return result

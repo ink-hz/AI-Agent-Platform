@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from app.control_plane.models import AuthContext, Role
-from app.fae_reports import routes
+from app.fae_workbench import routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -19,7 +19,15 @@ class Service:
         return {"report_id": report_id, "report_version": version or 1, "status": "ready"}
 
 
-def app(role):
+class FaeAccess:
+    def __init__(self, granted: bool = False):
+        self.granted = granted
+
+    def allows(self, context):
+        return context.role is Role.PLATFORM_OWNER or self.granted
+
+
+def app(role, *, granted=False):
     value = FastAPI()
 
     @value.middleware("http")
@@ -33,7 +41,9 @@ def app(role):
         return await call_next(request)
 
     value.state.fae_report_service = Service()
-    value.include_router(routes.router)
+    value.state.fae_access = FaeAccess(granted)
+    value.include_router(routes.router, prefix="/api/fae")
+    value.include_router(routes.router, prefix="/api/admin/fae", include_in_schema=False)
     return value
 
 
@@ -47,9 +57,19 @@ def test_owner_can_list_read_latest_and_versioned_report():
         "/api/admin/fae/reports/fae-topic-production-through-20260831?version=1"
     )
     assert detail.json()["report_version"] == 1
+    assert client.get("/api/fae/reports/latest").json()["status"] == "ready"
 
 
-def test_member_is_denied_and_unknown_report_is_404():
+def test_report_context_permits_granted_member_and_denies_ungranted_admin():
+    assert TestClient(app(Role.MEMBER, granted=True)).get(
+        "/api/fae/reports"
+    ).status_code == 200
+    assert TestClient(app(Role.PLATFORM_ADMIN)).get(
+        "/api/admin/fae/reports"
+    ).status_code == 403
+
+
+def test_ungranted_member_is_denied_and_unknown_report_is_404():
     assert TestClient(app(Role.MEMBER)).get("/api/admin/fae/reports").status_code == 403
     assert TestClient(app(Role.MANAGEMENT_VIEWER)).get(
         "/api/admin/fae/reports"

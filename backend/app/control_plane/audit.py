@@ -41,6 +41,10 @@ _UUID_KEYS = frozenset(
         "operation_id",
         "linked_audit_event_id",
         "directory_generation_id",
+        "expected_generation_id",
+        "expected_member_key",
+        "grant_id",
+        "internal_user_id",
         "previous_owner_internal_user_id",
         "new_owner_internal_user_id",
     }
@@ -91,6 +95,7 @@ _KNOWN_METADATA_KEYS = frozenset(
         "previous_prompt_sha256",
         "new_prompt_sha256",
         "sanitized_result",
+        "permission",
     }
 )
 
@@ -349,6 +354,43 @@ _register_events(
     requested=_READ_REQUEST,
     completed=_DETAIL_READ_COMPLETED,
 )
+_register_events(
+    ("fae_workbench_grant",),
+    reason="fae_workbench_access_approved",
+    target="directory_member",
+    requested=frozenset({
+        "operation_id",
+        "expected_generation_id",
+        "expected_member_key",
+        "result",
+    }),
+    completed=frozenset({
+        "operation_id",
+        "grant_id",
+        "internal_user_id",
+        "permission",
+        "row_version",
+        "result",
+    }),
+)
+_register_events(
+    ("fae_workbench_revoke",),
+    reason="fae_workbench_access_revoked",
+    target="internal_user",
+    requested=frozenset({
+        "operation_id",
+        "expected_row_version",
+        "result",
+    }),
+    completed=frozenset({
+        "operation_id",
+        "grant_id",
+        "internal_user_id",
+        "permission",
+        "row_version",
+        "result",
+    }),
+)
 
 AuditScalar = str | int | bool
 AuditValue = AuditScalar | Sequence[str]
@@ -437,6 +479,8 @@ def _safe_metadata_value(key: str, value: Any) -> bool:
             "probe_rejected",
             "activation_rejected",
         }
+    if key == "permission":
+        return value == "manager"
     if key == "error_code":
         return isinstance(value, str) and value in _ERROR_CODES
     if key in _SCOPE_KEYS:
@@ -637,6 +681,8 @@ def _validate_target(command: AuditCommand) -> bool:
         return command.target_id == "active"
     if command.target_type == "fae_session":
         return _HEX_64.fullmatch(command.target_id) is not None
+    if command.target_type == "directory_member":
+        return _uuid_string(command.target_id)
     return False
 
 

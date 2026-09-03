@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 from app.control_plane.authorization import AuthorizationService
+from app.control_plane.fae_access import FaeWorkbenchAccessUnavailable
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.models import AuthContext, IdentityMode, IssuedWebSession, Role
 from app.control_plane.routes_auth import build_auth_router
@@ -29,6 +30,7 @@ AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
     "mobile",
     "primary_department",
     "observation_agent_ids",
+    "workspace_scopes",
     "directory_freshness",
     "hard_stale_read_only",
     "csrf_token",
@@ -44,6 +46,26 @@ AI_ADMIN_ACCOUNT_CONTRACT_ROLES = {
 class _NoObservationGrants:
     def permits(self, *_args):
         return False
+
+
+class _NoFaeAccess:
+    def allows(self, context):
+        return context.role is Role.PLATFORM_OWNER
+
+
+class _GrantingFaeAccess:
+    def __init__(self, allowed_user_id):
+        self.allowed_user_id = allowed_user_id
+
+    def allows(self, context):
+        return context.role is Role.PLATFORM_OWNER or (
+            context.internal_user_id == self.allowed_user_id
+        )
+
+
+class _FailingFaeAccess:
+    def allows(self, _context):
+        raise FaeWorkbenchAccessUnavailable("fae grant repository unavailable")
 
 
 @pytest.mark.parametrize("role", list(Role))
@@ -258,6 +280,7 @@ def _app(
     agent_launch_service=None,
     partner_service=None,
     partner_provider=None,
+    fae_access=None,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -282,7 +305,7 @@ def _app(
     monkeypatch.setenv(
         "PLATFORM_AGENT_BRAIN_ENABLED", "1" if brain_enabled else "0"
     )
-    return create_app(
+    app = create_app(
         registry_path=str(registry),
         cluster_contract_path=str(contract),
         start_poller=False,
@@ -292,6 +315,8 @@ def _app(
         partner_service=partner_service,
         partner_provider=partner_provider,
     )
+    app.state.fae_access = fae_access if fae_access is not None else _NoFaeAccess()
+    return app
 
 
 def _app_with_static(
@@ -930,6 +955,7 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
         "role": "platform_owner",
         "departments": ["产品中心", "项目管理部"],
         "observation_agent_ids": [],
+        "workspace_scopes": ["fae_workbench"],
         "directory_freshness": "fresh",
         "hard_stale_read_only": False,
         "csrf_token": auth.csrf,
@@ -989,6 +1015,56 @@ def test_account_serializes_every_ai_admin_contract_role_with_exact_fields(
     assert response.status_code == 200
     assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
     assert response.json()["role"] == role.value
+
+
+def test_account_projects_only_bounded_fae_workspace_scope(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    granted_user_id = uuid4()
+    fae_access = _GrantingFaeAccess(granted_user_id)
+    client = TestClient(_app(tmp_path, monkeypatch, auth, fae_access=fae_access))
+
+    auth.context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+    owner = client.get(
+        "/api/v1/account",
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+    auth.context = AuthContext(granted_user_id, Role.MEMBER, uuid4(), False)
+    granted_member = client.get(
+        "/api/v1/account",
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+    for role in (Role.MEMBER, Role.MANAGEMENT_VIEWER, Role.PLATFORM_ADMIN):
+        auth.context = AuthContext(uuid4(), role, uuid4(), False)
+        denied = client.get(
+            "/api/v1/account",
+            cookies={auth.cookie_name: "valid-cookie"},
+        )
+        assert denied.status_code == 200
+        assert denied.json()["workspace_scopes"] == []
+
+    assert owner.status_code == 200
+    assert owner.json()["workspace_scopes"] == ["fae_workbench"]
+    assert granted_member.status_code == 200
+    assert granted_member.json()["workspace_scopes"] == ["fae_workbench"]
+
+
+def test_account_fails_closed_when_fae_scope_repository_fails(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    response = TestClient(
+        _app(tmp_path, monkeypatch, auth, fae_access=_FailingFaeAccess())
+    ).get(
+        "/api/v1/account",
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "account unavailable"}
 
 
 def test_account_returns_null_gender_without_changing_private_cache_contract(

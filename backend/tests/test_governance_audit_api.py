@@ -25,6 +25,10 @@ from app.control_plane.routes_manage import (
     management_service,
     router,
 )
+from app.control_plane.fae_access import (
+    FaeWorkbenchAccessService,
+    FaeWorkbenchAccessUnavailable,
+)
 from app.control_plane.audit import AuditWriter
 from test_control_plane_migration import control_database
 
@@ -37,6 +41,10 @@ MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
 
 class FakeManagementRepository:
     def __init__(self) -> None:
+        self.member_key = uuid4()
+        self.generation_id = uuid4()
+        self.fae_grant_id = uuid4()
+        self.fae_internal_user_id = uuid4()
         self.users = [
             {
                 "internal_user_id": uuid4(),
@@ -50,6 +58,15 @@ class FakeManagementRepository:
         self.revocations = []
         self.states = {}
         self.ledger = {}
+        self.fae_grants = [{
+            "grant_id": self.fae_grant_id,
+            "internal_user_id": self.fae_internal_user_id,
+            "display_name": "花名一",
+            "status": "active",
+            "permission": "manager",
+            "created_at": "2026-09-01T00:00:00+00:00",
+            "row_version": 0,
+        }]
 
     def list_users(self):
         return self.users
@@ -211,6 +228,77 @@ class FakeManagementRepository:
             }
         ]
 
+    def active_fae_workbench_member(self, display_name):
+        if display_name != "花名一":
+            raise ValueError("directory_member_not_found")
+        return {
+            "generation_id": self.generation_id,
+            "member_key": self.member_key,
+        }
+
+    def list_fae_workbench_grants(self):
+        return self.fae_grants
+
+    def grant_fae_workbench(
+        self,
+        actor,
+        display_name,
+        operation_id,
+        expected_generation_id,
+        expected_member_key,
+        new_user_id,
+        corporate_identity_id,
+        union_identity_id,
+        audit_event_id,
+    ):
+        self.mutations.append((
+            "grant_fae",
+            actor,
+            display_name,
+            operation_id,
+            expected_generation_id,
+            expected_member_key,
+            new_user_id,
+            corporate_identity_id,
+            union_identity_id,
+            audit_event_id,
+        ))
+        return {
+            "operation_id": str(operation_id),
+            "grant_id": str(self.fae_grant_id),
+            "internal_user_id": str(self.fae_internal_user_id),
+            "permission": "manager",
+            "row_version": 0,
+        }
+
+    def revoke_fae_workbench(
+        self,
+        actor,
+        target,
+        operation_id,
+        expected_row_version,
+        audit_event_id,
+    ):
+        self.mutations.append((
+            "revoke_fae",
+            actor,
+            target,
+            operation_id,
+            expected_row_version,
+            audit_event_id,
+        ))
+        self.fae_grants = [
+            grant for grant in self.fae_grants
+            if grant["internal_user_id"] != target
+        ]
+        return {
+            "operation_id": str(operation_id),
+            "grant_id": str(self.fae_grant_id),
+            "internal_user_id": str(target),
+            "permission": "manager",
+            "row_version": expected_row_version + 1,
+        }
+
 
 class FakeAuditWriter:
     def __init__(self) -> None:
@@ -240,6 +328,7 @@ def _client(context: AuthContext, *, csrf=True, fresh=True):
         hard_stale_audit=lambda *_args: None,
     )
     app = FastAPI()
+    app.state.fae_access = FaeWorkbenchAccessService(repository, audit)
     app.include_router(router)
     app.dependency_overrides[authenticated_context] = lambda: context
     app.dependency_overrides[csrf_protection] = lambda: csrf
@@ -281,6 +370,184 @@ def test_owner_user_list_is_internal_and_sanitized() -> None:
         "scopes",
     }
     assert not set(payload) & {"provider_id", "mobile", "email"}
+
+
+def test_owner_can_list_fae_workbench_grants_without_private_identity() -> None:
+    client, repository, _ = _client(OWNER)
+
+    response = client.get("/api/v1/manage/fae-workbench/grants")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "grants": [{
+            "grant_id": str(repository.fae_grant_id),
+            "internal_user_id": str(repository.fae_internal_user_id),
+            "display_name": "花名一",
+            "status": "active",
+            "permission": "manager",
+            "created_at": "2026-09-01T00:00:00+00:00",
+            "row_version": 0,
+        }]
+    }
+    assert "provider_id" not in response.text
+    assert "unionid" not in response.text
+    assert "mobile" not in response.text
+
+
+def test_owner_grants_fae_workbench_access_by_unique_display_name_only() -> None:
+    client, repository, audit = _client(OWNER)
+    request_id = uuid4()
+
+    response = client.post(
+        "/api/v1/manage/fae-workbench/grants",
+        json={
+            "display_name": "花名一",
+            "reason": "fae_workbench_access_approved",
+            "request_id": str(request_id),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "internal_user_id": str(repository.fae_internal_user_id),
+        "row_version": 0,
+    }
+    mutation = repository.mutations[-1]
+    assert mutation[:6] == (
+        "grant_fae",
+        OWNER.internal_user_id,
+        "花名一",
+        request_id,
+        repository.generation_id,
+        repository.member_key,
+    )
+    assert mutation[6] != mutation[7] != mutation[8]
+    assert [command.event_type for command in audit.commands] == [
+        "fae_workbench_grant_requested",
+        "fae_workbench_grant_completed",
+    ]
+    assert audit.commands[0].target_type == "directory_member"
+    assert audit.commands[0].target_id == str(repository.member_key)
+    assert audit.commands[0].metadata == {
+        "operation_id": str(request_id),
+        "expected_generation_id": str(repository.generation_id),
+        "expected_member_key": str(repository.member_key),
+        "result": "requested",
+    }
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status", "expected_detail"),
+    [
+        (ValueError("directory_member_not_found"), 409, "directory_member_not_found"),
+        (
+            FaeWorkbenchAccessUnavailable("control unavailable"),
+            503,
+            "fae workbench access unavailable",
+        ),
+    ],
+)
+def test_fae_grant_name_resolution_fails_closed(
+    error: Exception,
+    expected_status: int,
+    expected_detail: str,
+) -> None:
+    client, repository, audit = _client(OWNER)
+
+    def fail_resolution(_display_name):
+        raise error
+
+    repository.active_fae_workbench_member = fail_resolution
+    response = client.post(
+        "/api/v1/manage/fae-workbench/grants",
+        json={
+            "display_name": "不存在",
+            "reason": "fae_workbench_access_approved",
+            "request_id": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == expected_status
+    assert response.json() == {"detail": expected_detail}
+    assert repository.mutations == []
+    assert audit.commands == []
+
+
+def test_fae_workbench_grant_request_id_derives_replay_stable_identity_ids() -> None:
+    client, repository, _ = _client(OWNER)
+    request_id = uuid4()
+    payload = {
+        "display_name": "花名一",
+        "reason": "fae_workbench_access_approved",
+        "request_id": str(request_id),
+    }
+
+    assert client.post("/api/v1/manage/fae-workbench/grants", json=payload).status_code == 200
+    assert client.post("/api/v1/manage/fae-workbench/grants", json=payload).status_code == 200
+
+    first = repository.mutations[-2]
+    second = repository.mutations[-1]
+    assert first[6:9] == second[6:9]
+
+
+def test_owner_revokes_fae_workbench_access_with_expected_grant_row_version() -> None:
+    client, repository, audit = _client(OWNER)
+    request_id = uuid4()
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/manage/fae-workbench/grants/{repository.fae_internal_user_id}",
+        json={
+            "reason": "fae_workbench_access_revoked",
+            "request_id": str(request_id),
+            "expected_row_version": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "row_version": 1}
+    assert repository.mutations[-1][:5] == (
+        "revoke_fae",
+        OWNER.internal_user_id,
+        repository.fae_internal_user_id,
+        request_id,
+        0,
+    )
+    assert [command.event_type for command in audit.commands] == [
+        "fae_workbench_revoke_requested",
+        "fae_workbench_revoke_completed",
+    ]
+    assert audit.commands[0].metadata == {
+        "operation_id": str(request_id),
+        "expected_row_version": 0,
+        "result": "requested",
+    }
+
+
+@pytest.mark.parametrize("context", [ADMIN, VIEWER, MEMBER])
+def test_only_owner_can_manage_fae_workbench_grants(context: AuthContext) -> None:
+    client, repository, _ = _client(context)
+
+    assert client.get("/api/v1/manage/fae-workbench/grants").status_code == 403
+    assert client.post(
+        "/api/v1/manage/fae-workbench/grants",
+        json={
+            "display_name": "花名一",
+            "reason": "fae_workbench_access_approved",
+            "request_id": str(uuid4()),
+        },
+    ).status_code == 403
+    assert client.request(
+        "DELETE",
+        f"/api/v1/manage/fae-workbench/grants/{repository.fae_internal_user_id}",
+            json={
+                "reason": "fae_workbench_access_revoked",
+                "request_id": str(uuid4()),
+                "expected_row_version": 0,
+            },
+        ).status_code == 403
+    assert repository.mutations == []
 
 
 def test_admin_can_manage_viewers_scopes_and_read_governance() -> None:
