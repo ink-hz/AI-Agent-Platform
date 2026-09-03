@@ -140,6 +140,23 @@ def test_only_v4_can_carry_task_scoped_attachment_grants() -> None:
     assert TOKEN not in repr(payload.input_attachment_grants[0])
 
 
+def test_v4_followup_can_carry_fresh_turn_scoped_attachment_grants() -> None:
+    payload = RelayJobPayload(
+        **{
+            **_v3_payload().model_dump(),
+            "collaboration_contract": "core_chat_collaboration_v4",
+            "message_kind": "followup",
+            "message_seq": 2,
+            "parent_run_id": TRIGGER_MESSAGE_ID,
+            "input_attachment_grants": (_input_grant(),),
+            "output_write_grant": _output_grant(),
+        }
+    )
+
+    assert payload.message_kind == "followup"
+    assert payload.input_attachment_grants == (_input_grant(),)
+
+
 def test_v4_result_has_separate_answer_citation_and_registered_artifact_channels() -> (
     None
 ):

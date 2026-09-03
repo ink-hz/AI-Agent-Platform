@@ -366,7 +366,10 @@ def test_result_contract_probe_requires_v2_capability(tmp_path: Path) -> None:
 def test_collaboration_followup_requires_v3_and_reuses_child_session(
     tmp_path: Path,
 ) -> None:
-    capabilities = respx.get("http://127.0.0.1:9200/api/core-chat/capabilities").mock(
+    capabilities = respx.get(
+        "http://127.0.0.1:9200/api/core-chat/capabilities"
+        "?contract=core_chat_collaboration_v3"
+    ).mock(
         return_value=httpx.Response(
             200,
             json={
@@ -429,7 +432,10 @@ def test_collaboration_followup_requires_v3_and_reuses_child_session(
 def test_collaboration_send_fails_closed_when_v3_capability_is_missing(
     tmp_path: Path,
 ) -> None:
-    respx.get("http://127.0.0.1:9200/api/core-chat/capabilities").mock(
+    respx.get(
+        "http://127.0.0.1:9200/api/core-chat/capabilities"
+        "?contract=core_chat_collaboration_v3"
+    ).mock(
         return_value=httpx.Response(
             200, json={"contracts": {"coreChatResult": "core_chat_result_v2"}}
         )
@@ -467,7 +473,10 @@ def _v4_capabilities(**overrides: object) -> dict[str, object]:
 def test_collaboration_v4_requires_explicit_file_and_citation_capabilities(
     tmp_path: Path,
 ) -> None:
-    respx.get("http://127.0.0.1:9200/api/core-chat/capabilities").mock(
+    respx.get(
+        "http://127.0.0.1:9200/api/core-chat/capabilities"
+        "?contract=core_chat_collaboration_v4"
+    ).mock(
         return_value=httpx.Response(200, json=_v4_capabilities())
     )
     route = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
@@ -536,7 +545,10 @@ def test_collaboration_v4_requires_explicit_file_and_citation_capabilities(
 def test_collaboration_v4_fails_closed_when_capability_is_missing(
     tmp_path: Path, missing_capability: str
 ) -> None:
-    respx.get("http://127.0.0.1:9200/api/core-chat/capabilities").mock(
+    respx.get(
+        "http://127.0.0.1:9200/api/core-chat/capabilities"
+        "?contract=core_chat_collaboration_v4"
+    ).mock(
         return_value=httpx.Response(
             200, json=_v4_capabilities(**{missing_capability: False})
         )

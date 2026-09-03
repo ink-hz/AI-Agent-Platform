@@ -359,7 +359,10 @@ class MetaBotClient:
         agent_id: str,
         contract: str,
     ) -> None:
-        response = client.get(f"http://127.0.0.1:{port}/api/core-chat/capabilities")
+        response = client.get(
+            f"http://127.0.0.1:{port}/api/core-chat/capabilities",
+            params={"contract": contract},
+        )
         if response.status_code != 200:
             raise ValueError
         result = response.json()

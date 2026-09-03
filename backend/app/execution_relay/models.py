@@ -300,10 +300,6 @@ class RelayJobPayload(BaseModel):
             if self.input_attachment_grants or self.output_write_grant is not None:
                 raise ValueError("attachment grants require collaboration v4")
             return self
-        if self.message_kind != "initial" and (
-            self.input_attachment_grants or self.output_write_grant is not None
-        ):
-            raise ValueError("attachment grants require initial collaboration command")
         attachment_ids = tuple(
             grant.attachment_id for grant in self.input_attachment_grants
         )
