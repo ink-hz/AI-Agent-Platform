@@ -61,10 +61,14 @@ _ACTIVE_TEXT_PREFIXES = (
     b"<script",
     b"<?php",
 )
-_MARKUP_TAGS = frozenset(
-    ["a", "abbr", "address", "applet", "area", "article", "aside", "audio", "b", "base", "bdi", "bdo", "blockquote", "body", "br", "button", "canvas", "caption", "cite", "code", "col", "colgroup", "data", "datalist", "dd", "del", "details", "dfn", "dialog", "div", "dl", "dt", "em", "embed", "fieldset", "figcaption", "figure", "footer", "form", "frame", "frameset", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "i", "iframe", "img", "input", "ins", "kbd", "label", "legend", "li", "link", "main", "map", "mark", "marquee", "math", "menu", "meta", "meter", "nav", "noscript", "object", "ol", "optgroup", "option", "output", "p", "picture", "pre", "progress", "q", "rp", "rt", "ruby", "s", "samp", "script", "search", "section", "select", "slot", "small", "source", "span", "strong", "style", "sub", "summary", "sup", "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "title", "tr", "track", "u", "ul", "var", "video", "wbr", "svg", "animate", "animatemotion", "animatetransform", "circle", "clippath", "defs", "desc", "ellipse", "filter", "foreignobject", "g", "image", "line", "lineargradient", "marker", "mask", "metadata", "path", "pattern", "polygon", "polyline", "radialgradient", "rect", "set", "stop", "switch", "symbol", "text", "textpath", "tspan", "use", "view"]
+_MARKUP_TAG = re.compile(
+    r"<\s*(/?)\s*([A-Za-z][A-Za-z0-9_.:-]*)([^<>]*?)(/?)>", re.DOTALL
 )
-_MARKUP_TAG = re.compile(r"<\s*/?\s*([A-Za-z][A-Za-z0-9:-]*)\b")
+_DANGEROUS_MARKUP_ATTRIBUTE = re.compile(
+    r"(?:^|\s)(?:on[A-Za-z0-9_.:-]+|style|src|href|srcdoc|action|formaction)"
+    r"(?=\s*=|\s|/|$)",
+    re.IGNORECASE,
+)
 _MARKUP_DECLARATION = re.compile(
     r"<\s*(?:!\s*(?:doctype|entity)\b|\?\s*(?:xml|php)\b)",
     re.IGNORECASE,
@@ -940,11 +944,28 @@ class AttachmentValidator:
         else:
             if html_lib.unescape(normalized) != normalized:
                 raise AttachmentValidationError("active_content")
-        if _MARKUP_DECLARATION.search(normalized) or any(
-            match.group(1).rsplit(":", 1)[-1].casefold() in _MARKUP_TAGS
-            for match in _MARKUP_TAG.finditer(normalized)
-        ):
+        if _MARKUP_DECLARATION.search(normalized):
             raise AttachmentValidationError("active_content")
+        for match in _MARKUP_TAG.finditer(normalized):
+            closing, name, attributes, self_closing = match.groups()
+            generic_type_parameter = (
+                not closing
+                and not self_closing
+                and not attributes.strip()
+                and len(name) == 1
+                and name.isascii()
+                and name.isupper()
+                and match.start() > 0
+                and normalized[match.start() - 1].isascii()
+                and normalized[match.start() - 1].isalnum()
+            )
+            if (
+                closing
+                or self_closing
+                or _DANGEROUS_MARKUP_ATTRIBUTE.search(attributes)
+                or not generic_type_parameter
+            ):
+                raise AttachmentValidationError("active_content")
         if "\0" in text or any(
             ord(character) < 32 and character not in "\t\n\r\f" for character in text
         ):

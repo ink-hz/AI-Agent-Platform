@@ -237,6 +237,29 @@ def test_plain_text_with_non_markup_less_than_sign_remains_allowed(
     assert validate_bytes(plain_text.encode("utf-8")).detected_mime == "text/plain"
 
 
+@pytest.mark.parametrize(
+    "probe",
+    (
+        "<x onclick=alert(1)>click</x>",
+        "<x-evil onmouseover=alert(1)>click</x-evil>",
+        "<widget STYLE='background:url(https://example.invalid)'>x</widget>",
+        "<widget src='https://example.invalid'>x</widget>",
+        "<widget href='https://example.invalid'>x</widget>",
+        "<widget srcdoc='<script>x()</script>'>x</widget>",
+        "<widget action='https://example.invalid'>x</widget>",
+        "<widget formaction='https://example.invalid'>x</widget>",
+        "<employee-record>data</employee-record>",
+        "<employee-record />",
+        "&lt;x-evil&#x20;OnClick=alert(1)&gt;click&lt;/x-evil&gt;",
+        "&amp;lt;x-evil onmouseover=alert(1)&amp;gt;x&amp;lt;/x-evil&amp;gt;",
+    ),
+)
+def test_custom_markup_and_dangerous_attributes_are_rejected(probe: str) -> None:
+    with pytest.raises(AttachmentValidationError) as captured:
+        validate_bytes(probe.encode("utf-8"))
+    assert captured.value.reason == "active_content"
+
+
 def test_office_rejects_an_undeclared_gap_before_central_directory() -> None:
     candidate = bytearray((FIXTURES / "valid.docx").read_bytes())
     eocd = candidate.rfind(b"PK\x05\x06")
