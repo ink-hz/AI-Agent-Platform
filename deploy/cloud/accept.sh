@@ -11,7 +11,7 @@ fail() {
 [[ "$(/usr/bin/id -un)" == "neo" ]] || fail
 config_path="$1"
 action="$2"
-[[ "$action" == "preflight" || "$action" == "reference" || "$action" == "release" || "$action" == "accept" || "$action" == "rollback" || "$action" == "restore" ]] || fail
+[[ "$action" == "preflight" || "$action" == "reference" || "$action" == "routes" || "$action" == "release" || "$action" == "accept" || "$action" == "rollback" || "$action" == "restore" ]] || fail
 [[ -f "$config_path" && ! -L "$config_path" ]] || fail
 [[ "$(/usr/bin/stat -f '%Lp %u' "$config_path")" == "600 $(/usr/bin/id -u)" ]] || fail
 
@@ -318,6 +318,131 @@ print(json.dumps(snapshot, ensure_ascii=True, sort_keys=True, separators=(",", "
 PY
   done
 )
+}
+
+route_non_regression_snapshot() {
+(
+  set -euo pipefail
+  local snapshot_dir index url
+  snapshot_dir="$(/usr/bin/mktemp -d)"
+  trap '/bin/rm -rf -- "$snapshot_dir"' EXIT
+  local -a urls=(
+    'https://agent.orbbec.com.cn/'
+    'https://agent.orbbec.com.cn/office/'
+    'https://agent.orbbec.com.cn/office/?view=services'
+    'https://fae.orbbec.com.cn/'
+  )
+
+  for index in "${!urls[@]}"; do
+    url="${urls[$index]}"
+    /usr/bin/curl --noproxy '*' --silent --show-error --max-time 15 \
+      -D "$snapshot_dir/$index.headers" -o "$snapshot_dir/$index.body" \
+      "$url" || return 1
+    "$python" - "$url" "$snapshot_dir/$index.headers" \
+      "$snapshot_dir/$index.body" <<'PY' || return 1
+import hashlib
+import json
+import pathlib
+import sys
+
+url, header_path, body_path = sys.argv[1:]
+raw_headers = pathlib.Path(header_path).read_text(encoding="iso-8859-1")
+blocks = [block for block in raw_headers.replace("\r\n", "\n").split("\n\n") if block]
+block = next((item for item in reversed(blocks) if item.startswith("HTTP/")), "")
+lines = block.splitlines()
+if not lines or len(lines[0].split()) < 2:
+    raise SystemExit(1)
+headers = {}
+for line in lines[1:]:
+    if ":" in line:
+        key, value = line.split(":", 1)
+        headers[key.strip().lower()] = value.strip()
+security_names = (
+    "strict-transport-security",
+    "content-security-policy",
+    "x-content-type-options",
+    "x-frame-options",
+    "referrer-policy",
+    "permissions-policy",
+)
+snapshot = {
+    "url": url,
+    "status": int(lines[0].split()[1]),
+    "location": headers.get("location", ""),
+    "content_marker": hashlib.sha256(pathlib.Path(body_path).read_bytes()).hexdigest(),
+    "security_headers": {name: headers.get(name, "") for name in security_names},
+}
+print(json.dumps(snapshot, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
+PY
+  done
+)
+}
+
+verify_canonical_workspace_routes() {
+  remote /usr/bin/python3 - <<'PY' || return 1
+import re
+import subprocess
+
+
+def block(value: str, selector: str) -> str:
+    start = value.index(selector)
+    depth = 0
+    opened = False
+    for index in range(start, len(value)):
+        if value[index] == "{":
+            depth += 1
+            opened = True
+        elif value[index] == "}":
+            depth -= 1
+            if opened and depth == 0:
+                return value[start : index + 1]
+    raise ValueError("nginx block incomplete")
+
+
+rendered = subprocess.run(
+    ["/usr/sbin/nginx", "-T"],
+    check=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+    text=True,
+).stdout
+servers = []
+offset = 0
+while True:
+    match = re.search(r"(?m)^\s*server\s*\{", rendered[offset:])
+    if match is None:
+        break
+    start = offset + match.start()
+    selected = block(rendered[start:], "server {")
+    offset = start + len(selected)
+    servers.append(selected)
+agent_servers = [
+    value
+    for value in servers
+    if re.search(r"(?m)^\s*server_name\s+[^;]*\bagent\.orbbec\.com\.cn\b[^;]*;", value)
+    and re.search(r"(?m)^\s*listen\s+(?:[^; ]+:)?443\b[^;]*;", value)
+]
+if len(agent_servers) != 1:
+    raise SystemExit(1)
+agent = agent_servers[0]
+expected = {
+    "location ^~ /fae/manage/ {": "http://127.0.0.1:8080",
+    "location ^~ /fae/ {": "http://127.0.0.1:8000",
+    "location ^~ /voc/ {": "http://172.29.0.3:18130",
+    "location ^~ /office/ {": "http://127.0.0.1:8011",
+    "location ^~ /admin/ {": "http://127.0.0.1:8080",
+}
+for selector, owner in expected.items():
+    selected = block(agent, selector)
+    proxies = re.findall(r"(?m)^\s*proxy_pass\s+([^;]+);", selected)
+    if proxies != [owner]:
+        raise SystemExit(1)
+PY
+  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/fae)" == "308" ]] || return 1
+  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/fae/health)" == "404" ]] || return 1
+  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/fae/manage)" == "308" ]] || return 1
+  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/voc)" == "308" ]] || return 1
+  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/voc/health)" == "404" ]] || return 1
 }
 
 remote_fae_snapshot() {
@@ -747,17 +872,43 @@ release="$(/usr/bin/readlink -f "$root/current")"
 release_template="$release/deploy/cloud/agent-domain.nginx.conf"
 manifest="$release/MANIFEST.sha256"
 [[ "$release" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ ]] || fail
-[[ -f "$source" && ! -L "$source" && -f "$target" && ! -L "$target" && -L "$enabled" ]] || fail
+[[ -f "$source" && ! -L "$source" && -f "$target" && ! -L "$target" ]] || fail
+if [[ -L "$enabled" ]]; then
+  enabled_before_kind="symlink"
+elif [[ -f "$enabled" && ! -L "$enabled" ]]; then
+  enabled_before_kind="regular"
+else
+  fail
+fi
 [[ -f "$release_template" && ! -L "$release_template" && -f "$manifest" && ! -L "$manifest" ]] || fail
 [[ "$(/usr/bin/stat -c '%a %U' "$source")" == "600 root" ]] || fail
+[[ "$(/usr/bin/stat -c '%U' "$target")" == "root" ]] || fail
+[[ "$(/usr/bin/stat -c '%U' "$enabled")" == "root" ]] || fail
 /usr/bin/cmp -s "$source" "$release_template" || fail
 template_digest="$(/usr/bin/sha256sum "$release_template" | /usr/bin/awk '{print $1}')"
 /usr/bin/grep -Fxq "$template_digest  deploy/cloud/agent-domain.nginx.conf" "$manifest" || fail
 transaction_before="$state/agent-domain.transaction.before.conf"
 enabled_transaction_before="$state/agent-domain.transaction.before.enabled"
+enabled_transaction_before_config="$state/agent-domain.transaction.before.enabled.conf"
+enabled_transaction_before_kind="$state/agent-domain.transaction.before.enabled.kind"
 transaction_marker="$state/agent-domain.transaction.id"
-[[ ! -e "$transaction_before" && ! -e "$enabled_transaction_before" && ! -e "$transaction_marker" ]] || fail
+[[ ! -e "$transaction_before" && ! -e "$enabled_transaction_before" && ! -e "$enabled_transaction_before_config" && ! -e "$enabled_transaction_before_kind" && ! -e "$transaction_marker" ]] || fail
 published=0
+restore_enabled_nginx() {
+  case "$enabled_before_kind" in
+    symlink)
+      [[ "$enabled_before" =~ ^(/etc/nginx/sites-available/|\.\./sites-available/)[A-Za-z0-9._-]+$ ]] || return 1
+      /bin/rm -f -- "$enabled"
+      /bin/ln -s "$enabled_before" "$enabled"
+      ;;
+    regular)
+      /usr/bin/install -o root -g root -m 644 "$enabled_transaction_before_config" "$enabled.part.restore"
+      /bin/rm -f -- "$enabled"
+      /bin/mv -f "$enabled.part.restore" "$enabled"
+      ;;
+    *) return 1 ;;
+  esac
+}
 restore_nginx() {
   status="$?"
   trap - ERR EXIT
@@ -765,23 +916,36 @@ restore_nginx() {
   if [[ "$status" -ne 0 && "$published" == "1" ]]; then
     if ! /usr/bin/install -o root -g root -m 644 "$transaction_before" "$target.part.restore"; then restore_status=1; fi
     if [[ "$restore_status" == "0" ]] && ! /bin/mv -f "$target.part.restore" "$target"; then restore_status=1; fi
-    if [[ "$restore_status" == "0" ]] && ! /bin/ln -sfn "$enabled_before" "$enabled"; then restore_status=1; fi
+    if [[ "$restore_status" == "0" ]] && ! restore_enabled_nginx; then restore_status=1; fi
     if [[ "$restore_status" == "0" ]] && ! /usr/sbin/nginx -t >/dev/null 2>&1; then restore_status=1; fi
     if [[ "$restore_status" == "0" ]] && ! /bin/systemctl reload nginx >/dev/null 2>&1; then restore_status=1; fi
   elif [[ "$status" -ne 0 ]]; then
-    /bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$transaction_marker"
+    /bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$enabled_transaction_before_config" "$enabled_transaction_before_kind" "$transaction_marker"
   fi
   if [[ "$restore_status" -ne 0 ]]; then exit "$restore_status"; fi
   exit "$status"
 }
 trap restore_nginx ERR EXIT
 /usr/bin/install -o root -g root -m 600 "$target" "$transaction_before"
-enabled_before="$(/usr/bin/readlink "$enabled")"
-[[ -n "$enabled_before" ]] || fail
-/usr/bin/printf '%s\n' "$enabled_before" > "$enabled_transaction_before.part"
-/bin/chown root:root "$enabled_transaction_before.part"
-/bin/chmod 600 "$enabled_transaction_before.part"
-/bin/mv -f "$enabled_transaction_before.part" "$enabled_transaction_before"
+case "$enabled_before_kind" in
+  symlink)
+    enabled_before="$(/usr/bin/readlink "$enabled")"
+    [[ "$enabled_before" =~ ^(/etc/nginx/sites-available/|\.\./sites-available/)[A-Za-z0-9._-]+$ ]] || fail
+    /usr/bin/printf '%s\n' "$enabled_before" > "$enabled_transaction_before.part"
+    /bin/chown root:root "$enabled_transaction_before.part"
+    /bin/chmod 600 "$enabled_transaction_before.part"
+    /bin/mv -f "$enabled_transaction_before.part" "$enabled_transaction_before"
+    ;;
+  regular)
+    enabled_before=""
+    /usr/bin/install -o root -g root -m 600 "$enabled" "$enabled_transaction_before_config"
+    ;;
+  *) fail ;;
+esac
+/usr/bin/printf '%s\n' "$enabled_before_kind" > "$enabled_transaction_before_kind.part"
+/bin/chown root:root "$enabled_transaction_before_kind.part"
+/bin/chmod 600 "$enabled_transaction_before_kind.part"
+/bin/mv -f "$enabled_transaction_before_kind.part" "$enabled_transaction_before_kind"
 /usr/bin/printf '%s\n' "$transaction_id" > "$transaction_marker.part"
 /bin/chown root:root "$transaction_marker.part"
 /bin/chmod 600 "$transaction_marker.part"
@@ -828,7 +992,8 @@ PY
 /usr/bin/install -o root -g root -m 644 "$rendered" "$target.part"
 published=1
 /bin/mv -f "$target.part" "$target"
-/bin/ln -sfn "$target" "$enabled"
+/bin/rm -f -- "$enabled"
+/bin/ln -s "$target" "$enabled"
 /usr/sbin/nginx -t >/dev/null 2>&1
 /bin/systemctl reload nginx
 [[ "$fae_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
@@ -860,25 +1025,43 @@ exec 9>"$transaction_lock"
 /usr/bin/flock -x 9
 transaction_before="$state/agent-domain.transaction.before.conf"
 enabled_transaction_before="$state/agent-domain.transaction.before.enabled"
+enabled_transaction_before_config="$state/agent-domain.transaction.before.enabled.conf"
+enabled_transaction_before_kind="$state/agent-domain.transaction.before.enabled.kind"
 transaction_marker="$state/agent-domain.transaction.id"
 target=/etc/nginx/sites-available/agent-domain.conf
 enabled=/etc/nginx/sites-enabled/agent-domain.conf
-if [[ ! -e "$transaction_before" && ! -e "$enabled_transaction_before" && ! -e "$transaction_marker" ]]; then exit 0; fi
+if [[ ! -e "$transaction_before" && ! -e "$enabled_transaction_before" && ! -e "$enabled_transaction_before_config" && ! -e "$enabled_transaction_before_kind" && ! -e "$transaction_marker" ]]; then exit 0; fi
 [[ -f "$transaction_before" && ! -L "$transaction_before" ]] || exit 1
-[[ -f "$enabled_transaction_before" && ! -L "$enabled_transaction_before" ]] || exit 1
+[[ -f "$enabled_transaction_before_kind" && ! -L "$enabled_transaction_before_kind" ]] || exit 1
 [[ -f "$transaction_marker" && ! -L "$transaction_marker" ]] || exit 1
 [[ "$(/usr/bin/stat -c '%a %U' "$transaction_before")" == "600 root" ]] || exit 1
-[[ "$(/usr/bin/stat -c '%a %U' "$enabled_transaction_before")" == "600 root" ]] || exit 1
+[[ "$(/usr/bin/stat -c '%a %U' "$enabled_transaction_before_kind")" == "600 root" ]] || exit 1
 [[ "$(/usr/bin/stat -c '%a %U' "$transaction_marker")" == "600 root" ]] || exit 1
 [[ "$(/bin/cat "$transaction_marker")" == "$transaction_id" ]] || exit 1
-enabled_before="$(/bin/cat "$enabled_transaction_before")"
-[[ "$enabled_before" =~ ^(/etc/nginx/sites-available/|\.\./sites-available/)[A-Za-z0-9._-]+$ ]] || exit 1
+enabled_before_kind="$(/bin/cat "$enabled_transaction_before_kind")"
 /usr/bin/install -o root -g root -m 644 "$transaction_before" "$target.part.restore"
 /bin/mv -f "$target.part.restore" "$target"
-/bin/ln -sfn "$enabled_before" "$enabled"
+case "$enabled_before_kind" in
+  symlink)
+    [[ -f "$enabled_transaction_before" && ! -L "$enabled_transaction_before" ]] || exit 1
+    [[ "$(/usr/bin/stat -c '%a %U' "$enabled_transaction_before")" == "600 root" ]] || exit 1
+    enabled_before="$(/bin/cat "$enabled_transaction_before")"
+    [[ "$enabled_before" =~ ^(/etc/nginx/sites-available/|\.\./sites-available/)[A-Za-z0-9._-]+$ ]] || exit 1
+    /bin/rm -f -- "$enabled"
+    /bin/ln -s "$enabled_before" "$enabled"
+    ;;
+  regular)
+    [[ -f "$enabled_transaction_before_config" && ! -L "$enabled_transaction_before_config" ]] || exit 1
+    [[ "$(/usr/bin/stat -c '%a %U' "$enabled_transaction_before_config")" == "600 root" ]] || exit 1
+    /usr/bin/install -o root -g root -m 644 "$enabled_transaction_before_config" "$enabled.part.restore"
+    /bin/rm -f -- "$enabled"
+    /bin/mv -f "$enabled.part.restore" "$enabled"
+    ;;
+  *) exit 1 ;;
+esac
 /usr/sbin/nginx -t >/dev/null 2>&1
 /bin/systemctl reload nginx >/dev/null 2>&1
-/bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$transaction_marker"
+/bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$enabled_transaction_before_config" "$enabled_transaction_before_kind" "$transaction_marker"
 REMOTE
 }
 
@@ -898,15 +1081,17 @@ exec 9>"$transaction_lock"
 /usr/bin/flock -x 9
 transaction_before="$state/agent-domain.transaction.before.conf"
 enabled_transaction_before="$state/agent-domain.transaction.before.enabled"
+enabled_transaction_before_config="$state/agent-domain.transaction.before.enabled.conf"
+enabled_transaction_before_kind="$state/agent-domain.transaction.before.enabled.kind"
 transaction_marker="$state/agent-domain.transaction.id"
 [[ -f "$transaction_before" && ! -L "$transaction_before" ]] || exit 1
-[[ -f "$enabled_transaction_before" && ! -L "$enabled_transaction_before" ]] || exit 1
+[[ -f "$enabled_transaction_before_kind" && ! -L "$enabled_transaction_before_kind" ]] || exit 1
 [[ -f "$transaction_marker" && ! -L "$transaction_marker" ]] || exit 1
 [[ "$(/usr/bin/stat -c '%a %U' "$transaction_before")" == "600 root" ]] || exit 1
-[[ "$(/usr/bin/stat -c '%a %U' "$enabled_transaction_before")" == "600 root" ]] || exit 1
+[[ "$(/usr/bin/stat -c '%a %U' "$enabled_transaction_before_kind")" == "600 root" ]] || exit 1
 [[ "$(/usr/bin/stat -c '%a %U' "$transaction_marker")" == "600 root" ]] || exit 1
 [[ "$(/bin/cat "$transaction_marker")" == "$transaction_id" ]] || exit 1
-/bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$transaction_marker"
+/bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$enabled_transaction_before_config" "$enabled_transaction_before_kind" "$transaction_marker"
 REMOTE
 }
 
@@ -2246,6 +2431,34 @@ REMOTE
   echo "AGENT_BRAIN_V2_ACCEPTANCE_OK"
 }
 
+publish_routes_only() {
+  local route_snapshot_before route_snapshot_after nginx_transaction_id
+  nginx_transaction_id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  [[ "$nginx_transaction_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail
+  nginx_transaction_published="0"
+  route_failure_rollback() {
+    status="$?"
+    trap - ERR EXIT
+    if [[ "$status" -ne 0 && "$nginx_transaction_published" == "1" ]]; then
+      rollback_formal_nginx_transaction "$nginx_transaction_id" || status=1
+      nginx_transaction_published="0"
+    fi
+    release_action_lock || status=1
+    exit "$status"
+  }
+  trap route_failure_rollback ERR EXIT
+  route_snapshot_before="$(route_non_regression_snapshot)" || fail
+  nginx_transaction_published="1"
+  publish_formal_nginx "$nginx_transaction_id"
+  route_snapshot_after="$(route_non_regression_snapshot)" || fail
+  [[ "$route_snapshot_after" == "$route_snapshot_before" ]] || fail
+  verify_canonical_workspace_routes || fail
+  commit_formal_nginx_transaction "$nginx_transaction_id"
+  nginx_transaction_published="0"
+  trap - ERR EXIT
+  trap action_lock_exit EXIT
+}
+
 enable_with_rollback() {
   local workspace_snapshot_before workspace_snapshot_after nginx_transaction_id
   nginx_transaction_id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
@@ -2291,6 +2504,13 @@ case "$action" in
     prepare_v2_reference_evidence
     release_action_lock || fail
     trap - EXIT
+    ;;
+  routes)
+    acquire_action_lock
+    publish_routes_only
+    release_action_lock || fail
+    trap - EXIT
+    echo "AGENT_WORKSPACE_ROUTES_OK"
     ;;
   release)
     require_action_identity_schema

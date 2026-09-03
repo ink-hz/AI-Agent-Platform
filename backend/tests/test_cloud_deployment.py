@@ -788,6 +788,53 @@ def test_snapshot_regression_restores_the_published_nginx_transaction():
     assert "|| true" not in restore_handler
 
 
+def test_formal_nginx_transaction_preserves_legacy_regular_enabled_file():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    publish = _bash_function(
+        script,
+        "publish_formal_nginx",
+        "rollback_formal_nginx_transaction",
+    )
+    rollback = _bash_function(
+        script,
+        "rollback_formal_nginx_transaction",
+        "commit_formal_nginx_transaction",
+    )
+    commit = _bash_function(
+        script,
+        "commit_formal_nginx_transaction",
+        "cookie_config",
+    )
+
+    assert 'enabled_before_kind="regular"' in publish
+    assert 'enabled_before_kind="symlink"' in publish
+    assert "agent-domain.transaction.before.enabled.conf" in publish
+    assert "agent-domain.transaction.before.enabled.kind" in publish
+    assert 'case "$enabled_before_kind" in' in publish
+    assert 'case "$enabled_before_kind" in' in rollback
+    assert '/bin/rm -f -- "$enabled"' in rollback
+    assert '"$enabled_transaction_before_config" "$enabled.part.restore"' in rollback
+    assert '"$enabled_transaction_before_kind"' in commit
+    assert '"$enabled_transaction_before_config"' in commit
+
+
+def test_routes_action_publishes_edge_config_without_changing_brain_feature():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    routes = _bash_function(script, "publish_routes_only", "enable_with_rollback")
+    dispatcher = script.split('case "$action" in', 1)[1]
+
+    assert '"routes"' in script.split("repository_root=", 1)[0]
+    assert "routes)" in dispatcher
+    assert "acquire_action_lock" in dispatcher.split("routes)", 1)[1].split(";;", 1)[0]
+    assert "publish_routes_only" in dispatcher.split("routes)", 1)[1].split(";;", 1)[0]
+    assert "publish_formal_nginx" in routes
+    assert "rollback_formal_nginx_transaction" in routes
+    assert "commit_formal_nginx_transaction" in routes
+    assert "route_non_regression_snapshot" in routes
+    assert "verify_canonical_workspace_routes" in routes
+    assert "remote_feature" not in routes
+
+
 def _run_nginx_snapshot_transaction(
     tmp_path: Path,
     *,
