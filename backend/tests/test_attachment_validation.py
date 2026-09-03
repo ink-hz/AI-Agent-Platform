@@ -206,6 +206,37 @@ def test_active_text_cannot_hide_behind_xml_prolog_comments_or_bom(probe: bytes)
     assert captured.value.reason == "active_content"
 
 
+@pytest.mark.parametrize(
+    "probe",
+    (
+        "hello<script>alert(1)</script>",
+        "\u00a0\u2003<svg onload='alert(1)'></svg>",
+        "prefix<ScRiPt \n type='text/javascript'>x()</sCrIpT>",
+        "prefix &lt;ScRiPt&#x20;&gt;x()&lt;/sCrIpT&gt;",
+        "prefix &amp;lt;svg onload=x&amp;gt;&amp;lt;/svg&amp;gt;",
+        "prefix &amp;amp;amp;lt;script&amp;amp;amp;gt;x()",
+    ),
+)
+def test_active_markup_anywhere_or_entity_encoded_is_rejected(probe: str) -> None:
+    with pytest.raises(AttachmentValidationError) as captured:
+        validate_bytes(probe.encode("utf-8"))
+    assert captured.value.reason == "active_content"
+
+
+@pytest.mark.parametrize(
+    "plain_text",
+    (
+        "Use 1 < 2 and 3 > 1 in this policy.\n",
+        "A generic vector<T> is plain source documentation.\n",
+        "The budget is < USD 100 and contains no markup.\n",
+    ),
+)
+def test_plain_text_with_non_markup_less_than_sign_remains_allowed(
+    plain_text: str,
+) -> None:
+    assert validate_bytes(plain_text.encode("utf-8")).detected_mime == "text/plain"
+
+
 def test_office_rejects_an_undeclared_gap_before_central_directory() -> None:
     candidate = bytearray((FIXTURES / "valid.docx").read_bytes())
     eocd = candidate.rfind(b"PK\x05\x06")
