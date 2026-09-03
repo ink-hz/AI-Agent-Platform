@@ -38,9 +38,9 @@ if ! result="$(
     pg_dump -U platform_owner -d agent_platform --format=custom --no-password \
   | /usr/bin/docker run --rm -i --user 10001:10001 --read-only \
       --security-opt no-new-privileges:true --network none \
-      --tmpfs /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700 \
       -v orbbec-agent-platform-backup-secrets:/run/backup-secrets:ro \
       -v orbbec-agent-platform-backups:/backups \
+      -e TMPDIR=/backups \
       -e PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE=/run/backup-secrets/recovery-public-key \
       -e "PLATFORM_REPLICA_BACKUP_PATH=/backups/$backup_name" \
       "$platform_image" python -m app.cloud_replica.cli backup

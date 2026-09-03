@@ -30,6 +30,7 @@ def test_backup_and_restore_scripts_never_create_plaintext_dump_files():
     assert 'platform_image="$(/usr/bin/sed -n' in backup
     assert "/usr/bin/docker run --rm -i --user 10001:10001 --read-only" in backup
     assert "--security-opt no-new-privileges:true --network none" in backup
+    assert "TMPDIR=/backups" in backup
     assert "--network orbbec-agent-platform-internal" in backup
     assert '"${compose[@]}" run' not in backup
 
