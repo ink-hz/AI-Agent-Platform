@@ -5,6 +5,8 @@ import type { Conversation } from "../../conversationTypes";
 
 export interface ConversationSidebarProps {
   title?: string;
+  label?: string;
+  mark?: string;
   conversations: Conversation[];
   selectedConversationId?: string;
   loading: boolean;
@@ -47,6 +49,8 @@ function activityLabel(status: Conversation["activity_status"]): string | null {
 
 export function ConversationSidebar({
   title = "Agent 大脑",
+  label,
+  mark,
   conversations, selectedConversationId, loading, error, hasMore, loadingMore, mobileOpen,
   onCloseMobile, onLoadMore, onNewConversation, onRetry, conversationHref, onOpenConversation,
   archivedConversations = [], onArchive, onLoadArchived, onRename, onRestore,
@@ -73,7 +77,13 @@ export function ConversationSidebar({
     role={mobileOpen ? "dialog" : undefined}
   >
     <div className="conversation-sidebar-head">
-      <strong>{title}</strong>
+      <div className="conversation-sidebar-brand">
+        {mark && <span aria-hidden="true" className="conversation-sidebar-brand-mark">{mark}</span>}
+        <div>
+          {label && <small className="conversation-sidebar-label">{label}</small>}
+          <strong>{title}</strong>
+        </div>
+      </div>
       <button aria-label="关闭对话列表" className="conversation-sidebar-close" onClick={onCloseMobile} ref={closeButton} type="button">×</button>
     </div>
     <button className="conversation-sidebar-new" onClick={onNewConversation} type="button">＋ 新对话</button>

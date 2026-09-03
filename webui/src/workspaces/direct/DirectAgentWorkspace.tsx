@@ -29,6 +29,8 @@ export interface DirectAgentWorkspaceProps {
   conversationId?: string;
   conversationPath: (conversationId: string) => string;
   header?: ReactNode;
+  workspaceLabel?: string;
+  workspaceMark?: string;
 }
 
 export interface AgentHistoryClient {
@@ -61,6 +63,8 @@ export function DirectAgentWorkspace({
   conversationId,
   conversationPath,
   header,
+  workspaceLabel,
+  workspaceMark,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
   historyClient = DEFAULT_HISTORY_CLIENT,
@@ -203,13 +207,15 @@ export function DirectAgentWorkspace({
     return <><PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink><ErrorState /></>;
   }
 
-  return <div className="brain-workspace agent-use-workspace">
+  return <div className="brain-workspace agent-use-workspace" data-agent-id={agentId}>
     <button aria-expanded={mobileOpen} aria-label="打开对话列表" className="brain-workspace-menu" onClick={() => setMobileOpen(true)} type="button">☰</button>
     {mobileOpen && <button aria-label="关闭对话列表" className="conversation-sidebar-backdrop" onClick={() => setMobileOpen(false)} type="button" />}
     <ConversationSidebar
       archivedConversations={archivedConversations}
       conversationHref={conversationPath}
       title={card.display_name}
+      label={workspaceLabel}
+      mark={workspaceMark}
       conversations={conversations}
       selectedConversationId={conversationId}
       loading={historyLoading}

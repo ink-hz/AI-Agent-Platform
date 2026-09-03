@@ -57,9 +57,13 @@ export function ConversationFeedbackInbox({ api, actor }: { api: ConversationFee
     setLoading(true);
     api.feedback(controller.signal).then((page) => {
       if (controller.signal.aborted) return;
-      setItems(page.items);
-      setSelectedId((current) => current && page.items.some((item) => item.feedback_id === current)
-        ? current : page.items[0]?.feedback_id ?? null);
+      // Generic Review test doubles and older read replicas may return an empty
+      // object while the new feedback projection is unavailable. Treat it as an
+      // empty inbox instead of taking down the whole Review workspace.
+      const nextItems = Array.isArray(page?.items) ? page.items : [];
+      setItems(nextItems);
+      setSelectedId((current) => current && nextItems.some((item) => item.feedback_id === current)
+        ? current : nextItems[0]?.feedback_id ?? null);
       setLoading(false);
     }).catch(() => {
       if (!controller.signal.aborted) { setMessage("网页会话反馈暂时无法加载"); setLoading(false); }
