@@ -86,6 +86,9 @@ VOC_INACTIVE_STAFF_MAPPING_BINDING_MIGRATION = (
 FAE_WORKBENCH_ACCESS_MIGRATION = (
     MIGRATIONS / "063_fae_workbench_access.sql"
 )
+CONVERSATION_ATTACHMENTS_MIGRATION = (
+    MIGRATIONS / "064_conversation_attachments.sql"
+)
 DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
     MIGRATIONS / "039_directory_member_employee_profile.sql"
 )
@@ -227,7 +230,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 63
+    assert max(versions) == 64
 
 
 def migration_sql(filename: str) -> str:
@@ -371,6 +374,10 @@ def test_first_control_migration_exists() -> None:
     assert FAE_WORKBENCH_ACCESS_MIGRATION.is_file(), (
         "missing FAE workbench access migration: "
         f"{FAE_WORKBENCH_ACCESS_MIGRATION}"
+    )
+    assert CONVERSATION_ATTACHMENTS_MIGRATION.is_file(), (
+        "missing Conversation attachments migration: "
+        f"{CONVERSATION_ATTACHMENTS_MIGRATION}"
     )
 
 
