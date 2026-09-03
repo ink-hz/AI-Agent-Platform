@@ -175,6 +175,7 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".agent-use-card:hover")).toContain("transform: translateY(-2px)");
     expect(rule(".agent-use-card:focus-visible")).toContain("outline: 3px solid");
     expect(rule(".agent-use-card-action")).toContain("min-height: 42px");
+    expect(rule(".agent-use-card-availability")).toContain("font-weight: 760");
     expect(rule('.agent-use-card[data-agent-kind="fae"]')).toContain("--agent-accent: #1f66c7");
     expect(rule('.agent-use-card[data-agent-kind="admin"]')).toContain("--agent-accent: #946300");
     expect(rule(".agent-use-profile > span")).toContain("color: var(--brand-bright)");

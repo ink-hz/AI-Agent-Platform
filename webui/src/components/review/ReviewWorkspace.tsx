@@ -63,6 +63,7 @@ export interface ReviewWorkspaceProps {
   actor: string;
   showActorField: boolean;
   showAgentFilter: boolean;
+  enforceDeploymentReadOnly?: boolean;
   readOnlyReason?: "hard-stale";
   statusFilter?: string;
   statusFilterKind?: "status" | "disposition" | "all";
@@ -115,6 +116,7 @@ export function ReviewWorkspace({
   actor: initialActor,
   showActorField,
   showAgentFilter,
+  enforceDeploymentReadOnly = false,
   readOnlyReason,
   statusFilter,
   statusFilterKind,
@@ -380,9 +382,9 @@ export function ReviewWorkspace({
   if (!overview) return <LoadingState label="正在加载反馈闭环" />;
 
   const hardStaleReadOnly = readOnlyReason === "hard-stale";
-  const replicaReadOnly = !overview.write_available && basePath === "/admin/fae/issues";
+  const deploymentReadOnly = !overview.write_available && enforceDeploymentReadOnly;
   const readOnly = !overview.write_available || hardStaleReadOnly;
-  const hideMutations = replicaReadOnly || hardStaleReadOnly;
+  const hideMutations = deploymentReadOnly || hardStaleReadOnly;
   const faeGovernance = presentation === "fae-governance";
   const processingCount = ["fixing", "awaiting_merge", "awaiting_deploy", "awaiting_review"]
     .reduce((total, status) => total + (overview.statuses[status as keyof typeof overview.statuses] ?? 0), 0);
@@ -398,10 +400,10 @@ export function ReviewWorkspace({
       : <><p>Feedback Repair Ledger</p><h1>反馈修复闭环</h1><span>状态由合并、部署、逐题真实复跑和独立语义复审证据自动计算。</span></>}
       </div>{showActorField && <label>复审身份<input value={actor} onChange={(event) => saveActor(event.target.value)} placeholder="codex / fae:zhangsan" aria-invalid={actor.length > 0 && !accountableActor(actor)} /><small>仅保存在当前浏览器 session，不使用 web-reviewer。</small></label>}{faeGovernance && hardStaleReadOnly
         ? <div className="fae-governance-readonly is-unavailable" role="status"><strong>只读保护</strong><span>通讯录超过安全时限，治理变更已暂停</span></div>
-        : faeGovernance && replicaReadOnly && <div className={`fae-governance-readonly is-${replicaStatus?.freshness ?? "current"}`} role="status"><strong>只读副本</strong><span>{replicaStatus ? replicaFreshnessLabel : "当前数据仅供查看"}</span>{replicaStatus?.lastSuccessAt && <time dateTime={replicaStatus.lastSuccessAt}>同步于 {new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(replicaStatus.lastSuccessAt))}</time>}</div>}</section>
+        : faeGovernance && deploymentReadOnly && <div className={`fae-governance-readonly is-${replicaStatus?.freshness ?? "current"}`} role="status"><strong>只读副本</strong><span>{replicaStatus ? replicaFreshnessLabel : "当前数据仅供查看"}</span>{replicaStatus?.lastSuccessAt && <time dateTime={replicaStatus.lastSuccessAt}>同步于 {new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(replicaStatus.lastSuccessAt))}</time>}</div>}</section>
     {readOnly && !faeGovernance && <div className="review-message" role="status">{hardStaleReadOnly
       ? "通讯录状态已超过安全时限，治理变更已暂停。"
-      : replicaReadOnly
+      : deploymentReadOnly
         ? "当前为只读副本"
         : "只读模式：Writer 当前不可用，原始反馈、事项和最新复测答案仍可查看，所有写操作已禁用。"}</div>}
     {message && <div className="review-message" role="status">{message}</div>}

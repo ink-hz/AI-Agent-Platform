@@ -87,6 +87,54 @@ def test_safe_return_path_allows_only_the_exact_office_entry(candidate: str) -> 
     assert validate_return_path("/office/", route_prefix="/") == "/office/"
 
 
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "/fae/",
+        "/fae/conversations/fae:one",
+        "/fae/manage/",
+        "/fae/manage/sessions",
+        "/fae/manage/sessions/fae:one",
+        "/fae/manage/issues/00000000-0000-4000-8000-000000000001",
+        "/fae/manage/reports/weekly-1",
+        "/voc/records",
+        "/voc/records/VOC-1",
+        "/voc/manage/records",
+        "/voc/manage/records/VOC-1",
+        "/hr/",
+        "/hr/conversations/hr:one",
+        "/hr/conversations/hr%3Aone",
+        "/marketing/prospecting",
+        "/marketing/intelligence/conversations/mkt:one",
+        "/fae/manage/sessions/fae%3Aone",
+    ],
+)
+def test_safe_return_path_accepts_canonical_workspace_paths(candidate: str) -> None:
+    from app.control_plane.auth import validate_return_path
+
+    assert validate_return_path(candidate, route_prefix="/") == candidate
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "/fae/conversations/unsafe/path",
+        "/fae/manage/unknown",
+        "/voc/unknown",
+        "/hr/conversations/unsafe/path",
+        "/marketing/unknown",
+        "/marketing/voice/conversations/unsafe/path",
+        "/marketing/prospecting?next=/admin",
+        "/voc/records/VOC-1#fragment",
+    ],
+)
+def test_safe_return_path_rejects_malformed_workspace_paths(candidate: str) -> None:
+    from app.control_plane.auth import validate_return_path
+
+    with pytest.raises(ValueError, match="return path"):
+        validate_return_path(candidate, route_prefix="/")
+
+
 def test_qr_attempt_persists_exact_admin_return_path() -> None:
     from app.control_plane.auth import AuthSecrets, DingTalkWebAuth
 

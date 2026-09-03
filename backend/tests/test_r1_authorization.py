@@ -30,31 +30,34 @@ STALE_ADMIN = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), True)
 STALE_MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), True)
 STALE_VIEWER = AuthContext(uuid4(), Role.MANAGEMENT_VIEWER, uuid4(), True)
 
-FAE_ISSUE_READ_ROUTES = (
-    ("GET", "/api/admin/fae/issue-overview"),
-    ("GET", "/api/admin/fae/issue-inbox"),
-    ("GET", "/api/admin/fae/issues"),
-    ("GET", "/api/admin/fae/issues/{issue_id}"),
-    ("GET", "/api/admin/fae/turn-summaries"),
-)
-FAE_REPORT_READ_ROUTES = (
-    ("GET", "/api/admin/fae/reports"),
-    ("GET", "/api/admin/fae/reports/latest"),
-    ("GET", "/api/admin/fae/reports/{report_id}"),
-)
-FAE_ISSUE_MUTATION_ROUTES = (
-    ("POST", "/api/admin/fae/issues"),
-    ("PATCH", "/api/admin/fae/issues/{issue_id}"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/links"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/links/{link_id}/move"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/merge"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/fix-ready"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/evidence"),
-    ("POST", "/api/admin/fae/evidence/{evidence_id}/verify"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/replays"),
-    ("POST", "/api/admin/fae/replays/{replay_id}/semantic-review"),
-    ("POST", "/api/admin/fae/issues/{issue_id}/disposition"),
-)
+def _fae_routes(prefix: str) -> tuple[tuple[str, str], ...]:
+    return (
+        ("GET", f"{prefix}/overview"),
+        ("GET", f"{prefix}/sessions"),
+        ("GET", f"{prefix}/sessions/{{session_key}}"),
+        ("GET", f"{prefix}/issue-overview"),
+        ("GET", f"{prefix}/issue-inbox"),
+        ("GET", f"{prefix}/issues"),
+        ("GET", f"{prefix}/issues/{{issue_id}}"),
+        ("GET", f"{prefix}/turn-summaries"),
+        ("GET", f"{prefix}/reports"),
+        ("GET", f"{prefix}/reports/latest"),
+        ("GET", f"{prefix}/reports/{{report_id}}"),
+        ("POST", f"{prefix}/issues"),
+        ("PATCH", f"{prefix}/issues/{{issue_id}}"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/links"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/links/{{link_id}}/move"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/merge"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/fix-ready"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/evidence"),
+        ("POST", f"{prefix}/evidence/{{evidence_id}}/verify"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/replays"),
+        ("POST", f"{prefix}/replays/{{replay_id}}/semantic-review"),
+        ("POST", f"{prefix}/issues/{{issue_id}}/disposition"),
+    )
+
+
+FAE_ROUTES = _fae_routes("/api/fae") + _fae_routes("/api/admin/fae")
 
 
 class Grants:
@@ -67,97 +70,48 @@ class Grants:
         return agent_id in self.allowed
 
 
-@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
-@pytest.mark.parametrize(
-    "route",
-    [
-        "/api/admin/fae/overview",
-        "/api/admin/fae/sessions",
-        "/api/admin/fae/sessions/{session_key}",
-    ],
-)
-def test_exact_management_roles_can_read_fae_workbench(role, route):
-    decision = AuthorizationService(Grants()).decide(
-        AuthContext(uuid4(), role, uuid4(), False), "GET", route, ()
+@pytest.mark.parametrize("method,route", FAE_ROUTES)
+def test_fae_routes_require_authentication_before_scope_dependency(method, route):
+    decision = AuthorizationService(Grants()).decide(None, method, route, ())
+
+    assert (decision.status_code, decision.reason) == (
+        401,
+        "authentication_required",
+    )
+
+
+@pytest.mark.parametrize("role", list(Role))
+@pytest.mark.parametrize("method,route", FAE_ROUTES)
+def test_fae_routes_delegate_independent_scope_to_router_dependency(
+    role, method, route
+):
+    decision = AuthorizationService(Grants(), cloud_mode=True).decide(
+        AuthContext(uuid4(), role, uuid4(), False), method, route, ()
     )
 
     assert decision.allowed is True
+    assert decision.reason == "fae_workbench_route"
 
 
+@pytest.mark.parametrize("context", [STALE_OWNER, STALE_ADMIN, STALE_MEMBER, STALE_VIEWER])
 @pytest.mark.parametrize(
-    "route",
+    "method,route",
     [
-        "/api/admin/fae/overview",
-        "/api/admin/fae/sessions",
-        "/api/admin/fae/sessions/{session_key}",
+        ("GET", "/api/fae/overview"),
+        ("POST", "/api/fae/issues"),
+        ("GET", "/api/admin/fae/overview"),
+        ("POST", "/api/admin/fae/issues"),
     ],
 )
-def test_fae_workbench_reads_deny_non_management_roles_and_allow_hard_stale(route):
-    service = AuthorizationService(Grants())
-
-    assert service.decide(None, "GET", route, ()).status_code == 401
-    assert service.decide(MEMBER, "GET", route, ()).status_code == 403
-    assert service.decide(VIEWER, "GET", route, ()).status_code == 403
-    assert service.decide(STALE_OWNER, "GET", route, ()).allowed is True
-    assert service.decide(STALE_ADMIN, "GET", route, ()).allowed is True
-
-
-@pytest.mark.parametrize("method,route", FAE_ISSUE_READ_ROUTES)
-def test_fae_issue_reads_allow_only_owner_admin_and_remain_hard_stale_available(
-    method, route
+def test_fae_scope_dependency_owns_stale_and_cloud_mutation_denials(
+    context, method, route
 ):
-    service = AuthorizationService(Grants(), cloud_mode=True)
-
-    assert service.decide(None, method, route, ()).status_code == 401
-    assert service.decide(MEMBER, method, route, ()).status_code == 403
-    assert service.decide(VIEWER, method, route, ()).status_code == 403
-    for context in (OWNER, ADMIN, STALE_OWNER, STALE_ADMIN):
-        assert service.decide(context, method, route, ()).allowed is True
-
-
-@pytest.mark.parametrize("method,route", FAE_REPORT_READ_ROUTES)
-def test_fae_report_reads_allow_only_owner_admin_and_remain_hard_stale_available(
-    method, route
-):
-    service = AuthorizationService(Grants(), cloud_mode=True)
-
-    assert service.decide(None, method, route, ()).status_code == 401
-    assert service.decide(MEMBER, method, route, ()).status_code == 403
-    assert service.decide(VIEWER, method, route, ()).status_code == 403
-    for context in (OWNER, ADMIN, STALE_OWNER, STALE_ADMIN):
-        assert service.decide(context, method, route, ()).allowed is True
-
-
-@pytest.mark.parametrize("method,route", FAE_ISSUE_MUTATION_ROUTES)
-def test_fae_issue_mutations_allow_fresh_local_owner_admin_only(method, route):
-    service = AuthorizationService(Grants())
-
-    assert service.decide(None, method, route, ()).status_code == 401
-    assert service.decide(MEMBER, method, route, ()).status_code == 403
-    assert service.decide(VIEWER, method, route, ()).status_code == 403
-    assert service.decide(OWNER, method, route, ()).allowed is True
-    assert service.decide(ADMIN, method, route, ()).allowed is True
-
-
-@pytest.mark.parametrize("method,route", FAE_ISSUE_MUTATION_ROUTES)
-def test_fae_issue_mutations_deny_hard_stale_before_cloud_read_only(method, route):
-    cloud = AuthorizationService(Grants(), cloud_mode=True)
-
-    stale = cloud.decide(STALE_OWNER, method, route, ())
-    fresh = cloud.decide(OWNER, method, route, ())
-
-    assert (stale.status_code, stale.reason) == (503, "hard_stale_read_only")
-    assert (fresh.status_code, fresh.reason) == (403, "cloud_review_read_only")
-
-
-@pytest.mark.parametrize("method,route", FAE_ISSUE_READ_ROUTES + FAE_ISSUE_MUTATION_ROUTES)
-@pytest.mark.parametrize("cloud_mode", [False, True])
-def test_fae_role_denial_precedes_stale_and_cloud_details(method, route, cloud_mode):
-    decision = AuthorizationService(Grants(), cloud_mode=cloud_mode).decide(
-        STALE_VIEWER, method, route, ()
+    decision = AuthorizationService(Grants(), cloud_mode=True).decide(
+        context, method, route, ()
     )
 
-    assert (decision.status_code, decision.reason) == (403, "management_role_required")
+    assert decision.allowed is True
+    assert decision.reason == "fae_workbench_route"
 
 
 @pytest.mark.parametrize("role", list(Role))

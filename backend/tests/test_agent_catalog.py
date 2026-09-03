@@ -57,7 +57,7 @@ def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> N
     assert admin.workspace_url == "/office/?view=services"
     assert admin.adapter_kind is None
     assert admin.dispatchable is False
-    assert fae.workspace_url == "https://fae.orbbec.com.cn/"
+    assert fae.workspace_url == "/fae/"
     assert fae.adapter_kind is None
     assert fae.dispatchable is False
     assert voc.interaction_modes == ("external_workspace",)

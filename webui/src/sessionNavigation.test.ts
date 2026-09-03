@@ -53,7 +53,7 @@ describe("Session URL state", () => {
 
   it("uses the supplied listing base path without changing generic defaults", () => {
     expect(sessionsPath(EMPTY_SESSION_FILTERS)).toBe("/admin/sessions");
-    expect(sessionsPath(EMPTY_SESSION_FILTERS, "/admin/fae/sessions")).toBe("/admin/fae/sessions");
+    expect(sessionsPath(EMPTY_SESSION_FILTERS, "/fae/manage/sessions")).toBe("/fae/manage/sessions");
   });
 
   it("keeps FAE-only filters out of generic Session URLs", () => {
@@ -65,7 +65,7 @@ describe("Session URL state", () => {
     };
 
     expect(sessionsPath(filters)).toBe("/admin/sessions");
-    expect(sessionsPath(filters, "/admin/fae/sessions")).toBe("/admin/fae/sessions?channel=fae&sentiment=negative&date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
+    expect(sessionsPath(filters, "/fae/manage/sessions")).toBe("/fae/manage/sessions?channel=fae&sentiment=negative&date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
     expect(sessionFiltersFromSearch("?date_before=2026-08-31T00%3A00%3A00%2B08%3A00").date_before).toBe("2026-08-31T00:00:00+08:00");
   });
 });

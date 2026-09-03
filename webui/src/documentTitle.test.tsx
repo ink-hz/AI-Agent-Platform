@@ -27,7 +27,6 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "conversations" })).toBe("Agent 大脑 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "conversation", conversationId: "one" })).toBe("Agent 大脑 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "agents" })).toBe("专业 Agent · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "agent", agentId: "one" })).toBe("专业 Agent · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "voc-workspace" })).toBe("VOC 洞察助手 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "ai-notes" })).toBe("AI 工程笔记 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "ai-note", categorySlug: "foundations", articleSlug: "handbook" })).toBe("AI 工程笔记 · Orbbec Agent Platform");
@@ -37,14 +36,14 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "admin-session", sessionKey: "one" })).toBe("Session 回放 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-activity" })).toBe("运行记录 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-voc" })).toBe("VOC 管理 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-overview" })).toBe("FAE 工作台 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-sessions" })).toBe("FAE Sessions · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-session", sessionKey: "fae:one" })).toBe("FAE Session · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-issues" })).toBe("FAE 反馈与修复 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-issue", issueId: "00000000-0000-0000-0000-000000000001" })).toBe("FAE 问题 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-reports" })).toBe("FAE Agent 生产成果 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-report", reportId: "weekly:one" })).toBe("FAE Agent 生产成果 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "legacy-redirect", to: "/admin" })).toBe(PLATFORM_TITLE);
+    expect(routeDocumentTitle({ name: "hr" })).toBe("HR Agent · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "hr-conversation", conversationId: "one" })).toBe("HR Agent · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "marketing", agentSlug: "inbound" })).toBe("Marketing Inbound · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "marketing-conversation", agentSlug: "gtm", conversationId: "one" })).toBe("Marketing GTM · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "fae-manage-overview" })).toBe("FAE 工作台 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "fae-manage-session", sessionKey: "fae:one" })).toBe("FAE 工作台 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "fae-manage-report", reportId: "weekly:one" })).toBe("FAE 工作台 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "legacy-redirect", to: "/admin", navigation: "spa" })).toBe(PLATFORM_TITLE);
     expect(routeDocumentTitle({ name: "not-found" })).toBe(PLATFORM_TITLE);
   });
 

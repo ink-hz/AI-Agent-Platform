@@ -77,7 +77,7 @@ describe("FAE workbench API", () => {
     } as never);
 
     const requestPath = String(fetchMock.mock.calls[0][0]);
-    expect(requestPath).toContain("/api/admin/fae/sessions?");
+    expect(requestPath).toContain("/api/fae/sessions?");
     expect(requestPath).toContain("q=fallback");
     expect(requestPath).toContain("channel=dingtalk");
     expect(requestPath).toContain("date_to=2026-08-30T23%3A59%3A59%2B08%3A00");
@@ -186,22 +186,22 @@ describe("FAE workbench API", () => {
 
     const paths = fetchMock.mock.calls.map(([path]) => String(path));
     expect(paths).toEqual([
-      "/api/admin/fae/issue-overview",
-      "/api/admin/fae/issue-inbox?limit=20",
-      "/api/admin/fae/issues?limit=20&disposition=actionable",
-      "/api/admin/fae/turn-summaries?turn_key=fae%3Aturn-1",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001",
-      "/api/admin/fae/issues",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/links",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/links/00000000-0000-0000-0000-000000000002/move",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/fix-ready",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/merge",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/evidence",
-      "/api/admin/fae/evidence/00000000-0000-0000-0000-000000000003/verify",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/replays",
-      "/api/admin/fae/replays/00000000-0000-0000-0000-000000000004/semantic-review",
-      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/disposition",
+      "/api/fae/issue-overview",
+      "/api/fae/issue-inbox?limit=20",
+      "/api/fae/issues?limit=20&disposition=actionable",
+      "/api/fae/turn-summaries?turn_key=fae%3Aturn-1",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001",
+      "/api/fae/issues",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001/links",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001/links/00000000-0000-0000-0000-000000000002/move",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001/fix-ready",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001/merge",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001/evidence",
+      "/api/fae/evidence/00000000-0000-0000-0000-000000000003/verify",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001/replays",
+      "/api/fae/replays/00000000-0000-0000-0000-000000000004/semantic-review",
+      "/api/fae/issues/00000000-0000-0000-0000-000000000001/disposition",
     ]);
     const createBody = JSON.parse(String(fetchMock.mock.calls[5][1]?.body));
     const linkBody = JSON.parse(String(fetchMock.mock.calls[6][1]?.body));

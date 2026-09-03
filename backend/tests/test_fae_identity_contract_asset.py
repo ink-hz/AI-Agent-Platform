@@ -425,7 +425,7 @@ def test_display_projections_never_leave_the_two_back_channel_responses(
     assert "Contract Example Member" not in issue.text
     assert "Contract Example Member" not in LAUNCH_CODE
     assert issue.json()["launch_url"].startswith(
-        "https://fae.orbbec.com.cn/app/#platform_launch="
+        "https://agent.orbbec.com.cn/fae/#platform_launch="
     )
     # The persisted launch/binding row is an id-only audit projection.
     persisted = json.dumps(repository.issued[0], default=str)

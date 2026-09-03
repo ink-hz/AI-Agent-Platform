@@ -20,7 +20,7 @@ describe("Agent Brain API", () => {
   it("issues an authenticated one-time launch without exposing identity fields", async () => {
     const launchCode = "l".repeat(43);
     const launch = {
-      launch_url: `https://fae.orbbec.com.cn/app/#platform_launch=${launchCode}`,
+      launch_url: `https://agent.orbbec.com.cn/fae/#platform_launch=${launchCode}`,
       expires_at: "2026-08-28T12:01:00Z",
     };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(launch), {
@@ -38,6 +38,35 @@ describe("Agent Brain API", () => {
         headers: expect.objectContaining({ "X-CSRF-Token": "csrf-memory-only" }),
       }),
     );
+  });
+
+  it.each([
+    "https://fae.orbbec.com.cn/app/",
+    "https://agent.orbbec.com.cn/fae",
+    "https://agent.orbbec.com.cn/fae/?source=platform",
+    "https://operator@agent.orbbec.com.cn/fae/",
+    "https://agent.orbbec.com.cn:443/fae/",
+    "HTTPS://AGENT.ORBBEC.COM.CN/fae/",
+    " https://agent.orbbec.com.cn/fae/",
+    "https://agent.orbbec.com.cn/fae/?",
+  ])("rejects a launch outside the exact internal FAE origin and path: %s", async (base) => {
+    const launchCode = "l".repeat(43);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      launch_url: `${base}#platform_launch=${launchCode}`,
+      expires_at: "2026-08-28T12:01:00Z",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(launchAgent("ai-fae-agent", "csrf")).rejects.toThrow("Agent launch response invalid");
+  });
+
+  it("rejects duplicate or unrelated launch fragment fields", async () => {
+    const launchCode = "l".repeat(43);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      launch_url: `https://agent.orbbec.com.cn/fae/#platform_launch=${launchCode}&platform_launch=${launchCode}`,
+      expires_at: "2026-08-28T12:01:00Z",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(launchAgent("ai-fae-agent", "csrf")).rejects.toThrow("Agent launch response invalid");
   });
 
   it("accepts an Agent that has both a workspace and Brain delegation", async () => {

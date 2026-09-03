@@ -50,7 +50,7 @@ describe("FaeSessionsPage", () => {
     document.body.append(container);
     root = createRoot(container);
     requests = [];
-    window.history.replaceState({}, "", "/admin/fae/sessions?channel=fae&sentiment=negative&page=2");
+    window.history.replaceState({}, "", "/fae/manage/sessions?channel=fae&sentiment=negative&page=2");
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
@@ -74,7 +74,7 @@ describe("FaeSessionsPage", () => {
     await act(async () => root.render(<FaeSessionsPage />));
 
     expect(requests[requests.length - 1]).toBe(
-      "/api/admin/fae/sessions?channel=fae&sentiment=negative&limit=50&offset=50",
+      "/api/fae/sessions?channel=fae&sentiment=negative&limit=50&offset=50",
     );
     expect(container.querySelector('select[name="agent_id"]')).toBeNull();
     expect(container.querySelector('select[name="source_kind"]')).toBeNull();
@@ -86,45 +86,45 @@ describe("FaeSessionsPage", () => {
     expect(container.querySelector('input[name="date_from"]')).not.toBeNull();
     expect(container.querySelector('input[name="date_to"]')).not.toBeNull();
     expect(container.querySelector('a.session-row')?.getAttribute("href")).toBe(
-      "/admin/fae/sessions/fae%3Asession-1",
+      "/fae/manage/sessions/fae%3Asession-1",
     );
   });
 
   it("removes generic scope filters from an FAE Session URL", async () => {
-    window.history.replaceState({}, "", "/admin/fae/sessions?agent_id=other-agent&source_kind=admin&channel=fae");
+    window.history.replaceState({}, "", "/fae/manage/sessions?agent_id=other-agent&source_kind=admin&channel=fae");
 
     await act(async () => root.render(<FaeSessionsPage />));
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/sessions?channel=fae");
-    expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?channel=fae&limit=50");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/fae/manage/sessions?channel=fae");
+    expect(requests[requests.length - 1]).toBe("/api/fae/sessions?channel=fae&limit=50");
   });
 
   it("keeps timezone-bearing date filters visible and canonical", async () => {
-    window.history.replaceState({}, "", "/admin/fae/sessions?date_from=2026-08-01T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T23%3A59%3A59%2B08%3A00");
+    window.history.replaceState({}, "", "/fae/manage/sessions?date_from=2026-08-01T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T23%3A59%3A59%2B08%3A00");
 
     await act(async () => root.render(<FaeSessionsPage />));
 
     expect(container.querySelector<HTMLInputElement>('input[name="date_from"]')?.value).toBe("2026-08-01T00:00:00+08:00");
     expect(container.querySelector<HTMLInputElement>('input[name="date_to"]')?.value).toBe("2026-08-31T23:59:59+08:00");
-    expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?date_from=2026-08-01T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T23%3A59%3A59%2B08%3A00&limit=50");
+    expect(requests[requests.length - 1]).toBe("/api/fae/sessions?date_from=2026-08-01T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T23%3A59%3A59%2B08%3A00&limit=50");
   });
 
   it("round-trips the overview exclusive period end without converting it to inclusive", async () => {
-    window.history.replaceState({}, "", "/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
+    window.history.replaceState({}, "", "/fae/manage/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
 
     await act(async () => root.render(<FaeSessionsPage />));
 
     expect(`${window.location.pathname}${window.location.search}`).toContain("date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
-    expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00&limit=50");
+    expect(requests[requests.length - 1]).toBe("/api/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00&limit=50");
   });
 
   it("round-trips exact overview population filters before pagination", async () => {
-    window.history.replaceState({}, "", "/admin/fae/sessions?has_subject=true&abnormal=true&has_latency=true&page=2");
+    window.history.replaceState({}, "", "/fae/manage/sessions?has_subject=true&abnormal=true&has_latency=true&page=2");
 
     await act(async () => root.render(<FaeSessionsPage />));
 
     expect(requests[requests.length - 1]).toBe(
-      "/api/admin/fae/sessions?has_subject=true&abnormal=true&has_latency=true&limit=50&offset=50",
+      "/api/fae/sessions?has_subject=true&abnormal=true&has_latency=true&limit=50&offset=50",
     );
   });
 
@@ -133,16 +133,16 @@ describe("FaeSessionsPage", () => {
     "2026-08-01T00:00:00",
     "2026-02-30T00:00:00+08:00",
   ])("canonicalizes invalid FAE date_from %s before loading", async (dateFrom) => {
-    window.history.replaceState({}, "", `/admin/fae/sessions?date_from=${encodeURIComponent(dateFrom)}`);
+    window.history.replaceState({}, "", `/fae/manage/sessions?date_from=${encodeURIComponent(dateFrom)}`);
 
     await act(async () => root.render(<FaeSessionsPage />));
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/sessions");
-    expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?limit=50");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/fae/manage/sessions");
+    expect(requests[requests.length - 1]).toBe("/api/fae/sessions?limit=50");
   });
 
   it("does not serialize an invalid FAE date entered in the filter form", async () => {
-    window.history.replaceState({}, "", "/admin/fae/sessions");
+    window.history.replaceState({}, "", "/fae/manage/sessions");
     await act(async () => root.render(<FaeSessionsPage />));
 
     await act(async () => {
@@ -152,7 +152,7 @@ describe("FaeSessionsPage", () => {
       container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/sessions");
-    expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?limit=50");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/fae/manage/sessions");
+    expect(requests[requests.length - 1]).toBe("/api/fae/sessions?limit=50");
   });
 });

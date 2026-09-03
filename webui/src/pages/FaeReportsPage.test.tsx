@@ -69,8 +69,8 @@ describe("FAE reports", () => {
     await act(async () => undefined);
 
     expect(index).toHaveBeenCalledWith(expect.any(AbortSignal));
-    expect(container.querySelector('a.fae-outcome-currentness-link[href="/admin/fae"]')?.textContent).toContain("查看最新运营数据");
-    expect(container.querySelector(`a[href="/admin/fae/reports/${report.report_id}?version=1"]`)).not.toBeNull();
+    expect(container.querySelector('a.fae-outcome-currentness-link[href="/fae/manage/"]')?.textContent).toContain("查看最新运营数据");
+    expect(container.querySelector(`a[href="/fae/manage/reports/${report.report_id}?version=1"]`)).not.toBeNull();
     expect(container.textContent).toContain("数据截止");
     await act(async () => root.unmount()); container.remove();
   });
@@ -187,7 +187,7 @@ describe("FAE reports", () => {
     await act(async () => root.unmount()); container.remove();
   });
 
-  it("describes the current owner and admin report boundary without promising broader access", async () => {
+  it("describes the FAE workbench boundary when the backend denies report access", async () => {
     vi.spyOn(faeReportApi, "latest").mockRejectedValue(new FaeReportApiError(403));
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container);
@@ -196,13 +196,13 @@ describe("FAE reports", () => {
     await act(async () => root.render(<FaeReportsPage />));
     await act(async () => undefined);
 
-    expect(container.textContent).toContain("Platform Owner / Admin");
-    expect(container.textContent).not.toContain("FAE 团队");
+    expect(container.textContent).toContain("当前账号没有 FAE 工作台权限");
+    expect(container.textContent).not.toContain("Platform Owner / Admin");
     await act(async () => root.unmount()); container.remove();
   });
 
   it("loads the selected immutable version from the query string", async () => {
-    history.replaceState({}, "", `/admin/fae/reports/${report.report_id}?version=2`);
+    history.replaceState({}, "", `/fae/manage/reports/${report.report_id}?version=2`);
     const detail = vi.spyOn(faeReportApi, "detail").mockResolvedValue({
       ...report,
       report_version: 2,
@@ -219,7 +219,7 @@ describe("FAE reports", () => {
   });
 
   it("rejects an invalid report version without issuing a detail request", async () => {
-    history.replaceState({}, "", `/admin/fae/reports/${report.report_id}?version=0`);
+    history.replaceState({}, "", `/fae/manage/reports/${report.report_id}?version=0`);
     const detail = vi.spyOn(faeReportApi, "detail");
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container);

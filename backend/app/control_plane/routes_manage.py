@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import psycopg
 from psycopg.rows import dict_row
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from .audit import (
     AppliedMutation,
@@ -20,6 +20,7 @@ from .audit import (
     SensitiveMutationCoordinator,
     project_governance_metadata,
 )
+from .fae_access import FaeWorkbenchAccessService, fae_access_service
 from .models import AuthContext, Role
 from .dsn import validate_control_dsn
 
@@ -31,6 +32,20 @@ _AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 class ReasonBody(BaseModel):
     reason: str
     request_id: UUID | None = None
+
+
+class FaeWorkbenchGrantBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=1, max_length=256)
+    reason: str
+    request_id: UUID
+
+
+class FaeWorkbenchRevokeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str
+    request_id: UUID
+    expected_row_version: int = Field(ge=0)
 
 
 def authenticated_context() -> AuthContext:
@@ -69,6 +84,7 @@ def management_service(request: Request) -> ManagementService:
 
 Auth = Annotated[AuthContext, Depends(authenticated_context)]
 Service = Annotated["ManagementService", Depends(management_service)]
+FaeAccess = Annotated[FaeWorkbenchAccessService, Depends(fae_access_service)]
 
 
 def _manager(context: AuthContext) -> None:
@@ -759,6 +775,59 @@ class ManagementService:
 def list_users(context: Auth, service: Service) -> dict[str, Any]:
     _manager(context)
     return {"users": service.list_users(context)}
+
+
+@router.get("/fae-workbench/grants")
+def list_fae_workbench_grants(
+    context: Auth,
+    access: FaeAccess,
+) -> dict[str, Any]:
+    _owner(context)
+    return {"grants": access.list_grants()}
+
+
+@router.post("/fae-workbench/grants")
+def grant_fae_workbench_access(
+    payload: FaeWorkbenchGrantBody,
+    context: Auth,
+    access: FaeAccess,
+    csrf_verified: Annotated[bool, Depends(csrf_protection)],
+    directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
+) -> dict[str, Any]:
+    _owner(context)
+    _mutation_guards(context, csrf_verified, directory_is_fresh)
+    result = access.grant(
+        context,
+        payload.display_name,
+        payload.reason,
+        payload.request_id,
+    )
+    return {
+        "status": "ok",
+        "internal_user_id": result["internal_user_id"],
+        "row_version": result["row_version"],
+    }
+
+
+@router.delete("/fae-workbench/grants/{internal_user_id}")
+def revoke_fae_workbench_access(
+    internal_user_id: UUID,
+    payload: Annotated[FaeWorkbenchRevokeBody, Body()],
+    context: Auth,
+    access: FaeAccess,
+    csrf_verified: Annotated[bool, Depends(csrf_protection)],
+    directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
+) -> dict[str, Any]:
+    _owner(context)
+    _mutation_guards(context, csrf_verified, directory_is_fresh)
+    result = access.revoke(
+        context,
+        internal_user_id,
+        payload.reason,
+        payload.request_id,
+        payload.expected_row_version,
+    )
+    return {"status": "ok", "row_version": result["row_version"]}
 
 
 @router.post("/admins/{internal_user_id}")

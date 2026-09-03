@@ -18,6 +18,7 @@ from app.spa import (
 )
 
 from .auth import AuthenticationError, CompletedLogin, cookie_policy
+from .fae_access import FaeWorkbenchAccessUnavailable
 from .models import AuthContext, IssuedWebSession, Role
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable
 
@@ -221,6 +222,15 @@ def build_auth_router(
     @router.get("/missions/{client_path:path}", include_in_schema=False)
     @router.get("/conversations", include_in_schema=False)
     @router.get("/conversations/{client_path:path}", include_in_schema=False)
+    @router.get("/hr", include_in_schema=False)
+    @router.get("/hr/", include_in_schema=False)
+    @router.get("/hr/{client_path:path}", include_in_schema=False)
+    @router.get("/marketing", include_in_schema=False)
+    @router.get("/marketing/", include_in_schema=False)
+    @router.get("/marketing/{client_path:path}", include_in_schema=False)
+    @router.get("/fae/manage", include_in_schema=False)
+    @router.get("/fae/manage/", include_in_schema=False)
+    @router.get("/fae/manage/{client_path:path}", include_in_schema=False)
     @router.get("/ai-notes", include_in_schema=False)
     @router.get("/ai-notes/{client_path:path}", include_in_schema=False)
     @router.get("/admin", include_in_schema=False)
@@ -376,7 +386,15 @@ def build_auth_router(
         context: AuthContext = request.state.auth_context
         try:
             snapshot = auth.account_snapshot(context)
+            fae_access = getattr(request.app.state, "fae_access", None)
+            workspace_scopes = (
+                ["fae_workbench"]
+                if fae_access is not None and fae_access.allows(context)
+                else []
+            )
         except AuthenticationError:
+            raise HTTPException(503, "account unavailable") from None
+        except FaeWorkbenchAccessUnavailable:
             raise HTTPException(503, "account unavailable") from None
         return {
             "internal_user_id": str(context.internal_user_id),
@@ -388,6 +406,7 @@ def build_auth_router(
             "mobile": snapshot["mobile"],
             "primary_department": snapshot["primary_department"],
             "observation_agent_ids": snapshot["observation_agent_ids"],
+            "workspace_scopes": workspace_scopes,
             "directory_freshness": snapshot["directory_freshness"],
             "hard_stale_read_only": context.hard_stale_read_only,
             "csrf_token": request.state.csrf_token,

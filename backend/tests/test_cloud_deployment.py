@@ -1,10 +1,10 @@
 import json
 import os
-from pathlib import Path
 import signal
 import subprocess
 import textwrap
 import time
+from pathlib import Path
 
 import pytest
 import yaml
@@ -204,6 +204,33 @@ def test_cloud_registry_and_contract_have_no_source_coordinates():
     assert "http://" not in contract
     assert "https://" not in contract
     assert "47.106.112.69" not in contract
+
+
+def test_formal_edge_routes_each_fae_family_to_exactly_one_owner():
+    value = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
+    route_owners = {
+        "location ^~ /fae/manage/ {": "proxy_pass http://127.0.0.1:8080;",
+        "location = /fae/api/chat {": "proxy_pass http://127.0.0.1:8000;",
+        "location = /fae/api/attachments {": "proxy_pass http://127.0.0.1:8000;",
+        "location ^~ /fae/api/ {": "proxy_pass http://127.0.0.1:8000;",
+        "location ^~ /fae/assets/ {": "proxy_pass http://127.0.0.1:8000;",
+        "location ^~ /fae/ {": "proxy_pass http://127.0.0.1:8000;",
+    }
+
+    for selector, owner in route_owners.items():
+        assert value.count(selector) == 1
+        start = value.index(selector)
+        end = value.find("\n    location ", start + len(selector))
+        block = value[start:] if end < 0 else value[start:end]
+        assert block.count("proxy_pass ") == 1
+        assert owner in block
+
+    assert value.index("location ^~ /fae/manage/ {") < value.index(
+        "location ^~ /fae/ {"
+    )
+    assert value.index("location ^~ /fae/ {") < value.index(
+        "location / {", value.index("location ^~ /fae/ {")
+    )
 
 
 def test_local_deploy_preflight_is_clean_noninteractive_and_manifest_bound():
@@ -443,35 +470,684 @@ FAE_LIVE_REQUESTS = (
     "owner|GET|https://agent.orbbec.com.cn/api/v1/account",
     "member|GET|https://agent.orbbec.com.cn/api/v1/account",
     "viewer|GET|https://agent.orbbec.com.cn/api/v1/account",
-    "owner|GET|https://agent.orbbec.com.cn/admin/fae",
-    "owner|GET|https://agent.orbbec.com.cn/admin/fae/sessions",
-    "owner|GET|https://agent.orbbec.com.cn/admin/fae/issues",
+    "member|GET|https://agent.orbbec.com.cn/fae/",
+    "member|GET|https://agent.orbbec.com.cn/fae/conversations/fae:owned-1",
+    "owner|GET|https://agent.orbbec.com.cn/fae/manage/",
+    "owner|GET|https://agent.orbbec.com.cn/fae/manage/sessions",
+    "owner|GET|https://agent.orbbec.com.cn/fae/manage/issues",
+    "owner|GET|https://agent.orbbec.com.cn/api/fae/overview",
+    "owner|GET|https://agent.orbbec.com.cn/api/fae/sessions?limit=1",
+    "owner|GET|https://agent.orbbec.com.cn/api/fae/issues",
+    "owner|GET|https://agent.orbbec.com.cn/api/fae/reports/latest",
     "owner|GET|https://agent.orbbec.com.cn/api/admin/fae/overview",
-    "owner|GET|https://agent.orbbec.com.cn/api/admin/fae/sessions?limit=1",
-    "owner|GET|https://agent.orbbec.com.cn/api/admin/fae/issues",
-    "owner|GET|https://agent.orbbec.com.cn/api/admin/fae/reports/latest",
-    "owner|GET|https://agent.orbbec.com.cn/admin/fae/reports",
-    "member|GET|https://agent.orbbec.com.cn/admin/fae",
-    "member|GET|https://agent.orbbec.com.cn/api/admin/fae/overview",
-    "member|GET|https://agent.orbbec.com.cn/api/admin/fae/sessions?limit=1",
-    "member|GET|https://agent.orbbec.com.cn/api/admin/fae/issues",
-    "viewer|GET|https://agent.orbbec.com.cn/admin/fae",
-    "viewer|GET|https://agent.orbbec.com.cn/api/admin/fae/overview",
-    "viewer|GET|https://agent.orbbec.com.cn/api/admin/fae/sessions?limit=1",
-    "viewer|GET|https://agent.orbbec.com.cn/api/admin/fae/issues",
-    "owner|POST|https://agent.orbbec.com.cn/api/admin/fae/issues",
+    "owner|GET|https://agent.orbbec.com.cn/fae/manage/reports",
+    "member|GET|https://agent.orbbec.com.cn/api/fae/overview",
+    "member|GET|https://agent.orbbec.com.cn/api/fae/sessions?limit=1",
+    "member|GET|https://agent.orbbec.com.cn/api/fae/issues",
+    "viewer|GET|https://agent.orbbec.com.cn/fae/manage/",
+    "viewer|GET|https://agent.orbbec.com.cn/api/fae/overview",
+    "viewer|GET|https://agent.orbbec.com.cn/api/fae/sessions?limit=1",
+    "viewer|GET|https://agent.orbbec.com.cn/api/fae/issues",
+    "owner|POST|https://agent.orbbec.com.cn/api/fae/issues",
 )
 
 
 def test_fae_cloud_acceptance_requires_the_bounded_issue_page_contract():
     script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
 
-    assert 'if [[ "$path" == "/api/admin/fae/issues" ]]' in script
+    assert 'if [[ "$path" == "/api/fae/issues" ]]' in script
     assert 'value.get("items")' in script
     assert 'value.get("total")' in script
     assert 'value.get("limit")' in script
     assert 'value.get("offset")' in script
     assert 'value.get("has_more")' in script
+
+
+def test_fae_cloud_acceptance_uses_canonical_routes_with_bounded_compatibility():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    contract = _bash_function(
+        script,
+        "verify_fae_workbench_cloud_contract",
+        "verify_markdown_rendering",
+    )
+
+    for path in (
+        "/fae/",
+        "/fae/conversations/fae:owned-1",
+        "/fae/manage/",
+        "/fae/manage/sessions",
+        "/fae/manage/issues",
+        "/fae/manage/reports",
+        "/api/fae/overview",
+        "/api/fae/sessions?limit=1",
+        "/api/fae/issues",
+        "/api/fae/reports/latest",
+    ):
+        assert path in contract
+    compatibility = _bash_function(
+        script,
+        "verify_fae_reports_compatibility",
+        "verify_fae_viewer_denied",
+    )
+    assert compatibility.count("https://agent.orbbec.com.cn/admin/fae/reports") == 1
+    assert contract.count("verify_fae_reports_compatibility") == 1
+    assert contract.count("/api/admin/fae/overview") == 1
+    assert "/usr/bin/cmp" in contract
+    assert "fae-canonical-overview.json" in contract
+    assert "verify_fae_reports_compatibility" in contract
+    for old_path in (
+        "/admin/fae/sessions",
+        "/admin/fae/issues",
+        "/api/admin/fae/sessions",
+        "/api/admin/fae/issues",
+        "/api/admin/fae/reports",
+    ):
+        assert old_path not in contract
+
+
+def test_cloud_acceptance_gates_scoped_history_and_cross_identity_deep_links():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    history = _bash_function(
+        script,
+        "verify_platform_workspace_history",
+        "verify_markdown_rendering",
+    )
+
+    assert "direct_agent_id=$agent_id" in history
+    for agent_id in (
+        "hr-bot",
+        "marketing-prospecting-bot",
+        "marketing-inbound-bot",
+        "marketing-voice-bot",
+        "marketing-intelligence-bot",
+        "marketing-gtm-bot",
+    ):
+        assert agent_id in history
+    assert "if not items:" in history
+    assert "if items:" not in history
+    assert 'if [[ -n "$conversation_id" ]]' not in history
+    assert '"$base/api/v1/conversations/$conversation_id"' in history
+    assert '[[ "$status_code" == "404" ]]' in history
+    assert "verify_platform_workspace_history" in _bash_function(
+        script, "accept_v2_real", "enable_with_rollback"
+    )
+
+
+def test_route_transaction_compares_explicit_workspace_response_snapshots():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    snapshot = _bash_function(
+        script,
+        "workspace_non_regression_snapshot",
+        "remote_fae_snapshot",
+    )
+    enable = _bash_function(script, "enable_with_rollback", 'case "$action" in')
+
+    expected_routes = (
+        "https://agent.orbbec.com.cn/",
+        "https://agent.orbbec.com.cn/office/",
+        "https://agent.orbbec.com.cn/office/?view=services",
+        "https://fae.orbbec.com.cn/",
+        "https://agent.orbbec.com.cn/voc/",
+    )
+    for url in expected_routes:
+        assert url in snapshot
+    assert "/usr/sbin/nginx" in snapshot
+    assert '"-T"' in snapshot
+    assert "agent.orbbec.com.cn" in snapshot
+    assert "/etc/nginx/sites-available/agent-domain.conf" not in snapshot
+    assert "proxy_pass" in snapshot
+    for fabricated_owner in ("'platform'", "'ai-admin'", "'ai-fae-public'", "'voc'"):
+        assert fabricated_owner not in snapshot
+    for field in (
+        "status",
+        "location",
+        "content_marker",
+        "upstream_owner",
+        "strict-transport-security",
+        "content-security-policy",
+        "x-content-type-options",
+        "x-frame-options",
+        "referrer-policy",
+        "permissions-policy",
+    ):
+        assert field in snapshot
+    assert enable.count("workspace_non_regression_snapshot") == 2
+    assert enable.index(
+        'workspace_snapshot_before="$(workspace_non_regression_snapshot)"'
+    ) < enable.index("publish_formal_nginx") < enable.index(
+        'workspace_snapshot_after="$(workspace_non_regression_snapshot)"'
+    )
+    assert '[[ "$workspace_snapshot_after" == "$workspace_snapshot_before" ]]' in enable
+
+
+def _run_workspace_snapshot(tmp_path: Path, active_config: Path):
+    tmp_path.mkdir(parents=True)
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    snapshot = _bash_function(
+        script,
+        "workspace_non_regression_snapshot",
+        "remote_fae_snapshot",
+    )
+    fake_nginx = tmp_path / "nginx"
+    fake_nginx.write_text(
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        "[[ \"$1\" == \"-T\" ]]\n"
+        f"cat -- {active_config}\n"
+        "printf '%s\\n' 'server {' '  listen 443 ssl;' "
+        "'  server_name fae.orbbec.com.cn;' '  location / {' "
+        "'    proxy_pass http://127.0.0.1:8000;' '  }' '}'\n",
+        encoding="utf-8",
+    )
+    fake_nginx.chmod(0o700)
+    fake_curl = tmp_path / "curl"
+    fake_curl.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env python3
+            import pathlib
+            import sys
+
+            arguments = sys.argv[1:]
+            headers = pathlib.Path(arguments[arguments.index("-D") + 1])
+            body = pathlib.Path(arguments[arguments.index("-o") + 1])
+            url = arguments[-1]
+            headers.write_text(
+                "HTTP/2 200\\r\\n"
+                "Strict-Transport-Security: max-age=31536000\\r\\n"
+                "Content-Security-Policy: default-src 'none'\\r\\n"
+                "X-Content-Type-Options: nosniff\\r\\n"
+                "X-Frame-Options: DENY\\r\\n"
+                "Referrer-Policy: no-referrer\\r\\n"
+                "Permissions-Policy: camera=()\\r\\n\\r\\n",
+                encoding="iso-8859-1",
+            )
+            body.write_text(f"body:{url}", encoding="utf-8")
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o700)
+    snapshot = snapshot.replace("/usr/sbin/nginx", str(fake_nginx)).replace(
+        "/usr/bin/curl", str(fake_curl)
+    ).replace("remote /usr/bin/python3", 'remote "$python"')
+    harness = tmp_path / "workspace-snapshot.sh"
+    harness.write_text(
+        f"""#!/bin/bash
+set -euo pipefail
+python={ROOT / 'backend/.venv/bin/python'}
+remote() {{ "$@"; }}
+{snapshot}
+workspace_non_regression_snapshot
+""",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["/bin/bash", str(harness)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return tuple(json.loads(line) for line in result.stdout.splitlines())
+
+
+def test_workspace_snapshot_observes_active_nginx_owners_instead_of_labels(tmp_path):
+    active = tmp_path / "agent-domain.conf"
+    active.write_text(
+        (CLOUD / "agent-domain.nginx.conf")
+        .read_text(encoding="utf-8")
+        .replace("__AGENT_DOMAIN__", "agent.orbbec.com.cn"),
+        encoding="utf-8",
+    )
+
+    before = _run_workspace_snapshot(tmp_path / "before", active)
+    active.write_text(
+        active.read_text(encoding="utf-8").replace(
+            "proxy_pass http://127.0.0.1:8011;",
+            "proxy_pass http://127.0.0.1:8012;",
+        ),
+        encoding="utf-8",
+    )
+    after = _run_workspace_snapshot(tmp_path / "after", active)
+
+    assert [item["upstream_owner"] for item in before] == [
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:8011",
+        "http://127.0.0.1:8011",
+        before[3]["upstream_owner"],
+        "http://172.29.0.3:18130",
+    ]
+    assert before[3]["upstream_owner"].startswith("nginx-server-sha256:")
+    changed = {
+        index
+        for index, (old, new) in enumerate(zip(before, after, strict=True))
+        if old != new
+    }
+    assert changed == {1, 2}
+    assert {after[index]["upstream_owner"] for index in changed} == {
+        "http://127.0.0.1:8012"
+    }
+
+
+def test_snapshot_regression_restores_the_published_nginx_transaction():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    publish = _bash_function(
+        script,
+        "publish_formal_nginx",
+        "rollback_formal_nginx_transaction",
+    )
+    rollback = _bash_function(
+        script,
+        "rollback_formal_nginx_transaction",
+        "commit_formal_nginx_transaction",
+    )
+    commit = _bash_function(
+        script,
+        "commit_formal_nginx_transaction",
+        "cookie_config",
+    )
+    enable = _bash_function(script, "enable_with_rollback", 'case "$action" in')
+
+    assert 'nginx_transaction_published="0"' in enable
+    failure_handler = enable.split("enable_failure_rollback() {", 1)[1].split(
+        "  }", 1
+    )[0]
+    assert '"$nginx_transaction_published" == "1"' in failure_handler
+    assert "rollback_formal_nginx_transaction" in failure_handler
+    assert failure_handler.index("rollback_formal_nginx_transaction") < (
+        failure_handler.index("remote_feature 0")
+    )
+    assert enable.index('nginx_transaction_published="1"') < enable.index(
+        "publish_formal_nginx"
+    ) < enable.index(
+        'workspace_snapshot_after="$(workspace_non_regression_snapshot)"'
+    ) < enable.index("remote_feature 1") < enable.index(
+        "commit_formal_nginx_transaction"
+    )
+    assert 'publish_formal_nginx "$nginx_transaction_id"' in enable
+    assert 'rollback_formal_nginx_transaction "$nginx_transaction_id"' in enable
+    assert 'commit_formal_nginx_transaction "$nginx_transaction_id"' in enable
+    assert "agent-domain.transaction.before.conf" in rollback
+    assert "agent-domain.transaction.id" in rollback
+    assert "agent-domain.transaction.lock" in publish
+    assert "agent-domain.transaction.lock" in rollback
+    assert "/usr/bin/flock -x" in publish
+    assert "/usr/bin/flock -x" in rollback
+    assert "exit 0" in rollback
+    assert "/usr/sbin/nginx -t" in rollback
+    assert "/bin/systemctl reload nginx" in rollback
+    assert "agent-domain.transaction.before.conf" in commit
+    assert "agent-domain.transaction.id" in commit
+    assert (
+        '/bin/rm -f -- "$transaction_before" "$enabled_transaction_before"'
+        in commit
+    )
+    assert "transaction_before" not in publish.rsplit("trap - ERR EXIT", 1)[1]
+    restore_handler = publish.split("restore_nginx() {", 1)[1].split("}\ntrap", 1)[0]
+    assert "|| true" not in restore_handler
+
+
+def _run_nginx_snapshot_transaction(
+    tmp_path: Path,
+    *,
+    changed: bool,
+    publish_fails: bool = False,
+    feature_enable_fails: bool = False,
+):
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    enable = "enable_with_rollback() {" + script.split(
+        "enable_with_rollback() {", 1
+    )[1].split('\n}\n\ncase "$action" in', 1)[0] + "\n}"
+    events = tmp_path / "events"
+    snapshot_state = tmp_path / "snapshot-state"
+    harness = tmp_path / "nginx-snapshot-transaction.sh"
+    harness.write_text(
+        f"""#!/bin/bash
+set -eEuo pipefail
+fail() {{ return 91; }}
+action_lock_exit() {{ :; }}
+local_runtime_preflight() {{ :; }}
+run_relay_canary() {{ :; }}
+prepare_v2_reference_evidence() {{ :; }}
+v2_cutover_gates() {{ :; }}
+remote_feature() {{
+  printf 'remote_feature:%s\\n' "$1" >> {events}
+  if [[ "$1" == "1" && "{'1' if feature_enable_fails else '0'}" == "1" ]]; then
+    return 74
+  fi
+}}
+publish_formal_nginx() {{
+  printf 'publish\\n' >> {events}
+  {'return 73' if publish_fails else ':'}
+}}
+rollback_formal_nginx_transaction() {{ printf 'rollback\\n' >> {events}; }}
+commit_formal_nginx_transaction() {{ printf 'commit\\n' >> {events}; }}
+release_action_lock() {{ printf 'release\\n' >> {events}; }}
+workspace_non_regression_snapshot() {{
+  if [[ ! -e {snapshot_state} ]]; then
+    : > {snapshot_state}
+    printf 'before\\n'
+  else
+    printf '{'after' if changed else 'before'}\\n'
+  fi
+}}
+{enable}
+enable_with_rollback
+""",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["/bin/bash", str(harness)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result, tuple(events.read_text(encoding="utf-8").splitlines())
+
+
+def test_changed_post_snapshot_executes_nginx_rollback_before_failing(tmp_path):
+    result, events = _run_nginx_snapshot_transaction(tmp_path, changed=True)
+
+    assert result.returncode == 91
+    assert events == (
+        "remote_feature:0",
+        "publish",
+        "rollback",
+        "remote_feature:0",
+        "release",
+    )
+
+
+def test_publish_failure_executes_armed_nginx_rollback(tmp_path):
+    result, events = _run_nginx_snapshot_transaction(
+        tmp_path, changed=False, publish_fails=True
+    )
+
+    assert result.returncode == 73
+    assert events == (
+        "remote_feature:0",
+        "publish",
+        "rollback",
+        "remote_feature:0",
+        "release",
+    )
+
+
+def test_equal_post_snapshot_commits_nginx_after_enabling_feature(tmp_path):
+    result, events = _run_nginx_snapshot_transaction(tmp_path, changed=False)
+
+    assert result.returncode == 0, result.stderr
+    assert events == (
+        "remote_feature:0",
+        "publish",
+        "remote_feature:1",
+        "commit",
+    )
+
+
+def test_feature_enable_failure_rolls_nginx_back_before_feature_cleanup(tmp_path):
+    result, events = _run_nginx_snapshot_transaction(
+        tmp_path, changed=False, feature_enable_fails=True
+    )
+
+    assert result.returncode == 74
+    assert events == (
+        "remote_feature:0",
+        "publish",
+        "remote_feature:1",
+        "rollback",
+        "remote_feature:0",
+        "release",
+    )
+
+
+def test_voc_acceptance_proves_management_scope_is_independent_of_fae():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    contract = _bash_function(
+        script,
+        "verify_standalone_voc_release",
+        "local_runtime_preflight",
+    )
+
+    assert contract.count('"$base/voc/api/v1/admin/vocs"') == 3
+    assert '"${curl_owner[@]}"' in contract
+    assert '"${curl_viewer[@]}"' in contract
+    assert '"${curl_member[@]}"' in contract
+    assert contract.count('[[ "$status_code" == "200" ]]') >= 2
+    assert '[[ "$status_code" == "403" ]]' in contract
+
+
+def test_acceptance_requires_the_canonical_internal_fae_launch_fragment():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    acceptance = _bash_function(script, "accept_v2_real", "enable_with_rollback")
+
+    assert "('https','agent.orbbec.com.cn','/fae/')" in acceptance
+    assert "parsed.query or parsed.fragment.count('=') != 1" in acceptance
+    assert "fragment_key,fragment_code=parsed.fragment.split('=',1)" in acceptance
+    assert "fragment_key != 'platform_launch'" in acceptance
+    assert "urllib.parse.unquote(fragment_code) != fragment_code" in acceptance
+    assert "re.fullmatch(r'[A-Za-z0-9_-]{32,256}', fragment_code)" in acceptance
+    assert "fae.orbbec.com.cn','/enterprise/launch" not in acceptance
+
+
+def test_acceptance_exchanges_two_platform_launches_and_proves_fae_subject_history():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    history = _bash_function(
+        script,
+        "verify_fae_internal_history",
+        "verify_markdown_rendering",
+    )
+    acceptance = _bash_function(script, "accept_v2_real", "enable_with_rollback")
+
+    assert '"${curl_owner[@]}"' in history
+    assert '"$base/api/v1/agents/ai-fae-agent/launch"' in history
+    assert "for role in member owner" in history
+    assert history.count('"$base/fae/api/enterprise/session"') == 1
+    assert history.count('"$base/fae/api/authenticated/conversations?limit=30"') == 1
+    assert '"$base/fae/api/authenticated/conversations/$member_session_id"' in history
+    assert "__Host-fae_enterprise_session" in history
+    assert '[[ "$status_code" == "201" ]]' in history
+    assert '[[ "$status_code" == "200" ]]' in history
+    assert '[[ "$status_code" == "404" ]]' in history
+    assert '{"detail": "conversation not found"}' in history
+    assert "member_internal_user_id == owner_internal_user_id" in history
+    assert 'session["display_name"] != platform_account.get("display_name")' in history
+    assert "not member_session_ids or not owner_session_ids" in history
+    assert "set(member_session_ids).isdisjoint(owner_session_ids)" in history
+    assert "for role in member owner" in history
+    assert '"$base/fae/api/authenticated/conversations/$owner_session_id"' in history
+    assert "/usr/bin/cmp -s" in history
+    assert 'verify_fae_internal_history "$temporary/fae-launch.json"' in acceptance
+
+
+def _write_fae_history_curl_stub(path: Path) -> None:
+    path.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env python3
+            import json
+            import os
+            from pathlib import Path
+            import sys
+
+            arguments = sys.argv[1:]
+            output = Path(arguments[arguments.index("-o") + 1])
+            method = arguments[arguments.index("-X") + 1] if "-X" in arguments else "GET"
+            url = next(value for value in reversed(arguments) if value.startswith("https://"))
+            role = "unknown"
+            if "--config" in arguments:
+                role = Path(arguments[arguments.index("--config") + 1]).stem
+            if "--cookie-jar" in arguments:
+                jar = Path(arguments[arguments.index("--cookie-jar") + 1])
+                role = "member" if "member" in jar.name else "owner"
+            elif "--cookie" in arguments:
+                jar = Path(arguments[arguments.index("--cookie") + 1])
+                role = "member" if "member" in jar.name else "owner"
+
+            status = 200
+            body = {}
+            member_session = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            owner_session = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            if url.endswith("/api/v1/agents/ai-fae-agent/launch"):
+                body = {
+                    "launch_url": "https://agent.orbbec.com.cn/fae/"
+                    + "#platform_launch=" + "o" * 43,
+                }
+            elif url.endswith("/fae/api/enterprise/session"):
+                status = 201
+                body = {
+                    "authenticated": True,
+                    "authentication_mode": "platform_enterprise",
+                    "display_name": role,
+                    "partner_display_name": None,
+                    "csrf_token": role + "-csrf",
+                }
+                jar.write_text(
+                    "# Netscape HTTP Cookie File\\n"
+                    "#HttpOnly_agent.orbbec.com.cn\\tFALSE\\t/\\tTRUE\\t0\\t"
+                    "__Host-fae_enterprise_session\\t" + role + "-token\\n",
+                    encoding="utf-8",
+                )
+            elif url.endswith("/fae/api/authenticated/conversations?limit=30"):
+                selected = member_session if role == "member" else owner_session
+                items = [{
+                    "session_id": selected,
+                    "title": role + " history",
+                    "channel": "fae",
+                    "created_at": "2026-09-03T00:00:00+00:00",
+                    "last_active_at": "2026-09-03T00:00:01+00:00",
+                }]
+                leak = os.environ.get("FAE_HISTORY_LEAK")
+                if role == "owner" and leak == "member_into_owner":
+                    items.append({**items[0], "session_id": member_session})
+                if role == "member" and leak == "owner_into_member":
+                    items.append({**items[0], "session_id": owner_session})
+                body = {"items": items, "next_cursor": None}
+            elif url.endswith("/fae/api/authenticated/conversations/" + member_session):
+                if role == "owner":
+                    status = 404
+                    body = {"detail": "conversation not found"}
+                else:
+                    body = {
+                        "session_id": member_session,
+                        "channel": "fae",
+                        "messages": [],
+                        "current_schema": None,
+                        "attachments": [],
+                    }
+            elif url.endswith("/fae/api/authenticated/conversations/" + owner_session):
+                if role == "member":
+                    status = 404
+                    body = {"detail": "conversation not found"}
+                else:
+                    body = {
+                        "session_id": owner_session,
+                        "channel": "fae",
+                        "messages": [],
+                        "current_schema": None,
+                        "attachments": [],
+                    }
+            else:
+                raise SystemExit(81)
+
+            output.write_text(json.dumps(body, separators=(",", ":")), encoding="utf-8")
+            with Path(os.environ["FAE_HISTORY_LOG"]).open("a", encoding="utf-8") as log:
+                log.write(f"{role}|{method}|{url}\\n")
+            print(status, end="")
+            """
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o700)
+
+
+def _run_fae_history_contract(
+    tmp_path: Path, *, leaks_member_history: str | None = None
+):
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    history = _bash_function(
+        script,
+        "verify_fae_internal_history",
+        "verify_markdown_rendering",
+    )
+    stub = tmp_path / "curl"
+    _write_fae_history_curl_stub(stub)
+    history = history.replace("/usr/bin/curl", str(stub))
+    temporary = tmp_path / "private"
+    temporary.mkdir(mode=0o700)
+    (temporary / "fae-member-account.json").write_text(
+        '{"internal_user_id":"11111111-1111-4111-8111-111111111111",'
+        '"display_name":"member"}',
+        encoding="utf-8",
+    )
+    (temporary / "fae-owner-account.json").write_text(
+        '{"internal_user_id":"22222222-2222-4222-8222-222222222222",'
+        '"display_name":"owner"}',
+        encoding="utf-8",
+    )
+    member_launch = temporary / "fae-launch.json"
+    member_launch.write_text(
+        json.dumps(
+            {
+                "launch_url": (
+                    "https://agent.orbbec.com.cn/fae/"
+                    f"#platform_launch={'m' * 43}"
+                )
+            }
+        ),
+        encoding="utf-8",
+    )
+    log = tmp_path / "requests.log"
+    harness = tmp_path / "history-contract.sh"
+    harness.write_text(
+        f"""#!/bin/bash
+set -eEuo pipefail
+umask 077
+fail() {{ exit 91; }}
+python={ROOT / 'backend/.venv/bin/python'}
+base=https://agent.orbbec.com.cn
+temporary={temporary}
+curl_owner=({stub} --config owner)
+{history}
+verify_fae_internal_history {member_launch}
+""",
+        encoding="utf-8",
+    )
+    environment = {**os.environ, "FAE_HISTORY_LOG": str(log)}
+    if leaks_member_history:
+        environment["FAE_HISTORY_LEAK"] = leaks_member_history
+    result = subprocess.run(
+        ["/bin/bash", str(harness)],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+    requests = tuple(log.read_text(encoding="utf-8").splitlines())
+    return result, requests
+
+
+def test_fae_history_contract_executes_two_exchanges_and_cross_subject_probe(tmp_path):
+    result, requests = _run_fae_history_contract(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert len(requests) == 9
+    assert sum("/fae/api/enterprise/session" in item for item in requests) == 2
+    assert sum("/fae/api/authenticated/conversations?limit=30" in item for item in requests) == 2
+    assert sum("/fae/api/authenticated/conversations/aaaaaaaa" in item for item in requests) == 2
+    assert sum("/fae/api/authenticated/conversations/bbbbbbbb" in item for item in requests) == 2
+
+
+@pytest.mark.parametrize("leak_direction", ("member_into_owner", "owner_into_member"))
+def test_fae_history_contract_rejects_cross_subject_list_leak(
+    tmp_path, leak_direction
+):
+    result, _requests = _run_fae_history_contract(
+        tmp_path, leaks_member_history=leak_direction
+    )
+
+    assert result.returncode == 91
 
 
 def _write_fae_curl_stub(path: Path) -> None:
@@ -558,22 +1234,26 @@ def _write_fae_curl_stub(path: Path) -> None:
                     "hard_stale_read_only": False,
                     "csrf_token": csrf,
                 }, separators=(",", ":"))
-            elif role == "viewer" and url.endswith("/admin/fae"):
+            elif role == "member" and (
+                url.endswith("/fae/") or "/fae/conversations/" in url
+            ):
+                body = "<html><body>FAE direct workspace</body></html>"
+            elif role == "viewer" and url.endswith("/fae/manage/"):
                 body = "<html><body><div id=app></div></body></html>"
             elif role in {"member", "viewer"}:
                 status = 403
-                body = '{"detail":"management_role_required"}'
-            elif method == "GET" and url.endswith("/api/admin/fae/issues"):
+                body = '{"detail":"fae workbench access required"}'
+            elif method == "GET" and url.endswith("/api/fae/issues"):
                 body = json.dumps({
                     "items": [], "total": 0, "limit": 100,
                     "offset": 0, "has_more": False,
                 }, separators=(",", ":"))
-            elif method == "POST" and url.endswith("/api/admin/fae/issues"):
+            elif method == "POST" and url.endswith("/api/fae/issues"):
                 if "Content-Type: application/json" not in headers:
                     raise SystemExit(84)
                 status = 403
                 body = '{"detail":"cloud_review_read_only"}'
-            elif url.endswith("/api/admin/fae/reports/latest"):
+            elif url.endswith("/api/fae/reports/latest"):
                 body = json.dumps({
                     "schema_name": "fae.analysis-report", "status": "ready",
                     "source": {"agent_id": "ai-fae-agent", "session_count": 692,
@@ -584,7 +1264,10 @@ def _write_fae_curl_stub(path: Path) -> None:
                         {"dimension": "insights_improvement"},
                     ],
                 }, separators=(",", ":"))
-            elif url.endswith("/admin/fae/reports"):
+            elif (
+                url.endswith("/fae/manage/reports")
+                or url.endswith("/admin/fae/reports")
+            ):
                 body = "<html><body><div id=app></div></body></html>"
 
             if count == int(os.environ.get("STUB_STATUS_AT", "0")):
@@ -651,6 +1334,7 @@ curl_owner=({stub} --config {tmp_path / 'owner.curl'})
 curl_member=({stub} --config {tmp_path / 'member.curl'})
 curl_viewer=({stub} --config {tmp_path / 'viewer.curl'})
 verify_fae_reports_ready() {{ :; }}
+verify_fae_reports_compatibility() {{ :; }}
 verify_fae_viewer_denied() {{ printf rendered > {viewer_rendered}; }}
 {contract}
 verify_fae_workbench_cloud_contract
@@ -717,13 +1401,15 @@ def test_fae_live_contract_fails_closed_at_every_curl_position(
 @pytest.mark.parametrize(
     "stub_environment",
     (
-        {"STUB_STATUS_AT": "4", "STUB_STATUS": "403"},
-        {"STUB_BODY_AT": "7", "STUB_BODY": "not-json"},
-        {"STUB_BODY_AT": "10", "STUB_BODY": "{}"},
-        {"STUB_BODY_AT": "11", "STUB_BODY": "not-html"},
-        {"STUB_STATUS_AT": "12", "STUB_STATUS": "200"},
-        {"STUB_STATUS_AT": "16", "STUB_STATUS": "403"},
-        {"STUB_STATUS_AT": "17", "STUB_STATUS": "200"},
+        {"STUB_STATUS_AT": "6", "STUB_STATUS": "403"},
+        {"STUB_BODY_AT": "9", "STUB_BODY": "not-json"},
+        {"STUB_BODY_AT": "12", "STUB_BODY": "{}"},
+        {"STUB_BODY_AT": "13", "STUB_BODY": '{"different":true}'},
+        {"STUB_BODY_AT": "14", "STUB_BODY": "not-html"},
+        {"STUB_STATUS_AT": "15", "STUB_STATUS": "200"},
+        {"STUB_STATUS_AT": "18", "STUB_STATUS": "403"},
+        {"STUB_STATUS_AT": "19", "STUB_STATUS": "200"},
+        {"STUB_BODY_AT": "22", "STUB_BODY": "{}"},
     ),
 )
 def test_fae_live_contract_rejects_wrong_status_or_body(tmp_path, stub_environment):
@@ -842,10 +1528,10 @@ require_action_identity_schema
 def test_fae_report_dom_predicate_requires_exact_url_and_complete_report_shape():
     probe = CLOUD / "fae-reports-placeholder-probe.js"
     assert probe.is_file()
-    expected_url = "https://agent.orbbec.com.cn/admin/fae/reports"
+    expected_url = "https://agent.orbbec.com.cn/fae/manage/reports"
     report = (
         '<section class="fae-workbench"><aside class="fae-workbench__sidebar">'
-        '<a aria-current="page" href="/admin/fae/reports">分析报告</a></aside>'
+        '<a aria-current="page" href="/fae/manage/reports">分析报告</a></aside>'
         '<div class="fae-workbench__content">'
         '<article class="fae-report" data-report-id="production-20260831">'
         '<header class="fae-report-hero"><h1>FAE 生产成果</h1></header>'
@@ -866,11 +1552,11 @@ def test_fae_report_dom_predicate_requires_exact_url_and_complete_report_shape()
             expected_url,
             report.replace('<article data-metric="m4">4</article>', ''),
         ),
-        ("https://example.com/admin/fae/reports", report),
-        ("https://agent.orbbec.com.cn/admin/fae/reports/weekly", report),
+        ("https://example.com/fae/manage/reports", report),
+        ("https://agent.orbbec.com.cn/fae/manage/reports/weekly", report),
         (
             expected_url,
-            report.replace('href="/admin/fae/reports"', 'href="/admin/fae"'),
+            report.replace('href="/fae/manage/reports"', 'href="/fae/manage"'),
         ),
         (
             expected_url,
@@ -908,15 +1594,15 @@ process.stdout.write(JSON.stringify(results));
 
 def test_fae_viewer_dom_predicate_requires_exact_denial_only_shape():
     probe = CLOUD / "fae-reports-placeholder-probe.js"
-    expected_url = "https://agent.orbbec.com.cn/admin/fae"
+    expected_url = "https://agent.orbbec.com.cn/fae/manage/"
     denied = (
         '<main><section class="permission-state" role="alert">'
         '<h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></main>'
     )
     fixtures = (
         (expected_url, denied),
-        ("https://example.com/admin/fae", denied),
-        ("https://agent.orbbec.com.cn/admin/fae/sessions", denied),
+        ("https://example.com/fae/manage/", denied),
+        ("https://agent.orbbec.com.cn/fae/manage/sessions", denied),
         (expected_url, denied + '<section class="fae-workbench"></section>'),
         (expected_url, denied + denied),
     )
@@ -1093,8 +1779,18 @@ def _run_fae_report_probe(tmp_path: Path, mode: str, render_mode: str = "report"
     function = function.replace("local watchdog_seconds=15", "local watchdog_seconds=3")
     workspace = tmp_path / "workspace"
     workspace.mkdir(mode=0o700)
-    identity = "owner" if render_mode == "report" else "viewer"
-    artifact = "fae-reports" if render_mode == "report" else "fae-viewer"
+    report_modes = {"report", "compat-report"}
+    identity = "owner" if render_mode in report_modes else "viewer"
+    artifact = {
+        "report": "fae-reports",
+        "compat-report": "fae-compat-reports",
+        "viewer-denied": "fae-viewer",
+    }[render_mode]
+    verifier = {
+        "report": "reports_ready",
+        "compat-report": "reports_compatibility",
+        "viewer-denied": "viewer_denied",
+    }[render_mode]
     browser_cookie = workspace / f"{identity}.browser.json"
     browser_cookie.write_text(
         f'{{"__Host-platform_session":"{identity}-session",'
@@ -1113,7 +1809,7 @@ chrome_pid=""
 node_pid=""
 probe_watchdog_pid=""
 {function}
-verify_fae_{'reports_ready' if render_mode == 'report' else 'viewer_denied'} {browser_cookie} {workspace} || fail
+verify_fae_{verifier} {browser_cookie} {workspace} || fail
 """,
         encoding="utf-8",
     )
@@ -1219,7 +1915,7 @@ def test_fae_report_probe_injects_exact_cookies_and_navigates_exact_url(tmp_path
         },
     ]
     navigate = next(message for message in result["messages"] if message["method"] == "Page.navigate")
-    assert navigate["params"] == {"url": "https://agent.orbbec.com.cn/admin/fae/reports"}
+    assert navigate["params"] == {"url": "https://agent.orbbec.com.cn/fae/manage/reports"}
 
 
 def test_fae_viewer_probe_injects_viewer_cookies_and_navigates_exact_url(tmp_path):
@@ -1235,12 +1931,35 @@ def test_fae_viewer_probe_injects_viewer_cookies_and_navigates_exact_url(tmp_pat
         "viewer-csrf",
     ]
     navigate = next(message for message in result["messages"] if message["method"] == "Page.navigate")
-    assert navigate["params"] == {"url": "https://agent.orbbec.com.cn/admin/fae"}
+    assert navigate["params"] == {"url": "https://agent.orbbec.com.cn/fae/manage/"}
     assert result["alive"] is False
     assert result["node_alive"] is False
     assert result["browser_cookie_exists"] is False
     assert result["profile_exists"] is False
     assert result["target_exists"] is False
+
+
+def test_fae_compatibility_probe_redirects_to_the_canonical_report(tmp_path):
+    result = _run_fae_report_probe(tmp_path, "happy", "compat-report")
+
+    assert result["returncode"] == 0, result["stderr"]
+    assert result["stdout"] == "FAE_REPORTS_COMPATIBILITY_OK\n"
+    navigate = next(
+        message
+        for message in result["messages"]
+        if message["method"] == "Page.navigate"
+    )
+    assert navigate["params"] == {
+        "url": "https://agent.orbbec.com.cn/admin/fae/reports"
+    }
+    evaluation = next(
+        message
+        for message in result["messages"]
+        if message["method"] == "Runtime.evaluate"
+    )
+    assert "https://agent.orbbec.com.cn/fae/manage/reports" in evaluation[
+        "params"
+    ]["expression"]
 
 
 @pytest.mark.parametrize("mode", ("open_hang", "command_hang"))

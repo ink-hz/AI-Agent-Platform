@@ -1,16 +1,18 @@
 import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell";
 import { faeWorkbenchApi } from "../faeWorkbenchApi";
 import type { SessionSummary } from "../types";
+import { FAE_MANAGEMENT_PATH } from "../platform/workspaces";
 import { SessionsView } from "./SessionsPage";
 
 
-const faeDetailHref = (session: SessionSummary) => `/admin/fae/sessions/${encodeURIComponent(session.session_key)}`;
+const FAE_SESSIONS_PATH = `${FAE_MANAGEMENT_PATH}/sessions`;
+const faeDetailHref = (session: SessionSummary) => `${FAE_SESSIONS_PATH}/${encodeURIComponent(session.session_key)}`;
 
 
 export function FaeSessionsPage() {
   return <FaeWorkbenchShell currentSection="sessions">
     <SessionsView
-      basePath="/admin/fae/sessions"
+      basePath={FAE_SESSIONS_PATH}
       title="FAE Sessions"
       description="查看 FAE 范围内的真实 Session 和反馈复审信号。"
       showScopeFilters={false}

@@ -10,6 +10,7 @@ import { UsageChapter } from "../components/fae-reports/UsageChapter";
 import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell";
 import { FaeReportApiError, faeReportApi } from "../faeReportApi";
 import type { FaeAnalysisReport, FaeReportSummary } from "../faeReportTypes";
+import { selectedReportVersion } from "../router";
 
 function Report({ report, summaries }: { report: FaeAnalysisReport; summaries: FaeReportSummary[] }) {
   if (report.status === "failed") return <section className="fae-workbench__empty" role="alert"><h2>报告发布失败</h2><p>{report.failure?.message ?? "本次分析未通过发布门禁。"}</p></section>;
@@ -21,14 +22,6 @@ function Report({ report, summaries }: { report: FaeAnalysisReport; summaries: F
     <AnswerEffectivenessChapter report={report} />
     <InsightAndImprovementChapter report={report} />
   </article>;
-}
-
-function selectedReportVersion(search: string): number | undefined | null {
-  const values = new URLSearchParams(search).getAll("version");
-  if (values.length === 0) return undefined;
-  if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return null;
-  const version = Number(values[0]);
-  return Number.isSafeInteger(version) ? version : null;
 }
 
 export function FaeReportsPage({ reportId }: { reportId?: string }) {
@@ -55,7 +48,7 @@ export function FaeReportsPage({ reportId }: { reportId?: string }) {
     : failureStatus === 401
       ? <section className="fae-workbench__empty" role="alert"><h2>需要登录后查看分析报告</h2><p>请重新登录企业账号后再访问已发布的 FAE 成果。</p></section>
     : failureStatus === 403
-      ? <section className="fae-workbench__empty" role="alert"><h2>当前账号无权查看分析报告</h2><p>分析报告当前仅向 Platform Owner / Admin 开放。</p></section>
+      ? <section className="fae-workbench__empty" role="alert"><h2>当前账号无权查看分析报告</h2><p>当前账号没有 FAE 工作台权限，请联系 Platform Owner 授权。</p></section>
     : failureStatus === -1
       ? <section className="fae-workbench__empty" role="alert"><h2>报告内容未通过读取校验</h2><p>该版本不符合已发布报告契约，Platform 已停止展示，未使用不完整数据代替。</p></section>
     : failureStatus !== null

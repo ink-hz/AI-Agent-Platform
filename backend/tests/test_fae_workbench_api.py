@@ -173,6 +173,18 @@ class _Grants:
         raise AssertionError("FAE workbench must not use viewer grants")
 
 
+class _FaeAccess:
+    def __init__(self, allowed=(), *, cloud_mode=False):
+        self.allowed = set(allowed)
+        self.cloud_mode = cloud_mode
+
+    def allows(self, context):
+        return (
+            context.role is Role.PLATFORM_OWNER
+            or context.internal_user_id in self.allowed
+        )
+
+
 class _AuditRepository:
     def __init__(self, fail_result: str | None = None) -> None:
         self.events = []
@@ -216,6 +228,7 @@ def _protected_app(
     hard_stale: bool = False,
     cloud_mode: bool = False,
     fail_audit_result: str | None = None,
+    grant_fae: bool = False,
 ):
     audit_repository = _AuditRepository(fail_audit_result)
     detail_load_audit_counts = []
@@ -231,8 +244,17 @@ def _protected_app(
         repository, observability, review
     )
     app.state.fae_session_read_audit = AuditWriter(audit_repository)
-    app.include_router(fae_workbench_routes.router)
     context = AuthContext(uuid4(), role, uuid4(), hard_stale)
+    app.state.fae_access = _FaeAccess(
+        [context.internal_user_id] if grant_fae else [],
+        cloud_mode=cloud_mode,
+    )
+    app.include_router(fae_workbench_routes.router, prefix="/api/fae")
+    app.include_router(
+        fae_workbench_routes.router,
+        prefix="/api/admin/fae",
+        include_in_schema=False,
+    )
     auth = _Auth({"valid": context})
     app.add_middleware(
         IdentitySecurityMiddleware,
@@ -260,7 +282,17 @@ def _direct_app(context: AuthContext | None):
         repository, observability, review
     )
     app.state.fae_session_read_audit = AuditWriter(_AuditRepository())
-    app.include_router(fae_workbench_routes.router)
+    app.state.fae_access = _FaeAccess(
+        [context.internal_user_id]
+        if context is not None and context.role is not Role.PLATFORM_OWNER
+        else []
+    )
+    app.include_router(fae_workbench_routes.router, prefix="/api/fae")
+    app.include_router(
+        fae_workbench_routes.router,
+        prefix="/api/admin/fae",
+        include_in_schema=False,
+    )
     if context is not None:
         @app.middleware("http")
         async def inject_auth_context(request, call_next):
@@ -308,9 +340,9 @@ def test_fae_session_api_exposes_an_exclusive_period_end_without_changing_date_t
 
 @pytest.mark.parametrize(
     ("role", "expected_status"),
-    [(None, 401), (Role.MEMBER, 403), (Role.MANAGEMENT_VIEWER, 403)],
+    [(None, 401), (Role.MANAGEMENT_VIEWER, 200)],
 )
-def test_router_itself_rejects_missing_member_and_viewer_contexts(
+def test_router_itself_uses_shared_fae_access_context(
     role: Role | None, expected_status: int
 ) -> None:
     context = (
@@ -324,7 +356,7 @@ def test_router_itself_rejects_missing_member_and_viewer_contexts(
     )
 
 
-@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
+@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.MEMBER])
 def test_router_itself_allows_exact_management_contexts(role: Role) -> None:
     context = AuthContext(uuid4(), role, uuid4(), False)
     app, _observability = _direct_app(context)
@@ -332,29 +364,43 @@ def test_router_itself_allows_exact_management_contexts(role: Role) -> None:
     assert TestClient(app).get("/api/admin/fae/sessions").status_code == 200
 
 
-@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
-def test_owner_and_admin_can_read_fae_workbench(role: Role) -> None:
-    client, *_ = _protected_app(role)
+@pytest.mark.parametrize(
+    ("path", "role", "grant_fae", "expected_status"),
+    [
+        ("/api/fae/overview", Role.PLATFORM_OWNER, False, 200),
+        ("/api/admin/fae/overview", Role.PLATFORM_OWNER, False, 200),
+        ("/api/fae/overview", Role.MEMBER, True, 200),
+        ("/api/admin/fae/overview", Role.MEMBER, True, 200),
+        ("/api/fae/overview", Role.PLATFORM_ADMIN, False, 403),
+        ("/api/admin/fae/overview", Role.PLATFORM_ADMIN, False, 403),
+    ],
+)
+def test_both_fae_prefixes_require_owner_or_fae_grant(
+    path: str,
+    role: Role,
+    grant_fae: bool,
+    expected_status: int,
+) -> None:
+    client, *_ = _protected_app(role, grant_fae=grant_fae)
     client.cookies.set("session", "valid")
 
-    assert client.get("/api/admin/fae/overview").status_code == 200
-    assert client.get("/api/admin/fae/sessions").status_code == 200
+    assert client.get(path).status_code == expected_status
 
 
-def test_fae_workbench_rejects_unauthenticated_member_and_viewer() -> None:
+def test_fae_workbench_rejects_unauthenticated_member_and_viewer_without_grant() -> None:
     owner_client, *_ = _protected_app(Role.PLATFORM_OWNER)
     assert owner_client.get("/api/admin/fae/sessions").status_code == 401
 
-    for role in (Role.MEMBER, Role.MANAGEMENT_VIEWER):
+    for role in (Role.MEMBER, Role.MANAGEMENT_VIEWER, Role.PLATFORM_ADMIN):
         client, *_ = _protected_app(role)
         client.cookies.set("session", "valid")
         assert client.get("/api/admin/fae/sessions").status_code == 403
 
 
-@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
-def test_hard_stale_owner_and_admin_keep_read_access(role: Role) -> None:
+@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.MEMBER])
+def test_hard_stale_owner_and_fae_grant_keep_read_access(role: Role) -> None:
     client, _observability, _audit, _counts, auth = _protected_app(
-        role, hard_stale=True
+        role, hard_stale=True, grant_fae=role is Role.MEMBER
     )
     client.cookies.set("session", "valid")
 
@@ -370,8 +416,13 @@ def test_fae_issue_mutation_denials_report_hard_stale_before_cloud_read_only():
     cloud_client, *_ = _protected_app(Role.PLATFORM_OWNER, cloud_mode=True)
     cloud_client.cookies.set("session", "valid")
 
-    stale = stale_client.post("/api/admin/fae/issues", json={"title": "issue"})
-    cloud = cloud_client.post("/api/admin/fae/issues", json={"title": "issue"})
+    headers = {"Origin": "https://testserver", "X-CSRF-Token": "csrf"}
+    stale = stale_client.post(
+        "/api/admin/fae/issues", json={"title": "issue"}, headers=headers
+    )
+    cloud = cloud_client.post(
+        "/api/admin/fae/issues", json={"title": "issue"}, headers=headers
+    )
 
     assert (stale.status_code, stale.json()["detail"]) == (
         503,
@@ -400,10 +451,7 @@ def test_stale_viewer_role_denial_precedes_freshness_and_cloud(method, path, clo
         else client.get(path)
     )
 
-    assert (response.status_code, response.json()["detail"]) == (
-        403,
-        "management_role_required",
-    )
+    assert response.status_code == 403
 
 
 def test_fae_issue_facade_exposes_exact_route_templates() -> None:
@@ -411,32 +459,34 @@ def test_fae_issue_facade_exposes_exact_route_templates() -> None:
         (next(iter(route.methods)), route.path)
         for route in fae_workbench_routes.router.routes
         if getattr(route, "methods", None)
-        and route.path.startswith("/api/admin/fae/")
     }
 
     issue_routes = routes - {
-        ("GET", "/api/admin/fae/overview"),
-        ("GET", "/api/admin/fae/sessions"),
-        ("GET", "/api/admin/fae/sessions/{session_key}"),
+        ("GET", "/overview"),
+        ("GET", "/sessions"),
+        ("GET", "/sessions/{session_key}"),
+        ("GET", "/reports"),
+        ("GET", "/reports/latest"),
+        ("GET", "/reports/{report_id}"),
     }
 
     assert issue_routes == {
-        ("GET", "/api/admin/fae/issue-overview"),
-        ("GET", "/api/admin/fae/issue-inbox"),
-        ("GET", "/api/admin/fae/issues"),
-        ("GET", "/api/admin/fae/issues/{issue_id}"),
-        ("GET", "/api/admin/fae/turn-summaries"),
-        ("POST", "/api/admin/fae/issues"),
-        ("PATCH", "/api/admin/fae/issues/{issue_id}"),
-        ("POST", "/api/admin/fae/issues/{issue_id}/links"),
-        ("POST", "/api/admin/fae/issues/{issue_id}/links/{link_id}/move"),
-        ("POST", "/api/admin/fae/issues/{issue_id}/merge"),
-        ("POST", "/api/admin/fae/issues/{issue_id}/fix-ready"),
-        ("POST", "/api/admin/fae/issues/{issue_id}/evidence"),
-        ("POST", "/api/admin/fae/evidence/{evidence_id}/verify"),
-        ("POST", "/api/admin/fae/issues/{issue_id}/replays"),
-        ("POST", "/api/admin/fae/replays/{replay_id}/semantic-review"),
-        ("POST", "/api/admin/fae/issues/{issue_id}/disposition"),
+        ("GET", "/issue-overview"),
+        ("GET", "/issue-inbox"),
+        ("GET", "/issues"),
+        ("GET", "/issues/{issue_id}"),
+        ("GET", "/turn-summaries"),
+        ("POST", "/issues"),
+        ("PATCH", "/issues/{issue_id}"),
+        ("POST", "/issues/{issue_id}/links"),
+        ("POST", "/issues/{issue_id}/links/{link_id}/move"),
+        ("POST", "/issues/{issue_id}/merge"),
+        ("POST", "/issues/{issue_id}/fix-ready"),
+        ("POST", "/issues/{issue_id}/evidence"),
+        ("POST", "/evidence/{evidence_id}/verify"),
+        ("POST", "/issues/{issue_id}/replays"),
+        ("POST", "/replays/{replay_id}/semantic-review"),
+        ("POST", "/issues/{issue_id}/disposition"),
     }
 
 

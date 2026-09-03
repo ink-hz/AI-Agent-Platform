@@ -1,6 +1,7 @@
 import { buildImprovementThemes } from "../../faeReportPresentation";
 import type { FaeAnalysisReport } from "../../faeReportTypes";
 import { PlatformLink } from "../PlatformLink";
+import { FAE_MANAGEMENT_PATH } from "../../platform/workspaces";
 
 
 export function InsightAndImprovementChapter({ report }: { report: FaeAnalysisReport }) {
@@ -16,7 +17,7 @@ export function InsightAndImprovementChapter({ report }: { report: FaeAnalysisRe
           {recommendations.slice(0, 1).map((item) => <section key={item.recommendation_id}><strong>{item.title}</strong><p>{item.proposed_action}</p><small>责任角色：{item.owner_role}</small></section>)}
           {recommendations.length === 0 && <p className="fae-improvement-themes__pending">改进动作与责任角色待发布</p>}
           <footer>{finding.linked_issue_ids.length > 0
-            ? finding.linked_issue_ids.map((issueId) => <PlatformLink href={`/admin/fae/issues/${encodeURIComponent(issueId)}`} key={issueId}>查看修复闭环 →</PlatformLink>)
+            ? finding.linked_issue_ids.map((issueId) => <PlatformLink href={`${FAE_MANAGEMENT_PATH}/issues/${encodeURIComponent(issueId)}`} key={issueId}>查看修复闭环 →</PlatformLink>)
             : <span>待建立治理关联</span>}</footer>
         </article>)}</div>}
     </section>

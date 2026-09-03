@@ -180,6 +180,146 @@ REMOTE
   trap action_lock_exit EXIT
 }
 
+workspace_non_regression_snapshot() {
+(
+  set -euo pipefail
+  local snapshot_dir index url upstream_owner owner_count
+  snapshot_dir="$(/usr/bin/mktemp -d)"
+  trap '/bin/rm -rf -- "$snapshot_dir"' EXIT
+  local -a urls=(
+    'https://agent.orbbec.com.cn/'
+    'https://agent.orbbec.com.cn/office/'
+    'https://agent.orbbec.com.cn/office/?view=services'
+    'https://fae.orbbec.com.cn/'
+    'https://agent.orbbec.com.cn/voc/'
+  )
+
+  remote /usr/bin/python3 - <<'PY' > "$snapshot_dir/upstream-owners" || return 1
+import hashlib
+import re
+import subprocess
+
+
+def block(value: str, selector: str, *, last: bool = False) -> str:
+    start = value.rindex(selector) if last else value.index(selector)
+    depth = 0
+    opened = False
+    for index in range(start, len(value)):
+        if value[index] == "{":
+            depth += 1
+            opened = True
+        elif value[index] == "}":
+            depth -= 1
+            if opened and depth == 0:
+                return value[start : index + 1]
+    raise ValueError("nginx block incomplete")
+
+
+def proxy(value: str, selector: str, *, last: bool = False) -> str:
+    selected = block(value, selector, last=last)
+    matches = re.findall(r"(?m)^\s*proxy_pass\s+([^;]+);", selected)
+    if len(matches) != 1:
+        raise ValueError("workspace route owner is ambiguous")
+    return matches[0]
+
+
+rendered = subprocess.run(
+    ["/usr/sbin/nginx", "-T"],
+    check=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+    text=True,
+).stdout
+servers = []
+offset = 0
+while True:
+    match = re.search(r"(?m)^\s*server\s*\{", rendered[offset:])
+    if match is None:
+        break
+    start = offset + match.start()
+    selected = block(rendered[start:], "server {")
+    offset = start + len(selected)
+    servers.append(selected)
+
+
+def active_https_server(hostname: str) -> str:
+    named = [
+        value
+        for value in servers
+        if re.search(
+            rf"(?m)^\s*server_name\s+[^;]*\b{re.escape(hostname)}\b[^;]*;",
+            value,
+        )
+        and re.search(r"(?m)^\s*listen\s+(?:[^; ]+:)?443\b[^;]*;", value)
+    ]
+    if len(named) != 1:
+        raise ValueError(f"active HTTPS server for {hostname} is ambiguous")
+    return named[0]
+
+
+agent_config = active_https_server("agent.orbbec.com.cn")
+public_fae = active_https_server("fae.orbbec.com.cn")
+public_fae_owner = "nginx-server-sha256:" + hashlib.sha256(
+    public_fae.encode()
+).hexdigest()
+
+print(proxy(agent_config, "location / {", last=True))
+print(proxy(agent_config, "location ^~ /office/ {"))
+print(proxy(agent_config, "location ^~ /office/ {"))
+print(public_fae_owner)
+print(proxy(agent_config, "location ^~ /voc/ {"))
+PY
+  owner_count="$(/usr/bin/wc -l < "$snapshot_dir/upstream-owners" | /usr/bin/tr -d ' ')"
+  [[ "$owner_count" == "5" ]] || return 1
+
+  for index in "${!urls[@]}"; do
+    url="${urls[$index]}"
+    upstream_owner="$(/usr/bin/sed -n "$((index + 1))p" "$snapshot_dir/upstream-owners")"
+    [[ -n "$upstream_owner" ]] || return 1
+    /usr/bin/curl --noproxy '*' --silent --show-error --max-time 15 \
+      -D "$snapshot_dir/$index.headers" -o "$snapshot_dir/$index.body" \
+      "$url" || return 1
+    "$python" - "$url" "$upstream_owner" "$snapshot_dir/$index.headers" \
+      "$snapshot_dir/$index.body" <<'PY' || return 1
+import hashlib
+import json
+import pathlib
+import sys
+
+url, upstream_owner, header_path, body_path = sys.argv[1:]
+raw_headers = pathlib.Path(header_path).read_text(encoding="iso-8859-1")
+blocks = [block for block in raw_headers.replace("\r\n", "\n").split("\n\n") if block]
+block = next((item for item in reversed(blocks) if item.startswith("HTTP/")), "")
+lines = block.splitlines()
+if not lines or len(lines[0].split()) < 2:
+    raise SystemExit(1)
+headers = {}
+for line in lines[1:]:
+    if ":" in line:
+        key, value = line.split(":", 1)
+        headers[key.strip().lower()] = value.strip()
+security_names = (
+    "strict-transport-security",
+    "content-security-policy",
+    "x-content-type-options",
+    "x-frame-options",
+    "referrer-policy",
+    "permissions-policy",
+)
+snapshot = {
+    "url": url,
+    "status": int(lines[0].split()[1]),
+    "location": headers.get("location", ""),
+    "content_marker": hashlib.sha256(pathlib.Path(body_path).read_bytes()).hexdigest(),
+    "upstream_owner": upstream_owner,
+    "security_headers": {name: headers.get(name, "") for name in security_names},
+}
+print(json.dumps(snapshot, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
+PY
+  done
+)
+}
+
 remote_fae_snapshot() {
   remote /bin/bash -s <<'REMOTE'
 set -euo pipefail
@@ -210,6 +350,12 @@ verify_standalone_voc_release() {
   status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
     -o /dev/null -w '%{http_code}' --max-time 15 "$base/voc/session")" || fail
   [[ "$status_code" == "401" ]] || fail
+  status_code="$("${curl_owner[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/voc/api/v1/admin/vocs")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  status_code="$("${curl_viewer[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/voc/api/v1/admin/vocs")" || fail
+  [[ "$status_code" == "200" ]] || fail
   status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
     "$base/voc/api/v1/admin/vocs")" || fail
   [[ "$status_code" == "403" ]] || fail
@@ -575,20 +721,28 @@ REMOTE
 }
 
 publish_formal_nginx() {
-  local committed_template
+  local committed_template transaction_id="$1"
+  [[ "$transaction_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail
   committed_template="$(git -C "$repository_root" show HEAD:deploy/cloud/agent-domain.nginx.conf 2>/dev/null)" || fail
   [[ "$committed_template" == "$(<"$repository_root/deploy/cloud/agent-domain.nginx.conf")" ]] || fail
   remote 'umask 077; /usr/bin/install -d -o root -g root -m 700 /opt/orbbec-agent-platform/private/agent-brain-release; /bin/cat > /opt/orbbec-agent-platform/private/agent-brain-release/agent-domain.nginx.conf.part; /bin/chown root:root /opt/orbbec-agent-platform/private/agent-brain-release/agent-domain.nginx.conf.part; /bin/chmod 600 /opt/orbbec-agent-platform/private/agent-brain-release/agent-domain.nginx.conf.part; /bin/mv -f /opt/orbbec-agent-platform/private/agent-brain-release/agent-domain.nginx.conf.part /opt/orbbec-agent-platform/private/agent-brain-release/agent-domain.nginx.conf' \
     < "$repository_root/deploy/cloud/agent-domain.nginx.conf" || fail
-  remote /bin/bash -s <<'REMOTE' || fail
+  remote /bin/bash -s -- "$transaction_id" <<'REMOTE' || fail
 set -eEuo pipefail
 umask 077
 fail() { echo AGENT_BRAIN_NGINX_FAILED >&2; exit 1; }
+transaction_id="$1"
+[[ "$transaction_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail
 source=/opt/orbbec-agent-platform/private/agent-brain-release/agent-domain.nginx.conf
 target=/etc/nginx/sites-available/agent-domain.conf
 enabled=/etc/nginx/sites-enabled/agent-domain.conf
 state=/opt/orbbec-agent-platform/private/agent-brain-release
 root=/opt/orbbec-agent-platform
+transaction_lock="$state/agent-domain.transaction.lock"
+[[ ! -L "$transaction_lock" ]] || fail
+exec 9>"$transaction_lock"
+/bin/chmod 600 "$transaction_lock"
+/usr/bin/flock -x 9
 release="$(/usr/bin/readlink -f "$root/current")"
 release_template="$release/deploy/cloud/agent-domain.nginx.conf"
 manifest="$release/MANIFEST.sha256"
@@ -600,22 +754,38 @@ manifest="$release/MANIFEST.sha256"
 template_digest="$(/usr/bin/sha256sum "$release_template" | /usr/bin/awk '{print $1}')"
 /usr/bin/grep -Fxq "$template_digest  deploy/cloud/agent-domain.nginx.conf" "$manifest" || fail
 transaction_before="$state/agent-domain.transaction.before.conf"
-/usr/bin/install -o root -g root -m 600 "$target" "$transaction_before"
-enabled_before="$(/usr/bin/readlink "$enabled")"
-[[ -n "$enabled_before" ]] || fail
+enabled_transaction_before="$state/agent-domain.transaction.before.enabled"
+transaction_marker="$state/agent-domain.transaction.id"
+[[ ! -e "$transaction_before" && ! -e "$enabled_transaction_before" && ! -e "$transaction_marker" ]] || fail
 published=0
 restore_nginx() {
   status="$?"
   trap - ERR EXIT
+  restore_status=0
   if [[ "$status" -ne 0 && "$published" == "1" ]]; then
-    /usr/bin/install -o root -g root -m 644 "$transaction_before" "$target.part.restore"
-    /bin/mv -f "$target.part.restore" "$target"
-    /bin/ln -sfn "$enabled_before" "$enabled"
-    /usr/sbin/nginx -t >/dev/null 2>&1 && /bin/systemctl reload nginx >/dev/null 2>&1 || true
+    if ! /usr/bin/install -o root -g root -m 644 "$transaction_before" "$target.part.restore"; then restore_status=1; fi
+    if [[ "$restore_status" == "0" ]] && ! /bin/mv -f "$target.part.restore" "$target"; then restore_status=1; fi
+    if [[ "$restore_status" == "0" ]] && ! /bin/ln -sfn "$enabled_before" "$enabled"; then restore_status=1; fi
+    if [[ "$restore_status" == "0" ]] && ! /usr/sbin/nginx -t >/dev/null 2>&1; then restore_status=1; fi
+    if [[ "$restore_status" == "0" ]] && ! /bin/systemctl reload nginx >/dev/null 2>&1; then restore_status=1; fi
+  elif [[ "$status" -ne 0 ]]; then
+    /bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$transaction_marker"
   fi
+  if [[ "$restore_status" -ne 0 ]]; then exit "$restore_status"; fi
   exit "$status"
 }
 trap restore_nginx ERR EXIT
+/usr/bin/install -o root -g root -m 600 "$target" "$transaction_before"
+enabled_before="$(/usr/bin/readlink "$enabled")"
+[[ -n "$enabled_before" ]] || fail
+/usr/bin/printf '%s\n' "$enabled_before" > "$enabled_transaction_before.part"
+/bin/chown root:root "$enabled_transaction_before.part"
+/bin/chmod 600 "$enabled_transaction_before.part"
+/bin/mv -f "$enabled_transaction_before.part" "$enabled_transaction_before"
+/usr/bin/printf '%s\n' "$transaction_id" > "$transaction_marker.part"
+/bin/chown root:root "$transaction_marker.part"
+/bin/chmod 600 "$transaction_marker.part"
+/bin/mv -f "$transaction_marker.part" "$transaction_marker"
 fae_id="$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)"
 fae_image="$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend)"
 fae_started="$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)"
@@ -671,7 +841,72 @@ published=1
 [[ "$fae_domain_hash" == "$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$fae_legacy_ip_hash" == "$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 trap - ERR EXIT
-/bin/rm -f -- "$transaction_before"
+REMOTE
+}
+
+rollback_formal_nginx_transaction() {
+  local transaction_id="$1"
+  [[ "$transaction_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail
+  remote /bin/bash -s -- "$transaction_id" <<'REMOTE'
+set -euo pipefail
+umask 077
+transaction_id="$1"
+[[ "$transaction_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || exit 1
+state=/opt/orbbec-agent-platform/private/agent-brain-release
+transaction_lock="$state/agent-domain.transaction.lock"
+[[ ! -L "$transaction_lock" ]] || exit 1
+exec 9>"$transaction_lock"
+/bin/chmod 600 "$transaction_lock"
+/usr/bin/flock -x 9
+transaction_before="$state/agent-domain.transaction.before.conf"
+enabled_transaction_before="$state/agent-domain.transaction.before.enabled"
+transaction_marker="$state/agent-domain.transaction.id"
+target=/etc/nginx/sites-available/agent-domain.conf
+enabled=/etc/nginx/sites-enabled/agent-domain.conf
+if [[ ! -e "$transaction_before" && ! -e "$enabled_transaction_before" && ! -e "$transaction_marker" ]]; then exit 0; fi
+[[ -f "$transaction_before" && ! -L "$transaction_before" ]] || exit 1
+[[ -f "$enabled_transaction_before" && ! -L "$enabled_transaction_before" ]] || exit 1
+[[ -f "$transaction_marker" && ! -L "$transaction_marker" ]] || exit 1
+[[ "$(/usr/bin/stat -c '%a %U' "$transaction_before")" == "600 root" ]] || exit 1
+[[ "$(/usr/bin/stat -c '%a %U' "$enabled_transaction_before")" == "600 root" ]] || exit 1
+[[ "$(/usr/bin/stat -c '%a %U' "$transaction_marker")" == "600 root" ]] || exit 1
+[[ "$(/bin/cat "$transaction_marker")" == "$transaction_id" ]] || exit 1
+enabled_before="$(/bin/cat "$enabled_transaction_before")"
+[[ "$enabled_before" =~ ^(/etc/nginx/sites-available/|\.\./sites-available/)[A-Za-z0-9._-]+$ ]] || exit 1
+/usr/bin/install -o root -g root -m 644 "$transaction_before" "$target.part.restore"
+/bin/mv -f "$target.part.restore" "$target"
+/bin/ln -sfn "$enabled_before" "$enabled"
+/usr/sbin/nginx -t >/dev/null 2>&1
+/bin/systemctl reload nginx >/dev/null 2>&1
+/bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$transaction_marker"
+REMOTE
+}
+
+commit_formal_nginx_transaction() {
+  local transaction_id="$1"
+  [[ "$transaction_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail
+  remote /bin/bash -s -- "$transaction_id" <<'REMOTE'
+set -euo pipefail
+umask 077
+transaction_id="$1"
+[[ "$transaction_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || exit 1
+state=/opt/orbbec-agent-platform/private/agent-brain-release
+transaction_lock="$state/agent-domain.transaction.lock"
+[[ ! -L "$transaction_lock" ]] || exit 1
+exec 9>"$transaction_lock"
+/bin/chmod 600 "$transaction_lock"
+/usr/bin/flock -x 9
+transaction_before="$state/agent-domain.transaction.before.conf"
+enabled_transaction_before="$state/agent-domain.transaction.before.enabled"
+transaction_marker="$state/agent-domain.transaction.id"
+[[ -f "$transaction_before" && ! -L "$transaction_before" ]] || exit 1
+[[ -f "$enabled_transaction_before" && ! -L "$enabled_transaction_before" ]] || exit 1
+[[ -f "$transaction_marker" && ! -L "$transaction_marker" ]] || exit 1
+[[ "$(/usr/bin/stat -c '%a %U' "$transaction_before")" == "600 root" ]] || exit 1
+[[ "$(/usr/bin/stat -c '%a %U' "$enabled_transaction_before")" == "600 root" ]] || exit 1
+[[ "$(/usr/bin/stat -c '%a %U' "$transaction_marker")" == "600 root" ]] || exit 1
+[[ "$(/bin/cat "$transaction_marker")" == "$transaction_id" ]] || exit 1
+/bin/rm -f -- "$transaction_before" "$enabled_transaction_before" "$transaction_marker"
 REMOTE
 }
 
@@ -789,9 +1024,11 @@ verify_fae_rendered_state() {
     local _attempt watched_pid
     [[ "$workspace" == /* && -d "$workspace" && ! -L "$workspace" ]] || return 1
     if [[ "$probe_mode" == "report" ]]; then
-      [[ "$requested_url" == "https://agent.orbbec.com.cn/admin/fae/reports" && "$artifact_name" == "fae-reports" ]] || return 1
+      [[ "$requested_url" == "https://agent.orbbec.com.cn/fae/manage/reports" && "$artifact_name" == "fae-reports" ]] || return 1
+    elif [[ "$probe_mode" == "compat-report" ]]; then
+      [[ "$requested_url" == "https://agent.orbbec.com.cn/admin/fae/reports" && "$artifact_name" == "fae-compat-reports" ]] || return 1
     else
-      [[ "$probe_mode" == "viewer-denied" && "$requested_url" == "https://agent.orbbec.com.cn/admin/fae" && "$artifact_name" == "fae-viewer" ]] || return 1
+      [[ "$probe_mode" == "viewer-denied" && "$requested_url" == "https://agent.orbbec.com.cn/fae/manage/" && "$artifact_name" == "fae-viewer" ]] || return 1
     fi
     [[ "$browser_cookie_file" == "$workspace/"* && -f "$browser_cookie_file" && ! -L "$browser_cookie_file" ]] || return 1
     [[ -x "$chrome" && -x "$node" && -f "$probe" && ! -L "$probe" ]] || return 1
@@ -863,37 +1100,41 @@ PY
 
 verify_fae_reports_ready() {
   verify_fae_rendered_state "$1" "$2" \
-    https://agent.orbbec.com.cn/admin/fae/reports report fae-reports
+    https://agent.orbbec.com.cn/fae/manage/reports report fae-reports
+}
+
+verify_fae_reports_compatibility() {
+  verify_fae_rendered_state "$1" "$2" \
+    https://agent.orbbec.com.cn/admin/fae/reports compat-report fae-compat-reports
 }
 
 verify_fae_viewer_denied() {
   verify_fae_rendered_state "$1" "$2" \
-    https://agent.orbbec.com.cn/admin/fae viewer-denied fae-viewer
+    https://agent.orbbec.com.cn/fae/manage/ viewer-denied fae-viewer
 }
 
 verify_fae_workbench_cloud_contract() {
   local path status_code
   local -a fae_owner_paths=(
-    '/admin/fae'
-    '/admin/fae/sessions'
-    '/admin/fae/issues'
+    '/fae/manage/'
+    '/fae/manage/sessions'
+    '/fae/manage/issues'
   )
   local -a fae_owner_apis=(
-    '/api/admin/fae/overview'
-    '/api/admin/fae/sessions?limit=1'
-    '/api/admin/fae/issues'
-    '/api/admin/fae/reports/latest'
+    '/api/fae/overview'
+    '/api/fae/sessions?limit=1'
+    '/api/fae/issues'
+    '/api/fae/reports/latest'
   )
   local -a fae_member_denied_paths=(
-    '/admin/fae'
-    '/api/admin/fae/overview'
-    '/api/admin/fae/sessions?limit=1'
-    '/api/admin/fae/issues'
+    '/api/fae/overview'
+    '/api/fae/sessions?limit=1'
+    '/api/fae/issues'
   )
   local -a fae_viewer_denied_apis=(
-    '/api/admin/fae/overview'
-    '/api/admin/fae/sessions?limit=1'
-    '/api/admin/fae/issues'
+    '/api/fae/overview'
+    '/api/fae/sessions?limit=1'
+    '/api/fae/issues'
   )
 
   verify_fae_account_role platform_owner "$temporary/fae-owner-account.json" \
@@ -915,6 +1156,12 @@ if len(set(identities)) != 3:
     raise SystemExit(1)
 PY
 
+  status_code="$("${curl_member[@]}" -o "$temporary/fae-direct.html" -w '%{http_code}' "$base/fae/")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  status_code="$("${curl_member[@]}" -o "$temporary/fae-direct-deep-link.html" -w '%{http_code}' \
+    "$base/fae/conversations/fae:owned-1")" || fail
+  [[ "$status_code" == "200" ]] || fail
+
   for path in "${fae_owner_paths[@]}"; do
     status_code="$("${curl_owner[@]}" -o /dev/null -w '%{http_code}' "$base$path")" || fail
     [[ "$status_code" == "200" ]] || fail
@@ -922,7 +1169,7 @@ PY
   for path in "${fae_owner_apis[@]}"; do
     status_code="$("${curl_owner[@]}" -o "$temporary/fae-owner-api.json" -w '%{http_code}' "$base$path")" || fail
     [[ "$status_code" == "200" ]] || fail
-    if [[ "$path" == "/api/admin/fae/issues" ]]; then
+    if [[ "$path" == "/api/fae/issues" ]]; then
       "$python" - "$temporary/fae-owner-api.json" <<'PY' || fail
 import json
 import sys
@@ -945,7 +1192,7 @@ if (
 ):
     raise SystemExit(1)
 PY
-    elif [[ "$path" == "/api/admin/fae/reports/latest" ]]; then
+    elif [[ "$path" == "/api/fae/reports/latest" ]]; then
       "$python" - "$temporary/fae-owner-api.json" <<'PY' || fail
 import json
 import sys
@@ -974,9 +1221,20 @@ PY
     else
       "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary/fae-owner-api.json" || fail
     fi
+    if [[ "$path" == "/api/fae/overview" ]]; then
+      /bin/cp "$temporary/fae-owner-api.json" "$temporary/fae-canonical-overview.json" || fail
+    fi
   done
 
-  status_code="$("${curl_owner[@]}" -o "$temporary/fae-reports.html" -w '%{http_code}' "$base/admin/fae/reports")" || fail
+  status_code="$("${curl_owner[@]}" -o "$temporary/fae-compat-api.json" -w '%{http_code}' \
+    "$base/api/admin/fae/overview")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' \
+    "$temporary/fae-compat-api.json" || fail
+  /usr/bin/cmp -s "$temporary/fae-canonical-overview.json" \
+    "$temporary/fae-compat-api.json" || fail
+
+  status_code="$("${curl_owner[@]}" -o "$temporary/fae-reports.html" -w '%{http_code}' "$base/fae/manage/reports")" || fail
   [[ "$status_code" == "200" ]] || fail
   "$python" - "$temporary/fae-reports.html" <<'PY' || fail
 import pathlib
@@ -990,12 +1248,13 @@ if any(term in lowered for term in ("sample report", "demo report", "fixture rep
     raise SystemExit(1)
 PY
   verify_fae_reports_ready "$temporary/owner.browser.json" "$temporary"
+  verify_fae_reports_compatibility "$temporary/owner.browser.json" "$temporary"
 
   for path in "${fae_member_denied_paths[@]}"; do
     status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' "$base$path")" || fail
     [[ "$status_code" == "403" ]] || fail
   done
-  status_code="$("${curl_viewer[@]}" -o "$temporary/fae-viewer-shell.html" -w '%{http_code}' "$base/admin/fae")" || fail
+  status_code="$("${curl_viewer[@]}" -o "$temporary/fae-viewer-shell.html" -w '%{http_code}' "$base/fae/manage/")" || fail
   [[ "$status_code" == "200" ]] || fail
   verify_fae_viewer_denied "$temporary/viewer.browser.json" "$temporary"
   for path in "${fae_viewer_denied_apis[@]}"; do
@@ -1005,13 +1264,278 @@ PY
 
   status_code="$("${curl_owner[@]}" -o "$temporary/fae-mutation-denied.json" -w '%{http_code}' \
     -X POST -H 'Content-Type: application/json' --data-binary '{}' \
-    "$base/api/admin/fae/issues")" || fail
+    "$base/api/fae/issues")" || fail
   [[ "$status_code" == "403" ]] || fail
   "$python" - "$temporary/fae-mutation-denied.json" <<'PY' || fail
 import json
 import sys
 
 if json.load(open(sys.argv[1], encoding="utf-8")) != {"detail": "cloud_review_read_only"}:
+    raise SystemExit(1)
+PY
+}
+
+verify_platform_workspace_history() {
+  local agent_id conversation_id encoded_id path status_code index
+  local -a direct_agent_ids=(
+    'hr-bot'
+    'marketing-prospecting-bot'
+    'marketing-inbound-bot'
+    'marketing-voice-bot'
+    'marketing-intelligence-bot'
+    'marketing-gtm-bot'
+  )
+  local -a workspace_paths=(
+    '/hr'
+    '/marketing/prospecting'
+    '/marketing/inbound'
+    '/marketing/voice'
+    '/marketing/intelligence'
+    '/marketing/gtm'
+  )
+
+  for index in "${!direct_agent_ids[@]}"; do
+    agent_id="${direct_agent_ids[$index]}"
+    path="${workspace_paths[$index]}"
+    status_code="$("${curl_member[@]}" -o "$temporary/history-$index.json" \
+      -w '%{http_code}' "$base/api/v1/conversations?limit=100&direct_agent_id=$agent_id")" || fail
+    [[ "$status_code" == "200" ]] || fail
+    conversation_id="$("$python" - "$temporary/history-$index.json" "$agent_id" <<'PY'
+import json
+import sys
+import uuid
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+items = value.get("items") if isinstance(value, dict) else None
+if not isinstance(items, list):
+    raise SystemExit(1)
+for item in items:
+    if not isinstance(item, dict) or item.get("direct_agent_id") != sys.argv[2]:
+        raise SystemExit(1)
+if not items:
+    raise SystemExit(1)
+print(uuid.UUID(items[0]["conversation_id"]))
+PY
+    )" || fail
+    status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
+      "$base/api/v1/conversations/$conversation_id")" || fail
+    [[ "$status_code" == "200" ]] || fail
+    encoded_id="$("$python" -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$conversation_id")" || fail
+    status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
+      "$base$path/conversations/$encoded_id")" || fail
+    [[ "$status_code" == "200" ]] || fail
+  done
+
+  status_code="$("${curl_owner[@]}" -o "$temporary/owner-history.json" -w '%{http_code}' \
+    "$base/api/v1/conversations?limit=1")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  conversation_id="$("$python" - "$temporary/owner-history.json" <<'PY'
+import json
+import sys
+import uuid
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+items = value.get("items") if isinstance(value, dict) else None
+if not isinstance(items, list):
+    raise SystemExit(1)
+if not items:
+    raise SystemExit(1)
+print(uuid.UUID(items[0]["conversation_id"]))
+PY
+  )" || fail
+  status_code="$("${curl_member[@]}" -o "$temporary/cross-owner-history.json" \
+    -w '%{http_code}' "$base/api/v1/conversations/$conversation_id")" || fail
+  [[ "$status_code" == "404" ]] || fail
+  "$python" - "$temporary/cross-owner-history.json" <<'PY' || fail
+import json
+import sys
+
+if json.load(open(sys.argv[1], encoding="utf-8")) != {"detail": "Conversation not found"}:
+    raise SystemExit(1)
+PY
+}
+
+verify_fae_internal_history() {
+  local member_launch_file="$1" role launch_file status_code selected_session_id
+  local member_session_id owner_session_id
+  [[ -f "$member_launch_file" && ! -L "$member_launch_file" ]] || fail
+  "$python" - "$temporary/fae-member-account.json" \
+    "$temporary/fae-owner-account.json" <<'PY' || fail
+import json
+import sys
+import uuid
+
+member_internal_user_id = uuid.UUID(
+    json.load(open(sys.argv[1], encoding="utf-8"))["internal_user_id"]
+)
+owner_internal_user_id = uuid.UUID(
+    json.load(open(sys.argv[2], encoding="utf-8"))["internal_user_id"]
+)
+if member_internal_user_id == owner_internal_user_id:
+    raise SystemExit(1)
+PY
+
+  status_code="$("${curl_owner[@]}" -o "$temporary/fae-owner-launch.json" \
+    -w '%{http_code}' -X POST "$base/api/v1/agents/ai-fae-agent/launch")" || fail
+  [[ "$status_code" == "200" ]] || fail
+
+  for role in member owner; do
+    if [[ "$role" == "member" ]]; then
+      launch_file="$member_launch_file"
+    else
+      launch_file="$temporary/fae-owner-launch.json"
+    fi
+    "$python" - "$launch_file" > "$temporary/fae-$role-exchange.json" <<'PY' || fail
+import json
+import re
+import sys
+import urllib.parse
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+url = value.get("launch_url")
+if not isinstance(url, str):
+    raise SystemExit(1)
+parsed = urllib.parse.urlsplit(url)
+if (parsed.scheme, parsed.netloc, parsed.path) != (
+    "https", "agent.orbbec.com.cn", "/fae/"
+):
+    raise SystemExit(1)
+if parsed.query or parsed.fragment.count("=") != 1:
+    raise SystemExit(1)
+key, code = parsed.fragment.split("=", 1)
+if key != "platform_launch" or urllib.parse.unquote(code) != code:
+    raise SystemExit(1)
+if re.fullmatch(r"[A-Za-z0-9_-]{32,256}", code) is None:
+    raise SystemExit(1)
+print(json.dumps({"code": code}, separators=(",", ":")))
+PY
+    status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+      --max-time 15 --cookie-jar "$temporary/fae-$role.jar" \
+      -o "$temporary/fae-$role-session.json" -w '%{http_code}' -X POST \
+      -H 'Origin: https://agent.orbbec.com.cn' -H 'Content-Type: application/json' \
+      --data-binary "@$temporary/fae-$role-exchange.json" \
+      "$base/fae/api/enterprise/session")" || fail
+    [[ "$status_code" == "201" ]] || fail
+    "$python" - "$temporary/fae-$role-session.json" \
+      "$temporary/fae-$role.jar" "$temporary/fae-$role-account.json" <<'PY' || fail
+import json
+import pathlib
+import sys
+
+session = json.load(open(sys.argv[1], encoding="utf-8"))
+platform_account = json.load(open(sys.argv[3], encoding="utf-8"))
+if set(session) != {
+    "authenticated", "authentication_mode", "display_name",
+    "partner_display_name", "csrf_token",
+}:
+    raise SystemExit(1)
+if session["authenticated"] is not True:
+    raise SystemExit(1)
+if session["authentication_mode"] != "platform_enterprise":
+    raise SystemExit(1)
+if session["display_name"] != platform_account.get("display_name"):
+    raise SystemExit(1)
+if not isinstance(session["csrf_token"], str) or not session["csrf_token"]:
+    raise SystemExit(1)
+cookies = []
+for raw_line in pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").splitlines():
+    line = raw_line.removeprefix("#HttpOnly_")
+    if not line or line.startswith("#"):
+        continue
+    fields = line.split("\t")
+    if len(fields) == 7 and fields[5] == "__Host-fae_enterprise_session":
+        cookies.append(fields)
+if len(cookies) != 1:
+    raise SystemExit(1)
+cookie = cookies[0]
+if cookie[2] != "/" or cookie[3] != "TRUE" or not cookie[6]:
+    raise SystemExit(1)
+PY
+    status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+      --max-time 15 --cookie "$temporary/fae-$role.jar" \
+      -o "$temporary/fae-$role-history.json" -w '%{http_code}' \
+      "$base/fae/api/authenticated/conversations?limit=30")" || fail
+    [[ "$status_code" == "200" ]] || fail
+  done
+
+  "$python" - "$temporary/fae-member-history.json" \
+    "$temporary/fae-owner-history.json" \
+    > "$temporary/fae-history-subjects.txt" <<'PY' || fail
+import json
+import sys
+import uuid
+
+def session_ids(path):
+    value = json.load(open(path, encoding="utf-8"))
+    if set(value) != {"items", "next_cursor"} or not isinstance(value["items"], list):
+        raise SystemExit(1)
+    ids = []
+    for item in value["items"]:
+        if set(item) != {
+            "session_id", "title", "channel", "created_at", "last_active_at",
+        }:
+            raise SystemExit(1)
+        ids.append(str(uuid.UUID(item["session_id"])))
+    return ids
+
+member_session_ids = session_ids(sys.argv[1])
+owner_session_ids = session_ids(sys.argv[2])
+if not member_session_ids or not owner_session_ids:
+    raise SystemExit(1)
+member_session_id = member_session_ids[0]
+owner_session_id = owner_session_ids[0]
+if not set(member_session_ids).isdisjoint(owner_session_ids):
+    raise SystemExit(1)
+print(member_session_id, owner_session_id)
+PY
+  read -r member_session_id owner_session_id \
+    < "$temporary/fae-history-subjects.txt" || fail
+
+  for role in member owner; do
+    if [[ "$role" == "member" ]]; then
+      selected_session_id="$member_session_id"
+    else
+      selected_session_id="$owner_session_id"
+    fi
+    status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+      --max-time 15 --cookie "$temporary/fae-$role.jar" \
+      -o "$temporary/fae-$role-history-detail.json" -w '%{http_code}' \
+      "$base/fae/api/authenticated/conversations/$selected_session_id")" || fail
+    [[ "$status_code" == "200" ]] || fail
+    "$python" - "$temporary/fae-$role-history-detail.json" \
+      "$selected_session_id" <<'PY' || fail
+import json
+import sys
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+if set(value) != {
+    "session_id", "channel", "messages", "current_schema", "attachments",
+}:
+    raise SystemExit(1)
+if value["session_id"] != sys.argv[2]:
+    raise SystemExit(1)
+if not isinstance(value["messages"], list) or not isinstance(value["attachments"], list):
+    raise SystemExit(1)
+PY
+  done
+
+  status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+    --max-time 15 --cookie "$temporary/fae-owner.jar" \
+    -o "$temporary/fae-owner-cross-history.json" -w '%{http_code}' \
+    "$base/fae/api/authenticated/conversations/$member_session_id")" || fail
+  [[ "$status_code" == "404" ]] || fail
+  status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+    --max-time 15 --cookie "$temporary/fae-member.jar" \
+    -o "$temporary/fae-member-cross-history.json" -w '%{http_code}' \
+    "$base/fae/api/authenticated/conversations/$owner_session_id")" || fail
+  [[ "$status_code" == "404" ]] || fail
+  /usr/bin/cmp -s "$temporary/fae-owner-cross-history.json" \
+    "$temporary/fae-member-cross-history.json" || fail
+  "$python" - "$temporary/fae-owner-cross-history.json" <<'PY' || fail
+import json
+import sys
+
+if json.load(open(sys.argv[1], encoding="utf-8")) != {"detail": "conversation not found"}:
     raise SystemExit(1)
 PY
 }
@@ -1276,6 +1800,7 @@ PY
   )" || fail
   [[ "$member_role" == "member" && ( "$owner_role" == "platform_owner" || "$owner_role" == "platform_admin" ) ]] || fail
   verify_fae_workbench_cloud_contract
+  verify_platform_workspace_history
   [[ "$("${curl_member[@]}" -o "$temporary/root.html" -w '%{http_code}' "$base/")" == "200" ]] || fail
   [[ "$("${curl_member[@]}" -o /dev/null -w '%{http_code}' "$base/admin")" == "403" ]] || fail
   [[ "$("${curl_owner[@]}" -o /dev/null -w '%{http_code}' "$base/admin")" == "200" ]] || fail
@@ -1596,6 +2121,7 @@ accept_v2_real() {
   curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
   curl_viewer=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/viewer.curl" --max-time 15)
   verify_fae_workbench_cloud_contract
+  verify_platform_workspace_history
   verify_standalone_voc_release
   fae_before="$(remote_fae_snapshot)" || fail
   partner_gate="$(remote_partner_gate)" || fail
@@ -1615,15 +2141,19 @@ accept_v2_real() {
   # the token out of the process list and command arguments.
   [[ "$("${curl_member[@]}" -o "$temporary/fae-launch.json" -w '%{http_code}' -X POST "$base/api/v1/agents/ai-fae-agent/launch")" == "200" ]] || fail
   "$python" - "$temporary/fae-launch.json" <<'PY' || fail
-import json,sys,urllib.parse
+import json,re,sys,urllib.parse
 value=json.load(open(sys.argv[1],encoding='utf-8'))
 url=value.get('launch_url')
 if not isinstance(url,str): raise SystemExit(1)
 parsed=urllib.parse.urlsplit(url)
-if (parsed.scheme,parsed.netloc,parsed.path) != ('https','fae.orbbec.com.cn','/enterprise/launch'): raise SystemExit(1)
-query=urllib.parse.parse_qs(parsed.query,strict_parsing=True)
-if set(query) != {'code'} or len(query['code']) != 1 or len(query['code'][0]) < 32: raise SystemExit(1)
+if (parsed.scheme,parsed.netloc,parsed.path) != ('https','agent.orbbec.com.cn','/fae/'): raise SystemExit(1)
+if parsed.query or parsed.fragment.count('=') != 1: raise SystemExit(1)
+fragment_key,fragment_code=parsed.fragment.split('=',1)
+if fragment_key != 'platform_launch': raise SystemExit(1)
+if urllib.parse.unquote(fragment_code) != fragment_code: raise SystemExit(1)
+if re.fullmatch(r'[A-Za-z0-9_-]{32,256}', fragment_code) is None: raise SystemExit(1)
 PY
+  verify_fae_internal_history "$temporary/fae-launch.json"
   ENTERPRISE_FAE_LAUNCH_UNCHANGED=true
 
   [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o "$temporary/fae-identity-capabilities.json" -w '%{http_code}' --max-time 15 https://fae.orbbec.com.cn/identity/capabilities)" == "200" ]] || fail
@@ -1717,9 +2247,17 @@ REMOTE
 }
 
 enable_with_rollback() {
+  local workspace_snapshot_before workspace_snapshot_after nginx_transaction_id
+  nginx_transaction_id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  [[ "$nginx_transaction_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail
+  nginx_transaction_published="0"
   enable_failure_rollback() {
     status="$?"
     trap - ERR EXIT
+    if [[ "$status" -ne 0 && "$nginx_transaction_published" == "1" ]]; then
+      rollback_formal_nginx_transaction "$nginx_transaction_id" || status=1
+      nginx_transaction_published="0"
+    fi
     if [[ "$status" -ne 0 ]]; then remote_feature 0 || status=1; fi
     release_action_lock || status=1
     exit "$status"
@@ -1730,8 +2268,14 @@ enable_with_rollback() {
   run_relay_canary
   prepare_v2_reference_evidence
   v2_cutover_gates
-  publish_formal_nginx
+  workspace_snapshot_before="$(workspace_non_regression_snapshot)" || fail
+  nginx_transaction_published="1"
+  publish_formal_nginx "$nginx_transaction_id"
+  workspace_snapshot_after="$(workspace_non_regression_snapshot)" || fail
+  [[ "$workspace_snapshot_after" == "$workspace_snapshot_before" ]] || fail
   remote_feature 1
+  commit_formal_nginx_transaction "$nginx_transaction_id"
+  nginx_transaction_published="0"
   trap - ERR EXIT
   trap action_lock_exit EXIT
 }
