@@ -21,7 +21,7 @@ import { ConversationPage, type ConversationPageClient } from "./ConversationPag
 const conversationId = "8c13c965-1b60-472e-b275-199987d1d109";
 const account: Account = {
   internal_user_id: "member", display_name: "洛奇", role: "member",
-  departments: [], gender: null, observation_agent_ids: [], directory_freshness: "fresh",
+  departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh",
   hard_stale_read_only: false, csrf_token: "csrf",
 };
 const conversation: Conversation = {

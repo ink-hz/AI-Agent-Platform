@@ -15,6 +15,7 @@ const account: Account = {
   departments: ["项目管理部"],
   gender: "male",
   observation_agent_ids: ["ai-fae-agent"],
+  workspace_scopes: ["fae_workbench"],
   directory_freshness: "fresh",
   hard_stale_read_only: false,
   csrf_token: "csrf-memory-only",

@@ -12,7 +12,7 @@ import type { Route } from "./router";
 
 const member: Account = {
   internal_user_id: "member", display_name: "成员", role: "member", observation_agent_ids: [],
-  departments: [], gender: null,
+  departments: [], gender: null, workspace_scopes: [],
   directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
 };
 

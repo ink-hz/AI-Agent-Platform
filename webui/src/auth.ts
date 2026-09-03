@@ -5,6 +5,7 @@ export type PlatformRole =
   | "platform_owner";
 export type DirectoryFreshness = "fresh" | "warning" | "hard_stale";
 export type TrustedGender = "male" | "female" | null;
+export type WorkspaceScope = "fae_workbench";
 
 export interface Account {
   internal_user_id: string;
@@ -13,6 +14,7 @@ export interface Account {
   departments: string[];
   gender: TrustedGender;
   observation_agent_ids: string[];
+  workspace_scopes: WorkspaceScope[];
   directory_freshness: DirectoryFreshness;
   hard_stale_read_only: boolean;
   csrf_token: string;
@@ -73,6 +75,7 @@ export class IdentityDisabled extends PlatformApiError {
 const PREVIEW_PREFIX = "/_preview/dingtalk-r1";
 const ACCOUNT_KEYS = new Set([
   "internal_user_id", "display_name", "role", "departments", "gender", "observation_agent_ids",
+  "workspace_scopes",
   "real_name", "mobile", "primary_department",
   "directory_freshness", "hard_stale_read_only", "csrf_token",
 ]);
@@ -197,6 +200,7 @@ function parseAccount(value: unknown): Account {
   const departments = value.departments;
   const gender = value.gender;
   const scopes = value.observation_agent_ids;
+  const workspaceScopes = value.workspace_scopes;
   if (
     typeof value.internal_user_id !== "string" || !value.internal_user_id
     || typeof value.display_name !== "string" || !value.display_name
@@ -208,6 +212,9 @@ function parseAccount(value: unknown): Account {
     || (value.mobile !== undefined && value.mobile !== null && typeof value.mobile !== "string")
     || (value.primary_department !== undefined && value.primary_department !== null && typeof value.primary_department !== "string")
     || !Array.isArray(scopes) || scopes.some((scope) => typeof scope !== "string" || !scope)
+    || !Array.isArray(workspaceScopes)
+    || workspaceScopes.some((scope) => scope !== "fae_workbench")
+    || workspaceScopes.length !== new Set(workspaceScopes).size
     || !["fresh", "warning", "hard_stale"].includes(String(freshness))
     || typeof value.hard_stale_read_only !== "boolean"
     || typeof value.csrf_token !== "string"
@@ -221,6 +228,7 @@ function parseAccount(value: unknown): Account {
     departments: [...departments] as string[],
     gender: gender as TrustedGender,
     observation_agent_ids: [...scopes] as string[],
+    workspace_scopes: [...workspaceScopes] as WorkspaceScope[],
     directory_freshness: freshness as DirectoryFreshness,
     hard_stale_read_only: value.hard_stale_read_only,
     csrf_token: value.csrf_token,

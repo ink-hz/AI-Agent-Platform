@@ -320,7 +320,7 @@ describe("cloud replica mode", () => {
     const member: Account = {
       internal_user_id: "member", display_name: "成员", role: "member",
       departments: [], gender: null,
-      observation_agent_ids: [], directory_freshness: "fresh",
+      observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh",
       hard_stale_read_only: false, csrf_token: "csrf",
     };
     await act(async () => root.render(
@@ -346,7 +346,7 @@ describe("cloud replica mode", () => {
     const owner: Account = {
       internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
       departments: [], gender: null,
-      observation_agent_ids: [], directory_freshness: "hard_stale",
+      observation_agent_ids: [], workspace_scopes: ["fae_workbench"], directory_freshness: "hard_stale",
       hard_stale_read_only: true, csrf_token: "csrf",
     };
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("deployment unavailable"));
@@ -360,7 +360,7 @@ describe("cloud replica mode", () => {
     const administrator: Account = {
       internal_user_id: "admin", display_name: "管理员", role: "platform_admin",
       departments: [], gender: null,
-      observation_agent_ids: [], directory_freshness: "fresh",
+      observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh",
       hard_stale_read_only: false, csrf_token: "csrf",
     };
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({

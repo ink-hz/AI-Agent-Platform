@@ -51,6 +51,7 @@ function accountResponse(): Response {
     departments: ["项目管理部"],
     gender: "male",
     observation_agent_ids: [],
+    workspace_scopes: ["fae_workbench"],
     directory_freshness: "fresh",
     hard_stale_read_only: false,
     csrf_token: "csrf",
@@ -168,6 +169,7 @@ describe("authenticated account bootstrap", () => {
       mobile: "13800138000",
       primary_department: "总经办",
       observation_agent_ids: [],
+      workspace_scopes: ["fae_workbench"],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -197,6 +199,7 @@ describe("authenticated account bootstrap", () => {
       departments: [],
       gender: null,
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -216,6 +219,7 @@ describe("authenticated account bootstrap", () => {
       departments,
       gender,
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -276,6 +280,7 @@ describe("authenticated account bootstrap", () => {
       departments: ["行政部"],
       gender: "female",
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -292,6 +297,7 @@ describe("authenticated account bootstrap", () => {
       departments: [],
       gender: null,
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
@@ -309,6 +315,7 @@ describe("authenticated account bootstrap", () => {
       departments: ["项目管理部"],
       gender: "male",
       observation_agent_ids: [],
+      workspace_scopes: ["fae_workbench"],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "memory-only-csrf",
@@ -344,10 +351,28 @@ describe("authenticated account bootstrap", () => {
       departments: ["项目管理部"],
       gender: "male",
       observation_agent_ids: [],
+      workspace_scopes: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
       csrf_token: "csrf",
       provider_user_id: "must-not-cross-boundary",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(loadAccount("")).rejects.toThrow("account response invalid");
+  });
+
+  it("rejects unknown workspace scopes from the account API", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "user",
+      display_name: "苍渊",
+      role: "member",
+      departments: ["项目管理部"],
+      gender: "male",
+      observation_agent_ids: [],
+      workspace_scopes: ["fae_workbench", "admin_everything"],
+      directory_freshness: "fresh",
+      hard_stale_read_only: false,
+      csrf_token: "csrf",
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
 
     await expect(loadAccount("")).rejects.toThrow("account response invalid");
@@ -395,7 +420,8 @@ describe("identity management contract", () => {
   const owner: Account = {
     internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
     departments: ["项目管理部"], gender: "male",
-    observation_agent_ids: [], directory_freshness: "fresh",
+    observation_agent_ids: [], workspace_scopes: ["fae_workbench"],
+    directory_freshness: "fresh",
     hard_stale_read_only: false, csrf_token: "owner-csrf",
   };
   const member: ManagedUser = {
