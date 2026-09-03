@@ -57,7 +57,6 @@ function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
 export function AppShell({ route, children, account }: { route: Route; children: ReactNode; account?: Account | null }) {
   const current = routeSection(route);
   const brainWorkspace = route.name === "brain" || route.name === "conversation"
-    || route.name === "agent" || route.name === "agent-conversation"
     || route.name === "hr" || route.name === "hr-conversation"
     || route.name === "marketing" || route.name === "marketing-conversation";
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";

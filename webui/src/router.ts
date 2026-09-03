@@ -18,8 +18,6 @@ export type Route =
   | { name: "missions" }
   | { name: "mission"; missionId: string }
   | { name: "agents" }
-  | { name: "agent"; agentId: string }
-  | { name: "agent-conversation"; agentId: string; conversationId: string }
   | { name: "voc-workspace" }
   | { name: "hr" }
   | { name: "hr-conversation"; conversationId: string }
@@ -201,7 +199,7 @@ export function safeLegacyWorkspaceSearch(targetPath: string, sourceSearch: stri
 }
 
 
-export function parseRoute(pathname: string): Route {
+export function parseRoute(pathname: string, search = ""): Route {
   const local = localPathname(pathname);
   const clean = local === "/" ? "/" : local.replace(/\/+$/, "");
   if (clean === "/login") return { name: "login" };
@@ -215,6 +213,9 @@ export function parseRoute(pathname: string): Route {
   }
   if (clean === "/agents/ai-fae-agent") {
     return { name: "legacy-redirect", to: "/fae/", navigation: "document" };
+  }
+  if (clean === "/agents/ai-admin-agent") {
+    return { name: "legacy-redirect", to: "/office/?view=services", navigation: "document" };
   }
   if (clean === "/agents/hr-bot") {
     return { name: "legacy-redirect", to: "/hr/", navigation: "spa" };
@@ -266,6 +267,13 @@ export function parseRoute(pathname: string): Route {
   }
   if (clean === "/marketing") {
     return { name: "legacy-redirect", to: "/marketing/prospecting", navigation: "spa" };
+  }
+
+  if (clean === "/voc") {
+    const views = new URLSearchParams(search).getAll("view");
+    if (views.length === 1 && views[0] === "management") {
+      return { name: "legacy-redirect", to: "/voc/manage/", navigation: "document" };
+    }
   }
 
   const faeManageSession = /^\/fae\/manage\/sessions\/([^/]+)$/.exec(clean);
@@ -353,20 +361,6 @@ export function parseRoute(pathname: string): Route {
     const conversationId = decode(conversation[1]);
     return conversationId ? { name: "conversation", conversationId } : { name: "not-found" };
   }
-  const agent = /^\/agents\/([^/]+)$/.exec(clean);
-  if (agent) {
-    const agentId = decode(agent[1]);
-    return agentId ? { name: "agent", agentId } : { name: "not-found" };
-  }
-  const agentConversation = /^\/agents\/([^/]+)\/conversations\/([^/]+)$/.exec(clean);
-  if (agentConversation) {
-    const agentId = decode(agentConversation[1]);
-    const conversationId = decode(agentConversation[2]);
-    return agentId && conversationId
-      ? { name: "agent-conversation", agentId, conversationId }
-      : { name: "not-found" };
-  }
-
   if (clean === "/review") return { name: "legacy-redirect", to: "/admin/review", navigation: "spa" };
   if (clean === "/activity") return { name: "legacy-redirect", to: "/admin/activity", navigation: "spa" };
   if (clean === "/flywheel") return { name: "legacy-redirect", to: "/admin", navigation: "spa" };
@@ -392,8 +386,6 @@ export function routePath(route: Route): string {
     case "missions": return "/missions";
     case "mission": return `/missions/${encodeURIComponent(route.missionId)}`;
     case "agents": return "/agents";
-    case "agent": return `/agents/${encodeURIComponent(route.agentId)}`;
-    case "agent-conversation": return `/agents/${encodeURIComponent(route.agentId)}/conversations/${encodeURIComponent(route.conversationId)}`;
     case "voc-workspace": return "/agents/voc/workspace";
     case "hr": return "/hr/";
     case "hr-conversation": return `/hr/conversations/${encodeURIComponent(route.conversationId)}`;
@@ -428,7 +420,7 @@ export function routePath(route: Route): string {
 export function routeSection(route: Route): RouteSection | null {
   if (route.name === "brain") return "brain";
   if (route.name === "conversations" || route.name === "conversation") return "brain";
-  if (route.name === "agents" || route.name === "agent" || route.name === "agent-conversation" || route.name === "voc-workspace"
+  if (route.name === "agents" || route.name === "voc-workspace"
     || route.name === "hr" || route.name === "hr-conversation" || route.name === "marketing" || route.name === "marketing-conversation") return "agents";
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "ai-notes" || route.name === "ai-note") return "ai-notes";
@@ -458,9 +450,9 @@ export function navigate(path: string, options: NavigateOptions = {}): void {
 
 
 export function useRoute(): Route {
-  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname, window.location.search));
   useEffect(() => {
-    const update = () => setRoute(parseRoute(window.location.pathname));
+    const update = () => setRoute(parseRoute(window.location.pathname, window.location.search));
     window.addEventListener("popstate", update);
     window.addEventListener("platform:navigate", update);
     return () => {

@@ -27,7 +27,6 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "conversations" })).toBe("Agent 大脑 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "conversation", conversationId: "one" })).toBe("Agent 大脑 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "agents" })).toBe("专业 Agent · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "agent", agentId: "one" })).toBe("专业 Agent · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "voc-workspace" })).toBe("VOC 洞察助手 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "ai-notes" })).toBe("AI 工程笔记 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "ai-note", categorySlug: "foundations", articleSlug: "handbook" })).toBe("AI 工程笔记 · Orbbec Agent Platform");

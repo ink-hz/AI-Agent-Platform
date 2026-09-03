@@ -19,6 +19,48 @@ afterEach(() => {
 
 
 describe("Platform router", () => {
+  const compatibilityRoutes = [
+    ["/agents/hr-bot", "/hr/", "spa"],
+    ["/agents/hr-bot/conversations/hr%3Aone", "/hr/conversations/hr%3Aone", "spa"],
+    ["/agents/marketing-prospecting-bot", "/marketing/prospecting", "spa"],
+    ["/agents/marketing-prospecting-bot/conversations/mkt%3Aone", "/marketing/prospecting/conversations/mkt%3Aone", "spa"],
+    ["/agents/marketing-inbound-bot", "/marketing/inbound", "spa"],
+    ["/agents/marketing-inbound-bot/conversations/mkt%3Atwo", "/marketing/inbound/conversations/mkt%3Atwo", "spa"],
+    ["/agents/marketing-voice-bot", "/marketing/voice", "spa"],
+    ["/agents/marketing-voice-bot/conversations/mkt%3Athree", "/marketing/voice/conversations/mkt%3Athree", "spa"],
+    ["/agents/marketing-intelligence-bot", "/marketing/intelligence", "spa"],
+    ["/agents/marketing-intelligence-bot/conversations/mkt%3Afour", "/marketing/intelligence/conversations/mkt%3Afour", "spa"],
+    ["/agents/marketing-gtm-bot", "/marketing/gtm", "spa"],
+    ["/agents/marketing-gtm-bot/conversations/mkt%3Afive", "/marketing/gtm/conversations/mkt%3Afive", "spa"],
+    ["/agents/voc", "/voc/", "document"],
+    ["/agents/voc/workspace", "/voc/", "document"],
+    ["/agents/ai-fae-agent", "/fae/", "document"],
+    ["/agents/ai-fae-agent/conversations/fae%3Aone", "/fae/conversations/fae%3Aone", "document"],
+    ["/agents/ai-admin-agent", "/office/?view=services", "document"],
+    ["/admin/fae", "/fae/manage/", "spa"],
+    ["/admin/fae/sessions", "/fae/manage/sessions", "spa"],
+    ["/admin/fae/sessions/fae%3Aone", "/fae/manage/sessions/fae%3Aone", "spa"],
+    ["/admin/fae/issues", "/fae/manage/issues", "spa"],
+    ["/admin/fae/issues/00000000-0000-4000-8000-000000000001", "/fae/manage/issues/00000000-0000-4000-8000-000000000001", "spa"],
+    ["/admin/fae/reports", "/fae/manage/reports", "spa"],
+    ["/admin/fae/reports/weekly%3Aone", "/fae/manage/reports/weekly%3Aone", "spa"],
+    ["/admin/voc", "/voc/manage/", "document"],
+  ] as const;
+
+  it.each(compatibilityRoutes)("redirects %s exactly once to %s", (legacy, to, navigation) => {
+    expect(parseRoute(legacy)).toEqual({ name: "legacy-redirect", to, navigation });
+    const target = new URL(to, "https://platform.example");
+    expect(parseRoute(target.pathname, target.search).name).not.toBe("legacy-redirect");
+    expect(`${target.pathname}${target.search}`).not.toBe(legacy);
+  });
+
+  it("redirects the legacy VOC management query exactly once", () => {
+    expect(parseRoute("/voc/", "?view=management")).toEqual({
+      name: "legacy-redirect", to: "/voc/manage/", navigation: "document",
+    });
+    expect(parseRoute("/voc/manage/").name).not.toBe("legacy-redirect");
+  });
+
   it.each([
     ["/hr", { name: "legacy-redirect", to: "/hr/", navigation: "spa" }],
     ["/hr/", { name: "hr" }],
@@ -48,6 +90,8 @@ describe("Platform router", () => {
     });
     expect(parseRoute("/missions/one")).toEqual({ name: "mission", missionId: "one" });
     expect(parseRoute("/unknown")).toEqual({ name: "not-found" });
+    expect(parseRoute("/agents/unknown-agent")).toEqual({ name: "not-found" });
+    expect(parseRoute("/agents/unknown-agent/conversations/one")).toEqual({ name: "not-found" });
     expect(parseRoute("/login")).toEqual({ name: "login" });
     expect(parseRoute("/account")).toEqual({ name: "account" });
   });
@@ -82,7 +126,6 @@ describe("Platform router", () => {
 
   it("creates encoded canonical detail paths", () => {
     expect(routePath({ name: "mission", missionId: "a/b" })).toBe("/missions/a%2Fb");
-    expect(routePath({ name: "agent", agentId: "ai-fae-agent" })).toBe("/agents/ai-fae-agent");
     expect(routePath({ name: "admin-agent-runtime", agentId: "fae/a" })).toBe("/admin/agents/fae%2Fa/runtime");
     expect(routePath({ name: "admin-review" })).toBe("/admin/review");
     expect(routePath({ name: "admin-voc" })).toBe("/admin/voc");
@@ -94,7 +137,6 @@ describe("Platform router", () => {
   });
 
   it("keeps detail pages in their parent navigation section", () => {
-    expect(routeSection({ name: "agent", agentId: "ai-fae-agent" })).toBe("agents");
     expect(routeSection({ name: "mission", missionId: "one" })).toBe("missions");
     expect(routeSection({ name: "voc-workspace" })).toBe("agents");
     expect(routeSection({ name: "admin-session", sessionKey: "fae:abc" })).toBe("admin");
