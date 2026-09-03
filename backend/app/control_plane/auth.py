@@ -834,7 +834,7 @@ class WebSessionRepository:
             session_id = uuid4()
             with self._connection() as connection:
                 row = connection.execute(
-                    "select * from platform_control.consume_attempt_and_issue_session_v22(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "select * from platform_control.consume_attempt_and_issue_session_v65(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         attempt_id,internal_user_id,session_id,token_digest,
                         token_key_version,csrf_digest,csrf_key_version,

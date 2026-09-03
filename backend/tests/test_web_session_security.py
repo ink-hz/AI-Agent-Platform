@@ -832,7 +832,7 @@ def test_migration_015_revokes_direct_attempt_and_session_dml(production_environ
         "platform_control.create_web_login_attempt(uuid,text,bytea,integer,bytea,integer,bytea,text,text,integer)",
         "platform_control.claim_web_login_attempt(bytea,integer,text,text)",
         "platform_control.fail_web_login_attempt(uuid,text)",
-        "platform_control.consume_attempt_and_issue_session_v22(uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean)",
+        "platform_control.consume_attempt_and_issue_session_v65(uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean)",
         "platform_control.authenticate_web_session_v22(bytea,integer,integer)",
         "platform_control.revoke_web_session(uuid,text)",
     )
@@ -851,9 +851,16 @@ def test_migration_015_revokes_direct_attempt_and_session_dml(production_environ
             "where grantee='PUBLIC' and routine_schema='platform_control' "
             "and routine_name in ('create_web_login_attempt','claim_web_login_attempt',"
             "'fail_web_login_attempt','consume_attempt_and_issue_session',"
-            "'consume_attempt_and_issue_session_v22','authenticate_web_session',"
+            "'consume_attempt_and_issue_session_v22','consume_attempt_and_issue_session_v65',"
+            "'authenticate_web_session',"
             "'authenticate_web_session_v22','revoke_web_session')"
         ).fetchone() == (0,)
+        assert connection.execute(
+            "select has_function_privilege('platform_control_app',"
+            "'platform_control.consume_attempt_and_issue_session_v22("
+            "uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean)',"
+            "'execute')"
+        ).fetchone() == (False,)
 
 
 @pytest.mark.postgres
@@ -1009,6 +1016,12 @@ def test_database_session_uses_db_expiry_rechecks_member_and_revokes_logout(prod
     )
     assert issued is not None
     session_id, idle, absolute = issued
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select event_kind,login_kind,internal_user_id,session_id "
+            "from platform_control.user_access_events where session_id=%s",
+            (session_id,),
+        ).fetchall() == [("login_succeeded", "in_client", user_id, session_id)]
     assert timedelta(hours=7, minutes=59) < idle - datetime.now(UTC) <= timedelta(hours=8)
     assert timedelta(hours=23, minutes=59) < absolute - datetime.now(UTC) <= timedelta(hours=24)
     authenticated = repository.authenticate_session(
@@ -1024,6 +1037,132 @@ def test_database_session_uses_db_expiry_rechecks_member_and_revokes_logout(prod
         token_digest=repository.secrets.digest("session", raw_cookie), token_key_version=9,
         idle_seconds=28_800,
     ) is None
+
+
+@pytest.mark.postgres
+def test_qr_session_records_one_database_derived_login_event(
+    production_environment,
+) -> None:
+    from app.control_plane.auth import LoginAttempt
+
+    repository = _db_repository(production_environment)
+    user_id, _, _ = _seed_current_bound_member(production_environment)
+    state = repository.secrets.random_token()
+    verifier = repository.secrets.random_token()
+    attempt = LoginAttempt(
+        uuid4(), "qr", repository.secrets.digest("oauth-state", state), 9,
+        repository.secrets.digest("pkce-verifier", verifier), 9,
+        repository.secrets.seal_verifier(verifier), "/", "production",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    repository.create_attempt(attempt)
+    repository.claim_attempt(
+        state_digest=attempt.state_digest,
+        environment="production",
+        attempt_kind="qr",
+    )
+
+    issued = repository.issue_session(
+        attempt_id=attempt.attempt_id,
+        internal_user_id=user_id,
+        token_digest=repository.secrets.digest(
+            "session", repository.secrets.random_token()
+        ),
+        token_key_version=9,
+        csrf_digest=repository.secrets.digest(
+            "csrf", repository.secrets.random_token()
+        ),
+        csrf_key_version=9,
+        idle_seconds=28_800,
+        absolute_seconds=86_400,
+    )
+    assert issued is not None
+    assert repository.issue_session(
+        attempt_id=attempt.attempt_id,
+        internal_user_id=user_id,
+        token_digest=repository.secrets.digest(
+            "session", repository.secrets.random_token()
+        ),
+        token_key_version=9,
+        csrf_digest=repository.secrets.digest(
+            "csrf", repository.secrets.random_token()
+        ),
+        csrf_key_version=9,
+        idle_seconds=28_800,
+        absolute_seconds=86_400,
+    ) is None
+
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select event_kind,login_kind,count(*) from "
+            "platform_control.user_access_events where session_id=%s "
+            "group by event_kind,login_kind",
+            (issued[0],),
+        ).fetchall() == [("login_succeeded", "qr", 1)]
+
+
+@pytest.mark.postgres
+def test_login_event_failure_rolls_back_session_and_attempt_consumption(
+    production_environment,
+) -> None:
+    from app.control_plane.auth import LoginAttempt
+
+    repository = _db_repository(production_environment)
+    user_id, _, _ = _seed_current_bound_member(production_environment)
+    state = repository.secrets.random_token()
+    verifier = repository.secrets.random_token()
+    attempt = LoginAttempt(
+        uuid4(), "qr", repository.secrets.digest("oauth-state", state), 9,
+        repository.secrets.digest("pkce-verifier", verifier), 9,
+        repository.secrets.seal_verifier(verifier), "/", "production",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    repository.create_attempt(attempt)
+    repository.claim_attempt(
+        state_digest=attempt.state_digest,
+        environment="production",
+        attempt_kind="qr",
+    )
+    selected_session_id = uuid4()
+    with psycopg.connect(production_environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.user_access_events("
+            "access_event_id,internal_user_id,session_id,event_kind,login_kind"
+            ") values (%s,%s,%s,'login_succeeded','qr')",
+            (uuid4(), user_id, selected_session_id),
+        )
+
+    with psycopg.connect(
+        production_environment["urls"]["platform_control_app"]
+    ) as connection:
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            connection.execute(
+                "select * from platform_control.consume_attempt_and_issue_session_v65("
+                "%s,%s,%s,%s,9,%s,9,28800,86400,false)",
+                (
+                    attempt.attempt_id,
+                    user_id,
+                    selected_session_id,
+                    repository.secrets.digest(
+                        "session", repository.secrets.random_token()
+                    ),
+                    repository.secrets.digest(
+                        "csrf", repository.secrets.random_token()
+                    ),
+                ),
+            ).fetchone()
+
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.web_sessions "
+            "where session_id=%s",
+            (selected_session_id,),
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "select consumed_at from platform_control.login_attempts "
+            "where login_attempt_id=%s",
+            (attempt.attempt_id,),
+        ).fetchone() == (None,)
 
 
 @pytest.mark.postgres
