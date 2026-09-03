@@ -1,4 +1,10 @@
+import ast
+import os
+import shutil
+import socket
+import subprocess
 import threading
+import time
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,31 +28,6 @@ def _location_block(value: str, selector: str) -> str:
     start = value.index(selector)
     next_location = value.find("\n    location ", start + len(selector))
     return value[start:] if next_location < 0 else value[start:next_location]
-
-
-def _workspace_proxy_for_path(value: str, route: str) -> str:
-    path = route.split("?", 1)[0]
-    if path.startswith("/fae/manage/"):
-        selector = "location ^~ /fae/manage/ {"
-    elif path.startswith("/office/"):
-        selector = "location ^~ /office/ {"
-    elif path.startswith("/fae/"):
-        selector = "location ^~ /fae/ {"
-    elif path.startswith("/voc/"):
-        selector = "location ^~ /voc/ {"
-    elif path.startswith("/admin/"):
-        selector = "location ^~ /admin/ {"
-    else:
-        selector = "location / {"
-        value = value[value.rindex(selector) :]
-    selected = _location_block(value, selector)
-    owners = [
-        line.split()[1].removesuffix(";")
-        for line in selected.splitlines()
-        if line.strip().startswith("proxy_pass ")
-    ]
-    assert len(owners) == 1, route
-    return owners[0]
 
 
 def _http_response(port: int, route: str) -> tuple[int, str, bytes]:
@@ -91,48 +72,125 @@ def _upstream_handler(owner: str) -> type[BaseHTTPRequestHandler]:
     return UpstreamHandler
 
 
-def _proxy_handler(
-    nginx_server: str, upstream_ports: dict[str, int]
-) -> type[BaseHTTPRequestHandler]:
-    class ProxyHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            owner = _workspace_proxy_for_path(nginx_server, self.path)
-            upstream = HTTPConnection(
-                "127.0.0.1", upstream_ports[owner], timeout=0.5
-            )
-            try:
-                upstream.request("GET", self.path)
-                response = upstream.getresponse()
-                body = response.read()
-            except OSError:
-                body = f"{owner}:unavailable".encode()
-                self.send_response(502)
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            finally:
-                upstream.close()
-            self.send_response(response.status)
-            location = response.getheader("Location")
-            if location is not None:
-                self.send_header("Location", location)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *_args):
-            return
-
-    return ProxyHandler
-
-
 def _assert_no_workspace_failure_fallback(nginx_server: str) -> None:
     assert "error_page" not in nginx_server
     assert "recursive_error_pages" not in nginx_server
     assert "proxy_intercept_errors on" not in nginx_server
+
+
+def _unused_loopback_port() -> int:
+    listener = socket.socket()
+    try:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
+    finally:
+        listener.close()
+
+
+def _nginx_binary() -> str:
+    candidate = os.environ.get("NGINX_BINARY") or shutil.which("nginx")
+    if candidate is None:
+        pytest.skip("nginx binary unavailable; runtime isolation gate not executed")
+    version = subprocess.run(
+        [candidate, "-V"], text=True, capture_output=True, check=False
+    )
+    assert version.returncode == 0, version.stderr
+    assert "nginx version:" in version.stderr
+    return candidate
+
+
+def _render_isolated_nginx(
+    tmp_path: Path,
+    *,
+    listen_port: int,
+    redirect_port: int,
+    upstream_ports: dict[str, int],
+) -> Path:
+    value = _text(FORMAL_NGINX)
+    replacements = {
+        "__AGENT_DOMAIN__": "agent.orbbec.test",
+        "listen 80;": f"listen 127.0.0.1:{redirect_port};",
+        "listen 443 ssl;": f"listen 127.0.0.1:{listen_port};",
+        "proxy_pass http://127.0.0.1:8080;": (
+            f"proxy_pass http://127.0.0.1:{upstream_ports['platform']};"
+        ),
+        "proxy_pass http://127.0.0.1:8011;": (
+            f"proxy_pass http://127.0.0.1:{upstream_ports['office']};"
+        ),
+        "proxy_pass http://127.0.0.1:8000;": (
+            f"proxy_pass http://127.0.0.1:{upstream_ports['fae']};"
+        ),
+        "proxy_pass http://172.29.0.3:18130;": (
+            f"proxy_pass http://127.0.0.1:{upstream_ports['voc']};"
+        ),
+    }
+    for source, target in replacements.items():
+        assert source in value
+        value = value.replace(source, target)
+    value = "\n".join(
+        line
+        for line in value.splitlines()
+        if not line.strip().startswith("ssl_")
+        and not line.strip().startswith("access_log ")
+        and not line.strip().startswith("error_log ")
+    )
+    assert "__" not in value
+    for directory in ("client", "proxy"):
+        (tmp_path / directory).mkdir()
+    config = tmp_path / "nginx.conf"
+    config.write_text(
+        "daemon off;\n"
+        "master_process off;\n"
+        "worker_processes 1;\n"
+        f"pid {tmp_path / 'nginx.pid'};\n"
+        "error_log stderr crit;\n"
+        "events { worker_connections 64; }\n"
+        "http {\n"
+        "  access_log off;\n"
+        f"  client_body_temp_path {tmp_path / 'client'};\n"
+        f"  proxy_temp_path {tmp_path / 'proxy'};\n"
+        f"{value}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    return config
+
+
+def _start_nginx(nginx: str, config: Path, prefix: Path, port: int):
+    checked = subprocess.run(
+        [nginx, "-t", "-p", f"{prefix}/", "-c", str(config)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert checked.returncode == 0, checked.stderr
+    process = subprocess.Popen(
+        [nginx, "-p", f"{prefix}/", "-c", str(config)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    for _attempt in range(100):
+        if process.poll() is not None:
+            raise AssertionError(process.stderr.read())
+        try:
+            _http_response(port, "/")
+            return process
+        except OSError:
+            time.sleep(0.01)
+    process.terminate()
+    process.wait(timeout=2)
+    raise AssertionError("isolated nginx did not start")
+
+
+def _stop_nginx(process: subprocess.Popen[str]) -> None:
+    process.terminate()
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=2)
+    assert process.returncode is not None
 
 
 def test_nginx_entry_authenticates_every_https_path_and_keeps_loopback_upstream():
@@ -482,7 +540,10 @@ def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
             assert "/admin" not in block
 
 
-def test_each_stubbed_workspace_upstream_failure_is_isolated_to_its_routes():
+def test_each_stubbed_workspace_upstream_failure_is_isolated_by_rendered_nginx(
+    tmp_path,
+):
+    nginx = _nginx_binary()
     value = _text(FORMAL_NGINX).split("# HTTPS_ENTRY_BEGIN", 1)[1]
     _assert_no_workspace_failure_fallback(value)
     routes = (
@@ -498,59 +559,48 @@ def test_each_stubbed_workspace_upstream_failure_is_isolated_to_its_routes():
         "/voc/",
         "/voc/records/VOC-20260903-001",
     )
-    route_owners = {
-        route: _workspace_proxy_for_path(value, route) for route in routes
-    }
-    platform = "http://127.0.0.1:8080"
-    office = "http://127.0.0.1:8011"
-    fae = "http://127.0.0.1:8000"
-    voc = "http://172.29.0.3:18130"
-    assert route_owners == {
-        "/": platform,
-        "/hr/": platform,
-        "/marketing/gtm/conversations/mkt%3Aone": platform,
-        "/admin/sessions": platform,
-        "/fae/manage/issues": platform,
-        "/office/": office,
-        "/office/?view=services": office,
-        "/fae/": fae,
-        "/fae/conversations/fae%3Aone": fae,
-        "/voc/": voc,
-        "/voc/records/VOC-20260903-001": voc,
-    }
-    owners = {
-        platform,
-        office,
-        fae,
-        voc,
-    }
     expected_failure_routes = {
-        office: {"/office/", "/office/?view=services"},
-        fae: {"/fae/", "/fae/conversations/fae%3Aone"},
-        voc: {"/voc/", "/voc/records/VOC-20260903-001"},
+        "office": {"/office/", "/office/?view=services"},
+        "fae": {"/fae/", "/fae/conversations/fae%3Aone"},
+        "voc": {"/voc/", "/voc/records/VOC-20260903-001"},
     }
-    for failed_upstream, expected_changed in expected_failure_routes.items():
+    owners = {"platform", "office", "fae", "voc"}
+    for failed_owner, expected_changed in expected_failure_routes.items():
         upstreams = {
             owner: _start_http_server(_upstream_handler(owner)) for owner in owners
         }
-        upstream_ports = {
-            owner: server.server_port
-            for owner, (server, _thread) in upstreams.items()
-        }
-        proxy, proxy_thread = _start_http_server(
-            _proxy_handler(value, upstream_ports)
-        )
+        process = None
         stopped: set[str] = set()
         try:
+            upstream_ports = {
+                owner: server.server_port
+                for owner, (server, _thread) in upstreams.items()
+            }
+            nginx_root = tmp_path / failed_owner
+            nginx_root.mkdir()
+            listen_port = _unused_loopback_port()
+            redirect_port = _unused_loopback_port()
+            while (
+                redirect_port == listen_port
+                or redirect_port in upstream_ports.values()
+            ):
+                redirect_port = _unused_loopback_port()
+            config = _render_isolated_nginx(
+                nginx_root,
+                listen_port=listen_port,
+                redirect_port=redirect_port,
+                upstream_ports=upstream_ports,
+            )
+            process = _start_nginx(nginx, config, nginx_root, listen_port)
             baseline = {
-                route: _http_response(proxy.server_port, route) for route in routes
+                route: _http_response(listen_port, route) for route in routes
             }
             assert all(response[0] == 200 for response in baseline.values())
-            server, thread = upstreams[failed_upstream]
+            server, thread = upstreams[failed_owner]
             _stop_http_server(server, thread)
-            stopped.add(failed_upstream)
+            stopped.add(failed_owner)
             failed = {
-                route: _http_response(proxy.server_port, route) for route in routes
+                route: _http_response(listen_port, route) for route in routes
             }
             changed = {
                 route for route in routes if failed[route] != baseline[route]
@@ -558,14 +608,15 @@ def test_each_stubbed_workspace_upstream_failure_is_isolated_to_its_routes():
             assert changed == expected_changed
             assert all(failed[route][0] == 502 for route in changed)
             assert all(failed[route][1] == "" for route in changed)
-            assert all(b"unavailable" in failed[route][2] for route in changed)
+            assert all(failed[route][2] for route in changed)
             assert all(
                 failed[route] == baseline[route]
                 for route in routes
                 if route not in changed
             )
         finally:
-            _stop_http_server(proxy, proxy_thread)
+            if process is not None:
+                _stop_nginx(process)
             for owner, (server, thread) in upstreams.items():
                 if owner not in stopped:
                     _stop_http_server(server, thread)
@@ -581,3 +632,36 @@ def test_failure_isolation_gate_rejects_server_level_admin_fallback():
 
     with pytest.raises(AssertionError):
         _assert_no_workspace_failure_fallback(regressed)
+
+
+def test_failure_isolation_uses_an_nginx_process_not_a_python_proxy():
+    source = _text(Path(__file__))
+    tree = ast.parse(source)
+    function_names = {
+        node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+    }
+    runtime_function = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name
+        == "test_each_stubbed_workspace_upstream_failure_is_isolated_by_rendered_nginx"
+    )
+    runtime_constants = {
+        node.value
+        for node in ast.walk(runtime_function)
+        if isinstance(node, ast.Constant)
+    }
+    calls_popen = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+        and node.func.attr == "Popen"
+        for node in ast.walk(tree)
+    )
+
+    assert "_proxy_handler" not in function_names
+    assert "_start_nginx" in function_names
+    assert calls_popen
+    assert b"unavailable" not in runtime_constants

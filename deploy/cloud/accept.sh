@@ -1355,6 +1355,191 @@ if json.load(open(sys.argv[1], encoding="utf-8")) != {"detail": "Conversation no
 PY
 }
 
+verify_fae_internal_history() {
+  local member_launch_file="$1" role launch_file status_code selected_session_id
+  local member_session_id owner_session_id
+  [[ -f "$member_launch_file" && ! -L "$member_launch_file" ]] || fail
+  "$python" - "$temporary/fae-member-account.json" \
+    "$temporary/fae-owner-account.json" <<'PY' || fail
+import json
+import sys
+import uuid
+
+member_internal_user_id = uuid.UUID(
+    json.load(open(sys.argv[1], encoding="utf-8"))["internal_user_id"]
+)
+owner_internal_user_id = uuid.UUID(
+    json.load(open(sys.argv[2], encoding="utf-8"))["internal_user_id"]
+)
+if member_internal_user_id == owner_internal_user_id:
+    raise SystemExit(1)
+PY
+
+  status_code="$("${curl_owner[@]}" -o "$temporary/fae-owner-launch.json" \
+    -w '%{http_code}' -X POST "$base/api/v1/agents/ai-fae-agent/launch")" || fail
+  [[ "$status_code" == "200" ]] || fail
+
+  for role in member owner; do
+    if [[ "$role" == "member" ]]; then
+      launch_file="$member_launch_file"
+    else
+      launch_file="$temporary/fae-owner-launch.json"
+    fi
+    "$python" - "$launch_file" > "$temporary/fae-$role-exchange.json" <<'PY' || fail
+import json
+import re
+import sys
+import urllib.parse
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+url = value.get("launch_url")
+if not isinstance(url, str):
+    raise SystemExit(1)
+parsed = urllib.parse.urlsplit(url)
+if (parsed.scheme, parsed.netloc, parsed.path) != (
+    "https", "agent.orbbec.com.cn", "/fae/"
+):
+    raise SystemExit(1)
+if parsed.query or parsed.fragment.count("=") != 1:
+    raise SystemExit(1)
+key, code = parsed.fragment.split("=", 1)
+if key != "platform_launch" or urllib.parse.unquote(code) != code:
+    raise SystemExit(1)
+if re.fullmatch(r"[A-Za-z0-9_-]{32,256}", code) is None:
+    raise SystemExit(1)
+print(json.dumps({"code": code}, separators=(",", ":")))
+PY
+    status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+      --max-time 15 --cookie-jar "$temporary/fae-$role.jar" \
+      -o "$temporary/fae-$role-session.json" -w '%{http_code}' -X POST \
+      -H 'Origin: https://agent.orbbec.com.cn' -H 'Content-Type: application/json' \
+      --data-binary "@$temporary/fae-$role-exchange.json" \
+      "$base/fae/api/enterprise/session")" || fail
+    [[ "$status_code" == "201" ]] || fail
+    "$python" - "$temporary/fae-$role-session.json" \
+      "$temporary/fae-$role.jar" "$temporary/fae-$role-account.json" <<'PY' || fail
+import json
+import pathlib
+import sys
+
+session = json.load(open(sys.argv[1], encoding="utf-8"))
+platform_account = json.load(open(sys.argv[3], encoding="utf-8"))
+if set(session) != {
+    "authenticated", "authentication_mode", "display_name",
+    "partner_display_name", "csrf_token",
+}:
+    raise SystemExit(1)
+if session["authenticated"] is not True:
+    raise SystemExit(1)
+if session["authentication_mode"] != "platform_enterprise":
+    raise SystemExit(1)
+if session["display_name"] != platform_account.get("display_name"):
+    raise SystemExit(1)
+if not isinstance(session["csrf_token"], str) or not session["csrf_token"]:
+    raise SystemExit(1)
+cookies = []
+for raw_line in pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").splitlines():
+    line = raw_line.removeprefix("#HttpOnly_")
+    if not line or line.startswith("#"):
+        continue
+    fields = line.split("\t")
+    if len(fields) == 7 and fields[5] == "__Host-fae_enterprise_session":
+        cookies.append(fields)
+if len(cookies) != 1:
+    raise SystemExit(1)
+cookie = cookies[0]
+if cookie[2] != "/" or cookie[3] != "TRUE" or not cookie[6]:
+    raise SystemExit(1)
+PY
+    status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+      --max-time 15 --cookie "$temporary/fae-$role.jar" \
+      -o "$temporary/fae-$role-history.json" -w '%{http_code}' \
+      "$base/fae/api/authenticated/conversations?limit=30")" || fail
+    [[ "$status_code" == "200" ]] || fail
+  done
+
+  "$python" - "$temporary/fae-member-history.json" \
+    "$temporary/fae-owner-history.json" \
+    > "$temporary/fae-history-subjects.txt" <<'PY' || fail
+import json
+import sys
+import uuid
+
+def session_ids(path):
+    value = json.load(open(path, encoding="utf-8"))
+    if set(value) != {"items", "next_cursor"} or not isinstance(value["items"], list):
+        raise SystemExit(1)
+    ids = []
+    for item in value["items"]:
+        if set(item) != {
+            "session_id", "title", "channel", "created_at", "last_active_at",
+        }:
+            raise SystemExit(1)
+        ids.append(str(uuid.UUID(item["session_id"])))
+    return ids
+
+member_session_ids = session_ids(sys.argv[1])
+owner_session_ids = session_ids(sys.argv[2])
+if not member_session_ids or not owner_session_ids:
+    raise SystemExit(1)
+member_session_id = member_session_ids[0]
+owner_session_id = owner_session_ids[0]
+if not set(member_session_ids).isdisjoint(owner_session_ids):
+    raise SystemExit(1)
+print(member_session_id, owner_session_id)
+PY
+  read -r member_session_id owner_session_id \
+    < "$temporary/fae-history-subjects.txt" || fail
+
+  for role in member owner; do
+    if [[ "$role" == "member" ]]; then
+      selected_session_id="$member_session_id"
+    else
+      selected_session_id="$owner_session_id"
+    fi
+    status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+      --max-time 15 --cookie "$temporary/fae-$role.jar" \
+      -o "$temporary/fae-$role-history-detail.json" -w '%{http_code}' \
+      "$base/fae/api/authenticated/conversations/$selected_session_id")" || fail
+    [[ "$status_code" == "200" ]] || fail
+    "$python" - "$temporary/fae-$role-history-detail.json" \
+      "$selected_session_id" <<'PY' || fail
+import json
+import sys
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+if set(value) != {
+    "session_id", "channel", "messages", "current_schema", "attachments",
+}:
+    raise SystemExit(1)
+if value["session_id"] != sys.argv[2]:
+    raise SystemExit(1)
+if not isinstance(value["messages"], list) or not isinstance(value["attachments"], list):
+    raise SystemExit(1)
+PY
+  done
+
+  status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+    --max-time 15 --cookie "$temporary/fae-owner.jar" \
+    -o "$temporary/fae-owner-cross-history.json" -w '%{http_code}' \
+    "$base/fae/api/authenticated/conversations/$member_session_id")" || fail
+  [[ "$status_code" == "404" ]] || fail
+  status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+    --max-time 15 --cookie "$temporary/fae-member.jar" \
+    -o "$temporary/fae-member-cross-history.json" -w '%{http_code}' \
+    "$base/fae/api/authenticated/conversations/$owner_session_id")" || fail
+  [[ "$status_code" == "404" ]] || fail
+  /usr/bin/cmp -s "$temporary/fae-owner-cross-history.json" \
+    "$temporary/fae-member-cross-history.json" || fail
+  "$python" - "$temporary/fae-owner-cross-history.json" <<'PY' || fail
+import json
+import sys
+
+if json.load(open(sys.argv[1], encoding="utf-8")) != {"detail": "conversation not found"}:
+    raise SystemExit(1)
+PY
+}
+
 verify_markdown_rendering() {
   local conversation_id="$1" browser_cookie_file="$2" workspace="$3"
   local chrome=/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
@@ -1956,15 +2141,19 @@ accept_v2_real() {
   # the token out of the process list and command arguments.
   [[ "$("${curl_member[@]}" -o "$temporary/fae-launch.json" -w '%{http_code}' -X POST "$base/api/v1/agents/ai-fae-agent/launch")" == "200" ]] || fail
   "$python" - "$temporary/fae-launch.json" <<'PY' || fail
-import json,sys,urllib.parse
+import json,re,sys,urllib.parse
 value=json.load(open(sys.argv[1],encoding='utf-8'))
 url=value.get('launch_url')
 if not isinstance(url,str): raise SystemExit(1)
 parsed=urllib.parse.urlsplit(url)
-if (parsed.scheme,parsed.netloc,parsed.path) != ('https','fae.orbbec.com.cn','/enterprise/launch'): raise SystemExit(1)
-query=urllib.parse.parse_qs(parsed.query,strict_parsing=True)
-if set(query) != {'code'} or len(query['code']) != 1 or len(query['code'][0]) < 32: raise SystemExit(1)
+if (parsed.scheme,parsed.netloc,parsed.path) != ('https','agent.orbbec.com.cn','/fae/'): raise SystemExit(1)
+if parsed.query or parsed.fragment.count('=') != 1: raise SystemExit(1)
+fragment_key,fragment_code=parsed.fragment.split('=',1)
+if fragment_key != 'platform_launch': raise SystemExit(1)
+if urllib.parse.unquote(fragment_code) != fragment_code: raise SystemExit(1)
+if re.fullmatch(r'[A-Za-z0-9_-]{32,256}', fragment_code) is None: raise SystemExit(1)
 PY
+  verify_fae_internal_history "$temporary/fae-launch.json"
   ENTERPRISE_FAE_LAUNCH_UNCHANGED=true
 
   [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o "$temporary/fae-identity-capabilities.json" -w '%{http_code}' --max-time 15 https://fae.orbbec.com.cn/identity/capabilities)" == "200" ]] || fail
@@ -2084,9 +2273,9 @@ enable_with_rollback() {
   publish_formal_nginx "$nginx_transaction_id"
   workspace_snapshot_after="$(workspace_non_regression_snapshot)" || fail
   [[ "$workspace_snapshot_after" == "$workspace_snapshot_before" ]] || fail
+  remote_feature 1
   commit_formal_nginx_transaction "$nginx_transaction_id"
   nginx_transaction_published="0"
-  remote_feature 1
   trap - ERR EXIT
   trap action_lock_exit EXIT
 }
