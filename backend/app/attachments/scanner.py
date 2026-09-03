@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import socket
 import struct
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from queue import Empty, Full, Queue
+from threading import Event, Thread
 from typing import Protocol
 
 from .conversation_models import MAX_FILE_BYTES
@@ -46,6 +49,7 @@ class ClamAVScanner:
         max_file_bytes: int = MAX_FILE_BYTES,
         connect: Callable[..., socket.socket] = socket.create_connection,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         if host not in {"127.0.0.1", "::1", "localhost"}:
             raise ValueError("attachment scanner host invalid")
@@ -76,6 +80,7 @@ class ClamAVScanner:
         self._max_file_bytes = max_file_bytes
         self._connect = connect
         self._now = now
+        self._monotonic = monotonic
 
     def __repr__(self) -> str:
         return "ClamAVScanner(address=<redacted>)"
@@ -88,15 +93,16 @@ class ClamAVScanner:
             or size > self._max_file_bytes
         ):
             raise ScannerUnavailable()
-        database_version = self._fresh_database_version()
+        deadline = self._monotonic() + self._timeout_seconds
+        database_version = self._fresh_database_version(deadline)
         try:
             with self._connect(
-                self._address, timeout=self._timeout_seconds
+                self._address, timeout=self._remaining(deadline)
             ) as connection:
-                connection.settimeout(self._timeout_seconds)
-                connection.sendall(b"zINSTREAM\0")
+                self._send(connection, b"zINSTREAM\0", deadline)
                 streamed = 0
-                for chunk in chunks:
+                for chunk in self._deadline_chunks(chunks, deadline):
+                    self._remaining(deadline)
                     if not isinstance(chunk, bytes):
                         raise ScannerUnavailable()
                     for offset in range(0, len(chunk), _CLAMD_CHUNK_BYTES):
@@ -104,22 +110,21 @@ class ClamAVScanner:
                         streamed += len(selected)
                         if streamed > size or streamed > self._max_file_bytes:
                             raise ScannerUnavailable()
-                        connection.sendall(struct.pack("!I", len(selected)))
-                        connection.sendall(selected)
+                        self._send(connection, struct.pack("!I", len(selected)), deadline)
+                        self._send(connection, selected, deadline)
                 if streamed != size:
                     raise ScannerUnavailable()
-                connection.sendall(struct.pack("!I", 0))
-                reply = self._recv_reply(connection)
+                self._send(connection, struct.pack("!I", 0), deadline)
+                reply = self._recv_reply(connection, deadline)
         except ScannerUnavailable:
             raise
         except (OSError, RuntimeError, ValueError):
             raise ScannerUnavailable() from None
 
-        normalized = reply.rstrip(b"\0\r\n")
-        if normalized == b"stream: OK":
+        if reply == b"stream: OK":
             return ScanResult(ScanDisposition.CLEAN, database_version)
-        if normalized.startswith(b"stream: ") and normalized.endswith(b" FOUND"):
-            signature_bytes = normalized[len(b"stream: ") : -len(b" FOUND")]
+        if reply.startswith(b"stream: ") and reply.endswith(b" FOUND"):
+            signature_bytes = reply[len(b"stream: ") : -len(b" FOUND")]
             if not signature_bytes or len(signature_bytes) > 255:
                 raise ScannerUnavailable()
             try:
@@ -133,14 +138,54 @@ class ClamAVScanner:
             )
         raise ScannerUnavailable()
 
-    def _fresh_database_version(self) -> int:
+    def _deadline_chunks(
+        self, chunks: Iterable[bytes], deadline: float
+    ) -> Iterable[bytes]:
+        messages: Queue[tuple[str, object]] = Queue(maxsize=1)
+        stopped = Event()
+
+        def publish(message: tuple[str, object]) -> None:
+            while not stopped.is_set():
+                try:
+                    messages.put(message, timeout=0.05)
+                    return
+                except Full:
+                    continue
+
+        def produce() -> None:
+            try:
+                for chunk in chunks:
+                    if stopped.is_set():
+                        return
+                    publish(("chunk", chunk))
+            except Exception as error:  # noqa: BLE001 - source errors are sanitized
+                publish(("error", error))
+            finally:
+                publish(("done", None))
+
+        Thread(target=produce, name="attachment-scan-source", daemon=True).start()
+        try:
+            while True:
+                try:
+                    kind, value = messages.get(timeout=self._remaining(deadline))
+                except Empty:
+                    raise ScannerUnavailable() from None
+                self._remaining(deadline)
+                if kind == "done":
+                    return
+                if kind != "chunk" or not isinstance(value, bytes):
+                    raise ScannerUnavailable()
+                yield value
+        finally:
+            stopped.set()
+
+    def _fresh_database_version(self, deadline: float) -> int:
         try:
             with self._connect(
-                self._address, timeout=self._timeout_seconds
+                self._address, timeout=self._remaining(deadline)
             ) as connection:
-                connection.settimeout(self._timeout_seconds)
-                connection.sendall(b"zVERSION\0")
-                response = self._recv_reply(connection).rstrip(b"\0\r\n")
+                self._send(connection, b"zVERSION\0", deadline)
+                response = self._recv_reply(connection, deadline)
             parts = response.split(b"/")
             if len(parts) < 3 or not parts[0].startswith(b"ClamAV "):
                 raise ScannerUnavailable()
@@ -157,18 +202,34 @@ class ClamAVScanner:
         except (OSError, RuntimeError, UnicodeError, ValueError):
             raise ScannerUnavailable() from None
 
-    @staticmethod
-    def _recv_reply(connection: socket.socket) -> bytes:
+    def _remaining(self, deadline: float) -> float:
+        remaining = deadline - self._monotonic()
+        if remaining <= 0:
+            raise ScannerUnavailable()
+        return remaining
+
+    def _send(self, connection: socket.socket, data: bytes, deadline: float) -> None:
+        connection.settimeout(self._remaining(deadline))
+        connection.sendall(data)
+        self._remaining(deadline)
+
+    def _recv_reply(self, connection: socket.socket, deadline: float) -> bytes:
         result = bytearray()
         while len(result) < _MAX_REPLY_BYTES:
+            connection.settimeout(self._remaining(deadline))
             chunk = connection.recv(min(1024, _MAX_REPLY_BYTES - len(result)))
+            self._remaining(deadline)
             if not isinstance(chunk, bytes):
                 raise ScannerUnavailable()
             if not chunk:
-                break
+                raise ScannerUnavailable()
             result.extend(chunk)
-            if b"\0" in chunk or b"\n" in chunk:
-                break
+            if b"\n" in chunk or b"\r" in chunk:
+                raise ScannerUnavailable()
+            if b"\0" in chunk:
+                if result.count(0) != 1 or result[-1] != 0:
+                    raise ScannerUnavailable()
+                return bytes(result[:-1])
         if not result or len(result) >= _MAX_REPLY_BYTES:
             raise ScannerUnavailable()
-        return bytes(result)
+        raise ScannerUnavailable()

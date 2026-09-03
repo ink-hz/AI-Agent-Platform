@@ -8,6 +8,8 @@ psycopg[binary]>=3.2
 boto3==1.42.97
 cryptography==50.0.0
 Pillow==11.3.0
+pypdf==6.16.2
+defusedxml==0.7.1
 dingtalk-stream==0.24.3
 pytest>=8.0
 pytest-asyncio>=0.24

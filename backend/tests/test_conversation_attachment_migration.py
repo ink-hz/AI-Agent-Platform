@@ -1058,7 +1058,7 @@ def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
         derivative_id = uuid4()
         assert brain.execute(
             "select platform_attachments.record_attachment_derivative_v64("
-            "%s,%s,'preview',%s,1,'application/pdf',64,%s,null)",
+            "%s,%s,'preview',%s,1,'image/png',64,%s,null)",
             (derivative_job_id, derivative_id, b"d" * 29, b"p" * 32),
         ).fetchone() == (derivative_id,)
         brain.commit()
@@ -1077,6 +1077,77 @@ def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
             "select state from platform_attachments.derivatives where derivative_id=%s",
             (derivative_id,),
         ).fetchone() == ("ready",)
+
+
+@pytest.mark.postgres
+def test_v64_processing_requires_exact_predecessor_and_safe_derivative_shape(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        wrong_validate_attachment = _insert_attachment(admin, context, state="scanning")
+        wrong_scan_attachment = _insert_attachment(admin, context, state="validating")
+        ready_attachment = _insert_attachment(admin, context, state="ready")
+        validate_job, scan_job, derivative_job, metadata_job = (
+            uuid4(), uuid4(), uuid4(), uuid4()
+        )
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind,state,attempt_count) values "
+            "(%s,%s,'validate','running',1),(%s,%s,'scan','running',1)",
+            (
+                validate_job,
+                wrong_validate_attachment,
+                scan_job,
+                wrong_scan_attachment,
+            ),
+        )
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind,derivative_kind,state,attempt_count) "
+            "values (%s,%s,'derive','preview','running',1)",
+            (derivative_job, ready_attachment),
+        )
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind,derivative_kind,state,attempt_count) "
+            "values (%s,%s,'derive','metadata','running',1)",
+            (metadata_job, ready_attachment),
+        )
+        admin.commit()
+
+    with psycopg.connect(environment["urls"]["platform_brain_worker"]) as brain:
+        for job_id in (validate_job, scan_job):
+            with (
+                pytest.raises(psycopg.errors.CheckViolation, match="predecessor"),
+                brain.transaction(),
+            ):
+                brain.execute(
+                    "select platform_attachments.record_attachment_processing_result_v64("
+                    "%s,'retry','temporary')",
+                    (job_id,),
+                )
+        for mime, size in (
+            ("application/pdf", 64),
+            ("image/png", 0),
+            ("image/png", 10 * 1024 * 1024 + 1),
+        ):
+            with (
+                pytest.raises(psycopg.errors.CheckViolation, match="derivative invalid"),
+                brain.transaction(),
+            ):
+                brain.execute(
+                    "select platform_attachments.record_attachment_derivative_v64("
+                    "%s,%s,'preview',%s,1,%s,%s,%s,null)",
+                    (derivative_job, uuid4(), b"d" * 29, mime, size, b"p" * 32),
+                )
+        metadata_id = uuid4()
+        assert brain.execute(
+            "select platform_attachments.record_attachment_derivative_v64("
+            "%s,%s,'metadata',%s,1,'application/json',128,%s,null)",
+            (metadata_job, metadata_id, b"d" * 29, b"p" * 32),
+        ).fetchone() == (metadata_id,)
 
 
 @pytest.mark.postgres

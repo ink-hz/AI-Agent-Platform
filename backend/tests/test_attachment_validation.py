@@ -83,10 +83,32 @@ def test_declared_extension_and_mime_are_not_authoritative() -> None:
         ("truncated.png", "invalid_image"),
         ("zip_bomb.docx", "archive_limits_exceeded"),
         ("encrypted.docx", "encrypted_document"),
+        ("local_encrypted.docx", "encrypted_document"),
+        ("encrypted_container.docx", "encrypted_document"),
         ("encrypted.pdf", "encrypted_document"),
         ("active.svg", "active_content"),
         ("active.html", "active_content"),
         ("script.sh", "active_content"),
+        ("bom_active.html", "active_content"),
+        ("polyglot.png", "invalid_image"),
+        ("polyglot.jpg", "invalid_image"),
+        ("concatenated.jpg", "invalid_image"),
+        ("escaped_active.pdf", "active_content"),
+        ("external_reference.pdf", "active_content"),
+        ("compressed_active.pdf", "active_content"),
+        ("movie.pdf", "active_content"),
+        ("external_relationship.docx", "active_content"),
+        ("application_relationship.docx", "active_content"),
+        ("external_connections.xlsx", "active_content"),
+        ("macro_content.docx", "active_content"),
+        ("activex.docx", "active_content"),
+        ("embedding.docx", "active_content"),
+        ("traversal.docx", "archive_limits_exceeded"),
+        ("untyped_part.docx", "invalid_office"),
+        ("polyglot.docx", "invalid_office"),
+        ("corrupt_crc.docx", "invalid_office"),
+        ("forged_metadata.docx", "archive_limits_exceeded"),
+        ("malformed_relationship.docx", "invalid_office"),
     ),
 )
 def test_validation_rejects_unsafe_content_with_stable_reason(
@@ -105,6 +127,22 @@ def test_validation_rejects_unsafe_content_with_stable_reason(
     assert captured.value.reason == reason
     assert name not in str(captured.value)
     assert name not in repr(captured.value)
+
+
+def test_minimal_office_fixtures_have_authoritative_package_roots() -> None:
+    """The positive corpus must exercise actual OPC relationships and roots."""
+    import zipfile
+
+    expected = {
+        "valid.docx": ("word/document.xml", "document"),
+        "valid.xlsx": ("xl/workbook.xml", "workbook"),
+        "valid.pptx": ("ppt/presentation.xml", "presentation"),
+    }
+    for name, (part, root) in expected.items():
+        with zipfile.ZipFile(FIXTURES / name) as package:
+            assert "_rels/.rels" in package.namelist()
+            assert part in package.namelist()
+            assert root.encode() in package.read(part)
 
 
 @pytest.mark.parametrize("wrong", ["size", "digest"])

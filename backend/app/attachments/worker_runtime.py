@@ -9,7 +9,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import psycopg
 from psycopg.rows import dict_row
@@ -20,11 +20,17 @@ from app.execution_relay.content_crypto import ContentCodec, SealedContent
 from app.local_secrets import read_secret_file
 
 from .conversation_repository import attachment_object_subject
-from .derivatives import Derivative, DerivativeBuilder
+from .derivatives import BubblewrapPdfSandbox, Derivative, DerivativeBuilder
 from .object_writer import _credential
 from .scanner import ClamAVScanner
 from .validation import AttachmentValidator, OpenedObject, ValidationResult
-from .worker import AttachmentProcessor, ProcessingJob, StoredDerivative
+from .worker import (
+    AttachmentProcessor,
+    DerivativeFinalizeError,
+    ProcessingJob,
+    ReconciliationStatus,
+    StoredDerivative,
+)
 
 
 class AttachmentWorkerRuntimeError(RuntimeError):
@@ -155,21 +161,80 @@ class AttachmentProcessingRepository:
         except Exception:  # noqa: BLE001 - DB adapter errors are sanitized
             raise AttachmentWorkerRuntimeError() from None
 
+    def reconcile_result(
+        self, job: ProcessingJob, state: str
+    ) -> ReconciliationStatus:
+        expected_job = "queued" if state == "retry" else (
+            "completed" if state in {"scanning", "ready"} else "failed"
+        )
+        expected_attachment = {
+            "scanning": "scanning",
+            "ready": "ready",
+            "quarantined": "quarantined",
+            "rejected": "rejected",
+        }.get(state)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select job.state as job_state,attachment.state as attachment_state "
+                    "from platform_attachments.processing_jobs job "
+                    "join platform_attachments.attachments attachment "
+                    "on attachment.attachment_id=job.attachment_id "
+                    "where job.processing_job_id=%s and job.attachment_id=%s",
+                    (job.processing_job_id, job.attachment_id),
+                ).fetchone()
+            if not row:
+                return ReconciliationStatus.UNKNOWN
+            if state == "retry":
+                predecessor = {
+                    "validate": "validating",
+                    "scan": "scanning",
+                    "derive": "ready",
+                }.get(job.job_kind)
+                committed = (
+                    row["job_state"] == expected_job
+                    and row["attachment_state"] == predecessor
+                ) or (
+                    row["job_state"] == "failed"
+                    and row["attachment_state"]
+                    == ("ready" if job.job_kind == "derive" else "rejected")
+                )
+                if committed:
+                    return ReconciliationStatus.COMMITTED
+            elif (
+                row["job_state"] == expected_job
+                and (
+                    expected_attachment is None
+                    or row["attachment_state"] == expected_attachment
+                )
+            ):
+                return ReconciliationStatus.COMMITTED
+            if row["job_state"] == "running":
+                return ReconciliationStatus.RUNNING
+            return ReconciliationStatus.UNKNOWN
+        except Exception:  # noqa: BLE001 - uncertainty must not cause mutation
+            return ReconciliationStatus.UNKNOWN
+
     def record_derivative(
         self,
         job: ProcessingJob,
         derivative: Derivative,
         stored: StoredDerivative,
     ) -> None:
-        derivative_id = uuid4()
+        derivative_id = uuid5(
+            NAMESPACE_URL,
+            f"platform-attachment-derivative-v64:{job.processing_job_id}:{job.derivative_kind or derivative.kind}",
+        )
         if not hasattr(self._content_codec, "seal_json"):
-            raise AttachmentWorkerRuntimeError()
+            raise DerivativeFinalizeError(ambiguous=False)
+        executed = False
         try:
             sealed = self._content_codec.seal_json(
                 derivative_object_subject(job.attachment_id, derivative_id),
                 {"object_ref": stored.object_ref},
             )
             with self._connection() as connection:
+                executed = True
                 row = connection.execute(
                     "select platform_attachments."
                     "record_attachment_derivative_v64("
@@ -186,11 +251,43 @@ class AttachmentProcessingRepository:
                     ),
                 ).fetchone()
             if row is None or row["derivative_id"] != derivative_id:
-                raise AttachmentWorkerRuntimeError()
-        except AttachmentWorkerRuntimeError:
+                raise DerivativeFinalizeError(ambiguous=True)
+        except DerivativeFinalizeError:
             raise
         except Exception:  # noqa: BLE001 - DB/codec errors are sanitized
-            raise AttachmentWorkerRuntimeError() from None
+            raise DerivativeFinalizeError(ambiguous=executed) from None
+
+    def reconcile_derivative(
+        self, job: ProcessingJob, stored: StoredDerivative
+    ) -> ReconciliationStatus:
+        derivative_id = uuid5(
+            NAMESPACE_URL,
+            f"platform-attachment-derivative-v64:{job.processing_job_id}:{job.derivative_kind}",
+        )
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select derivative.derivative_id,derivative.size_bytes,"
+                    "derivative.sha256,job.state as job_state "
+                    "from platform_attachments.derivatives derivative "
+                    "join platform_attachments.processing_jobs job "
+                    "on job.attachment_id=derivative.attachment_id "
+                    "where derivative.derivative_id=%s "
+                    "and job.processing_job_id=%s",
+                    (derivative_id, job.processing_job_id),
+                ).fetchone()
+            if (
+                row
+                and row["job_state"] == "completed"
+                and int(row["size_bytes"]) == stored.size_bytes
+                and bytes(row["sha256"]) == stored.sha256
+            ):
+                return ReconciliationStatus.COMMITTED
+            if row and row["job_state"] == "running":
+                return ReconciliationStatus.RUNNING
+            return ReconciliationStatus.UNKNOWN
+        except Exception:  # noqa: BLE001 - uncertainty must not cause mutation
+            return ReconciliationStatus.UNKNOWN
 
 
 class S3ProcessingObjectStore:
@@ -207,7 +304,14 @@ class S3ProcessingObjectStore:
         try:
             head = self._client.head_object(Bucket=self._bucket, Key=object_ref)
             size = int(head["ContentLength"])
-            response = self._client.get_object(Bucket=self._bucket, Key=object_ref)
+            get_args = {"Bucket": self._bucket, "Key": object_ref}
+            version_id = head.get("VersionId")
+            etag = head.get("ETag")
+            if isinstance(version_id, str) and version_id and version_id != "null":
+                get_args["VersionId"] = version_id
+            elif isinstance(etag, str) and etag:
+                get_args["IfMatch"] = etag
+            response = self._client.get_object(**get_args)
             if int(response["ContentLength"]) != size:
                 response["Body"].close()
                 raise AttachmentWorkerRuntimeError()
@@ -217,10 +321,16 @@ class S3ProcessingObjectStore:
         except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
             raise AttachmentWorkerRuntimeError() from None
 
-    def put_derivative(self, data: bytes) -> StoredDerivative:
-        if not isinstance(data, bytes) or not data:
+    def put_derivative(self, data: bytes, *, object_key: str) -> StoredDerivative:
+        if (
+            not isinstance(data, bytes)
+            or not data
+            or not isinstance(object_key, str)
+            or len(object_key) != 64
+            or any(character not in "0123456789abcdef" for character in object_key)
+        ):
             raise AttachmentWorkerRuntimeError()
-        object_ref = secrets.token_hex(32)
+        object_ref = object_key
         digest = hashlib.sha256(data).digest()
         try:
             self._client.put_object(
@@ -281,6 +391,7 @@ def build_processor() -> AttachmentProcessor:
         f"platform-attachments.{secrets.token_hex(4)}",
     ).strip()
     renderer = os.getenv("PLATFORM_ATTACHMENT_PDFTOPPM_PATH", "/usr/bin/pdftoppm")
+    bubblewrap = os.getenv("PLATFORM_ATTACHMENT_BWRAP_PATH", "/usr/bin/bwrap")
     return AttachmentProcessor(
         repository=AttachmentProcessingRepository(database_url, content_codec=codec),
         object_store=S3ProcessingObjectStore(
@@ -289,17 +400,38 @@ def build_processor() -> AttachmentProcessor:
         ),
         validator=AttachmentValidator(),
         scanner=ClamAVScanner(),
-        derivatives=DerivativeBuilder(pdftoppm_path=renderer),
+        derivatives=DerivativeBuilder(
+            sandbox_runner=BubblewrapPdfSandbox(
+                bubblewrap_path=bubblewrap,
+                pdftoppm_path=renderer,
+            )
+        ),
         worker_id=worker_id,
     )
 
 
-async def run() -> None:
-    processor = build_processor()
+async def run(
+    processor: AttachmentProcessor | None = None,
+    *,
+    sleep: Callable[[float], Any] = asyncio.sleep,
+    max_iterations: int | None = None,
+) -> None:
+    processor = processor or build_processor()
+    failures = 0
+    iterations = 0
     while True:
-        changed = await processor.process_next()
+        if max_iterations is not None and iterations >= max_iterations:
+            return
+        iterations += 1
+        try:
+            changed = await processor.process_next()
+            failures = 0
+        except Exception:  # noqa: BLE001 - one malformed job must not kill worker
+            failures += 1
+            await sleep(min(30.0, float(2 ** min(failures - 1, 5))))
+            continue
         if not changed:
-            await asyncio.sleep(1.0)
+            await sleep(1.0)
 
 
 def main() -> None:

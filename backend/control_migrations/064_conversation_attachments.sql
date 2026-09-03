@@ -246,7 +246,7 @@ create table platform_attachments.derivatives (
   derivative_id uuid primary key,
   attachment_id uuid not null
     references platform_attachments.attachments(attachment_id),
-  kind text not null check (kind in ('thumbnail','preview','text','ocr')),
+  kind text not null check (kind in ('thumbnail','preview','metadata','text','ocr')),
   object_ref_ciphertext bytea not null
     check (octet_length(object_ref_ciphertext) between 29 and 1048576),
   object_ref_key_version integer not null check (object_ref_key_version > 0),
@@ -320,7 +320,7 @@ create table platform_attachments.processing_jobs (
   job_kind text not null check (job_kind in ('validate','scan','derive')),
   derivative_kind text
     check (derivative_kind is null or derivative_kind in (
-      'thumbnail','preview','text','ocr'
+      'thumbnail','preview','metadata','text','ocr'
     )),
   state text not null default 'queued'
     check (state in ('queued','running','completed','failed')),
@@ -909,6 +909,10 @@ begin
   if not found or selected_current_state='deleted' then
     raise check_violation using message='Attachment deleted or unavailable';
   end if;
+  if (selected_job.job_kind='validate' and selected_current_state <> 'validating')
+     or (selected_job.job_kind='scan' and selected_current_state <> 'scanning')
+     or (selected_job.job_kind='derive' and selected_current_state <> 'ready')
+  then raise check_violation using message='Attachment processing predecessor invalid'; end if;
 
   if selected_job.job_kind='validate' and selected_attachment_state='scanning' then
     if selected_detected_mime is null
@@ -994,13 +998,16 @@ begin
   elsif (selected_job.job_kind='scan' and selected_attachment_state='ready') then
     next_job_kind := 'derive';
     next_derivative_kind := case
-      when selected_current_detected_mime in ('image/png','image/jpeg')
-        then 'thumbnail'
-      else 'preview'
+      when selected_current_detected_mime in ('image/png','image/jpeg') then 'thumbnail'
+      when selected_current_detected_mime='application/pdf' then 'preview'
+      else 'metadata'
     end;
   elsif not (
-    selected_job.job_kind in ('validate','scan')
-    and selected_attachment_state in ('quarantined','rejected')
+    (selected_job.job_kind in ('validate','scan')
+      and selected_attachment_state in ('quarantined','rejected'))
+    or (selected_job.job_kind='derive'
+      and selected_attachment_state='rejected'
+      and selected_state_reason='integrity_mismatch')
   ) then
     raise check_violation using message='Attachment processing transition invalid';
   end if;
@@ -1083,8 +1090,16 @@ begin
     raise check_violation using message='Derivative attachment unavailable';
   end if;
   if octet_length(selected_object_ref_ciphertext) < 29
-     or selected_object_ref_key_version <= 0 or selected_detected_mime is null
-     or selected_size_bytes < 0 or octet_length(selected_sha256) <> 32
+     or selected_object_ref_key_version <= 0
+     or octet_length(selected_sha256) <> 32
+     or not (
+       (selected_kind in ('thumbnail','preview')
+         and selected_detected_mime='image/png'
+         and selected_size_bytes between 1 and 10485760)
+       or (selected_kind='metadata'
+         and selected_detected_mime='application/json'
+         and selected_size_bytes between 1 and 1024)
+     )
   then raise check_violation using message='Attachment derivative invalid'; end if;
   insert into platform_attachments.derivatives(
     derivative_id,attachment_id,kind,object_ref_ciphertext,

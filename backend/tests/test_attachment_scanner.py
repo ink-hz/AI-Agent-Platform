@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import struct
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -13,20 +16,30 @@ from app.attachments.scanner import (
     ScannerUnavailable,
 )
 from app.attachments.validation import OpenedObject
-from app.attachments.worker import AttachmentProcessor, ProcessingJob
-from app.attachments.worker_runtime import AttachmentProcessingRepository
+from app.attachments.worker import (
+    AttachmentProcessor,
+    ProcessingJob,
+    ProcessingTransitionError,
+    ReconciliationStatus,
+)
+from app.attachments.worker_runtime import (
+    AttachmentProcessingRepository,
+    S3ProcessingObjectStore,
+    run,
+)
 from app.execution_relay.content_crypto import SealedContent
 
 FIXTURES = Path(__file__).parent / "fixtures" / "conversation_attachments"
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
-FRESH_VERSION = b"ClamAV 1.4.2/28000/Wed Sep  2 12:00:00 2026\n"
+FRESH_VERSION = b"ClamAV 1.4.2/28000/Wed Sep  2 12:00:00 2026\0"
 
 
 class FakeSocket:
-    def __init__(self, response: bytes | BaseException) -> None:
-        self.response = response
+    def __init__(self, response: bytes | BaseException | list[bytes]) -> None:
+        self.responses = list(response) if isinstance(response, list) else [response]
         self.sent = bytearray()
         self.timeout = None
+        self.timeouts = []
 
     def __enter__(self):
         return self
@@ -36,32 +49,36 @@ class FakeSocket:
 
     def settimeout(self, timeout: float) -> None:
         self.timeout = timeout
+        self.timeouts.append(timeout)
 
     def sendall(self, data: bytes) -> None:
         self.sent.extend(data)
 
     def recv(self, _size: int) -> bytes:
-        if isinstance(self.response, BaseException):
-            raise self.response
-        response, self.response = self.response, b""
+        if not self.responses:
+            return b""
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
         return response
 
 
 class SocketFactory:
-    def __init__(self, *responses: bytes | BaseException) -> None:
+    def __init__(self, *responses: bytes | BaseException | list[bytes]) -> None:
         self.sockets = [FakeSocket(response) for response in responses]
         self.sockets_used: list[FakeSocket] = []
 
     def __call__(self, address, timeout):
         assert address == ("127.0.0.1", 3310)
-        assert timeout == 2.0
+        assert 0 < timeout <= 2.0
         selected = self.sockets.pop(0)
         self.sockets_used.append(selected)
         return selected
 
 
 def scanner_with(
-    *responses: bytes | BaseException,
+    *responses: bytes | BaseException | list[bytes],
+    monotonic=lambda: 0.0,
 ) -> tuple[ClamAVScanner, SocketFactory]:
     factory = SocketFactory(*responses)
     scanner = ClamAVScanner(
@@ -71,6 +88,7 @@ def scanner_with(
         max_database_age_seconds=48 * 60 * 60,
         connect=factory,
         now=lambda: NOW,
+        monotonic=monotonic,
     )
     return scanner, factory
 
@@ -112,7 +130,7 @@ def test_clamav_reports_eicar_as_infected_without_exposing_signature() -> None:
         (OSError("daemon host detail"),),
         (TimeoutError("secret timeout"),),
         (b"unexpected reply\0",),
-        (b"ClamAV 1.4.2/28000/Sun Aug  2 12:00:00 2026\n",),
+        (b"ClamAV 1.4.2/28000/Sun Aug  2 12:00:00 2026\0",),
         (FRESH_VERSION, b"stream: protocol ERROR\0"),
     ),
 )
@@ -126,6 +144,95 @@ def test_clamav_failures_and_stale_database_fail_closed(responses) -> None:
     assert "secret" not in repr(captured.value)
 
 
+def test_clamav_accepts_fragmented_replies_only_when_nul_terminated() -> None:
+    scanner, _factory = scanner_with(
+        [b"ClamAV 1.4.2/", b"28000/Wed Sep  2 12:00:00 2026", b"\0"],
+        [b"stream", b": O", b"K", b"\0"],
+    )
+
+    result = scanner.scan_stream((b"clean",), size=5)
+
+    assert result.disposition is ScanDisposition.CLEAN
+
+
+@pytest.mark.parametrize(
+    "reply",
+    (
+        b"stream: OK",
+        b"stream: OK\n",
+        b"stream: OK\0trailing",
+    ),
+)
+def test_clamav_rejects_missing_newline_or_nonfinal_nul_terminators(reply: bytes) -> None:
+    scanner, _factory = scanner_with(FRESH_VERSION, reply)
+
+    with pytest.raises(ScannerUnavailable):
+        scanner.scan_stream((b"clean",), size=5)
+
+
+def test_clamav_uses_one_total_deadline_across_source_and_protocol() -> None:
+    class Clock:
+        value = 0.0
+
+        def __call__(self):
+            return self.value
+
+    clock = Clock()
+    scanner, _factory = scanner_with(FRESH_VERSION, b"stream: OK\0", monotonic=clock)
+
+    def slow_source():
+        clock.value = 1.25
+        yield b"clean"
+
+    scanner._timeout_seconds = 1.0
+    with pytest.raises(ScannerUnavailable):
+        scanner.scan_stream(slow_source(), size=5)
+
+
+def test_clamav_bounds_slow_drip_reply_by_total_deadline() -> None:
+    class DripClock:
+        value = 0.0
+
+        def __call__(self):
+            current = self.value
+            self.value += 0.16
+            return current
+
+    clock = DripClock()
+    scanner, _factory = scanner_with(
+        [b"Clam", b"AV 1.4.2/", b"28000/", b"Wed Sep  2 12:00:00 2026", b"\0"],
+        b"stream: OK\0",
+        monotonic=clock,
+    )
+    scanner._timeout_seconds = 0.5
+
+    with pytest.raises(ScannerUnavailable):
+        scanner.scan_stream((b"clean",), size=5)
+
+
+def test_clamav_deadline_interrupts_a_blocked_source_iterator() -> None:
+    release = threading.Event()
+    scanner, _factory = scanner_with(
+        FRESH_VERSION,
+        b"stream: OK\0",
+        monotonic=time.monotonic,
+    )
+    scanner._timeout_seconds = 0.05
+
+    def blocked_source():
+        release.wait(0.5)
+        yield b"clean"
+
+    started = time.monotonic()
+    try:
+        with pytest.raises(ScannerUnavailable):
+            scanner.scan_stream(blocked_source(), size=5)
+    finally:
+        release.set()
+
+    assert time.monotonic() - started < 0.25
+
+
 class FakeRepository:
     def __init__(self, job: ProcessingJob) -> None:
         self.job = job
@@ -137,6 +244,13 @@ class FakeRepository:
 
     def record_result(self, _job, state, reason, *, validation=None):
         self.results.append((state, reason))
+
+    def reconcile_result(self, _job, state):
+        return (
+            ReconciliationStatus.COMMITTED
+            if self.results and self.results[-1][0] == state
+            else ReconciliationStatus.RUNNING
+        )
 
 
 class FakeStore:
@@ -170,6 +284,126 @@ async def test_scanner_unavailable_retries_and_never_marks_ready_or_parses() -> 
 
     assert await processor.process_next() is True
     assert repository.results == [("retry", "scanner_unavailable")]
+
+
+class CleanScanner:
+    def scan_stream(self, chunks, *, size):
+        assert sum(len(chunk) for chunk in chunks) == size
+        from app.attachments.scanner import ScanResult
+
+        return ScanResult(ScanDisposition.CLEAN, 28000)
+
+
+@pytest.mark.asyncio
+async def test_scan_rejects_same_size_object_replacement_before_ready() -> None:
+    expected = b"clean"
+    replacement = b"other"
+    job = ProcessingJob(
+        uuid4(), uuid4(), "scan", None, "opaque", len(expected), hashlib.sha256(expected).digest(), "text/plain"
+    )
+    repository = FakeRepository(job)
+
+    class ReplacedStore:
+        def open(self, _object_ref):
+            return OpenedObject(io.BytesIO(replacement), len(replacement))
+
+    processor = AttachmentProcessor(
+        repository=repository,
+        object_store=ReplacedStore(),
+        validator=None,
+        scanner=CleanScanner(),
+        derivatives=ForbiddenBuilder(),
+        worker_id="attachment-worker.1",
+    )
+
+    assert await processor.process_next() is True
+    assert repository.results == [("rejected", "integrity_mismatch")]
+
+
+@pytest.mark.asyncio
+async def test_committed_scan_result_response_loss_is_reconciled_without_retry() -> None:
+    data = b"clean"
+    job = ProcessingJob(
+        uuid4(), uuid4(), "scan", None, "opaque", len(data), hashlib.sha256(data).digest(), "text/plain"
+    )
+
+    class CommitLossRepository(FakeRepository):
+        def record_result(self, job, state, reason, *, validation=None):
+            super().record_result(job, state, reason, validation=validation)
+            raise RuntimeError("response lost secret")
+
+    repository = CommitLossRepository(job)
+    processor = AttachmentProcessor(
+        repository=repository,
+        object_store=FakeStore(),
+        validator=None,
+        scanner=CleanScanner(),
+        derivatives=ForbiddenBuilder(),
+        worker_id="attachment-worker.1",
+    )
+
+    assert await processor.process_next() is True
+    assert repository.results == [("ready", None)]
+
+
+@pytest.mark.asyncio
+async def test_unknown_scan_result_never_issues_a_second_transition() -> None:
+    data = b"clean"
+    job = ProcessingJob(
+        uuid4(), uuid4(), "scan", None, "opaque", len(data), hashlib.sha256(data).digest(), "text/plain"
+    )
+
+    class UnknownRepository(FakeRepository):
+        def record_result(self, job, state, reason, *, validation=None):
+            self.results.append((state, reason))
+            raise RuntimeError("response uncertain")
+
+        def reconcile_result(self, _job, _state):
+            return ReconciliationStatus.UNKNOWN
+
+    repository = UnknownRepository(job)
+    processor = AttachmentProcessor(
+        repository=repository,
+        object_store=FakeStore(),
+        validator=None,
+        scanner=CleanScanner(),
+        derivatives=ForbiddenBuilder(),
+        worker_id="attachment-worker.1",
+    )
+
+    with pytest.raises(ProcessingTransitionError):
+        await processor.process_next()
+    assert repository.results == [("ready", None)]
+
+
+@pytest.mark.asyncio
+async def test_stream_close_failure_cannot_override_persisted_terminal_result() -> None:
+    data = b"clean"
+    job = ProcessingJob(
+        uuid4(), uuid4(), "scan", None, "opaque", len(data), hashlib.sha256(data).digest(), "text/plain"
+    )
+    repository = FakeRepository(job)
+
+    class CloseFailure(io.BytesIO):
+        def close(self):
+            super().close()
+            raise OSError("close secret")
+
+    class Store:
+        def open(self, _object_ref):
+            return OpenedObject(CloseFailure(data), len(data))
+
+    processor = AttachmentProcessor(
+        repository=repository,
+        object_store=Store(),
+        validator=None,
+        scanner=CleanScanner(),
+        derivatives=ForbiddenBuilder(),
+        worker_id="attachment-worker.1",
+    )
+
+    assert await processor.process_next() is True
+    assert repository.results == [("ready", None)]
 
 
 class FakeCodec:
@@ -245,3 +479,53 @@ def test_runtime_repository_claims_and_mutates_only_through_protected_functions(
         for token in ("insert into", "update ", "delete from")
     )
     assert "opaque-object" not in repr(repository)
+
+
+@pytest.mark.parametrize(
+    ("head_extra", "expected_binding"),
+    (
+        ({"VersionId": "immutable-v1", "ETag": '"etag"'}, ("VersionId", "immutable-v1")),
+        ({"ETag": '"etag"'}, ("IfMatch", '"etag"')),
+    ),
+)
+def test_s3_open_binds_get_to_head_identity_when_available(
+    head_extra, expected_binding
+) -> None:
+    class Client:
+        get_args = None
+
+        def head_object(self, **_kwargs):
+            return {"ContentLength": 5, **head_extra}
+
+        def get_object(self, **kwargs):
+            self.get_args = kwargs
+            return {"ContentLength": 5, "Body": io.BytesIO(b"clean")}
+
+    client = Client()
+    source = S3ProcessingObjectStore(client, "bucket").open("opaque")
+
+    assert source.stream.read() == b"clean"
+    assert client.get_args[expected_binding[0]] == expected_binding[1]
+
+
+@pytest.mark.asyncio
+async def test_worker_loop_survives_job_failure_with_bounded_backoff() -> None:
+    class Processor:
+        calls = 0
+
+        async def process_next(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("candidate secret")
+            return False
+
+    processor = Processor()
+    delays = []
+
+    async def fake_sleep(delay):
+        delays.append(delay)
+
+    await run(processor, sleep=fake_sleep, max_iterations=2)
+
+    assert processor.calls == 2
+    assert delays == [1.0, 1.0]

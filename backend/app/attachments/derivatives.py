@@ -9,6 +9,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -57,19 +58,131 @@ def _parser_limits() -> None:
         resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
 
 
+class PdfSandboxRunner(Protocol):
+    def render(
+        self,
+        source_path: Path,
+        output_path: Path,
+        *,
+        timeout_seconds: float,
+    ) -> None: ...
+
+
+class BubblewrapPdfSandbox:
+    """Linux production boundary: no network and only explicit mounts."""
+
+    def __init__(
+        self,
+        *,
+        bubblewrap_path: str = "/usr/bin/bwrap",
+        pdftoppm_path: str = "/usr/bin/pdftoppm",
+        runtime_ro_paths: tuple[str, ...] = ("/usr", "/lib", "/lib64"),
+    ) -> None:
+        paths = (bubblewrap_path, pdftoppm_path, *runtime_ro_paths)
+        if not all(isinstance(value, str) and Path(value).is_absolute() for value in paths):
+            raise ValueError("attachment renderer path invalid")
+        self._bubblewrap_path = bubblewrap_path
+        self._pdftoppm_path = pdftoppm_path
+        self._runtime_ro_paths = tuple(runtime_ro_paths)
+
+    def __repr__(self) -> str:
+        return "BubblewrapPdfSandbox(paths=<fixed>)"
+
+    def render(
+        self,
+        source_path: Path,
+        output_path: Path,
+        *,
+        timeout_seconds: float,
+    ) -> None:
+        if (
+            not source_path.is_absolute()
+            or not output_path.is_absolute()
+            or not source_path.is_file()
+            or not output_path.parent.is_dir()
+            or not Path(self._bubblewrap_path).exists()
+            or not Path(self._pdftoppm_path).exists()
+        ):
+            raise DerivativeError()
+        argv = [
+            self._bubblewrap_path,
+            "--unshare-all",
+            "--die-with-parent",
+            "--new-session",
+            "--clearenv",
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp",
+        ]
+        for runtime in self._runtime_ro_paths:
+            if Path(runtime).exists():
+                argv.extend(("--ro-bind", runtime, runtime))
+        argv.extend(
+            (
+                "--dir",
+                "/input",
+                "--dir",
+                "/output",
+                "--ro-bind",
+                str(source_path),
+                "/input/source.pdf",
+                "--bind",
+                str(output_path.parent),
+                "/output",
+                "--chdir",
+                "/output",
+                "--setenv",
+                "LANG",
+                "C",
+                "--setenv",
+                "LC_ALL",
+                "C",
+                self._pdftoppm_path,
+                "-f",
+                "1",
+                "-l",
+                "1",
+                "-singlefile",
+                "-png",
+                "-scale-to",
+                "1600",
+                "/input/source.pdf",
+                "/output/first-page",
+            )
+        )
+        try:
+            subprocess.run(
+                argv,
+                check=True,
+                shell=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=output_path.parent,
+                env={"LANG": "C", "LC_ALL": "C"},
+                close_fds=True,
+                timeout=timeout_seconds,
+                preexec_fn=_parser_limits if os.name == "posix" else None,
+            )
+        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+            raise DerivativeError() from None
+        if not output_path.is_file():
+            raise DerivativeError()
+
+
 class DerivativeBuilder:
     def __init__(
         self,
         *,
-        pdftoppm_path: str = "/usr/bin/pdftoppm",
+        sandbox_runner: PdfSandboxRunner | None = None,
         timeout_seconds: float = 10.0,
     ) -> None:
-        path = Path(pdftoppm_path)
-        if not path.is_absolute():
-            raise ValueError("attachment renderer path invalid")
         if not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
             raise ValueError("attachment renderer timeout invalid")
-        self._pdftoppm_path = str(path)
+        self._sandbox_runner = sandbox_runner
         self._timeout_seconds = float(timeout_seconds)
 
     def __repr__(self) -> str:
@@ -86,7 +199,7 @@ class DerivativeBuilder:
             if detected_mime in _OFFICE_MIMES or detected_mime == "text/plain":
                 return (
                     Derivative(
-                        "preview",
+                        "metadata",
                         "application/json",
                         _METADATA_ONLY,
                         inline_preview=False,
@@ -115,8 +228,10 @@ class DerivativeBuilder:
                 normalized.thumbnail(_THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
                 if normalized.mode not in {"RGB", "RGBA"}:
                     normalized = normalized.convert("RGBA")
+                fresh = Image.new(normalized.mode, normalized.size)
+                fresh.putdata(list(normalized.getdata()))
                 output = io.BytesIO()
-                normalized.save(output, format="PNG", optimize=False)
+                fresh.save(output, format="PNG", optimize=False)
                 data = output.getvalue()
                 if not data or len(data) > _MAX_PREVIEW_BYTES:
                     raise DerivativeError()
@@ -137,13 +252,21 @@ class DerivativeBuilder:
         return Derivative("thumbnail", "image/png", data, inline_preview=True)
 
     def _pdf_preview(self, source: OpenedObject) -> Derivative:
-        if source.size <= 0 or source.size > MAX_FILE_BYTES:
+        if (
+            source.size <= 0
+            or source.size > MAX_FILE_BYTES
+            or self._sandbox_runner is None
+        ):
             raise DerivativeError()
         try:
             with tempfile.TemporaryDirectory(prefix="attachment-preview-") as temporary:
                 directory = Path(temporary)
-                source_path = directory / "source.pdf"
-                output_prefix = directory / "first-page"
+                input_directory = directory / "input"
+                output_directory = directory / "output"
+                input_directory.mkdir(mode=0o700)
+                output_directory.mkdir(mode=0o700)
+                source_path = input_directory / "source.pdf"
+                rendered = output_directory / "first-page.png"
                 size = 0
                 with source_path.open("xb") as output:
                     for chunk in source.iter_chunks():
@@ -153,31 +276,11 @@ class DerivativeBuilder:
                         output.write(chunk)
                 if size != source.size:
                     raise DerivativeError()
-                subprocess.run(
-                    [
-                        self._pdftoppm_path,
-                        "-f",
-                        "1",
-                        "-l",
-                        "1",
-                        "-singlefile",
-                        "-png",
-                        "-scale-to",
-                        "1600",
-                        str(source_path),
-                        str(output_prefix),
-                    ],
-                    check=True,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    cwd=directory,
-                    env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
-                    close_fds=True,
-                    timeout=self._timeout_seconds,
-                    preexec_fn=_parser_limits if os.name == "posix" else None,
+                self._sandbox_runner.render(
+                    source_path,
+                    rendered,
+                    timeout_seconds=self._timeout_seconds,
                 )
-                rendered = output_prefix.with_suffix(".png")
                 metadata = rendered.stat()
                 if metadata.st_size <= 0 or metadata.st_size > _MAX_PREVIEW_BYTES:
                     raise DerivativeError()
