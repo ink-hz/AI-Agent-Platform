@@ -30,6 +30,7 @@ _MANAGEMENT_SHELL_ROUTES = frozenset({
 _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/account"),
     ("GET", "/api/v1/internal/session/subject"),
+    ("POST", "/api/v1/access-events/page-view"),
     ("POST", "/api/v1/auth/logout"),
     ("GET", "/api/v1/catalog/agents"),
     ("POST", "/api/v1/agents/{agent_id}/launch"),
@@ -99,6 +100,10 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/identity"),
     ("GET", "/governance"),
     ("GET", "/flywheel"),
+})
+
+_PLATFORM_OWNER_ONLY_ROUTES = frozenset({
+    ("GET", "/api/v1/manage/access-events"),
 })
 
 _VOC_MUTATION_ROUTES = frozenset({
@@ -287,6 +292,10 @@ class AuthorizationService:
         key = (selected_method, route_template)
         if auth is None:
             return self._deny(401, "authentication_required")
+        if key in _PLATFORM_OWNER_ONLY_ROUTES:
+            if auth.role is not Role.PLATFORM_OWNER:
+                return self._deny(403, "platform_owner_required")
+            return AuthorizationDecision(True, 200, "platform_owner", None)
         if key in _AUTHENTICATED_SELF_ROUTES:
             if auth.hard_stale_read_only and key in _HARD_STALE_SELF_MUTATION_ROUTES:
                 return self._deny(503, "hard_stale_read_only")

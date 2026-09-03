@@ -1083,6 +1083,97 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
     assert client.get("/api/v1/account", cookies=cookies).status_code == 401
 
 
+def test_page_access_event_csrf_exception_is_exact_and_keeps_origin_and_session() -> None:
+    from app.control_plane.middleware import is_page_access_event_request
+
+    assert is_page_access_event_request(
+        "POST", "/api/v1/access-events/page-view"
+    ) is True
+    for method, path in (
+        ("GET", "/api/v1/access-events/page-view"),
+        ("POST", "/api/v1/access-events/page-view/"),
+        ("POST", "/api/v1/access-events/page-view/extra"),
+        ("POST", "/api/v1/access-events/page-views"),
+    ):
+        assert is_page_access_event_request(method, path) is False
+
+    class Limiter:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def check_authenticated(self, actor, *, mutation):
+            self.calls.append((actor, mutation))
+
+    auth = FakeAuth()
+    limiter = Limiter()
+    auth.rate_limiter = limiter
+    app = FastAPI()
+
+    @app.post("/api/v1/access-events/page-view", status_code=204)
+    async def page_view_event():
+        return None
+
+    app.add_middleware(
+        IdentitySecurityMiddleware,
+        auth=auth,
+        public_assets=frozenset(),
+        authorization=AuthorizationService(_NoObservationGrants()),
+        routes=tuple(app.router.routes),
+    )
+    client = TestClient(app)
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    accepted = client.post(
+        "/api/v1/access-events/page-view",
+        headers={"Origin": auth.public_base_url},
+        cookies=cookies,
+    )
+    assert accepted.status_code == 204
+    assert limiter.calls == []
+    assert client.post(
+        "/api/v1/access-events/page-view",
+        headers={"Origin": "https://fae.orbbec.com.cn"},
+        cookies=cookies,
+    ).status_code == 403
+    assert client.post(
+        "/api/v1/access-events/page-view",
+        cookies=cookies,
+    ).status_code == 403
+    assert client.post(
+        "/api/v1/access-events/page-view",
+        headers={"Origin": auth.public_base_url},
+    ).status_code == 401
+
+
+def test_platform_app_mounts_access_history_routes_with_fail_closed_backend(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth()
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    page = client.post(
+        "/api/v1/access-events/page-view",
+        headers={"Origin": auth.public_base_url},
+        cookies=cookies,
+        json={
+            "access_event_id": str(uuid4()),
+            "workspace_key": "platform",
+            "page_key": "platform.brain",
+            "agent_id": None,
+        },
+    )
+    assert page.status_code == 503
+    assert client.get(
+        "/api/v1/manage/access-events", cookies=cookies
+    ).status_code == 503
+
+    auth.context = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), False)
+    assert client.get(
+        "/api/v1/manage/access-events", cookies=cookies
+    ).status_code == 403
+
+
 def test_ai_admin_account_contract_roles_match_complete_platform_role_enum() -> None:
     assert AI_ADMIN_ACCOUNT_CONTRACT_ROLES == {role.value for role in Role}
 

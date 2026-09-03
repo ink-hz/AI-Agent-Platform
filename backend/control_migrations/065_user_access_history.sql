@@ -324,7 +324,7 @@ begin
      or selected_date_from is null or selected_date_to is null
      or selected_date_from >= selected_date_to
      or selected_date_to-selected_date_from > interval '90 days'
-     or selected_limit not between 1 and 100
+     or selected_limit not between 1 and 101
      or selected_offset not between 0 and 100000
      or (selected_display_name is not null and (
        char_length(selected_display_name) not between 1 and 128
