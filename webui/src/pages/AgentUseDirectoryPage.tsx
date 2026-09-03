@@ -4,12 +4,7 @@ import { fetchAgentCatalog } from "../brainApi";
 import type { AgentCapabilityCard } from "../brainTypes";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
 import { PlatformLink } from "../components/PlatformLink";
-
-const WORKSPACE_URLS: Readonly<Record<string, string>> = Object.freeze({
-  "ai-admin-agent": "/office/?view=services",
-  "ai-fae-agent": "https://fae.orbbec.com.cn/",
-  "voc": "/voc/",
-});
+import { workspaceLaunchPath } from "../platform/workspaces";
 const AGENT_ORDER = Object.freeze([
   "ai-fae-agent",
   "hr-bot",
@@ -32,7 +27,7 @@ function agentKind(card: AgentCapabilityCard): AgentKind {
 }
 
 function safeWorkspaceUrl(card: AgentCapabilityCard): string | null {
-  const expected = WORKSPACE_URLS[card.agent_id];
+  const expected = workspaceLaunchPath(card.agent_id);
   return expected && card.workspace_url === expected ? expected : null;
 }
 
