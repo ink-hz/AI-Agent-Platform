@@ -187,11 +187,23 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert services["platform-clamav"]["networks"] == {
         "platform-internal": {"ipv4_address": "172.30.0.9"}
     }
+    assert services["platform-clamav"]["user"] == "100:101"
+    assert services["platform-clamav"]["read_only"] is True
+    assert services["platform-clamav"]["entrypoint"] == ["clamd"]
+    assert services["platform-clamav"]["command"] == [
+        "--foreground=true",
+        "--log=/tmp/clamd.log",
+        "--datadir=/var/lib/clamav",
+    ]
+    assert services["platform-clamav"]["tmpfs"] == [
+        "/tmp:rw,noexec,nosuid,size=16m,uid=100,gid=101,mode=0770"
+    ]
+    assert "volumes" not in services["platform-clamav"]
     assert services["platform-clamav"]["cap_drop"] == ["ALL"]
-    assert services["platform-clamav"]["cap_add"] == [
-        "CHOWN",
-        "SETGID",
-        "SETUID",
+    assert "cap_add" not in services["platform-clamav"]
+    assert services["platform-clamav"]["healthcheck"]["test"] == [
+        "CMD-SHELL",
+        "clamdscan --ping=1 --wait /etc/hosts >/dev/null",
     ]
     worker = services["platform-attachments"]
     assert worker["command"] == [

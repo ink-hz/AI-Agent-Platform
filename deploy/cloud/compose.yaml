@@ -188,21 +188,24 @@ services:
   platform-clamav:
     image: ${PLATFORM_CLAMAV_IMAGE:-clamav/clamav:1.4.3}
     restart: unless-stopped
+    user: "100:101"
+    read_only: true
+    entrypoint: ["clamd"]
+    command:
+      - "--foreground=true"
+      - "--log=/tmp/clamd.log"
+      - "--datadir=/var/lib/clamav"
     cap_drop:
       - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
     security_opt:
       - no-new-privileges:true
-    volumes:
-      - /data/orbbec-agent-platform/clamav:/var/lib/clamav
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=100,gid=101,mode=0770
     networks:
       platform-internal:
         ipv4_address: 172.30.0.9
     healthcheck:
-      test: ["CMD-SHELL", "clamdscan --ping=1 --wait=5"]
+      test: ["CMD-SHELL", "clamdscan --ping=1 --wait /etc/hosts >/dev/null"]
       interval: 30s
       timeout: 8s
       retries: 6
