@@ -169,7 +169,7 @@ def test_new_position_task_persists_before_start_and_atomically_scopes_conversat
     assert task.turn_id == commands.results[request_id].turn.turn_id
 
 
-def test_existing_conversation_is_checked_after_persistence_and_replays_without_duplicate_turn():
+def test_existing_conversation_is_checked_before_persistence_and_replays_without_duplicate_turn():
     service, intelligence, commands, _, _, calls = dependencies()
     request_id = uuid4()
     values = {
@@ -194,7 +194,7 @@ def test_existing_conversation_is_checked_after_persistence_and_replays_without_
     assert commands.created_side_effects == 1
 
 
-def test_cross_position_conversation_is_concealed_after_request_is_persisted():
+def test_cross_position_conversation_is_concealed_without_persisting_ghost_task():
     service, intelligence, commands, scope, _, _ = dependencies()
     scope.bound_position = uuid4()
 
@@ -211,7 +211,7 @@ def test_cross_position_conversation_is_concealed_after_request_is_persisted():
             position_candidate_id=None,
         )
 
-    assert len(intelligence.records) == 1
+    assert intelligence.records == {}
     assert commands.created_side_effects == 0
 
 

@@ -228,6 +228,12 @@ class HrPositionTaskService:
             position_candidate_id=position_candidate_id,
         )
         try:
+            if (
+                conversation_id is not None
+                and self.position_scope.for_conversation(owner_id, conversation_id)
+                != position_id
+            ):
+                raise HrPositionTaskNotFound("position conversation not found")
             request = self._intelligence.create_task_request(
                 owner_id=owner_id,
                 position_id=position_id,
@@ -253,11 +259,6 @@ class HrPositionTaskService:
                     position_id=position_id,
                 )
             else:
-                if (
-                    self.position_scope.for_conversation(owner_id, conversation_id)
-                    != position_id
-                ):
-                    raise HrPositionTaskNotFound("position conversation not found")
                 result = self._conversations.append_turn(
                     owner_id,
                     conversation_id,
