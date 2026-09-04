@@ -231,6 +231,17 @@ def _hr_bot_model_version(contract_path: str) -> str:
     return model.strip()
 
 
+def _optional_hr_bot_model_version(contract_path: str) -> str | None:
+    try:
+        return _hr_bot_model_version(contract_path)
+    except RuntimeError:
+        logger.warning(
+            "HR task context disabled because exact runtime model provenance "
+            "is unavailable"
+        )
+        return None
+
+
 class _UnavailableFaeWorkbenchRepository:
     def snapshot(self, _period_start, _period_end):
         raise FaeWorkbenchReadError("fae_workbench_query_failed")
@@ -1174,17 +1185,19 @@ def create_app(
                     and current.context_version_id == context_version_id
                 )
 
-            hr_task_context_provider = HrTaskContextProvider(
-                PostgresHrTaskContextSource(
-                    control_database_url,
-                    execution_model_version=_hr_bot_model_version(
-                        cluster_contract_path or config.metabot_contract_path
-                    ),
-                ),
-                candidate_provider=CandidateEnvelopeProvider(
-                    candidate_repository, context_is_confirmed
-                ),
+            hr_model_version = _optional_hr_bot_model_version(
+                cluster_contract_path or config.metabot_contract_path
             )
+            if hr_model_version is not None:
+                hr_task_context_provider = HrTaskContextProvider(
+                    PostgresHrTaskContextSource(
+                        control_database_url,
+                        execution_model_version=hr_model_version,
+                    ),
+                    candidate_provider=CandidateEnvelopeProvider(
+                        candidate_repository, context_is_confirmed
+                    ),
+                )
         if (
             hr_position_task_service is None
             and conversation_command_service is not None

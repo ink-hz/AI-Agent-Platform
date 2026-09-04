@@ -833,6 +833,17 @@ def test_hr_bot_model_version_fails_closed_without_exact_model(
         _hr_bot_model_version(str(contract))
 
 
+def test_optional_hr_bot_model_version_isolates_missing_cloud_provenance(
+    tmp_path,
+) -> None:
+    from app import main as app_main
+
+    contract = tmp_path / "metabot.runtime-contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+
+    assert app_main._optional_hr_bot_model_version(str(contract)) is None
+
+
 @pytest.mark.asyncio
 async def test_create_app_runs_injected_hr_task_result_projection_lane(
     tmp_path, monkeypatch,
