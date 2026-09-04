@@ -9,10 +9,12 @@ export type HrWorkspaceSection = "chat" | "positions";
 
 export function HrWorkspaceShell({
   account,
+  chatHref = "/hr/",
   current,
   children,
 }: {
   account: Account;
+  chatHref?: string;
   current: HrWorkspaceSection;
   children: ReactNode;
 }) {
@@ -23,7 +25,7 @@ export function HrWorkspaceShell({
         <strong>HR 智能工作台</strong>
       </PlatformLink>
       <nav className="hr-workspace-nav" aria-label="HR 智能工作台">
-        <PlatformLink aria-current={current === "chat" ? "page" : undefined} href="/hr/">对话</PlatformLink>
+        <PlatformLink aria-current={current === "chat" ? "page" : undefined} href={chatHref}>对话</PlatformLink>
         <PlatformLink aria-current={current === "positions" ? "page" : undefined} href="/hr/positions">岗位</PlatformLink>
       </nav>
       <div className="hr-workspace-actions">

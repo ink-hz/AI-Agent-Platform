@@ -107,9 +107,36 @@ describe("HrWorkspacePage", () => {
     await act(async () => root.render(<HrWorkspacePage account={account} positions />));
 
     expect(container.textContent).toContain("官网岗位");
-    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBeNull();
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).not.toBeNull();
+    expect(container.querySelector<HTMLElement>(".hr-workspace-chat-panel")?.hidden).toBe(true);
     expect(createHrApi).toHaveBeenCalled();
-    expect(listConversations).not.toHaveBeenCalled();
+    expect(listConversations).toHaveBeenCalled();
+  });
+
+  it("keeps an unsent chat draft mounted while visiting positions", async () => {
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "不要丢失的岗位需求");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => root.render(<HrWorkspacePage account={account} positions />));
+    expect(container.querySelector<HTMLTextAreaElement>(".hr-workspace-chat-panel textarea")?.value)
+      .toBe("不要丢失的岗位需求");
+
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    expect(container.querySelector<HTMLTextAreaElement>(".hr-workspace-chat-panel textarea")?.value)
+      .toBe("不要丢失的岗位需求");
+  });
+
+  it("keeps the current conversation as the chat navigation target", async () => {
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    await act(async () => root.render(<HrWorkspacePage account={account} positions />));
+
+    expect(container.querySelector<HTMLAnchorElement>(
+      '.hr-workspace-nav a[href="/hr/conversations/c-7"]',
+    )?.textContent).toBe("对话");
   });
 
   it("opens a new HR conversation at the canonical workspace root with a trailing slash", async () => {

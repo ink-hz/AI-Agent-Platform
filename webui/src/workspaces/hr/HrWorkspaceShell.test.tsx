@@ -43,4 +43,16 @@ describe("HrWorkspaceShell", () => {
     expect(container.querySelector('.hr-workspace-nav a[aria-current="page"]')?.textContent).toBe("岗位");
     expect(container.querySelector(".hr-workspace-stale")?.textContent).toContain("只读");
   });
+
+  it("returns to the last active HR conversation from the positions view", async () => {
+    await act(async () => root.render(<HrWorkspaceShell
+      account={account}
+      chatHref="/hr/conversations/c-9"
+      current="positions"
+    ><p>岗位内容</p></HrWorkspaceShell>));
+
+    expect(container.querySelector<HTMLAnchorElement>(
+      '.hr-workspace-nav a[href="/hr/conversations/c-9"]',
+    )?.textContent).toBe("对话");
+  });
 });
