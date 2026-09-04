@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import psycopg
@@ -12,10 +14,11 @@ from app.hr.models import (
     CreateManualPosition,
     DismissPositionDraft,
     MergePositionDraft,
+    PromotePositionMaterial,
     ProjectOfficialPosition,
     ProposePositionDraft,
 )
-from app.hr.repository import HrNotFound, HrPositionRepository
+from app.hr.repository import HrConflict, HrNotFound, HrPositionRepository, HrUnavailable
 from test_control_plane_migration import control_database
 
 
@@ -67,6 +70,43 @@ def test_repository_creates_manual_position_idempotently_and_lists_for_owner(
 
 
 @pytest.mark.postgres
+def test_repository_serializes_concurrent_manual_position_replay(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Concurrent HR Position Owner")
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    command = CreateManualPosition(
+        owner_id, uuid4(), uuid4(), "并发结构工程师", "研发", ("深圳",),
+    )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = tuple(pool.map(lambda _index: repository.create_manual(command), range(8)))
+
+    assert {result.position_id for result in results} == {command.position_id}
+
+
+@pytest.mark.postgres
+def test_repository_rejects_reused_request_id_with_a_different_payload(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Conflicting HR Position Owner")
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    request_id = uuid4()
+    repository.create_manual(
+        CreateManualPosition(owner_id, uuid4(), request_id, "结构工程师")
+    )
+
+    with pytest.raises(HrConflict):
+        repository.create_manual(
+            CreateManualPosition(owner_id, uuid4(), request_id, "算法工程师")
+        )
+
+
+@pytest.mark.postgres
 def test_repository_projects_official_position_updates_without_duplication(
     control_database,
 ) -> None:
@@ -78,10 +118,12 @@ def test_repository_projects_official_position_updates_without_duplication(
     first = repository.project_official(ProjectOfficialPosition(
         owner_id, position_id, uuid4(), "J11014", "算法工程师", "机器人",
         ("深圳",), "active", "sync-v1", "a" * 64,
+        datetime(2026, 9, 4, 1, tzinfo=UTC),
     ))
     changed = repository.project_official(ProjectOfficialPosition(
         owner_id, position_id, uuid4(), "J11014", "高级算法工程师", "机器人",
         ("深圳", "中山"), "suspected_inactive", "sync-v2", "b" * 64,
+        datetime(2026, 9, 4, 2, tzinfo=UTC),
     ))
 
     assert first.position_id == changed.position_id == position_id
@@ -89,6 +131,93 @@ def test_repository_projects_official_position_updates_without_duplication(
     assert changed.official_status == "suspected_inactive"
     assert changed.source_version == "sync-v2"
     assert repository.list_positions(owner_id).items == (changed,)
+
+
+@pytest.mark.postgres
+def test_repository_never_rolls_an_official_position_back_to_an_older_snapshot(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Ordered Official Projection Owner")
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position_id = uuid4()
+    newer = repository.project_official(ProjectOfficialPosition(
+        owner_id, position_id, uuid4(), "J11014", "高级算法工程师", "机器人",
+        ("深圳",), "active", "sync-v2", "b" * 64,
+        datetime(2026, 9, 4, 2, tzinfo=UTC),
+    ))
+    older = repository.project_official(ProjectOfficialPosition(
+        owner_id, position_id, uuid4(), "J11014", "算法工程师", "机器人",
+        ("中山",), "inactive", "sync-v1", "a" * 64,
+        datetime(2026, 9, 4, 1, tzinfo=UTC),
+    ))
+
+    assert older == newer
+    assert older.title == "高级算法工程师"
+    assert older.source_version == "sync-v2"
+
+
+@pytest.mark.postgres
+def test_official_projection_rolls_back_when_import_evidence_cannot_be_recorded(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Atomic Official Import Owner")
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position_id = uuid4()
+    command = ProjectOfficialPosition(
+        owner_id, position_id, uuid4(), "J11014", "算法工程师", "机器人",
+        ("深圳",), "active", "sync-v1", "a" * 64,
+        datetime(2026, 9, 4, 1, tzinfo=UTC),
+    )
+    invalid_evidence = {
+        "evidence_id": uuid4(),
+        "owner_id": owner_id,
+        "position_id": uuid4(),
+        "draft_id": None,
+        "source_conversation_id": None,
+        "source_message_seq": None,
+        "source_kind": "official_snapshot",
+        "source_key": "J11014:a",
+        "rule_version": "official-registry-v1",
+        "evidence": {"content_hash": "a" * 64},
+    }
+
+    with pytest.raises(HrUnavailable):
+        repository.project_official(command, import_evidence=invalid_evidence)
+
+    assert repository.list_positions(owner_id).items == ()
+
+
+@pytest.mark.postgres
+def test_repository_rejects_agent_output_as_position_material(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Position Material Owner")
+        attachment_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.attachments ("
+            "attachment_id,owner_internal_user_id,source_kind,"
+            "original_name_ciphertext,original_name_key_version,"
+            "object_ref_ciphertext,object_ref_key_version,retained_until,"
+            "state,ready_at) values (%s,%s,'agent_output',%s,1,%s,1,"
+            "now()+interval '1 day','ready',now())",
+            (attachment_id, owner_id, b"x" * 29, b"y" * 29),
+        )
+        admin.commit()
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position = repository.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "算法工程师")
+    )
+
+    with pytest.raises(HrNotFound):
+        repository.promote_material(PromotePositionMaterial(
+            owner_id, position.position_id, attachment_id, uuid4(),
+        ))
 
 
 @pytest.mark.postgres

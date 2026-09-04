@@ -76,9 +76,11 @@ def test_official_snapshot_rejects_noncanonical_or_duplicate_ids(job_id: str) ->
 class RecordingOfficialRepository:
     def __init__(self) -> None:
         self.commands = []
+        self.evidence = []
 
-    def project_official(self, command):
+    def project_official(self, command, *, import_evidence=None):
         self.commands.append(command)
+        self.evidence.append(import_evidence)
         return command
 
 
@@ -102,6 +104,7 @@ def test_official_projection_is_deterministic_and_preserves_registry_status() ->
     assert repository.commands[2].title == "高级算法工程师"
     assert repository.commands[2].official_status == "suspected_inactive"
     assert repository.commands[2].source_version == changed.version
+    assert all(repository.evidence)
 
 
 def test_historical_discovery_links_only_one_known_complete_job_id() -> None:
@@ -156,13 +159,16 @@ class RecordingHistoricalRepository:
     def __init__(self) -> None:
         self.bindings = []
         self.drafts = []
+        self.evidence = []
 
-    def bind_conversation(self, command):
+    def bind_conversation(self, command, *, import_evidence=None):
         self.bindings.append(command)
+        self.evidence.append(import_evidence)
         return command
 
-    def propose_draft(self, command):
+    def propose_draft(self, command, *, import_evidence=None):
         self.drafts.append(command)
+        self.evidence.append(import_evidence)
         return command
 
 

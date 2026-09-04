@@ -168,7 +168,12 @@ class OfficialJobSnapshot:
 
 
 class OfficialProjectionRepository(Protocol):
-    def project_official(self, command: ProjectOfficialPosition): ...
+    def project_official(
+        self,
+        command: ProjectOfficialPosition,
+        *,
+        import_evidence: dict[str, object] | None = None,
+    ): ...
 
 
 def project_official_jobs(
@@ -183,9 +188,29 @@ def project_official_jobs(
         raise ValueError("official projection identifiers invalid")
     projected = []
     for job in snapshot.jobs:
-        projected.append(repository.project_official(ProjectOfficialPosition(
+        position_id = uuid5(owner_id, f"official-position:{job.canonical_id}")
+        evidence = {
+            "evidence_id": uuid5(
+                owner_id,
+                f"official-evidence:{job.canonical_id}:{job.content_hash}",
+            ),
+            "owner_id": owner_id,
+            "position_id": position_id,
+            "draft_id": None,
+            "source_conversation_id": None,
+            "source_message_seq": None,
+            "source_kind": "official_snapshot",
+            "source_key": f"{job.canonical_id}:{job.content_hash}",
+            "rule_version": "official-registry-v1",
+            "evidence": {
+                "content_hash": job.content_hash,
+                "last_successful_sync_at": snapshot.last_successful_sync_at.isoformat(),
+                "snapshot_version": snapshot.version,
+            },
+        }
+        record = repository.project_official(ProjectOfficialPosition(
             owner_id=owner_id,
-            position_id=uuid5(owner_id, f"official-position:{job.canonical_id}"),
+            position_id=position_id,
             client_request_id=uuid5(request_id, f"official-position:{job.canonical_id}"),
             official_job_id=job.canonical_id,
             title=job.title,
@@ -194,7 +219,9 @@ def project_official_jobs(
             official_status=job.status,
             source_version=snapshot.version,
             content_hash=job.content_hash,
-        )))
+            source_synced_at=snapshot.last_successful_sync_at,
+        ), import_evidence=evidence)
+        projected.append(record)
     return tuple(projected)
 
 
@@ -250,9 +277,19 @@ class HistoricalDiscovery:
 
 
 class HistoricalImportRepository(Protocol):
-    def bind_conversation(self, command: BindPositionConversation): ...
+    def bind_conversation(
+        self,
+        command: BindPositionConversation,
+        *,
+        import_evidence: dict[str, object] | None = None,
+    ): ...
 
-    def propose_draft(self, command: ProposePositionDraft): ...
+    def propose_draft(
+        self,
+        command: ProposePositionDraft,
+        *,
+        import_evidence: dict[str, object] | None = None,
+    ): ...
 
 
 def discover_historical_positions(
@@ -343,18 +380,47 @@ def apply_historical_discovery(
         if position_id is None:
             raise ValueError("historical exact position missing")
         key = f"exact:{link.conversation_id}:{link.official_job_id}"
-        bindings.append(repository.bind_conversation(BindPositionConversation(
+        evidence = {
+            "evidence_id": uuid5(owner_id, f"historical-evidence:{key}:{link.rule_version}"),
+            "owner_id": owner_id,
+            "position_id": position_id,
+            "draft_id": None,
+            "source_conversation_id": link.conversation_id,
+            "source_message_seq": link.message_sequence,
+            "source_kind": "historical_exact",
+            "source_key": key,
+            "rule_version": link.rule_version,
+            "evidence": {"official_job_id": link.official_job_id},
+        }
+        binding = repository.bind_conversation(BindPositionConversation(
             owner_id=owner_id,
             position_id=position_id,
             conversation_id=link.conversation_id,
             client_request_id=uuid5(request_id, key),
             binding_kind="historical_exact",
-        )))
+        ), import_evidence=evidence)
+        bindings.append(binding)
     drafts = []
     for proposal in discovery.drafts:
-        drafts.append(repository.propose_draft(ProposePositionDraft(
+        draft_id = uuid5(owner_id, proposal.source_key)
+        evidence = {
+            "evidence_id": uuid5(
+                owner_id,
+                f"historical-evidence:{proposal.source_key}:{proposal.rule_version}",
+            ),
+            "owner_id": owner_id,
+            "position_id": None,
+            "draft_id": draft_id,
+            "source_conversation_id": proposal.conversation_id,
+            "source_message_seq": proposal.evidence.get("message_seq"),
+            "source_kind": "historical_draft",
+            "source_key": proposal.source_key,
+            "rule_version": proposal.rule_version,
+            "evidence": proposal.evidence,
+        }
+        draft = repository.propose_draft(ProposePositionDraft(
             owner_id=owner_id,
-            draft_id=uuid5(owner_id, proposal.source_key),
+            draft_id=draft_id,
             client_request_id=uuid5(request_id, proposal.source_key),
             source_kind="historical_conversation",
             source_key=proposal.source_key,
@@ -363,5 +429,6 @@ def apply_historical_discovery(
             proposal={},
             evidence=proposal.evidence,
             discovery_rule_version=proposal.rule_version,
-        )))
+        ), import_evidence=evidence)
+        drafts.append(draft)
     return tuple(bindings), tuple(drafts)

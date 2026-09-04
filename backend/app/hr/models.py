@@ -217,6 +217,7 @@ class PositionDetail:
     conversation_ids: tuple[UUID, ...] = ()
     material_attachment_ids: tuple[UUID, ...] = ()
     artifact_ids: tuple[UUID, ...] = ()
+    artifact_attachment_ids: tuple[UUID, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.position, PositionRecord) or any(
@@ -229,7 +230,8 @@ class PositionDetail:
         ):
             raise ValueError("position detail invalid")
         for values in (
-            self.conversation_ids, self.material_attachment_ids, self.artifact_ids
+            self.conversation_ids, self.material_attachment_ids,
+            self.artifact_ids, self.artifact_attachment_ids,
         ):
             if not isinstance(values, tuple) or any(
                 not isinstance(value, UUID) for value in values
@@ -270,6 +272,7 @@ class ProjectOfficialPosition:
     official_status: OfficialStatus
     source_version: str
     content_hash: str
+    source_synced_at: datetime
 
     def __post_init__(self) -> None:
         for value in (self.owner_id, self.position_id, self.client_request_id):
@@ -285,6 +288,11 @@ class ProjectOfficialPosition:
             r"[a-f0-9]{64}", self.content_hash
         ) is None:
             raise ValueError("position content hash invalid")
+        if (
+            not isinstance(self.source_synced_at, datetime)
+            or self.source_synced_at.tzinfo is None
+        ):
+            raise ValueError("position source sync time invalid")
         object.__setattr__(self, "official_job_id", job_id)
         object.__setattr__(self, "title", _text(
             self.title, maximum=500, message="position title invalid"

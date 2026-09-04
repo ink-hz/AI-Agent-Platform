@@ -32,6 +32,7 @@ create table platform_hr.positions (
   official_content_hash text check (
     official_content_hash is null or official_content_hash ~ '^[a-f0-9]{64}$'
   ),
+  source_synced_at timestamptz,
   row_version bigint not null default 1 check (row_version > 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -200,6 +201,70 @@ create table platform_hr.position_import_evidence (
   unique (owner_internal_user_id,source_kind,source_key,rule_version)
 );
 
+create function platform_hr.record_import_evidence_v65(
+  selected_evidence_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_position_id uuid,
+  selected_draft_id uuid,
+  selected_source_conversation_id uuid,
+  selected_source_message_seq integer,
+  selected_source_kind text,
+  selected_source_key text,
+  selected_rule_version text,
+  selected_evidence jsonb
+) returns platform_hr.position_import_evidence
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.position_import_evidence%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':import-evidence:' ||
+    selected_source_kind || ':' || selected_source_key || ':' ||
+    selected_rule_version,0
+  ));
+  select * into selected from platform_hr.position_import_evidence
+  where owner_internal_user_id=selected_owner_internal_user_id
+    and source_kind=selected_source_kind
+    and source_key=selected_source_key
+    and rule_version=selected_rule_version;
+  if found then
+    if selected.position_id is distinct from selected_position_id
+       or selected.draft_id is distinct from selected_draft_id
+       or selected.source_conversation_id is distinct from selected_source_conversation_id
+       or selected.source_message_seq is distinct from selected_source_message_seq
+       or selected.evidence<>selected_evidence then
+      raise unique_violation using message='import evidence payload mismatch';
+    end if;
+    return selected;
+  end if;
+  if selected_position_id is not null then
+    perform 1 from platform_hr.positions where
+      position_id=selected_position_id
+      and owner_internal_user_id=selected_owner_internal_user_id;
+  else
+    perform 1 from platform_hr.position_drafts where
+      draft_id=selected_draft_id
+      and owner_internal_user_id=selected_owner_internal_user_id;
+  end if;
+  if not found then raise no_data_found; end if;
+  insert into platform_hr.position_import_evidence(
+    evidence_id,owner_internal_user_id,position_id,draft_id,
+    source_conversation_id,source_message_seq,source_kind,source_key,
+    rule_version,evidence
+  ) values (
+    selected_evidence_id,selected_owner_internal_user_id,selected_position_id,
+    selected_draft_id,selected_source_conversation_id,
+    selected_source_message_seq,selected_source_kind,selected_source_key,
+    selected_rule_version,selected_evidence
+  ) returning * into selected;
+  return selected;
+end
+$function$;
+
 create function platform_hr.create_position_v65(
   selected_position_id uuid,
   selected_owner_internal_user_id uuid,
@@ -220,10 +285,26 @@ begin
   if session_user not in ('platform_control_app','platform_control_app_preview') then
     raise insufficient_privilege;
   end if;
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':position-request:' ||
+    client_request_id::text,0
+  ));
   select * into selected from platform_hr.positions
   where owner_internal_user_id=selected_owner_internal_user_id
     and positions.client_request_id=create_position_v65.client_request_id;
-  if found then return selected; end if;
+  if found then
+    if selected.position_id<>selected_position_id
+       or selected.source_kind<>selected_source_kind
+       or selected.official_job_id is distinct from selected_official_job_id
+       or selected.title<>btrim(selected_title)
+       or selected.department is distinct from nullif(btrim(selected_department),'')
+       or selected.locations<>selected_locations
+       or selected.official_status is distinct from selected_official_status
+       or selected.source_version is distinct from selected_source_version then
+      raise unique_violation using message='position idempotency payload mismatch';
+    end if;
+    return selected;
+  end if;
   if selected_source_kind='official_site' then
     select * into selected from platform_hr.positions
     where owner_internal_user_id=selected_owner_internal_user_id
@@ -253,7 +334,8 @@ create function platform_hr.project_official_position_v65(
   selected_locations jsonb,
   selected_official_status text,
   selected_source_version text,
-  selected_content_hash text
+  selected_content_hash text,
+  selected_source_synced_at timestamptz
 ) returns platform_hr.positions
 language plpgsql security definer
 set search_path=pg_catalog,platform_hr
@@ -263,10 +345,17 @@ begin
   if session_user not in ('platform_control_app','platform_control_app_preview') then
     raise insufficient_privilege;
   end if;
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':' || selected_official_job_id,0
+  ));
   select * into selected from platform_hr.positions
   where owner_internal_user_id=selected_owner_internal_user_id
     and official_job_id=selected_official_job_id for update;
   if found then
+    if selected.source_synced_at is not null
+       and selected.source_synced_at>selected_source_synced_at then
+      return selected;
+    end if;
     update platform_hr.positions set
       title=btrim(selected_title),
       department=nullif(btrim(selected_department),''),
@@ -274,6 +363,7 @@ begin
       official_status=selected_official_status,
       source_version=selected_source_version,
       official_content_hash=selected_content_hash,
+      source_synced_at=selected_source_synced_at,
       row_version=case when
         title is distinct from btrim(selected_title)
         or department is distinct from nullif(btrim(selected_department),'')
@@ -296,12 +386,13 @@ begin
   insert into platform_hr.positions(
     position_id,owner_internal_user_id,client_request_id,source_kind,
     official_job_id,title,department,locations,official_status,source_version,
-    official_content_hash
+    official_content_hash,source_synced_at
   ) values (
     selected_position_id,selected_owner_internal_user_id,client_request_id,
     'official_site',selected_official_job_id,btrim(selected_title),
     nullif(btrim(selected_department),''),selected_locations,
-    selected_official_status,selected_source_version,selected_content_hash
+    selected_official_status,selected_source_version,selected_content_hash,
+    selected_source_synced_at
   ) returning * into selected;
   return selected;
 end
@@ -378,11 +469,30 @@ begin
   if session_user not in ('platform_control_app','platform_control_app_preview') then
     raise insufficient_privilege;
   end if;
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':draft-request:' ||
+    client_request_id::text,0
+  ));
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':draft-source:' ||
+    selected_source_kind || ':' || selected_source_key,0
+  ));
   select * into selected from platform_hr.position_drafts
   where owner_internal_user_id=selected_owner_internal_user_id
     and (position_drafts.client_request_id=propose_position_draft_v65.client_request_id
       or (source_kind=selected_source_kind and source_key=selected_source_key));
-  if found then return selected; end if;
+  if found then
+    if selected.source_kind<>selected_source_kind
+       or selected.source_key<>selected_source_key
+       or selected.source_conversation_id is distinct from selected_source_conversation_id
+       or selected.title<>btrim(selected_title)
+       or selected.proposal<>selected_proposal
+       or selected.evidence<>selected_evidence
+       or selected.discovery_rule_version<>selected_discovery_rule_version then
+      raise unique_violation using message='draft idempotency payload mismatch';
+    end if;
+    return selected;
+  end if;
   insert into platform_hr.position_drafts(
     draft_id,owner_internal_user_id,client_request_id,source_kind,source_key,
     source_conversation_id,title,proposal,evidence,discovery_rule_version
@@ -628,6 +738,7 @@ begin
   perform 1 from platform_attachments.attachments
   where attachment_id=selected_attachment_id
     and owner_internal_user_id=selected_owner_internal_user_id
+    and source_kind='user_input'
     and state='ready' and deleted_at is null and retained_until>now();
   if not found then raise no_data_found; end if;
   insert into platform_hr.position_materials(
@@ -655,6 +766,17 @@ declare selected platform_hr.position_materials%rowtype;
 begin
   if session_user not in ('platform_control_app','platform_control_app_preview') then
     raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.position_materials
+  where owner_internal_user_id=selected_owner_internal_user_id
+    and position_materials.client_request_id=remove_material_v65.client_request_id
+  for update;
+  if found then
+    if selected.position_id<>selected_position_id
+       or selected.attachment_id<>selected_attachment_id then
+      raise unique_violation using message='material idempotency payload mismatch';
+    end if;
+    return selected;
   end if;
   select * into selected from platform_hr.position_materials
   where owner_internal_user_id=selected_owner_internal_user_id
@@ -702,11 +824,14 @@ $function$;
 
 revoke all on all tables in schema platform_hr from public;
 revoke all on all functions in schema platform_hr from public;
+revoke all on function platform_hr.record_import_evidence_v65(
+  uuid,uuid,uuid,uuid,uuid,integer,text,text,text,jsonb
+) from public;
 revoke all on function platform_hr.create_position_v65(
   uuid,uuid,uuid,text,text,text,text,jsonb,text,text
 ) from public;
 revoke all on function platform_hr.project_official_position_v65(
-  uuid,uuid,uuid,text,text,text,jsonb,text,text,text
+  uuid,uuid,uuid,text,text,text,jsonb,text,text,text,timestamptz
 ) from public;
 revoke all on function platform_hr.confirm_position_draft_v65(
   uuid,uuid,uuid,uuid,bigint
@@ -758,12 +883,16 @@ begin
   execute format('grant usage on schema platform_hr to %I,%I',selected_app,selected_brain);
   execute format('grant select on all tables in schema platform_hr to %I',selected_app);
   execute format(
+    'grant execute on function platform_hr.record_import_evidence_v65('
+    'uuid,uuid,uuid,uuid,uuid,integer,text,text,text,jsonb) to %I',selected_app
+  );
+  execute format(
     'grant execute on function platform_hr.create_position_v65('
     'uuid,uuid,uuid,text,text,text,text,jsonb,text,text) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.project_official_position_v65('
-    'uuid,uuid,uuid,text,text,text,jsonb,text,text,text) to %I',selected_app
+    'uuid,uuid,uuid,text,text,text,jsonb,text,text,text,timestamptz) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.confirm_position_draft_v65('

@@ -194,7 +194,10 @@ class HrPositionRepository:
             raise HrUnavailable("position repository unavailable") from None
 
     def project_official(
-        self, command: ProjectOfficialPosition
+        self,
+        command: ProjectOfficialPosition,
+        *,
+        import_evidence: dict[str, object] | None = None,
     ) -> PositionRecord:
         if not isinstance(command, ProjectOfficialPosition):
             raise ValueError("official position projection required")
@@ -202,7 +205,7 @@ class HrPositionRepository:
             with self._connection() as connection:
                 row = connection.execute(
                     "select (platform_hr.project_official_position_v65("
-                    "%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)).*",
+                    "%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)).*",
                     (
                         command.position_id,
                         command.owner_id,
@@ -214,10 +217,13 @@ class HrPositionRepository:
                         command.official_status,
                         command.source_version,
                         command.content_hash,
+                        command.source_synced_at,
                     ),
                 ).fetchone()
-            if row is None:
-                raise HrUnavailable("official position projection unavailable")
+                if row is None:
+                    raise HrUnavailable("official position projection unavailable")
+                if import_evidence is not None:
+                    self._record_import_evidence_on(connection, import_evidence)
             return _record(row)
         except HrRepositoryError:
             raise
@@ -226,8 +232,76 @@ class HrPositionRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrUnavailable("position repository unavailable") from None
 
+    def record_import_evidence(
+        self,
+        *,
+        evidence_id: UUID,
+        owner_id: UUID,
+        position_id: UUID | None,
+        draft_id: UUID | None,
+        source_conversation_id: UUID | None,
+        source_message_seq: int | None,
+        source_kind: str,
+        source_key: str,
+        rule_version: str,
+        evidence: dict[str, object],
+    ) -> None:
+        values = {
+            "evidence_id": evidence_id,
+            "owner_id": owner_id,
+            "position_id": position_id,
+            "draft_id": draft_id,
+            "source_conversation_id": source_conversation_id,
+            "source_message_seq": source_message_seq,
+            "source_kind": source_kind,
+            "source_key": source_key,
+            "rule_version": rule_version,
+            "evidence": evidence,
+        }
+        try:
+            with self._connection() as connection:
+                self._record_import_evidence_on(connection, values)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position import evidence target not found") from None
+        except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
+            raise HrConflict("position import evidence conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    @staticmethod
+    def _record_import_evidence_on(
+        connection,
+        values: dict[str, object],
+    ) -> None:
+        required = {
+            "evidence_id", "owner_id", "position_id", "draft_id",
+            "source_conversation_id", "source_message_seq", "source_kind",
+            "source_key", "rule_version", "evidence",
+        }
+        if set(values) != required:
+            raise ValueError("position import evidence fields invalid")
+        row = connection.execute(
+            "select (platform_hr.record_import_evidence_v65("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
+            (
+                values["evidence_id"], values["owner_id"],
+                values["position_id"], values["draft_id"],
+                values["source_conversation_id"], values["source_message_seq"],
+                values["source_kind"], values["source_key"],
+                values["rule_version"],
+                json.dumps(values["evidence"], ensure_ascii=False),
+            ),
+        ).fetchone()
+        if row is None:
+            raise HrUnavailable("position import evidence unavailable")
+
     def propose_draft(
-        self, command: ProposePositionDraft
+        self,
+        command: ProposePositionDraft,
+        *,
+        import_evidence: dict[str, object] | None = None,
     ) -> PositionDraftRecord:
         if not isinstance(command, ProposePositionDraft):
             raise ValueError("position draft command required")
@@ -249,8 +323,10 @@ class HrPositionRepository:
                         command.discovery_rule_version,
                     ),
                 ).fetchone()
-            if row is None:
-                raise HrUnavailable("position draft unavailable")
+                if row is None:
+                    raise HrUnavailable("position draft unavailable")
+                if import_evidence is not None:
+                    self._record_import_evidence_on(connection, import_evidence)
             return _draft(row)
         except HrRepositoryError:
             raise
@@ -345,7 +421,10 @@ class HrPositionRepository:
             raise HrUnavailable("position repository unavailable") from None
 
     def bind_conversation(
-        self, command: BindPositionConversation
+        self,
+        command: BindPositionConversation,
+        *,
+        import_evidence: dict[str, object] | None = None,
     ) -> PositionConversationBinding:
         if not isinstance(command, BindPositionConversation):
             raise ValueError("position conversation binding required")
@@ -362,8 +441,10 @@ class HrPositionRepository:
                         command.binding_kind,
                     ),
                 ).fetchone()
-            if row is None:
-                raise HrUnavailable("position conversation binding unavailable")
+                if row is None:
+                    raise HrUnavailable("position conversation binding unavailable")
+                if import_evidence is not None:
+                    self._record_import_evidence_on(connection, import_evidence)
             return _binding(row)
         except HrRepositoryError:
             raise
@@ -565,7 +646,14 @@ class HrPositionRepository:
                     "array(select artifact.artifact_id from "
                     "platform_hr.position_artifacts artifact where "
                     "artifact.position_id=position.position_id order by artifact.created_at desc) "
-                    "as artifact_ids from platform_hr.positions position "
+                    "as artifact_ids,array(select version.attachment_id from "
+                    "platform_hr.position_artifacts artifact join "
+                    "platform_attachments.current_artifact_versions version "
+                    "on version.artifact_id=artifact.artifact_id where "
+                    "artifact.position_id=position.position_id and "
+                    "version.state='ready' and version.result_status='succeeded' "
+                    "order by artifact.created_at desc) as artifact_attachment_ids "
+                    "from platform_hr.positions position "
                     "where position.owner_internal_user_id=%s "
                     "and position.position_id=%s",
                     (owner_id, position_id),
@@ -580,6 +668,7 @@ class HrPositionRepository:
                 conversation_ids=tuple(row["conversation_ids"]),
                 material_attachment_ids=tuple(row["material_attachment_ids"]),
                 artifact_ids=tuple(row["artifact_ids"]),
+                artifact_attachment_ids=tuple(row["artifact_attachment_ids"]),
             )
         except HrRepositoryError:
             raise

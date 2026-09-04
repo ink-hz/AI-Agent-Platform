@@ -107,6 +107,17 @@ def test_r11_import_review_binding_and_owner_boundary_survive_replay(
     drafts = repository.list_drafts(owner_id, state="proposed")
     assert len(drafts) == 3
     assert len([draft for draft in drafts if draft.source_conversation_id == multi_id]) == 2
+    with psycopg.connect(environment["admin"]) as admin:
+        evidence = admin.execute(
+            "select source_kind,source_conversation_id,source_message_seq,rule_version "
+            "from platform_hr.position_import_evidence "
+            "where owner_internal_user_id=%s order by source_kind,source_key",
+            (owner_id,),
+        ).fetchall()
+    assert len(evidence) == 5
+    assert (
+        "historical_exact", exact_id, 2, "history-r11"
+    ) in evidence
 
     ambiguous = next(draft for draft in drafts if draft.source_conversation_id == ambiguous_id)
     confirmed = repository.confirm_draft(ConfirmPositionDraft(
