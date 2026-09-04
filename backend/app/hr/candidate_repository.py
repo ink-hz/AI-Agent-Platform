@@ -152,6 +152,7 @@ def _analysis(row: dict[str, Any]) -> CandidateAnalysisVersion:
         agent_version=row["agent_version"],
         model_version=row["model_version"],
         created_at=row["created_at"],
+        source_artifact_version_id=row["source_artifact_version_id"],
     )
 
 
@@ -684,9 +685,9 @@ class CandidateRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.create_candidate_analysis_v70("
+                    "select (platform_hr.create_candidate_analysis_v77("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,"
-                    "%s::jsonb,%s::jsonb,%s::jsonb,%s,%s)).*",
+                    "%s::jsonb,%s::jsonb,%s::jsonb,%s,%s,%s)).*",
                     (
                         analysis_version_id, command.owner_id,
                         command.position_candidate_id, command.context_version_id,
@@ -698,6 +699,7 @@ class CandidateRepository:
                         json.dumps(command.conflicts, ensure_ascii=False),
                         json.dumps(command.verification_questions, ensure_ascii=False),
                         command.agent_version, command.model_version,
+                        command.source_artifact_version_id,
                     ),
                 ).fetchone()
                 if row is None:
@@ -745,6 +747,8 @@ class CandidateRepository:
                     == command.verification_questions
                     and selected.agent_version == command.agent_version
                     and selected.model_version == command.model_version
+                    and selected.source_artifact_version_id
+                    == command.source_artifact_version_id
                     and tuple(sorted(selected.feedback_ids))
                     == tuple(sorted(command.feedback_ids))
                 )

@@ -99,6 +99,7 @@ def test_candidate_records_are_frozen_and_preserve_human_ai_separation() -> None
         result={"summary": "适配"}, evidence=(), unknowns=("领导力",),
         conflicts=(), verification_questions=("举例说明领导经历",),
         agent_version="hr-r12", model_version="model-v1", created_at=NOW,
+        source_artifact_version_id=None,
     )
     feedback = AppendHumanFeedback(
         owner_id=owner_id, position_candidate_id=relation.position_candidate_id,
@@ -109,6 +110,13 @@ def test_candidate_records_are_frozen_and_preserve_human_ai_separation() -> None
     )
 
     assert analysis.unknowns == ("领导力",)
+    assert analysis.source_artifact_version_id is None
+    legacy_interview = replace(
+        analysis,
+        analysis_kind="candidate_interview_plan",
+        result={"title": "旧面试题", "questions": []},
+    )
+    assert legacy_interview.source_artifact_version_id is None
     assert feedback.correction == "候选人实际带过 6 人团队"
     with pytest.raises(FrozenInstanceError):
         candidate.stable_name = "changed"  # type: ignore[misc]
@@ -313,3 +321,20 @@ def test_parser_queue_commands_separate_claim_from_execution_binding() -> None:
     assert attach.execution_job_id is not None
     with pytest.raises(ValueError, match="processing lease invalid"):
         replace(claim, lease_seconds=29)
+
+
+def test_analysis_source_artifact_version_is_nullable_and_uuid_only() -> None:
+    artifact_version_id = uuid4()
+    command = CreateCandidateAnalysis(
+        uuid4(), uuid4(), uuid4(), (uuid4(),), "candidate_interview_plan",
+        uuid4(), {"title": "面试题", "questions": []}, (), (), (), (),
+        "hr-r12", "model-v1", source_artifact_version_id=artifact_version_id,
+    )
+
+    assert command.source_artifact_version_id == artifact_version_id
+    with pytest.raises(ValueError, match="candidate interview artifact required"):
+        replace(command, source_artifact_version_id=None)
+    with pytest.raises(ValueError, match="artifact version invalid"):
+        replace(command, source_artifact_version_id="locator:secret")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="candidate analysis artifact invalid"):
+        replace(command, analysis_kind="match")

@@ -39,8 +39,24 @@ _PROMPTS = {
     "talent_profile": "基于当前已确认的岗位上下文生成人才画像。",
     "sourcing_strategy": "基于当前已确认的岗位上下文生成候选人搜寻策略。",
     "position_interview_plan": "基于当前已确认的岗位上下文生成岗位面试方案。",
-    "candidate_match": "基于当前岗位上下文和候选人材料生成匹配分析。",
-    "candidate_interview_plan": "基于当前岗位上下文和候选人材料生成专属面试题。",
+    "candidate_match": (
+        "基于当前岗位上下文和候选人材料生成匹配分析。先输出完整、可读 Markdown，"
+        "再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> "
+        "隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=candidate_match、"
+        "payload，payload 必须且只能包含 "
+        "summary、dimensions、evidence、gaps、risks、unknowns、"
+        "verification_questions。"
+    ),
+    "candidate_interview_plan": (
+        "基于当前岗位上下文和候选人材料生成专属面试题。先输出完整、可读 Markdown，"
+        "再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> "
+        "隐藏 envelope；canonical JSON 必须恰含 schema_version=1、"
+        "kind=candidate_interview_plan、payload，payload 必须且只能包含 title、questions，"
+        "每题必须且只能包含 verification_goal、candidate_reason、"
+        "question、follow_ups、strong_evidence、risk_signals。还必须通过现有 write_output "
+        "grant 创建且只创建一个 ready application/pdf 文件，文件名严格为 "
+        "<岗位>-<候选人>-面试题-v<版本>.pdf。"
+    ),
 }
 
 

@@ -454,6 +454,7 @@ class CandidateAnalysisVersion:
     agent_version: str
     model_version: str
     created_at: datetime
+    source_artifact_version_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -461,6 +462,9 @@ class CandidateAnalysisVersion:
             self.position_id, self.candidate_id, self.context_version_id,
         ):
             _uuid(value)
+        _optional_uuid(
+            self.source_artifact_version_id, "analysis artifact version invalid"
+        )
         _positive(self.version_number, "analysis version invalid")
         if self.analysis_kind not in _ANALYSIS_KINDS:
             raise ValueError("analysis kind invalid")
@@ -716,6 +720,7 @@ class CreateCandidateAnalysis:
     agent_version: str
     model_version: str
     feedback_ids: tuple[UUID, ...] = ()
+    source_artifact_version_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -723,8 +728,21 @@ class CreateCandidateAnalysis:
             self.context_version_id, self.client_request_id,
         ):
             _uuid(value)
+        _optional_uuid(
+            self.source_artifact_version_id, "analysis artifact version invalid"
+        )
         if self.analysis_kind not in _ANALYSIS_KINDS:
             raise ValueError("analysis kind invalid")
+        if (
+            self.analysis_kind == "candidate_interview_plan"
+            and self.source_artifact_version_id is None
+        ):
+            raise ValueError("candidate interview artifact required")
+        if (
+            self.analysis_kind != "candidate_interview_plan"
+            and self.source_artifact_version_id is not None
+        ):
+            raise ValueError("candidate analysis artifact invalid")
         _uuid_tuple(
             self.document_ids, minimum=1, maximum=100,
             message="analysis documents required",
