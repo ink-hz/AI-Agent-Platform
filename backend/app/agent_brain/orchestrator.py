@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-import json
-import logging
 from typing import Any
 from uuid import UUID
 
@@ -32,19 +32,18 @@ from .conversation_context import (
     ConversationSummaryProtocolError,
     parse_summary_result,
 )
-from .conversation_repository import ConversationRepositoryError
 from .conversation_projection import ConversationProjection
+from .conversation_repository import ConversationRepositoryError
 from .models import AgentCapabilityCard
 from .protocol import BrainProtocolError, parse_brain_decision
 from .repository import (
+    TERMINAL_MISSION_STATUSES,
     MissionContentUnavailable,
     MissionRecord,
     MissionRepositoryConflict,
     MissionRepositoryError,
     MissionRun,
-    TERMINAL_MISSION_STATUSES,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +117,7 @@ def _request_sections(
     current = user_request.messages[-1]
     if current.role != "user":
         raise ValueError("conversation context invalid")
-    return {
+    sections = {
         "conversation_summary": user_request.summary,
         "conversation_messages": [
             {"role": message.role, "content": message.content}
@@ -126,6 +125,40 @@ def _request_sections(
         ],
         "user_request": current.content,
     }
+    hr_context = user_request.hr_position_context
+    if hr_context is not None:
+        sections["hr_position_context"] = {
+            "position_id": str(hr_context.position_id),
+            "official_version_id": (
+                str(hr_context.official_version_id)
+                if hr_context.official_version_id is not None else None
+            ),
+            "context_version_id": (
+                str(hr_context.context_version_id)
+                if hr_context.context_version_id is not None else None
+            ),
+            "task_kind": hr_context.task_kind,
+            "material_attachment_ids": [
+                str(value) for value in hr_context.material_attachment_ids
+            ],
+            "candidate_id": (
+                str(hr_context.candidate_id)
+                if hr_context.candidate_id is not None else None
+            ),
+            "position_candidate_id": (
+                str(hr_context.position_candidate_id)
+                if hr_context.position_candidate_id is not None else None
+            ),
+            "document_attachment_ids": [
+                str(value) for value in hr_context.document_attachment_ids
+            ],
+            "human_feedback_ids": [
+                str(value) for value in hr_context.human_feedback_ids
+            ],
+            "prompt_context": hr_context.prompt_context,
+            "canonical_sha256": hr_context.canonical_sha256,
+        }
+    return sections
 
 
 def build_planning_prompt(

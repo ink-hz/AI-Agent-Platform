@@ -14,6 +14,8 @@ from app.agent_brain.conversation_repository import (
     ConversationRepositoryNotFound,
 )
 from app.execution_relay.content_crypto import ContentCryptoError
+from app.hr.position_intelligence_models import HrPositionContextEnvelope
+from app.hr.task_context import HrTaskContextError, canonical_hash
 
 MAX_CONTEXT_BYTES = 96 * 1024
 COMPACTION_TRIGGER_BYTES = 64 * 1024
@@ -46,6 +48,7 @@ class ConversationContext:
     messages: tuple[ContextMessage, ...]
     estimated_utf8_bytes: int
     active_attachment_ids: tuple[UUID, ...] = ()
+    hr_position_context: HrPositionContextEnvelope | None = None
 
 
 @dataclass(frozen=True)
@@ -91,20 +94,36 @@ def parse_summary_result(
         raise ConversationSummaryProtocolError() from None
 
 
-def _context_size(summary: str | None, messages: tuple[ContextMessage, ...]) -> int:
+def _context_size(
+    summary: str | None,
+    messages: tuple[ContextMessage, ...],
+    hr_position_context: HrPositionContextEnvelope | None = None,
+) -> int:
     total = 0
     if summary is not None:
         total += len(summary.encode("utf-8")) + len("summary") + 16
     for message in messages:
         total += len(message.content.encode("utf-8")) + len(message.role) + 16
+    if hr_position_context is not None:
+        total += len(hr_position_context.prompt_context.encode("utf-8")) + 512
     return total
 
 
 class ConversationContextBuilder:
-    def __init__(self, repository: ConversationRepository) -> None:
+    def __init__(
+        self,
+        repository: ConversationRepository,
+        *,
+        hr_task_context_provider: object | None = None,
+    ) -> None:
         if not isinstance(repository, ConversationRepository):
             raise ValueError("Conversation repository required")
+        if hr_task_context_provider is not None and not callable(
+            getattr(hr_task_context_provider, "build_for_turn", None)
+        ):
+            raise ValueError("HR task context provider invalid")
         self.repository = repository
+        self._hr_task_context_provider = hr_task_context_provider
 
     def _load(
         self, conversation_id: UUID, turn_id: UUID
@@ -113,7 +132,11 @@ class ConversationContextBuilder:
             raise ValueError("Conversation context identifiers invalid")
         with self.repository._connection() as connection, connection.cursor() as cursor:
             row = cursor.execute(
-                "select conversation.*,turn.user_message_id,message.seq as user_seq "
+                "select conversation.*,turn.user_message_id,message.seq as user_seq,"
+                "exists(select 1 from platform_hr.position_conversations binding "
+                "where binding.conversation_id=conversation.conversation_id "
+                "and binding.owner_internal_user_id=conversation.owner_internal_user_id) "
+                "as verified_hr_position "
                 "from platform_control.conversations conversation "
                 "join platform_control.conversation_turns turn "
                 "on turn.conversation_id=conversation.conversation_id "
@@ -172,14 +195,40 @@ class ConversationContextBuilder:
             for record in records
         )
         messages = tuple(message for _seq, message in sequenced)
+        hr_position_context = None
+        is_hr_position = (
+            row["mode"] == "direct_agent"
+            and row["direct_agent_id"] == "hr-bot"
+            and row["verified_hr_position"] is True
+        )
+        if is_hr_position:
+            if self._hr_task_context_provider is None:
+                raise ConversationContextError()
+            try:
+                hr_position_context = (
+                    self._hr_task_context_provider.build_for_turn(
+                        row["owner_internal_user_id"], conversation_id, turn_id
+                    )
+                )
+                if (
+                    not isinstance(hr_position_context, HrPositionContextEnvelope)
+                    or canonical_hash(hr_position_context)
+                    != hr_position_context.canonical_sha256
+                ):
+                    raise ValueError
+            except (HrTaskContextError, ValueError):
+                raise ConversationContextError() from None
         return (
             ConversationContext(
                 summary=conversation.summary,
                 messages=messages,
-                estimated_utf8_bytes=_context_size(conversation.summary, messages),
+                estimated_utf8_bytes=_context_size(
+                    conversation.summary, messages, hr_position_context
+                ),
                 active_attachment_ids=tuple(
                     item["attachment_id"] for item in active_rows
                 ),
+                hr_position_context=hr_position_context,
             ),
             row["user_seq"],
             sequenced,
