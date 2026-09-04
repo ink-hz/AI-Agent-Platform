@@ -22,7 +22,20 @@ from .importers import (
     discover_historical_positions,
     project_official_jobs,
 )
+from .position_intelligence_repository import PositionIntelligenceRepository
 from .repository import HrPositionRepository
+
+
+class _ImportRepository:
+    def __init__(self, database_url: str) -> None:
+        self._positions = HrPositionRepository(database_url)
+        self._intelligence = PositionIntelligenceRepository(database_url)
+
+    def project_official_version(self, command):
+        return self._intelligence.project_official_version(command)
+
+    def __getattr__(self, name: str):
+        return getattr(self._positions, name)
 
 DEFAULT_REGISTRY_FILE = (
     "/Users/agentops/AgentRuntime/instances/hr-bot/state/"
@@ -182,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         snapshot=snapshot,
         owner_id=namespace.owner_id,
         request_id=request_id,
-        position_repository=HrPositionRepository(database_url),
+        position_repository=_ImportRepository(database_url),
         conversation_repository=ConversationRepository(
             database_url, content_codec=codec,
         ),

@@ -11,7 +11,9 @@ from psycopg.rows import dict_row
 from .position_intelligence_models import (
     ConfirmContextModules,
     CreateContextDraft,
+    OfficialPositionVersion,
     PositionContextVersion,
+    ProjectOfficialVersion,
 )
 
 
@@ -59,6 +61,36 @@ def _context(row: dict[str, Any]) -> PositionContextVersion:
     )
 
 
+def _official(row: dict[str, Any]) -> OfficialPositionVersion:
+    locations = row["locations"]
+    return OfficialPositionVersion(
+        official_position_version_id=row["official_position_version_id"],
+        owner_id=row["owner_internal_user_id"],
+        position_id=row["position_id"],
+        official_job_id=row["official_job_id"],
+        title=row["title"],
+        department=row["department"],
+        locations=tuple(locations),
+        category=row["category"],
+        subcategory=row["subcategory"],
+        headcount=row["headcount"],
+        degree=row["degree"],
+        employment_type=row["employment_type"],
+        salary=row["salary"],
+        duty=row["duty"],
+        requirement=row["requirement"],
+        source_version=row["source_version"],
+        source_changed_at=row["source_changed_at"],
+        content_hash=row["content_hash"],
+        first_observed_at=row["first_observed_at"],
+        last_observed_at=row["last_observed_at"],
+        official_status=row["official_status"],
+        status_reason=row["status_reason"],
+        evidence=row["evidence"],
+        created_at=row["created_at"],
+    )
+
+
 class PositionIntelligenceRepository:
     def __init__(
         self,
@@ -100,6 +132,75 @@ class PositionIntelligenceRepository:
             raise PositionIntelligenceUnavailable(
                 "position context unavailable"
             ) from None
+
+    def project_official_version(
+        self, command: ProjectOfficialVersion
+    ) -> OfficialPositionVersion:
+        if not isinstance(command, ProjectOfficialVersion):
+            raise ValueError("official version projection required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.project_official_version_v67("
+                    "%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,"
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
+                    (
+                        command.official_position_version_id,
+                        command.owner_id,
+                        command.position_id,
+                        command.client_request_id,
+                        command.official_job_id,
+                        command.title,
+                        command.department,
+                        json.dumps(command.locations, ensure_ascii=False),
+                        command.category,
+                        command.subcategory,
+                        command.headcount,
+                        command.degree,
+                        command.employment_type,
+                        command.salary,
+                        command.duty,
+                        command.requirement,
+                        command.source_version,
+                        command.source_changed_at,
+                        command.content_hash,
+                        command.first_observed_at,
+                        command.last_observed_at,
+                        command.official_status,
+                        command.status_reason,
+                        json.dumps(command.evidence, ensure_ascii=False),
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PositionIntelligenceUnavailable("official version unavailable")
+            return _official(row)
+        except PositionIntelligenceError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise PositionContextNotFound("position not found") from None
+        except (psycopg.errors.SerializationFailure, psycopg.errors.UniqueViolation):
+            raise PositionContextConflict("official version conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise PositionIntelligenceUnavailable("official version unavailable") from None
+
+    def official_versions(
+        self, owner_id: UUID, position_id: UUID
+    ) -> tuple[OfficialPositionVersion, ...]:
+        if not isinstance(owner_id, UUID) or not isinstance(position_id, UUID):
+            raise ValueError("official version identifiers invalid")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select version.* from platform_hr.official_position_versions version "
+                    "join platform_hr.positions position using (position_id) "
+                    "where version.owner_internal_user_id=%s "
+                    "and position.owner_internal_user_id=%s and version.position_id=%s "
+                    "order by version.source_changed_at desc,version.created_at desc",
+                    (owner_id, owner_id, position_id),
+                ).fetchall()
+            return tuple(_official(row) for row in rows)
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise PositionIntelligenceUnavailable("official versions unavailable") from None
 
     def list_versions(
         self,

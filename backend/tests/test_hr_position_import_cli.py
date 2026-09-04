@@ -52,6 +52,7 @@ class _Conversations:
 class _Positions:
     def __init__(self) -> None:
         self.projected = []
+        self.official_versions = []
         self.bound = []
         self.proposed = []
         self.evidence = []
@@ -60,6 +61,10 @@ class _Positions:
         self.projected.append(command)
         self.evidence.append(import_evidence)
         return SimpleNamespace(position_id=command.position_id)
+
+    def project_official_version(self, command):
+        self.official_versions.append(command)
+        return command
 
     def bind_conversation(self, command, *, import_evidence=None):
         self.bound.append(command)
@@ -115,7 +120,10 @@ def test_import_apply_projects_and_binds_with_the_supplied_stable_run_id() -> No
     )
 
     assert summary["mode"] == "apply"
-    assert len(positions.projected) == len(positions.bound) == 1
+    assert len(positions.projected) == len(positions.official_versions) == 1
+    assert len(positions.bound) == 1
     assert positions.proposed == []
     assert positions.projected[0].owner_id == owner_id
     assert positions.bound[0].conversation_id == conversation_id
+    assert positions.official_versions[0].duty == "Build the system."
+    assert "Build the system." not in json.dumps(summary)

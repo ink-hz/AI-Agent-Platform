@@ -40,6 +40,10 @@ class RecordingRepository:
         self.calls.append(("compare", args))
         return {"changed_modules": ()}
 
+    def official_versions(self, *args):
+        self.calls.append(("official", args))
+        return ()
+
 
 def test_service_builds_draft_and_human_confirmation_commands() -> None:
     owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()

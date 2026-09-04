@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-
 ContextState = Literal["draft", "confirmed", "superseded"]
 CONTEXT_MODULES = frozenset(
     {
@@ -169,6 +168,69 @@ class OfficialPositionVersion:
         if self.first_observed_at > self.last_observed_at:
             raise ValueError("official observation range invalid")
         _object(self.evidence, 65536, "official evidence invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectOfficialVersion:
+    official_position_version_id: UUID
+    owner_id: UUID
+    position_id: UUID
+    client_request_id: UUID
+    official_job_id: str
+    title: str
+    department: str | None
+    locations: tuple[str, ...]
+    category: str
+    subcategory: str | None
+    headcount: int
+    degree: str | None
+    employment_type: str
+    salary: str
+    duty: str
+    requirement: str
+    source_version: str
+    source_changed_at: datetime
+    content_hash: str
+    first_observed_at: datetime
+    last_observed_at: datetime
+    official_status: str
+    status_reason: str
+    evidence: dict[str, object]
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.official_position_version_id,
+            self.owner_id,
+            self.position_id,
+            self.client_request_id,
+        ):
+            _uuid(value)
+        OfficialPositionVersion(
+            official_position_version_id=self.official_position_version_id,
+            owner_id=self.owner_id,
+            position_id=self.position_id,
+            official_job_id=self.official_job_id,
+            title=self.title,
+            department=self.department,
+            locations=self.locations,
+            category=self.category,
+            subcategory=self.subcategory,
+            headcount=self.headcount,
+            degree=self.degree,
+            employment_type=self.employment_type,
+            salary=self.salary,
+            duty=self.duty,
+            requirement=self.requirement,
+            source_version=self.source_version,
+            source_changed_at=self.source_changed_at,
+            content_hash=self.content_hash,
+            first_observed_at=self.first_observed_at,
+            last_observed_at=self.last_observed_at,
+            official_status=self.official_status,
+            status_reason=self.status_reason,
+            evidence=self.evidence,
+            created_at=self.first_observed_at,
+        )
 
 
 @dataclass(frozen=True, slots=True)
