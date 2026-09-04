@@ -367,31 +367,27 @@ def build_conversation_attachment_router() -> APIRouter:
         request: Request,
         content_length: str | None = Header(default=None, alias="Content-Length"),
     ):
-        if (
-            content_length is None
-            or "chunked" in request.headers.get("transfer-encoding", "").lower()
-        ):
-            raise HTTPException(status_code=411, detail="content length required")
-        try:
-            size = int(content_length)
-        except (TypeError, ValueError):
-            raise HTTPException(
-                status_code=411, detail="content length required"
-            ) from None
-        if size <= 0 or size > MAX_FILE_BYTES:
-            raise HTTPException(
-                status_code=409, detail="attachment operation unavailable"
-            )
+        if content_length is not None:
+            try:
+                declared_size = int(content_length)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=411, detail="content length required"
+                ) from None
+            if declared_size > MAX_FILE_BYTES:
+                raise HTTPException(
+                    status_code=409, detail="attachment operation unavailable"
+                )
         received = 0
         with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as staged:
             async for chunk in request.stream():
                 received += len(chunk)
-                if received > size or received > MAX_FILE_BYTES:
+                if received > MAX_FILE_BYTES:
                     raise HTTPException(
                         status_code=409, detail="attachment operation unavailable"
                     )
                 staged.write(chunk)
-            if received != size:
+            if received == 0:
                 raise HTTPException(
                     status_code=409, detail="attachment operation unavailable"
                 )
@@ -402,7 +398,7 @@ def build_conversation_attachment_router() -> APIRouter:
                     _owner(request),
                     upload_id,
                     staged,
-                    size,
+                    received,
                 )
                 return _upload_response(result)
             except RuntimeError as error:

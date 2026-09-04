@@ -117,24 +117,40 @@ describe("Executive Operations visual contract", () => {
     expect(mobile).toContain(".hr-position-card { grid-template-columns: 1fr;");
   });
 
-  it("keeps the position context visible across the three-column HR workspace", () => {
-    expect(rule(".hr-position-workspace")).toContain("min-height: 100%");
-    expect(rule(".hr-position-workspace")).toContain("overflow-y: auto");
-    expect(rule(".hr-position-workspace")).not.toContain("overflow: hidden");
-    expect(rule(".hr-position-context")).toContain("position: sticky");
-    expect(rule(".hr-position-context-metrics")).toContain("grid-template-columns: repeat(3,minmax(0,1fr))");
+  it("keeps the position conversation primary with on-demand responsive controls", () => {
+    expect(rule(".hr-position-workspace")).toContain("height: 100%");
+    expect(rule(".hr-position-workspace")).toContain("min-height: 0");
+    expect(rule(".hr-position-workspace")).toContain("overflow: hidden");
+    expect(rule(".hr-position-bar")).toContain("height: 64px");
+    expect(rule(".hr-position-chat-surface")).toContain("flex: 1");
+    expect(rule(".hr-position-chat-surface")).toContain("min-height: 0");
+    expect(rule(".hr-position-chat-surface > .agent-use-workspace.is-focused")).toContain("grid-template-columns: 248px minmax(0,1fr)");
+    expect(rule(".hr-position-details-drawer")).toContain("position: absolute");
+    expect(rule(".hr-position-details-drawer")).toContain("right: 0");
+    expect(rule(".hr-position-task-popover")).toContain("bottom: calc(100% + 10px)");
+    const compactDesktop = blockContaining(
+      "@media screen and (min-width: 721px) and (max-width: 840px)",
+      ".hr-position-task-popover",
+    );
+    expect(compactDesktop).toContain(".hr-position-task-popover { position: fixed;");
+    expect(compactDesktop).toContain("right: 16px");
+    expect(compactDesktop).toContain("width: min(540px,calc(100vw - 32px))");
+    expect(compactDesktop).toContain("max-height: calc(100dvh - 32px)");
+    expect(compactDesktop).toContain("overflow-y: auto");
+    expect(styles).not.toContain(".hr-position-context-metrics {");
+    expect(styles).not.toContain(".hr-position-sections {");
+    expect(styles).not.toContain(".hr-position-taskbar {");
+    expect(styles).not.toContain(".hr-position-quick-tasks {");
     expect(rule(".session-material-position-action")).toContain("min-height: 34px");
     const mobile = blockContaining(
       "@media screen and (max-width: 720px)",
-      ".hr-position-context-metrics",
+      ".hr-position-details-drawer",
     );
-    expect(mobile).toContain(".hr-position-context-metrics { grid-template-columns: 1fr;");
-    expect(rule(".hr-position-section-panel")).toContain("overflow: auto");
-    expect(rule('.hr-position-sections [role="tablist"]')).toContain("display: flex");
+    expect(mobile).toContain(".hr-position-details-drawer { top: auto; left: 0; width: 100%;");
+    expect(mobile).toContain("border-radius: 16px 16px 0 0");
     expect(rule(".hr-drawer-backdrop")).toContain("position: fixed");
     expect(rule(".hr-mobile-drawer")).toContain("position: fixed");
     expect(rule(".hr-mobile-drawer")).toContain("overflow-y: auto");
-    expect(mobile).toContain(".hr-position-taskbar");
     expect(mobile).toContain(".hr-mobile-drawer");
     expect(mobile).toContain("right: 0");
     expect(mobile).toContain("bottom: 0");

@@ -10,6 +10,11 @@ import type { ConversationSubmissionResult } from "../conversationTypes";
 import { DirectAgentWorkspace } from "../workspaces/direct/DirectAgentWorkspace";
 import { AgentUseDirectoryPage } from "./AgentUseDirectoryPage";
 
+vi.mock("./ConversationPage", () => ({
+  ConversationPage: ({ messageActionsPresentation }: { messageActionsPresentation?: string }) => (
+    <p data-message-actions-presentation={messageActionsPresentation} />
+  ),
+}));
 
 const account: Account = {
   internal_user_id: "member", display_name: "磐德", role: "member",
@@ -171,6 +176,28 @@ describe("professional Agent use pages", () => {
     expect(historyClient.list).toHaveBeenCalledWith(expect.any(AbortSignal), undefined, 20, "hr-bot");
   });
 
+  it("uses FAE actions only for HR direct conversations", async () => {
+    await act(async () => root.render(<DirectAgentWorkspace
+      account={account} agentId="hr-bot" conversationId="hr-conversation"
+      loadCatalog={vi.fn().mockResolvedValue([card])} historyClient={historyClient} onOpenConversation={vi.fn()}
+      conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
+    />));
+
+    expect(container.querySelector("[data-message-actions-presentation]")?.getAttribute("data-message-actions-presentation"))
+      .toBe("icon");
+  });
+
+  it("keeps legacy actions for non-HR direct conversations", async () => {
+    await act(async () => root.render(<DirectAgentWorkspace
+      account={account} agentId={marketingCard.agent_id} conversationId="marketing-conversation"
+      loadCatalog={vi.fn().mockResolvedValue([marketingCard])} historyClient={historyClient} onOpenConversation={vi.fn()}
+      conversationPath={(conversationId) => `/marketing/conversations/${conversationId}`}
+    />));
+
+    expect(container.querySelector("[data-message-actions-presentation]")?.getAttribute("data-message-actions-presentation"))
+      .toBe("legacy");
+  });
+
   it("sends a new conversation with Enter but keeps Shift+Enter and IME Enter for editing", async () => {
     const send = vi.fn().mockResolvedValue(result);
     const createSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
@@ -272,6 +299,7 @@ describe("professional Agent use pages", () => {
     expect(textarea.compareDocumentPosition(attachments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(attachments.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(form.textContent).toContain("添加文件或图片");
+    expect(form.textContent).not.toContain("支持选择、拖放或粘贴；单条最多");
     expect(form.textContent).not.toContain("直接交给 HR Agent");
   });
 

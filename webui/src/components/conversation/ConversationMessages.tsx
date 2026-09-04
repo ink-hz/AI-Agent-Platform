@@ -11,7 +11,7 @@ import type {
 import { MessageMarkdown } from "../MessageMarkdown";
 import { ArtifactVersionList } from "./ArtifactVersionList";
 import { CitationList } from "./CitationList";
-import { MessageActions } from "./MessageActions";
+import { MessageActions, type MessageActionsPresentation } from "./MessageActions";
 
 function timeLabel(value: string): string {
   const date = new Date(value);
@@ -45,7 +45,7 @@ function SearchRecoveryNotice({ message, onRetry }: { message: ConversationMessa
   return <aside className="conversation-search-recovery is-partial" role="status"><strong>已返回部分检索结果</strong>{recovery.coverageNote && <span>{recovery.coverageNote}</span>}</aside>;
 }
 
-function AssistantMessage({ message, assistantLabel, feedbackState, citations, versions, onFeedback, onOpenAttachment, onDownloadAll, onRetry }: {
+function AssistantMessage({ message, assistantLabel, feedbackState, citations, versions, onFeedback, onOpenAttachment, onDownloadAll, onRetry, messageActionsPresentation }: {
   message: ConversationMessage;
   assistantLabel: string;
   feedbackState?: ConversationFeedbackRating | "pending" | "error";
@@ -55,6 +55,7 @@ function AssistantMessage({ message, assistantLabel, feedbackState, citations, v
   onOpenAttachment?: (attachment: ConversationAttachment, purpose: "preview" | "download") => void;
   onDownloadAll?: () => void;
   onRetry?: () => void;
+  messageActionsPresentation: MessageActionsPresentation;
 }) {
   const visible = useRef<HTMLDivElement>(null);
   return <article className="conversation-message conversation-assistant" data-message-id={message.message_id}>
@@ -68,6 +69,7 @@ function AssistantMessage({ message, assistantLabel, feedbackState, citations, v
       feedbackState={feedbackState}
       onFeedback={onFeedback ? (rating, reason, comment) => onFeedback(message.message_id, rating, reason, comment) : undefined}
       onRetry={onRetry}
+      presentation={messageActionsPresentation}
     />}
   </article>;
 }
@@ -83,6 +85,7 @@ export function ConversationMessages({
   onDownloadAll,
   onRetry,
   renderAfterUserTurn,
+  messageActionsPresentation = "legacy",
 }: {
   messages: ConversationMessage[];
   assistantLabel?: string;
@@ -94,6 +97,7 @@ export function ConversationMessages({
   onDownloadAll?: (messageId: string) => void;
   onRetry?: (message: ConversationMessage) => void;
   renderAfterUserTurn?: (turnId: string) => ReactNode;
+  messageActionsPresentation?: MessageActionsPresentation;
 }) {
   const ordered = [...new Map(messages.map((message) => [message.message_id, message])).values()]
     .sort((left, right) => left.seq - right.seq);
@@ -104,6 +108,7 @@ export function ConversationMessages({
         citations={citations[message.message_id] ?? message.citations ?? []}
         feedbackState={feedback[message.message_id]}
         message={message}
+        messageActionsPresentation={messageActionsPresentation}
         onDownloadAll={message.output_attachments.length > 1 && onDownloadAll ? () => onDownloadAll(message.message_id) : undefined}
         onFeedback={onFeedback}
         onOpenAttachment={onOpenAttachment}

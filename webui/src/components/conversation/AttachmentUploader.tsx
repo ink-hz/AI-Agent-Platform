@@ -10,11 +10,13 @@ import {
 } from "react";
 
 import {
+  attachmentUploadErrorMessage,
   beginAttachmentUpload,
   cancelAttachmentUpload,
   completeAttachmentUpload,
   fetchConversationAttachment,
   uploadAttachmentContent,
+  type AttachmentUploadStage,
   type AttachmentUpload,
 } from "../../attachmentApi";
 import type { AgentAttachmentLimits, AgentContentType } from "../../brainTypes";
@@ -28,7 +30,8 @@ export interface UploadQueueItem {
   state: "queued" | "uploading" | "processing" | "ready" | "failed";
   attachment?: ConversationAttachment;
   uploadId?: string;
-  error?: string;
+  error?: unknown;
+  errorMessage?: string;
 }
 
 export interface AttachmentUploadClient {
@@ -105,9 +108,11 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   conversationBytes?: number;
   conversationFileCount?: number;
   conversationId: string | null;
+  compact?: boolean;
   csrfToken: string;
   disabled?: boolean;
   limits?: AgentAttachmentLimits;
+  initialItems?: UploadQueueItem[];
   onChange?: (items: UploadQueueItem[]) => void;
   onError?: (message: string | null) => void;
   onReady?: (attachment: ConversationAttachment) => void;
@@ -119,6 +124,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   conversationBytes = 0,
   conversationFileCount = 0,
   conversationId,
+  compact = false,
   csrfToken,
   disabled = false,
   limits = {
@@ -128,15 +134,16 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
     max_files_per_conversation: 50,
     max_bytes_per_conversation: 500 * 1024 * 1024,
   },
+  initialItems = [],
   onChange,
   onError,
   onReady,
   onRemoveReady,
   onQueueChange,
 }, forwardedRef) {
-  const [items, setItems] = useState<UploadQueueItem[]>([]);
+  const [items, setItems] = useState<UploadQueueItem[]>(() => initialItems.map((item) => ({ ...item })));
   const [validationError, setValidationError] = useState<string | null>(null);
-  const itemsRef = useRef<UploadQueueItem[]>([]);
+  const itemsRef = useRef<UploadQueueItem[]>(items);
   const controllers = useRef(new Map<string, AbortController>());
 
   useEffect(() => () => {
@@ -162,14 +169,29 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
     if (!item) return;
     const controller = new AbortController();
     controllers.current.set(localId, controller);
+    let stage: AttachmentUploadStage = "begin";
     try {
-      update(localId, { error: undefined, progress: 10, state: "uploading", uploadId: undefined });
+      if (item.uploadId) {
+        try {
+          await client.cancel(item.uploadId, csrfToken, controller.signal);
+        } catch {
+          if (controller.signal.aborted) return;
+          // Cancellation is best effort: an expired upload must not block a clean restart.
+        }
+      }
+      if (controller.signal.aborted) return;
+      update(localId, {
+        error: undefined, errorMessage: undefined, progress: 10, state: "uploading", uploadId: undefined,
+      });
       const begun = await client.begin(conversationId, item.file, csrfToken, controller.signal);
       update(localId, { progress: 35, uploadId: begun.uploadId });
+      stage = "content";
       await client.upload(begun.uploadId, item.file, csrfToken, controller.signal);
       update(localId, { progress: 70, state: "processing" });
+      stage = "complete";
       let attachment = await client.complete(begun.uploadId, csrfToken, controller.signal, item.file);
       update(localId, { attachment, progress: attachment.state === "ready" ? 100 : 85 });
+      stage = "processing";
       for (let attempt = 0; ["validating", "scanning"].includes(attachment.state); attempt += 1) {
         if (!client.status || attempt >= 300) throw new Error("文件处理超时，请稍后重试");
         await wait(1000, controller.signal);
@@ -179,19 +201,27 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
       if (attachment.state !== "ready") {
         throw new Error(attachment.stateReason || "文件未通过安全处理");
       }
-      update(localId, { attachment, error: undefined, progress: 100, state: "ready" });
+      update(localId, { attachment, error: undefined, errorMessage: undefined, progress: 100, state: "ready" });
       onReady?.(attachment);
       showError(null);
     } catch (error) {
       if (!controller.signal.aborted) {
-        const message = error instanceof Error ? error.message : "上传失败";
-        update(localId, { error: message, state: "failed" });
-        onError?.("附件上传失败，请重试");
+        const message = attachmentUploadErrorMessage(error, stage);
+        update(localId, { error, errorMessage: message, state: "failed" });
+        showError(message);
       }
     } finally {
-      controllers.current.delete(localId);
+      if (controllers.current.get(localId) === controller) controllers.current.delete(localId);
     }
   };
+
+  useEffect(() => {
+    for (const item of itemsRef.current) {
+      if (["queued", "uploading", "processing"].includes(item.state)) void process(item.localId);
+    }
+    // Restored queue items are resumed only once when this uploader mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const validate = (selected: File[]): string | null => {
     const existingQueue = itemsRef.current.filter((item) => item.state !== "failed");
@@ -238,10 +268,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   };
   useImperativeHandle(forwardedRef, () => ({ addFiles }));
 
-  const retry = async (item: UploadQueueItem) => {
-    if (item.uploadId) {
-      try { await client.cancel(item.uploadId, csrfToken); } catch { /* stale uploads expire server-side */ }
-    }
+  const retry = (item: UploadQueueItem) => {
     void process(item.localId);
   };
   const remove = async (item: UploadQueueItem) => {
@@ -269,26 +296,28 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   };
 
   return <section
-    className="attachment-uploader attachment-dropzone conversation-uploader"
+    className={`attachment-uploader attachment-dropzone conversation-uploader${compact ? " is-compact" : ""}`}
     onDragOver={(event) => event.preventDefault()}
     onDrop={drop}
     onPaste={paste}
   >
-    <label className="conversation-upload-button">
-      <input
-        accept="image/*,.pdf,.txt,.md,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-        disabled={disabled}
-        multiple
-        onChange={change}
-        type="file"
-      />
-      <span aria-hidden="true">＋</span> 添加文件或图片
-    </label>
-    <small>支持选择、拖放或粘贴；单条最多 {limits.max_files_per_message} 个、合计 {sizeLabel(limits.max_bytes_per_message)}</small>
+    <div className="conversation-upload-toolbar">
+      <label className="conversation-upload-button">
+        <input
+          accept="image/*,.pdf,.txt,.md,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+          disabled={disabled}
+          multiple
+          onChange={change}
+          type="file"
+        />
+        <span aria-hidden="true">＋</span> 添加文件或图片
+      </label>
+    </div>
+    {!compact && <small>支持选择、拖放或粘贴；单条最多 {limits.max_files_per_message} 个、合计 {sizeLabel(limits.max_bytes_per_message)}</small>}
     {validationError && <p className="conversation-upload-error" role="alert">{validationError}</p>}
-    {items.length > 0 && <ul className="conversation-upload-queue">{items.map((item) => <li key={item.localId} data-state={item.state}>
+    {items.length > 0 && <ul className="conversation-upload-queue">{items.map((item) => <li className="conversation-upload-chip" key={item.localId} data-state={item.state}>
       <div><strong>{item.file.name}</strong><span>{item.state === "failed"
-        ? `上传失败：${item.error ?? "请重试"}`
+        ? `上传失败：${item.errorMessage ?? "请重试"}`
         : item.state === "ready" ? "已就绪"
           : item.state === "processing" ? "正在安全处理" : "正在上传"}</span></div>
       <progress max={100} value={item.progress} />

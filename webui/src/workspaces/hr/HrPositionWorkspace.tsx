@@ -9,14 +9,12 @@ import { createHrR12Api, type HrR12Api } from "../../hrR12Api";
 import type { HrContextVersion, HrPositionMaterialItem, HrPositionSection, HrPositionTaskKind, HrTaskRecord } from "../../hrR12Types";
 import type { HrPositionDetail } from "../../hrTypes";
 import type { ConversationPageClient } from "../../pages/ConversationPage";
-import { PlatformLink } from "../../components/PlatformLink";
 import { navigate } from "../../router";
 import { DirectAgentWorkspace, type AgentHistoryClient } from "../direct/DirectAgentWorkspace";
-import { HrPositionContextPanel } from "./HrPositionContextPanel";
-import { HrCandidateWorkspace } from "./HrCandidateWorkspace";
-import { HrPositionResourcesPanel } from "./HrPositionResourcesPanel";
-import { trapDialogFocus } from "./modalFocus";
 import { completeMutationRequest, retainMutationRequest } from "./hrMutationRequest";
+import { HrPositionDetailsDrawer, type HrPositionDetailsTab } from "./HrPositionDetailsDrawer";
+import { HrPositionHeader } from "./HrPositionHeader";
+import { HrPositionTaskMenu } from "./HrPositionTaskMenu";
 
 
 type PositionWorkspaceApi = Pick<HrApi, "position" | "promoteMaterial" | "removeMaterial">;
@@ -53,11 +51,11 @@ function positionConversationPath(positionId: string, conversationId: string): s
 }
 
 
-function statusLabel(detail: HrPositionDetail): string {
-  if (detail.internalStatus === "archived") return "已归档";
-  if (detail.officialStatus === "inactive") return "官网已下线";
-  if (detail.officialStatus === "stale" || detail.officialStatus === "suspected_inactive") return "官网状态待核验";
-  return "进行中";
+function detailsTabForSection(section?: HrPositionSection): HrPositionDetailsTab | null {
+  if (section === "context") return "position";
+  if (section === "candidates") return "candidates";
+  if (section === "artifacts") return "resources";
+  return null;
 }
 
 
@@ -81,7 +79,7 @@ export function HrPositionWorkspace({
   conversationClient,
   onOpenConversation = navigate,
   r12Api,
-  section = "chat",
+  section,
 }: {
   account: Account;
   positionId: string;
@@ -115,14 +113,10 @@ export function HrPositionWorkspace({
   const [materialNotice, setMaterialNotice] = useState<string | null>(null);
   const [resourceRefreshGeneration, setResourceRefreshGeneration] = useState(0);
   const [contextRefreshGeneration, setContextRefreshGeneration] = useState(0);
-  const [activeSection, setActiveSection] = useState<HrPositionSection>(section);
-  const [materialDrawerOpen, setMaterialDrawerOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(() => detailsTabForSection(section) !== null);
+  const [detailsTab, setDetailsTab] = useState<HrPositionDetailsTab>(() => detailsTabForSection(section) ?? "position");
   const taskController = useRef<AbortController | null>(null);
   const artifactRefreshController = useRef<AbortController | null>(null);
-  const materialDrawerClose = useRef<HTMLButtonElement>(null);
-  const materialDrawerButton = useRef<HTMLButtonElement>(null);
-  const materialDrawerWasOpen = useRef(false);
-  const tabRefs = useRef<Partial<Record<HrPositionSection, HTMLButtonElement | null>>>({});
 
   const refreshArtifactProjection = useCallback(async () => {
     artifactRefreshController.current?.abort();
@@ -145,9 +139,16 @@ export function HrPositionWorkspace({
   }, [client, positionId]);
 
   useEffect(() => () => artifactRefreshController.current?.abort(), [positionId]);
-  useEffect(() => setActiveSection(section), [section]);
-  useEffect(() => { setTurnMaterialIds([]); setMaterialDrawerOpen(false); }, [conversationId]);
-  useEffect(() => { if (materialDrawerOpen) materialDrawerClose.current?.focus(); else if (materialDrawerWasOpen.current) materialDrawerButton.current?.focus(); materialDrawerWasOpen.current = materialDrawerOpen; }, [materialDrawerOpen]);
+  useEffect(() => { setTurnMaterialIds([]); }, [conversationId]);
+  useEffect(() => {
+    const routeTab = detailsTabForSection(section);
+    if (routeTab === null) {
+      setDetailsOpen(false);
+      return;
+    }
+    setDetailsTab(routeTab);
+    setDetailsOpen(true);
+  }, [section]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -178,12 +179,12 @@ export function HrPositionWorkspace({
   }, [attempt, positionId, r12]);
 
   useEffect(() => {
-    const controller = new AbortController(); setTaskState("loading");
+    const controller = new AbortController(); setActiveTasks([]); setTaskState("loading");
     void r12.activeTasks(positionId, controller.signal).then((tasks) => {
       if (!controller.signal.aborted) { setActiveTasks(tasks); setTaskState("ready"); }
-    }).catch(() => { if (!controller.signal.aborted) setTaskState("unavailable"); });
+    }).catch(() => { if (!controller.signal.aborted) { setActiveTasks([]); setTaskState("unavailable"); } });
     return () => controller.abort();
-  }, [positionId, r12, taskRefresh]);
+  }, [attempt, positionId, r12, taskRefresh]);
 
   const hasActiveTasks = activeTasks.some((task) => task.status === "accepted" || task.status === "running");
   useEffect(() => {
@@ -200,7 +201,7 @@ export function HrPositionWorkspace({
           }
           setActiveTasks(tasks); setTaskState("ready");
         }
-      }).catch(() => { if (!controller.signal.aborted) setTaskState("unavailable"); });
+      }).catch(() => { if (!controller.signal.aborted) { setActiveTasks([]); setTaskState("unavailable"); } });
     }, 2_000);
     return () => { window.clearTimeout(timeout); controller.abort(); };
   }, [activeTasks, hasActiveTasks, positionId, r12, refreshArtifactProjection]);
@@ -238,25 +239,6 @@ export function HrPositionWorkspace({
     }
   }
 
-  const header = <header className="hr-position-context">
-    <div className="hr-position-context-main">
-      <PlatformLink href="/hr/positions">← 所有岗位</PlatformLink>
-      <div><span className="hr-position-eyebrow">POSITION CONTEXT</span>
-        <h1>{detail.title}</h1>
-        <p>{[detail.department, ...detail.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
-      </div>
-      <div className="hr-position-context-tags"><span>{detail.officialJobId ?? "内部岗位"}</span><span>{statusLabel(detail)}</span>
-        {account.hard_stale_read_only && <strong>目录信息已过期，当前岗位只读</strong>}</div>
-    </div>
-    <dl className="hr-position-context-metrics">
-      <div><dt>对话</dt><dd>{detail.conversationCount} 个对话</dd></div>
-      <div><dt>岗位材料</dt><dd>{detail.materialCount} 份岗位材料</dd></div>
-      <div><dt>生成结果</dt><dd>{detail.artifactCount} 个生成结果</dd></div>
-    </dl>
-    {conversationId && !selectedConversationId && <p className="hr-position-scope-error" role="alert">该对话不属于当前岗位，已阻止跨岗位读取。</p>}
-    {materialNotice && <p className="hr-position-scope-error" role="status">{materialNotice}</p>}
-  </header>;
-
   async function quickTask(taskKind: HrPositionTaskKind) {
     if (account.hard_stale_read_only) return;
     taskController.current?.abort(); const controller = new AbortController(); taskController.current = controller;
@@ -281,52 +263,60 @@ export function HrPositionWorkspace({
       }
     } catch { if (!controller.signal.aborted) setMaterialNotice("岗位任务未启动，请重试。"); }
   }
-  const sections: Array<[HrPositionSection, string]> = [["chat", "对话"], ["context", "上下文"], ["candidates", "候选人"], ["artifacts", "材料与成果"]];
-  function activateSection(value: HrPositionSection) { setActiveSection(value); onOpenConversation(`/hr/positions/${encodeURIComponent(positionId)}/${value}`); tabRefs.current[value]?.focus(); }
-  function tabKey(event: React.KeyboardEvent<HTMLButtonElement>, value: HrPositionSection) {
-    const index = sections.findIndex(([item]) => item === value); let next = index;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (index + 1) % sections.length;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (index - 1 + sections.length) % sections.length;
-    else if (event.key === "Home") next = 0; else if (event.key === "End") next = sections.length - 1; else return;
-    event.preventDefault(); activateSection(sections[next][0]);
-  }
-  const navigation = <nav className="hr-position-sections" aria-label="岗位工作台分区"><div role="tablist">{sections.map(([value, label]) => <button aria-controls={`hr-position-panel-${value}`} id={`hr-position-tab-${value}`} key={value} ref={(element) => { tabRefs.current[value] = element; }} tabIndex={activeSection === value ? 0 : -1} type="button" role="tab" aria-selected={activeSection === value} onKeyDown={(event) => tabKey(event, value)} onClick={() => activateSection(value)}>{label}</button>)}</div></nav>;
-  const materialChoices = <>{availableMaterials.length === 0 ? <p>当前没有可用岗位材料。</p> : availableMaterials.map((material) => <label key={material.attachmentId}><input disabled={account.hard_stale_read_only} name="quick-task-material" type="checkbox" checked={turnMaterialIds.includes(material.attachmentId)} onChange={() => setTurnMaterialIds((ids) => ids.includes(material.attachmentId) ? ids.filter((id) => id !== material.attachmentId) : [...ids, material.attachmentId])} />{material.filename}</label>)}<small>默认不选；只会把本轮明确勾选的材料交给 Agent。</small></>;
-  const quickTasks = <section className="hr-position-taskbar" aria-label="岗位快捷任务"><div className="hr-position-quick-tasks"><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("jd")}>生成JD</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("jr")}>生成JR</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("talent_profile")}>生成人才画像</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("sourcing_strategy")}>生成搜寻策略</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("position_interview_plan")}>生成面试方案</button></div><button aria-expanded={materialDrawerOpen} ref={materialDrawerButton} type="button" onClick={() => setMaterialDrawerOpen(true)}>本轮材料（已选 {turnMaterialIds.length}）</button>{materialDrawerOpen && <><button aria-label="关闭本轮材料遮罩" className="hr-drawer-backdrop" type="button" onClick={() => setMaterialDrawerOpen(false)} /><aside aria-label="本轮任务材料" aria-modal="true" className="hr-mobile-drawer hr-turn-materials" role="dialog" onKeyDown={(event) => trapDialogFocus(event, () => setMaterialDrawerOpen(false))}><header><h2>本轮任务材料</h2><button aria-label="关闭本轮材料" ref={materialDrawerClose} type="button" onClick={() => setMaterialDrawerOpen(false)}>关闭</button></header>{materialChoices}</aside></>}</section>;
-  const sectionView = activeSection === "context" ? <HrPositionContextPanel api={r12} onConfirmed={setCurrentContext} positionId={positionId} readOnly={account.hard_stale_read_only} refreshGeneration={contextRefreshGeneration} />
-    : activeSection === "candidates" ? <HrCandidateWorkspace api={r12} csrfToken={account.csrf_token} currentContextVersionId={currentContext?.contextVersionId ?? null} positionId={positionId} readOnly={account.hard_stale_read_only} />
-      : <HrPositionResourcesPanel api={r12} positionId={positionId} readOnly={account.hard_stale_read_only} refreshGeneration={resourceRefreshGeneration} />;
-
   const taskLabel: Record<string, string> = { jd: "JD", jr: "JR", talent_profile: "人才画像", sourcing_strategy: "搜寻策略", position_interview_plan: "面试方案", candidate_match: "候选人匹配", candidate_interview_plan: "候选人面试题", candidate_comparison: "候选人比较" };
   const taskStatusLabel: Record<string, string> = { accepted: "已受理", running: "执行中", completed: "已完成", failed: "执行失败" };
-  const taskRecovery = <section aria-label="岗位任务状态" className="hr-task-recovery" aria-live="polite">{taskState === "loading" ? <p>正在恢复任务状态…</p> : taskState === "unavailable" ? <p>任务状态暂时不可用。<button type="button" onClick={() => setTaskRefresh((value) => value + 1)}>刷新任务状态</button></p> : activeTasks.length === 0 ? <p>当前没有执行中任务。</p> : <ul>{activeTasks.map((task) => <li key={task.taskId}>{taskLabel[task.taskKind] ?? task.taskKind}：{taskStatusLabel[task.status] ?? task.status}{task.error ? ` · ${task.error}` : ""}</li>)}</ul>}</section>;
+  const visibleTasks = activeTasks.filter((task) => task.status === "accepted" || task.status === "running" || task.status === "failed");
+  const taskStatus = taskState === "unavailable"
+    ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><p>任务状态暂时不可用。<button type="button" onClick={() => setTaskRefresh((value) => value + 1)}>刷新任务状态</button></p></section>
+    : taskState === "ready" && visibleTasks.length > 0
+      ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><ul>{visibleTasks.map((task) => <li key={task.taskId}>{taskLabel[task.taskKind] ?? task.taskKind}：{taskStatusLabel[task.status] ?? task.status}{task.error ? ` · ${task.error}` : ""}</li>)}</ul></section>
+      : null;
 
-  return <main className="hr-position-workspace" data-position-id={positionId}>
-    {header}{navigation}{quickTasks}{taskRecovery}
-    <section aria-label={sections.find(([value]) => value === activeSection)?.[1]} aria-labelledby={`hr-position-tab-${activeSection}`} className="hr-position-section-panel" id={`hr-position-panel-${activeSection}`} role="tabpanel"><DirectAgentWorkspace
+  return <main className="hr-position-workspace is-chat-first" data-position-id={positionId}>
+    <HrPositionHeader detail={detail} readOnly={account.hard_stale_read_only}
+      onNewConversation={() => onOpenConversation(`/hr/positions/${encodeURIComponent(positionId)}`)}
+      onOpenDetails={() => setDetailsOpen(true)} />
+    {conversationId && !selectedConversationId && <p className="hr-position-scope-error" role="alert">该对话不属于当前岗位，已阻止跨岗位读取。</p>}
+    {materialNotice && <p className="hr-position-scope-error" role="status">{materialNotice}</p>}
+    <section aria-label="岗位对话" className="hr-position-chat-surface"><DirectAgentWorkspace
       account={account}
       agentId="hr-bot"
       autoFocusComposer
       conversationClient={conversationClient}
       conversationId={selectedConversationId}
       conversationPath={(id) => positionConversationPath(positionId, id)}
+      composerTools={<HrPositionTaskMenu
+        disabled={account.hard_stale_read_only}
+        materials={availableMaterials}
+        onSelectedMaterialIdsChange={setTurnMaterialIds}
+        onStart={(kind) => void quickTask(kind)}
+        selectedMaterialIds={turnMaterialIds}
+      />}
       createSubmission={createSubmission}
-      header={activeSection === "chat" ? null : sectionView}
+      header={taskStatus}
       historyClient={historyClient}
+      layout="focused"
       loadCatalog={loadCatalog}
       newConversationHeader={<section className="hr-position-conversation-welcome">
-        <span>岗位对话</span><h2>从这个岗位开始对话</h2>
-        <p>当前岗位、已选材料和后续生成结果会保留在同一上下文中。</p>
+        <span>岗位对话</span><h2>围绕这个岗位，直接开始协作</h2>
+        <p>当前岗位、明确选择的材料和后续生成结果会保留在同一上下文中。</p>
       </section>}
       newConversationScope={scope}
       onOpenConversation={onOpenConversation}
       onPositionMaterialChange={account.hard_stale_read_only ? undefined : changePositionMaterial}
       positionMaterialIds={promotedMaterialIds}
       positionArtifactAttachmentIds={detail.artifactAttachmentIds}
+      showTaskStarters={false}
       showWorkspaceBackLink={false}
       workspaceLabel="岗位对话"
       workspaceMark="HR"
       workspaceRootPath={`/hr/positions/${encodeURIComponent(positionId)}`}
     /></section>
+    <HrPositionDetailsDrawer activeTab={detailsTab} api={r12} csrfToken={account.csrf_token}
+      currentContextVersionId={currentContext?.contextVersionId ?? null}
+      detail={detail} open={detailsOpen} readOnly={account.hard_stale_read_only}
+      onActiveTabChange={setDetailsTab} onClose={() => setDetailsOpen(false)} onConfirmed={setCurrentContext}
+      contextRefreshGeneration={contextRefreshGeneration}
+      resourceRefreshGeneration={resourceRefreshGeneration} />
   </main>;
 }

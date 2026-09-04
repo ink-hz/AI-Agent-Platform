@@ -44,6 +44,14 @@ export interface DirectAgentWorkspaceProps {
   layout?: "standard" | "focused";
   composerTools?: ReactNode;
   threadSupplement?: ReactNode;
+  initialDraftSnapshot?: DirectAgentDraftSnapshot;
+  onDraftSnapshotChange?: (snapshot: DirectAgentDraftSnapshot) => void;
+}
+
+export interface DirectAgentDraftSnapshot {
+  text: string;
+  attachments: ConversationAttachment[];
+  uploadQueue: UploadQueueItem[];
 }
 
 export interface AgentHistoryClient {
@@ -90,6 +98,8 @@ export function DirectAgentWorkspace({
   layout = "standard",
   composerTools,
   threadSupplement,
+  initialDraftSnapshot,
+  onDraftSnapshotChange,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
   historyClient = DEFAULT_HISTORY_CLIENT,
@@ -106,11 +116,15 @@ export function DirectAgentWorkspace({
   const [historyAttempt, setHistoryAttempt] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => initialDraftSnapshot?.text ?? "");
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState(false);
-  const [attachments, setAttachments] = useState<ConversationAttachment[]>([]);
-  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
+  const [attachments, setAttachments] = useState<ConversationAttachment[]>(
+    () => initialDraftSnapshot?.attachments.map((item) => ({ ...item })) ?? [],
+  );
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>(
+    () => initialDraftSnapshot?.uploadQueue.map((item) => ({ ...item })) ?? [],
+  );
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
   const inFlight = useRef(false);
@@ -149,6 +163,14 @@ export function DirectAgentWorkspace({
   }, [agentId, card, historyAttempt, historyClient]);
 
   useEffect(() => () => controllerRef.current?.abort(), []);
+
+  useEffect(() => {
+    onDraftSnapshotChange?.({
+      text,
+      attachments: attachments.map((item) => ({ ...item })),
+      uploadQueue: uploadQueue.map((item) => ({ ...item })),
+    });
+  }, [attachments, onDraftSnapshotChange, text, uploadQueue]);
 
   const upsertConversation = useCallback((conversation: Conversation) => {
     if (conversation.direct_agent_id === agentId) {
@@ -283,6 +305,7 @@ export function DirectAgentWorkspace({
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
           composerTools={composerTools}
+          messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
           materialsPresentation={layout === "focused" ? "hidden" : "sidebar"}
         />
@@ -331,9 +354,14 @@ export function DirectAgentWorkspace({
               }} />
             {card.attachment_limits && <section className="agent-direct-attachments" aria-label="新对话附件">
               <AttachmentUploader ref={uploaderRef} acceptedInputTypes={card.accepted_input_types} conversationId={null}
-                csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
-                limits={card.attachment_limits} onChange={setUploadQueue} onError={setAttachmentError}
-                onReady={(attachment) => { setAttachments((current) => [...current, attachment]); setFailure(false); retained.current = null; }} />
+                compact={agentId === "hr-bot"} csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
+                initialItems={initialDraftSnapshot?.uploadQueue} limits={card.attachment_limits} onChange={setUploadQueue} onError={setAttachmentError}
+                onReady={(attachment) => { setAttachments((current) => [...current, attachment]); setFailure(false); retained.current = null; }}
+                onRemoveReady={(attachment) => {
+                  setAttachments((current) => current.filter((item) => item.attachmentId !== attachment.attachmentId));
+                  setFailure(false);
+                  retained.current = null;
+                }} />
               {attachments.map((attachment) => <AttachmentCard active attachment={attachment} key={attachment.attachmentId}
                 onActiveChange={() => undefined} />)}
               {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}

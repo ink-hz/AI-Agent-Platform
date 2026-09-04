@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { Check, CircleAlert, Copy, ThumbsDown, ThumbsUp } from "lucide-react";
 
 import { copyVisibleText } from "../../clipboard";
 import type { ConversationFeedbackReason, ConversationFeedbackRating } from "../../conversationTypes";
+
+export type MessageActionsPresentation = "legacy" | "icon";
 
 const REASONS: ReadonlyArray<readonly [ConversationFeedbackReason, string]> = [
   ["inaccurate", "信息不准确"], ["incomplete", "信息不完整"], ["unclear", "表达不清楚"],
@@ -9,12 +12,13 @@ const REASONS: ReadonlyArray<readonly [ConversationFeedbackReason, string]> = [
   ["source_timeliness", "来源或时效有问题"], ["other", "其他"],
 ];
 
-export function MessageActions({ copyText, feedbackState, onCopy = copyVisibleText, onFeedback, onRetry }: {
+export function MessageActions({ copyText, feedbackState, onCopy = copyVisibleText, onFeedback, onRetry, presentation = "legacy" }: {
   copyText: () => string;
   feedbackState?: ConversationFeedbackRating | "pending" | "error";
   onCopy?: (text: string) => Promise<boolean>;
   onFeedback?: (rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null) => void;
   onRetry?: () => void;
+  presentation?: MessageActionsPresentation;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [improving, setImproving] = useState(false);
@@ -27,13 +31,23 @@ export function MessageActions({ copyText, feedbackState, onCopy = copyVisibleTe
   }, [copyState]);
   const disabled = Boolean(feedbackState && feedbackState !== "error");
   const changeComment = (value: string) => setComment(Array.from(value).slice(0, 1000).join(""));
+  const copyLabel = copyState === "copied" ? "已复制" : copyState === "error" ? "复制失败" : "复制回答";
+  const iconPresentation = presentation === "icon";
   return <footer className="conversation-message-actions">
     <div className="conversation-message-action-row">
-      <button onClick={() => void onCopy(copyText()).then((ok) => setCopyState(ok ? "copied" : "error")).catch(() => setCopyState("error"))} type="button">
-        {copyState === "copied" ? "已复制" : copyState === "error" ? "复制失败" : "复制"}
-      </button>
-      {onFeedback && <><button aria-label="这个回答有帮助" className={feedbackState === "helpful" ? "is-selected" : ""} disabled={disabled} onClick={() => onFeedback("helpful", null, null)} type="button">有帮助</button>
-        <button aria-label="这个回答需改进" className={feedbackState === "unhelpful" ? "is-selected" : ""} disabled={disabled} onClick={() => setImproving(true)} type="button">需改进</button></>}
+      {iconPresentation
+        ? <button aria-label={copyLabel} className={`copy-answer-button ${copyState}`} onClick={() => void onCopy(copyText()).then((ok) => setCopyState(ok ? "copied" : "error")).catch(() => setCopyState("error"))} title={copyLabel} type="button">
+          {copyState === "copied" ? <Check size={15} /> : copyState === "error" ? <CircleAlert size={15} /> : <Copy size={15} />}
+        </button>
+        : <button onClick={() => void onCopy(copyText()).then((ok) => setCopyState(ok ? "copied" : "error")).catch(() => setCopyState("error"))} type="button">
+          {copyState === "copied" ? "已复制" : copyState === "error" ? "复制失败" : "复制"}
+        </button>}
+      {onFeedback && <>{iconPresentation
+        ? <button aria-label="有用" aria-pressed={feedbackState === "helpful"} className={`feedback-icon-button ${feedbackState === "helpful" ? "is-selected" : ""}`} disabled={disabled} onClick={() => onFeedback("helpful", null, null)} title="有用" type="button"><ThumbsUp size={15} /></button>
+        : <button aria-label="这个回答有帮助" aria-pressed={feedbackState === "helpful"} className={feedbackState === "helpful" ? "is-selected" : ""} disabled={disabled} onClick={() => onFeedback("helpful", null, null)} type="button">有帮助</button>}
+        {iconPresentation
+          ? <button aria-label="不达标" aria-pressed={feedbackState === "unhelpful"} className={`feedback-icon-button ${feedbackState === "unhelpful" ? "is-selected" : ""}`} disabled={disabled} onClick={() => setImproving(true)} title="不达标" type="button"><ThumbsDown size={15} /></button>
+          : <button aria-label="这个回答需改进" aria-pressed={feedbackState === "unhelpful"} className={feedbackState === "unhelpful" ? "is-selected" : ""} disabled={disabled} onClick={() => setImproving(true)} type="button">需改进</button>}</>}
       {onRetry && <button onClick={onRetry} type="button">重新生成</button>}
       {(feedbackState === "helpful" || feedbackState === "unhelpful") && <span>已记录你的反馈</span>}
     </div>

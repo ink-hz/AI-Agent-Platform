@@ -3,6 +3,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  AttachmentApiError,
+  attachmentUploadErrorMessage,
   beginAttachmentUpload,
   completeAttachmentUpload,
   downloadConversationArtifacts,
@@ -60,6 +62,29 @@ afterEach(() => {
 });
 
 describe("conversation attachment API", () => {
+  it("maps upload stages and transport failures to safe messages", () => {
+    expect(attachmentUploadErrorMessage(new AttachmentApiError(409, { private: "detail" }), "content"))
+      .toBe("文件传输失败，请重试");
+    expect(attachmentUploadErrorMessage(new AttachmentApiError(401), "begin"))
+      .toBe("登录状态已失效，请刷新后重试");
+    expect(attachmentUploadErrorMessage(new AttachmentApiError(403), "complete"))
+      .toBe("登录状态已失效，请刷新后重试");
+    expect(attachmentUploadErrorMessage(new AttachmentApiError(413), "begin"))
+      .toBe("文件超过大小限制，请更换后重试");
+    expect(attachmentUploadErrorMessage(new AttachmentApiError(415), "complete"))
+      .toBe("文件类型不受支持，请更换后重试");
+    expect(attachmentUploadErrorMessage(new TypeError("offline"), "complete"))
+      .toBe("网络连接异常，请检查网络后重试");
+    expect(attachmentUploadErrorMessage(new Error("raw begin detail"), "begin"))
+      .toBe("无法开始上传，请重试");
+    expect(attachmentUploadErrorMessage(new Error("raw complete detail"), "complete"))
+      .toBe("文件提交失败，请重试");
+    expect(attachmentUploadErrorMessage(new Error("raw processing detail"), "processing"))
+      .toBe("文件处理失败，请稍后重试");
+    expect(attachmentUploadErrorMessage(new Error("raw content detail"), "content"))
+      .toBe("文件传输失败，请重试");
+  });
+
   it("reports each server-owned upload state without inventing ready", async () => {
     const file = new File(["payload"], "candidate.pdf", { type: "application/pdf" });
     const fetchMock = vi.fn()

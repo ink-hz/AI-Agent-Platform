@@ -132,27 +132,39 @@ function workspaceHarness() {
 }
 
 describe("HR R1.2 position journey", () => {
-  it("navigates the four work areas and carries only explicitly selected material into a recoverable task", async () => {
+  it("keeps chat as the main canvas while details and position tasks stay on demand", async () => {
     vi.useFakeTimers();
     const journey = workspaceHarness();
     await act(async () => root.render(<HrPositionWorkspace {...journey.props} />));
-    expect(container.querySelector<HTMLTextAreaElement>("#direct-agent-request")).not.toBeNull();
-    await click("上下文");
-    expect(container.querySelector('section[aria-label="岗位上下文"]')).not.toBeNull();
+    expect(container.querySelector(".hr-position-bar")).not.toBeNull();
+    expect(container.querySelector(".agent-use-workspace.is-focused")).not.toBeNull();
+    expect(container.querySelector(".hr-position-context-metrics")).toBeNull();
+    expect(container.querySelector(".hr-position-sections")).toBeNull();
+    expect(container.querySelector(".hr-position-taskbar")).toBeNull();
+    expect(container.textContent).not.toContain("当前没有执行中任务");
+    const textarea = container.querySelector<HTMLTextAreaElement>("#direct-agent-request")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "保留岗位会话草稿");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await click("岗位资料");
+    expect(container.querySelector('section[aria-label="当前岗位理解"]')).not.toBeNull();
     await click("候选人");
     expect(container.querySelector('section[aria-label="批量简历导入"] input[type="file"]')).not.toBeNull();
     await click("材料与成果");
     expect(container.querySelector('section[aria-label="岗位材料与成果"]')).not.toBeNull();
-    expect(journey.onOpenConversation.mock.calls.map(([path]) => path)).toEqual([
-      `/hr/positions/${positionId}/context`, `/hr/positions/${positionId}/candidates`,
-      `/hr/positions/${positionId}/artifacts`,
-    ]);
+    expect(container.querySelector("#direct-agent-request")).toBe(textarea);
+    expect(textarea.value).toBe("保留岗位会话草稿");
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭岗位资料"]')?.click());
+    expect(container.querySelector("#direct-agent-request")).toBe(textarea);
+    expect(textarea.value).toBe("保留岗位会话草稿");
+    expect(journey.onOpenConversation).not.toHaveBeenCalled();
 
-    await click("本轮材料（");
-    const selectedMaterial = container.querySelector<HTMLInputElement>('input[name="quick-task-material"]')!;
+    await click("岗位任务");
+    const selectedMaterial = container.querySelector<HTMLInputElement>('.hr-position-task-materials input[type="checkbox"]')!;
     expect(selectedMaterial.checked).toBe(false);
     await act(async () => selectedMaterial.click());
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭本轮材料"]')?.click());
     await click("生成人才画像");
     expect(journey.startTask).toHaveBeenCalledWith(positionId, "talent_profile", expect.any(String), {
       contextVersionId: contextId, materialIds: [materialId], conversationId: undefined,
@@ -164,11 +176,14 @@ describe("HR R1.2 position journey", () => {
     expect(container.textContent).toContain("人才画像：执行中");
     const resourcesBeforeCompletion = journey.resources.mock.calls.length;
     await act(async () => vi.advanceTimersByTimeAsync(2_000));
-    expect(container.textContent).toContain("当前没有执行中任务");
-    expect(journey.resources.mock.calls.length).toBeGreaterThan(resourcesBeforeCompletion);
+    expect(container.textContent).not.toContain("当前没有执行中任务");
+    expect(container.querySelector('[aria-label="岗位任务状态"]')).toBeNull();
     expect(journey.position).toHaveBeenCalledTimes(3);
+    await click("岗位资料");
+    await click("材料与成果");
+    expect(journey.resources.mock.calls.length).toBeGreaterThan(resourcesBeforeCompletion);
     expect(container.textContent).toContain("人才画像.docx");
-    expect(container.textContent).toContain("1 个生成结果");
+    expect(container.textContent).toContain("成果（1）");
 
     const replace = vi.fn();
     vi.spyOn(window, "open").mockReturnValue({ opener: null, close: vi.fn(), location: { replace } } as never);

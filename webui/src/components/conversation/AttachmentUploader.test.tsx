@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { act } from "react";
+import { StrictMode, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentAttachmentLimits } from "../../brainTypes";
 import type { ConversationAttachment } from "../../conversationTypes";
+import { AttachmentApiError } from "../../attachmentApi";
 import { AttachmentUploader, type AttachmentUploadClient, type UploadQueueItem } from "./AttachmentUploader";
 
 
@@ -158,6 +159,125 @@ describe("AttachmentUploader", () => {
     await act(async () => [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "移除")?.click());
     expect(container.textContent).not.toContain("resume.pdf");
+  });
+
+  it("shows a safe retry message when content upload conflicts", async () => {
+    const api = client();
+    vi.mocked(api.upload).mockRejectedValueOnce(new AttachmentApiError(409, {
+      detail: "declared and streamed content sizes differ",
+    }));
+    await act(async () => root.render(<AttachmentUploader
+      acceptedInputTypes={["pdf"]}
+      client={api}
+      conversationId="conversation-1"
+      csrfToken="csrf"
+      limits={limits}
+    />));
+    const file = new File(["resume"], "resume.pdf", { type: "application/pdf" });
+    const input = container.querySelector<HTMLInputElement>("input[type='file']")!;
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+
+    expect(container.textContent).toContain("文件传输失败，请重试");
+    expect(container.textContent).not.toContain("Attachment API 409");
+  });
+
+  it("keeps the default uploader quota disclosure", async () => {
+    await act(async () => root.render(<AttachmentUploader
+      conversationId="conversation-1"
+      csrfToken="csrf"
+      limits={limits}
+    />));
+
+    expect(container.textContent).toContain("支持选择、拖放或粘贴；单条最多");
+  });
+
+  it("keeps an empty HR compact queue free of quota disclosure", async () => {
+    await act(async () => root.render(<AttachmentUploader
+      compact
+      conversationId="conversation-1"
+      csrfToken="csrf"
+      limits={limits}
+    />));
+
+    expect(container.textContent).not.toContain("未选择任何文件");
+    expect(container.textContent).not.toContain("支持选择、拖放或粘贴；单条最多");
+  });
+
+  it("cancels the exact restored upload before restarting it on every mount", async () => {
+    const api = client();
+    const file = new File(["resume"], "restored.pdf", { type: "application/pdf" });
+    const calls: string[] = [];
+    let cancelAttempts = 0;
+    vi.mocked(api.cancel).mockImplementation(async (uploadId) => {
+      calls.push(`cancel:${uploadId}`);
+      cancelAttempts += 1;
+      if (cancelAttempts === 2) throw new Error("already expired");
+    });
+    vi.mocked(api.begin).mockImplementation(async (_conversationId, selected) => {
+      calls.push(`begin:${selected.name}`);
+      return {
+        uploadId: `upload-${selected.name}`, attachmentId: `attachment-${selected.name}`,
+        conversationId: "conversation-1", displayName: selected.name,
+        declaredMime: selected.type, declaredSize: selected.size, state: "uploading",
+        uploadedBytes: 0, expiresAt: "2026-09-04T10:00:00Z",
+      };
+    });
+    const uploader = <AttachmentUploader
+        acceptedInputTypes={["pdf"]}
+        client={api}
+        conversationId="conversation-1"
+        csrfToken="csrf"
+        initialItems={[{ localId: "restored-upload", file, progress: 35, state: "uploading", uploadId: "stale-upload" }]}
+        limits={limits}
+      />;
+
+    await act(async () => root.render(uploader));
+    expect(calls).toEqual(["cancel:stale-upload", "begin:restored.pdf"]);
+    expect(api.cancel).toHaveBeenNthCalledWith(1, "stale-upload", "csrf", expect.any(AbortSignal));
+
+    await act(async () => root.render(null));
+    await act(async () => root.render(uploader));
+
+    expect(calls).toEqual([
+      "cancel:stale-upload", "begin:restored.pdf",
+      "cancel:stale-upload", "begin:restored.pdf",
+    ]);
+    expect(api.cancel).toHaveBeenNthCalledWith(2, "stale-upload", "csrf", expect.any(AbortSignal));
+    expect(api.begin).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('.conversation-upload-chip[data-state="ready"]')?.textContent).toContain("restored.pdf");
+  });
+
+  it("keeps the current restored upload abortable through a StrictMode restart", async () => {
+    const api = client();
+    const file = new File(["resume"], "strict-restored.pdf", { type: "application/pdf" });
+    const cancelResolvers: Array<() => void> = [];
+    const cancelSignals: AbortSignal[] = [];
+    vi.mocked(api.cancel).mockImplementation((_uploadId, _csrfToken, signal) => new Promise<void>((resolve) => {
+      cancelSignals.push(signal!);
+      cancelResolvers.push(resolve);
+    }));
+    const uploader = <AttachmentUploader
+      acceptedInputTypes={["pdf"]}
+      client={api}
+      conversationId="conversation-1"
+      csrfToken="csrf"
+      initialItems={[{ localId: "strict-restored", file, progress: 35, state: "uploading", uploadId: "strict-stale" }]}
+      limits={limits}
+    />;
+
+    await act(async () => root.render(<StrictMode>{uploader}</StrictMode>));
+    expect(api.cancel).toHaveBeenCalledTimes(2);
+    expect(cancelSignals[0]?.aborted).toBe(true);
+    expect(cancelSignals[1]?.aborted).toBe(false);
+
+    await act(async () => cancelResolvers[0]?.());
+    await act(async () => root.render(null));
+    const currentUploadWasAborted = cancelSignals[1]?.aborted;
+    await act(async () => cancelResolvers[1]?.());
+
+    expect(currentUploadWasAborted).toBe(true);
+    expect(api.begin).not.toHaveBeenCalled();
   });
 
   it("rejects type, per-file, per-message, and Session quota overflow before upload", async () => {

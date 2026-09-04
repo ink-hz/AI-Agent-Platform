@@ -88,11 +88,17 @@ describe("HR workspace core acceptance", () => {
       feedbackState={undefined}
       onCopy={onCopy}
       onFeedback={onFeedback}
+      presentation="icon"
     />));
 
-    await act(async () => [...container.querySelectorAll("button")].find((button) => button.textContent === "复制")?.click());
+    const copy = container.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')!;
+    const unhelpful = container.querySelector<HTMLButtonElement>('[aria-label="不达标"]')!;
+    expect(copy.querySelector("svg")).not.toBeNull();
+    expect(unhelpful.querySelector("svg")).not.toBeNull();
+    await act(async () => copy.click());
     expect(onCopy).toHaveBeenCalledWith("候选人分析结果");
-    await act(async () => [...container.querySelectorAll("button")].find((button) => button.textContent === "需改进")?.click());
+    expect(container.querySelector('[aria-label="已复制"]')).not.toBeNull();
+    await act(async () => unhelpful.click());
     await act(async () => [...container.querySelectorAll("button")].find((button) => button.textContent === "来源或时效有问题")?.click());
     const textarea = container.querySelector("textarea")!;
     await act(async () => {

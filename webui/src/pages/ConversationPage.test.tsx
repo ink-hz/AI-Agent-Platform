@@ -406,6 +406,30 @@ describe("ConversationPage", () => {
     expect(container.querySelector(".conversation-workspace-grid")).toBeNull();
   });
 
+  it("uses compact attachment controls for an existing HR conversation", async () => {
+    const limits = {
+      max_file_bytes: 50 * 1024 * 1024,
+      max_files_per_message: 5,
+      max_bytes_per_message: 50 * 1024 * 1024,
+      max_files_per_conversation: 50,
+      max_bytes_per_conversation: 500 * 1024 * 1024,
+    };
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      attachmentLimits={limits}
+      client={client({
+        fetchConversation: vi.fn().mockResolvedValue({ conversation: directConversation, current_turn: completedTurn }),
+        listAttachments: vi.fn().mockResolvedValue([]),
+      })}
+      conversationId={conversationId}
+      expectedAgentId="hr-bot"
+    />));
+
+    expect(container.querySelector(".conversation-uploader")?.classList.contains("is-compact")).toBe(true);
+    expect(container.textContent).not.toContain("支持选择、拖放或粘贴；单条最多");
+  });
+
   it("keeps a direct Agent composer locked while its current Turn is active", async () => {
     const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
     const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
@@ -604,5 +628,24 @@ describe("ConversationPage", () => {
       "message-2", "unhelpful", "incomplete", "缺少目标公司", account.csrf_token,
       expect.any(AbortSignal),
     );
+  });
+
+  it("uses FAE icon actions only when the presentation is requested", async () => {
+    const submitFeedback = vi.fn().mockResolvedValue({
+      feedback_id: "feedback-3", conversation_id: conversationId,
+      message_id: "message-2", turn_id: "turn-1",
+      rating: "helpful", reason: null, created_at: "2026-08-23T10:03:00Z",
+    });
+    await act(async () => root.render(<ConversationPage
+      account={account} client={client({ submitFeedback })} conversationId={conversationId}
+      messageActionsPresentation="icon"
+    />));
+
+    const helpful = container.querySelector<HTMLButtonElement>("button[aria-label='有用']")!;
+    expect(helpful.querySelector("svg")).not.toBeNull();
+    expect(helpful.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector("button[aria-label='这个回答有帮助']")).toBeNull();
+    await act(async () => helpful.click());
+    expect(helpful.getAttribute("aria-pressed")).toBe("true");
   });
 });
