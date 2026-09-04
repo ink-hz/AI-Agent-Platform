@@ -114,6 +114,26 @@ _VOC_MUTATION_ROUTES = frozenset({
     ("POST", "/api/v1/extensions/voc/vocs/{voc_no}/supplements"),
 })
 
+_HR_POSITION_ROUTES = frozenset({
+    ("GET", "/api/hr/positions"),
+    ("GET", "/api/hr/positions/{position_id}"),
+    ("GET", "/api/hr/position-drafts"),
+    ("POST", "/api/hr/position-drafts"),
+    ("POST", "/api/hr/position-drafts/{draft_id}/confirm"),
+    ("POST", "/api/hr/position-drafts/{draft_id}/merge"),
+    ("POST", "/api/hr/position-drafts/{draft_id}/dismiss"),
+    (
+        "POST",
+        "/api/hr/positions/{position_id}/conversations/{conversation_id}",
+    ),
+    ("POST", "/api/hr/positions/{position_id}/materials/{attachment_id}"),
+    ("DELETE", "/api/hr/positions/{position_id}/materials/{attachment_id}"),
+})
+
+_HR_POSITION_MUTATION_ROUTES = frozenset(
+    route for route in _HR_POSITION_ROUTES if route[0] not in {"GET", "HEAD", "OPTIONS"}
+)
+
 _HARD_STALE_SELF_MUTATION_ROUTES = _VOC_MUTATION_ROUTES | frozenset({
     ("POST", "/api/v1/agents/{agent_id}/launch"),
 })
@@ -300,6 +320,12 @@ class AuthorizationService:
             if auth.hard_stale_read_only and key in _HARD_STALE_SELF_MUTATION_ROUTES:
                 return self._deny(503, "hard_stale_read_only")
             return AuthorizationDecision(True, 200, "self_service", None)
+        if key in _HR_POSITION_ROUTES:
+            if auth.hard_stale_read_only and key in _HR_POSITION_MUTATION_ROUTES:
+                return self._deny(503, "hard_stale_read_only")
+            # Exact HR Agent entitlement and owner scope are resolved by the
+            # router dependency after central authentication succeeds.
+            return AuthorizationDecision(True, 200, "hr_position_route", None)
         if key in (_FAE_WORKBENCH_READ_ROUTES | _FAE_WORKBENCH_MUTATION_ROUTES):
             # The independent FAE grant is resolved by the router dependency.
             # Freshness/cloud mutation guards run there only after that grant is

@@ -15,6 +15,7 @@ import {
   renameConversation,
   restoreConversation,
   startConversation,
+  type ConversationStartScope,
   type ConversationSubmission,
 } from "../../conversationApi";
 import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmission } from "../../conversationTypes";
@@ -31,15 +32,21 @@ export interface DirectAgentWorkspaceProps {
   header?: ReactNode;
   workspaceLabel?: string;
   workspaceMark?: string;
+  workspaceRootPath?: string;
+  newConversationScope?: ConversationStartScope;
+  autoFocusComposer?: boolean;
+  positionMaterialIds?: readonly string[];
+  positionArtifactAttachmentIds?: readonly string[];
+  onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
 }
 
 export interface AgentHistoryClient {
   list(signal?: AbortSignal, before?: string, limit?: number, directAgentId?: string, status?: "active" | "archived"): Promise<ConversationPage>;
 }
 
-interface DirectAgentWorkspaceDependencies {
+export interface DirectAgentWorkspaceDependencies {
   loadCatalog?: (signal?: AbortSignal) => Promise<AgentCapabilityCard[]>;
-  createSubmission?: (input: string | TurnSubmission, csrfToken: string, agentId?: string) => ConversationSubmission;
+  createSubmission?: (input: string | TurnSubmission, csrfToken: string, agentId?: string, scope?: ConversationStartScope) => ConversationSubmission;
   historyClient?: AgentHistoryClient;
   conversationClient?: ConversationPageClient;
   onOpenConversation?: (path: string) => void;
@@ -65,6 +72,12 @@ export function DirectAgentWorkspace({
   header,
   workspaceLabel,
   workspaceMark,
+  workspaceRootPath,
+  newConversationScope,
+  autoFocusComposer = false,
+  positionMaterialIds,
+  positionArtifactAttachmentIds,
+  onPositionMaterialChange,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
   historyClient = DEFAULT_HISTORY_CLIENT,
@@ -92,7 +105,7 @@ export function DirectAgentWorkspace({
   const controllerRef = useRef<AbortController | null>(null);
   const card = catalog?.find((item) => item.agent_id === agentId) ?? null;
   const inputTooLarge = conversationInputTooLarge(text.trim());
-  const workspacePath = rootPath(agentId);
+  const workspacePath = workspaceRootPath ?? rootPath(agentId);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -179,7 +192,9 @@ export function DirectAgentWorkspace({
     const requestKey = typeof input === "string" ? input : JSON.stringify(input);
     let selected = retained.current;
     if (!selected || selected.text !== requestKey) {
-      selected = { text: requestKey, submission: createSubmission(input, account.csrf_token, card.agent_id) };
+      selected = { text: requestKey, submission: newConversationScope
+        ? createSubmission(input, account.csrf_token, card.agent_id, newConversationScope)
+        : createSubmission(input, account.csrf_token, card.agent_id) };
       retained.current = selected;
     }
     const controller = new AbortController();
@@ -246,6 +261,9 @@ export function DirectAgentWorkspace({
           conversationId={conversationId}
           expectedAgentId={agentId}
           attachmentLimits={card.attachment_limits}
+          positionMaterialIds={positionMaterialIds}
+          positionArtifactAttachmentIds={positionArtifactAttachmentIds}
+          onPositionMaterialChange={onPositionMaterialChange}
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
         />
@@ -273,7 +291,7 @@ export function DirectAgentWorkspace({
           </section>}
           <form className="agent-direct-composer" onSubmit={submit}>
             <label htmlFor="direct-agent-request">直接交给 {card.display_name}</label>
-            <textarea id="direct-agent-request" rows={5} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
+            <textarea autoFocus={autoFocusComposer} id="direct-agent-request" rows={5} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
               placeholder={card.example_tasks[0] ?? "描述任务目标和背景…"}
               onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }} />
             <div><span>对话会持续保留在当前 Agent 的左侧历史中。</span><button disabled={(!text.trim() && attachments.length === 0) || uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state)) || inputTooLarge || pending || account.hard_stale_read_only} type="submit">{pending ? "正在创建…" : "开始对话"}</button></div>

@@ -8,6 +8,7 @@ import type { Account } from "../../auth";
 import { fetchAgentCatalog } from "../../brainApi";
 import type { AgentCapabilityCard } from "../../brainTypes";
 import { listConversations } from "../../conversationApi";
+import { createHrApi } from "../../hrApi";
 import { HrWorkspacePage } from "./HrWorkspacePage";
 
 
@@ -19,6 +20,11 @@ vi.mock("../../brainApi", async (importOriginal) => ({
 vi.mock("../../conversationApi", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../conversationApi")>(),
   listConversations: vi.fn(),
+}));
+
+vi.mock("../../hrApi", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../hrApi")>(),
+  createHrApi: vi.fn(),
 }));
 
 
@@ -73,6 +79,10 @@ describe("HrWorkspacePage", () => {
   beforeEach(() => {
     vi.mocked(fetchAgentCatalog).mockResolvedValue([hrCard]);
     vi.mocked(listConversations).mockResolvedValue({ items: [], next_cursor: null });
+    vi.mocked(createHrApi).mockReturnValue({
+      listPositions: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+      listDrafts: vi.fn().mockResolvedValue([]),
+    } as never);
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -85,15 +95,12 @@ describe("HrWorkspacePage", () => {
     vi.clearAllMocks();
   });
 
-  it("scopes history to the canonical HR workspace Agent", async () => {
+  it("opens the position-first HR workspace at the canonical root", async () => {
     await act(async () => root.render(<HrWorkspacePage account={account} />));
 
-    expect(listConversations).toHaveBeenCalledWith(expect.any(AbortSignal), undefined, 20, "hr-bot");
-    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).not.toBeNull();
-    expect(container.querySelector(".conversation-sidebar-brand-mark")?.textContent).toBe("HR");
-    expect(container.querySelector(".conversation-sidebar-label")?.textContent).toBe("人才智能工作台");
-    expect(container.querySelector("h1")?.textContent).toBe("HR Agent");
-    expect(container.querySelector('nav[aria-label="Marketing Agent 切换"]')).toBeNull();
+    expect(container.querySelector("h1")?.textContent).toBe("岗位智能工作台");
+    expect(container.textContent).toContain("官网岗位");
+    expect(listConversations).not.toHaveBeenCalled();
   });
 
   it("opens a new HR conversation at the canonical workspace root with a trailing slash", async () => {

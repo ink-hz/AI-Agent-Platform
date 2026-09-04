@@ -55,6 +55,9 @@ class ConversationCommandService:
         *,
         mode: Literal["brain", "direct_agent"] = "brain",
         direct_agent_id: str | None = None,
+        hr_position_scope=None,
+        position_id: UUID | None = None,
+        position_draft_id: UUID | None = None,
     ) -> ConversationCreateResult:
         submission = normalize_turn_submission(submission)
         if not self.v2_enabled or mode == "direct_agent":
@@ -64,7 +67,12 @@ class ConversationCommandService:
                 submission,
                 mode=mode,
                 direct_agent_id=direct_agent_id,
+                hr_position_scope=hr_position_scope,
+                position_id=position_id,
+                position_draft_id=position_draft_id,
             )
+        if position_id is not None or position_draft_id is not None:
+            raise ValueError("HR position scope requires a direct Agent")
         return self._repository.start_v2(
             owner,
             request_id,

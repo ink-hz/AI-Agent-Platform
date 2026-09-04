@@ -20,6 +20,9 @@ export type Route =
   | { name: "agents" }
   | { name: "voc-workspace" }
   | { name: "hr" }
+  | { name: "hr-chat" }
+  | { name: "hr-position"; positionId: string }
+  | { name: "hr-position-conversation"; positionId: string; conversationId: string }
   | { name: "hr-conversation"; conversationId: string }
   | { name: "marketing"; agentSlug: MarketingAgentSlug }
   | { name: "marketing-conversation"; agentSlug: MarketingAgentSlug; conversationId: string }
@@ -244,13 +247,27 @@ export function parseRoute(pathname: string, search = ""): Route {
     }
   }
 
+  const hrPositionConversation = /^\/hr\/positions\/([^/]+)\/conversations\/([^/]+)$/.exec(clean);
+  if (hrPositionConversation) {
+    const positionId = safeDecodedValue(hrPositionConversation[1], /^[0-9a-fA-F-]{36}$/);
+    const conversationId = safeDecodedValue(hrPositionConversation[2]);
+    return positionId && conversationId
+      ? { name: "hr-position-conversation", positionId, conversationId }
+      : { name: "not-found" };
+  }
   const hrConversation = /^\/hr\/conversations\/([^/]+)$/.exec(clean);
   if (hrConversation) {
     const conversationId = safeDecodedValue(hrConversation[1]);
     return conversationId ? { name: "hr-conversation", conversationId } : { name: "not-found" };
   }
+  const hrPosition = /^\/hr\/positions\/([^/]+)$/.exec(clean);
+  if (hrPosition) {
+    const positionId = safeDecodedValue(hrPosition[1], /^[0-9a-fA-F-]{36}$/);
+    return positionId ? { name: "hr-position", positionId } : { name: "not-found" };
+  }
   if (local === "/hr") return { name: "legacy-redirect", to: "/hr/", navigation: "spa" };
   if (clean === "/hr") return { name: "hr" };
+  if (clean === "/hr/chat") return { name: "hr-chat" };
 
   const marketingConversation = /^\/marketing\/([^/]+)\/conversations\/([^/]+)$/.exec(clean);
   if (marketingConversation) {
@@ -390,6 +407,9 @@ export function routePath(route: Route): string {
     case "agents": return "/agents";
     case "voc-workspace": return "/agents/voc/workspace";
     case "hr": return "/hr/";
+    case "hr-chat": return "/hr/chat";
+    case "hr-position": return `/hr/positions/${encodeURIComponent(route.positionId)}`;
+    case "hr-position-conversation": return `/hr/positions/${encodeURIComponent(route.positionId)}/conversations/${encodeURIComponent(route.conversationId)}`;
     case "hr-conversation": return `/hr/conversations/${encodeURIComponent(route.conversationId)}`;
     case "marketing": return `/marketing/${route.agentSlug}`;
     case "marketing-conversation": return `/marketing/${route.agentSlug}/conversations/${encodeURIComponent(route.conversationId)}`;
@@ -424,7 +444,7 @@ export function routeSection(route: Route): RouteSection | null {
   if (route.name === "brain") return "brain";
   if (route.name === "conversations" || route.name === "conversation") return "brain";
   if (route.name === "agents" || route.name === "voc-workspace"
-    || route.name === "hr" || route.name === "hr-conversation" || route.name === "marketing" || route.name === "marketing-conversation") return "agents";
+    || route.name === "hr" || route.name === "hr-chat" || route.name === "hr-position" || route.name === "hr-position-conversation" || route.name === "hr-conversation" || route.name === "marketing" || route.name === "marketing-conversation") return "agents";
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "ai-notes" || route.name === "ai-note") return "ai-notes";
   if (route.name === "account") return "account";

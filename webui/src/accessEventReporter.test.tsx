@@ -41,6 +41,14 @@ describe("page access reporter", () => {
     expect(accessEventForRoute({ name: "marketing", agentSlug: "prospecting" })).toEqual({
       workspace_key: "marketing", page_key: "marketing.workspace", agent_id: "marketing-prospecting-bot",
     });
+    expect(accessEventForRoute({ name: "hr-position", positionId: "private-position" })).toEqual({
+      workspace_key: "hr", page_key: "hr.workspace",
+    });
+    expect(accessEventForRoute({
+      name: "hr-position-conversation",
+      positionId: "private-position",
+      conversationId: "private-conversation",
+    })).toEqual({ workspace_key: "hr", page_key: "hr.conversation" });
     expect(accessEventForRoute({ name: "admin-access" })).toEqual({
       workspace_key: "admin", page_key: "admin.access_history",
     });

@@ -59,6 +59,22 @@ def _fae_routes(prefix: str) -> tuple[tuple[str, str], ...]:
 
 FAE_ROUTES = _fae_routes("/api/fae") + _fae_routes("/api/admin/fae")
 
+HR_POSITION_ROUTES = (
+    ("GET", "/api/hr/positions"),
+    ("GET", "/api/hr/positions/{position_id}"),
+    ("GET", "/api/hr/position-drafts"),
+    ("POST", "/api/hr/position-drafts"),
+    ("POST", "/api/hr/position-drafts/{draft_id}/confirm"),
+    ("POST", "/api/hr/position-drafts/{draft_id}/merge"),
+    ("POST", "/api/hr/position-drafts/{draft_id}/dismiss"),
+    (
+        "POST",
+        "/api/hr/positions/{position_id}/conversations/{conversation_id}",
+    ),
+    ("POST", "/api/hr/positions/{position_id}/materials/{attachment_id}"),
+    ("DELETE", "/api/hr/positions/{position_id}/materials/{attachment_id}"),
+)
+
 
 class Grants:
     def __init__(self, allowed=("hr-bot",)):
@@ -68,6 +84,42 @@ class Grants:
     def permits(self, actor, agent_id):
         self.calls.append((actor, agent_id))
         return agent_id in self.allowed
+
+
+@pytest.mark.parametrize("role", list(Role))
+@pytest.mark.parametrize("method,route", HR_POSITION_ROUTES)
+def test_hr_position_routes_delegate_authenticated_scope_to_router(
+    role, method, route
+):
+    decision = AuthorizationService(Grants()).decide(
+        AuthContext(uuid4(), role, uuid4(), False), method, route, ()
+    )
+
+    assert decision.allowed is True
+    assert decision.reason == "hr_position_route"
+
+
+@pytest.mark.parametrize("method,route", HR_POSITION_ROUTES)
+def test_hr_position_routes_require_authentication(method, route):
+    decision = AuthorizationService(Grants()).decide(None, method, route, ())
+
+    assert (decision.status_code, decision.reason) == (
+        401,
+        "authentication_required",
+    )
+
+
+@pytest.mark.parametrize(
+    "method,route",
+    [item for item in HR_POSITION_ROUTES if item[0] not in {"GET", "HEAD", "OPTIONS"}],
+)
+def test_hr_position_mutations_are_denied_for_hard_stale_accounts(method, route):
+    decision = AuthorizationService(Grants()).decide(
+        STALE_MEMBER, method, route, ()
+    )
+
+    assert decision.status_code == 503
+    assert decision.reason == "hard_stale_read_only"
 
 
 @pytest.mark.parametrize("method,route", FAE_ROUTES)

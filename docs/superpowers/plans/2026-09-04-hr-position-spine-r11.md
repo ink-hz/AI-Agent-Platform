@@ -24,7 +24,7 @@
 
 ## File Map
 
-- `backend/control_migrations/065_hr_position_spine.sql`: schema, tables, constraints, grants, and mutation functions.
+- `backend/control_migrations/066_hr_position_spine.sql`: schema, tables, constraints, grants, and mutation functions.
 - `backend/app/hr/models.py`: immutable domain records and strict command validation.
 - `backend/app/hr/repository.py`: psycopg persistence and projection queries.
 - `backend/app/hr/service.py`: idempotency, confirmation, merge, correction, and import orchestration.
@@ -39,12 +39,12 @@
 ### Task 1: PostgreSQL HR Position Spine
 
 **Files:**
-- Create: `backend/control_migrations/065_hr_position_spine.sql`
+- Create: `backend/control_migrations/066_hr_position_spine.sql`
 - Create: `backend/tests/test_hr_position_migration.py`
 
 **Interfaces:**
 - Produces tables `platform_hr.positions`, `position_drafts`, `position_conversations`, `position_materials`, `position_artifacts`, `position_import_evidence`.
-- Produces SQL functions `platform_hr.create_position_v65`, `confirm_position_draft_v65`, `bind_conversation_v65`, `promote_material_v65`, and `link_artifact_v65`.
+- Produces SQL functions `platform_hr.create_position_v66`, `confirm_position_draft_v66`, `bind_conversation_v66`, `promote_material_v66`, and `link_artifact_v66`.
 
 - [ ] **Step 1: Write failing migration-contract tests**
 
@@ -77,7 +77,7 @@ Expected: all pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/control_migrations/065_hr_position_spine.sql backend/tests/test_hr_position_migration.py
+git add backend/control_migrations/066_hr_position_spine.sql backend/tests/test_hr_position_migration.py
 git commit -m "feat(hr): add position spine schema"
 ```
 

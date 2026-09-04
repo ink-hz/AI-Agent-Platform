@@ -119,6 +119,9 @@ export function ConversationPage({
   assistantLabel = "Agent 大脑",
   personaSubtitle,
   attachmentLimits,
+  positionMaterialIds,
+  positionArtifactAttachmentIds,
+  onPositionMaterialChange,
 }: {
   conversationId: string;
   account: Account;
@@ -128,6 +131,9 @@ export function ConversationPage({
   assistantLabel?: string;
   personaSubtitle?: string | null;
   attachmentLimits?: { max_file_bytes: number; max_files_per_message: number; max_bytes_per_message: number; max_files_per_conversation: number; max_bytes_per_conversation: number } | null;
+  positionMaterialIds?: readonly string[];
+  positionArtifactAttachmentIds?: readonly string[];
+  onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -154,6 +160,7 @@ export function ConversationPage({
   const writeController = useRef<AbortController | null>(null);
   const eventCursor = useRef(0);
   const inFlight = useRef(false);
+  const readOnly = account.hard_stale_read_only || detail?.conversation.status === "archived";
   const loadTaskDetail = useCallback(
     (turnId: string, taskId: string, signal: AbortSignal) => client.fetchTaskDetail(
       conversationId, turnId, taskId, signal,
@@ -253,7 +260,7 @@ export function ConversationPage({
   const sendValue = async (value: string) => {
     const normalized = value.trim();
     const waitingUser = detail?.current_turn?.status === "waiting_user";
-    if ((!normalized && newAttachmentIds.length === 0) || inFlight.current || account.hard_stale_read_only
+    if ((!normalized && newAttachmentIds.length === 0) || inFlight.current || readOnly
       || (turnIsActive(detail) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
     const submissionInput: TurnSubmission = {
       text: normalized,
@@ -306,7 +313,7 @@ export function ConversationPage({
   const retryTurn = async () => {
     const turn = detail?.current_turn;
     if (!turn || !["failed", "interrupted"].includes(turn.status)
-      || inFlight.current || account.hard_stale_read_only) return;
+      || inFlight.current || readOnly) return;
     const controller = new AbortController();
     writeController.current?.abort(); writeController.current = controller;
     inFlight.current = true; setPending(true); setSendFailure(false);
@@ -330,7 +337,7 @@ export function ConversationPage({
 
   const resumeSearch = async (message: ConversationMessage) => {
     if (!message.turn_id || !message.search_recovery?.resumable || !client.resumeSearch
-      || inFlight.current || account.hard_stale_read_only) return;
+      || inFlight.current || readOnly) return;
     const controller = new AbortController();
     writeController.current?.abort(); writeController.current = controller;
     inFlight.current = true; setPending(true); setSendFailure(false);
@@ -365,7 +372,7 @@ export function ConversationPage({
   };
 
   const rate = async (messageId: string, rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null) => {
-    if (account.hard_stale_read_only || feedback[messageId] === "pending") return;
+    if (readOnly || feedback[messageId] === "pending") return;
     const controller = new AbortController();
     setFeedback((current) => ({ ...current, [messageId]: "pending" }));
     try {
@@ -427,7 +434,7 @@ export function ConversationPage({
   const waitingQuestion = waitingUserEvent?.payload.objective_summary;
   const stopButton = <button
     className="conversation-stop"
-    disabled={cancelRequested || account.hard_stale_read_only}
+    disabled={cancelRequested || readOnly}
     onClick={() => void stop()}
     type="button"
   >{cancelRequested ? "正在停止" : "停止"}</button>;
@@ -458,17 +465,17 @@ export function ConversationPage({
       messages={messages}
       feedback={feedback}
       onDownloadAll={() => void downloadAllArtifacts()}
-      onFeedback={account.hard_stale_read_only ? undefined : (messageId, rating, reason, comment) => void rate(messageId, rating, reason, comment)}
+      onFeedback={readOnly ? undefined : (messageId, rating, reason, comment) => void rate(messageId, rating, reason, comment)}
       onOpenAttachment={(attachment, purpose) => void openAttachment(attachment, purpose)}
-      onRetry={account.hard_stale_read_only ? undefined : (message) => void resumeSearch(message)}
+      onRetry={readOnly ? undefined : (message) => void resumeSearch(message)}
       renderAfterUserTurn={(turnId) => {
         const workroom = workrooms.get(turnId);
         return workroom ? <MultiAgentWorkroom
           loadTaskDetail={loadTaskDetail}
-          onConfirmAction={account.hard_stale_read_only ? undefined : (actionId, actionDigest) => client.confirmAction(
+          onConfirmAction={readOnly ? undefined : (actionId, actionDigest) => client.confirmAction(
             conversationId, actionId, actionDigest, account.csrf_token,
           )}
-          onRejectAction={account.hard_stale_read_only ? undefined : (actionId) => client.rejectAction(
+          onRejectAction={readOnly ? undefined : (actionId) => client.rejectAction(
             conversationId, actionId, account.csrf_token,
           )}
           workroom={workroom}
@@ -484,23 +491,23 @@ export function ConversationPage({
     />
     {cancelFailure && <p className="conversation-action-error" role="alert">停止请求暂未送达，请稍后重试。</p>}
     {waitingUser && typeof waitingQuestion === "string" && <UserInputRequest
-      disabled={account.hard_stale_read_only}
+      disabled={readOnly}
       onSubmit={(answer) => void sendValue(answer)}
       pending={pending}
       question={waitingQuestion}
     />}
     {detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
-      && <button className="conversation-turn-retry" disabled={pending || account.hard_stale_read_only} onClick={() => void retryTurn()} type="button">重试本轮</button>}
+      && <button className="conversation-turn-retry" disabled={pending || readOnly} onClick={() => void retryTurn()} type="button">重试本轮</button>}
     <ConversationComposer
       attachmentControls={attachmentLimits ? <AttachmentUploader
         conversationId={conversationId} csrfToken={account.csrf_token}
-        disabled={account.hard_stale_read_only || (active && detail.conversation.mode === "direct_agent")}
+        disabled={readOnly || (active && detail.conversation.mode === "direct_agent")}
         conversationBytes={attachments.filter((item) => item.source === "user").reduce((sum, item) => sum + item.sizeBytes, 0)}
         conversationFileCount={attachments.filter((item) => item.source === "user").length} onError={setAttachmentError}
         onQueueChange={setUploadQueue} onReady={addReadyAttachment}
       /> : undefined}
       attachmentPending={uploadPending}
-      disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || account.hard_stale_read_only}
+      disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || readOnly}
       label={active && detail.conversation.mode === "brain" ? "补充当前任务" : "继续对话"}
       onChange={(value) => {
         setText(value); setSendFailure(false);
@@ -514,12 +521,15 @@ export function ConversationPage({
         : undefined}
       value={text}
     />
-    {account.hard_stale_read_only && <p className="conversation-read-only" role="status">当前为只读状态，已有对话仍可查看。</p>}
+    {readOnly && <p className="conversation-read-only" role="status">当前为只读状态，已有对话仍可查看。</p>}
     {sendFailure && <div className="conversation-action-error" role="alert"><span>消息暂未发送成功，可以使用同一次请求安全重试。</span><button className="conversation-retry" disabled={pending} onClick={() => void send()} type="button">重新发送</button></div>}
     {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
   </div>;
   return attachmentLimits ? <div className="conversation-workspace-grid">{conversationContent}<SessionMaterialsDrawer
     activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
     onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
+    positionMaterialIds={positionMaterialIds} onPositionMaterialChange={onPositionMaterialChange}
+    positionArtifactAttachmentIds={positionArtifactAttachmentIds}
+    readOnly={readOnly}
   /></div> : conversationContent;
 }

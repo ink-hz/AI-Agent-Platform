@@ -2,6 +2,8 @@ import type { Account } from "../../auth";
 import { directConversationPath } from "../../platform/workspaces";
 import { WorkspaceErrorBoundary } from "../../shared/WorkspaceErrorBoundary";
 import { DirectAgentWorkspace } from "../direct/DirectAgentWorkspace";
+import { HrPositionIndex } from "./HrPositionIndex";
+import { HrPositionWorkspace } from "./HrPositionWorkspace";
 
 
 function hrConversationPath(conversationId: string): string {
@@ -10,7 +12,17 @@ function hrConversationPath(conversationId: string): string {
 }
 
 
-export function HrWorkspacePage(props: { account: Account; conversationId?: string }) {
+export function HrWorkspacePage(props: { account: Account; conversationId?: string; positionId?: string; freeChat?: boolean }) {
+  if (!props.conversationId && !props.positionId && !props.freeChat) {
+    return <WorkspaceErrorBoundary title="HR Agent">
+      <HrPositionIndex account={props.account} />
+    </WorkspaceErrorBoundary>;
+  }
+  if (props.positionId) {
+    return <WorkspaceErrorBoundary title="HR Agent">
+      <HrPositionWorkspace account={props.account} conversationId={props.conversationId} positionId={props.positionId} />
+    </WorkspaceErrorBoundary>;
+  }
   return <WorkspaceErrorBoundary title="HR Agent">
     <DirectAgentWorkspace
       account={props.account}

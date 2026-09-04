@@ -573,6 +573,9 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
     [
         "/hr",
         "/hr/",
+        "/hr/chat",
+        "/hr/positions/11111111-1111-4111-8111-111111111111",
+        "/hr/positions/11111111-1111-4111-8111-111111111111/conversations/hr%3Aone",
         "/hr/conversations/hr%3Aone",
         "/marketing",
         "/marketing/",
@@ -601,6 +604,8 @@ def test_public_hr_and_marketing_shells_bootstrap_enterprise_login(
     "path",
     [
         "/hr/unknown/path",
+        "/hr/positions/not-a-uuid",
+        "/hr/positions/11111111-1111-4111-8111-111111111111/unknown",
         "/marketing/unknown",
         "/marketing/voice/unknown",
     ],

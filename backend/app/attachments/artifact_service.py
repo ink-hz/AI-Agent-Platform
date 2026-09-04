@@ -359,9 +359,25 @@ class ArtifactRepository:
 
 
 class ArtifactOutputService:
-    def __init__(self, repository, object_writer) -> None:
+    def __init__(self, repository, object_writer, *, position_linker=None) -> None:
         self._repository = repository
         self._object_writer = object_writer
+        self._position_linker = position_linker
+
+    def set_position_linker(self, position_linker) -> None:
+        if not callable(getattr(position_linker, "link_artifact", None)):
+            raise ValueError("artifact position linker invalid")
+        self._position_linker = position_linker
+
+    def _link_position(self, upload: ArtifactUpload) -> None:
+        if self._position_linker is None:
+            return
+        try:
+            self._position_linker.link_artifact(
+                upload.owner_id, upload.conversation_id, upload.artifact_id
+            )
+        except Exception as error:  # noqa: BLE001 - cross-domain failures are opaque
+            raise ArtifactUploadConflict("artifact position link unavailable") from error
 
     @staticmethod
     def _digest(token: str) -> bytes:
@@ -399,6 +415,7 @@ class ArtifactOutputService:
             token_sha256=token_sha256, upload_id=upload_id
         )
         if upload.state != "uploading":
+            self._link_position(upload)
             return upload
         if content_length != upload.declared_size:
             raise ArtifactUploadConflict("artifact content length mismatch")
@@ -433,7 +450,7 @@ class ArtifactOutputService:
                 attempt_id=attempt.attempt_id,
             )
             raise ArtifactUploadConflict("artifact integrity mismatch")
-        return self._repository.finalize(
+        finalized = self._repository.finalize(
             token_sha256=token_sha256,
             upload_id=upload_id,
             attempt_id=attempt.attempt_id,
@@ -441,8 +458,12 @@ class ArtifactOutputService:
             size_bytes=receipt.size_bytes,
             sha256=receipt.sha256,
         )
+        self._link_position(finalized)
+        return finalized
 
     def complete(self, bearer_token: str, upload_id: UUID) -> ArtifactUpload:
-        return self._repository.upload(
+        upload = self._repository.upload(
             token_sha256=self._digest(bearer_token), upload_id=upload_id
         )
+        self._link_position(upload)
+        return upload
