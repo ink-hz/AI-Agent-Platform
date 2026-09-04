@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -15,7 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.control_plane.models import AuthContext
 
-from .models import PositionDraftRecord, PositionRecord
+from .models import (
+    ConfirmedPositionPackage,
+    PositionDraftRecord,
+    PositionDraftVersion,
+    PositionRecord,
+)
 from .repository import HrConflict, HrNotFound, HrUnavailable
 
 _PRIVATE_HEADERS = {
@@ -189,10 +195,70 @@ def _material(record) -> dict[str, object]:
     }
 
 
+def _package_modules(value: Mapping[str, object]) -> dict[str, object]:
+    if not isinstance(value, Mapping) or set(value) != {"mission", "jd", "jr"}:
+        raise HrUnavailable("position package projection invalid")
+    result: dict[str, object] = {}
+    for name in ("mission", "jd", "jr"):
+        module = value[name]
+        if not isinstance(module, Mapping) or set(module) != {"text"}:
+            raise HrUnavailable("position package projection invalid")
+        selected = module["text"]
+        if not isinstance(selected, str) or not selected:
+            raise HrUnavailable("position package projection invalid")
+        result[name] = {"text": selected}
+    return result
+
+
+def _position_package(
+    owner_id: UUID,
+    draft: PositionDraftRecord,
+    record: PositionDraftVersion,
+) -> dict[str, object]:
+    if not isinstance(draft, PositionDraftRecord) or not isinstance(
+        record, PositionDraftVersion
+    ):
+        raise HrUnavailable("position package projection invalid")
+    if draft.owner_id != owner_id or record.owner_id != owner_id:
+        raise HTTPException(403, "HR position access denied")
+    if (
+        record.draft_id != draft.draft_id
+        or record.source_conversation_id != draft.source_conversation_id
+    ):
+        raise HrUnavailable("position package projection invalid")
+    return {
+        "draft_id": str(draft.draft_id),
+        "draft_version_id": str(record.draft_version_id),
+        "conversation_id": str(record.source_conversation_id),
+        "version_number": record.version_number,
+        "title": record.title,
+        "modules": _package_modules(record.modules),
+        "row_version": draft.row_version,
+        "created_at": record.created_at.isoformat(),
+        "updated_at": record.updated_at.isoformat(),
+    }
+
+
+def _confirmed_package(
+    owner_id: UUID, record: ConfirmedPositionPackage
+) -> dict[str, object]:
+    if not isinstance(record, ConfirmedPositionPackage):
+        raise HrUnavailable("confirmed position package projection invalid")
+    if record.position.owner_id != owner_id or record.context.owner_id != owner_id:
+        raise HTTPException(403, "HR position access denied")
+    return {
+        "position_id": str(record.position.position_id),
+        "context_version_id": str(record.context.context_version_id),
+        "conversation_id": str(record.conversation_id),
+    }
+
+
 def build_hr_position_router(service, agent_use_authorization) -> APIRouter:
     required_service = (
         "list_positions", "position", "list_drafts", "propose_draft",
-        "confirm_draft", "merge_draft", "dismiss_draft", "bind_conversation",
+        "confirm_draft", "position_package_for_conversation",
+        "confirm_package",
+        "merge_draft", "dismiss_draft", "bind_conversation",
         "promote_material", "remove_material",
     )
     if any(not callable(getattr(service, name, None)) for name in required_service):
@@ -277,6 +343,18 @@ def build_hr_position_router(service, agent_use_authorization) -> APIRouter:
         records = await call(service.list_drafts, owner_id, state=state, limit=limit)
         return {"items": [_draft(item) for item in records]}
 
+    @router.get("/api/hr/conversations/{conversation_id}/position-package")
+    async def conversation_position_package(
+        request: Request, conversation_id: Annotated[UUID, Path()]
+    ):
+        owner_id = await owner(request)
+        draft, version = await call(
+            service.position_package_for_conversation,
+            owner_id,
+            conversation_id,
+        )
+        return await call(_position_package, owner_id, draft, version)
+
     @router.post("/api/hr/position-drafts")
     async def propose_draft(
         body: ProposeDraftBody,
@@ -303,6 +381,30 @@ def build_hr_position_router(service, agent_use_authorization) -> APIRouter:
             expected_row_version=body.expected_row_version,
         )
         return _position(record)
+
+    @router.post(
+        "/api/hr/position-drafts/{draft_id}/versions/"
+        "{draft_version_id}/confirm"
+    )
+    async def confirm_position_package(
+        body: VersionBody,
+        request: Request,
+        draft_id: Annotated[UUID, Path()],
+        draft_version_id: Annotated[UUID, Path()],
+        idempotency_key: Annotated[
+            str | None, Header(alias="Idempotency-Key")
+        ] = None,
+    ):
+        owner_id = await owner(request, writable=True)
+        record = await call(
+            service.confirm_package,
+            owner_id,
+            draft_id,
+            draft_version_id,
+            _request_id(idempotency_key),
+            expected_row_version=body.expected_row_version,
+        )
+        return await call(_confirmed_package, owner_id, record)
 
     @router.post("/api/hr/position-drafts/{draft_id}/merge")
     async def merge_draft(

@@ -479,6 +479,39 @@ class HrPositionRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrUnavailable("position repository unavailable") from None
 
+    def position_package_for_conversation(
+        self, owner_id: UUID, conversation_id: UUID
+    ) -> tuple[PositionDraftRecord, PositionDraftVersion]:
+        if not isinstance(owner_id, UUID) or not isinstance(conversation_id, UUID):
+            raise ValueError("position package identifiers required")
+        try:
+            with self._connection() as connection:
+                version_row = connection.execute(
+                    "select version.* from "
+                    "platform_hr.position_draft_versions version join "
+                    "platform_control.conversation_messages message on "
+                    "message.conversation_id=version.source_conversation_id "
+                    "and message.message_id=version.source_assistant_message_id "
+                    "where version.owner_internal_user_id=%s and "
+                    "version.source_conversation_id=%s order by message.seq desc,"
+                    "version.draft_version_id desc limit 1",
+                    (owner_id, conversation_id),
+                ).fetchone()
+                if version_row is None:
+                    raise HrNotFound("position package not found")
+                draft_row = connection.execute(
+                    "select * from platform_hr.position_drafts where "
+                    "owner_internal_user_id=%s and draft_id=%s",
+                    (owner_id, version_row["draft_id"]),
+                ).fetchone()
+            if draft_row is None:
+                raise HrUnavailable("position package unavailable")
+            return _draft(draft_row), _draft_version(version_row)
+        except HrRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
     def confirm_package(
         self,
         owner_id: UUID,

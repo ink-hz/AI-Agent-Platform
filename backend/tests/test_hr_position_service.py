@@ -97,6 +97,10 @@ class RecordingRepository:
         self.commands.append((owner_id, draft_id))
         return self.draft_version
 
+    def position_package_for_conversation(self, owner_id, conversation_id):
+        self.commands.append((owner_id, conversation_id))
+        return self.draft, self.draft_version
+
     def confirm_package(self, *args, **kwargs):
         self.commands.append((args, kwargs))
         return self.confirmed_package
@@ -242,6 +246,20 @@ def test_service_creates_and_confirms_a_versioned_position_package(
     )
 
 
+def test_service_reads_position_package_by_owner_and_conversation(
+    position_record, draft_record
+) -> None:
+    repository = RecordingRepository(position_record, draft_record)
+    repository.draft_version = object()
+    service = HrPositionService(repository)
+    owner_id, conversation_id = uuid4(), uuid4()
+
+    assert service.position_package_for_conversation(
+        owner_id, conversation_id
+    ) == (draft_record, repository.draft_version)
+    assert repository.commands[-1] == (owner_id, conversation_id)
+
+
 def test_service_reuses_default_draft_version_id_for_request_replay(
     position_record, draft_record
 ) -> None:
@@ -278,7 +296,12 @@ def test_service_reuses_default_draft_version_id_for_request_replay(
 
 @pytest.mark.parametrize(
     "missing",
-    ["create_draft_version", "latest_draft_version", "confirm_package"],
+    [
+        "create_draft_version",
+        "latest_draft_version",
+        "position_package_for_conversation",
+        "confirm_package",
+    ],
 )
 def test_service_requires_position_package_repository_capabilities(
     position_record, draft_record, missing

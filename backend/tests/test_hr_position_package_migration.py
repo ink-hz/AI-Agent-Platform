@@ -76,6 +76,12 @@ def test_migration_requires_exact_modules_and_scoped_source_identity() -> None:
         "foreign key (source_conversation_id,source_assistant_message_id) "
         "references platform_control.conversation_messages"
     ) in sql
+    assert re.search(
+        r"create index position_draft_versions_conversation_v76 on "
+        r"platform_hr\.position_draft_versions\(\s*owner_internal_user_id,"
+        r"source_conversation_id\s*\)",
+        sql,
+    )
 
 
 def test_migration_exposes_app_only_idempotent_package_mutations() -> None:

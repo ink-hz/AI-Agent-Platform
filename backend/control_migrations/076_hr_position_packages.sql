@@ -55,6 +55,11 @@ create table platform_hr.position_draft_versions (
   unique (owner_internal_user_id,draft_id,source_assistant_message_id)
 );
 
+create index position_draft_versions_conversation_v76
+  on platform_hr.position_draft_versions(
+    owner_internal_user_id,source_conversation_id
+  );
+
 create table platform_hr.position_package_projections (
   projection_id uuid primary key,
   projection_request_id uuid not null,

@@ -44,6 +44,30 @@ export interface HrPositionDraft {
   updatedAt: string;
 }
 
+export interface HrPositionPackageModules {
+  mission: { text: string };
+  jd: { text: string };
+  jr: { text: string };
+}
+
+export interface HrPositionPackage {
+  draftId: string;
+  draftVersionId: string;
+  conversationId: string;
+  versionNumber: number;
+  title: string;
+  modules: HrPositionPackageModules;
+  rowVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrConfirmedPositionPackage {
+  positionId: string;
+  contextVersionId: string;
+  conversationId: string;
+}
+
 export interface PositionPage {
   items: HrPosition[];
   nextCursor: string | null;

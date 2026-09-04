@@ -51,6 +51,10 @@ class PositionCommandRepository(Protocol):
         self, owner_id: UUID, draft_id: UUID
     ) -> PositionDraftVersion: ...
 
+    def position_package_for_conversation(
+        self, owner_id: UUID, conversation_id: UUID
+    ) -> tuple[PositionDraftRecord, PositionDraftVersion]: ...
+
     def confirm_package(
         self, owner_id: UUID, draft_id: UUID, draft_version_id: UUID,
         request_id: UUID, *, expected_row_version: int,
@@ -92,6 +96,7 @@ class HrPositionService:
             "confirm_draft",
             "create_draft_version",
             "latest_draft_version",
+            "position_package_for_conversation",
             "confirm_package",
             "merge_draft",
             "dismiss_draft",
@@ -231,6 +236,13 @@ class HrPositionService:
         self, owner_id: UUID, draft_id: UUID
     ) -> PositionDraftVersion:
         return self._repository.latest_draft_version(owner_id, draft_id)
+
+    def position_package_for_conversation(
+        self, owner_id: UUID, conversation_id: UUID
+    ) -> tuple[PositionDraftRecord, PositionDraftVersion]:
+        return self._repository.position_package_for_conversation(
+            owner_id, conversation_id
+        )
 
     def confirm_package(
         self,
