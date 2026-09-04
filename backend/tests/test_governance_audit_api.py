@@ -29,6 +29,7 @@ from app.control_plane.fae_access import (
     FaeWorkbenchAccessService,
     FaeWorkbenchAccessUnavailable,
 )
+from app.control_plane.voc_access import VocWorkbenchAccessService
 from app.control_plane.audit import AuditWriter
 from test_control_plane_migration import control_database
 
@@ -46,6 +47,10 @@ class FakeManagementRepository:
         self.fae_grant_id = uuid4()
         self.fae_internal_user_id = uuid4()
         self.fae_grant_replays = {}
+        self.voc_grant_id = uuid4()
+        self.voc_internal_user_id = uuid4()
+        self.voc_grant_replays = {}
+        self.voc_allowed_user_ids = {self.voc_internal_user_id}
         self.users = [
             {
                 "internal_user_id": uuid4(),
@@ -66,6 +71,15 @@ class FakeManagementRepository:
             "status": "active",
             "permission": "manager",
             "created_at": "2026-09-01T00:00:00+00:00",
+            "row_version": 0,
+        }]
+        self.voc_grants = [{
+            "grant_id": self.voc_grant_id,
+            "internal_user_id": self.voc_internal_user_id,
+            "display_name": "稻夫",
+            "status": "active",
+            "permission": "manager",
+            "created_at": "2026-09-04T00:00:00+00:00",
             "row_version": 0,
         }]
 
@@ -309,6 +323,90 @@ class FakeManagementRepository:
             "row_version": expected_row_version + 1,
         }
 
+    def allows(self, internal_user_id):
+        return internal_user_id in self.voc_allowed_user_ids
+
+    def active_voc_workbench_member(self, display_name):
+        if display_name != "稻夫":
+            raise ValueError("directory_member_not_found")
+        return {
+            "generation_id": self.generation_id,
+            "member_key": self.member_key,
+        }
+
+    def voc_workbench_grant_replay(self, actor, display_name, operation_id):
+        return self.voc_grant_replays.get((actor, display_name, operation_id))
+
+    def list_voc_workbench_grants(self):
+        return self.voc_grants
+
+    def grant_voc_workbench(
+        self,
+        actor,
+        display_name,
+        operation_id,
+        expected_generation_id,
+        expected_member_key,
+        new_user_id,
+        corporate_identity_id,
+        union_identity_id,
+        audit_event_id,
+    ):
+        self.mutations.append((
+            "grant_voc",
+            actor,
+            display_name,
+            operation_id,
+            expected_generation_id,
+            expected_member_key,
+            new_user_id,
+            corporate_identity_id,
+            union_identity_id,
+            audit_event_id,
+        ))
+        result = {
+            "operation_id": str(operation_id),
+            "grant_id": str(self.voc_grant_id),
+            "internal_user_id": str(self.voc_internal_user_id),
+            "permission": "manager",
+            "row_version": 0,
+        }
+        self.voc_grant_replays[(actor, display_name, operation_id)] = {
+            "generation_id": expected_generation_id,
+            "member_key": expected_member_key,
+            "result": result,
+        }
+        return result
+
+    def revoke_voc_workbench(
+        self,
+        actor,
+        target,
+        operation_id,
+        expected_row_version,
+        audit_event_id,
+    ):
+        self.mutations.append((
+            "revoke_voc",
+            actor,
+            target,
+            operation_id,
+            expected_row_version,
+            audit_event_id,
+        ))
+        self.voc_allowed_user_ids.discard(target)
+        self.voc_grants = [
+            grant for grant in self.voc_grants
+            if grant["internal_user_id"] != target
+        ]
+        return {
+            "operation_id": str(operation_id),
+            "grant_id": str(self.voc_grant_id),
+            "internal_user_id": str(target),
+            "permission": "manager",
+            "row_version": expected_row_version + 1,
+        }
+
 
 class FakeAuditWriter:
     def __init__(self) -> None:
@@ -339,6 +437,7 @@ def _client(context: AuthContext, *, csrf=True, fresh=True):
     )
     app = FastAPI()
     app.state.fae_access = FaeWorkbenchAccessService(repository, audit)
+    app.state.voc_access = VocWorkbenchAccessService(repository, audit)
     app.include_router(router)
     app.dependency_overrides[authenticated_context] = lambda: context
     app.dependency_overrides[csrf_protection] = lambda: csrf
@@ -580,6 +679,100 @@ def test_only_owner_can_manage_fae_workbench_grants(context: AuthContext) -> Non
                 "expected_row_version": 0,
             },
         ).status_code == 403
+    assert repository.mutations == []
+
+
+def test_voc_access_keeps_global_roles_and_allows_only_granted_members() -> None:
+    repository = FakeManagementRepository()
+    access = VocWorkbenchAccessService(repository, FakeAuditWriter())
+
+    assert access.allows(OWNER) is True
+    assert access.allows(ADMIN) is True
+    assert access.allows(VIEWER) is True
+    assert access.allows(
+        AuthContext(repository.voc_internal_user_id, Role.MEMBER, uuid4(), False)
+    ) is True
+    assert access.allows(MEMBER) is False
+
+
+def test_owner_manages_voc_grant_without_changing_platform_role() -> None:
+    client, repository, audit = _client(OWNER)
+    listed = client.get("/api/v1/manage/voc-workbench/grants")
+
+    assert listed.status_code == 200
+    assert listed.json() == {"grants": [{
+        **repository.voc_grants[0],
+        "grant_id": str(repository.voc_grant_id),
+        "internal_user_id": str(repository.voc_internal_user_id),
+    }]}
+    request_id = uuid4()
+    granted = client.post(
+        "/api/v1/manage/voc-workbench/grants",
+        json={
+            "display_name": "稻夫",
+            "reason": "voc_workbench_access_approved",
+            "request_id": str(request_id),
+        },
+    )
+    assert granted.status_code == 200
+    assert granted.json() == {
+        "status": "ok",
+        "internal_user_id": str(repository.voc_internal_user_id),
+        "row_version": 0,
+    }
+    assert repository.mutations[-1][:6] == (
+        "grant_voc",
+        OWNER.internal_user_id,
+        "稻夫",
+        request_id,
+        repository.generation_id,
+        repository.member_key,
+    )
+    assert [command.event_type for command in audit.commands] == [
+        "voc_workbench_grant_requested",
+        "voc_workbench_grant_completed",
+    ]
+
+    revoked = client.request(
+        "DELETE",
+        f"/api/v1/manage/voc-workbench/grants/{repository.voc_internal_user_id}",
+        json={
+            "reason": "voc_workbench_access_revoked",
+            "request_id": str(uuid4()),
+            "expected_row_version": 0,
+        },
+    )
+    assert revoked.status_code == 200
+    assert revoked.json() == {"status": "ok", "row_version": 1}
+    assert repository.mutations[-1][0] == "revoke_voc"
+    assert [command.event_type for command in audit.commands[-2:]] == [
+        "voc_workbench_revoke_requested",
+        "voc_workbench_revoke_completed",
+    ]
+
+
+@pytest.mark.parametrize("context", [ADMIN, VIEWER, MEMBER])
+def test_only_owner_can_manage_voc_workbench_grants(context: AuthContext) -> None:
+    client, repository, _ = _client(context)
+
+    assert client.get("/api/v1/manage/voc-workbench/grants").status_code == 403
+    assert client.post(
+        "/api/v1/manage/voc-workbench/grants",
+        json={
+            "display_name": "稻夫",
+            "reason": "voc_workbench_access_approved",
+            "request_id": str(uuid4()),
+        },
+    ).status_code == 403
+    assert client.request(
+        "DELETE",
+        f"/api/v1/manage/voc-workbench/grants/{repository.voc_internal_user_id}",
+        json={
+            "reason": "voc_workbench_access_revoked",
+            "request_id": str(uuid4()),
+            "expected_row_version": 0,
+        },
+    ).status_code == 403
     assert repository.mutations == []
 
 

@@ -97,6 +97,10 @@ from .control_plane.fae_access import (
     FaeWorkbenchAccessRepository,
     FaeWorkbenchAccessService,
 )
+from .control_plane.voc_access import (
+    VocWorkbenchAccessRepository,
+    VocWorkbenchAccessService,
+)
 from .control_plane.identity import IdentityResolver
 from .control_plane.in_client_apps import load_trusted_in_client_apps
 from .control_plane.middleware import (
@@ -1411,6 +1415,7 @@ def create_app(
     )
     app.state.hr_task_result_reconciler = hr_task_result_reconciler
     app.state.fae_access = None
+    app.state.voc_access = None
     app.state.fae_session_read_audit = None
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
@@ -1430,6 +1435,11 @@ def create_app(
         )
         app.state.fae_access = FaeWorkbenchAccessService(
             FaeWorkbenchAccessRepository(control_database_url),
+            audit_writer,
+            cloud_mode=cloud_mode,
+        )
+        app.state.voc_access = VocWorkbenchAccessService(
+            VocWorkbenchAccessRepository(control_database_url),
             audit_writer,
             cloud_mode=cloud_mode,
         )
