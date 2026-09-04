@@ -678,7 +678,7 @@ begin
     and run.agent_id='hr-bot' and run.phase='direct'
     and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
     and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
-    and mission.client_request_id=selected_attempt.draft_client_request_id
+    and mission.client_request_id=turn.turn_id
     and conversation.mode='direct_agent'
     and conversation.direct_agent_id='hr-bot'
     and conversation.started_by_client_request_id=
@@ -793,7 +793,7 @@ begin
       and run.agent_id='hr-bot' and run.phase='direct'
       and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
       and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
-      and mission.client_request_id=selected_attempt.draft_client_request_id
+      and mission.client_request_id=turn.turn_id
       and conversation.mode='direct_agent' and conversation.direct_agent_id='hr-bot'
       and conversation.started_by_client_request_id=
         selected_attempt.draft_client_request_id
@@ -849,6 +849,72 @@ begin
     and owner_internal_user_id=selected_owner_internal_user_id;
   if not found then raise no_data_found; end if;
   return selected;
+end
+$function$;
+
+create function platform_hr.read_candidate_draft_execution_result_v70(
+  selected_attempt_id uuid,
+  selected_worker_id text
+) returns table(
+  execution_status text,
+  turn_status text,
+  conversation_id uuid,
+  assistant_message_id uuid,
+  content_ciphertext bytea,
+  encryption_key_version integer
+)
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in (
+    'platform_brain_worker','platform_brain_worker_preview'
+  ) then raise insufficient_privilege; end if;
+  return query
+  select execution.status::text,turn.status::text,
+    conversation.conversation_id,turn.assistant_message_id,
+    message.content_ciphertext,message.encryption_key_version
+  from platform_hr.candidate_draft_processing_attempts selected_attempt
+  join platform_control.execution_jobs execution
+    on execution.job_id=selected_attempt.execution_job_id
+    and execution.agent_id='hr-bot'
+    and execution.status in ('completed','failed','cancelled','interrupted')
+  join platform_control.mission_runs run
+    on run.run_id=execution.run_id and run.agent_id='hr-bot'
+    and run.phase='direct'
+  join platform_control.missions mission
+    on mission.mission_id=run.mission_id
+    and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
+    and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
+  join platform_control.conversation_turns turn
+    on turn.mission_id=mission.mission_id
+    and turn.turn_id=selected_attempt.turn_id
+    and turn.conversation_id=selected_attempt.conversation_id
+    and turn.client_request_id=selected_attempt.draft_client_request_id
+    and turn.status in ('completed','failed','cancelled','interrupted')
+  join platform_control.conversations conversation
+    on conversation.conversation_id=turn.conversation_id
+    and conversation.owner_internal_user_id=selected_attempt.owner_internal_user_id
+    and conversation.started_by_client_request_id=
+      selected_attempt.draft_client_request_id
+    and conversation.mode='direct_agent'
+    and conversation.direct_agent_id='hr-bot'
+  left join platform_control.conversation_messages message
+    on message.conversation_id=conversation.conversation_id
+    and message.message_id=turn.assistant_message_id
+    and message.turn_id=turn.turn_id
+    and message.mission_id=mission.mission_id and message.role='assistant'
+    and message.delivery_status='completed'
+  where selected_attempt.attempt_id=selected_attempt_id
+    and selected_attempt.worker_id=selected_worker_id
+    and selected_attempt.state='processing'
+    and selected_attempt.lease_expires_at>now()
+    and mission.client_request_id=turn.turn_id
+    and not exists (
+      select 1 from platform_hr.position_conversations position_conversation
+      where position_conversation.conversation_id=conversation.conversation_id
+    );
+  if not found then raise no_data_found; end if;
 end
 $function$;
 
@@ -1241,7 +1307,7 @@ begin
     and execution.status='completed' and execution.agent_id='hr-bot'
     and run.agent_id='hr-bot' and run.phase='direct'
     and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
-    and mission.client_request_id=selected_attempt.draft_client_request_id
+    and mission.client_request_id=turn.turn_id
     and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
     and turn.client_request_id=selected_attempt.draft_client_request_id
     and turn.status='completed';
@@ -1312,7 +1378,7 @@ begin
     and execution.agent_id='hr-bot'
     and run.agent_id='hr-bot' and run.phase='direct'
     and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
-    and mission.client_request_id=selected_attempt.draft_client_request_id
+    and mission.client_request_id=turn.turn_id
     and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
     and turn.client_request_id=selected_attempt.draft_client_request_id
     and turn.status in ('completed','failed','cancelled','interrupted');
@@ -1906,6 +1972,9 @@ revoke all on function platform_hr.complete_candidate_draft_v70(
 revoke all on function platform_hr.fail_candidate_draft_v70(
   uuid,uuid,uuid,bigint,text
 ) from public;
+revoke all on function platform_hr.read_candidate_draft_execution_result_v70(
+  uuid,text
+) from public;
 revoke all on function platform_hr.retry_candidate_draft_v70(
   uuid,uuid,uuid,bigint
 ) from public;
@@ -1963,6 +2032,10 @@ begin
   execute format(
     'grant execute on function platform_hr.read_candidate_draft_attempt_v70('
     'uuid,uuid) to %I,%I',selected_app,selected_brain
+  );
+  execute format(
+    'grant execute on function platform_hr.read_candidate_draft_execution_result_v70(uuid,text) '
+    'to %I',selected_brain
   );
   execute format(
     'grant execute on function platform_hr.complete_claimed_candidate_draft_v70('

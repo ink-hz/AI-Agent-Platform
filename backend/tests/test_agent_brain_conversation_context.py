@@ -160,6 +160,58 @@ def test_unbound_hr_turn_does_not_call_position_provider(
 
 
 @pytest.mark.postgres
+def test_unbound_candidate_parser_turn_receives_only_verified_special_input(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    request_id = uuid4()
+    attachment_id = uuid4()
+    started = repository.start(
+        owner_id, request_id, "parse one resume",
+        mode="direct_agent", direct_agent_id="hr-bot",
+    )
+
+    class Provider:
+        def __init__(self):
+            self.calls = []
+
+        def for_turn(self, selected_owner, conversation_id, turn_id):
+            self.calls.append((selected_owner, conversation_id, turn_id))
+            return attachment_id
+
+    provider = Provider()
+    context = ConversationContextBuilder(
+        repository, candidate_parser_input_provider=provider
+    ).build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.active_attachment_ids == (attachment_id,)
+    assert context.hr_position_context is None
+    assert provider.calls == [(
+        owner_id, started.conversation.conversation_id, started.turn.turn_id
+    )]
+
+
+@pytest.mark.postgres
+def test_non_hr_turn_never_receives_candidate_parser_input(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    started = repository.start(owner_id, uuid4(), "ordinary request")
+
+    class Provider:
+        def for_turn(self, *_args):
+            raise AssertionError("ordinary conversation must not use parser input")
+
+    context = ConversationContextBuilder(
+        repository, candidate_parser_input_provider=Provider()
+    ).build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.active_attachment_ids == ()
+
+
+@pytest.mark.postgres
 def test_compaction_covers_only_completed_exchange_and_keeps_current_request(
     conversation_database,
     repository,

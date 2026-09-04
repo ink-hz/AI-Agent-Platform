@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 
 import yaml
+
 from app.agent_brain.worker_runtime import tick, validate_worker_mode
 
 ROOT = Path(__file__).parents[2]
@@ -435,6 +436,89 @@ def test_private_worker_phase_failure_does_not_skip_other_durable_lanes() -> Non
         "reaper",
         "heartbeat:agent-brain-reaper:healthy:-",
     ]
+
+
+def test_candidate_parser_is_an_isolated_brain_worker_lane() -> None:
+    calls: list[str] = []
+
+    class Runtime:
+        def advance_one(self):
+            calls.append("brain")
+            return False
+
+        def scan_settled_batches(self):
+            return 0
+
+        def dispatch_one(self):
+            return False
+
+        def reconcile_one(self):
+            return False
+
+        def reconcile_adapter_tasks(self, _kind):
+            return 0
+
+        def reconcile_cancellations(self):
+            return 0
+
+        def expire_actions(self):
+            return 0
+
+    class ParserRuntime:
+        def tick(self):
+            calls.append("candidate-parser")
+            return True
+
+    class Repository:
+        def heartbeat(self, name, *, status, error_code=None):
+            calls.append(f"heartbeat:{name}:{status}")
+
+        def settle_active_waits(self, *, limit):
+            return 0
+
+        def expire_leases(self, *, limit):
+            return 0
+
+        def expire_delivery_leases(self, *, limit):
+            return 0
+
+        def expire_waiting_users(self, *, limit):
+            return 0
+
+        def terminalize_blocked_tasks(self, *, limit):
+            return 0
+
+        def expire_task_deadlines(self, *, limit):
+            return 0
+
+        def erase_expired_model_responses(self, *, limit):
+            return 0
+
+        def erase_expired_conversations(self, *, limit):
+            return 0
+
+    changed = tick(
+        validate_worker_mode("all"), Runtime(), Repository(),
+        candidate_parser_runtime=ParserRuntime(),
+    )
+
+    assert changed == 1
+    assert calls[:4] == [
+        "brain",
+        "heartbeat:agent-brain-step:healthy",
+        "candidate-parser",
+        "heartbeat:hr-candidate-parser:healthy",
+    ]
+
+
+def test_brain_worker_builds_durable_candidate_parser_runtime() -> None:
+    source = (ROOT / "backend" / "app" / "agent_brain" / "worker_runtime.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CandidateParserQueue(CandidateRepository(database_url))" in source
+    assert "PostgresCandidateParserResultReader(" in source
+    assert "candidate_parser_runtime=candidate_parser_runtime" in source
 
 
 def test_api_process_does_not_start_v1_scheduler_when_v2_is_enabled() -> None:

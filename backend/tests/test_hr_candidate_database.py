@@ -9,6 +9,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 import test_control_plane_migration as control_migration
+
 from app.hr.candidate_models import (
     AttachCandidateDraftExecution,
     ClaimNextCandidateDraft,
@@ -132,7 +133,7 @@ def _seed_execution_identity(connection, owner_id, request_id, *, agent_id="hr-b
         "insert into platform_control.missions("
         "mission_id,owner_internal_user_id,client_request_id,mode,"
         "direct_agent_id,status) values (%s,%s,%s,'direct_agent',%s,'delegated')",
-        (ids["mission"], owner_id, request_id, agent_id),
+        (ids["mission"], owner_id, ids["turn"], agent_id),
     )
     connection.execute(
         "insert into platform_control.mission_tasks("
