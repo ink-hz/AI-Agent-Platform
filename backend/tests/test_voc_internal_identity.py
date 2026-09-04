@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 import pytest
+from app.control_plane.authorization import AuthorizationService
 from app.control_plane.identity import StaffIdentity
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.models import AuthContext, DirectoryFreshness, Role
@@ -29,10 +30,15 @@ class Auth:
     rate_limiter = None
 
     def authenticate(self, cookie: str):
-        if cookie != "manager-session":
+        if cookie not in {"manager-session", "member-session"}:
             return None
         return (
-            AuthContext(USER_ID, Role.MANAGEMENT_VIEWER, uuid4(), False),
+            AuthContext(
+                USER_ID,
+                Role.MEMBER if cookie == "member-session" else Role.MANAGEMENT_VIEWER,
+                uuid4(),
+                False,
+            ),
             "session-csrf",
         )
 
@@ -64,6 +70,11 @@ class BotSubjects:
         if staff_id == "unavailable":
             raise RuntimeError("provider-user-sensitive")
         return None
+
+
+class NoManagementGrants:
+    def permits(self, _actor, _agent_id):
+        return False
 
 
 @pytest.mark.asyncio
@@ -196,23 +207,39 @@ def test_identity_middleware_hides_private_route_before_session_authentication(
         IdentitySecurityMiddleware,
         auth=Auth(),
         public_assets=frozenset(),
+        authorization=AuthorizationService(NoManagementGrants()),
         routes=tuple(app.router.routes),
         voc_service_authorizer=authorizer,
     )
 
     with TestClient(app, client=("172.29.0.3", 50000)) as protected:
         assert protected.get("/api/v1/internal/voc/browser-subject").status_code == 404
+        assert protected.get(
+            "/api/v1/internal/voc/browser-subject",
+            headers={"Authorization": f"Bearer {voc_bearer}"},
+        ).status_code == 401
         response = protected.get(
             "/api/v1/internal/voc/browser-subject",
             headers={
                 "Authorization": f"Bearer {voc_bearer}",
-                "Cookie": "__Host-platform_session=manager-session; "
+                "Cookie": "__Host-platform_session=member-session; "
                 "__Host-platform_csrf=session-csrf",
             },
         )
 
     assert response.status_code == 200
+    assert response.json()["capabilities"] == ["voc.read_self", "voc.submit"]
     assert response.json()["csrf_token"] == "session-csrf"
+
+    with TestClient(app, client=("172.29.0.4", 50000)) as public:
+        assert public.get(
+            "/api/v1/internal/voc/browser-subject",
+            headers={
+                "Authorization": f"Bearer {voc_bearer}",
+                "Cookie": "__Host-platform_session=member-session; "
+                "__Host-platform_csrf=session-csrf",
+            },
+        ).status_code == 404
 
 
 def test_bot_subject_is_strict_and_uses_directory_identity(client, voc_bearer):
