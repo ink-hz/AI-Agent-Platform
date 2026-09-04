@@ -4,7 +4,7 @@
 
 **Goal:** Deliver confirmed candidates, isolated batch resume parsing, versioned position-relative analysis, comparison, interview plans, and durable human correction.
 
-**Architecture:** Migration 068 owns candidate-domain objects and security-definer mutations. Candidate modules expose one `CandidateEnvelopeProvider` to the position task-context builder; file bytes and task execution remain in existing Attachment and Conversation services.
+**Architecture:** Migration 069 owns candidate-domain objects and security-definer mutations. Candidate modules expose one `CandidateEnvelopeProvider` to the position task-context builder; file bytes and task execution remain in existing Attachment and Conversation services. The number was advanced after master assigned migration 067 to access-history indexing and position intelligence moved to 068.
 
 **Tech Stack:** PostgreSQL, Python 3.11, psycopg 3, FastAPI, Pydantic, pytest.
 
@@ -20,10 +20,10 @@
 
 ---
 
-### Task 1: Add migration 068 and bounded models
+### Task 1: Add migration 069 and bounded models
 
 **Files:**
-- Create: `backend/control_migrations/068_hr_candidate_intelligence.sql`
+- Create: `backend/control_migrations/069_hr_candidate_intelligence.sql`
 - Create: `backend/app/hr/candidate_models.py`
 - Create: `backend/tests/test_hr_candidate_migration.py`
 - Create: `backend/tests/test_hr_candidate_models.py`
@@ -35,7 +35,7 @@
 
 ```python
 def test_candidate_schema_has_owner_composite_references_and_no_ats_fields():
-    sql = migration_sql("068_hr_candidate_intelligence.sql")
+    sql = migration_sql("069_hr_candidate_intelligence.sql")
     assert "foreign key (position_id,owner_internal_user_id)" in sql
     assert all(word not in sql for word in ("offer_status", "pipeline_stage", "interview_schedule"))
 
@@ -50,7 +50,7 @@ def test_analysis_requires_exact_context_and_documents():
 
 Run: `cd backend && ./.venv/bin/python -m pytest -q tests/test_hr_candidate_migration.py tests/test_hr_candidate_models.py`
 
-Expected: FAIL because migration 068 and models do not exist.
+Expected: FAIL because migration 069 and models do not exist.
 
 - [ ] **Step 3: Implement owner-scoped append-only schema**
 
@@ -61,7 +61,7 @@ CandidateDraft processing states are `pending/processing/ready/failed/confirmed/
 ```bash
 cd backend
 ./.venv/bin/python -m pytest -q tests/test_hr_candidate_migration.py tests/test_hr_candidate_models.py
-git add control_migrations/068_hr_candidate_intelligence.sql app/hr/candidate_models.py tests/test_hr_candidate_migration.py tests/test_hr_candidate_models.py
+git add control_migrations/069_hr_candidate_intelligence.sql app/hr/candidate_models.py tests/test_hr_candidate_migration.py tests/test_hr_candidate_models.py
 git commit -m "feat(hr): add candidate intelligence schema"
 ```
 
@@ -224,4 +224,3 @@ Expected: PASS.
 Run: `cd backend && ./.venv/bin/python -m compileall -q app && ./.venv/bin/ruff check --select I app/hr tests/test_hr_candidate_*.py tests/test_hr_resume_batch.py && git diff --check`
 
 Expected: PASS.
-

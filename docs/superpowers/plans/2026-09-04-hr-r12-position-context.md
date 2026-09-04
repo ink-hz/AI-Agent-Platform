@@ -4,7 +4,7 @@
 
 **Goal:** Make every HR position task use immutable official facts, a confirmed position-context version, exact materials, and a recoverable task record.
 
-**Architecture:** Migration 067 owns official versions, context versions, module confirmations, and task records. New focused HR modules expose repository/service/router boundaries; `ConversationContextBuilder` composes an immutable HR envelope only for a verified `hr-bot` position conversation.
+**Architecture:** Migration 068 owns official versions, context versions, module confirmations, and task records. New focused HR modules expose repository/service/router boundaries; `ConversationContextBuilder` composes an immutable HR envelope only for a verified `hr-bot` position conversation. The number was advanced after master assigned migration 067 to access-history indexing.
 
 **Tech Stack:** PostgreSQL, Python 3.11, psycopg 3, FastAPI, Pydantic, pytest.
 
@@ -18,10 +18,10 @@
 
 ---
 
-### Task 1: Add migration 067 and domain models
+### Task 1: Add migration 068 and domain models
 
 **Files:**
-- Create: `backend/control_migrations/067_hr_position_intelligence.sql`
+- Create: `backend/control_migrations/068_hr_position_intelligence.sql`
 - Create: `backend/app/hr/position_intelligence_models.py`
 - Create: `backend/tests/test_hr_position_intelligence_migration.py`
 - Create: `backend/tests/test_hr_position_intelligence_models.py`
@@ -47,7 +47,7 @@ def test_context_draft_requires_exact_baselines():
 
 Run: `cd backend && ./.venv/bin/python -m pytest -q tests/test_hr_position_intelligence_migration.py tests/test_hr_position_intelligence_models.py`
 
-Expected: FAIL because migration 067 and models do not exist.
+Expected: FAIL because migration 068 and models do not exist.
 
 - [ ] **Step 3: Implement schema and bounded models**
 
@@ -74,7 +74,7 @@ class HrPositionContextEnvelope:
 Run the Step 2 command. Expected: PASS.
 
 ```bash
-git add backend/control_migrations/067_hr_position_intelligence.sql backend/app/hr/position_intelligence_models.py backend/tests/test_hr_position_intelligence_migration.py backend/tests/test_hr_position_intelligence_models.py
+git add backend/control_migrations/068_hr_position_intelligence.sql backend/app/hr/position_intelligence_models.py backend/tests/test_hr_position_intelligence_migration.py backend/tests/test_hr_position_intelligence_models.py
 git commit -m "feat(hr): add position intelligence schema"
 ```
 
@@ -87,7 +87,7 @@ git commit -m "feat(hr): add position intelligence schema"
 - Create: `backend/tests/test_hr_position_intelligence_service.py`
 
 **Interfaces:**
-- Consumes: migration 067 functions and models from Task 1
+- Consumes: migration 068 functions and models from Task 1
 - Produces: `PositionIntelligenceRepository`, `PositionIntelligenceService`
 
 - [ ] **Step 1: Write RED tests for replay, conflict, and owner isolation**

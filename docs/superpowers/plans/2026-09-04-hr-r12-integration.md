@@ -4,7 +4,7 @@
 
 **Goal:** Integrate the position-intelligence, candidate-intelligence, and workbench-resource plans into one business-usable HR R1.2 release.
 
-**Architecture:** Three subsystem plans develop against frozen boundaries in separate worktrees. Position intelligence owns migration 067 and the immutable HR context envelope; candidate intelligence owns migration 068 and consumes the confirmed position context identity; workbench/resources consumes both APIs and does not infer business scope client-side. A final integration task mounts routers, updates the migration ceiling, runs cross-domain acceptance, and produces release evidence.
+**Architecture:** Three subsystem plans develop against frozen boundaries in separate worktrees. Position intelligence owns migration 068 and the immutable HR context envelope; candidate intelligence owns migration 069 and consumes the confirmed position context identity; workbench/resources consumes both APIs and does not infer business scope client-side. A final integration task mounts routers, updates the migration ceiling, runs cross-domain acceptance, and produces release evidence. Migration numbers were advanced after master assigned 067 to the access-history subject index.
 
 **Tech Stack:** PostgreSQL migrations, Python 3.11, FastAPI, psycopg 3, Pydantic, React 19, TypeScript, Vitest, pytest.
 
@@ -27,9 +27,9 @@
 
 | Domain | Owned files | Forbidden overlap |
 |---|---|---|
-| Position intelligence | migration `067_*`; `hr/position_intelligence_*.py`; conversation-context/orchestrator extension | `main.py`; candidate modules; React workspace |
-| Candidate intelligence | migration `068_*`; `hr/candidate_*.py` | position migration/modules; React workspace |
-| Workbench/resources | `hr/resource_*.py`; HR React components, types, and API clients | migrations 067/068; Agent orchestrator |
+| Position intelligence | migration `068_*`; `hr/position_intelligence_*.py`; conversation-context/orchestrator extension | `main.py`; candidate modules; React workspace |
+| Candidate intelligence | migration `069_*`; `hr/candidate_*.py` | position migration/modules; React workspace |
+| Workbench/resources | `hr/resource_*.py`; HR React components, types, and API clients | migrations 068/069; Agent orchestrator |
 | Final integration | `main.py`, router composition, migration ceiling, acceptance/release docs | domain behavior already reviewed in subsystem commits |
 
 Each subsystem adds its migration contract assertions to a domain-specific test file. Only final integration changes the shared contiguous-version ceiling in `backend/tests/test_control_plane_migration.py`.
@@ -175,7 +175,7 @@ Expected: owner isolation, idempotency replay, exact version pinning, attachment
 
 - [ ] **Step 1: Write failing composition tests**
 
-Add tests proving the application mounts all three routers only when the writable Control Plane dependencies exist, migration max is 68, HR position turns receive one pinned envelope, and `/hr/positions/:id/{context,candidates,artifacts}` routes restore after refresh.
+Add tests proving the application mounts all three routers only when the writable Control Plane dependencies exist, migration max is 69, HR position turns receive one pinned envelope, and `/hr/positions/:id/{context,candidates,artifacts}` routes restore after refresh.
 
 - [ ] **Step 2: Run the composition tests to record RED**
 
@@ -197,7 +197,7 @@ git merge --no-ff feat/hr-r12-candidate
 git merge --no-ff feat/hr-r12-workbench
 ```
 
-Expected: only planned router/wiring conflicts; resolve by retaining every domain router and using migration order 067 then 068.
+Expected: only planned router/wiring conflicts; resolve by retaining every domain router and using migration order 068 then 069 after master migration 067.
 
 - [ ] **Step 4: Implement the composition layer**
 
@@ -288,7 +288,7 @@ git commit -m "test(hr): prove the R1.2 business workflow"
 
 - [ ] **Step 1: Add deployment acceptance assertions**
 
-Require migration 068, `platform_hr` readiness, `/api/hr` authenticated health, HR deep-link shell, one Position read, and attachment download-ticket readiness. Do not modify Nginx or unrelated service checks.
+Require migration 069, `platform_hr` readiness, `/api/hr` authenticated health, HR deep-link shell, one Position read, and attachment download-ticket readiness. Do not modify Nginx or unrelated service checks.
 
 - [ ] **Step 2: Run deployment tests to RED then GREEN**
 
