@@ -5,6 +5,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
+from uuid import uuid4
 
 import psycopg
 from fastapi import FastAPI, HTTPException, Request
@@ -1174,7 +1175,12 @@ def create_app(
                 )
 
             hr_task_context_provider = HrTaskContextProvider(
-                PostgresHrTaskContextSource(control_database_url),
+                PostgresHrTaskContextSource(
+                    control_database_url,
+                    execution_model_version=_hr_bot_model_version(
+                        cluster_contract_path or config.metabot_contract_path
+                    ),
+                ),
                 candidate_provider=CandidateEnvelopeProvider(
                     candidate_repository, context_is_confirmed
                 ),
@@ -1202,10 +1208,7 @@ def create_app(
                 hr_position_intelligence_service,
                 hr_candidate_service,
                 content_codec,
-                worker_id="platform-hr-task-result-projection",
-                model_version=_hr_bot_model_version(
-                    cluster_contract_path or config.metabot_contract_path
-                ),
+                worker_id=f"platform-hr-projection-{uuid4().hex}",
             )
     if v1_mission_modes:
         if (
