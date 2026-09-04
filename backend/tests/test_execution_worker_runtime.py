@@ -1739,6 +1739,38 @@ async def test_heartbeat_success_waits_exactly_fifteen_seconds() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lease_loop_waits_one_second_after_an_empty_lease() -> None:
+    delays: list[float] = []
+    runtime: WorkerRuntime
+
+    async def capture_sleep(seconds: float) -> None:
+        delays.append(seconds)
+        runtime.stop()
+
+    runtime = _runtime(cloud=FakeCloud([None]), sleep=capture_sleep)
+
+    await lease_loop(runtime)
+
+    assert delays == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_lease_loop_keeps_fast_turnaround_after_claiming_work() -> None:
+    delays: list[float] = []
+    runtime: WorkerRuntime
+
+    async def capture_sleep(seconds: float) -> None:
+        delays.append(seconds)
+        runtime.stop()
+
+    runtime = _runtime(cloud=FakeCloud([_lease()]), sleep=capture_sleep)
+
+    await lease_loop(runtime)
+
+    assert delays == [0.25]
+
+
+@pytest.mark.asyncio
 async def test_worker_holds_one_run_at_a_time_by_default() -> None:
     cloud = FakeCloud([_lease(), _lease(run_id=UUID("00000000-0000-4000-8000-0000000009f1"))])
     runtime = _runtime(cloud=cloud)

@@ -1,5 +1,7 @@
 import {
+  forwardRef,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
   type ChangeEvent,
@@ -52,6 +54,10 @@ export interface AttachmentUploadClient {
   cancel(uploadId: string, csrfToken: string, signal?: AbortSignal): Promise<void>;
 }
 
+export interface AttachmentUploaderHandle {
+  addFiles(files: File[]): void;
+}
+
 const DEFAULT_CLIENT: AttachmentUploadClient = {
   begin: beginAttachmentUpload,
   upload: uploadAttachmentContent,
@@ -93,7 +99,21 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export function AttachmentUploader({
+export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
+  acceptedInputTypes?: AgentContentType[];
+  client?: AttachmentUploadClient;
+  conversationBytes?: number;
+  conversationFileCount?: number;
+  conversationId: string | null;
+  csrfToken: string;
+  disabled?: boolean;
+  limits?: AgentAttachmentLimits;
+  onChange?: (items: UploadQueueItem[]) => void;
+  onError?: (message: string | null) => void;
+  onReady?: (attachment: ConversationAttachment) => void;
+  onRemoveReady?: (attachment: ConversationAttachment) => void;
+  onQueueChange?: (items: UploadQueueItem[]) => void;
+}>(function AttachmentUploader({
   acceptedInputTypes = ["text", "image", "pdf", "office"],
   client = DEFAULT_CLIENT,
   conversationBytes = 0,
@@ -113,21 +133,7 @@ export function AttachmentUploader({
   onReady,
   onRemoveReady,
   onQueueChange,
-}: {
-  acceptedInputTypes?: AgentContentType[];
-  client?: AttachmentUploadClient;
-  conversationBytes?: number;
-  conversationFileCount?: number;
-  conversationId: string | null;
-  csrfToken: string;
-  disabled?: boolean;
-  limits?: AgentAttachmentLimits;
-  onChange?: (items: UploadQueueItem[]) => void;
-  onError?: (message: string | null) => void;
-  onReady?: (attachment: ConversationAttachment) => void;
-  onRemoveReady?: (attachment: ConversationAttachment) => void;
-  onQueueChange?: (items: UploadQueueItem[]) => void;
-}) {
+}, forwardedRef) {
   const [items, setItems] = useState<UploadQueueItem[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
   const itemsRef = useRef<UploadQueueItem[]>([]);
@@ -230,6 +236,7 @@ export function AttachmentUploader({
     publish([...itemsRef.current, ...created]);
     for (const item of created) void process(item.localId);
   };
+  useImperativeHandle(forwardedRef, () => ({ addFiles }));
 
   const retry = async (item: UploadQueueItem) => {
     if (item.uploadId) {
@@ -291,4 +298,4 @@ export function AttachmentUploader({
       </div>
     </li>)}</ul>}
   </section>;
-}
+});

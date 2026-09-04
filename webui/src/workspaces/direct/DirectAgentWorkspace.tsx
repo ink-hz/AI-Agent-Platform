@@ -4,7 +4,7 @@ import type { Account } from "../../auth";
 import { fetchAgentCatalog } from "../../brainApi";
 import type { AgentCapabilityCard } from "../../brainTypes";
 import { ConversationSidebar } from "../../components/conversation/ConversationSidebar";
-import { AttachmentUploader, type UploadQueueItem } from "../../components/conversation/AttachmentUploader";
+import { AttachmentUploader, type AttachmentUploaderHandle, type UploadQueueItem } from "../../components/conversation/AttachmentUploader";
 import { AttachmentCard } from "../../components/conversation/AttachmentCard";
 import { ErrorState, LoadingState } from "../../components/DataState";
 import { PlatformLink } from "../../components/PlatformLink";
@@ -40,6 +40,7 @@ export interface DirectAgentWorkspaceProps {
   positionMaterialIds?: readonly string[];
   positionArtifactAttachmentIds?: readonly string[];
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
+  showTaskStarters?: boolean;
 }
 
 export interface AgentHistoryClient {
@@ -82,6 +83,7 @@ export function DirectAgentWorkspace({
   positionMaterialIds,
   positionArtifactAttachmentIds,
   onPositionMaterialChange,
+  showTaskStarters = true,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
   historyClient = DEFAULT_HISTORY_CLIENT,
@@ -107,6 +109,7 @@ export function DirectAgentWorkspace({
   const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
   const inFlight = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
+  const uploaderRef = useRef<AttachmentUploaderHandle | null>(null);
   const card = catalog?.find((item) => item.agent_id === agentId) ?? null;
   const inputTooLarge = conversationInputTooLarge(text.trim());
   const workspacePath = workspaceRootPath ?? rootPath(agentId);
@@ -276,29 +279,47 @@ export function DirectAgentWorkspace({
             {card.persona_subtitle && <p className="agent-persona-subtitle">{card.persona_subtitle}</p>}
             <p>{card.mission}</p>
           </section>}
-          <section aria-label="常用任务" className="agent-task-starters">
+          {showTaskStarters && <section aria-label="常用任务" className="agent-task-starters">
             {card.example_tasks.slice(0, 4).map((example) => <button
               className="agent-task-starter"
               key={example}
               onClick={() => { setText(example); retained.current = null; setFailure(false); }}
               type="button"
             >{example}</button>)}
-          </section>
-          {card.attachment_limits && <section className="agent-new-conversation-files" aria-label="新对话附件">
-            <AttachmentUploader acceptedInputTypes={card.accepted_input_types} conversationId={null}
-              csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
-              limits={card.attachment_limits} onChange={setUploadQueue} onError={setAttachmentError}
-              onReady={(attachment) => { setAttachments((current) => [...current, attachment]); setFailure(false); retained.current = null; }} />
-            {attachments.map((attachment) => <AttachmentCard active attachment={attachment} key={attachment.attachmentId}
-              onActiveChange={() => undefined} />)}
-            {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
           </section>}
-          <form className="agent-direct-composer" onSubmit={submit}>
-            <label htmlFor="direct-agent-request">直接交给 {card.display_name}</label>
-            <textarea autoFocus={autoFocusComposer} id="direct-agent-request" rows={5} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
-              placeholder={card.example_tasks[0] ?? "描述任务目标和背景…"}
+          <form className="agent-direct-composer" onSubmit={submit}
+            onDragOver={(event) => {
+              if (Array.from(event.dataTransfer.types).includes("Files")) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              if ((event.target as Element).closest(".attachment-uploader")) return;
+              const files = Array.from(event.dataTransfer.files);
+              if (files.length > 0) {
+                event.preventDefault();
+                uploaderRef.current?.addFiles(files);
+              }
+            }}
+            onPaste={(event) => {
+              if ((event.target as Element).closest(".attachment-uploader")) return;
+              const files = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+              if (files.length > 0) {
+                event.preventDefault();
+                uploaderRef.current?.addFiles(files);
+              }
+            }}>
+            <textarea aria-label={`交给 ${card.display_name}`} autoFocus={autoFocusComposer} id="direct-agent-request" rows={8} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
+              placeholder="描述招聘任务、粘贴岗位说明或候选人资料……"
               onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }} />
-            <div><span>对话会持续保留在当前 Agent 的左侧历史中。</span><button disabled={(!text.trim() && attachments.length === 0) || uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state)) || inputTooLarge || pending || account.hard_stale_read_only} type="submit">{pending ? "正在创建…" : "开始对话"}</button></div>
+            {card.attachment_limits && <section className="agent-direct-attachments" aria-label="新对话附件">
+              <AttachmentUploader ref={uploaderRef} acceptedInputTypes={card.accepted_input_types} conversationId={null}
+                csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
+                limits={card.attachment_limits} onChange={setUploadQueue} onError={setAttachmentError}
+                onReady={(attachment) => { setAttachments((current) => [...current, attachment]); setFailure(false); retained.current = null; }} />
+              {attachments.map((attachment) => <AttachmentCard active attachment={attachment} key={attachment.attachmentId}
+                onActiveChange={() => undefined} />)}
+              {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
+            </section>}
+            <div className="agent-direct-composer-actions"><span>文字、图片和文件会随本轮一起发送。</span><button className="agent-direct-submit" disabled={(!text.trim() && attachments.length === 0) || uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state)) || inputTooLarge || pending || account.hard_stale_read_only} type="submit">{pending ? "正在创建…" : "发送"}</button></div>
           </form>
           {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
           {failure && <div className="brain-submit-error" role="alert"><span>对话暂未创建成功，可安全重试。</span><button onClick={() => void send()} type="button">重新提交</button></div>}

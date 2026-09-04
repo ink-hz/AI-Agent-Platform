@@ -64,6 +64,14 @@ def test_official_snapshot_accepts_only_complete_published_registry_contract() -
         OfficialJobSnapshot.parse(json.dumps(document).encode())
 
 
+def test_official_snapshot_accepts_sync_fallback_jobad_identifier() -> None:
+    snapshot = OfficialJobSnapshot.parse(_snapshot(_job(
+        "jobad:511189333", jobAdId=511189333,
+    )))
+
+    assert snapshot.jobs[0].canonical_id == "JOBAD:511189333"
+
+
 @pytest.mark.parametrize("job_id", ["J1", "11014", "J-11014", "J1234567890123"])
 def test_official_snapshot_rejects_noncanonical_or_duplicate_ids(job_id: str) -> None:
     with pytest.raises(ValueError, match="official job id invalid"):

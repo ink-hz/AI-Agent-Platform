@@ -205,23 +205,79 @@ describe("professional Agent use pages", () => {
     expect(createSubmission).not.toHaveBeenCalled();
   });
 
-  it("keeps HR free of Marketing controls and offers non-submitting task starters", async () => {
+  it("keeps HR free of Marketing controls and can remove non-functional task starters", async () => {
     const createSubmission = vi.fn();
     await act(async () => root.render(<DirectAgentWorkspace
       account={account} agentId="hr-bot"
       loadCatalog={vi.fn().mockResolvedValue([card, marketingCard])}
       createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={vi.fn()}
+      showTaskStarters={false}
       conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
     />));
 
     expect(container.querySelector("nav[aria-label='Marketing Agent 切换']")).toBeNull();
     expect(container.textContent).toContain("Hannah · 技术人才搜寻与招聘协作");
-    const starter = container.querySelector<HTMLButtonElement>(".agent-task-starter");
-    expect(starter?.textContent).toContain("候选人能力组合");
-    await act(async () => starter?.click());
-    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value)
-      .toBe(card.example_tasks[0]);
+    expect(container.querySelector(".agent-task-starter")).toBeNull();
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("");
     expect(createSubmission).not.toHaveBeenCalled();
+  });
+
+  it("places attachment controls below the textarea inside one composer", async () => {
+    const attachmentCard: AgentCapabilityCard = {
+      ...card,
+      accepted_input_types: ["text", "image", "pdf", "office"],
+      supports_attachments_in: true,
+      attachment_limits: {
+        max_file_bytes: 50 * 1024 * 1024,
+        max_files_per_message: 5,
+        max_bytes_per_message: 50 * 1024 * 1024,
+        max_files_per_conversation: 50,
+        max_bytes_per_conversation: 500 * 1024 * 1024,
+      },
+    };
+    await act(async () => root.render(<DirectAgentWorkspace
+      account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([attachmentCard])}
+      historyClient={historyClient} onOpenConversation={vi.fn()} showTaskStarters={false}
+      conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
+    />));
+
+    const form = container.querySelector(".agent-direct-composer")!;
+    const textarea = form.querySelector("textarea")!;
+    const attachments = form.querySelector(".agent-direct-attachments")!;
+    const actions = form.querySelector(".agent-direct-composer-actions")!;
+    expect(textarea.compareDocumentPosition(attachments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(attachments.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(form.textContent).toContain("添加文件或图片");
+    expect(form.textContent).not.toContain("直接交给 HR Agent");
+  });
+
+  it("passes an image pasted in the composer textarea to the attachment uploader", async () => {
+    const attachmentCard: AgentCapabilityCard = {
+      ...card,
+      accepted_input_types: ["text", "image"],
+      supports_attachments_in: true,
+      attachment_limits: {
+        max_file_bytes: 50 * 1024 * 1024,
+        max_files_per_message: 5,
+        max_bytes_per_message: 50 * 1024 * 1024,
+        max_files_per_conversation: 50,
+        max_bytes_per_conversation: 500 * 1024 * 1024,
+      },
+    };
+    await act(async () => root.render(<DirectAgentWorkspace
+      account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([attachmentCard])}
+      historyClient={historyClient} onOpenConversation={vi.fn()} showTaskStarters={false}
+      conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
+    />));
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: { files: [new File([], "screen.png", { type: "image/png" })] },
+    });
+
+    await act(async () => container.querySelector("textarea")?.dispatchEvent(paste));
+
+    expect(paste.defaultPrevented).toBe(true);
+    expect(container.textContent).toContain("单个文件不能超过 50 MB");
   });
 
   it("lets an independent product replace the embedded Agent return and welcome", async () => {
