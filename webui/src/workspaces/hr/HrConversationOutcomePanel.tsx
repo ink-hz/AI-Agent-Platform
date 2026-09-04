@@ -19,6 +19,7 @@ function errorStatus(error: unknown): number | undefined {
 
 export function HrConversationOutcomePanel({
   api,
+  confirmed = false,
   conversationId,
   csrfToken,
   onConfirmed,
@@ -26,6 +27,7 @@ export function HrConversationOutcomePanel({
   readOnly = false,
 }: {
   api?: PositionPackageApi;
+  confirmed?: boolean;
   conversationId?: string;
   csrfToken: string;
   onConfirmed?: (confirmed: HrConfirmedPositionPackage, positionPackage: HrPositionPackage) => void;
@@ -37,7 +39,7 @@ export function HrConversationOutcomePanel({
   const [positionPackage, setPositionPackage] = useState<HrPositionPackage | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
   const [notice, setNotice] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmedLocally, setConfirmedLocally] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [refreshRequired, setRefreshRequired] = useState(false);
   const mutation = useRef<AbortController | null>(null);
@@ -45,7 +47,7 @@ export function HrConversationOutcomePanel({
 
   useEffect(() => {
     mutation.current?.abort();
-    setPositionPackage(null); setNotice(null); setConfirmed(false);
+    setPositionPackage(null); setNotice(null); setConfirmedLocally(false);
     if (!conversationId) { setState("empty"); return; }
     const controller = new AbortController();
     let packagePoll: number | undefined;
@@ -75,7 +77,7 @@ export function HrConversationOutcomePanel({
   useEffect(() => () => mutation.current?.abort(), []);
 
   const confirm = async () => {
-    if (readOnly || refreshRequired || !positionPackage || inFlight.current) return;
+    if (confirmed || confirmedLocally || readOnly || refreshRequired || !positionPackage || inFlight.current) return;
     const selected = positionPackage;
     const payload = {
       draftVersionId: selected.draftVersionId,
@@ -94,7 +96,7 @@ export function HrConversationOutcomePanel({
       );
       if (controller.signal.aborted) return;
       completeMutationRequest(operation.key);
-      setConfirmed(true);
+      setConfirmedLocally(true);
       onConfirmed?.(result, selected);
       onNavigate(`/hr/positions/${encodeURIComponent(result.positionId)}/conversations/${encodeURIComponent(result.conversationId)}`);
     } catch (error) {
@@ -132,7 +134,7 @@ export function HrConversationOutcomePanel({
   </section>;
   if (!positionPackage) return null;
   return <section className="conversation-flow-supplement">
-    <HrPositionProposalCard confirmationDisabled={readOnly || refreshRequired} confirmed={confirmed} notice={notice} onConfirm={confirm} positionPackage={positionPackage} />
+    <HrPositionProposalCard confirmationDisabled={readOnly || refreshRequired} confirmed={confirmed || confirmedLocally} notice={notice} onConfirm={confirm} positionPackage={positionPackage} />
     {refreshRequired && <button className="hr-position-proposal-refresh" onClick={() => setLoadAttempt((value) => value + 1)} type="button">重新读取最新方案</button>}
   </section>;
 }

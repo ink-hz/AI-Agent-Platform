@@ -58,8 +58,11 @@ export function HrPositionProposalCard({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [confirming, setConfirming] = useState(false);
   const confirmationInFlight = useRef(false);
+  const activeCopyScope = useRef("");
+  const copyRequest = useRef(0);
   const activeLabel = TABS.find(([tab]) => tab === activeTab)?.[1] ?? "岗位需求";
   const activeText = positionPackage.modules[activeTab].text;
+  activeCopyScope.current = `${positionPackage.draftVersionId}:${activeTab}`;
 
   useEffect(() => {
     setCopyState("idle");
@@ -72,10 +75,13 @@ export function HrPositionProposalCard({
   }, [copyState]);
 
   const copy = async () => {
+    const scope = activeCopyScope.current;
+    const request = ++copyRequest.current;
     try {
-      setCopyState(await onCopy(activeText) ? "copied" : "error");
+      const copied = await onCopy(activeText);
+      if (activeCopyScope.current === scope && copyRequest.current === request) setCopyState(copied ? "copied" : "error");
     } catch {
-      setCopyState("error");
+      if (activeCopyScope.current === scope && copyRequest.current === request) setCopyState("error");
     }
   };
   const confirm = async () => {

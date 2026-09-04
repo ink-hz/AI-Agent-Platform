@@ -2219,6 +2219,9 @@ body {
 .hr-position-details-drawer > nav button { flex: 1; min-height: 34px; border: 0; border-radius: 7px; background: transparent; color: #587066; font: inherit; font-size: 11.5px; font-weight: 750; cursor: pointer; }
 .hr-position-details-drawer > nav button[aria-selected="true"] { background: #fff; color: #175a47; box-shadow: 0 2px 7px rgba(31,74,58,.08); }
 .hr-position-details-drawer > [role="tabpanel"] { padding-bottom: 28px; }
+.hr-position-details-degraded { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 18px 0; padding: 11px 13px; border: 1px solid #d9c48e; border-radius: 10px; background: #fff9e8; color: #684b0f; font-size: 12.5px; }
+.hr-position-details-degraded p { margin: 0; }
+.hr-position-details-degraded button { flex: none; min-height: 34px; padding: 6px 10px; border: 1px solid #9f7931; border-radius: 8px; background: #fff; color: #684b0f; font: inherit; font-weight: 760; cursor: pointer; }
 .hr-position-details-drawer .hr-r12-panel { padding: 18px; }
 .hr-position-details-drawer .hr-candidate-workspace { grid-template-columns: 1fr; }
 .hr-position-details-drawer .hr-candidate-workspace > header,.hr-position-details-drawer .hr-candidate-workspace > [role="status"],.hr-position-details-drawer .hr-candidate-import,.hr-position-details-drawer .hr-candidate-detail { grid-column: auto; }

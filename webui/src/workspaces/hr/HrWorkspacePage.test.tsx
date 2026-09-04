@@ -41,7 +41,8 @@ vi.mock("../../hrR12Api", async (importOriginal) => ({
   createHrR12Api: vi.fn(),
 }));
 
-vi.mock("./HrPositionWorkspace", () => ({
+vi.mock("./HrPositionWorkspace", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./HrPositionWorkspace")>(),
   HrPositionWorkspace: () => <div className="agent-use-workspace" data-agent-id="hr-bot" />,
 }));
 
@@ -110,6 +111,23 @@ const hrCard: AgentCapabilityCard = {
   output_contract: "normalized_task_result_v1",
   interaction_modes: ["direct_chat", "brain_delegation"],
   workspace_url: null,
+};
+
+const positionId = "44444444-4444-4444-8444-444444444444";
+const positionPackage = {
+  draftId: "11111111-1111-4111-8111-111111111111",
+  draftVersionId: "22222222-2222-4222-8222-222222222222",
+  conversationId: "c-7",
+  versionNumber: 2,
+  title: "视觉算法工程师",
+  modules: {
+    mission: { text: "负责空间视觉算法落地" },
+    jd: { text: "对外 JD" },
+    jr: { text: "内部 JR" },
+  },
+  rowVersion: 3,
+  createdAt: "2026-09-04T01:00:00Z",
+  updatedAt: "2026-09-04T02:00:00Z",
 };
 
 
@@ -353,6 +371,79 @@ describe("HrWorkspacePage", () => {
     expect(container.querySelectorAll('.agent-use-workspace[data-agent-id="hr-bot"]')).toHaveLength(1);
   });
 
+  it("validates a fresh canonical route before loading chat and scopes history to the position", async () => {
+    let resolveDetail: ((detail: unknown) => void) | undefined;
+    const client = vi.mocked(createHrApi)("csrf") as unknown as {
+      position: ReturnType<typeof vi.fn>;
+    };
+    client.position.mockReturnValueOnce(new Promise((resolve) => { resolveDetail = resolve; }));
+    vi.mocked(listConversations).mockResolvedValue({ items: [{
+      conversation_id: "c-7", mode: "direct_agent", direct_agent_id: "hr-bot", title: "Position A conversation",
+      status: "active", summary_through_seq: 0, created_at: "2026-09-04T00:00:00Z",
+      updated_at: "2026-09-04T00:00:00Z", archived_at: null,
+    }, {
+      conversation_id: "c-b", mode: "direct_agent", direct_agent_id: "hr-bot", title: "Position B conversation",
+      status: "active", summary_through_seq: 0, created_at: "2026-09-04T00:00:00Z",
+      updated_at: "2026-09-04T00:00:00Z", archived_at: null,
+    }], next_cursor: null });
+    vi.mocked(fetchConversation).mockResolvedValueOnce({
+      conversation: {
+        conversation_id: "c-7", mode: "direct_agent", direct_agent_id: "hr-bot", title: "Position A conversation",
+        status: "active", summary_through_seq: 0, created_at: "2026-09-04T00:00:00Z",
+        updated_at: "2026-09-04T00:00:00Z", archived_at: null,
+      },
+      current_turn: null,
+    });
+
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" positionId={positionId} />));
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBeNull();
+    expect(fetchConversation).not.toHaveBeenCalled();
+
+    await act(async () => resolveDetail?.({
+      positionId, sourceKind: "manual", officialJobId: null, title: "Position A", department: "研发",
+      locations: ["深圳"], officialStatus: null, internalStatus: "active", sourceVersion: null, rowVersion: 1,
+      createdAt: "2026-09-04T00:00:00Z", updatedAt: "2026-09-04T00:00:00Z", conversationCount: 1,
+      materialCount: 0, artifactCount: 0, conversationIds: ["c-7"], materialAttachmentIds: [],
+      artifactIds: [], artifactAttachmentIds: [],
+    }));
+
+    expect(container.textContent).toContain("此前对话消息");
+    expect(container.textContent).toContain("Position A conversation");
+    expect(container.textContent).not.toContain("Position B conversation");
+    expect(container.querySelector<HTMLAnchorElement>(`.conversation-session-link[href="/hr/positions/${positionId}/conversations/c-7"]`)).not.toBeNull();
+    expect(container.querySelector<HTMLAnchorElement>(`.conversation-session-link[href="/hr/positions/${positionId}/conversations/c-b"]`)).toBeNull();
+  });
+
+  it("safely rejects a conversation that is not owned by the routed position", async () => {
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-b" positionId={positionId} />));
+
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBeNull();
+    expect(fetchConversation).not.toHaveBeenCalledWith("c-b", expect.anything());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("不属于这个岗位");
+    expect(container.querySelector<HTMLAnchorElement>(`a[href="/hr/positions/${positionId}"]`)).not.toBeNull();
+  });
+
+  it("restores the confirmed terminal action after a fresh route remount", async () => {
+    const client = vi.mocked(createHrApi)("csrf") as unknown as {
+      positionPackage: ReturnType<typeof vi.fn>;
+      confirmPositionPackage: ReturnType<typeof vi.fn>;
+    };
+    client.positionPackage.mockResolvedValue(positionPackage);
+
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" positionId={positionId} />));
+    const confirmed = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "已加入岗位库");
+    expect(confirmed?.disabled).toBe(true);
+    expect(client.confirmPositionPackage).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" positionId={positionId} />));
+    expect([...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "已加入岗位库")?.disabled).toBe(true);
+    expect(client.confirmPositionPackage).not.toHaveBeenCalled();
+  });
+
   it("preserves ready attachments and an active stream across the same-conversation position route", async () => {
     vi.mocked(fetchAgentCatalog).mockResolvedValue([{ ...hrCard,
       accepted_input_types: ["text", "image", "pdf", "office"], supports_attachments_in: true,
@@ -401,25 +492,33 @@ describe("HrWorkspacePage", () => {
     expect(listConversationAttachments).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps chat usable and retries position chrome after its secondary detail read fails", async () => {
-    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
-    const workspace = container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]');
-    const firstClient = vi.mocked(createHrApi).mock.results[0]?.value as {
+  it("opens fallback package details while validation is unavailable and retries safely", async () => {
+    const firstClient = vi.mocked(createHrApi)("csrf") as unknown as {
       position: ReturnType<typeof vi.fn>;
+      positionPackage: ReturnType<typeof vi.fn>;
     };
     firstClient.position.mockRejectedValueOnce(new Error("offline"));
+    firstClient.positionPackage.mockResolvedValue(positionPackage);
+    const r12Client = vi.mocked(createHrR12Api)("csrf") as unknown as { context: ReturnType<typeof vi.fn> };
+    r12Client.context.mockRejectedValueOnce(new Error("context offline"));
     await act(async () => root.render(<HrWorkspacePage
-      account={account} conversationId="c-7" positionId="44444444-4444-4444-8444-444444444444"
+      account={account} conversationId="c-7" positionId={positionId}
     />));
 
-    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(workspace);
-    expect(container.textContent).toContain("此前对话消息");
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBeNull();
+    expect(container.textContent).toContain("视觉算法工程师");
+    const details = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "岗位资料")!;
+    expect(details?.disabled).toBe(false);
+    await act(async () => details.click());
+    expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).not.toBeNull();
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("岗位资料暂时无法完整读取");
+
     const retry = [...container.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent === "重新读取岗位资料")!;
     expect(retry).toBeDefined();
     await act(async () => retry.click());
-    expect([...container.querySelectorAll<HTMLButtonElement>("button")]
-      .some((button) => button.textContent === "岗位资料" && !button.disabled)).toBe(true);
-    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(workspace);
+    expect(container.textContent).toContain("此前对话消息");
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).not.toBeNull();
   });
 });

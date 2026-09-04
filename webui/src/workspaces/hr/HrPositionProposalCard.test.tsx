@@ -66,6 +66,25 @@ describe("HrPositionProposalCard", () => {
     expect(container.querySelector('[aria-label="已复制 JD"]')).not.toBeNull();
   });
 
+  it("does not attribute a delayed copy result to a different tab", async () => {
+    let finishCopy: ((copied: boolean) => void) | undefined;
+    const copy = vi.fn(() => new Promise<boolean>((resolve) => { finishCopy = resolve; }));
+    await act(async () => root.render(<HrPositionProposalCard
+      onConfirm={vi.fn()} onCopy={copy} positionPackage={positionPackage}
+    />));
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((button) => button.textContent === "JD")?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="复制 JD"]')?.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((button) => button.textContent === "JR")?.click());
+    await act(async () => finishCopy?.(true));
+
+    expect(copy).toHaveBeenCalledWith(positionPackage.modules.jd.text);
+    expect(container.querySelector('[aria-label="已复制 JR"]')).toBeNull();
+    expect(container.querySelector('[aria-label="复制 JR"]')).not.toBeNull();
+  });
+
   it("moves through package tabs with Arrow, Home, and End keys", async () => {
     await act(async () => root.render(<HrPositionProposalCard
       onConfirm={vi.fn()} positionPackage={positionPackage}
