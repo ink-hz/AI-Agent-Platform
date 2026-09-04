@@ -147,8 +147,18 @@ def _decode_document(token: str) -> dict[str, object] | None:
         UnicodeError,
         ValueError,
         json.JSONDecodeError,
+        RecursionError,
     ):
         return None
+
+
+def _visible_markdown(markdown: str, match: re.Match[str]) -> str:
+    before = markdown[: match.start()]
+    if before.endswith("\r\n\r\n"):
+        before = before[:-4]
+    elif before.endswith("\n\n"):
+        before = before[:-2]
+    return before + markdown[match.end() :]
 
 
 def encode_hr_envelope(kind: str, payload: Mapping[str, object]) -> str:
@@ -199,9 +209,7 @@ def extract_hr_envelope(
     payload = _json_object(document["payload"])
     if payload is None:
         return None
-    visible_markdown = (
-        markdown[: matches[0].start()] + markdown[matches[0].end() :]
-    ).strip()
+    visible_markdown = _visible_markdown(markdown, matches[0])
     return HrStructuredEnvelope(
         kind=document["kind"], payload=payload, visible_markdown=visible_markdown
     )

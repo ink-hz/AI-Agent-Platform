@@ -36,15 +36,16 @@ def test_position_package_round_trips_without_changing_visible_markdown() -> Non
     assert parsed.visible_markdown == "岗位方案如下。"
 
 
-@pytest.mark.parametrize(
-    "markdown",
-    [
-        "岗位方案\n<!-- platform-hr-v1:e30= -->",
-        "岗位方案\n<!-- platform-hr-v1:e30 -->\n<!-- platform-hr-v1:e30 -->",
-        "岗位方案\n<!-- platform-hr-v1:_w -->",
-    ],
-)
-def test_extract_rejects_malformed_or_ambiguous_envelopes(markdown: str) -> None:
+@pytest.mark.parametrize("variant", ["padded", "duplicate", "invalid_utf8"])
+def test_extract_rejects_malformed_or_ambiguous_envelopes(variant: str) -> None:
+    envelope = encode_hr_envelope("position_package", _position_payload())
+    if variant == "padded":
+        markdown = envelope.replace(" -->", "= -->")
+    elif variant == "duplicate":
+        markdown = f"{envelope}\n\n{envelope}"
+    else:
+        markdown = "<!-- platform-hr-v1:_w -->"
+
     assert extract_hr_envelope(markdown, "position_package") is None
 
 
@@ -113,6 +114,32 @@ def test_extract_rejects_noncanonical_json() -> None:
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
+    token = base64.urlsafe_b64encode(document).decode("ascii").rstrip("=")
+
+    assert (
+        extract_hr_envelope(f"<!-- platform-hr-v1:{token} -->", "position_package")
+        is None
+    )
+
+
+def test_extract_preserves_leading_whitespace_in_visible_markdown() -> None:
+    envelope = encode_hr_envelope("position_package", _position_payload())
+    markdown = f"\n    nozzle = design()\n    verify(nozzle)\n\n{envelope}"
+
+    parsed = extract_hr_envelope(markdown, "position_package")
+
+    assert parsed is not None
+    assert parsed.visible_markdown == "\n    nozzle = design()\n    verify(nozzle)"
+
+
+def test_extract_rejects_excessively_nested_json_without_raising() -> None:
+    nested = "[" * 1_100 + "0" + "]" * 1_100
+    document = (
+        '{"kind":"position_package","payload":{"modules":'
+        '{"jd":{"text":"x"},"jr":{"text":"x"},'
+        f'"mission":{{"text":"x"}}}},"title":{nested}}},'
+        '"schema_version":1}'
+    ).encode()
     token = base64.urlsafe_b64encode(document).decode("ascii").rstrip("=")
 
     assert (
