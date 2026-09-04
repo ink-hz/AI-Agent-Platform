@@ -366,6 +366,7 @@ _register_events(
     }),
     completed=frozenset({
         "operation_id",
+        "linked_audit_event_id",
         "grant_id",
         "internal_user_id",
         "permission",
@@ -384,6 +385,7 @@ _register_events(
     }),
     completed=frozenset({
         "operation_id",
+        "linked_audit_event_id",
         "grant_id",
         "internal_user_id",
         "permission",

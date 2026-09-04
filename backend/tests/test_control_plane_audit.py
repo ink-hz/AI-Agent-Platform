@@ -124,6 +124,79 @@ def test_fae_session_detail_audit_accepts_only_content_free_metadata() -> None:
     ]
     assert "fae:session-1" not in repr(appended)
 
+
+@pytest.mark.parametrize(
+    ("stem", "target_type", "reason"),
+    (
+        (
+            "fae_workbench_grant",
+            "directory_member",
+            "fae_workbench_access_approved",
+        ),
+        (
+            "fae_workbench_revoke",
+            "internal_user",
+            "fae_workbench_access_revoked",
+        ),
+    ),
+)
+def test_fae_workbench_outcome_audit_links_requested_event(
+    stem: str,
+    target_type: str,
+    reason: str,
+) -> None:
+    appended = []
+
+    class Repository:
+        def append(self, event_id, command, sanitized):
+            appended.append((command.event_type, sanitized))
+            return event_id
+
+    request_id = uuid4()
+    target_id = uuid4()
+    requested_metadata = {
+        "operation_id": str(request_id),
+        "result": "requested",
+    }
+    if stem == "fae_workbench_grant":
+        requested_metadata.update(
+            {
+                "expected_generation_id": str(uuid4()),
+                "expected_member_key": str(target_id),
+            }
+        )
+    else:
+        requested_metadata["expected_row_version"] = 0
+    requested = AuditCommand(
+        event_type=f"{stem}_requested",
+        actor_internal_user_id=uuid4(),
+        target_type=target_type,
+        target_id=str(target_id),
+        request_id=request_id,
+        reason=reason,
+        metadata=requested_metadata,
+    )
+
+    writer = AuditWriter(Repository())
+    requested_event_id = writer.append(requested)
+    writer.append_outcome(
+        requested,
+        requested_event_id,
+        actual={
+            "operation_id": str(request_id),
+            "grant_id": str(uuid4()),
+            "internal_user_id": str(target_id),
+            "permission": "manager",
+            "row_version": 0,
+        },
+    )
+
+    assert [event_type for event_type, _metadata in appended] == [
+        f"{stem}_requested",
+        f"{stem}_completed",
+    ]
+    assert appended[-1][1]["linked_audit_event_id"] == str(requested_event_id)
+
     for invalid in (
         _fae_detail_command(target_id="fae:session-1"),
         _fae_detail_command(
