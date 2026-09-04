@@ -39,6 +39,12 @@ from app.execution_relay.repository import (
     ExecutionRelayError,
     ExecutionRelayRepository,
 )
+from app.hr.candidate_parser_queue import CandidateParserQueue
+from app.hr.candidate_parser_runtime import (
+    CandidateParserRuntime,
+    PostgresCandidateParserResultReader,
+)
+from app.hr.candidate_repository import CandidateRepository
 from app.local_secrets import read_secret_file
 from app.voc_extension.client import VocTaskClient
 from app.voc_extension.identity import PlatformVocTokenSigner
@@ -145,6 +151,14 @@ def _worker_id() -> str:
     return candidate
 
 
+def _candidate_parser_worker_id() -> str:
+    configured = os.getenv("PLATFORM_CANDIDATE_PARSER_WORKER_ID", "").strip()
+    candidate = configured or "candidate-parser.primary"
+    if len(candidate) > 64 or _WORKER_ID.fullmatch(candidate) is None:
+        raise RuntimeError("Candidate parser worker configuration unavailable")
+    return candidate
+
+
 def _required_path(name: str) -> Path:
     value = os.getenv(name, "")
     path = Path(value)
@@ -243,7 +257,12 @@ def register_voc_action_adapter(
     return client
 
 
-def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client]:
+def build_runtime() -> tuple[
+    BrainLoopRuntime,
+    BrainLoopRepository,
+    CandidateParserRuntime,
+    httpx.Client,
+]:
     database_path = _required_path("PLATFORM_BRAIN_DATABASE_URL_FILE")
     content_path = _required_path("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE")
     manifest_path = _required_path("PLATFORM_BRAIN_MODEL_MANIFEST")
@@ -279,6 +298,12 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
         client=client,
     )
     repository = BrainLoopRepository(database_url, content_codec=codec)
+    candidate_queue = CandidateParserQueue(CandidateRepository(database_url))
+    candidate_parser_runtime = CandidateParserRuntime(
+        candidate_queue,
+        PostgresCandidateParserResultReader(database_url, codec),
+        worker_id=_candidate_parser_worker_id(),
+    )
     action_commands = ActionCommandService(
         database_url,
         content_codec=codec,
@@ -327,11 +352,18 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
             attachment_grants=attachment_grants,
         ),
         repository,
+        candidate_parser_runtime,
         client,
     )
 
 
-def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
+def tick(
+    mode: WorkerMode,
+    runtime: BrainLoopRuntime,
+    repository,
+    *,
+    candidate_parser_runtime: CandidateParserRuntime | None = None,
+) -> int:
     def run_phase(name: str, operation) -> int:
         try:
             changed = operation()
@@ -375,6 +407,8 @@ def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
     changed = 0
     if mode in {"brain", "all"}:
         changed += run_phase("agent-brain-step", brain_tick)
+        if candidate_parser_runtime is not None:
+            changed += run_phase("hr-candidate-parser", candidate_parser_runtime.tick)
     if mode in {"adapter", "all"}:
         changed += run_phase("agent-brain-adapter", adapter_tick)
     if mode in {"reaper", "all"}:
@@ -397,9 +431,12 @@ def _healthcheck() -> int:
                 "select count(*) from platform_control.worker_heartbeats "
                 "where worker_name=any(%s) and status='healthy' "
                 "and last_seen_at>clock_timestamp()-interval '60 seconds'",
-                (["agent-brain-step", "agent-brain-adapter", "agent-brain-reaper"],),
+                ((
+                    "agent-brain-step", "hr-candidate-parser",
+                    "agent-brain-adapter", "agent-brain-reaper",
+                ),),
             ).fetchone()[0]
-        return 0 if count == 3 else 1
+        return 0 if count == 4 else 1
     except Exception:
         return 1
 
@@ -412,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
         return _healthcheck()
     try:
         mode = validate_worker_mode(selected)
-        runtime, repository, client = build_runtime()
+        runtime, repository, candidate_parser_runtime, client = build_runtime()
     except Exception:
         return 1
     stopping = False
@@ -426,10 +463,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         while not stopping:
             try:
-                changed = tick(mode, runtime, repository)
+                changed = tick(
+                    mode,
+                    runtime,
+                    repository,
+                    candidate_parser_runtime=candidate_parser_runtime,
+                )
             except Exception:
                 for name in (
                     "agent-brain-step",
+                    "hr-candidate-parser",
                     "agent-brain-adapter",
                     "agent-brain-reaper",
                 ):

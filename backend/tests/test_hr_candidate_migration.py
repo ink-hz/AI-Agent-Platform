@@ -215,6 +215,22 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
     )
 
 
+def test_candidate_parser_result_reader_is_exact_and_brain_only() -> None:
+    sql = _sql()
+
+    assert "create function platform_hr.read_candidate_draft_execution_result_v70" in sql
+    assert "selected_attempt.execution_job_id" in sql
+    assert "turn.assistant_message_id" in sql
+    assert "message.role='assistant'" in sql
+    assert "message.mission_id=mission.mission_id" in sql
+    assert (
+        "grant execute on function "
+        "platform_hr.read_candidate_draft_execution_result_v70(uuid,text)"
+        in sql
+    )
+    assert "to %i',selected_brain" in sql
+
+
 def test_resume_processing_uses_an_agent_supported_by_brain_and_relay() -> None:
     assert "hr-bot" in CALLABLE_AGENT_IDS
     assert "hr-bot" in _APPROVED_AGENT_IDS

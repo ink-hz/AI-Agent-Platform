@@ -115,6 +115,7 @@ class ConversationContextBuilder:
         repository: ConversationRepository,
         *,
         hr_task_context_provider: object | None = None,
+        candidate_parser_input_provider: object | None = None,
     ) -> None:
         if not isinstance(repository, ConversationRepository):
             raise ValueError("Conversation repository required")
@@ -122,8 +123,13 @@ class ConversationContextBuilder:
             getattr(hr_task_context_provider, "build_for_turn", None)
         ):
             raise ValueError("HR task context provider invalid")
+        if candidate_parser_input_provider is not None and not callable(
+            getattr(candidate_parser_input_provider, "for_turn", None)
+        ):
+            raise ValueError("candidate parser input provider invalid")
         self.repository = repository
         self._hr_task_context_provider = hr_task_context_provider
+        self._candidate_parser_input_provider = candidate_parser_input_provider
 
     def _load(
         self, conversation_id: UUID, turn_id: UUID
@@ -196,11 +202,11 @@ class ConversationContextBuilder:
         )
         messages = tuple(message for _seq, message in sequenced)
         hr_position_context = None
-        is_hr_position = (
+        is_hr_agent = (
             row["mode"] == "direct_agent"
             and row["direct_agent_id"] == "hr-bot"
-            and row["verified_hr_position"] is True
         )
+        is_hr_position = is_hr_agent and row["verified_hr_position"] is True
         if is_hr_position:
             if self._hr_task_context_provider is None:
                 raise ConversationContextError()
@@ -218,6 +224,32 @@ class ConversationContextBuilder:
                     raise ValueError
             except (HrTaskContextError, ValueError):
                 raise ConversationContextError() from None
+        candidate_parser_attachment_id = None
+        if (
+            is_hr_agent
+            and not is_hr_position
+            and self._candidate_parser_input_provider is not None
+        ):
+            try:
+                candidate_parser_attachment_id = (
+                    self._candidate_parser_input_provider.for_turn(
+                        row["owner_internal_user_id"], conversation_id, turn_id
+                    )
+                )
+                if candidate_parser_attachment_id is not None and not isinstance(
+                    candidate_parser_attachment_id, UUID
+                ):
+                    raise ValueError
+                if candidate_parser_attachment_id is not None and any(
+                    item["attachment_id"] != candidate_parser_attachment_id
+                    for item in active_rows
+                ):
+                    raise ValueError
+            except ValueError:
+                raise ConversationContextError() from None
+        active_attachment_ids = [item["attachment_id"] for item in active_rows]
+        if candidate_parser_attachment_id is not None:
+            active_attachment_ids.append(candidate_parser_attachment_id)
         return (
             ConversationContext(
                 summary=conversation.summary,
@@ -225,9 +257,7 @@ class ConversationContextBuilder:
                 estimated_utf8_bytes=_context_size(
                     conversation.summary, messages, hr_position_context
                 ),
-                active_attachment_ids=tuple(
-                    item["attachment_id"] for item in active_rows
-                ),
+                active_attachment_ids=tuple(dict.fromkeys(active_attachment_ids)),
                 hr_position_context=hr_position_context,
             ),
             row["user_seq"],
