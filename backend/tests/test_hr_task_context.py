@@ -281,12 +281,6 @@ def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
 
     request.addfinalizer(cleanup)
     turn_request_id = uuid4()
-    PositionIntelligenceRepository(
-        environment["urls"]["platform_control_app"]
-    ).create_task_request(CreatePositionTaskRequest(
-        uuid4(), owner_id, position.position_id, turn_request_id,
-        "d" * 64, "freeform", None,
-    ))
     started = repository.start(
         owner_id, turn_request_id, "请生成岗位说明",
         mode="direct_agent", direct_agent_id="hr-bot",
@@ -318,6 +312,13 @@ def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
             (owner_id, started.turn.turn_id),
         ).fetchone()[0]
     assert count == 1
+    with psycopg.connect(environment["admin"]) as connection:
+        implicit = connection.execute(
+            "select task_kind,status from platform_hr.position_task_requests "
+            "where owner_internal_user_id=%s and client_request_id=%s",
+            (owner_id, turn_request_id),
+        ).fetchone()
+    assert implicit == ("freeform", "consumed")
 
 
 @pytest.mark.postgres
@@ -371,6 +372,23 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
     with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
         with pytest.raises(psycopg.errors.SerializationFailure):
             connection.execute(statement, values)
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
+
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "delete from platform_hr.position_task_requests "
+            "where owner_internal_user_id=%s and client_request_id=%s",
+            (owner_id, client_request_id),
+        )
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
+        with pytest.raises(psycopg.errors.NoDataFound):
+            connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
+    intelligence.create_task_request(CreatePositionTaskRequest(
+        uuid4(), owner_id, target.position_id, client_request_id,
+        "f" * 64, "freeform", None,
+    ))
 
     attachment_id = uuid4()
     with psycopg.connect(environment["admin"]) as connection:

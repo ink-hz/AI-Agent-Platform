@@ -821,8 +821,10 @@ as $function$
 declare selected platform_hr.position_task_records%rowtype;
 declare request platform_hr.position_task_requests%rowtype;
 declare current_official_id uuid;
+declare current_context_id uuid;
 declare turn_request_id uuid;
 declare exact_material_ids uuid[];
+declare request_is_explicit boolean := false;
 begin
   if session_user not in (
     'platform_control_app','platform_control_app_preview',
@@ -872,20 +874,33 @@ begin
     and position_id=selected_position_id
     and client_request_id=selected_client_request_id
     and status='active' for update;
-  if not found then raise no_data_found; end if;
-  if request.task_kind<>selected_task_kind
-    or request.expected_context_version_id is distinct from selected_context_version_id
-    or request.material_attachment_ids<>selected_material_attachment_ids
-    or request.candidate_id is distinct from selected_candidate_id
-    or request.position_candidate_id is distinct from selected_position_candidate_id then
-    raise unique_violation using message='position task selection mismatch';
+  if found then
+    request_is_explicit := true;
+    if request.task_kind<>selected_task_kind
+      or request.expected_context_version_id is distinct from selected_context_version_id
+      or request.material_attachment_ids<>selected_material_attachment_ids
+      or request.candidate_id is distinct from selected_candidate_id
+      or request.position_candidate_id is distinct from selected_position_candidate_id then
+      raise unique_violation using message='position task selection mismatch';
+    end if;
+  elsif selected_task_kind<>'freeform'
+    or selected_candidate_id is not null
+    or selected_position_candidate_id is not null
+    or cardinality(selected_document_attachment_ids)<>0
+    or cardinality(selected_human_feedback_ids)<>0 then
+    raise no_data_found using message='explicit position task request required';
   end if;
-  select current_official_version_id into current_official_id
+  select current_official_version_id,current_context_version_id
+    into current_official_id,current_context_id
   from platform_hr.positions
   where owner_internal_user_id=selected_owner_internal_user_id
     and position_id=selected_position_id for update;
   if current_official_id is distinct from selected_official_position_version_id then
     raise serialization_failure using message='official position task baseline conflict';
+  end if;
+  if not request_is_explicit
+    and current_context_id is distinct from selected_context_version_id then
+    raise serialization_failure using message='implicit position task context conflict';
   end if;
   if selected_context_version_id is not null then
     perform 1 from platform_hr.position_context_versions
@@ -910,6 +925,20 @@ begin
     selected_position_candidate_id,selected_document_attachment_ids,
     selected_human_feedback_ids
   ) then raise no_data_found; end if;
+  if not request_is_explicit then
+    insert into platform_hr.position_task_requests(
+      task_request_id,owner_internal_user_id,position_id,client_request_id,
+      canonical_payload_sha256,task_kind,expected_context_version_id,
+      material_attachment_ids,candidate_id,position_candidate_id,status
+    ) values (
+      md5(selected_owner_internal_user_id::text || ':' ||
+        selected_client_request_id::text || ':implicit-freeform')::uuid,
+      selected_owner_internal_user_id,selected_position_id,
+      selected_client_request_id,selected_canonical_sha256,'freeform',
+      selected_context_version_id,selected_material_attachment_ids,
+      null,null,'consumed'
+    ) returning * into request;
+  end if;
   insert into platform_hr.position_task_records(
     task_record_id,owner_internal_user_id,position_id,client_request_id,
     task_kind,official_position_version_id,context_version_id,
@@ -925,8 +954,10 @@ begin
     selected_human_feedback_ids,selected_conversation_id,selected_turn_id,
     selected_prompt_context,selected_canonical_sha256
   ) returning * into selected;
-  update platform_hr.position_task_requests set status='consumed'
-  where task_request_id=request.task_request_id;
+  if request_is_explicit then
+    update platform_hr.position_task_requests set status='consumed'
+    where task_request_id=request.task_request_id;
+  end if;
   return selected;
 end
 $function$;

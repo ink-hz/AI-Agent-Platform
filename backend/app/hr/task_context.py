@@ -496,10 +496,14 @@ class PostgresHrTaskContextSource:
                     "select * from platform_hr.read_position_task_request_v69(%s,%s,%s)",
                     (owner_id, scope["position_id"], scope["client_request_id"]),
                 ).fetchone()
-                if request_row is None or request_row["status"] != "active":
+                if request_row is not None and request_row["status"] != "active":
                     raise HrTaskContextError("HR task selection unavailable")
                 context_row = None
-                expected_context_id = request_row["expected_context_version_id"]
+                expected_context_id = (
+                    scope["current_context_version_id"]
+                    if request_row is None
+                    else request_row["expected_context_version_id"]
+                )
                 if expected_context_id is not None:
                     context_row = connection.execute(
                         "select * from platform_hr.position_context_versions "
@@ -552,8 +556,12 @@ class PostgresHrTaskContextSource:
                 )
                 if self._task_selection is not None
                 else (
-                    request_row["task_kind"], request_row["candidate_id"],
-                    request_row["position_candidate_id"],
+                    (
+                        request_row["task_kind"], request_row["candidate_id"],
+                        request_row["position_candidate_id"],
+                    )
+                    if request_row is not None
+                    else ("freeform", None, None)
                 )
             )
             return HrTaskScope(
