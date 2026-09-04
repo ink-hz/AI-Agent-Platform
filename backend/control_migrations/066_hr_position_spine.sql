@@ -59,6 +59,7 @@ create table platform_hr.position_drafts (
     check (source_kind in ('historical_conversation','new_conversation')),
   source_key text not null check (char_length(source_key) between 1 and 256),
   source_conversation_id uuid,
+  source_conversation_request_id uuid,
   title text not null check (char_length(btrim(title)) between 1 and 500),
   proposal jsonb not null default '{}'::jsonb check (
     jsonb_typeof(proposal)='object' and octet_length(proposal::text) <= 131072
@@ -85,8 +86,12 @@ create table platform_hr.position_drafts (
     or (state in ('confirmed','merged') and resolved_position_id is not null)
     or (state='dismissed' and resolved_position_id is null)
   ),
+  check (
+    source_conversation_request_id is null or source_conversation_id is not null
+  ),
   unique (owner_internal_user_id,client_request_id),
-  unique (owner_internal_user_id,source_kind,source_key)
+  unique (owner_internal_user_id,source_kind,source_key),
+  unique (owner_internal_user_id,source_conversation_request_id)
 );
 
 create table platform_hr.position_conversations (
@@ -626,7 +631,7 @@ create function platform_hr.attach_conversation_to_draft_v66(
   selected_owner_internal_user_id uuid,
   selected_draft_id uuid,
   selected_conversation_id uuid,
-  client_request_id uuid
+  selected_client_request_id uuid
 ) returns platform_hr.position_drafts
 language plpgsql security definer
 set search_path=pg_catalog,platform_hr
@@ -641,6 +646,9 @@ begin
     and owner_internal_user_id=selected_owner_internal_user_id for update;
   if not found then raise no_data_found; end if;
   if selected.source_conversation_id=selected_conversation_id then
+    if selected.source_conversation_request_id is distinct from selected_client_request_id then
+      raise unique_violation using message='draft conversation scope payload mismatch';
+    end if;
     return selected;
   end if;
   if selected.state<>'proposed' or selected.source_conversation_id is not null then
@@ -653,6 +661,7 @@ begin
   if not found then raise no_data_found; end if;
   update platform_hr.position_drafts set
     source_conversation_id=selected_conversation_id,
+    source_conversation_request_id=selected_client_request_id,
     row_version=row_version+1,updated_at=now()
   where draft_id=selected_draft_id returning * into selected;
   return selected;

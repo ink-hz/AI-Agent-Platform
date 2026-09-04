@@ -39,10 +39,13 @@ def test_hr_position_migration_enforces_draft_and_single_conversation_binding() 
 
     assert "state in ('proposed','confirmed','merged','dismissed')" in sql
     assert "source_kind in ('historical_conversation','new_conversation')" in sql
+    assert "source_conversation_request_id uuid" in sql
+    assert "unique (owner_internal_user_id,source_conversation_request_id)" in sql
     assert "conversation_id uuid primary key" in sql
     assert "references platform_control.conversations(conversation_id)" in sql
     assert "foreign key (position_id,owner_internal_user_id) references platform_hr.positions" in sql
     assert "foreign key (conversation_id,owner_internal_user_id) references platform_control.conversations" in sql
+    assert "draft conversation scope payload mismatch" in sql
 
 
 def test_hr_position_migration_references_attachment_and_artifact_authorities() -> None:

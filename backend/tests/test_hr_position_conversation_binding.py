@@ -72,6 +72,74 @@ def test_hr_conversation_is_returned_only_after_position_binding_exists(
         ).fetchone() == (1,)
 
 
+@pytest.mark.postgres
+def test_conversation_start_replay_rejects_a_different_position_scope(
+    hr_conversation_database, repository
+) -> None:
+    environment, owner_id, _ = hr_conversation_database
+    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
+    first_position = positions.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "结构工程师")
+    )
+    other_position = positions.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "算法工程师")
+    )
+    scope = HrPositionScope(positions)
+    app, auth, _ = _app(owner_id, repository, hr_position_scope=scope)
+    client = TestClient(app)
+    request_id = uuid4()
+
+    first = _post(client, auth, "hr-bot", request_id, {
+        "text": "建立岗位工作区", "position_id": str(first_position.position_id),
+    })
+    conflicting = _post(client, auth, "hr-bot", request_id, {
+        "text": "建立岗位工作区", "position_id": str(other_position.position_id),
+    })
+
+    assert first.status_code == 201
+    assert conflicting.status_code == 409
+    conversation_id = UUID(first.json()["conversation"]["conversation_id"])
+    assert scope.for_conversation(owner_id, conversation_id) == first_position.position_id
+
+
+@pytest.mark.postgres
+def test_conversation_start_replay_rejects_a_different_draft_scope(
+    hr_conversation_database, repository
+) -> None:
+    environment, owner_id, _ = hr_conversation_database
+    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
+    first_draft = positions.propose_draft(ProposePositionDraft(
+        owner_id, uuid4(), uuid4(), "new_conversation", "request:first",
+        None, "结构工程师", {}, {}, "interactive-v1",
+    ))
+    other_draft = positions.propose_draft(ProposePositionDraft(
+        owner_id, uuid4(), uuid4(), "new_conversation", "request:other",
+        None, "算法工程师", {}, {}, "interactive-v1",
+    ))
+    app, auth, _ = _app(
+        owner_id, repository, hr_position_scope=HrPositionScope(positions)
+    )
+    client = TestClient(app)
+    request_id = uuid4()
+
+    first = _post(client, auth, "hr-bot", request_id, {
+        "text": "继续定义岗位", "position_draft_id": str(first_draft.draft_id),
+    })
+    conflicting = _post(client, auth, "hr-bot", request_id, {
+        "text": "继续定义岗位", "position_draft_id": str(other_draft.draft_id),
+    })
+
+    assert first.status_code == 201
+    assert conflicting.status_code == 409
+    conversation_id = UUID(first.json()["conversation"]["conversation_id"])
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select draft_id from platform_hr.position_drafts "
+            "where source_conversation_id=%s",
+            (conversation_id,),
+        ).fetchall() == [(first_draft.draft_id,)]
+
+
 def test_non_hr_conversation_rejects_position_scope_fields() -> None:
     owner_id = uuid4()
     app, auth, _ = _app(owner_id, object(), hr_position_scope=object())
