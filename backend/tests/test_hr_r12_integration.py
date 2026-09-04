@@ -13,4 +13,5 @@ def test_create_app_declares_all_hr_r12_service_boundaries() -> None:
         "hr_candidate_service",
         "hr_resource_service",
         "hr_task_context_provider",
+        "hr_position_task_service",
     }.issubset(parameters)
