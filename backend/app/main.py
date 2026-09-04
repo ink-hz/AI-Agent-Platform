@@ -1152,10 +1152,15 @@ def create_app(
         hr_position_scope = HrPositionScope(hr_position_repository)
     position_intelligence_repository = None
     candidate_repository = None
+    candidate_task_validator = None
     hr_model_version = None
     hr_model_version_checked = False
     if identity_enabled and control_database_url is not None:
-        if hr_position_intelligence_service is None or hr_task_context_provider is None:
+        if (
+            hr_position_intelligence_service is None
+            or hr_task_context_provider is None
+            or hr_position_task_service is None
+        ):
             position_intelligence_repository = PositionIntelligenceRepository(
                 control_database_url
             )
@@ -1163,7 +1168,11 @@ def create_app(
             hr_position_intelligence_service = PositionIntelligenceService(
                 position_intelligence_repository
             )
-        if hr_candidate_service is None or hr_task_context_provider is None:
+        if (
+            hr_candidate_service is None
+            or hr_task_context_provider is None
+            or hr_position_task_service is None
+        ):
             candidate_repository = CandidateRepository(control_database_url)
         if hr_candidate_service is None:
             hr_candidate_service = CandidateService(
@@ -1212,7 +1221,7 @@ def create_app(
                 ),
                 conversation_attachment_download_service,
             )
-        if hr_task_context_provider is None and "direct_agent" in v1_mission_modes:
+        if hr_task_context_provider is None or hr_position_task_service is None:
             def context_is_confirmed(owner_id, position_id, context_version_id):
                 current = position_intelligence_repository.current(
                     owner_id, position_id
@@ -1223,20 +1232,22 @@ def create_app(
                     and current.context_version_id == context_version_id
                 )
 
-            hr_model_version = _optional_hr_bot_model_version(
-                cluster_contract_path or config.metabot_contract_path
+            candidate_task_validator = CandidateEnvelopeProvider(
+                candidate_repository, context_is_confirmed
             )
-            hr_model_version_checked = True
-            if hr_model_version is not None:
-                hr_task_context_provider = HrTaskContextProvider(
-                    PostgresHrTaskContextSource(
-                        control_database_url,
-                        execution_model_version=hr_model_version,
-                    ),
-                    candidate_provider=CandidateEnvelopeProvider(
-                        candidate_repository, context_is_confirmed
-                    ),
+            if hr_task_context_provider is None and "direct_agent" in v1_mission_modes:
+                hr_model_version = _optional_hr_bot_model_version(
+                    cluster_contract_path or config.metabot_contract_path
                 )
+                hr_model_version_checked = True
+                if hr_model_version is not None:
+                    hr_task_context_provider = HrTaskContextProvider(
+                        PostgresHrTaskContextSource(
+                            control_database_url,
+                            execution_model_version=hr_model_version,
+                        ),
+                        candidate_provider=candidate_task_validator,
+                    )
         if (
             hr_position_task_service is None
             and conversation_command_service is not None
@@ -1248,6 +1259,7 @@ def create_app(
                 conversation_command_service,
                 hr_position_scope,
                 PostgresHrPositionTaskRepository(control_database_url),
+                candidate_validator=candidate_task_validator,
             )
         if (
             hr_task_result_reconciler is None

@@ -173,9 +173,10 @@ function LegacyAnalysisCard({ analysis, candidateNames }: { analysis: Extract<Hr
   </article>;
 }
 
-export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContextVersionId, uploadClient, readOnly = false }: {
+export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContextVersionId, taskConversationId, uploadClient, readOnly = false }: {
   api: CandidateApi; positionId: string; csrfToken: string;
-  currentContextVersionId: string | null; uploadClient?: AttachmentUploadClient; readOnly?: boolean;
+  currentContextVersionId: string | null; taskConversationId?: string;
+  uploadClient?: AttachmentUploadClient; readOnly?: boolean;
 }) {
   const [drafts, setDrafts] = useState<HrCandidateDraft[]>([]);
   const [relations, setRelations] = useState<NamedRelation[]>([]);
@@ -369,7 +370,7 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
   async function launch(kind: "candidate_match" | "candidate_interview_plan") {
     if (readOnly || !selected || !currentContextVersionId || selected.relation.contextVersionId !== currentContextVersionId) return;
     const current = controller();
-    const input = { contextVersionId: currentContextVersionId, candidate: { candidateId: selected.candidate.candidateId, positionCandidateId: selected.relation.positionCandidateId }, materialIds: [] };
+    const input = { contextVersionId: currentContextVersionId, candidate: { candidateId: selected.candidate.candidateId, positionCandidateId: selected.relation.positionCandidateId }, materialIds: [], ...(taskConversationId ? { conversationId: taskConversationId } : {}) };
     const operation = retainMutationRequest(`candidate-task:${positionId}:${kind}`, input);
     try {
       const task = await api.startTask(positionId, kind, operation.requestId, input, current.signal);
@@ -377,7 +378,11 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
       completeMutationRequest(operation.key);
       const scope = { positionCandidateId: selected.relation.positionCandidateId, candidateId: selected.candidate.candidateId, taskKind: kind };
       analysisTaskScope.current = scope;
-      if (task.taskKind !== kind) { setAnalysisTask(null); setNotice("候选人任务绑定异常，已停止自动刷新。"); return; }
+      if (task.taskKind !== kind || (taskConversationId && (
+        task.conversationId !== taskConversationId
+        || task.candidateId !== scope.candidateId
+        || task.positionCandidateId !== scope.positionCandidateId
+      ))) { setAnalysisTask(null); setNotice("候选人任务绑定异常，已停止自动刷新。"); return; }
       setAnalysisTask(task);
       if (task.status === "failed") { setNotice(`${TASK_LABEL[kind]}执行失败：${task.error ?? "未知错误"}`); return; }
       if (task.status === "completed") {

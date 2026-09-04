@@ -16,6 +16,7 @@ from test_control_plane_migration import control_database  # noqa: F401
 
 from app.agent_brain.conversation_repository import message_subject
 from app.agent_brain.conversation_service import ConversationCommandService
+from app.hr.candidate_context import CandidateEnvelopeProvider
 from app.hr.candidate_repository import CandidateRepository
 from app.hr.candidate_service import CandidateService
 from app.hr.context import HrPositionScope
@@ -49,6 +50,7 @@ def _finish_task(
     candidate_scope=None,
     artifact_specs=(),
     grant_agent_id="hr-bot",
+    existing_task_context=False,
 ):
     codec = _codec()
     message_id = uuid4()
@@ -63,37 +65,48 @@ def _finish_task(
             "where conversation_id=%s and turn_id=%s",
             (task.conversation_id, task.turn_id),
         ).fetchone()[0]
-        connection.execute(
-            "insert into platform_hr.position_task_records("
-            "task_record_id,owner_internal_user_id,position_id,client_request_id,"
-            "task_kind,context_version_id,candidate_id,position_candidate_id,"
-            "material_attachment_ids,document_attachment_ids,"
-            "human_feedback_ids,conversation_id,turn_id,prompt_context,canonical_sha256,"
-            "execution_model_version) "
-            "select %s,%s,%s,client_request_id,%s,%s,%s,%s,'{}',%s,'{}',%s,%s,%s,%s,%s "
-            "from platform_hr.position_task_requests where task_request_id=%s",
-            (
-                task_record_id,
-                owner_id,
-                position_id,
-                task_kind,
-                candidate_scope["context"] if candidate_scope else None,
-                candidate_scope["candidate"] if candidate_scope else None,
-                candidate_scope["relation"] if candidate_scope else None,
-                [candidate_scope["attachment"]] if candidate_scope else [],
-                task.conversation_id,
-                task.turn_id,
-                "projection database test",
-                "0" * 64,
-                model_version,
-                task.task_id,
-            ),
-        )
-        connection.execute(
-            "update platform_hr.position_task_requests set status='consumed' "
-            "where task_request_id=%s",
-            (task.task_id,),
-        )
+        if existing_task_context:
+            row = connection.execute(
+                "select task_record_id from platform_hr.position_task_records "
+                "where owner_internal_user_id=%s and position_id=%s "
+                "and conversation_id=%s and turn_id=%s",
+                (owner_id, position_id, task.conversation_id, task.turn_id),
+            ).fetchone()
+            if row is None:
+                raise AssertionError("real HR task context record required")
+            task_record_id = row[0]
+        else:
+            connection.execute(
+                "insert into platform_hr.position_task_records("
+                "task_record_id,owner_internal_user_id,position_id,client_request_id,"
+                "task_kind,context_version_id,candidate_id,position_candidate_id,"
+                "material_attachment_ids,document_attachment_ids,"
+                "human_feedback_ids,conversation_id,turn_id,prompt_context,canonical_sha256,"
+                "execution_model_version) "
+                "select %s,%s,%s,client_request_id,%s,%s,%s,%s,'{}',%s,'{}',%s,%s,%s,%s,%s "
+                "from platform_hr.position_task_requests where task_request_id=%s",
+                (
+                    task_record_id,
+                    owner_id,
+                    position_id,
+                    task_kind,
+                    candidate_scope["context"] if candidate_scope else None,
+                    candidate_scope["candidate"] if candidate_scope else None,
+                    candidate_scope["relation"] if candidate_scope else None,
+                    [candidate_scope["attachment"]] if candidate_scope else [],
+                    task.conversation_id,
+                    task.turn_id,
+                    "projection database test",
+                    "0" * 64,
+                    model_version,
+                    task.task_id,
+                ),
+            )
+            connection.execute(
+                "update platform_hr.position_task_requests set status='consumed' "
+                "where task_request_id=%s",
+                (task.task_id,),
+            )
         connection.execute(
             "insert into platform_control.execution_workers("
             "worker_id,allowed_agent_ids,status) values (%s,array['hr-bot'],'active')",
@@ -555,6 +568,14 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
         ConversationCommandService(repository, v2_enabled=True),
         HrPositionScope(positions),
         PostgresHrPositionTaskRepository(environment["urls"]["platform_control_app"]),
+        candidate_validator=CandidateEnvelopeProvider(
+            CandidateRepository(environment["urls"]["platform_control_app"]),
+            lambda candidate_owner, candidate_position, candidate_context: (
+                candidate_owner == owner_id
+                and candidate_position == position.position_id
+                and candidate_context == scope["context"]
+            ),
+        ),
     )
     candidates = CandidateService(
         CandidateRepository(environment["urls"]["platform_control_app"])

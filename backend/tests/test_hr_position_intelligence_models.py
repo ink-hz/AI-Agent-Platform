@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+
 from app.hr.position_intelligence_models import (
     ConfirmContextModules,
     CreateContextDraft,
+    CreatePositionTaskRequest,
     HrPositionContextEnvelope,
     OfficialPositionVersion,
     PositionContextVersion,
     ProjectOfficialVersion,
+    candidate_task_snapshot_sha256,
 )
 
 
@@ -156,5 +160,30 @@ def test_envelope_is_frozen_and_uses_exact_contract() -> None:
     )
 
     assert envelope.task_kind == "jd"
-    with pytest.raises(Exception):
+    with pytest.raises(FrozenInstanceError):
         envelope.task_kind = "jr"  # type: ignore[misc]
+
+
+def test_candidate_task_request_requires_and_hashes_exact_snapshot() -> None:
+    candidate_id, relation_id, context_id = uuid4(), uuid4(), uuid4()
+    document_id, attachment_id, feedback_id = uuid4(), uuid4(), uuid4()
+    command = CreatePositionTaskRequest(
+        uuid4(), uuid4(), uuid4(), uuid4(), "a" * 64, "candidate_match",
+        context_id, (), candidate_id, relation_id,
+        (document_id,), (attachment_id,), (feedback_id,), "candidate evidence",
+    )
+
+    assert command.candidate_snapshot_sha256 == candidate_task_snapshot_sha256(
+        candidate_id=candidate_id,
+        position_candidate_id=relation_id,
+        context_version_id=context_id,
+        document_ids=(document_id,),
+        document_attachment_ids=(attachment_id,),
+        human_feedback_ids=(feedback_id,),
+        prompt_context="candidate evidence",
+    )
+    with pytest.raises(ValueError, match="candidate task snapshot required"):
+        CreatePositionTaskRequest(
+            uuid4(), uuid4(), uuid4(), uuid4(), "b" * 64,
+            "candidate_match", context_id, (), candidate_id, relation_id,
+        )

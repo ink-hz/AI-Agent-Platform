@@ -273,6 +273,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
       onRetryDetail={() => setContinuedPositionDetailAttempt((value) => value + 1)}
       open={positionDetailsOpen}
       readOnly={props.account.hard_stale_read_only}
+      taskConversationId={positionRouteValidated ? props.conversationId : undefined}
     />}
   </HrWorkspaceShell>;
 }

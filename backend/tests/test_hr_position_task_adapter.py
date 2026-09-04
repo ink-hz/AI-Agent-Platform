@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -8,15 +10,22 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from test_agent_brain_conversation_repository import (
+    _codec,
     conversation_database,  # noqa: F401
     repository,  # noqa: F401
 )
 from test_control_plane_migration import control_database  # noqa: F401
 
 from app.agent_brain.conversation_service import ConversationCommandService
+from app.control_plane.auth import AuthSecrets
+from app.hr.candidate_context import CandidateEnvelopeProvider
+from app.hr.candidate_repository import CandidateNotFound
 from app.hr.context import HrPositionScope
 from app.hr.models import CreateManualPosition
-from app.hr.position_intelligence_models import PositionTaskRequest
+from app.hr.position_intelligence_models import (
+    PositionTaskRequest,
+    candidate_task_snapshot_sha256,
+)
 from app.hr.position_intelligence_repository import PositionIntelligenceRepository
 from app.hr.position_intelligence_service import PositionIntelligenceService
 from app.hr.repository import HrPositionRepository
@@ -27,7 +36,9 @@ from app.hr.task_service import (
     HrPositionTaskConflict,
     HrPositionTaskNotFound,
     HrPositionTaskService,
+    HrPositionTaskUnavailable,
 )
+from app.main import create_app
 
 OWNER = UUID("00000000-0000-4000-8000-000000000001")
 POSITION = UUID("00000000-0000-4000-8000-000000000002")
@@ -36,6 +47,8 @@ CONTEXT = UUID("00000000-0000-4000-8000-000000000004")
 CANDIDATE = UUID("00000000-0000-4000-8000-000000000005")
 RELATION = UUID("00000000-0000-4000-8000-000000000006")
 MATERIAL = UUID("00000000-0000-4000-8000-000000000007")
+DOCUMENT = UUID("00000000-0000-4000-8000-000000000008")
+ATTACHMENT = UUID("00000000-0000-4000-8000-000000000009")
 
 
 class Intelligence:
@@ -65,8 +78,35 @@ class Intelligence:
             values["position_candidate_id"],
             "active",
             datetime.now(UTC),
+            values.get("candidate_snapshot").document_ids
+            if values.get("candidate_snapshot") else (),
+            values.get("candidate_snapshot").document_attachment_ids
+            if values.get("candidate_snapshot") else (),
+            values.get("candidate_snapshot").human_feedback_ids
+            if values.get("candidate_snapshot") else (),
+            values.get("candidate_snapshot").prompt_context
+            if values.get("candidate_snapshot") else None,
+            candidate_task_snapshot_sha256(
+                candidate_id=values["candidate_id"],
+                position_candidate_id=values["position_candidate_id"],
+                context_version_id=values["expected_context_version_id"],
+                document_ids=values["candidate_snapshot"].document_ids,
+                document_attachment_ids=(
+                    values["candidate_snapshot"].document_attachment_ids
+                ),
+                human_feedback_ids=values["candidate_snapshot"].human_feedback_ids,
+                prompt_context=values["candidate_snapshot"].prompt_context,
+            ) if values.get("candidate_snapshot") else None,
         )
         self.records[request_id] = record
+        return record
+
+    def task_request(self, owner_id, position_id, request_id):
+        record = self.records.get(request_id)
+        if record is None or (record.owner_id, record.position_id) != (
+            owner_id, position_id
+        ):
+            return None
         return record
 
 
@@ -128,14 +168,80 @@ class Projection:
         return next((item for item in self.rows if item.task_id == task_id), None)
 
 
-def dependencies():
+def dependencies(*, candidate_validator=None):
     calls: list[tuple[str, object]] = []
     intelligence = Intelligence()
     commands = Commands(calls)
     scope = Scope(calls)
     projection = Projection()
-    service = HrPositionTaskService(intelligence, commands, scope, projection)
+    service = HrPositionTaskService(
+        intelligence,
+        commands,
+        scope,
+        projection,
+        candidate_validator=candidate_validator,
+    )
     return service, intelligence, commands, scope, projection, calls
+
+
+class CandidateContextRepository:
+    def __init__(self) -> None:
+        self.relation_position = POSITION
+        self.relation_candidate = CANDIDATE
+        self.confirmed = True
+        self.documents = (
+            SimpleNamespace(
+                owner_id=OWNER,
+                candidate_id=CANDIDATE,
+                document_id=DOCUMENT,
+                attachment_id=ATTACHMENT,
+                version_number=1,
+                content_sha256="a" * 64,
+                status="active",
+            ),
+        )
+
+    def position_candidate_for_owner(self, owner_id, position_candidate_id):
+        if owner_id != OWNER or position_candidate_id != RELATION:
+            raise CandidateNotFound("concealed")
+        return SimpleNamespace(
+            status="active",
+            position_id=self.relation_position,
+            candidate_id=self.relation_candidate,
+            context_version_id=CONTEXT,
+        )
+
+    def candidate_for_owner(self, owner_id, candidate_id):
+        if owner_id != OWNER or candidate_id != CANDIDATE:
+            raise CandidateNotFound("concealed")
+        return SimpleNamespace(
+            owner_id=OWNER,
+            candidate_id=CANDIDATE,
+            stable_name="候选人甲",
+            facts={"skills": ["挤出系统"]},
+        )
+
+    def documents_for_candidate(self, owner_id, candidate_id):
+        assert (owner_id, candidate_id) == (OWNER, CANDIDATE)
+        return self.documents
+
+    def attachment_state_for_document(self, owner_id, document_id):
+        assert (owner_id, document_id) == (OWNER, DOCUMENT)
+        return "ready"
+
+    def feedback_for_candidate_context(self, owner_id, relation_id, context_id):
+        assert (owner_id, relation_id, context_id) == (OWNER, RELATION, CONTEXT)
+        return ()
+
+
+def candidate_validator(context_repository: CandidateContextRepository):
+    return CandidateEnvelopeProvider(
+        context_repository,
+        lambda owner_id, position_id, context_id: (
+            context_repository.confirmed
+            and (owner_id, position_id, context_id) == (OWNER, POSITION, CONTEXT)
+        ),
+    )
 
 
 def test_new_position_task_persists_before_start_and_atomically_scopes_conversation():
@@ -249,6 +355,183 @@ def test_service_rejects_invalid_candidate_and_comparison_envelopes(values):
             **values,
         )
     assert intelligence.records == {}
+
+
+@pytest.mark.parametrize(
+    ("owner_id", "candidate_id", "mutate", "error"),
+    [
+        (OWNER, uuid4(), lambda _repository: None, HrPositionTaskConflict),
+        (
+            OWNER,
+            CANDIDATE,
+            lambda context_repository: setattr(
+                context_repository, "relation_position", uuid4()
+            ),
+            HrPositionTaskConflict,
+        ),
+        (
+            OWNER,
+            CANDIDATE,
+            lambda context_repository: setattr(context_repository, "confirmed", False),
+            HrPositionTaskConflict,
+        ),
+        (
+            OWNER,
+            CANDIDATE,
+            lambda context_repository: setattr(context_repository, "documents", ()),
+            HrPositionTaskConflict,
+        ),
+        (uuid4(), CANDIDATE, lambda _repository: None, HrPositionTaskNotFound),
+    ],
+)
+def test_candidate_task_validation_rejects_scope_or_missing_snapshot_before_writes(
+    owner_id, candidate_id, mutate, error
+):
+    context_repository = CandidateContextRepository()
+    mutate(context_repository)
+    service, intelligence, commands, _, _, calls = dependencies(
+        candidate_validator=candidate_validator(context_repository)
+    )
+
+    with pytest.raises(error):
+        service.start(
+            owner_id=owner_id,
+            position_id=POSITION,
+            request_id=uuid4(),
+            task_kind="candidate_match",
+            context_version_id=CONTEXT,
+            material_ids=(),
+            conversation_id=None,
+            candidate_id=candidate_id,
+            position_candidate_id=RELATION,
+        )
+
+    assert intelligence.calls == []
+    assert commands.created_side_effects == 0
+    assert calls == []
+
+
+def test_candidate_task_without_validator_fails_closed_before_writes():
+    service, intelligence, commands, _, _, calls = dependencies()
+
+    with pytest.raises(HrPositionTaskUnavailable):
+        service.start(
+            owner_id=OWNER,
+            position_id=POSITION,
+            request_id=uuid4(),
+            task_kind="candidate_match",
+            context_version_id=CONTEXT,
+            material_ids=(),
+            conversation_id=None,
+            candidate_id=CANDIDATE,
+            position_candidate_id=RELATION,
+        )
+
+    assert intelligence.calls == []
+    assert commands.created_side_effects == 0
+    assert calls == []
+
+
+@pytest.mark.postgres
+def test_create_app_auto_task_service_shares_candidate_validator_with_context(
+    control_database,  # noqa: F811
+    tmp_path,
+    monkeypatch,
+):
+    from app import main as app_main
+    from app.config import load_config
+
+    environment = control_database["environments"]["production"]
+    config = replace(
+        load_config(),
+        execution_relay_enabled=True,
+        direct_agent_enabled=True,
+        agent_brain_enabled=False,
+        agent_brain_v2_enabled=False,
+    )
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "contract.json"
+    contract.write_text(
+        json.dumps({
+            "bots": [{
+                "name": "hr-bot",
+                "model": "hr-runtime-test",
+                "instance": {"pm2Name": "metabot-hr", "apiPort": 9101},
+            }],
+        }),
+        encoding="utf-8",
+    )
+    codec = _codec()
+    monkeypatch.setattr(app_main, "load_config", lambda: config)
+    monkeypatch.setattr(
+        app_main,
+        "read_secret_file",
+        lambda _path: environment["urls"]["platform_control_app"],
+    )
+    monkeypatch.setattr(app_main, "_check_execution_relay_database", lambda _dsn: None)
+    monkeypatch.setattr(
+        app_main.IdentityKeyring, "from_file", lambda *_args, **_kwargs: object()
+    )
+    monkeypatch.setattr(app_main, "ContentCodec", lambda _keyring: codec)
+    identity_auth = SimpleNamespace(
+        route_prefix="/",
+        cookie_name="session",
+        csrf_cookie_name="csrf",
+        public_base_url="https://agent.example.test",
+        trusted_proxy_networks=(),
+        rate_limiter=None,
+        mode=config.control_plane.mode,
+        secrets=AuthSecrets(b"s" * 32, key_version=1),
+        authenticate=lambda _token: None,
+        verify_csrf=lambda *_args: False,
+        hard_stale_audit=lambda *_args: None,
+        repository=SimpleNamespace(directory_freshness=lambda **_kwargs: None),
+    )
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        identity_auth=identity_auth,
+    )
+
+    validator = app.state.hr_position_task_service._candidate_validator
+    assert isinstance(validator, CandidateEnvelopeProvider)
+    assert app.state.hr_task_context_provider._candidate_provider is validator
+
+
+def test_candidate_task_validation_accepts_exact_snapshot_and_replays_one_turn():
+    context_repository = CandidateContextRepository()
+    validator = candidate_validator(context_repository)
+    snapshot = validator.for_task(OWNER, POSITION, CANDIDATE, RELATION)
+    assert snapshot.context_version_id == CONTEXT
+    assert snapshot.document_ids == (DOCUMENT,)
+    assert snapshot.document_attachment_ids == (ATTACHMENT,)
+    assert snapshot.human_feedback_ids == ()
+    service, intelligence, commands, *_ = dependencies(
+        candidate_validator=validator
+    )
+    request_id = uuid4()
+    values = {
+        "owner_id": OWNER,
+        "position_id": POSITION,
+        "request_id": request_id,
+        "task_kind": "candidate_match",
+        "context_version_id": CONTEXT,
+        "material_ids": (),
+        "conversation_id": None,
+        "candidate_id": CANDIDATE,
+        "position_candidate_id": RELATION,
+    }
+
+    first = service.start(**values)
+    context_repository.documents = ()
+    replay = service.start(**values)
+
+    assert first == replay
+    assert len(intelligence.calls) == 2
+    assert commands.created_side_effects == 1
 
 
 def test_get_recovery_conceals_missing_position_and_returns_durable_states():
@@ -444,6 +727,40 @@ def test_task_routes_conceal_cross_scope_and_return_private_no_store():
     response = client.get(f"/api/hr/positions/{POSITION}/tasks?status=active")
     assert response.status_code == 404
     assert "internal detail" not in response.text
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "detail"),
+    [
+        (HrPositionTaskConflict("internal scope"), 409, "HR position task conflict"),
+        (
+            HrPositionTaskUnavailable("internal validator"),
+            503,
+            "HR position task unavailable",
+        ),
+    ],
+)
+def test_task_route_maps_candidate_scope_rejection_without_leaking(
+    error, status, detail
+):
+    client, service = route_client()
+    service.error = error
+
+    response = client.post(
+        f"/api/hr/positions/{POSITION}/tasks",
+        headers={"Idempotency-Key": str(uuid4())},
+        json={
+            "task_kind": "candidate_match",
+            "context_version_id": str(CONTEXT),
+            "candidate_id": str(CANDIDATE),
+            "position_candidate_id": str(RELATION),
+            "material_ids": [],
+        },
+    )
+
+    assert (response.status_code, response.json()) == (status, {"detail": detail})
+    assert "internal" not in response.text
     assert response.headers["cache-control"] == "private, no-store"
 
 

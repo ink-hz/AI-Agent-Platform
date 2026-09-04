@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from uuid import uuid4
 
 import psycopg
 import pytest
+from test_agent_brain_conversation_repository import (
+    conversation_database,  # noqa: F401
+    repository,  # noqa: F401
+)
+from test_control_plane_migration import control_database  # noqa: F401
+
 from app.hr.models import (
     BindPositionConversation,
     CreateManualPosition,
@@ -18,6 +23,7 @@ from app.hr.position_intelligence_models import (
     OfficialPositionVersion,
     PositionContextVersion,
     ProjectOfficialVersion,
+    candidate_task_snapshot_sha256,
 )
 from app.hr.position_intelligence_repository import PositionIntelligenceRepository
 from app.hr.repository import HrPositionRepository
@@ -29,11 +35,6 @@ from app.hr.task_context import (
     PostgresHrTaskContextSource,
     canonical_hash,
 )
-from test_agent_brain_conversation_repository import (
-    conversation_database,
-    repository,
-)
-from test_control_plane_migration import control_database
 
 
 def _records():
@@ -191,6 +192,61 @@ def test_envelope_pins_position_context_materials_and_candidate_fragment() -> No
     assert prompt["official_facts"]["headcount"] == 1
     assert prompt["official_facts"]["status_reason"] == "published"
     assert len(source.recorded) == 1
+
+
+def test_persisted_candidate_snapshot_is_used_without_mutable_provider_read() -> None:
+    owner_id, position_id, official, context, material = _records()
+    conversation_id, turn_id = uuid4(), uuid4()
+    candidate_id, relation_id = uuid4(), uuid4()
+    document_id, attachment_id, feedback_id = uuid4(), uuid4(), uuid4()
+    prompt_context = "accepted candidate evidence"
+    source = Source(HrTaskScope(
+        owner_id, position_id, conversation_id, turn_id, "candidate_match",
+        official, context, (material,), candidate_id, relation_id,
+        client_request_id=uuid4(), candidate_document_ids=(document_id,),
+        candidate_document_attachment_ids=(attachment_id,),
+        candidate_human_feedback_ids=(feedback_id,),
+        candidate_prompt_context=prompt_context,
+        candidate_snapshot_sha256=candidate_task_snapshot_sha256(
+            candidate_id=candidate_id, position_candidate_id=relation_id,
+            context_version_id=context.context_version_id,
+            document_ids=(document_id,), document_attachment_ids=(attachment_id,),
+            human_feedback_ids=(feedback_id,), prompt_context=prompt_context,
+        ),
+    ))
+
+    envelope = HrTaskContextProvider(
+        source, candidate_provider=FailingCandidateProvider()
+    ).build_for_turn(owner_id, conversation_id, turn_id)
+
+    assert envelope.document_attachment_ids == (attachment_id,)
+    assert envelope.human_feedback_ids == (feedback_id,)
+    assert prompt_context in envelope.prompt_context
+
+
+def test_persisted_candidate_snapshot_fails_closed_when_legacy_or_tampered() -> None:
+    owner_id, position_id, official, context, material = _records()
+    conversation_id, turn_id = uuid4(), uuid4()
+    base = HrTaskScope(
+        owner_id, position_id, conversation_id, turn_id, "candidate_match",
+        official, context, (material,), uuid4(), uuid4(),
+        client_request_id=uuid4(),
+    )
+    with pytest.raises(HrTaskContextError, match="snapshot unavailable"):
+        HrTaskContextProvider(Source(base)).build_for_turn(
+            owner_id, conversation_id, turn_id
+        )
+    tampered = replace(
+        base,
+        candidate_document_ids=(uuid4(),),
+        candidate_document_attachment_ids=(uuid4(),),
+        candidate_prompt_context="persisted",
+        candidate_snapshot_sha256="f" * 64,
+    )
+    with pytest.raises(HrTaskContextError, match="snapshot invalid"):
+        HrTaskContextProvider(Source(tampered)).build_for_turn(
+            owner_id, conversation_id, turn_id
+        )
 
 
 def test_candidate_tasks_require_exact_confirmed_context_and_documents() -> None:
@@ -420,8 +476,8 @@ def test_recovery_returns_the_recorded_envelope_without_rereading_newer_context(
 
 @pytest.mark.postgres
 def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
-    conversation_database,
-    repository,
+    conversation_database,  # noqa: F811
+    repository,  # noqa: F811
     request,
 ) -> None:
     environment, owner_id, _ = conversation_database
@@ -518,8 +574,8 @@ def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
 
 @pytest.mark.postgres
 def test_explicit_task_uses_owned_position_material_from_another_conversation(
-    conversation_database,
-    repository,
+    conversation_database,  # noqa: F811
+    repository,  # noqa: F811
     request,
 ) -> None:
     environment, owner_id, _ = conversation_database
@@ -632,8 +688,8 @@ def test_explicit_task_uses_owned_position_material_from_another_conversation(
 
 @pytest.mark.postgres
 def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_inputs(
-    conversation_database,
-    repository,
+    conversation_database,  # noqa: F811
+    repository,  # noqa: F811
     request,
 ) -> None:
     environment, owner_id, _ = conversation_database
@@ -718,9 +774,9 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
         )
     )
     statement = (
-        "select (platform_hr.create_position_task_record_v69("
+        "select (platform_hr.create_position_task_record_v79("
         "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,%s::uuid[],%s::uuid[],"
-        "%s,%s,%s,%s)).*"
+        "%s,%s,%s,%s,%s)).*"
     )
     values = (
         uuid4(),
@@ -739,13 +795,18 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
         started.turn.turn_id,
         "target prompt",
         "1" * 64,
+        "hr-runtime-v1",
     )
-    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
-        with pytest.raises(psycopg.errors.SerializationFailure):
-            connection.execute(statement, values)
-    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
-        with pytest.raises(psycopg.errors.UniqueViolation):
-            connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as connection,
+        pytest.raises(psycopg.errors.SerializationFailure),
+    ):
+        connection.execute(statement, values)
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as connection,
+        pytest.raises(psycopg.errors.UniqueViolation),
+    ):
+        connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
 
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
@@ -753,9 +814,11 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
             "where owner_internal_user_id=%s and client_request_id=%s",
             (owner_id, client_request_id),
         )
-    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
-        with pytest.raises(psycopg.errors.NoDataFound):
-            connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as connection,
+        pytest.raises(psycopg.errors.NoDataFound),
+    ):
+        connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
     intelligence.create_task_request(
         CreatePositionTaskRequest(
             uuid4(),
@@ -816,6 +879,8 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
 
     request.addfinalizer(cleanup)
     exact_values = (*values[:5], None, *values[6:])
-    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
-        with pytest.raises(psycopg.errors.NoDataFound):
-            connection.execute(statement, exact_values)
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as connection,
+        pytest.raises(psycopg.errors.NoDataFound),
+    ):
+        connection.execute(statement, exact_values)

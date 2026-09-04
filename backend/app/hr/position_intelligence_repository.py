@@ -111,6 +111,13 @@ def _task_request(row: dict[str, Any]) -> PositionTaskRequest:
         position_candidate_id=row["position_candidate_id"],
         status=row["status"],
         created_at=row["created_at"],
+        document_ids=tuple(row.get("document_ids", ())),
+        document_attachment_ids=tuple(
+            row.get("document_attachment_ids", ())
+        ),
+        human_feedback_ids=tuple(row.get("human_feedback_ids", ())),
+        candidate_prompt_context=row.get("candidate_prompt_context"),
+        candidate_snapshot_sha256=row.get("candidate_snapshot_sha256"),
     )
 
 
@@ -142,8 +149,9 @@ class PositionIntelligenceRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.create_position_task_request_v69("
-                    "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s)).*",
+                    "select (platform_hr.create_position_task_request_v79("
+                    "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,"
+                    "%s::uuid[],%s::uuid[],%s::uuid[],%s)).*",
                     (
                         command.task_request_id, command.owner_id,
                         command.position_id, command.client_request_id,
@@ -151,6 +159,10 @@ class PositionIntelligenceRepository:
                         command.expected_context_version_id,
                         list(command.material_attachment_ids),
                         command.candidate_id, command.position_candidate_id,
+                        list(command.document_ids),
+                        list(command.document_attachment_ids),
+                        list(command.human_feedback_ids),
+                        command.candidate_prompt_context,
                     ),
                 ).fetchone()
             if row is None:

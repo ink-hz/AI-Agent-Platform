@@ -13,6 +13,14 @@ from app.agent_brain.conversation_repository import (
     ConversationRepositoryNotFound,
 )
 
+from .candidate_models import CandidateEnvelopeFragment
+from .candidate_repository import (
+    CandidateConflict,
+    CandidateNotFound,
+    CandidateUnavailable,
+)
+from .candidate_service import CandidateScopeViolation
+from .position_intelligence_models import PositionTaskRequest
 from .position_intelligence_repository import (
     PositionContextConflict,
     PositionContextNotFound,
@@ -167,7 +175,15 @@ def _status(value: object) -> TaskStatus:
 
 
 class HrPositionTaskService:
-    def __init__(self, intelligence, conversations, position_scope, projection) -> None:
+    def __init__(
+        self,
+        intelligence,
+        conversations,
+        position_scope,
+        projection,
+        *,
+        candidate_validator=None,
+    ) -> None:
         if not callable(getattr(intelligence, "create_task_request", None)):
             raise TypeError("position intelligence service required")
         if any(
@@ -189,6 +205,11 @@ class HrPositionTaskService:
         self._conversations = conversations
         self.position_scope = position_scope
         self._projection = projection
+        if candidate_validator is not None and not callable(
+            getattr(candidate_validator, "for_task", None)
+        ):
+            raise TypeError("candidate task validator required")
+        self._candidate_validator = candidate_validator
 
     def start(
         self,
@@ -244,6 +265,44 @@ class HrPositionTaskService:
             position_candidate_id=position_candidate_id,
         )
         try:
+            existing_request = None
+            read_request = getattr(self._intelligence, "task_request", None)
+            if callable(read_request):
+                existing_request = read_request(owner_id, position_id, request_id)
+            candidate_snapshot = None
+            if task_kind in CANDIDATE_TASK_KINDS:
+                if isinstance(existing_request, PositionTaskRequest):
+                    if existing_request.candidate_snapshot_sha256 is None:
+                        raise HrPositionTaskUnavailable(
+                            "candidate task snapshot unavailable"
+                        )
+                    candidate_snapshot = CandidateEnvelopeFragment(
+                        candidate_id=existing_request.candidate_id,
+                        position_candidate_id=existing_request.position_candidate_id,
+                        context_version_id=existing_request.expected_context_version_id,
+                        document_ids=existing_request.document_ids,
+                        document_attachment_ids=(
+                            existing_request.document_attachment_ids
+                        ),
+                        human_feedback_ids=existing_request.human_feedback_ids,
+                        prompt_context=existing_request.candidate_prompt_context,
+                    )
+                elif self._candidate_validator is None:
+                    raise HrPositionTaskUnavailable(
+                        "candidate task validator unavailable"
+                    )
+                else:
+                    candidate_snapshot = self._candidate_validator.for_task(
+                        owner_id,
+                        position_id,
+                        candidate_id,
+                        position_candidate_id,
+                    )
+                if (
+                    not isinstance(candidate_snapshot, CandidateEnvelopeFragment)
+                    or candidate_snapshot.context_version_id != context_version_id
+                ):
+                    raise CandidateScopeViolation("candidate task context mismatch")
             if (
                 conversation_id is not None
                 and self.position_scope.for_conversation(owner_id, conversation_id)
@@ -260,6 +319,7 @@ class HrPositionTaskService:
                 material_attachment_ids=normalized_materials,
                 candidate_id=candidate_id,
                 position_candidate_id=position_candidate_id,
+                candidate_snapshot=candidate_snapshot,
             )
             # Position materials remain pinned to the HR request; the HR context
             # grants them without rebinding their Conversation ownership.
@@ -303,6 +363,12 @@ class HrPositionTaskService:
             raise HrPositionTaskConflict("position task conflict") from None
         except PositionIntelligenceUnavailable:
             raise HrPositionTaskUnavailable("position task unavailable") from None
+        except CandidateNotFound:
+            raise HrPositionTaskNotFound("candidate task not found") from None
+        except (CandidateConflict, CandidateScopeViolation):
+            raise HrPositionTaskConflict("candidate task conflict") from None
+        except CandidateUnavailable:
+            raise HrPositionTaskUnavailable("candidate task unavailable") from None
         except ConversationRepositoryNotFound:
             raise HrPositionTaskNotFound("position conversation not found") from None
         except ConversationRepositoryConflict:
