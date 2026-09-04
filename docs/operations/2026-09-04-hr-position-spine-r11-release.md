@@ -1,7 +1,7 @@
 # HR Position Spine R1.1 发布验收记录
 
 日期：2026-09-04
-状态：代码验收中，尚未发布生产
+状态：代码验收通过，尚未发布生产
 
 ## 发布范围
 
@@ -27,7 +27,9 @@
 - 官网导入和历史发现均使用稳定请求 ID，重复执行不创建重复岗位、草稿或绑定。
 - 每一条导入投影/绑定/草稿及其来源证据在同一数据库事务提交，证据失败时业务写入回滚。
 - 历史发现只建立岗位对象和关系，不重放 Turn，也不伪造历史 Agent 回答。
+- 历史导入证据明确区分会话标题与具体消息；标题命中不会伪造为第 1 条消息。
 - 多岗位会话按岗位分别形成草稿；未经用户确认不自动绑定。
+- 会话创建请求重放必须保持最初的 Position 或 PositionDraft 作用域，跨岗位重放返回冲突。
 - Position Detail 返回精确的 `conversation_ids`、`material_attachment_ids` 和
   `artifact_ids`；网页端不以数量或宽泛会话列表推断作用域。
 - 只有用户上传附件可被明确设为岗位材料；Agent 生成附件保留为可下载结果。
@@ -80,10 +82,10 @@ R1.1 核心验收：
 
 本地最终验证：
 
-- Platform 后端全量：`4782 passed, 3 skipped`；另有 236 条既有 Starlette
+- Platform 后端全量：`4892 passed, 3 skipped`；另有 246 条既有 Starlette
   TestClient cookie 弃用警告。
-- R1.1 后端聚焦验收：`55 passed`；另有 6 条同类既有警告。
-- WebUI 全量：`96` 个测试文件、`828 passed`；jsdom 输出既有 `scrollTo`
+- R1.1 后端聚焦验收：`68 passed`；另有 10 条同类既有警告。
+- WebUI 全量：`99` 个测试文件、`851 passed`；jsdom 输出既有 `scrollTo`
   未实现提示，不影响测试结果。
 - WebUI production build：通过；Vite 仅提示既有大 chunk 优化建议。
 - `git diff --check`：通过。
@@ -126,3 +128,5 @@ R1.1 核心验收：
 应用回滚只切换 Agent Platform 当前 Release 和本应用镜像，不删除 PostgreSQL 持久数据，
 也不反向删除已创建的岗位、草稿、材料或会话绑定。回滚前后必须验收登录、HR 岗位列表、
 岗位详情、原 HR 会话工作台、附件下载、`/office/` 和 FAE；不得重启或改写无关应用。
+迁移 065 暂时保留旧版登录函数 `consume_attempt_and_issue_session_v22` 的应用角色执行权限，
+支持数据库先迁移、旧应用节点短时共存和应用回滚；待既定回滚窗口结束后再单独迁移撤权。
