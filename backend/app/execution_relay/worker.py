@@ -56,6 +56,7 @@ _FORCED_TERMINAL_STATES = frozenset({"cancelled", "interrupted"})
 _MAX_PENDING_STOPS = 100
 _BACKOFF_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
 _LOG = logging.getLogger("app.execution_relay.worker")
+LeaseOutcome = Literal["leased", "empty", "at_capacity", "failed"]
 
 
 class CloudRelayError(RuntimeError):
@@ -539,6 +540,7 @@ class WorkerRuntime:
         self._state_lock = asyncio.Lock()
         self._lease_lock = asyncio.Lock()
         self._upload_lock = asyncio.Lock()
+        self._last_lease_outcome: LeaseOutcome = "empty"
 
     def stop(self) -> None:
         self.shutdown_event.set()
@@ -640,6 +642,7 @@ class WorkerRuntime:
             async with self._state_lock:
                 at_capacity = len(self._runs) >= self.max_concurrent_runs
             if at_capacity:
+                self._last_lease_outcome = "at_capacity"
                 return True
             async with self._state_lock:
                 self._lease_claim_active = True
@@ -651,9 +654,11 @@ class WorkerRuntime:
             except Exception as error:
                 self._lease_claim_active = False
                 self._safe_log("lease_failed", error)
+                self._last_lease_outcome = "failed"
                 return False
             if lease is None:
                 self._lease_claim_active = False
+                self._last_lease_outcome = "empty"
                 return True
             run_id = lease.payload.run_id
             agent_id = lease.payload.agent_id
@@ -688,6 +693,7 @@ class WorkerRuntime:
                         )
                         await self._store_call("mark_terminal", run_id, status)
                         context.terminal_status = status
+                        self._last_lease_outcome = "leased"
                         return True
                     callback_url = (
                         f"http://127.0.0.1:{self.callback_port}/callbacks/"
@@ -710,6 +716,7 @@ class WorkerRuntime:
                     result = dispatch_task.result()
                     if cancelled:
                         raise asyncio.CancelledError
+                    self._last_lease_outcome = "leased" if result else "failed"
                     return result
             except asyncio.CancelledError:
                 raise
@@ -732,6 +739,7 @@ class WorkerRuntime:
                             run_id=run_id,
                             agent_id=agent_id,
                         )
+                self._last_lease_outcome = "failed"
                 return False
             finally:
                 self._lease_claim_active = False
@@ -1070,7 +1078,9 @@ async def lease_loop(runtime: WorkerRuntime) -> None:
         succeeded = await runtime.lease_once()
         if succeeded:
             backoff.reset()
-            await runtime.pause(0.25)
+            await runtime.pause(
+                1.0 if runtime._last_lease_outcome == "empty" else 0.25
+            )
         else:
             await runtime.pause(backoff.next_delay())
 
