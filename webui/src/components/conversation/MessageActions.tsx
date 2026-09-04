@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Check, CircleAlert, Copy, ThumbsDown, ThumbsUp } from "lucide-react";
 
 import { copyVisibleText } from "../../clipboard";
 import type { ConversationFeedbackReason, ConversationFeedbackRating } from "../../conversationTypes";
@@ -27,13 +28,14 @@ export function MessageActions({ copyText, feedbackState, onCopy = copyVisibleTe
   }, [copyState]);
   const disabled = Boolean(feedbackState && feedbackState !== "error");
   const changeComment = (value: string) => setComment(Array.from(value).slice(0, 1000).join(""));
+  const copyLabel = copyState === "copied" ? "已复制" : copyState === "error" ? "复制失败" : "复制回答";
   return <footer className="conversation-message-actions">
     <div className="conversation-message-action-row">
-      <button onClick={() => void onCopy(copyText()).then((ok) => setCopyState(ok ? "copied" : "error")).catch(() => setCopyState("error"))} type="button">
-        {copyState === "copied" ? "已复制" : copyState === "error" ? "复制失败" : "复制"}
+      <button aria-label={copyLabel} className={`copy-answer-button ${copyState}`} onClick={() => void onCopy(copyText()).then((ok) => setCopyState(ok ? "copied" : "error")).catch(() => setCopyState("error"))} title={copyLabel} type="button">
+        {copyState === "copied" ? <Check size={15} /> : copyState === "error" ? <CircleAlert size={15} /> : <Copy size={15} />}
       </button>
-      {onFeedback && <><button aria-label="这个回答有帮助" className={feedbackState === "helpful" ? "is-selected" : ""} disabled={disabled} onClick={() => onFeedback("helpful", null, null)} type="button">有帮助</button>
-        <button aria-label="这个回答需改进" className={feedbackState === "unhelpful" ? "is-selected" : ""} disabled={disabled} onClick={() => setImproving(true)} type="button">需改进</button></>}
+      {onFeedback && <><button aria-label="有用" className={`feedback-icon-button ${feedbackState === "helpful" ? "is-selected" : ""}`} disabled={disabled} onClick={() => onFeedback("helpful", null, null)} title="有用" type="button"><ThumbsUp size={15} /></button>
+        <button aria-label="不达标" className={`feedback-icon-button ${feedbackState === "unhelpful" ? "is-selected" : ""}`} disabled={disabled} onClick={() => setImproving(true)} title="不达标" type="button"><ThumbsDown size={15} /></button></>}
       {onRetry && <button onClick={onRetry} type="button">重新生成</button>}
       {(feedbackState === "helpful" || feedbackState === "unhelpful") && <span>已记录你的反馈</span>}
     </div>

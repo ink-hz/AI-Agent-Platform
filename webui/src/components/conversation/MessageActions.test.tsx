@@ -15,15 +15,22 @@ describe("MessageActions", () => {
   });
   afterEach(async () => { await act(async () => root.unmount()); container.remove(); });
 
-  it("copies visible text and opens a reason/comment panel before downvote submission", async () => {
+  it("uses accessible icon actions and opens a reason/comment panel before downvote submission", async () => {
     const onCopy = vi.fn().mockResolvedValue(true); const onFeedback = vi.fn();
     await act(async () => root.render(<MessageActions
       copyText={() => "渲染后的回答"} feedbackState={undefined} onCopy={onCopy} onFeedback={onFeedback}
     />));
-    await act(async () => [...container.querySelectorAll("button")].find((item) => item.textContent === "复制")?.click());
+    const copy = container.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')!;
+    const helpful = container.querySelector<HTMLButtonElement>('[aria-label="有用"]')!;
+    const unhelpful = container.querySelector<HTMLButtonElement>('[aria-label="不达标"]')!;
+    expect(copy.querySelector("svg")).not.toBeNull();
+    expect(helpful.querySelector("svg")).not.toBeNull();
+    expect(unhelpful.querySelector("svg")).not.toBeNull();
+
+    await act(async () => copy.click());
     expect(onCopy).toHaveBeenCalledWith("渲染后的回答");
-    expect(container.textContent).toContain("已复制");
-    await act(async () => [...container.querySelectorAll("button")].find((item) => item.textContent === "需改进")?.click());
+    expect(container.querySelector('[aria-label="已复制"]')).not.toBeNull();
+    await act(async () => unhelpful.click());
     expect(onFeedback).not.toHaveBeenCalled();
     expect(container.textContent).toContain("文件或格式有问题");
     expect(container.textContent).toContain("来源或时效有问题");

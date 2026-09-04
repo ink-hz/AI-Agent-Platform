@@ -589,7 +589,7 @@ describe("ConversationPage", () => {
     ));
 
     const helpful = container.querySelector<HTMLButtonElement>(
-      "button[aria-label='这个回答有帮助']",
+      "button[aria-label='有用']",
     );
     expect(helpful).not.toBeNull();
     await act(async () => helpful?.click());
@@ -599,7 +599,7 @@ describe("ConversationPage", () => {
     );
     expect(container.textContent).toContain("已记录你的反馈");
     expect(container.querySelector<HTMLButtonElement>(
-      "button[aria-label='这个回答需改进']",
+      "button[aria-label='不达标']",
     )?.disabled).toBe(true);
   });
 
@@ -613,7 +613,7 @@ describe("ConversationPage", () => {
       account={account} client={client({ submitFeedback })} conversationId={conversationId}
     />));
 
-    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-label='这个回答需改进']")?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-label='不达标']")?.click());
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>(".conversation-feedback-detail button")]
       .find((button) => button.textContent === "信息不完整")?.click());
     const comment = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='补充改进建议']")!;
