@@ -117,6 +117,16 @@ class HrTaskContextSource(Protocol):
     ) -> object: ...
 
 
+class CandidateEnvelopeFragment(Protocol):
+    candidate_id: UUID
+    position_candidate_id: UUID
+    context_version_id: UUID
+    document_ids: tuple[UUID, ...]
+    document_attachment_ids: tuple[UUID, ...]
+    human_feedback_ids: tuple[UUID, ...]
+    prompt_context: str
+
+
 class CandidateEnvelopeProvider(Protocol):
     def for_task(
         self,
@@ -127,29 +137,48 @@ class CandidateEnvelopeProvider(Protocol):
     ) -> CandidateEnvelopeFragment: ...
 
 
-@dataclass(frozen=True, slots=True)
-class CandidateEnvelopeFragment:
-    candidate_id: UUID
-    position_candidate_id: UUID
-    context_version_id: UUID
-    document_attachment_ids: tuple[UUID, ...]
-    human_feedback_ids: tuple[UUID, ...]
-    prompt_context: str
-
-    def __post_init__(self) -> None:
-        if any(not isinstance(value, UUID) for value in (
-            self.candidate_id, self.position_candidate_id, self.context_version_id,
-        )):
-            raise ValueError("candidate context identifiers invalid")
-        for values in (self.document_attachment_ids, self.human_feedback_ids):
-            if not isinstance(values, tuple) or any(
-                not isinstance(value, UUID) for value in values
-            ) or len(values) != len(set(values)) or len(values) > 100:
-                raise ValueError("candidate context identifiers invalid")
-        if not self.document_attachment_ids:
-            raise ValueError("candidate documents unavailable")
-        if not isinstance(self.prompt_context, str) or not self.prompt_context.strip():
-            raise ValueError("candidate prompt context invalid")
+def _validated_candidate_fragment(
+    fragment: object,
+    scope: HrTaskScope,
+) -> CandidateEnvelopeFragment:
+    if (
+        not isinstance(getattr(fragment, "candidate_id", None), UUID)
+        or not isinstance(getattr(fragment, "position_candidate_id", None), UUID)
+        or not isinstance(getattr(fragment, "context_version_id", None), UUID)
+        or fragment.candidate_id != scope.candidate_id
+        or fragment.position_candidate_id != scope.position_candidate_id
+        or scope.context is None
+        or fragment.context_version_id != scope.context.context_version_id
+    ):
+        raise HrTaskContextError("candidate context scope invalid")
+    document_ids = getattr(fragment, "document_ids", None)
+    attachment_ids = getattr(fragment, "document_attachment_ids", None)
+    if (
+        not isinstance(document_ids, tuple)
+        or not isinstance(attachment_ids, tuple)
+        or not document_ids
+        or not attachment_ids
+        or len(document_ids) != len(attachment_ids)
+    ):
+        raise HrTaskContextError("candidate documents unavailable")
+    feedback_ids = getattr(fragment, "human_feedback_ids", None)
+    for values in (document_ids, attachment_ids, feedback_ids):
+        if (
+            not isinstance(values, tuple)
+            or len(values) > 100
+            or len(values) != len(set(values))
+            or any(not isinstance(value, UUID) for value in values)
+        ):
+            raise HrTaskContextError("candidate context scope invalid")
+    prompt_context = getattr(fragment, "prompt_context", None)
+    if (
+        not isinstance(prompt_context, str)
+        or not prompt_context.strip()
+        or "\0" in prompt_context
+        or len(prompt_context) > 131072
+    ):
+        raise HrTaskContextError("candidate context scope invalid")
+    return fragment  # type: ignore[return-value]
 
 
 def _canonical_document(envelope: HrPositionContextEnvelope) -> dict[str, object]:
@@ -212,6 +241,7 @@ def _prompt(scope: HrTaskScope, candidate_fragment: CandidateEnvelopeFragment | 
             "status_reason": scope.official.status_reason,
             "consecutive_misses": scope.official.consecutive_misses,
             "source_changed_at": scope.official.source_changed_at.isoformat(),
+            "source_snapshot_at": scope.official.source_snapshot_at.isoformat(),
             "first_observed_at": scope.official.first_observed_at.isoformat(),
             "last_observed_at": scope.official.last_observed_at.isoformat(),
             "source_version": scope.official.source_version,
@@ -335,24 +365,9 @@ class HrTaskContextProvider:
                 raise HrTaskContextError(
                     "candidate context unavailable"
                 ) from None
-            if not isinstance(candidate_fragment, CandidateEnvelopeFragment):
-                raise HrTaskContextError("candidate context scope invalid")
-            if (
-                getattr(candidate_fragment, "candidate_id", None) != scope.candidate_id
-                or getattr(candidate_fragment, "position_candidate_id", None)
-                != scope.position_candidate_id
-                or candidate_fragment.context_version_id
-                != scope.context.context_version_id
-            ):
-                raise HrTaskContextError("candidate context scope invalid")
-            document_ids = tuple(
-                getattr(candidate_fragment, "document_attachment_ids", ())
-            )
-            feedback_ids = tuple(
-                getattr(candidate_fragment, "human_feedback_ids", ())
-            )
-            if not document_ids:
-                raise HrTaskContextError("candidate documents unavailable")
+            candidate_fragment = _validated_candidate_fragment(candidate_fragment, scope)
+            document_ids = candidate_fragment.document_attachment_ids
+            feedback_ids = candidate_fragment.human_feedback_ids
         prompt_context = _prompt(scope, candidate_fragment)
         placeholder = HrPositionContextEnvelope(
             position_id=scope.position_id,

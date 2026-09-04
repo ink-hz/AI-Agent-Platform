@@ -192,6 +192,7 @@ def _official(record) -> dict[str, object]:
         "requirement": record.requirement,
         "source_version": record.source_version,
         "source_changed_at": record.source_changed_at.isoformat(),
+        "source_snapshot_at": record.source_snapshot_at.isoformat(),
         "content_hash": record.content_hash,
         "first_observed_at": record.first_observed_at.isoformat(),
         "last_observed_at": record.last_observed_at.isoformat(),

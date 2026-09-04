@@ -114,3 +114,34 @@ def test_service_builds_durable_task_request_before_conversation() -> None:
     assert result.task_request_id == generated_id
     assert result.client_request_id == request_id
     assert repository.calls[-1] == ("task_request", result)
+
+
+def test_default_service_ids_are_deterministic_per_operation_and_request() -> None:
+    owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()
+    repository = RecordingRepository(_context(owner_id, position_id, context_id))
+    service = PositionIntelligenceService(repository)
+    request_id = uuid4()
+
+    for _ in range(2):
+        service.create_draft(
+            owner_id=owner_id, position_id=position_id, request_id=request_id,
+            base_context_version_id=None, official_version_id=None,
+            modules={"mission": {}}, summary="summary",
+        )
+        service.create_task_request(
+            owner_id=owner_id, position_id=position_id, request_id=request_id,
+            canonical_payload_sha256="a" * 64, task_kind="jd",
+            expected_context_version_id=None,
+        )
+
+    draft_ids = [
+        value.context_version_id for kind, value in repository.calls
+        if kind == "draft"
+    ]
+    task_ids = [
+        value.task_request_id for kind, value in repository.calls
+        if kind == "task_request"
+    ]
+    assert draft_ids[0] == draft_ids[1]
+    assert task_ids[0] == task_ids[1]
+    assert draft_ids[0] != task_ids[0]

@@ -277,6 +277,7 @@ def project_official_jobs(
             },
             consecutive_misses=job.consecutive_misses,
             official_status_code=job.official_status,
+            source_snapshot_at=snapshot.last_successful_sync_at,
         ))
         projected.append(OfficialPositionProjection(record, official_version))
     return tuple(projected)

@@ -93,6 +93,7 @@ def _official(row: dict[str, Any]) -> OfficialPositionVersion:
         created_at=row["created_at"],
         consecutive_misses=row["consecutive_misses"],
         official_status_code=row["official_status_code"],
+        source_snapshot_at=row["source_snapshot_at"],
     )
 
 
@@ -213,7 +214,7 @@ class PositionIntelligenceRepository:
                 row = connection.execute(
                     "select (platform_hr.project_official_version_v69("
                     "%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,"
-                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)).*",
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)).*",
                     (
                         command.official_position_version_id,
                         command.owner_id,
@@ -241,6 +242,7 @@ class PositionIntelligenceRepository:
                         json.dumps(thaw_json(command.evidence), ensure_ascii=False),
                         command.consecutive_misses,
                         command.official_status_code,
+                        command.source_snapshot_at,
                     ),
                 ).fetchone()
             if row is None:

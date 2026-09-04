@@ -159,6 +159,7 @@ class OfficialPositionVersion:
     created_at: datetime
     consecutive_misses: int = 0
     official_status_code: int = 0
+    source_snapshot_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for value in (self.official_position_version_id, self.owner_id, self.position_id):
@@ -193,6 +194,8 @@ class OfficialPositionVersion:
             raise ValueError("official content hash invalid")
         for value in (self.source_changed_at, self.first_observed_at, self.last_observed_at, self.created_at):
             _aware(value)
+        snapshot_at = self.last_observed_at if self.source_snapshot_at is None else self.source_snapshot_at
+        object.__setattr__(self, "source_snapshot_at", _aware(snapshot_at))
         if self.first_observed_at > self.last_observed_at:
             raise ValueError("official observation range invalid")
         object.__setattr__(self, "evidence", _object(self.evidence, 65536, "official evidence invalid"))
@@ -226,6 +229,7 @@ class ProjectOfficialVersion:
     evidence: dict[str, object]
     consecutive_misses: int = 0
     official_status_code: int = 0
+    source_snapshot_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -262,6 +266,7 @@ class ProjectOfficialVersion:
             created_at=self.first_observed_at,
             consecutive_misses=self.consecutive_misses,
             official_status_code=self.official_status_code,
+            source_snapshot_at=self.source_snapshot_at,
         )
         object.__setattr__(self, "official_job_id", normalized.official_job_id)
         object.__setattr__(self, "title", normalized.title)
@@ -276,6 +281,7 @@ class ProjectOfficialVersion:
         object.__setattr__(self, "official_status", normalized.official_status)
         object.__setattr__(self, "status_reason", normalized.status_reason)
         object.__setattr__(self, "evidence", normalized.evidence)
+        object.__setattr__(self, "source_snapshot_at", normalized.source_snapshot_at)
 
 
 @dataclass(frozen=True, slots=True)

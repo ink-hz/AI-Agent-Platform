@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Protocol
-from uuid import UUID, uuid4
+from uuid import UUID, uuid5
 
 from .position_intelligence_models import (
     ConfirmContextModules,
@@ -29,7 +29,7 @@ class PositionIntelligenceService:
         self,
         repository: PositionIntelligenceCommands,
         *,
-        uuid_factory: Callable[[], UUID] = uuid4,
+        uuid_factory: Callable[[], UUID] | None = None,
     ) -> None:
         for name in (
             "current", "list_versions", "create_draft", "confirm_modules",
@@ -38,10 +38,15 @@ class PositionIntelligenceService:
         ):
             if not callable(getattr(repository, name, None)):
                 raise ValueError("position intelligence repository invalid")
-        if not callable(uuid_factory):
+        if uuid_factory is not None and not callable(uuid_factory):
             raise ValueError("position intelligence UUID factory invalid")
         self._repository = repository
         self._uuid_factory = uuid_factory
+
+    def _resource_id(self, owner_id: UUID, request_id: UUID, operation: str) -> UUID:
+        if self._uuid_factory is not None:
+            return self._uuid_factory()
+        return uuid5(owner_id, f"position-intelligence:{operation}:{request_id}")
 
     def current(self, owner_id: UUID, position_id: UUID) -> PositionContextVersion | None:
         return self._repository.current(owner_id, position_id)
@@ -76,7 +81,7 @@ class PositionIntelligenceService:
         position_candidate_id: UUID | None = None,
     ) -> object:
         return self._repository.create_task_request(CreatePositionTaskRequest(
-            task_request_id=self._uuid_factory(),
+            task_request_id=self._resource_id(owner_id, request_id, "task-request"),
             owner_id=owner_id,
             position_id=position_id,
             client_request_id=request_id,
@@ -113,7 +118,7 @@ class PositionIntelligenceService:
     ) -> PositionContextVersion:
         return self._repository.create_draft(CreateContextDraft(
             owner_id=owner_id,
-            context_version_id=self._uuid_factory(),
+            context_version_id=self._resource_id(owner_id, request_id, "context-draft"),
             position_id=position_id,
             base_context_version_id=base_context_version_id,
             official_version_id=official_version_id,

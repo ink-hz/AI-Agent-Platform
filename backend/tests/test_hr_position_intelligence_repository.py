@@ -22,6 +22,7 @@ from app.hr.position_intelligence_repository import (
     PositionContextNotFound,
     PositionIntelligenceRepository,
 )
+from app.hr.position_intelligence_service import PositionIntelligenceService
 from app.hr.repository import HrPositionRepository
 from test_control_plane_migration import control_database
 
@@ -213,6 +214,7 @@ def test_official_versions_are_append_only_and_older_observation_cannot_rollback
         "c" * 64, datetime(2026, 9, 4, tzinfo=UTC),
         datetime(2026, 9, 4, 2, tzinfo=UTC), "active", "published",
         {"snapshot": "sync-v2"}, consecutive_misses=0, official_status_code=1,
+        source_snapshot_at=datetime(2026, 9, 4, 3, tzinfo=UTC),
     )
     newest = repository.project_official_version(base)
     older = repository.project_official_version(replace(
@@ -220,10 +222,11 @@ def test_official_versions_are_append_only_and_older_observation_cannot_rollback
         official_position_version_id=uuid4(),
         client_request_id=uuid4(),
         source_version="sync-v1",
-        source_changed_at=datetime(2026, 9, 4, 1, tzinfo=UTC),
-        last_observed_at=datetime(2026, 9, 4, 1, tzinfo=UTC),
+        source_changed_at=base.source_changed_at,
+        last_observed_at=base.last_observed_at,
         official_status="stale",
         status_reason="older snapshot",
+        source_snapshot_at=datetime(2026, 9, 4, 2, tzinfo=UTC),
     ))
 
     assert older.official_position_version_id != newest.official_position_version_id
@@ -261,6 +264,39 @@ def test_task_request_is_durable_and_replay_compares_full_payload(control_databa
     ) == first
     with pytest.raises(PositionContextConflict):
         repository.create_task_request(replace(command, task_kind="jr"))
+
+
+@pytest.mark.postgres
+def test_default_service_replays_task_request_and_context_draft_with_same_ids(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Service Replay Owner")
+    position = HrPositionRepository(
+        environment["urls"]["platform_control_app"]
+    ).create_manual(CreateManualPosition(owner_id, uuid4(), uuid4(), "重试岗位"))
+    service = PositionIntelligenceService(PositionIntelligenceRepository(
+        environment["urls"]["platform_control_app"]
+    ))
+    task_request_id = uuid4()
+    draft_request_id = uuid4()
+    task_args = dict(
+        owner_id=owner_id, position_id=position.position_id,
+        request_id=task_request_id, canonical_payload_sha256="8" * 64,
+        task_kind="jd", expected_context_version_id=None,
+    )
+    draft_args = dict(
+        owner_id=owner_id, position_id=position.position_id,
+        request_id=draft_request_id, base_context_version_id=None,
+        official_version_id=None, modules={"mission": {"text": "stable"}},
+        summary="stable draft",
+    )
+
+    assert service.create_task_request(**task_args) == service.create_task_request(
+        **task_args
+    )
+    assert service.create_draft(**draft_args) == service.create_draft(**draft_args)
 
 
 @pytest.mark.postgres

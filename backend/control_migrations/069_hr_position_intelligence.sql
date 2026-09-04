@@ -27,6 +27,7 @@ create table platform_hr.official_position_versions (
     check (char_length(btrim(requirement)) between 1 and 131072),
   source_version text not null check (char_length(source_version) between 1 and 256),
   source_changed_at timestamptz not null,
+  source_snapshot_at timestamptz not null,
   content_hash text not null check (content_hash ~ '^[a-f0-9]{64}$'),
   first_observed_at timestamptz not null,
   last_observed_at timestamptz not null,
@@ -320,7 +321,8 @@ create function platform_hr.project_official_version_v69(
   selected_status_reason text,
   selected_evidence jsonb,
   selected_consecutive_misses integer,
-  selected_official_status_code integer
+  selected_official_status_code integer,
+  selected_source_snapshot_at timestamptz
 ) returns platform_hr.official_position_versions
 language plpgsql security definer
 set search_path=pg_catalog,platform_hr
@@ -361,7 +363,8 @@ begin
       or selected.status_reason<>btrim(selected_status_reason)
       or selected.evidence<>selected_evidence
       or selected.consecutive_misses<>selected_consecutive_misses
-      or selected.official_status_code<>selected_official_status_code then
+      or selected.official_status_code<>selected_official_status_code
+      or selected.source_snapshot_at<>selected_source_snapshot_at then
       raise unique_violation using message='official version idempotency payload mismatch';
     end if;
     return selected;
@@ -375,7 +378,7 @@ begin
       official_position_version_id,owner_internal_user_id,position_id,
       client_request_id,official_job_id,title,department,locations,category,
       subcategory,headcount,degree,employment_type,salary,duty,requirement,
-      source_version,source_changed_at,content_hash,first_observed_at,
+      source_version,source_changed_at,source_snapshot_at,content_hash,first_observed_at,
       last_observed_at,official_status,status_reason,evidence,
       consecutive_misses,official_status_code
     ) values (
@@ -386,7 +389,8 @@ begin
       selected_headcount,nullif(btrim(selected_degree),''),
       btrim(selected_employment_type),btrim(selected_salary),btrim(selected_duty),
       btrim(selected_requirement),selected_source_version,
-      selected_source_changed_at,selected_content_hash,selected_first_observed_at,
+      selected_source_changed_at,selected_source_snapshot_at,
+      selected_content_hash,selected_first_observed_at,
       selected_last_observed_at,selected_official_status,
       btrim(selected_status_reason),selected_evidence,
       selected_consecutive_misses,selected_official_status_code
@@ -402,9 +406,13 @@ begin
         where current_version.official_position_version_id=current_official_version_id
           and current_version.owner_internal_user_id=selected_owner_internal_user_id
           and (
-            current_version.last_observed_at>selected_last_observed_at
-            or (current_version.last_observed_at=selected_last_observed_at
-              and current_version.source_changed_at>selected_source_changed_at)
+            current_version.source_snapshot_at,
+            current_version.last_observed_at,
+            current_version.source_changed_at,
+            current_version.source_version
+          ) >= (
+            selected_source_snapshot_at,selected_last_observed_at,
+            selected_source_changed_at,selected_source_version
           )
       )
     );
@@ -979,7 +987,7 @@ revoke all on all tables in schema platform_hr from public;
 revoke all on all functions in schema platform_hr from public;
 revoke all on function platform_hr.project_official_version_v69(
   uuid,uuid,uuid,uuid,text,text,text,jsonb,text,text,integer,text,text,text,
-  text,text,text,timestamptz,text,timestamptz,timestamptz,text,text,jsonb,integer,integer
+  text,text,text,timestamptz,text,timestamptz,timestamptz,text,text,jsonb,integer,integer,timestamptz
 ) from public;
 revoke all on function platform_hr.create_context_draft_v69(
   uuid,uuid,uuid,uuid,uuid,uuid,jsonb,text,uuid,uuid,uuid,uuid[],text,text,uuid
@@ -1021,7 +1029,7 @@ begin
   execute format(
     'grant execute on function platform_hr.project_official_version_v69('
     'uuid,uuid,uuid,uuid,text,text,text,jsonb,text,text,integer,text,text,text,'
-    'text,text,text,timestamptz,text,timestamptz,timestamptz,text,text,jsonb,integer,integer) to %I',
+    'text,text,text,timestamptz,text,timestamptz,timestamptz,text,text,jsonb,integer,integer,timestamptz) to %I',
     selected_app
   );
   execute format(

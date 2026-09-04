@@ -117,6 +117,7 @@ def test_migration_keeps_official_snapshots_and_confirmation_requests_immutable(
 
     assert "consecutive_misses integer" in sql
     assert "official_status_code integer" in sql
+    assert "source_snapshot_at timestamptz" in sql
     assert "confirmation_source_row_version bigint" in sql
     assert "guard_official_version_immutability_v69" in sql
     assert "update platform_hr.official_position_versions set" not in sql

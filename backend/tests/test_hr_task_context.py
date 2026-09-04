@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -21,7 +21,6 @@ from app.hr.position_intelligence_models import (
 from app.hr.position_intelligence_repository import PositionIntelligenceRepository
 from app.hr.repository import HrPositionRepository
 from app.hr.task_context import (
-    CandidateEnvelopeFragment,
     HrTaskContextError,
     HrTaskContextProvider,
     HrTaskMaterial,
@@ -75,16 +74,29 @@ class Source:
         return envelope
 
 
+@dataclass(frozen=True)
+class ExternalCandidateFragment:
+    candidate_id: object
+    position_candidate_id: object
+    context_version_id: object
+    document_ids: object
+    document_attachment_ids: object
+    human_feedback_ids: object
+    prompt_context: object
+
+
 class CandidateProvider:
     def __init__(self):
         self.calls = []
 
     def for_task(self, owner_id, position_id, candidate_id, position_candidate_id):
         self.calls.append((owner_id, position_id, candidate_id, position_candidate_id))
-        return CandidateEnvelopeFragment(
+        document_id = uuid4()
+        return ExternalCandidateFragment(
             candidate_id=candidate_id,
             position_candidate_id=position_candidate_id,
             context_version_id=self.context_version_id,
+            document_ids=(document_id,),
             document_attachment_ids=(uuid4(),),
             human_feedback_ids=(uuid4(),),
             prompt_context="Candidate evidence",
@@ -140,10 +152,35 @@ def test_candidate_tasks_require_exact_confirmed_context_and_documents() -> None
             owner_id, conversation_id, turn_id
         )
 
-    with pytest.raises(ValueError, match="candidate documents unavailable"):
-        CandidateEnvelopeFragment(
-            source.scope.candidate_id, source.scope.position_candidate_id,
-            context.context_version_id, (), (), "candidate",
+    candidate.context_version_id = context.context_version_id
+    candidate.for_task = lambda *args: ExternalCandidateFragment(  # type: ignore[method-assign]
+        args[2], args[3], context.context_version_id, (), (), (), "candidate"
+    )
+    with pytest.raises(HrTaskContextError, match="candidate documents unavailable"):
+        HrTaskContextProvider(source, candidate_provider=candidate).build_for_turn(
+            owner_id, conversation_id, turn_id
+        )
+
+
+def test_candidate_fragment_rejects_structurally_invalid_fields() -> None:
+    owner_id, position_id, official, context, material = _records()
+    conversation_id, turn_id = uuid4(), uuid4()
+    candidate_id, position_candidate_id = uuid4(), uuid4()
+    source = Source(HrTaskScope(
+        owner_id, position_id, conversation_id, turn_id, "candidate_match",
+        official, context, (material,), candidate_id, position_candidate_id,
+    ))
+
+    class InvalidProvider:
+        def for_task(self, *_args):
+            return ExternalCandidateFragment(
+                candidate_id, position_candidate_id, context.context_version_id,
+                ("not-a-uuid",), (uuid4(),), (), "candidate",
+            )
+
+    with pytest.raises(HrTaskContextError, match="candidate context scope invalid"):
+        HrTaskContextProvider(source, candidate_provider=InvalidProvider()).build_for_turn(
+            owner_id, conversation_id, turn_id
         )
 
 
