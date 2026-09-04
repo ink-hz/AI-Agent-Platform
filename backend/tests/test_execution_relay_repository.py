@@ -14,7 +14,12 @@ from app.execution_relay.content_crypto import (
     ContentCryptoError,
     SealedContent,
 )
-from app.execution_relay.models import RelayEvent, RelayJobPayload, RequesterSubject
+from app.execution_relay.models import (
+    OutputWriteGrantPayload,
+    RelayEvent,
+    RelayJobPayload,
+    RequesterSubject,
+)
 from app.execution_relay.repository import (
     ExecutionRelayConflict,
     ExecutionRelayError,
@@ -184,6 +189,40 @@ def test_enqueue_encrypts_payload_with_job_and_run_bound_subject(
         SealedContent(bytes(row[3]), row[4]),
     )
     assert RelayJobPayload.model_validate(sealed_payload) == payload
+
+
+@pytest.mark.postgres
+def test_v4_direct_agent_grant_survives_encrypted_json_lease_round_trip(
+    relay_database, repository
+) -> None:
+    task_id = uuid4()
+    payload = RelayJobPayload(
+        **{
+            **_payload(run_id=uuid4()).model_dump(),
+            "job_kind": "direct_agent",
+            "result_mode": "public_markdown",
+            "collaboration_contract": "core_chat_collaboration_v4",
+            "task_session_id": "task-session-000000000104",
+            "output_write_grant": OutputWriteGrantPayload(
+                task_id=task_id,
+                agent_id="hr-bot",
+                upload_url=(
+                    f"/api/v1/execution-worker/tasks/{task_id}/artifacts"
+                ),
+                bearer_token="A" * 43,
+                max_files=20,
+                max_total_bytes=250 * 1024 * 1024,
+            ),
+        }
+    )
+    repository.enqueue(payload)
+
+    lease = repository.lease("worker-a", ("hr-bot",), 45, ("direct_agent",))
+
+    assert lease is not None
+    assert lease.payload == payload
+    assert lease.payload.output_write_grant is not None
+    assert lease.payload.output_write_grant.task_id == task_id
 
 
 @pytest.mark.postgres
