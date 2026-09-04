@@ -108,6 +108,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   conversationBytes?: number;
   conversationFileCount?: number;
   conversationId: string | null;
+  compact?: boolean;
   csrfToken: string;
   disabled?: boolean;
   limits?: AgentAttachmentLimits;
@@ -122,6 +123,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   conversationBytes = 0,
   conversationFileCount = 0,
   conversationId,
+  compact = false,
   csrfToken,
   disabled = false,
   limits = {
@@ -278,7 +280,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   };
 
   return <section
-    className="attachment-uploader attachment-dropzone conversation-uploader"
+    className={`attachment-uploader attachment-dropzone conversation-uploader${compact ? " is-compact" : ""}`}
     onDragOver={(event) => event.preventDefault()}
     onDrop={drop}
     onPaste={paste}
@@ -295,6 +297,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
         <span aria-hidden="true">＋</span> 添加文件或图片
       </label>
     </div>
+    {!compact && <small>支持选择、拖放或粘贴；单条最多 {limits.max_files_per_message} 个、合计 {sizeLabel(limits.max_bytes_per_message)}</small>}
     {validationError && <p className="conversation-upload-error" role="alert">{validationError}</p>}
     {items.length > 0 && <ul className="conversation-upload-queue">{items.map((item) => <li className="conversation-upload-chip" key={item.localId} data-state={item.state}>
       <div><strong>{item.file.name}</strong><span>{item.state === "failed"

@@ -272,6 +272,7 @@ describe("professional Agent use pages", () => {
     expect(textarea.compareDocumentPosition(attachments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(attachments.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(form.textContent).toContain("添加文件或图片");
+    expect(form.textContent).not.toContain("支持选择、拖放或粘贴；单条最多");
     expect(form.textContent).not.toContain("直接交给 HR Agent");
   });
 

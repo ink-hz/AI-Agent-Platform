@@ -331,7 +331,7 @@ export function DirectAgentWorkspace({
               }} />
             {card.attachment_limits && <section className="agent-direct-attachments" aria-label="新对话附件">
               <AttachmentUploader ref={uploaderRef} acceptedInputTypes={card.accepted_input_types} conversationId={null}
-                csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
+                compact={agentId === "hr-bot"} csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
                 limits={card.attachment_limits} onChange={setUploadQueue} onError={setAttachmentError}
                 onReady={(attachment) => { setAttachments((current) => [...current, attachment]); setFailure(false); retained.current = null; }} />
               {attachments.map((attachment) => <AttachmentCard active attachment={attachment} key={attachment.attachmentId}

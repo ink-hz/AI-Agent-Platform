@@ -406,6 +406,30 @@ describe("ConversationPage", () => {
     expect(container.querySelector(".conversation-workspace-grid")).toBeNull();
   });
 
+  it("uses compact attachment controls for an existing HR conversation", async () => {
+    const limits = {
+      max_file_bytes: 50 * 1024 * 1024,
+      max_files_per_message: 5,
+      max_bytes_per_message: 50 * 1024 * 1024,
+      max_files_per_conversation: 50,
+      max_bytes_per_conversation: 500 * 1024 * 1024,
+    };
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      attachmentLimits={limits}
+      client={client({
+        fetchConversation: vi.fn().mockResolvedValue({ conversation: directConversation, current_turn: completedTurn }),
+        listAttachments: vi.fn().mockResolvedValue([]),
+      })}
+      conversationId={conversationId}
+      expectedAgentId="hr-bot"
+    />));
+
+    expect(container.querySelector(".conversation-uploader")?.classList.contains("is-compact")).toBe(true);
+    expect(container.textContent).not.toContain("支持选择、拖放或粘贴；单条最多");
+  });
+
   it("keeps a direct Agent composer locked while its current Turn is active", async () => {
     const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
     const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };

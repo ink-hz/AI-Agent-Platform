@@ -508,6 +508,7 @@ export function ConversationPage({
     <ConversationComposer
       attachmentControls={attachmentLimits ? <AttachmentUploader
         conversationId={conversationId} csrfToken={account.csrf_token}
+        compact={expectedAgentId === "hr-bot"}
         disabled={readOnly || (active && detail.conversation.mode === "direct_agent")}
         conversationBytes={attachments.filter((item) => item.source === "user").reduce((sum, item) => sum + item.sizeBytes, 0)}
         conversationFileCount={attachments.filter((item) => item.source === "user").length} onError={setAttachmentError}

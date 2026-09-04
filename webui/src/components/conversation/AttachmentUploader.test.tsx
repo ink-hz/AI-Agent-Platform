@@ -182,8 +182,19 @@ describe("AttachmentUploader", () => {
     expect(container.textContent).not.toContain("Attachment API 409");
   });
 
-  it("keeps an empty queue compact", async () => {
+  it("keeps the default uploader quota disclosure", async () => {
     await act(async () => root.render(<AttachmentUploader
+      conversationId="conversation-1"
+      csrfToken="csrf"
+      limits={limits}
+    />));
+
+    expect(container.textContent).toContain("支持选择、拖放或粘贴；单条最多");
+  });
+
+  it("keeps an empty HR compact queue free of quota disclosure", async () => {
+    await act(async () => root.render(<AttachmentUploader
+      compact
       conversationId="conversation-1"
       csrfToken="csrf"
       limits={limits}
