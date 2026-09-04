@@ -592,6 +592,8 @@ FAE_LIVE_REQUESTS = (
     "owner|GET|https://agent.orbbec.com.cn/api/v1/account",
     "member|GET|https://agent.orbbec.com.cn/api/v1/account",
     "viewer|GET|https://agent.orbbec.com.cn/api/v1/account",
+    "owner|GET|https://agent.orbbec.com.cn/api/v1/workspaces/fae/navigation",
+    "member|GET|https://agent.orbbec.com.cn/api/v1/workspaces/fae/navigation",
     "member|GET|https://agent.orbbec.com.cn/fae/",
     "member|GET|https://agent.orbbec.com.cn/fae/conversations/fae:owned-1",
     "owner|GET|https://agent.orbbec.com.cn/fae/manage/",
@@ -634,6 +636,7 @@ def test_fae_cloud_acceptance_uses_canonical_routes_with_bounded_compatibility()
     )
 
     for path in (
+        "/api/v1/workspaces/fae/navigation",
         "/fae/",
         "/fae/conversations/fae:owned-1",
         "/fae/manage/",
@@ -646,6 +649,8 @@ def test_fae_cloud_acceptance_uses_canonical_routes_with_bounded_compatibility()
         "/api/fae/reports/latest",
     ):
         assert path in contract
+    assert '{"management_workspace_url": "/fae/manage/"}' in contract
+    assert '{"management_workspace_url": None}' in contract
     compatibility = _bash_function(
         script,
         "verify_fae_reports_compatibility",
@@ -1403,6 +1408,12 @@ def _write_fae_curl_stub(path: Path) -> None:
                     "hard_stale_read_only": False,
                     "csrf_token": csrf,
                 }, separators=(",", ":"))
+            elif url.endswith("/api/v1/workspaces/fae/navigation"):
+                body = json.dumps({
+                    "management_workspace_url": (
+                        "/fae/manage/" if role == "owner" else None
+                    ),
+                }, separators=(",", ":"))
             elif role == "member" and (
                 url.endswith("/fae/") or "/fae/conversations/" in url
             ):
@@ -1570,15 +1581,17 @@ def test_fae_live_contract_fails_closed_at_every_curl_position(
 @pytest.mark.parametrize(
     "stub_environment",
     (
-        {"STUB_STATUS_AT": "6", "STUB_STATUS": "403"},
-        {"STUB_BODY_AT": "9", "STUB_BODY": "not-json"},
-        {"STUB_BODY_AT": "12", "STUB_BODY": "{}"},
-        {"STUB_BODY_AT": "13", "STUB_BODY": '{"different":true}'},
-        {"STUB_BODY_AT": "14", "STUB_BODY": "not-html"},
-        {"STUB_STATUS_AT": "15", "STUB_STATUS": "200"},
-        {"STUB_STATUS_AT": "18", "STUB_STATUS": "403"},
-        {"STUB_STATUS_AT": "19", "STUB_STATUS": "200"},
-        {"STUB_BODY_AT": "22", "STUB_BODY": "{}"},
+        {"STUB_BODY_AT": "4", "STUB_BODY": '{"management_workspace_url":null}'},
+        {"STUB_BODY_AT": "5", "STUB_BODY": '{"management_workspace_url":"/fae/manage/"}'},
+        {"STUB_STATUS_AT": "8", "STUB_STATUS": "403"},
+        {"STUB_BODY_AT": "11", "STUB_BODY": "not-json"},
+        {"STUB_BODY_AT": "14", "STUB_BODY": "{}"},
+        {"STUB_BODY_AT": "15", "STUB_BODY": '{"different":true}'},
+        {"STUB_BODY_AT": "16", "STUB_BODY": "not-html"},
+        {"STUB_STATUS_AT": "17", "STUB_STATUS": "200"},
+        {"STUB_STATUS_AT": "20", "STUB_STATUS": "403"},
+        {"STUB_STATUS_AT": "21", "STUB_STATUS": "200"},
+        {"STUB_BODY_AT": "24", "STUB_BODY": "{}"},
     ),
 )
 def test_fae_live_contract_rejects_wrong_status_or_body(tmp_path, stub_environment):

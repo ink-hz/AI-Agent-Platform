@@ -1248,6 +1248,73 @@ def test_account_projects_only_bounded_fae_workspace_scope(
     assert granted_member.json()["workspace_scopes"] == ["fae_workbench"]
 
 
+def test_fae_navigation_projects_only_the_bounded_management_url(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    granted_user_id = uuid4()
+    client = TestClient(
+        _app(
+            tmp_path,
+            monkeypatch,
+            auth,
+            fae_access=_GrantingFaeAccess(granted_user_id),
+        )
+    )
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    auth.context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+    owner = client.get("/api/v1/workspaces/fae/navigation", cookies=cookies)
+    auth.context = AuthContext(granted_user_id, Role.MEMBER, uuid4(), False)
+    granted_member = client.get(
+        "/api/v1/workspaces/fae/navigation", cookies=cookies
+    )
+    auth.context = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
+    ordinary_member = client.get(
+        "/api/v1/workspaces/fae/navigation", cookies=cookies
+    )
+
+    assert owner.status_code == 200
+    assert owner.json() == {"management_workspace_url": "/fae/manage/"}
+    assert granted_member.status_code == 200
+    assert granted_member.json() == {
+        "management_workspace_url": "/fae/manage/"
+    }
+    assert ordinary_member.status_code == 200
+    assert ordinary_member.json() == {"management_workspace_url": None}
+    for response in (owner, granted_member, ordinary_member):
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["pragma"] == "no-cache"
+
+
+def test_fae_navigation_requires_authentication(tmp_path, monkeypatch) -> None:
+    auth = FakeAuth()
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/api/v1/workspaces/fae/navigation"
+    )
+
+    assert response.status_code == 401
+
+
+def test_fae_navigation_fails_closed_without_leaking_account_data(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    response = TestClient(
+        _app(tmp_path, monkeypatch, auth, fae_access=_FailingFaeAccess())
+    ).get(
+        "/api/v1/workspaces/fae/navigation",
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "workspace navigation unavailable"}
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+
+
 @pytest.mark.parametrize(
     ("role", "has_fae_grant", "fae_status", "voc_status"),
     (

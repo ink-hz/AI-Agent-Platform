@@ -27,7 +27,7 @@ describe("FAE workbench shell", () => {
     expect(shell?.firstElementChild?.classList.contains("fae-workbench__sidebar")).toBe(true);
     expect(shell?.lastElementChild?.classList.contains("fae-workbench__content")).toBe(true);
     expect([...container.querySelectorAll<HTMLAnchorElement>('.fae-workbench__workspace-nav a')].map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
-      ["Agent", "/fae/"],
+      ["返回 FAE Agent", "/fae/"],
       ["管理", "/fae/manage/"],
     ]);
     expect([...container.querySelectorAll<HTMLAnchorElement>(".fae-workbench__sections a")].map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
