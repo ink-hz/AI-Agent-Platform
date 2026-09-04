@@ -12,11 +12,11 @@ from .models import (
     DismissPositionDraft,
     MergePositionDraft,
     PositionConversationBinding,
-    PositionMaterialRecord,
     PositionDraftRecord,
+    PositionMaterialRecord,
     PositionRecord,
-    ProposePositionDraft,
     PromotePositionMaterial,
+    ProposePositionDraft,
 )
 from .repository import PositionPage
 

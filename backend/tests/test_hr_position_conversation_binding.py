@@ -5,14 +5,14 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
-
-from app.hr.context import HrPositionScope
-from app.hr.models import CreateManualPosition, ProposePositionDraft
-from app.hr.repository import HrPositionRepository, HrUnavailable
 from test_agent_brain_api import _write_credentials
 from test_agent_brain_conversation_api import _app
 from test_agent_brain_conversation_repository import conversation_database, repository
 from test_control_plane_migration import control_database  # noqa: F401
+
+from app.hr.context import HrPositionScope
+from app.hr.models import CreateManualPosition, ProposePositionDraft
+from app.hr.repository import HrPositionRepository, HrUnavailable
 
 
 @pytest.fixture

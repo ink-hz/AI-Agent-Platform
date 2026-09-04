@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 import json
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -17,7 +17,6 @@ from app.control_plane.models import AuthContext
 
 from .models import PositionDraftRecord, PositionRecord
 from .repository import HrConflict, HrNotFound, HrUnavailable
-
 
 _PRIVATE_HEADERS = {
     "Cache-Control": "private, no-store",

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import psycopg
 import pytest
+from test_control_plane_migration import control_database
 
 from app.hr.models import (
     BindPositionConversation,
@@ -14,12 +15,16 @@ from app.hr.models import (
     CreateManualPosition,
     DismissPositionDraft,
     MergePositionDraft,
-    PromotePositionMaterial,
     ProjectOfficialPosition,
+    PromotePositionMaterial,
     ProposePositionDraft,
 )
-from app.hr.repository import HrConflict, HrNotFound, HrPositionRepository, HrUnavailable
-from test_control_plane_migration import control_database
+from app.hr.repository import (
+    HrConflict,
+    HrNotFound,
+    HrPositionRepository,
+    HrUnavailable,
+)
 
 
 def _owner(admin: psycopg.Connection, name: str):

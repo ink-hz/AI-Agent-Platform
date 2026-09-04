@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
 import json
 import re
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID, uuid5
 
@@ -12,7 +12,6 @@ from .models import (
     ProjectOfficialPosition,
     ProposePositionDraft,
 )
-
 
 _REGISTRY_FIELDS = {"version", "lastSuccessfulSyncAt", "jobs"}
 _JOB_FIELDS = {

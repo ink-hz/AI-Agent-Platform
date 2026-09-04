@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from collections import Counter
-from datetime import datetime
 import json
 import os
-from pathlib import Path
 import stat
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
 from uuid import UUID, uuid5
 
 from app.agent_brain.conversation_repository import ConversationRepository
@@ -23,7 +23,6 @@ from .importers import (
     project_official_jobs,
 )
 from .repository import HrPositionRepository
-
 
 DEFAULT_REGISTRY_FILE = (
     "/Users/agentops/AgentRuntime/instances/hr-bot/state/"

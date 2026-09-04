@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
+from test_hr_position_importers import _job, _snapshot
+
 from app.hr.import_cli import execute_import, inspect_snapshot
 from app.hr.importers import OfficialJobSnapshot
-from test_hr_position_importers import _job, _snapshot
 
 
 def test_import_cli_inspection_emits_safe_snapshot_summary_only() -> None:

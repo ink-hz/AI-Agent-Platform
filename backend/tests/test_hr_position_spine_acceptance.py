@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import fields
 import json
+from dataclasses import fields
 from uuid import uuid4
 
 import psycopg
 import pytest
+from test_control_plane_migration import control_database
 
 from app.hr.importers import (
     HistoricalConversation,
@@ -17,7 +18,6 @@ from app.hr.importers import (
 )
 from app.hr.models import ConfirmPositionDraft, PositionDraftRecord, PositionRecord
 from app.hr.repository import HrNotFound, HrPositionRepository
-from test_control_plane_migration import control_database
 
 
 def _owner(connection: psycopg.Connection, label: str):
