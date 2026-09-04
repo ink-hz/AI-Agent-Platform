@@ -65,6 +65,28 @@ describe("HrPositionDetailsDrawer", () => {
     expect(container.textContent).toContain("暂无生成成果");
   });
 
+  it("supports initial and controlled active tabs for legacy position routes", async () => {
+    const client = api();
+    const onActiveTabChange = vi.fn();
+    await act(async () => root.render(<HrPositionDetailsDrawer
+      api={client as never} csrfToken="csrf" detail={detail} initialTab="resources" open
+      onActiveTabChange={onActiveTabChange} onClose={vi.fn()} onConfirmed={vi.fn()} readOnly={false}
+    />));
+
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("材料与成果");
+    expect(client.resources).toHaveBeenCalledWith(POSITION_ID, expect.any(AbortSignal));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((button) => button.textContent === "候选人")?.click());
+    expect(onActiveTabChange).toHaveBeenCalledWith("candidates");
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("候选人");
+
+    await act(async () => root.render(<HrPositionDetailsDrawer
+      activeTab="resources" api={client as never} csrfToken="csrf" detail={detail} open
+      onActiveTabChange={onActiveTabChange} onClose={vi.fn()} onConfirmed={vi.fn()} readOnly={false}
+    />));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("材料与成果");
+  });
+
   it("closes on Escape and returns focus to the element that opened it", async () => {
     const opener = document.createElement("button"); opener.textContent = "岗位资料"; document.body.append(opener); opener.focus();
     const onClose = vi.fn();
@@ -78,5 +100,27 @@ describe("HrPositionDetailsDrawer", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(opener);
     opener.remove();
+  });
+
+  it("keeps Shift+Tab inside the active panel after another panel has been visited", async () => {
+    await act(async () => root.render(<HrPositionDetailsDrawer
+      api={api() as never} csrfToken="csrf" detail={detail} open
+      onClose={vi.fn()} onConfirmed={vi.fn()} readOnly={false}
+    />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((button) => button.textContent === "候选人")?.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((button) => button.textContent === "岗位信息")?.click());
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="岗位资料"]')!;
+    const activePanel = dialog.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')!;
+    const activeButtons = [...activePanel.querySelectorAll<HTMLButtonElement>("button:not([disabled])")];
+    const expectedLast = activeButtons[activeButtons.length - 1];
+    const close = dialog.querySelector<HTMLButtonElement>('[aria-label="关闭岗位资料"]')!;
+    close.focus();
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true })));
+
+    expect(expectedLast).toBeDefined();
+    expect(document.activeElement).toBe(expectedLast);
   });
 });

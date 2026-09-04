@@ -12,7 +12,7 @@ import type { ConversationPageClient } from "../../pages/ConversationPage";
 import { navigate } from "../../router";
 import { DirectAgentWorkspace, type AgentHistoryClient } from "../direct/DirectAgentWorkspace";
 import { completeMutationRequest, retainMutationRequest } from "./hrMutationRequest";
-import { HrPositionDetailsDrawer } from "./HrPositionDetailsDrawer";
+import { HrPositionDetailsDrawer, type HrPositionDetailsTab } from "./HrPositionDetailsDrawer";
 import { HrPositionHeader } from "./HrPositionHeader";
 import { HrPositionTaskMenu } from "./HrPositionTaskMenu";
 
@@ -51,6 +51,14 @@ function positionConversationPath(positionId: string, conversationId: string): s
 }
 
 
+function detailsTabForSection(section?: HrPositionSection): HrPositionDetailsTab | null {
+  if (section === "context") return "position";
+  if (section === "candidates") return "candidates";
+  if (section === "artifacts") return "resources";
+  return null;
+}
+
+
 function historyFrom(items: Conversation[]): AgentHistoryClient {
   return {
     async list(_signal, _before, _limit, _agentId, status = "active"): Promise<ConversationPage> {
@@ -71,6 +79,7 @@ export function HrPositionWorkspace({
   conversationClient,
   onOpenConversation = navigate,
   r12Api,
+  section,
 }: {
   account: Account;
   positionId: string;
@@ -104,7 +113,8 @@ export function HrPositionWorkspace({
   const [materialNotice, setMaterialNotice] = useState<string | null>(null);
   const [resourceRefreshGeneration, setResourceRefreshGeneration] = useState(0);
   const [contextRefreshGeneration, setContextRefreshGeneration] = useState(0);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(() => detailsTabForSection(section) !== null);
+  const [detailsTab, setDetailsTab] = useState<HrPositionDetailsTab>(() => detailsTabForSection(section) ?? "position");
   const taskController = useRef<AbortController | null>(null);
   const artifactRefreshController = useRef<AbortController | null>(null);
 
@@ -130,6 +140,15 @@ export function HrPositionWorkspace({
 
   useEffect(() => () => artifactRefreshController.current?.abort(), [positionId]);
   useEffect(() => { setTurnMaterialIds([]); }, [conversationId]);
+  useEffect(() => {
+    const routeTab = detailsTabForSection(section);
+    if (routeTab === null) {
+      setDetailsOpen(false);
+      return;
+    }
+    setDetailsTab(routeTab);
+    setDetailsOpen(true);
+  }, [section]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -160,12 +179,12 @@ export function HrPositionWorkspace({
   }, [attempt, positionId, r12]);
 
   useEffect(() => {
-    const controller = new AbortController(); setTaskState("loading");
+    const controller = new AbortController(); setActiveTasks([]); setTaskState("loading");
     void r12.activeTasks(positionId, controller.signal).then((tasks) => {
       if (!controller.signal.aborted) { setActiveTasks(tasks); setTaskState("ready"); }
-    }).catch(() => { if (!controller.signal.aborted) setTaskState("unavailable"); });
+    }).catch(() => { if (!controller.signal.aborted) { setActiveTasks([]); setTaskState("unavailable"); } });
     return () => controller.abort();
-  }, [positionId, r12, taskRefresh]);
+  }, [attempt, positionId, r12, taskRefresh]);
 
   const hasActiveTasks = activeTasks.some((task) => task.status === "accepted" || task.status === "running");
   useEffect(() => {
@@ -182,7 +201,7 @@ export function HrPositionWorkspace({
           }
           setActiveTasks(tasks); setTaskState("ready");
         }
-      }).catch(() => { if (!controller.signal.aborted) setTaskState("unavailable"); });
+      }).catch(() => { if (!controller.signal.aborted) { setActiveTasks([]); setTaskState("unavailable"); } });
     }, 2_000);
     return () => { window.clearTimeout(timeout); controller.abort(); };
   }, [activeTasks, hasActiveTasks, positionId, r12, refreshArtifactProjection]);
@@ -247,11 +266,11 @@ export function HrPositionWorkspace({
   const taskLabel: Record<string, string> = { jd: "JD", jr: "JR", talent_profile: "人才画像", sourcing_strategy: "搜寻策略", position_interview_plan: "面试方案", candidate_match: "候选人匹配", candidate_interview_plan: "候选人面试题", candidate_comparison: "候选人比较" };
   const taskStatusLabel: Record<string, string> = { accepted: "已受理", running: "执行中", completed: "已完成", failed: "执行失败" };
   const visibleTasks = activeTasks.filter((task) => task.status === "accepted" || task.status === "running" || task.status === "failed");
-  const taskStatus = taskState === "unavailable" || visibleTasks.length > 0
-    ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite">
-      {taskState === "unavailable" && <p>任务状态暂时不可用。<button type="button" onClick={() => setTaskRefresh((value) => value + 1)}>刷新任务状态</button></p>}
-      {visibleTasks.length > 0 && <ul>{visibleTasks.map((task) => <li key={task.taskId}>{taskLabel[task.taskKind] ?? task.taskKind}：{taskStatusLabel[task.status] ?? task.status}{task.error ? ` · ${task.error}` : ""}</li>)}</ul>}
-    </section> : null;
+  const taskStatus = taskState === "unavailable"
+    ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><p>任务状态暂时不可用。<button type="button" onClick={() => setTaskRefresh((value) => value + 1)}>刷新任务状态</button></p></section>
+    : taskState === "ready" && visibleTasks.length > 0
+      ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><ul>{visibleTasks.map((task) => <li key={task.taskId}>{taskLabel[task.taskKind] ?? task.taskKind}：{taskStatusLabel[task.status] ?? task.status}{task.error ? ` · ${task.error}` : ""}</li>)}</ul></section>
+      : null;
 
   return <main className="hr-position-workspace is-chat-first" data-position-id={positionId}>
     <HrPositionHeader detail={detail} readOnly={account.hard_stale_read_only}
@@ -293,10 +312,10 @@ export function HrPositionWorkspace({
       workspaceMark="HR"
       workspaceRootPath={`/hr/positions/${encodeURIComponent(positionId)}`}
     /></section>
-    <HrPositionDetailsDrawer api={r12} csrfToken={account.csrf_token}
+    <HrPositionDetailsDrawer activeTab={detailsTab} api={r12} csrfToken={account.csrf_token}
       currentContextVersionId={currentContext?.contextVersionId ?? null}
       detail={detail} open={detailsOpen} readOnly={account.hard_stale_read_only}
-      onClose={() => setDetailsOpen(false)} onConfirmed={setCurrentContext}
+      onActiveTabChange={setDetailsTab} onClose={() => setDetailsOpen(false)} onConfirmed={setCurrentContext}
       contextRefreshGeneration={contextRefreshGeneration}
       resourceRefreshGeneration={resourceRefreshGeneration} />
   </main>;

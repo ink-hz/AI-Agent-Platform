@@ -128,6 +128,15 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".hr-position-details-drawer")).toContain("position: absolute");
     expect(rule(".hr-position-details-drawer")).toContain("right: 0");
     expect(rule(".hr-position-task-popover")).toContain("bottom: calc(100% + 10px)");
+    const compactDesktop = blockContaining(
+      "@media screen and (min-width: 721px) and (max-width: 840px)",
+      ".hr-position-task-popover",
+    );
+    expect(compactDesktop).toContain(".hr-position-task-popover { position: fixed;");
+    expect(compactDesktop).toContain("right: 16px");
+    expect(compactDesktop).toContain("width: min(540px,calc(100vw - 32px))");
+    expect(compactDesktop).toContain("max-height: calc(100dvh - 32px)");
+    expect(compactDesktop).toContain("overflow-y: auto");
     expect(styles).not.toContain(".hr-position-context-metrics {");
     expect(styles).not.toContain(".hr-position-sections {");
     expect(styles).not.toContain(".hr-position-taskbar {");

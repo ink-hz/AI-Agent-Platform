@@ -204,6 +204,22 @@ describe("AttachmentUploader", () => {
     expect(container.textContent).not.toContain("支持选择、拖放或粘贴；单条最多");
   });
 
+  it("restarts a restored pending upload instead of leaving a frozen queue item", async () => {
+    const api = client();
+    const file = new File(["resume"], "restored.pdf", { type: "application/pdf" });
+    await act(async () => root.render(<AttachmentUploader
+      acceptedInputTypes={["pdf"]}
+      client={api}
+      conversationId="conversation-1"
+      csrfToken="csrf"
+      initialItems={[{ localId: "restored-upload", file, progress: 35, state: "uploading", uploadId: "stale-upload" }]}
+      limits={limits}
+    />));
+
+    expect(api.begin).toHaveBeenCalledWith("conversation-1", file, "csrf", expect.any(AbortSignal));
+    expect(container.querySelector('.conversation-upload-chip[data-state="ready"]')?.textContent).toContain("restored.pdf");
+  });
+
   it("rejects type, per-file, per-message, and Session quota overflow before upload", async () => {
     const api = client();
     await act(async () => root.render(<AttachmentUploader

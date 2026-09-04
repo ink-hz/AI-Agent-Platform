@@ -273,13 +273,29 @@ describe("HrPositionWorkspace", () => {
     expect(deps.r12Api.startTask).toHaveBeenLastCalledWith(POSITION_ID, "jd", expect.any(String), expect.objectContaining({ conversationId: ACTIVE_ID }), expect.any(AbortSignal));
   });
 
-  it("restores durable active tasks while legacy section routes keep the same chat canvas", async () => {
+  it("restores durable active tasks while legacy section routes control the details drawer without replacing chat", async () => {
     const deps = dependencies(); deps.r12Api.activeTasks.mockResolvedValue([{ taskId: "durable-task", status: "running", taskKind: "talent_profile" }]);
     await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="chat" {...deps} />));
     expect(container.textContent).toContain("人才画像：执行中");
     const textarea = container.querySelector<HTMLTextAreaElement>("#direct-agent-request");
+    expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).toBeNull();
+
     await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="candidates" {...deps} />));
     expect(container.querySelector("#direct-agent-request")).toBe(textarea);
+    expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).not.toBeNull();
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("候选人");
+
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="artifacts" {...deps} />));
+    expect(container.querySelector("#direct-agent-request")).toBe(textarea);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("材料与成果");
+
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="context" {...deps} />));
+    expect(container.querySelector("#direct-agent-request")).toBe(textarea);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("岗位信息");
+
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="chat" {...deps} />));
+    expect(container.querySelector("#direct-agent-request")).toBe(textarea);
+    expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).toBeNull();
     expect(container.querySelector(".hr-position-sections")).toBeNull();
     expect(container.querySelector(".agent-use-workspace.is-focused")).not.toBeNull();
   });
@@ -348,6 +364,34 @@ describe("HrPositionWorkspace", () => {
     expect(deps.r12Api.activeTasks).toHaveBeenCalledTimes(calls);
   });
 
+  it("clears stale task status while a replacement recovery source is loading", async () => {
+    const deps = dependencies();
+    deps.r12Api.activeTasks.mockResolvedValue([{ taskId: "old-task", status: "running", taskKind: "jd" }]);
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
+    expect(container.textContent).toContain("JD：执行中");
+
+    const replacement = { ...deps.r12Api, activeTasks: vi.fn().mockReturnValue(new Promise(() => undefined)) };
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} r12Api={replacement as never} />));
+
+    expect(container.querySelector('[aria-label="岗位任务状态"]')).toBeNull();
+    expect(container.textContent).not.toContain("JD：执行中");
+  });
+
+  it("drops stale active tasks when polling recovery fails", async () => {
+    vi.useFakeTimers();
+    const deps = dependencies();
+    deps.r12Api.activeTasks.mockReset()
+      .mockResolvedValueOnce([{ taskId: "old-task", status: "running", taskKind: "jd" }])
+      .mockRejectedValueOnce(new Error("offline"));
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
+    expect(container.textContent).toContain("JD：执行中");
+
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+
+    expect(container.textContent).toContain("任务状态暂时不可用");
+    expect(container.textContent).not.toContain("JD：执行中");
+  });
+
   it("refreshes resources when one durable generation task completes while another remains active", async () => {
     vi.useFakeTimers(); const deps = dependencies();
     deps.api.position.mockReset()
@@ -402,9 +446,6 @@ describe("HrPositionWorkspace", () => {
     expect(container.querySelector('[aria-label="对话列表面板"]')).not.toBeNull();
     const textarea = container.querySelector<HTMLTextAreaElement>("#direct-agent-request")!;
     expect(textarea).not.toBeNull();
-    expect(container.querySelector('section[aria-label="批量简历导入"]')).toBeNull();
-    await clickButton(container, "岗位资料");
-    await clickButton(container, "候选人");
     expect(container.querySelector('section[aria-label="批量简历导入"]')).not.toBeNull();
     expect(container.querySelector("#direct-agent-request")).toBe(textarea);
   });

@@ -1,9 +1,9 @@
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 
 import type { Account } from "../../auth";
 import { directConversationPath } from "../../platform/workspaces";
 import { WorkspaceErrorBoundary } from "../../shared/WorkspaceErrorBoundary";
-import { DirectAgentWorkspace } from "../direct/DirectAgentWorkspace";
+import { DirectAgentWorkspace, type DirectAgentDraftSnapshot } from "../direct/DirectAgentWorkspace";
 import { HrPositionIndex } from "./HrPositionIndex";
 import { HrPositionWorkspace } from "./HrPositionWorkspace";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
@@ -20,6 +20,11 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const positionsActive = Boolean(props.positions || props.positionId);
   const positionDetailActive = Boolean(props.positionId);
   const lastChatConversationId = useRef<string | undefined>(undefined);
+  const freeChatDraftSnapshots = useRef(new Map<string, DirectAgentDraftSnapshot>());
+  const draftOwnerId = props.account.internal_user_id;
+  const retainFreeChatDraft = useCallback((snapshot: DirectAgentDraftSnapshot) => {
+    freeChatDraftSnapshots.current.set(draftOwnerId, snapshot);
+  }, [draftOwnerId]);
   if (!positionsActive) lastChatConversationId.current = props.conversationId;
   const chatConversationId = positionsActive
     ? lastChatConversationId.current
@@ -41,11 +46,14 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           autoFocusComposer
           conversationId={chatConversationId}
           conversationPath={hrConversationPath}
+          initialDraftSnapshot={freeChatDraftSnapshots.current.get(draftOwnerId)}
+          key={`hr-free-chat:${draftOwnerId}`}
           newConversationHeader={<section className="hr-conversation-welcome">
             <span>AI 招聘协作</span>
             <h1>今天想推进哪项招聘工作？</h1>
             <p>找岗位、做人才研究、筛简历、准备面试或整理招聘材料，直接告诉我。</p>
           </section>}
+          onDraftSnapshotChange={retainFreeChatDraft}
           showTaskStarters={false}
           showWorkspaceBackLink={false}
           workspaceLabel="HR 智能工作台"

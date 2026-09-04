@@ -8,8 +8,8 @@ import { HrPositionContextPanel } from "./HrPositionContextPanel";
 import { HrPositionResourcesPanel } from "./HrPositionResourcesPanel";
 import { trapDialogFocus } from "./modalFocus";
 
-type DetailsTab = "position" | "candidates" | "resources";
-const TABS: ReadonlyArray<readonly [DetailsTab, string]> = [
+export type HrPositionDetailsTab = "position" | "candidates" | "resources";
+const TABS: ReadonlyArray<readonly [HrPositionDetailsTab, string]> = [
   ["position", "岗位信息"],
   ["candidates", "候选人"],
   ["resources", "材料与成果"],
@@ -26,24 +26,39 @@ function statusLabel(detail: HrPositionDetail): string {
   return "进行中";
 }
 
-export function HrPositionDetailsDrawer({ api, csrfToken, currentContextVersionId = null, detail, open, readOnly, onClose, onConfirmed,
+export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, csrfToken, currentContextVersionId = null,
+  detail, initialTab = "position", open, readOnly, onActiveTabChange, onClose, onConfirmed,
   contextRefreshGeneration = 0, resourceRefreshGeneration = 0 }: {
+  activeTab?: HrPositionDetailsTab;
   api: HrR12Api;
   csrfToken: string;
   currentContextVersionId?: string | null;
   detail: HrPositionDetail;
+  initialTab?: HrPositionDetailsTab;
   open: boolean;
   readOnly: boolean;
+  onActiveTabChange?(tab: HrPositionDetailsTab): void;
   onClose(): void;
   onConfirmed(context: HrContextVersion): void;
   contextRefreshGeneration?: number;
   resourceRefreshGeneration?: number;
 }) {
-  const [activeTab, setActiveTab] = useState<DetailsTab>("position");
-  const [visited, setVisited] = useState<Set<DetailsTab>>(() => new Set(["position"]));
+  const [uncontrolledActiveTab, setUncontrolledActiveTab] = useState<HrPositionDetailsTab>(initialTab);
+  const activeTab = controlledActiveTab ?? uncontrolledActiveTab;
+  const [visited, setVisited] = useState<Set<HrPositionDetailsTab>>(
+    () => new Set([controlledActiveTab ?? initialTab]),
+  );
   const closeButton = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
-  const tabRefs = useRef<Partial<Record<DetailsTab, HTMLButtonElement | null>>>({});
+  const tabRefs = useRef<Partial<Record<HrPositionDetailsTab, HTMLButtonElement | null>>>({});
+
+  useEffect(() => {
+    if (controlledActiveTab === undefined) setUncontrolledActiveTab(initialTab);
+  }, [controlledActiveTab, initialTab]);
+
+  useEffect(() => {
+    setVisited((current) => current.has(activeTab) ? current : new Set([...current, activeTab]));
+  }, [activeTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -57,11 +72,12 @@ export function HrPositionDetailsDrawer({ api, csrfToken, currentContextVersionI
     returnFocus.current?.focus();
     onClose();
   };
-  const activate = (tab: DetailsTab) => {
+  const activate = (tab: HrPositionDetailsTab) => {
     setVisited((current) => current.has(tab) ? current : new Set([...current, tab]));
-    setActiveTab(tab);
+    if (controlledActiveTab === undefined) setUncontrolledActiveTab(tab);
+    onActiveTabChange?.(tab);
   };
-  const tabKey = (event: React.KeyboardEvent<HTMLButtonElement>, tab: DetailsTab) => {
+  const tabKey = (event: React.KeyboardEvent<HTMLButtonElement>, tab: HrPositionDetailsTab) => {
     const index = TABS.findIndex(([candidate]) => candidate === tab);
     let next = index;
     if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (index + 1) % TABS.length;

@@ -31,6 +31,28 @@ vi.mock("./HrPositionWorkspace", () => ({
   HrPositionWorkspace: () => <div className="agent-use-workspace" data-agent-id="hr-bot" />,
 }));
 
+vi.mock("../../attachmentApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../attachmentApi")>();
+  const upload = {
+    uploadId: "upload-free-chat", attachmentId: "attachment-free-chat", conversationId: null,
+    displayName: "候选人简历.pdf", declaredMime: "application/pdf", declaredSize: 6,
+    state: "uploading" as const, uploadedBytes: 6, expiresAt: "2026-09-04T12:00:00Z",
+  };
+  return {
+    ...actual,
+    beginAttachmentUpload: vi.fn().mockResolvedValue(upload),
+    uploadAttachmentContent: vi.fn().mockResolvedValue(upload),
+    completeAttachmentUpload: vi.fn().mockResolvedValue({
+      attachmentId: upload.attachmentId, conversationId: null, source: "user", displayName: upload.displayName,
+      detectedMime: upload.declaredMime, sizeBytes: upload.declaredSize, sha256: null, state: "ready",
+      stateReason: null, createdAt: "2026-09-04T10:00:00Z", retainedUntil: "2027-09-04T10:00:00Z",
+      preview: { attachmentId: upload.attachmentId, detectedMime: upload.declaredMime }, coverage: null,
+    }),
+    fetchConversationAttachment: vi.fn(),
+    cancelAttachmentUpload: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 
 const account: Account = {
   internal_user_id: "member",
@@ -140,6 +162,41 @@ describe("HrWorkspacePage", () => {
 
     expect(container.querySelector(".hr-workspace-chat-panel")).toBeNull();
     expect(container.querySelectorAll('.agent-use-workspace[data-agent-id="hr-bot"]')).toHaveLength(1);
+  });
+
+  it("restores the current user's free-chat text and ready upload queue after a position detail visit", async () => {
+    vi.mocked(fetchAgentCatalog).mockResolvedValue([{ ...hrCard,
+      accepted_input_types: ["text", "image", "pdf", "office"], supports_attachments_in: true,
+      attachment_limits: {
+        max_file_bytes: 50 * 1024 * 1024, max_files_per_message: 5,
+        max_bytes_per_message: 50 * 1024 * 1024, max_files_per_conversation: 50,
+        max_bytes_per_conversation: 500 * 1024 * 1024,
+      },
+    }]);
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    const textarea = container.querySelector<HTMLTextAreaElement>("#direct-agent-request")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "保留自由聊天草稿");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const fileInput = container.querySelector<HTMLInputElement>('.agent-direct-attachments input[type="file"]')!;
+    Object.defineProperty(fileInput, "files", {
+      configurable: true,
+      value: [new File(["resume"], "候选人简历.pdf", { type: "application/pdf" })],
+    });
+    await act(async () => fileInput.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(container.querySelector('.conversation-upload-chip[data-state="ready"]')?.textContent).toContain("候选人简历.pdf");
+
+    await act(async () => root.render(<HrWorkspacePage account={account} positionId="position-7" />));
+    expect(container.querySelectorAll('.agent-use-workspace[data-agent-id="hr-bot"]')).toHaveLength(1);
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    expect(container.querySelector<HTMLTextAreaElement>("#direct-agent-request")?.value).toBe("保留自由聊天草稿");
+    expect(container.querySelector('.conversation-upload-chip[data-state="ready"]')?.textContent).toContain("候选人简历.pdf");
+    expect(container.querySelector(".conversation-attachment-card")?.textContent).toContain("候选人简历.pdf");
+
+    await act(async () => root.render(<HrWorkspacePage account={{ ...account, internal_user_id: "other-user" }} />));
+    expect(container.querySelector<HTMLTextAreaElement>("#direct-agent-request")?.value).toBe("");
+    expect(container.querySelector(".conversation-upload-chip")).toBeNull();
   });
 
   it("keeps the current conversation as the chat navigation target", async () => {

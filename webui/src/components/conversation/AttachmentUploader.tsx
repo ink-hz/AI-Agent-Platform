@@ -112,6 +112,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   csrfToken: string;
   disabled?: boolean;
   limits?: AgentAttachmentLimits;
+  initialItems?: UploadQueueItem[];
   onChange?: (items: UploadQueueItem[]) => void;
   onError?: (message: string | null) => void;
   onReady?: (attachment: ConversationAttachment) => void;
@@ -133,15 +134,16 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
     max_files_per_conversation: 50,
     max_bytes_per_conversation: 500 * 1024 * 1024,
   },
+  initialItems = [],
   onChange,
   onError,
   onReady,
   onRemoveReady,
   onQueueChange,
 }, forwardedRef) {
-  const [items, setItems] = useState<UploadQueueItem[]>([]);
+  const [items, setItems] = useState<UploadQueueItem[]>(() => initialItems.map((item) => ({ ...item })));
   const [validationError, setValidationError] = useState<string | null>(null);
-  const itemsRef = useRef<UploadQueueItem[]>([]);
+  const itemsRef = useRef<UploadQueueItem[]>(items);
   const controllers = useRef(new Map<string, AbortController>());
 
   useEffect(() => () => {
@@ -203,6 +205,14 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
       controllers.current.delete(localId);
     }
   };
+
+  useEffect(() => {
+    for (const item of itemsRef.current) {
+      if (["queued", "uploading", "processing"].includes(item.state)) void process(item.localId);
+    }
+    // Restored queue items are resumed only once when this uploader mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const validate = (selected: File[]): string | null => {
     const existingQueue = itemsRef.current.filter((item) => item.state !== "failed");
