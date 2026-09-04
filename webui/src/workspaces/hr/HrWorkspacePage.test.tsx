@@ -95,11 +95,20 @@ describe("HrWorkspacePage", () => {
     vi.clearAllMocks();
   });
 
-  it("opens the position-first HR workspace at the canonical root", async () => {
+  it("opens a conversation-first HR workspace at the canonical root", async () => {
     await act(async () => root.render(<HrWorkspacePage account={account} />));
 
-    expect(container.querySelector("h1")?.textContent).toBe("岗位智能工作台");
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("官网岗位");
+    expect(listConversations).toHaveBeenCalled();
+  });
+
+  it("opens existing position data only on the positions route", async () => {
+    await act(async () => root.render(<HrWorkspacePage account={account} positions />));
+
     expect(container.textContent).toContain("官网岗位");
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBeNull();
+    expect(createHrApi).toHaveBeenCalled();
     expect(listConversations).not.toHaveBeenCalled();
   });
 

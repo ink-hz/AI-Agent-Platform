@@ -21,6 +21,7 @@ export type Route =
   | { name: "voc-workspace" }
   | { name: "hr" }
   | { name: "hr-chat" }
+  | { name: "hr-positions" }
   | { name: "hr-position"; positionId: string }
   | { name: "hr-position-section"; positionId: string; section: import("./hrR12Types").HrPositionSection }
   | { name: "hr-position-conversation"; positionId: string; conversationId: string }
@@ -268,6 +269,7 @@ export function parseRoute(pathname: string, search = ""): Route {
     const conversationId = safeDecodedValue(hrConversation[1]);
     return conversationId ? { name: "hr-conversation", conversationId } : { name: "not-found" };
   }
+  if (clean === "/hr/positions") return { name: "hr-positions" };
   const hrPosition = /^\/hr\/positions\/([^/]+)$/.exec(clean);
   if (hrPosition) {
     const positionId = safeDecodedValue(hrPosition[1], /^[0-9a-fA-F-]{36}$/);
@@ -416,6 +418,7 @@ export function routePath(route: Route): string {
     case "voc-workspace": return "/agents/voc/workspace";
     case "hr": return "/hr/";
     case "hr-chat": return "/hr/chat";
+    case "hr-positions": return "/hr/positions";
     case "hr-position": return `/hr/positions/${encodeURIComponent(route.positionId)}`;
     case "hr-position-section": return `/hr/positions/${encodeURIComponent(route.positionId)}/${route.section}`;
     case "hr-position-conversation": return `/hr/positions/${encodeURIComponent(route.positionId)}/conversations/${encodeURIComponent(route.conversationId)}`;
@@ -453,7 +456,7 @@ export function routeSection(route: Route): RouteSection | null {
   if (route.name === "brain") return "brain";
   if (route.name === "conversations" || route.name === "conversation") return "brain";
   if (route.name === "agents" || route.name === "voc-workspace"
-    || route.name === "hr" || route.name === "hr-chat" || route.name === "hr-position" || route.name === "hr-position-section" || route.name === "hr-position-conversation" || route.name === "hr-conversation" || route.name === "marketing" || route.name === "marketing-conversation") return "agents";
+    || route.name === "hr" || route.name === "hr-chat" || route.name === "hr-positions" || route.name === "hr-position" || route.name === "hr-position-section" || route.name === "hr-position-conversation" || route.name === "hr-conversation" || route.name === "marketing" || route.name === "marketing-conversation") return "agents";
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "ai-notes" || route.name === "ai-note") return "ai-notes";
   if (route.name === "account") return "account";

@@ -60,7 +60,8 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 it("renders one position-first index with official, internal, and pending work", async () => {
   await act(async () => root.render(<HrPositionIndex account={account} api={api() as never} />));
 
-  expect(container.querySelector("h1")?.textContent).toBe("岗位智能工作台");
+  expect(container.querySelector("h1")?.textContent).toBe("岗位");
+  expect(container.textContent).not.toContain("岗位智能工作台");
   expect(container.textContent).toContain("官网岗位");
   expect(container.textContent).toContain("内部岗位");
   expect(container.textContent).toContain("待确认");

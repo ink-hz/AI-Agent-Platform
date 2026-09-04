@@ -114,6 +114,9 @@ describe("HrPositionWorkspace", () => {
     expect(container.textContent).toContain("3 个生成结果");
     expect(container.textContent).toContain("喷嘴与挤出工艺面试");
     expect(container.textContent).not.toContain("其他岗位候选人");
+    expect(container.textContent).toContain("从这个岗位开始对话");
+    expect(container.textContent).not.toContain("岗位智能工作台");
+    expect(container.textContent).not.toContain("返回专业 Agent");
 
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="查看已归档对话"]')?.click());
     expect(container.textContent).toContain("历史岗位画像");
@@ -146,7 +149,7 @@ describe("HrPositionWorkspace", () => {
     ));
 
     expect(container.querySelector<HTMLAnchorElement>(".hr-position-context a")?.getAttribute("href"))
-      .toBe("/_preview/dingtalk-r1/hr/");
+      .toBe("/_preview/dingtalk-r1/hr/positions");
   });
 
   it("refuses a deep-linked conversation outside the position and keeps hard-stale workspaces read-only", async () => {

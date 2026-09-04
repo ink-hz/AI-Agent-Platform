@@ -50,7 +50,10 @@ describe("page access reporter", () => {
       conversationId: "private-conversation",
     })).toEqual({ workspace_key: "hr", page_key: "hr.position_conversation" });
     expect(accessEventForRoute({ name: "hr" })).toEqual({
-      workspace_key: "hr", page_key: "hr.index",
+      workspace_key: "hr", page_key: "hr.chat",
+    });
+    expect(accessEventForRoute({ name: "hr-positions" })).toEqual({
+      workspace_key: "hr", page_key: "hr.positions",
     });
     expect(accessEventForRoute({ name: "hr-chat" })).toEqual({
       workspace_key: "hr", page_key: "hr.free_chat",

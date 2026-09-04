@@ -74,6 +74,7 @@ describe("Platform router", () => {
     ["/hr", { name: "legacy-redirect", to: "/hr/", navigation: "spa" }],
     ["/hr/", { name: "hr" }],
     ["/hr/chat", { name: "hr-chat" }],
+    ["/hr/positions", { name: "hr-positions" }],
     ["/hr/positions/00000000-0000-4000-8000-000000000001", { name: "hr-position", positionId: "00000000-0000-4000-8000-000000000001" }],
     ["/hr/positions/00000000-0000-4000-8000-000000000001/conversations/conversation-1", { name: "hr-position-conversation", positionId: "00000000-0000-4000-8000-000000000001", conversationId: "conversation-1" }],
     ["/hr/conversations/c%3A1", { name: "hr-conversation", conversationId: "c:1" }],
@@ -146,6 +147,7 @@ describe("Platform router", () => {
     expect(routePath({ name: "account" })).toBe("/account");
     expect(routePath({ name: "voc-workspace" })).toBe("/agents/voc/workspace");
     expect(routePath({ name: "hr-conversation", conversationId: "c:1" })).toBe("/hr/conversations/c%3A1");
+    expect(routePath({ name: "hr-positions" })).toBe("/hr/positions");
     expect(routePath({ name: "hr-position", positionId: "00000000-0000-4000-8000-000000000001" })).toBe("/hr/positions/00000000-0000-4000-8000-000000000001");
     expect(routePath({ name: "hr-position-conversation", positionId: "00000000-0000-4000-8000-000000000001", conversationId: "conversation-1" })).toBe("/hr/positions/00000000-0000-4000-8000-000000000001/conversations/conversation-1");
     expect(routePath({ name: "marketing-conversation", agentSlug: "voice", conversationId: "c:2" })).toBe("/marketing/voice/conversations/c%3A2");

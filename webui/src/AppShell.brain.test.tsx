@@ -48,8 +48,10 @@ describe("usage navigation", () => {
       section: "candidates",
     }} account={member}><p>候选人</p></AppShell>));
 
-    expect(container.querySelector(".app.is-brain-workspace-shell")).not.toBeNull();
-    expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
+    expect(container.querySelector(".app.is-hr-workspace-shell")).not.toBeNull();
+    expect(container.querySelector(".app.is-brain-workspace-shell")).toBeNull();
+    expect(container.querySelector("main.page.is-hr-workspace")).not.toBeNull();
+    expect(container.querySelector("main.page.is-brain-workspace")).toBeNull();
     expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 
@@ -120,6 +122,11 @@ describe("usage navigation", () => {
     };
     await act(async () => root.render(
       <AppShell route={{ name: "fae-manage-overview" }} account={hardStale}><p>FAE 内容</p></AppShell>,
+    ));
+    expect(container.querySelector(".hard-stale-banner")).toBeNull();
+
+    await act(async () => root.render(
+      <AppShell route={{ name: "hr" }} account={hardStale}><p>HR 内容</p></AppShell>,
     ));
     expect(container.querySelector(".hard-stale-banner")).toBeNull();
 
@@ -204,10 +211,26 @@ describe("usage navigation", () => {
     expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 
-  it("uses the conversation workspace shell for canonical HR and Marketing routes", async () => {
+  it("uses an independent application shell for every canonical HR route", async () => {
     const routes: Route[] = [
       { name: "hr" },
+      { name: "hr-positions" },
       { name: "hr-conversation", conversationId: "c-1" },
+      { name: "hr-position", positionId: "11111111-1111-4111-8111-111111111111" },
+    ];
+
+    for (const route of routes) {
+      await act(async () => root.render(<AppShell route={route} account={member}><p>HR 工作区</p></AppShell>));
+      expect(container.querySelector("main.page.is-hr-workspace")).not.toBeNull();
+      expect(container.querySelector(".app.is-hr-workspace-shell")).not.toBeNull();
+      expect(container.querySelector("main.page.is-brain-workspace")).toBeNull();
+      expect(container.querySelector(".app.is-brain-workspace-shell")).toBeNull();
+      expect(container.querySelector("footer.site-foot")).toBeNull();
+    }
+  });
+
+  it("keeps Marketing in the shared conversation workspace shell", async () => {
+    const routes: Route[] = [
       { name: "marketing", agentSlug: "inbound" },
       { name: "marketing-conversation", agentSlug: "voice", conversationId: "c-2" },
     ];

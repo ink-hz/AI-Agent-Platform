@@ -35,6 +35,8 @@ export interface DirectAgentWorkspaceProps {
   workspaceRootPath?: string;
   newConversationScope?: ConversationStartScope;
   autoFocusComposer?: boolean;
+  showWorkspaceBackLink?: boolean;
+  newConversationHeader?: ReactNode;
   positionMaterialIds?: readonly string[];
   positionArtifactAttachmentIds?: readonly string[];
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
@@ -75,6 +77,8 @@ export function DirectAgentWorkspace({
   workspaceRootPath,
   newConversationScope,
   autoFocusComposer = false,
+  showWorkspaceBackLink = true,
+  newConversationHeader,
   positionMaterialIds,
   positionArtifactAttachmentIds,
   onPositionMaterialChange,
@@ -216,10 +220,10 @@ export function DirectAgentWorkspace({
 
   const submit = (event: FormEvent) => { event.preventDefault(); void send(); };
 
-  if (loadFailure) return <><PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink><ErrorState /></>;
+  if (loadFailure) return <>{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}<ErrorState /></>;
   if (!catalog) return <LoadingState label="正在打开专业 Agent" />;
   if (!card || !card.interaction_modes.includes("direct_chat")) {
-    return <><PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink><ErrorState /></>;
+    return <>{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}<ErrorState /></>;
   }
 
   return <div className="brain-workspace agent-use-workspace" data-agent-id={agentId}>
@@ -267,11 +271,11 @@ export function DirectAgentWorkspace({
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
         />
-        : <div className="agent-use-page"><PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>
-          <section className="agent-use-profile is-compact"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
+        : <div className="agent-use-page">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}
+          {newConversationHeader ?? <section className="agent-use-profile is-compact"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
             {card.persona_subtitle && <p className="agent-persona-subtitle">{card.persona_subtitle}</p>}
             <p>{card.mission}</p>
-          </section>
+          </section>}
           <section aria-label="常用任务" className="agent-task-starters">
             {card.example_tasks.slice(0, 4).map((example) => <button
               className="agent-task-starter"

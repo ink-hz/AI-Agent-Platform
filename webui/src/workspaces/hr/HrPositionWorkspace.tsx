@@ -240,7 +240,7 @@ export function HrPositionWorkspace({
 
   const header = <header className="hr-position-context">
     <div className="hr-position-context-main">
-      <PlatformLink href="/hr/">← 所有岗位</PlatformLink>
+      <PlatformLink href="/hr/positions">← 所有岗位</PlatformLink>
       <div><span className="hr-position-eyebrow">POSITION CONTEXT</span>
         <h1>{detail.title}</h1>
         <p>{[detail.department, ...detail.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
@@ -314,12 +314,17 @@ export function HrPositionWorkspace({
       header={activeSection === "chat" ? null : sectionView}
       historyClient={historyClient}
       loadCatalog={loadCatalog}
+      newConversationHeader={<section className="hr-position-conversation-welcome">
+        <span>岗位对话</span><h2>从这个岗位开始对话</h2>
+        <p>当前岗位、已选材料和后续生成结果会保留在同一上下文中。</p>
+      </section>}
       newConversationScope={scope}
       onOpenConversation={onOpenConversation}
       onPositionMaterialChange={account.hard_stale_read_only ? undefined : changePositionMaterial}
       positionMaterialIds={promotedMaterialIds}
       positionArtifactAttachmentIds={detail.artifactAttachmentIds}
-      workspaceLabel="岗位智能工作台"
+      showWorkspaceBackLink={false}
+      workspaceLabel="岗位对话"
       workspaceMark="HR"
       workspaceRootPath={`/hr/positions/${encodeURIComponent(positionId)}`}
     /></section>
