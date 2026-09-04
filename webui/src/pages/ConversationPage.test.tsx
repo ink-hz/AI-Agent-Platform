@@ -168,6 +168,28 @@ describe("ConversationPage", () => {
     expect(container.querySelector("textarea[aria-label='继续对话']")).not.toBeNull();
   });
 
+  it("sends a follow-up with Enter but keeps Shift+Enter and IME Enter for editing", async () => {
+    const createMessageSubmission = vi.fn().mockImplementation((_id, text) => ({
+      idempotencyKey: "same", send: vi.fn().mockResolvedValue(submissionResult(text)),
+    }));
+    const pageClient = client({ createMessageSubmission });
+    await act(async () => root.render(<ConversationPage
+      account={account} client={pageClient} conversationId={conversationId}
+    />));
+    await setTextarea(container, "继续补充岗位信息");
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")!;
+
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter", shiftKey: true })));
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter", isComposing: true })));
+    expect(createMessageSubmission).not.toHaveBeenCalled();
+
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter" })));
+
+    expect(createMessageSubmission).toHaveBeenCalledWith(
+      conversationId, "继续补充岗位信息", account.csrf_token,
+    );
+  });
+
   it("retains one submission object when a follow-up is safely retried", async () => {
     const send = vi.fn().mockRejectedValueOnce(new TypeError("offline")).mockResolvedValueOnce(submissionResult("继续"));
     const createMessageSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
