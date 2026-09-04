@@ -235,7 +235,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 69
+    assert max(versions) == 70
 
 
 def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
@@ -273,7 +273,7 @@ def test_user_access_history_migration_defines_closed_page_catalog_and_functions
     assert "create function platform_control.append_page_view_v65" in sql
     assert "create function platform_control.read_user_access_events_v65" in sql
     assert "create function platform_control.retain_user_access_events_v65" in sql
-    assert "revoke execute on function platform_control.consume_attempt_and_issue_session_v22" not in normalized
+    assert "revoke execute on function platform_control.consume_attempt_and_issue_session_v22" in normalized
     assert "pg_advisory_xact_lock" in sql
     assert "interval '60 seconds'" in sql
     assert ">= 120" in sql
@@ -337,6 +337,18 @@ def test_user_access_history_migration_defines_closed_page_catalog_and_functions
     }
     for page_key in expected_page_keys:
         assert f"'{page_key}'" in sql
+
+
+def test_auth_rollback_window_migration_restores_legacy_session_issuer_execute() -> None:
+    sql = migration_sql("068_auth_rollback_window.sql")
+    normalized = " ".join(sql.split())
+
+    assert "grant execute on function platform_control.consume_attempt_and_issue_session_v22" in normalized
+    assert "platform_control_app" in sql
+    assert "platform_control_app_preview" in sql
+    assert "agent_platform_control" in sql
+    assert "agent_platform_control_preview" in sql
+    assert "revoke all on function platform_control.consume_attempt_and_issue_session_v22" in normalized
 
 
 @pytest.mark.postgres
