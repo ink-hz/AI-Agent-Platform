@@ -104,8 +104,8 @@ environment="$root_path/private/platform.env"
 compose="$release/deploy/cloud/compose.yaml"
 postgres="$(/usr/bin/docker compose --env-file "$environment" -f "$compose" ps -q platform-postgres)"
 [[ -n "$postgres" ]]
-access_schema="$(/usr/bin/docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select concat((select count(*) from platform_control.schema_migrations where version=65),'|',(to_regclass('platform_control.user_access_events') is not null)::int);")"
-[[ "$access_schema" == "1|1" ]]
+access_schema="$(/usr/bin/docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select concat((select count(*) from platform_control.schema_migrations where version=67),'|',(to_regclass('platform_control.user_access_events') is not null)::int,'|',(to_regprocedure('platform_control.read_access_subjects_v67(uuid,uuid,timestamptz,timestamptz,text,text,text,integer,integer)') is not null)::int);")"
+[[ "$access_schema" == "1|1|1" ]]
 /usr/bin/curl -fsS --max-time 3 http://127.0.0.1:8080/api/health >/dev/null
 /usr/bin/curl -fsS --max-time 3 http://127.0.0.1:8080/api/deployment |
   /usr/bin/python3 -c 'import json,sys; v=json.load(sys.stdin); assert v["mode"]=="cloud-replica" and v["read_only"] is True and v["auth"]=="ssh-tunnel"'
@@ -116,6 +116,7 @@ upload_status="$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' -H 'Content-Ty
 download_status="$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/v1/attachments/00000000-0000-0000-0000-000000000000)"
 [[ "$download_status" == "401" || "$download_status" == "403" ]]
 [[ "$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/v1/manage/access-events)" == "401" ]]
+[[ "$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/v1/manage/access-subjects)" == "401" ]]
 [[ "$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/review/overview)" == "503" ]]
 /usr/bin/docker inspect --format '{{.State.Health.Status}}' orbbec-agent-platform-platform-attachments-1 | /usr/bin/grep -Fxq healthy
 /usr/bin/docker inspect --format '{{.State.Health.Status}}' orbbec-agent-platform-platform-clamav-1 | /usr/bin/grep -Fxq healthy

@@ -2199,19 +2199,38 @@ body {
 .access-history-heading > p { margin: 0 0 8px; color: #567065; font-size: 12px; font-weight: 800; letter-spacing: .14em; }
 .access-history-heading h1 { margin: 0; font-size: clamp(28px, 4vw, 42px); }
 .access-history-heading span { display: block; max-width: 720px; margin-top: 10px; color: #607068; line-height: 1.65; }
-.access-history-filters { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(160px, .6fr) minmax(150px, .5fr) auto; gap: 12px; align-items: end; margin-bottom: 18px; padding: 16px; border: 1px solid #dce4e0; border-radius: 14px; background: #fbfcfb; }
+.access-history-filters { display: grid; grid-template-columns: minmax(160px,1fr) repeat(4,minmax(135px,.6fr)) auto; gap: 12px; align-items: end; margin-bottom: 18px; padding: 16px; border: 1px solid #dce4e0; border-radius: 14px; background: #fbfcfb; }
 .access-history-filters label { display: grid; gap: 6px; color: #47564f; font-size: 13px; font-weight: 700; }
 .access-history-filters input,
 .access-history-filters select { min-height: 42px; padding: 0 12px; border: 1px solid #ccd8d2; border-radius: 9px; background: #fff; color: #17231e; font: inherit; }
 .access-history-filters button,
 .access-history-pagination button { min-height: 42px; padding: 0 18px; border: 1px solid #1f6a55; border-radius: 9px; background: #1f6a55; color: #fff; font-weight: 750; cursor: pointer; }
-.access-history-table-wrap { overflow-x: auto; border: 1px solid #dce4e0; border-radius: 14px; background: #fff; }
-.access-history-table { width: 100%; border-collapse: collapse; }
-.access-history-table th,
-.access-history-table td { padding: 14px 16px; border-bottom: 1px solid #e7ece9; text-align: left; white-space: nowrap; }
-.access-history-table th { color: #5a6a62; background: #f6f9f7; font-size: 12px; letter-spacing: .04em; }
-.access-history-table tr:last-child td { border-bottom: 0; }
-.access-history-table time { color: #56655e; font-variant-numeric: tabular-nums; }
+.access-subject-list { display: grid; gap: 10px; }
+.access-subject-card { overflow: hidden; border: 1px solid #dce4e0; border-radius: 16px; background: #fff; box-shadow: 0 7px 24px rgba(29,72,58,.04); }
+.access-subject-card.is-expanded { border-color: #aec9bd; box-shadow: 0 12px 32px rgba(29,72,58,.08); }
+.access-subject-summary { display: grid; width: 100%; grid-template-columns: 46px minmax(150px,.8fr) 90px minmax(260px,1.5fr) 24px; gap: 14px; align-items: center; padding: 16px 18px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.access-subject-summary:hover { background: #f7faf8; }
+.access-subject-avatar { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 13px; background: #e5f1ec; color: #22604d; font-weight: 850; }
+.access-subject-identity,.access-subject-count,.access-subject-latest { display: grid; min-width: 0; gap: 4px; }
+.access-subject-identity strong { font-size: 16px; }
+.access-subject-identity small,.access-subject-count small,.access-subject-latest small { overflow: hidden; color: #728078; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.access-subject-count strong { color: #1f6a55; font-size: 22px; font-variant-numeric: tabular-nums; }
+.access-subject-latest strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.access-subject-chevron { color: #658176; font-size: 22px; transform: rotate(0); transition: transform .15s ease; }
+.access-subject-card.is-expanded .access-subject-chevron { transform: rotate(180deg); }
+.access-subject-detail { border-top: 1px solid #e7ece9; padding: 4px 18px 20px 78px; background: #fbfcfb; }
+.access-timeline-day > h3 { margin: 18px 0 8px; color: #5d6f66; font-size: 12px; letter-spacing: .04em; }
+.access-timeline-day ol { margin: 0; padding: 0; list-style: none; }
+.access-timeline-day li { display: grid; grid-template-columns: 72px 12px minmax(0,1fr); gap: 12px; align-items: start; padding: 10px 0; }
+.access-timeline-day time { color: #6f7d76; font-size: 12px; font-variant-numeric: tabular-nums; }
+.access-event-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #78a994; box-shadow: 0 0 0 4px #e8f2ed; }
+.access-event-dot.is-login_succeeded { background: #b5822d; box-shadow: 0 0 0 4px #f7ecd9; }
+.access-timeline-day li > div { display: grid; gap: 3px; }
+.access-timeline-day strong { font-size: 13px; }
+.access-timeline-day p { margin: 0; color: #5e6e66; font-size: 12px; }
+.access-timeline-day p span { color: #a7b1ac; }
+.access-timeline-day small { color: #85928c; }
+.access-timeline-more { min-height: 36px; margin-top: 12px; padding: 0 14px; border: 1px solid #b9ccc3; border-radius: 9px; background: #fff; color: #1f6a55; font-weight: 750; cursor: pointer; }
 .access-history-state { padding: 32px; border: 1px dashed #ccd8d2; border-radius: 14px; color: #64716b; text-align: center; }
 .access-history-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 16px; color: #5a6861; }
 .access-history-pagination button { min-height: 36px; padding: 0 14px; background: #fff; color: #1f6a55; }
@@ -2221,4 +2240,10 @@ body {
   .access-history-page { width: calc(100% - 28px); margin-top: 24px; }
   .access-history-filters { grid-template-columns: 1fr; }
   .access-history-filters button { width: 100%; }
+  .access-subject-summary { grid-template-columns: 42px minmax(0,1fr) auto; padding: 14px; }
+  .access-subject-count { justify-items: end; }
+  .access-subject-latest { grid-column: 2 / -1; }
+  .access-subject-chevron { display: none; }
+  .access-subject-detail { padding: 2px 14px 16px; }
+  .access-timeline-day li { grid-template-columns: 58px 10px minmax(0,1fr); gap: 8px; }
 }

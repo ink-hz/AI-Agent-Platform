@@ -50,13 +50,28 @@ class AccessHistoryFilter:
 class AccessHistoryEvent:
     access_event_id: UUID
     display_name: str
+    departments: tuple[str, ...]
     event_kind: str
     login_kind: str | None
     workspace_key: str | None
     page_key: str | None
+    module_display_name: str | None
     page_display_name: str | None
     agent_id: str | None
     occurred_at: datetime
+
+
+@dataclass(frozen=True)
+class AccessHistorySubject:
+    display_name: str
+    departments: tuple[str, ...]
+    event_count: int
+    latest_occurred_at: datetime
+    latest_event_kind: str
+    latest_workspace_key: str | None
+    latest_module_display_name: str | None
+    latest_page_display_name: str | None
+    latest_agent_id: str | None
 
 
 class AccessHistoryRepository:
@@ -118,7 +133,7 @@ class AccessHistoryRepository:
         try:
             with self._connection() as connection:
                 rows = connection.execute(
-                    "select * from platform_control.read_user_access_events_v65("
+                    "select * from platform_control.read_user_access_events_v67("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         context.internal_user_id,
@@ -136,10 +151,12 @@ class AccessHistoryRepository:
                 AccessHistoryEvent(
                     access_event_id=row["access_event_id"],
                     display_name=row["display_name"],
+                    departments=tuple(row["departments"] or ()),
                     event_kind=row["event_kind"],
                     login_kind=row["login_kind"],
                     workspace_key=row["workspace_key"],
                     page_key=row["page_key"],
+                    module_display_name=row["module_display_name"],
                     page_display_name=row["page_display_name"],
                     agent_id=row["agent_id"],
                     occurred_at=row["occurred_at"],
@@ -153,10 +170,54 @@ class AccessHistoryRepository:
         except psycopg.Error:
             raise AccessHistoryUnavailable("access history unavailable") from None
 
+    def list_subjects(
+        self, context: AuthContext, filters: AccessHistoryFilter
+    ) -> list[AccessHistorySubject]:
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from platform_control.read_access_subjects_v67("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        context.internal_user_id,
+                        context.session_id,
+                        filters.date_from,
+                        filters.date_to,
+                        filters.display_name,
+                        filters.workspace_key,
+                        filters.event_kind,
+                        filters.limit + 1,
+                        filters.offset,
+                    ),
+                ).fetchall()
+            return [
+                AccessHistorySubject(
+                    display_name=row["display_name"],
+                    departments=tuple(row["departments"] or ()),
+                    event_count=int(row["event_count"]),
+                    latest_occurred_at=row["latest_occurred_at"],
+                    latest_event_kind=row["latest_event_kind"],
+                    latest_workspace_key=row["latest_workspace_key"],
+                    latest_module_display_name=row["latest_module_display_name"],
+                    latest_page_display_name=row["latest_page_display_name"],
+                    latest_agent_id=row["latest_agent_id"],
+                )
+                for row in rows
+            ]
+        except psycopg.errors.InsufficientPrivilege:
+            raise AccessHistoryForbidden("platform owner required") from None
+        except psycopg.errors.CheckViolation:
+            raise AccessHistoryInvalid("access subject query invalid") from None
+        except psycopg.Error:
+            raise AccessHistoryUnavailable("access history unavailable") from None
+
 
 class UnavailableAccessHistoryRepository:
     def record_page_view(self, *_args, **_kwargs):
         raise AccessHistoryUnavailable("page access unavailable")
 
     def list_events(self, *_args, **_kwargs):
+        raise AccessHistoryUnavailable("access history unavailable")
+
+    def list_subjects(self, *_args, **_kwargs):
         raise AccessHistoryUnavailable("access history unavailable")

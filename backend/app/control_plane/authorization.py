@@ -104,6 +104,7 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
 
 _PLATFORM_OWNER_ONLY_ROUTES = frozenset({
     ("GET", "/api/v1/manage/access-events"),
+    ("GET", "/api/v1/manage/access-subjects"),
 })
 
 _VOC_MUTATION_ROUTES = frozenset({
