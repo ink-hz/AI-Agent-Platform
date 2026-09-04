@@ -31,10 +31,12 @@ class AccessHistoryEventResponse(BaseModel):
 
     access_event_id: UUID
     display_name: str
+    departments: list[str]
     event_kind: str
     login_kind: str | None
     workspace_key: str | None
     page_key: str | None
+    module_display_name: str | None
     page_display_name: str | None
     agent_id: str | None
     occurred_at: datetime
@@ -44,6 +46,29 @@ class AccessHistoryPageResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[AccessHistoryEventResponse]
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class AccessHistorySubjectResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    display_name: str
+    departments: list[str]
+    event_count: int
+    latest_occurred_at: datetime
+    latest_event_kind: str
+    latest_workspace_key: str | None
+    latest_module_display_name: str | None
+    latest_page_display_name: str | None
+    latest_agent_id: str | None
+
+
+class AccessHistorySubjectPageResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AccessHistorySubjectResponse]
     limit: int
     offset: int
     has_more: bool
@@ -111,6 +136,53 @@ def build_access_history_router(repository) -> APIRouter:
                 headers={"Retry-After": "60"},
             )
         return Response(status_code=204)
+
+    @router.get(
+        "/api/v1/manage/access-subjects",
+        response_model=AccessHistorySubjectPageResponse,
+    )
+    async def list_access_subjects(
+        request: Request,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        display_name: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+        workspace_key: Annotated[str | None, Query(min_length=1, max_length=32)] = None,
+        event_kind: Literal["login_succeeded", "page_view"] | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        offset: Annotated[int, Query(ge=0, le=100000)] = 0,
+    ) -> AccessHistorySubjectPageResponse:
+        context = _owner_context(request)
+        selected_to = date_to or datetime.now(UTC)
+        selected_from = date_from or selected_to - timedelta(days=7)
+        filters = AccessHistoryFilter(
+            date_from=selected_from,
+            date_to=selected_to,
+            display_name=display_name,
+            workspace_key=workspace_key,
+            event_kind=event_kind,
+            limit=limit,
+            offset=offset,
+        )
+        try:
+            rows = repository.list_subjects(context, filters)
+        except AccessHistoryForbidden:
+            raise HTTPException(
+                status_code=403, detail="platform owner required"
+            ) from None
+        except AccessHistoryInvalid:
+            raise HTTPException(
+                status_code=400, detail="access history query invalid"
+            ) from None
+        except AccessHistoryUnavailable:
+            raise HTTPException(
+                status_code=503, detail="访问记录暂不可用"
+            ) from None
+        return AccessHistorySubjectPageResponse(
+            items=[AccessHistorySubjectResponse.model_validate(row) for row in rows[:limit]],
+            limit=limit,
+            offset=offset,
+            has_more=len(rows) > limit,
+        )
 
     @router.get(
         "/api/v1/manage/access-events",

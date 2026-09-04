@@ -31,6 +31,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
         "/api/v1/account",
         "/api/v1/access-events/page-view",
         "/api/v1/manage/access-events",
+        "/api/v1/manage/access-subjects",
         "/api/v1/internal/session/subject",
         "/api/v1/auth/logout",
         "/api/v1/manage/system-health",

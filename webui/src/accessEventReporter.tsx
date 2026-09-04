@@ -21,13 +21,11 @@ export function accessEventForRoute(route: Route): PageAccessEvent | null {
     case "account": return { workspace_key: "platform", page_key: "platform.account" };
     case "ai-notes": return { workspace_key: "platform", page_key: "platform.ai_notes" };
     case "ai-note": return { workspace_key: "platform", page_key: "platform.ai_note" };
-    case "hr":
-    case "hr-chat":
-    case "hr-position":
-      return { workspace_key: "hr", page_key: "hr.workspace" };
-    case "hr-conversation":
-    case "hr-position-conversation":
-      return { workspace_key: "hr", page_key: "hr.conversation" };
+    case "hr": return { workspace_key: "hr", page_key: "hr.index" };
+    case "hr-chat": return { workspace_key: "hr", page_key: "hr.free_chat" };
+    case "hr-position": return { workspace_key: "hr", page_key: "hr.position_detail" };
+    case "hr-conversation": return { workspace_key: "hr", page_key: "hr.conversation" };
+    case "hr-position-conversation": return { workspace_key: "hr", page_key: "hr.position_conversation" };
     case "marketing": return { workspace_key: "marketing", page_key: "marketing.workspace", agent_id: MARKETING_AGENT_ID_BY_SLUG[route.agentSlug] };
     case "marketing-conversation": return { workspace_key: "marketing", page_key: "marketing.conversation", agent_id: MARKETING_AGENT_ID_BY_SLUG[route.agentSlug] };
     case "fae-manage-overview": return { workspace_key: "fae", page_key: "fae.manage.overview" };

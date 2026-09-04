@@ -235,7 +235,31 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 66
+    assert max(versions) == 67
+
+
+def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
+    sql = migration_sql("067_access_history_subject_index.sql")
+    normalized = " ".join(sql.split())
+
+    assert "add column module_display_name" in normalized
+    assert "create function platform_control.read_access_subjects_v67" in sql
+    assert "create function platform_control.read_user_access_events_v67" in sql
+    assert "platform_control.member_departments" in sql
+    assert "platform_control.directory_departments" in sql
+    assert "users.role='platform_owner'" in normalized
+    assert "grant execute on function platform_control.read_access_subjects_v67" in normalized
+    assert "grant execute on function platform_control.read_user_access_events_v67" in normalized
+    assert "grant select on platform_control.user_access_events" not in normalized
+    for page_key in (
+        "hr.index",
+        "hr.free_chat",
+        "hr.position_detail",
+        "hr.position_conversation",
+        "office.service.property_service",
+        "office.service.other",
+    ):
+        assert page_key in sql
 
 
 def test_user_access_history_migration_defines_closed_page_catalog_and_functions() -> None:
@@ -329,7 +353,7 @@ def test_user_access_history_database_enforces_catalog_and_role_boundaries(
                 "select page_key from platform_control.access_page_catalog"
             ).fetchall()
         }
-        assert len(page_keys) == 52
+        assert len(page_keys) == 64
         assert {
             "platform.brain",
             "hr.workspace",
@@ -338,6 +362,7 @@ def test_user_access_history_database_enforces_catalog_and_role_boundaries(
             "fae.manage.reports",
             "voc.manage.record_detail",
             "admin.access_history",
+            "hr.position_detail",
         } <= page_keys
 
         foreign_targets = {
