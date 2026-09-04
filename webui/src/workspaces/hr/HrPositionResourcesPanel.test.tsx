@@ -23,6 +23,8 @@ it("shows exact resource metadata with user-language availability and a prefixed
   await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} />));
   expect(container.textContent).toContain("成果 v2"); expect(container.textContent).toContain("4 KB");
   expect(container.textContent).toContain("来源对话 00000000"); expect(container.textContent).toContain("正在安全检查，暂不可使用");
+  expect(container.textContent).toContain("可下载，暂不支持预览");
+  expect(container.textContent).not.toContain("可预览和下载");
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载面试方案.docx")?.click());
   expect(client.downloadResource).toHaveBeenCalledWith(positionId, artifactId, expect.any(String), "download", expect.any(AbortSignal));
   expect(window.open).toHaveBeenCalledWith("about:blank", "_blank");

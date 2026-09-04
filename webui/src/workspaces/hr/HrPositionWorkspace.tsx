@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Account } from "../../auth";
 import type { AgentCapabilityCard } from "../../brainTypes";
@@ -117,11 +117,33 @@ export function HrPositionWorkspace({
   const [activeSection, setActiveSection] = useState<HrPositionSection>(section);
   const [materialDrawerOpen, setMaterialDrawerOpen] = useState(false);
   const taskController = useRef<AbortController | null>(null);
+  const artifactRefreshController = useRef<AbortController | null>(null);
   const materialDrawerClose = useRef<HTMLButtonElement>(null);
   const materialDrawerButton = useRef<HTMLButtonElement>(null);
   const materialDrawerWasOpen = useRef(false);
   const tabRefs = useRef<Partial<Record<HrPositionSection, HTMLButtonElement | null>>>({});
 
+  const refreshArtifactProjection = useCallback(async () => {
+    artifactRefreshController.current?.abort();
+    const controller = new AbortController();
+    artifactRefreshController.current = controller;
+    try {
+      const refreshed = await client.position(positionId, controller.signal);
+      if (controller.signal.aborted) return;
+      setDetail((current) => current ? {
+        ...current,
+        artifactCount: refreshed.artifactCount,
+        artifactIds: refreshed.artifactIds,
+        artifactAttachmentIds: refreshed.artifactAttachmentIds,
+      } : current);
+    } catch {
+      // The resources panel refresh remains useful even when this secondary projection is unavailable.
+    } finally {
+      if (artifactRefreshController.current === controller) artifactRefreshController.current = null;
+    }
+  }, [client, positionId]);
+
+  useEffect(() => () => artifactRefreshController.current?.abort(), [positionId]);
   useEffect(() => setActiveSection(section), [section]);
   useEffect(() => { setTurnMaterialIds([]); setMaterialDrawerOpen(false); }, [conversationId]);
   useEffect(() => { if (materialDrawerOpen) materialDrawerClose.current?.focus(); else if (materialDrawerWasOpen.current) materialDrawerButton.current?.focus(); materialDrawerWasOpen.current = materialDrawerOpen; }, [materialDrawerOpen]);
@@ -168,11 +190,18 @@ export function HrPositionWorkspace({
     const controller = new AbortController();
     const timeout = window.setTimeout(() => {
       void r12.activeTasks(positionId, controller.signal).then((tasks) => {
-        if (!controller.signal.aborted) { setActiveTasks(tasks); setTaskState("ready"); }
+        if (!controller.signal.aborted) {
+          const nextActiveIds = new Set(tasks.filter((task) => task.status === "accepted" || task.status === "running").map((task) => task.taskId));
+          if (activeTasks.some((task) => (task.status === "accepted" || task.status === "running") && !nextActiveIds.has(task.taskId))) {
+            setResourceRefreshGeneration((value) => value + 1);
+            void refreshArtifactProjection();
+          }
+          setActiveTasks(tasks); setTaskState("ready");
+        }
       }).catch(() => { if (!controller.signal.aborted) setTaskState("unavailable"); });
     }, 2_000);
     return () => { window.clearTimeout(timeout); controller.abort(); };
-  }, [activeTasks, hasActiveTasks, positionId, r12]);
+  }, [activeTasks, hasActiveTasks, positionId, r12, refreshArtifactProjection]);
 
   const historyClient = useMemo(() => historyFrom(conversations), [conversations]);
 
@@ -242,6 +271,10 @@ export function HrPositionWorkspace({
         if (started.status !== "failed") setTurnMaterialIds([]);
         setTaskState("ready");
         setActiveTasks((items) => [started, ...items.filter((item) => item.taskId !== started.taskId)]);
+        if (started.status === "completed") {
+          setResourceRefreshGeneration((value) => value + 1);
+          void refreshArtifactProjection();
+        }
       }
     } catch { if (!controller.signal.aborted) setMaterialNotice("岗位任务未启动，请重试。"); }
   }

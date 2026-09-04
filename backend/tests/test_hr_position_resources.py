@@ -3,8 +3,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.attachments.conversation_models import AttachmentRecord
-from app.attachments.download_service import DownloadNotFound
+from app.attachments.download_service import (
+    ConversationAttachmentAccessRepository,
+    DownloadNotFound,
+)
 from app.attachments.repository import AttachmentRepositoryError
+from app.control_plane.crypto import IdentityKeyring
+from app.execution_relay.content_crypto import ContentCodec
 from app.hr.resource_models import PositionArtifactItem, PositionMaterialItem
 from app.hr.resource_service import (
     HrPositionResourceService,
@@ -223,3 +228,30 @@ def test_systemic_attachment_repository_failure_is_not_degraded_to_one_bad_row()
     with pytest.raises(ResourceUnavailable) as raised:
         repository.materials_for_position(OWNER, POSITION)
     assert isinstance(raised.value.__cause__, AttachmentRepositoryError)
+
+
+def test_real_attachment_access_adapter_preserves_systemic_failure_for_resource_503():
+    def broken_connect(*_args, **_kwargs):
+        raise RuntimeError("database unavailable")
+
+    access = ConversationAttachmentAccessRepository(
+        "postgresql://platform_control_app@127.0.0.1/agent_platform_control",
+        content_codec=ContentCodec(IdentityKeyring(
+            active_version=1,
+            purpose="platform-content-encryption",
+            _keys={1: b"1" * 32},
+        )),
+        connect=broken_connect,
+    )
+    rows = [{
+        "attachment_id": MATERIAL, "source_conversation_id": None,
+        "source_turn_id": None, "created_at": NOW,
+        "attachment_state": "ready", "detected_mime": "application/pdf",
+        "declared_mime": "application/pdf", "attachment_size_bytes": 12,
+        "attachment_created_at": NOW, "resource_state": "ready",
+        "download_available": True, "preview_available": True,
+    }]
+    repository = PsycopgPositionResourceRepository(lambda: Connection(rows), access)
+
+    with pytest.raises(ResourceUnavailable):
+        repository.materials_for_position(OWNER, POSITION)

@@ -54,7 +54,7 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
   const [correction, setCorrection] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [analysisTask, setAnalysisTask] = useState<HrTaskRecord | null>(null);
-  const analysisTaskScope = useRef<{ positionCandidateId: string; candidateId: string } | null>(null);
+  const analysisTaskScope = useRef<{ positionCandidateId: string; candidateId: string; taskKind: keyof typeof TASK_LABEL } | null>(null);
   const selectedRelationId = useRef<string | null>(null);
   const mutation = useRef<AbortController | null>(null);
   const draftPollAttempt = useRef(0);
@@ -102,12 +102,14 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
     const timeout = window.setTimeout(() => {
       void api.taskStatus(positionId, analysisTask.taskId, controller.signal).then(async (terminal) => {
         if (controller.signal.aborted) return;
-        if (terminal.positionCandidateId !== scope.positionCandidateId || terminal.candidateId !== scope.candidateId) throw new Error("candidate task scope mismatch");
+        if (terminal.positionCandidateId !== scope.positionCandidateId || terminal.candidateId !== scope.candidateId || terminal.taskKind !== scope.taskKind) {
+          setAnalysisTask(null); setNotice("候选人任务绑定异常，已停止自动刷新。"); return;
+        }
         setAnalysisTask(terminal);
         if (terminal.status === "accepted" || terminal.status === "running") return;
         if (terminal.status === "failed") { if (selectedRelationId.current === scope.positionCandidateId) setNotice(`${TASK_LABEL[terminal.taskKind as keyof typeof TASK_LABEL]}执行失败：${terminal.error ?? "未知错误"}`); return; }
         const analyses = await api.candidateAnalyses(scope.positionCandidateId, controller.signal);
-        if (!controller.signal.aborted) { setSelected((value) => value?.relation.positionCandidateId === scope.positionCandidateId ? { ...value, analyses } : value); setNotice(`${TASK_LABEL[terminal.taskKind as keyof typeof TASK_LABEL]}已完成，分析版本已刷新。`); }
+        if (!controller.signal.aborted) { setSelected((value) => value?.relation.positionCandidateId === scope.positionCandidateId ? { ...value, analyses } : value); if (selectedRelationId.current === scope.positionCandidateId) setNotice(`${TASK_LABEL[scope.taskKind]}已完成，分析版本已刷新。`); }
       }).catch(() => { if (!controller.signal.aborted) setNotice("候选人任务状态暂时无法刷新，可手动刷新分析。"); });
     }, 1_000);
     return () => { window.clearTimeout(timeout); controller.abort(); };
@@ -165,7 +167,24 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
     const current = controller();
     const input = { contextVersionId: currentContextVersionId, candidate: { candidateId: selected.candidate.candidateId, positionCandidateId: selected.relation.positionCandidateId }, materialIds: [] };
     const operation = retainMutationRequest(`candidate-task:${positionId}:${kind}`, input);
-    try { const task = await api.startTask(positionId, kind, operation.requestId, input, current.signal); if (!current.signal.aborted) { completeMutationRequest(operation.key); analysisTaskScope.current = { positionCandidateId: selected.relation.positionCandidateId, candidateId: selected.candidate.candidateId }; setAnalysisTask(task); setNotice(task.status === "failed" ? `${TASK_LABEL[kind]}执行失败：${task.error ?? "未知错误"}` : `${TASK_LABEL[kind]}已启动，完成后将自动刷新分析版本。`); } } catch { if (!current.signal.aborted) setNotice("候选人任务未启动，可以安全重试。"); }
+    try {
+      const task = await api.startTask(positionId, kind, operation.requestId, input, current.signal);
+      if (current.signal.aborted) return;
+      completeMutationRequest(operation.key);
+      const scope = { positionCandidateId: selected.relation.positionCandidateId, candidateId: selected.candidate.candidateId, taskKind: kind };
+      analysisTaskScope.current = scope;
+      if (task.taskKind !== kind) { setAnalysisTask(null); setNotice("候选人任务绑定异常，已停止自动刷新。"); return; }
+      setAnalysisTask(task);
+      if (task.status === "failed") { setNotice(`${TASK_LABEL[kind]}执行失败：${task.error ?? "未知错误"}`); return; }
+      if (task.status === "completed") {
+        try {
+          const analyses = await api.candidateAnalyses(scope.positionCandidateId, current.signal);
+          if (!current.signal.aborted) { setSelected((value) => value?.relation.positionCandidateId === scope.positionCandidateId ? { ...value, analyses } : value); setNotice(`${TASK_LABEL[kind]}已完成，分析版本已刷新。`); }
+        } catch { if (!current.signal.aborted) setNotice(`${TASK_LABEL[kind]}任务已完成，分析暂时无法刷新，请手动刷新。`); }
+        return;
+      }
+      setNotice(`${TASK_LABEL[kind]}已启动，完成后将自动刷新分析版本。`);
+    } catch { if (!current.signal.aborted) setNotice("候选人任务未启动，可以安全重试。"); }
   }
   async function appendFeedback() {
     if (readOnly) return;

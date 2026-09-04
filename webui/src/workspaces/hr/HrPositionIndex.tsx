@@ -150,6 +150,7 @@ export function HrPositionIndex({
       } else {
         attempt.submission ??= startConversation(
           text, account.csrf_token, "hr-bot", { positionDraftId: draft.draftId },
+          attempt.conversationRequestId,
         );
         const created = await attempt.submission.send();
         result = { conversationId: created.conversation.conversation_id };

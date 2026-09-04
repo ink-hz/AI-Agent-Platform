@@ -6,13 +6,19 @@ import { completeMutationRequest, retainMutationRequest } from "./hrMutationRequ
 
 type ResourceItem = HrPositionMaterialItem | HrPositionArtifactItem;
 const STATE_LABELS: Record<string, string> = {
-  ready: "可预览和下载", uploading: "正在上传，暂不可使用", validating: "正在安全检查，暂不可使用",
+  uploading: "正在上传，暂不可使用", validating: "正在安全检查，暂不可使用",
   scanning: "正在安全检查，暂不可使用", failed: "生成失败，可回到任务重试", quarantined: "安全隔离，暂不可使用",
   rejected: "文件未通过安全检查", deleted: "已删除或保留期已结束",
 };
 function size(bytes: number): string { if (bytes < 1024) return `${bytes} B`; if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`; return `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
 function typeLabel(mediaType: string): string { if (mediaType === "application/pdf") return "PDF"; if (mediaType.includes("wordprocessingml") || mediaType === "application/msword") return "Word"; if (mediaType.startsWith("image/")) return "图片"; return mediaType; }
 function isArtifact(item: ResourceItem): item is HrPositionArtifactItem { return "artifactId" in item; }
+function availability(item: ResourceItem): string {
+  if (item.previewAvailable && item.downloadAvailable) return "可预览和下载";
+  if (item.downloadAvailable) return "可下载，暂不支持预览";
+  if (item.previewAvailable) return "可预览，暂不可下载";
+  return STATE_LABELS[item.state] ?? "当前状态暂不可使用";
+}
 
 export function HrPositionResourcesPanel({ api, positionId, readOnly = false, refreshGeneration = 0 }: {
   api: Pick<HrR12Api, "resources" | "downloadResource">; positionId: string;
@@ -63,7 +69,7 @@ export function HrPositionResourcesPanel({ api, positionId, readOnly = false, re
   const render = (item: ResourceItem) => <article key={`${isArtifact(item) ? item.artifactId : "material"}:${item.attachmentId}`}>
     <div><strong>{item.filename}</strong><span>{isArtifact(item) ? `成果 v${item.artifactVersion}` : "岗位材料"}</span></div>
     <dl><div><dt>类型</dt><dd>{typeLabel(item.mediaType)}</dd></div><div><dt>大小</dt><dd>{size(item.sizeBytes)}</dd></div><div><dt>创建时间</dt><dd><time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString("zh-CN")}</time></dd></div></dl>
-    <p>{STATE_LABELS[item.state] ?? "当前状态暂不可使用"}</p>
+    <p>{availability(item)}</p>
     {(item.sourceConversationId || item.sourceTurnId) && <p className="hr-resource-source">{item.sourceConversationId && `来源对话 ${item.sourceConversationId.slice(0, 8)}`}{item.sourceTurnId && ` · 轮次 ${item.sourceTurnId.slice(0, 8)}`}</p>}
     <div className="hr-resource-actions"><label><input disabled={readOnly || !item.downloadAvailable} type="checkbox" value={item.attachmentId} checked={selected.includes(item.attachmentId)} onChange={() => setSelected((ids) => ids.includes(item.attachmentId) ? ids.filter((id) => id !== item.attachmentId) : [...ids, item.attachmentId])} />加入批量下载</label>{item.previewAvailable && <button disabled={readOnly} type="button" onClick={() => void open(item.attachmentId, "preview")}>预览{item.filename}</button>}{item.downloadAvailable && <button disabled={readOnly} type="button" onClick={() => void open(item.attachmentId, "download")}>下载{item.filename}</button>}</div>
   </article>;

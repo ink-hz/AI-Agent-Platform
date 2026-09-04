@@ -216,6 +216,40 @@ it("refreshes analysis after a durable candidate task reaches completion", async
   expect(container.textContent).toContain("分析版本 v3");
 });
 
+it("refreshes analysis when an idempotent candidate task replay is already completed", async () => {
+  const client = api();
+  const refreshed = { ...analysis, analysisVersionId: newestAnalysisId, versionNumber: 3 };
+  client.startTask.mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null });
+  client.candidateAnalyses.mockResolvedValueOnce([analysis]).mockResolvedValueOnce([analysis, refreshed]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
+  expect(container.textContent).toContain("分析版本 v3");
+  expect(container.textContent).toContain("已完成，分析版本已刷新");
+});
+
+it("does not claim a completed candidate task failed to start when analysis refresh is unavailable", async () => {
+  const client = api();
+  client.startTask.mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null });
+  client.candidateAnalyses.mockResolvedValueOnce([analysis]).mockRejectedValueOnce(new Error("temporarily unavailable"));
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
+  expect(container.textContent).toContain("任务已完成，分析暂时无法刷新");
+  expect(container.textContent).not.toContain("任务未启动");
+});
+
+it("fails closed when terminal task kind does not match the launched candidate task", async () => {
+  vi.useFakeTimers(); const client = api();
+  client.taskStatus.mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_interview_plan", error: null, positionCandidateId: relationIds[0], candidateId: candidateIds[0] });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(client.candidateAnalyses).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("任务绑定异常");
+});
+
 it("uses authoritative terminal failure and keeps it isolated from another selected candidate", async () => {
   vi.useFakeTimers(); const client = api();
   client.taskStatus.mockResolvedValue({ taskId: "task", status: "failed", taskKind: "candidate_match", error: "模型失败", positionCandidateId: relationIds[0], candidateId: candidateIds[0] });

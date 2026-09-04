@@ -162,6 +162,33 @@ The server remains responsible for exact owner/position authorization, idempoten
 replay, original envelope recovery after browser/worker restart, and deriving status
 from durable execution records.
 
+## Final-review follow-up closure
+
+The final production-path review found five remaining Important issues and one Minor
+presentation issue that component mocks had not exposed. They are now covered by
+RED-to-GREEN tests against the real call paths:
+
+1. Position-section URLs survive login return-path validation, use the same full-height
+   `AppShell` as the position root, and retain the position-workbench document title.
+2. The default production `startConversation` path accepts the retained request UUID;
+   an uncertain response followed by a component remount reuses the same HTTP
+   `Idempotency-Key` instead of allocating a second conversation request.
+3. Candidate task responses that are already `completed` refresh the exact candidate
+   analysis immediately; `failed` remains terminal, and a mismatched task kind or
+   candidate binding stops automatic refresh. A completed task whose analysis read is
+   temporarily unavailable is never described as failing to start.
+4. Resources refresh whenever any previously active generation task leaves the active
+   set, including when another task remains running, and when task creation directly
+   returns `completed`. The position artifact attachment projection refreshes through
+   the real position API on an independent lifecycle signal, so the conversation
+   materials drawer does not retain stale artifact IDs when the task poll rerenders.
+5. The production attachment access repository preserves a typed opaque operational
+   failure for database access while missing, erased, or corrupt individual rows remain
+   concealed as `DownloadNotFound`. HR collection reads therefore return 503 for a
+   systemic reader failure instead of silently degrading every row.
+6. Resource availability text is derived from preview/download capabilities, so a
+   ready Word artifact no longer claims that preview is available.
+
 ## TDD and verification evidence
 
 RED evidence recorded before implementation:
@@ -201,6 +228,15 @@ Fresh GREEN evidence after final independent-review remediation:
   material retention, hard-stale resource tickets, resource-panel refresh, complete
   analysis provenance, derivative expiry, typed row degradation, polling reset, and
   drawer focus trapping/restoration.
+
+Fresh GREEN evidence after the production-path follow-up:
+
+- Full frontend suite: `106` files / `910` tests passed.
+- Backend resource plus production attachment-access suites: `67 passed`.
+- `npm run build`: TypeScript and Vite production build passed; only the existing
+  chunk-size advisory was emitted.
+- `python -m compileall -q backend/app/hr backend/app/attachments`: passed.
+- Ruff import checks on changed backend modules/tests and `git diff --check`: passed.
 
 ## Remaining integration risks and boundaries
 

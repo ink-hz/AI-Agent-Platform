@@ -249,6 +249,24 @@ describe("HrPositionWorkspace", () => {
     expect(deps.r12Api.activeTasks).toHaveBeenCalledTimes(calls);
   });
 
+  it("refreshes resources when one durable generation task completes while another remains active", async () => {
+    vi.useFakeTimers(); const deps = dependencies();
+    deps.api.position.mockReset()
+      .mockResolvedValueOnce(detail)
+      .mockResolvedValue({ ...detail, artifactCount: 4, artifactAttachmentIds: ["88888888-8888-4888-8888-888888888888"] });
+    deps.r12Api.activeTasks.mockReset().mockResolvedValueOnce([
+      { taskId: "durable-task", status: "running", taskKind: "jd" },
+      { taskId: "other-task", status: "running", taskKind: "jr" },
+    ]).mockResolvedValueOnce([{ taskId: "other-task", status: "running", taskKind: "jr" }]);
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="artifacts" {...deps} />));
+    const beforeCompletion = deps.r12Api.resources.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(deps.r12Api.resources.mock.calls.length).toBeGreaterThan(beforeCompletion);
+    expect(deps.api.position).toHaveBeenCalledTimes(2);
+    expect((deps.api.position.mock.calls[1][1] as AbortSignal).aborted).toBe(false);
+    expect(container.textContent).toContain("4 个生成结果");
+  });
+
   it("updates the parent context immediately after human confirmation", async () => {
     const deps = dependencies();
     const draft = { contextVersionId: "66666666-6666-4666-8666-666666666666", positionId: POSITION_ID, displayVersion: 1, status: "draft", summary: "画像草稿", modules: { talent_profile: { summary: "高级工程师" } }, officialVersionId: null, baseContextVersionId: null, sourceConversationId: null, sourceTurnId: null, sourceArtifactVersionId: null, sourceMaterialAttachmentIds: [], agentId: null, modelVersion: null, rowVersion: 1, createdAt: "2026-09-04T00:00:00Z", confirmedAt: null };
