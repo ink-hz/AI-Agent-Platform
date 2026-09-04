@@ -20,7 +20,7 @@ BindingKind = Literal[
     "manual_correction",
 ]
 
-_JOB_ID = re.compile(r"J[0-9]{4,12}\Z")
+_JOB_ID = re.compile(r"(?:J[0-9]{4,12}|JOBAD:[0-9]{1,20})\Z")
 _POSITION_SOURCES = {"official_site", "manual"}
 _OFFICIAL_STATUSES = {"active", "stale", "suspected_inactive", "inactive"}
 _INTERNAL_STATUSES = {"draft", "active", "archived"}

@@ -68,6 +68,23 @@ def test_official_version_preserves_complete_published_facts() -> None:
     assert record.official_status_code == 1
 
 
+def test_official_version_accepts_sync_fallback_jobad_identifier() -> None:
+    now = datetime.now(UTC)
+    record = OfficialPositionVersion(
+        official_position_version_id=uuid4(), owner_id=uuid4(),
+        position_id=uuid4(), official_job_id="jobad:511189333",
+        title="结构工程师", department=None, locations=("深圳",),
+        category="研发", subcategory="结构类", headcount=1, degree="本科",
+        employment_type="全职", salary="面议", duty="设计", requirement="经验",
+        source_version="sync-v1", source_changed_at=now,
+        content_hash="a" * 64, first_observed_at=now, last_observed_at=now,
+        official_status="active", status_reason="published", evidence={},
+        created_at=now, consecutive_misses=0, official_status_code=1,
+    )
+
+    assert record.official_job_id == "JOBAD:511189333"
+
+
 def test_frozen_models_deeply_isolate_mapping_inputs() -> None:
     modules = {"mission": {"items": ["first"]}}
     command = CreateContextDraft(

@@ -55,6 +55,18 @@ def test_position_record_separates_official_and_internal_status() -> None:
     assert record.internal_status == "active"
 
 
+def test_position_record_accepts_sync_fallback_jobad_identifier() -> None:
+    now = datetime.now(UTC)
+    record = PositionRecord(
+        position_id=uuid4(), owner_id=uuid4(), source_kind="official_site",
+        official_job_id="jobad:511189333", title="结构工程师", department=None,
+        locations=("深圳",), official_status="active", internal_status="active",
+        source_version="sync-v1", row_version=1, created_at=now, updated_at=now,
+    )
+
+    assert record.official_job_id == "JOBAD:511189333"
+
+
 @pytest.mark.parametrize("job_id", ["J1", "11014", "J-11014", "J1234567890123"])
 def test_official_position_rejects_noncanonical_job_id(job_id: str) -> None:
     now = datetime.now(UTC)

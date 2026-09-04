@@ -35,7 +35,7 @@ TASK_KINDS = frozenset(
         "freeform",
     }
 )
-_JOB_ID = re.compile(r"J[0-9]{4,12}\Z")
+_JOB_ID = re.compile(r"(?:J[0-9]{4,12}|JOBAD:[0-9]{1,20})\Z")
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 
 

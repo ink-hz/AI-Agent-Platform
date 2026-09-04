@@ -23,7 +23,7 @@ _JOB_FIELDS = {
     "consecutiveMisses", "contentHash", "officialStatus",
 }
 _STATUSES = {"active", "stale", "suspected_inactive", "inactive"}
-_JOB_ID = re.compile(r"J[0-9]{4,12}\Z")
+_JOB_ID = re.compile(r"(?:J[0-9]{4,12}|JOBAD:[0-9]{1,20})\Z")
 _JOB_REFERENCE = re.compile(r"(?<![A-Z0-9])J[0-9]{4,12}(?![A-Z0-9])")
 _POSITION_INTENT = re.compile(r"岗位|招聘|工程师|人才画像|任职要求|JD", re.I)
 
