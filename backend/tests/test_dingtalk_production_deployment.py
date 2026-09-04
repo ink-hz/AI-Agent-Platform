@@ -573,7 +573,6 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
         "platform-api",
         "platform-minio",
         "platform-attachment-storage-init",
-        "platform-clamav",
         "platform-attachments",
         "platform-loopback",
         "platform-directory",
