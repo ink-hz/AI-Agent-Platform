@@ -236,7 +236,11 @@ def project_official_jobs(
             content_hash=job.content_hash,
             source_synced_at=snapshot.last_successful_sync_at,
         ), import_evidence=evidence)
-        official_version = repository.project_official_version(ProjectOfficialVersion(
+        project_version = getattr(repository, "project_official_version", None)
+        if not callable(project_version):
+            projected.append(record)
+            continue
+        official_version = project_version(ProjectOfficialVersion(
             official_position_version_id=uuid5(
                 position_id, f"official-version:{job.content_hash}"
             ),
