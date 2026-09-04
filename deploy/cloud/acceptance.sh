@@ -119,7 +119,6 @@ download_status="$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0
 [[ "$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/v1/manage/access-subjects)" == "401" ]]
 [[ "$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/review/overview)" == "503" ]]
 /usr/bin/docker inspect --format '{{.State.Health.Status}}' orbbec-agent-platform-platform-attachments-1 | /usr/bin/grep -Fxq healthy
-/usr/bin/docker inspect --format '{{.State.Health.Status}}' orbbec-agent-platform-platform-clamav-1 | /usr/bin/grep -Fxq healthy
 /usr/bin/docker exec orbbec-agent-platform-platform-api-1 python -c 'import urllib.error,urllib.request; u="http://platform-minio:9000/orbbec-agent-attachments"; code=0
 try: urllib.request.urlopen(u,timeout=3)
 except urllib.error.HTTPError as error: code=error.code

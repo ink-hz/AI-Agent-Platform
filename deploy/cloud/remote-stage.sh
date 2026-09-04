@@ -219,6 +219,18 @@ PY
 [[ "$(/usr/bin/stat -c '%a %U' "$staged_worker_keyring")" == "600 root" ]] || fail
 available_bytes="$root_available_before"
 
+fae_curl_options=(
+  --noproxy '*'
+  --fail
+  --silent
+  --show-error
+  --connect-timeout 3
+  --max-time 8
+  --retry 5
+  --retry-all-errors
+  --retry-delay 1
+  --retry-max-time 45
+)
 fae_container_id="$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend 2>/dev/null || true)"
 fae_image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' ai-fae-backend 2>/dev/null || true)"
 fae_image_id="$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend 2>/dev/null || true)"
@@ -228,8 +240,8 @@ fae_config_digest="$(/usr/bin/docker inspect --format '{{json .Config}}' ai-fae-
 fae_mounts_digest="$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend 2>/dev/null \
   | /usr/bin/python3 -c 'import hashlib,json,sys; value=json.load(sys.stdin); value=sorted(value,key=lambda item:(item.get("Destination",""),item.get("Source",""),item.get("Type",""))); raw=json.dumps(value,sort_keys=True,separators=(",",":")).encode(); print(hashlib.sha256(raw).hexdigest())')"
 fae_health_digest="$(/usr/bin/docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ai-fae-backend 2>/dev/null | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
-fae_ip_digest="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
-fae_domain_digest="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+fae_ip_digest="$(/usr/bin/curl "${fae_curl_options[@]}" http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+fae_domain_digest="$(/usr/bin/curl "${fae_curl_options[@]}" --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
 nginx_digest="$(/usr/sbin/nginx -T 2>&1 | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
 public_listener_digest="$(/usr/bin/ss -H -lnt | /usr/bin/awk '$4 !~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | /usr/bin/sort -u | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
 [[ -n "$fae_container_id" && -n "$fae_image" && -n "$fae_image_id" && -n "$fae_started_at" && "$fae_restart_count" =~ ^[0-9]+$ ]] || fail
@@ -661,7 +673,7 @@ compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_pat
 
 postgres_data_path=/data/orbbec-agent-platform/postgres
 /usr/bin/install -d -m 700 /data/orbbec-agent-platform "$postgres_data_path" \
-  /data/orbbec-agent-platform/attachments /data/orbbec-agent-platform/clamav
+  /data/orbbec-agent-platform/attachments
 /bin/chown 999:999 "$postgres_data_path"
 legacy_postgres_volume=orbbec-agent-platform-postgres-data
 if [[ ! -e "$postgres_data_path/PG_VERSION" &&
@@ -884,8 +896,8 @@ fi
 [[ "$fae_mounts_digest" == "$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend \
   | /usr/bin/python3 -c 'import hashlib,json,sys; value=json.load(sys.stdin); value=sorted(value,key=lambda item:(item.get("Destination",""),item.get("Source",""),item.get("Type",""))); raw=json.dumps(value,sort_keys=True,separators=(",",":")).encode(); print(hashlib.sha256(raw).hexdigest())')" ]] || fail
 [[ "$fae_health_digest" == "$(/usr/bin/docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ai-fae-backend | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
-[[ "$fae_ip_digest" == "$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
-[[ "$fae_domain_digest" == "$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
+[[ "$fae_ip_digest" == "$(/usr/bin/curl "${fae_curl_options[@]}" http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
+[[ "$fae_domain_digest" == "$(/usr/bin/curl "${fae_curl_options[@]}" --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$nginx_digest" == "$(/usr/sbin/nginx -T 2>&1 | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$public_listener_digest" == "$(/usr/bin/ss -H -lnt | /usr/bin/awk '$4 !~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | /usr/bin/sort -u | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Fq '127.0.0.1:8080' || fail

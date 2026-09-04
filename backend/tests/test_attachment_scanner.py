@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from app.attachments import scanner as scanner_module
 from app.attachments.scanner import (
     ClamAVScanner,
     ScanDisposition,
@@ -113,6 +114,29 @@ def test_clamav_allows_only_loopback_or_the_private_compose_service() -> None:
 
     with pytest.raises(ValueError, match="attachment scanner host invalid"):
         ClamAVScanner(host="clamav.example.com")
+
+
+def test_trusted_internal_scanner_consumes_the_bounded_stream_without_network() -> None:
+    scanner_type = getattr(scanner_module, "TrustedInternalScanner", None)
+    assert scanner_type is not None
+    source = bounded(b"abc", b"def")
+
+    result = scanner_type(timeout_seconds=2.0, monotonic=lambda: 0.0).scan_stream(
+        source, size=6
+    )
+
+    assert result.disposition is ScanDisposition.CLEAN
+    assert result.database_version == 0
+
+
+def test_trusted_internal_scanner_fails_closed_on_size_mismatch() -> None:
+    scanner_type = getattr(scanner_module, "TrustedInternalScanner", None)
+    assert scanner_type is not None
+
+    with pytest.raises(ScannerUnavailable):
+        scanner_type(timeout_seconds=2.0, monotonic=lambda: 0.0).scan_stream(
+            bounded(b"abc"), size=4
+        )
 
 
 def test_clamav_uses_bounded_instream_protocol_for_clean_content() -> None:

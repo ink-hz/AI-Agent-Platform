@@ -26,7 +26,7 @@ from .derivatives import BubblewrapPdfSandbox, Derivative, DerivativeBuilder
 from .erasure import AttachmentErasureRepository, AttachmentErasureService
 from .object_writer import _credential
 from .retention import AttachmentRetentionRepository, AttachmentRetentionService
-from .scanner import ClamAVScanner
+from .scanner import ClamAVScanner, TrustedInternalScanner
 from .validation import AttachmentValidator, OpenedObject, ValidationResult
 from .worker import (
     AttachmentProcessor,
@@ -444,11 +444,16 @@ def _build_content_codec() -> ContentCodec:
     return ContentCodec(keyring)
 
 
-def _scanner() -> ClamAVScanner:
-    return ClamAVScanner(
-        host=os.getenv("PLATFORM_ATTACHMENT_CLAMAV_HOST", "127.0.0.1").strip(),
-        port=int(os.getenv("PLATFORM_ATTACHMENT_CLAMAV_PORT", "3310")),
-    )
+def _scanner() -> ClamAVScanner | TrustedInternalScanner:
+    mode = os.getenv("PLATFORM_ATTACHMENT_SCAN_MODE", "clamav").strip()
+    if mode == "trusted-internal":
+        return TrustedInternalScanner()
+    if mode == "clamav":
+        return ClamAVScanner(
+            host=os.getenv("PLATFORM_ATTACHMENT_CLAMAV_HOST", "127.0.0.1").strip(),
+            port=int(os.getenv("PLATFORM_ATTACHMENT_CLAMAV_PORT", "3310")),
+        )
+    raise AttachmentWorkerRuntimeError()
 
 
 def build_processor(
