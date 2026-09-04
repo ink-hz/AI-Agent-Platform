@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+
 from app.hr.candidate_models import (
     AppendHumanFeedback,
     AttachCandidateDraftExecution,
@@ -191,6 +192,43 @@ def test_protected_or_unrelated_personal_fields_are_rejected_from_facts() -> Non
                 candidate_id=uuid4(), owner_id=uuid4(), stable_name="候选人",
                 facts=facts, created_at=NOW, updated_at=NOW,
             )
+
+
+@pytest.mark.parametrize(
+    "facts",
+    (
+        {"summary": {"性别": "女"}},
+        {"contact": {"birthDate": "1990-01-01"}},
+        {"contact": {"BIRTH-DATE": "1990-01-01"}},
+        {"contact": {"ｂｉｒｔｈＤａｔｅ": "1990-01-01"}},
+        {"contact": {" date.of.birth ": "1990-01-01"}},
+        {"summary": {"出生 日期": "1990-01-01"}},
+        {"summary": {"政治面貌": "x"}},
+        {"sources": [{"ImmutableLocator": "secret"}]},
+    ),
+)
+def test_protected_fact_keys_reject_unicode_and_normalized_aliases(facts) -> None:
+    with pytest.raises(ValueError, match="candidate facts contain forbidden fields"):
+        Candidate(
+            candidate_id=uuid4(), owner_id=uuid4(), stable_name="候选人",
+            facts=facts, created_at=NOW, updated_at=NOW,
+        )
+
+
+def test_protected_key_normalization_does_not_reject_ordinary_skill_fields() -> None:
+    candidate = Candidate(
+        candidate_id=uuid4(), owner_id=uuid4(), stable_name="候选人",
+        facts={
+            "skills": [
+                {"name": "C++", "experienceYears": 5},
+                {"技能名称": "光学设计", "proficiency-level": "senior"},
+            ]
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    assert candidate.facts["skills"][0]["experienceYears"] == 5
 
 
 def test_uuid_fields_do_not_accept_strings() -> None:

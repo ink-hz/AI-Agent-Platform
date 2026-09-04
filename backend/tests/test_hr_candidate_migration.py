@@ -175,6 +175,10 @@ def test_candidate_writes_reject_erasing_attachments_and_json_is_defended_in_dep
     assert "from platform_attachments.erasure_jobs" in sql
     assert "create function platform_hr.candidate_json_safe_v70" in sql
     assert "candidate facts contain forbidden fields" in sql
+    assert "normalize(btrim(item.key),nfkc)" in sql
+    assert "regexp_replace" in sql
+    for protected_alias in ("性别", "birthdate", "dateofbirth", "出生日期", "政治面貌"):
+        assert f"'{protected_alias}'" in sql
 
 
 def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:

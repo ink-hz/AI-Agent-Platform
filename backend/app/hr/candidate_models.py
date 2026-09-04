@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -29,37 +31,75 @@ _ANALYSIS_KINDS = {
 }
 _FEEDBACK_KINDS = {"accepted", "rejected", "correction"}
 _PROCESSING_ATTEMPT_STATES = {"processing", "completed", "failed", "expired"}
+_PROTECTED_KEY_SEPARATORS = re.compile(r"[\s_.:/-]+")
+
+
+def _normalized_fact_key(value: object) -> str:
+    return _PROTECTED_KEY_SEPARATORS.sub(
+        "", unicodedata.normalize("NFKC", str(value)).strip().casefold()
+    )
+
+
 _FORBIDDEN_FACT_KEYS = {
     "age",
-    "birth_date",
-    "date_of_birth",
+    "birthdate",
+    "dateofbirth",
     "disability",
     "ethnicity",
     "gender",
     "health",
-    "marital_status",
+    "maritalstatus",
     "nationality",
     "onboarding",
-    "offer_status",
-    "pipeline_stage",
-    "political_affiliation",
+    "offerstatus",
+    "pipelinestage",
+    "politicalaffiliation",
     "pregnancy",
     "race",
     "religion",
-    "sexual_orientation",
-    "storage_key",
-    "storage_path",
-    "object_key",
-    "object_ref",
-    "object_ref_ciphertext",
-    "immutable_locator",
+    "sexualorientation",
+    "storagekey",
+    "storagepath",
+    "objectkey",
+    "objectref",
+    "objectrefciphertext",
+    "immutablelocator",
     "ats",
-    "ats_id",
-    "interview_schedule",
-    "automatic_rejection",
+    "atsid",
+    "interviewschedule",
+    "automaticrejection",
     "beisen",
-    "boss_zhipin",
+    "bosszhipin",
     "liepin",
+    "年龄",
+    "出生日期",
+    "生日",
+    "残疾",
+    "残障",
+    "民族",
+    "性别",
+    "健康",
+    "健康状况",
+    "婚姻",
+    "婚姻状况",
+    "婚育",
+    "国籍",
+    "入职",
+    "录用状态",
+    "流程阶段",
+    "政治面貌",
+    "怀孕",
+    "孕期",
+    "种族",
+    "宗教",
+    "性取向",
+    "存储键",
+    "存储路径",
+    "对象键",
+    "对象引用",
+    "不可变定位符",
+    "面试安排",
+    "自动淘汰",
 }
 _CANDIDATE_FACT_KEYS = {
     "stable_name", "summary", "contact", "education", "experiences",
@@ -114,7 +154,7 @@ def _optional_text(
 def _contains_forbidden_key(value: object) -> bool:
     if isinstance(value, dict):
         return any(
-            str(key).strip().lower() in _FORBIDDEN_FACT_KEYS
+            _normalized_fact_key(key) in _FORBIDDEN_FACT_KEYS
             or _contains_forbidden_key(item)
             for key, item in value.items()
         )

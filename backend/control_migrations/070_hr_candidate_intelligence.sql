@@ -472,17 +472,22 @@ language plpgsql immutable
 set search_path=pg_catalog,platform_hr
 as $function$
 declare item record;
+declare normalized_key text;
 declare allowed_keys constant text[] := array[
   'stable_name','summary','contact','education','experiences','projects','skills',
   'certifications','languages','awards','publications','unknowns','sources'
 ];
 declare forbidden_keys constant text[] := array[
-  'age','birth_date','date_of_birth','disability','ethnicity','gender','health',
-  'marital_status','nationality','onboarding','offer_status','pipeline_stage',
-  'political_affiliation','pregnancy','race','religion','sexual_orientation',
-  'storage_key','storage_path','object_key','object_ref','object_ref_ciphertext',
-  'immutable_locator','ats','ats_id','interview_schedule','automatic_rejection',
-  'beisen','boss_zhipin','liepin'
+  'age','birthdate','dateofbirth','disability','ethnicity','gender','health',
+  'maritalstatus','nationality','onboarding','offerstatus','pipelinestage',
+  'politicalaffiliation','pregnancy','race','religion','sexualorientation',
+  'storagekey','storagepath','objectkey','objectref','objectrefciphertext',
+  'immutablelocator','ats','atsid','interviewschedule','automaticrejection',
+  'beisen','bosszhipin','liepin',
+  '年龄','出生日期','生日','残疾','残障','民族','性别','健康','健康状况',
+  '婚姻','婚姻状况','婚育','国籍','入职','录用状态','流程阶段','政治面貌',
+  '怀孕','孕期','种族','宗教','性取向','存储键','存储路径','对象键',
+  '对象引用','不可变定位符','面试安排','自动淘汰'
 ];
 begin
   if selected_payload is null then return false; end if;
@@ -491,7 +496,11 @@ begin
   end if;
   if jsonb_typeof(selected_payload)='object' then
     for item in select key,value from jsonb_each(selected_payload) loop
-      if lower(btrim(item.key))=any(forbidden_keys) then return false; end if;
+      normalized_key := regexp_replace(
+        lower(normalize(btrim(item.key),NFKC)),
+        '[[:space:]_.:/-]+','','g'
+      );
+      if normalized_key=any(forbidden_keys) then return false; end if;
       if selected_candidate_facts and not lower(btrim(item.key))=any(allowed_keys) then
         return false;
       end if;

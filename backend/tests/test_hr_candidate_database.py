@@ -186,6 +186,52 @@ def test_candidate_confirmation_can_explicitly_create_despite_identity_matches(
         ).fetchone()[0] == "Existing"
 
 
+@pytest.mark.postgres
+def test_candidate_json_persistence_rejects_normalized_protected_keys(
+    candidate_database,
+) -> None:
+    environment = candidate_database["environments"]["production"]
+    ids = _seed_candidate_scope(environment)
+    protected_payloads = (
+        '{"summary":{"性别":"女"}}',
+        '{"contact":{"birthDate":"1990-01-01"}}',
+        '{"contact":{"BIRTH-DATE":"1990-01-01"}}',
+        '{"contact":{"ｂｉｒｔｈＤａｔｅ":"1990-01-01"}}',
+        '{"contact":{"date.of.birth":"1990-01-01"}}',
+        '{"summary":{"出生 日期":"1990-01-01"}}',
+        '{"sources":[{"ImmutableLocator":"secret"}]}',
+    )
+    for payload in protected_payloads:
+        with (
+            psycopg.connect(environment["admin"]) as connection,
+            pytest.raises(psycopg.errors.CheckViolation),
+        ):
+            connection.execute(
+                "insert into platform_hr.candidates("
+                "candidate_id,owner_internal_user_id,confirmation_request_id,"
+                "stable_name,facts) values (%s,%s,%s,'Unsafe',%s::jsonb)",
+                (uuid4(), ids["owner"], uuid4(), payload),
+            )
+
+    safe_candidate_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_hr.candidates("
+            "candidate_id,owner_internal_user_id,confirmation_request_id,"
+            "stable_name,facts) values (%s,%s,%s,'Safe',%s::jsonb)",
+            (
+                safe_candidate_id,
+                ids["owner"],
+                uuid4(),
+                '{"skills":[{"name":"C++","experienceYears":5},'
+                '{"技能名称":"光学设计","proficiency-level":"senior"}]}',
+            ),
+        )
+    assert CandidateRepository(
+        environment["urls"]["platform_control_app"]
+    ).candidate_for_owner(ids["owner"], safe_candidate_id).stable_name == "Safe"
+
+
 def _seed_execution_identity(connection, owner_id, request_id, *, agent_id="hr-bot"):
     ids = {name: uuid4() for name in (
         "mission", "task", "run", "job", "conversation", "message", "turn"
