@@ -75,6 +75,7 @@ class ClaimedHrTaskResult:
     output_artifact_version_id: UUID | None
     assistant_message_id: UUID
     agent_id: str
+    execution_model_version: str
     content_ciphertext: bytes
     encryption_key_version: int
 
@@ -114,6 +115,9 @@ class ClaimedHrTaskResult:
             )
             or self.task_kind not in {*_POSITION_MODULES, *_CANDIDATE_ANALYSES}
             or self.agent_id != "hr-bot"
+            or not isinstance(self.execution_model_version, str)
+            or not self.execution_model_version.strip()
+            or len(self.execution_model_version) > 128
             or not isinstance(self.content_ciphertext, bytes)
             or not self.content_ciphertext
             or isinstance(self.encryption_key_version, bool)
@@ -190,6 +194,7 @@ class HrTaskResultProjectionRepository:
                 output_artifact_version_id=row["output_artifact_version_id"],
                 assistant_message_id=row["assistant_message_id"],
                 agent_id=row["agent_id"],
+                execution_model_version=row["execution_model_version"],
                 content_ciphertext=bytes(row["content_ciphertext"]),
                 encryption_key_version=row["encryption_key_version"],
             )
@@ -260,7 +265,6 @@ class HrTaskResultReconciler:
         content_codec: ContentCodec,
         *,
         worker_id: str,
-        model_version: str,
         lease_seconds: int = 300,
     ) -> None:
         if any(
@@ -274,13 +278,8 @@ class HrTaskResultReconciler:
             raise TypeError("candidate service required")
         if not isinstance(content_codec, ContentCodec):
             raise TypeError("HR task result content codec required")
-        normalized_model = (
-            model_version.strip() if isinstance(model_version, str) else ""
-        )
         if (
-            not normalized_model
-            or len(normalized_model) > 128
-            or not isinstance(worker_id, str)
+            not isinstance(worker_id, str)
             or _WORKER_ID.fullmatch(worker_id) is None
             or isinstance(lease_seconds, bool)
             or not isinstance(lease_seconds, int)
@@ -292,7 +291,6 @@ class HrTaskResultReconciler:
         self._candidates = candidates
         self._content_codec = content_codec
         self._worker_id = worker_id
-        self._model_version = normalized_model
         self._lease_seconds = lease_seconds
 
     def _text(self, claim: ClaimedHrTaskResult) -> str:
@@ -326,7 +324,7 @@ class HrTaskResultReconciler:
                 source_artifact_version_id=claim.output_artifact_version_id,
                 source_material_attachment_ids=claim.material_attachment_ids,
                 agent_id=claim.agent_id,
-                model_version=self._model_version,
+                model_version=claim.execution_model_version,
                 created_by=claim.owner_id,
             )
             resource_id = getattr(result, "context_version_id", None)
@@ -345,7 +343,7 @@ class HrTaskResultReconciler:
                     conflicts=(),
                     verification_questions=(),
                     agent_version=claim.agent_id,
-                    model_version=self._model_version,
+                    model_version=claim.execution_model_version,
                     feedback_ids=claim.feedback_ids,
                 )
             )

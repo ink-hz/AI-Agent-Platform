@@ -1,16 +1,11 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from uuid import uuid4
 
 import psycopg
 import pytest
-from test_agent_brain_conversation_repository import (
-    _codec,
-    conversation_database,  # noqa: F401
-    repository,  # noqa: F401
-)
-from test_control_plane_migration import control_database  # noqa: F401
-
 from app.agent_brain.conversation_repository import message_subject
 from app.agent_brain.conversation_service import ConversationCommandService
 from app.hr.context import HrPositionScope
@@ -24,6 +19,12 @@ from app.hr.task_result_projection import (
     HrTaskResultReconciler,
 )
 from app.hr.task_service import HrPositionTaskService
+from test_agent_brain_conversation_repository import (
+    _codec,
+    conversation_database,  # noqa: F401
+    repository,  # noqa: F401
+)
+from test_control_plane_migration import control_database  # noqa: F401
 
 
 class _UnusedCandidates:
@@ -31,7 +32,16 @@ class _UnusedCandidates:
         raise AssertionError("candidate projection was not expected")
 
 
-def _finish_task(environment, task, owner_id, position_id, task_kind, value) -> None:
+def _finish_task(
+    environment,
+    task,
+    owner_id,
+    position_id,
+    task_kind,
+    value,
+    *,
+    model_version="hr-runtime-before-upgrade",
+) -> None:
     codec = _codec()
     message_id = uuid4()
     task_record_id = uuid4()
@@ -49,8 +59,9 @@ def _finish_task(environment, task, owner_id, position_id, task_kind, value) -> 
             "insert into platform_hr.position_task_records("
             "task_record_id,owner_internal_user_id,position_id,client_request_id,"
             "task_kind,material_attachment_ids,document_attachment_ids,"
-            "human_feedback_ids,conversation_id,turn_id,prompt_context,canonical_sha256) "
-            "select %s,%s,%s,client_request_id,%s,'{}','{}','{}',%s,%s,%s,%s "
+            "human_feedback_ids,conversation_id,turn_id,prompt_context,canonical_sha256,"
+            "execution_model_version) "
+            "select %s,%s,%s,client_request_id,%s,'{}','{}','{}',%s,%s,%s,%s,%s "
             "from platform_hr.position_task_requests where task_request_id=%s",
             (
                 task_record_id,
@@ -61,6 +72,7 @@ def _finish_task(environment, task, owner_id, position_id, task_kind, value) -> 
                 task.turn_id,
                 "projection database test",
                 "0" * 64,
+                model_version,
                 task.task_id,
             ),
         )
@@ -182,6 +194,37 @@ def test_projection_is_durable_idempotent_and_bad_result_does_not_block(
         HrPositionScope(positions),
         PostgresHrPositionTaskRepository(environment["urls"]["platform_control_app"]),
     )
+    contended = tasks.start(
+        owner_id=owner_id,
+        position_id=position.position_id,
+        request_id=uuid4(),
+        task_kind="talent_profile",
+        context_version_id=None,
+        material_ids=(),
+        conversation_id=None,
+        candidate_id=None,
+        position_candidate_id=None,
+    )
+    _finish_task(
+        environment,
+        contended,
+        owner_id,
+        position.position_id,
+        "talent_profile",
+        {"text": "并发结果"},
+    )
+    gate = Barrier(2)
+
+    def claim(worker_id):
+        gate.wait()
+        return HrTaskResultProjectionRepository(
+            environment["urls"]["platform_control_app"]
+        ).claim(worker_id, 300)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = tuple(pool.map(claim, ("projection-a", "projection-b")))
+    assert sum(item is not None for item in claims) == 1
+
     bad = tasks.start(
         owner_id=owner_id,
         position_id=position.position_id,
@@ -214,7 +257,6 @@ def test_projection_is_durable_idempotent_and_bad_result_does_not_block(
         _UnusedCandidates(),
         _codec(),
         worker_id="projection-test",
-        model_version="hr-runtime-test-v1",
     )
     assert reconciler.reconcile_one() is True
     assert reconciler.reconcile_one() is True
@@ -226,4 +268,4 @@ def test_projection_is_durable_idempotent_and_bad_result_does_not_block(
     drafts = intelligence.drafts(owner_id, position.position_id)
     assert len(drafts) == 1
     assert drafts[0].modules == {"jd": {"text": "真实 JD"}}
-    assert drafts[0].model_version == "hr-runtime-test-v1"
+    assert drafts[0].model_version == "hr-runtime-before-upgrade"

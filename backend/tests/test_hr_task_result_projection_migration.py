@@ -21,6 +21,12 @@ def test_result_projection_ledger_is_leased_and_app_only() -> None:
     assert "lease_expires_at timestamptz" in sql
     assert "attempt_count integer not null" in sql
     assert "for update of record skip locked limit 1" in sql
+    assert "execution_model_version text" in sql
+    assert "create function platform_hr.create_position_task_record_v71" in sql
+    assert "get diagnostics claimed_count=row_count" in sql
+    assert "if claimed_count=0 then return" in sql
+    assert "where (platform_hr.hr_task_result_projections.state='pending'" in sql
+    assert "platform_hr.hr_task_result_projections.lease_expires_at<=now()" in sql
     for function in (
         "claim_hr_task_result_projection_v71",
         "complete_hr_task_result_projection_v71",
@@ -59,6 +65,7 @@ def test_claim_requires_an_exact_completed_hr_task_and_assistant_message() -> No
         "message.delivery_status='completed'",
         "conversation.direct_agent_id='hr-bot'",
         "execution.agent_id='hr-bot'",
+        "record.execution_model_version",
         "count(distinct execution.job_id)",
         "count(distinct message.message_id)",
     ):

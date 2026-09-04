@@ -1743,7 +1743,10 @@ def test_hr_direct_relay_recovery_reuses_durable_position_envelope(
     context_builder = ConversationContextBuilder(
         conversations,
         hr_task_context_provider=HrTaskContextProvider(
-            PostgresHrTaskContextSource(environment["urls"]["platform_control_app"])
+            PostgresHrTaskContextSource(
+                environment["urls"]["platform_control_app"],
+                execution_model_version="hr-runtime-test-v1",
+            )
         ),
     )
     card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")

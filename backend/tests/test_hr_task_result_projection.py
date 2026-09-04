@@ -5,8 +5,6 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-from test_agent_brain_conversation_repository import _codec
-
 from app.agent_brain.conversation_repository import message_subject
 from app.hr.candidate_repository import CandidateUnavailable
 from app.hr.task_result_projection import (
@@ -14,9 +12,15 @@ from app.hr.task_result_projection import (
     HrTaskResultReconciler,
     hr_task_result_projection_loop,
 )
+from test_agent_brain_conversation_repository import _codec
 
 
-def _claim(task_kind: str = "jd", *, text: str = "完整真实结果") -> ClaimedHrTaskResult:
+def _claim(
+    task_kind: str = "jd",
+    *,
+    text: str = "完整真实结果",
+    model_version: str = "hr-runtime-execution-v1",
+) -> ClaimedHrTaskResult:
     codec = _codec()
     conversation_id = UUID(int=10)
     message_id = UUID(int=12)
@@ -43,6 +47,7 @@ def _claim(task_kind: str = "jd", *, text: str = "完整真实结果") -> Claime
         output_artifact_version_id=UUID(int=9),
         assistant_message_id=message_id,
         agent_id="hr-bot",
+        execution_model_version=model_version,
         content_ciphertext=sealed.ciphertext,
         encryption_key_version=sealed.key_version,
     )
@@ -96,19 +101,18 @@ def _reconciler(ledger, positions=None, candidates=None):
         candidates or _Candidates(),
         _codec(),
         worker_id="hr-result-projector.test",
-        model_version="hr-runtime-2026-09-04",
     )
 
 
-def test_reconciler_requires_explicit_real_model_version() -> None:
+def test_claim_requires_persisted_execution_model_version() -> None:
     with pytest.raises(ValueError):
-        HrTaskResultReconciler(
-            _Ledger(),
-            _Positions(),
-            _Candidates(),
-            _codec(),
-            worker_id="hr-result-projector.test",
-            model_version=" ",
+        ClaimedHrTaskResult(
+            **{
+                name: getattr(_claim(), name)
+                for name in _claim().__dataclass_fields__
+                if name != "execution_model_version"
+            },
+            execution_model_version=" ",
         )
 
 
@@ -143,7 +147,7 @@ def test_position_results_create_exact_context_module(task_kind, module) -> None
         "source_artifact_version_id": claim.output_artifact_version_id,
         "source_material_attachment_ids": claim.material_attachment_ids,
         "agent_id": "hr-bot",
-        "model_version": "hr-runtime-2026-09-04",
+        "model_version": "hr-runtime-execution-v1",
         "created_by": claim.owner_id,
     }
     assert ledger.completed == [(claim, "hr-result-projector.test", UUID(int=30))]
@@ -179,7 +183,16 @@ def test_candidate_results_create_analysis_without_fabricated_fields(
     assert command.conflicts == ()
     assert command.verification_questions == ()
     assert command.agent_version == "hr-bot"
-    assert command.model_version == "hr-runtime-2026-09-04"
+    assert command.model_version == "hr-runtime-execution-v1"
+
+
+def test_backlog_projection_uses_execution_snapshot_not_projector_runtime() -> None:
+    claim = _claim("jd", model_version="hr-runtime-before-upgrade")
+    positions = _Positions()
+
+    assert _reconciler(_Ledger((claim,)), positions=positions).reconcile_one() is True
+
+    assert positions.calls[0]["model_version"] == "hr-runtime-before-upgrade"
 
 
 def test_bad_result_is_failed_and_next_result_is_not_blocked() -> None:

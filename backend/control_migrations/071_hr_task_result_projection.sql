@@ -1,3 +1,107 @@
+alter table platform_hr.position_task_records
+  add column execution_model_version text check (
+    execution_model_version is null
+    or char_length(btrim(execution_model_version)) between 1 and 128
+  );
+
+create or replace function platform_hr.guard_position_task_record_immutability_v69()
+returns trigger language plpgsql
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if tg_op='DELETE' then
+    if session_user in (
+      'platform_control_app','platform_control_app_preview',
+      'platform_brain_worker','platform_brain_worker_preview'
+    ) then
+      raise check_violation using message='position task record is immutable';
+    end if;
+    return old;
+  end if;
+  if not (
+    (to_jsonb(new)-'output_artifact_version_id'-'draft_context_version_id'
+      -'execution_model_version')=
+      (to_jsonb(old)-'output_artifact_version_id'-'draft_context_version_id'
+      -'execution_model_version')
+    and (old.output_artifact_version_id is null
+      or new.output_artifact_version_id=old.output_artifact_version_id)
+    and (old.draft_context_version_id is null
+      or new.draft_context_version_id=old.draft_context_version_id)
+    and (
+      new.execution_model_version=old.execution_model_version
+      or (old.execution_model_version is null
+        and new.execution_model_version is not null)
+    )
+  ) then
+    raise check_violation using message='position task record is immutable';
+  end if;
+  return new;
+end
+$function$;
+
+create function platform_hr.create_position_task_record_v71(
+  selected_task_record_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_position_id uuid,
+  selected_client_request_id uuid,
+  selected_task_kind text,
+  selected_official_position_version_id uuid,
+  selected_context_version_id uuid,
+  selected_material_attachment_ids uuid[],
+  selected_candidate_id uuid,
+  selected_position_candidate_id uuid,
+  selected_document_attachment_ids uuid[],
+  selected_human_feedback_ids uuid[],
+  selected_conversation_id uuid,
+  selected_turn_id uuid,
+  selected_prompt_context text,
+  selected_canonical_sha256 text,
+  selected_execution_model_version text
+) returns platform_hr.position_task_records
+language plpgsql security definer set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.position_task_records%rowtype;
+declare existing_model_version text;
+begin
+  if session_user not in (
+    'platform_control_app','platform_control_app_preview',
+    'platform_brain_worker','platform_brain_worker_preview'
+  ) or selected_execution_model_version is null
+    or char_length(btrim(selected_execution_model_version)) not between 1 and 128
+  then raise insufficient_privilege; end if;
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':position-task:' ||
+    selected_client_request_id::text,0
+  ));
+  select record.execution_model_version into existing_model_version
+  from platform_hr.position_task_records record
+  where record.owner_internal_user_id=selected_owner_internal_user_id
+    and record.client_request_id=selected_client_request_id;
+  if found and existing_model_version is distinct from
+      btrim(selected_execution_model_version) then
+    raise unique_violation using
+      message='position task execution model snapshot mismatch';
+  end if;
+  selected := platform_hr.create_position_task_record_v69(
+    selected_task_record_id,selected_owner_internal_user_id,
+    selected_position_id,selected_client_request_id,selected_task_kind,
+    selected_official_position_version_id,selected_context_version_id,
+    selected_material_attachment_ids,selected_candidate_id,
+    selected_position_candidate_id,selected_document_attachment_ids,
+    selected_human_feedback_ids,selected_conversation_id,selected_turn_id,
+    selected_prompt_context,selected_canonical_sha256
+  );
+  if selected.execution_model_version is null then
+    update platform_hr.position_task_records record set
+      execution_model_version=btrim(selected_execution_model_version)
+    where record.task_record_id=selected.task_record_id
+      and record.execution_model_version is null
+    returning record.* into selected;
+  end if;
+  return selected;
+end
+$function$;
+
 create table platform_hr.hr_task_result_projections (
   projection_id uuid primary key,
   task_record_id uuid not null references platform_hr.position_task_records(task_record_id),
@@ -70,12 +174,14 @@ create function platform_hr.claim_hr_task_result_projection_v71(
   output_artifact_version_id uuid,
   assistant_message_id uuid,
   agent_id text,
+  execution_model_version text,
   content_ciphertext bytea,
   encryption_key_version integer
 )
 language plpgsql security definer set search_path=pg_catalog,platform_hr
 as $function$
 declare selected_record_id uuid;
+declare claimed_count integer;
 begin
   if session_user not in ('platform_control_app','platform_control_app_preview')
      or selected_worker_id is null
@@ -136,6 +242,7 @@ begin
     'jd','jr','talent_profile','sourcing_strategy','position_interview_plan',
     'candidate_match','candidate_interview_plan'
   )
+    and record.execution_model_version is not null
     and platform_hr.validate_candidate_task_inputs_v69(
       record.owner_internal_user_id,record.position_id,record.context_version_id,
       record.candidate_id,record.position_candidate_id,
@@ -192,7 +299,13 @@ begin
     state='processing',worker_id=excluded.worker_id,
     lease_expires_at=excluded.lease_expires_at,
     attempt_count=platform_hr.hr_task_result_projections.attempt_count+1,
-    error_code=null,updated_at=now();
+    error_code=null,updated_at=now()
+  where (platform_hr.hr_task_result_projections.state='pending'
+      and platform_hr.hr_task_result_projections.available_at<=now())
+    or (platform_hr.hr_task_result_projections.state='processing'
+      and platform_hr.hr_task_result_projections.lease_expires_at<=now());
+  get diagnostics claimed_count=row_count;
+  if claimed_count=0 then return; end if;
 
   return query
   select record.task_record_id,request.task_request_id,
@@ -210,6 +323,7 @@ begin
        and document.status='active'),'{}'::uuid[]),
     record.human_feedback_ids,record.conversation_id,record.turn_id,
     record.output_artifact_version_id,turn.assistant_message_id,'hr-bot'::text,
+    record.execution_model_version,
     message.content_ciphertext,message.encryption_key_version
   from platform_hr.position_task_records record
   join platform_hr.position_task_requests request
@@ -298,6 +412,10 @@ end
 $function$;
 
 revoke all on table platform_hr.hr_task_result_projections from public;
+revoke all on function platform_hr.create_position_task_record_v71(
+  uuid,uuid,uuid,uuid,text,uuid,uuid,uuid[],uuid,uuid,uuid[],uuid[],
+  uuid,uuid,text,text,text
+) from public;
 revoke all on function platform_hr.read_hr_task_result_projection_state_v71(uuid) from public;
 revoke all on function platform_hr.claim_hr_task_result_projection_v71(text,integer) from public;
 revoke all on function platform_hr.complete_hr_task_result_projection_v71(uuid,text,uuid,uuid) from public;
@@ -318,6 +436,11 @@ begin
       message='HR result projection migration owner/environment mismatch';
   end if;
   execute format('grant usage on schema platform_hr to %I',selected_app);
+  execute format(
+    'grant execute on function platform_hr.create_position_task_record_v71('
+    'uuid,uuid,uuid,uuid,text,uuid,uuid,uuid[],uuid,uuid,uuid[],uuid[],'
+    'uuid,uuid,text,text,text) to %I',selected_app
+  );
   execute format('grant execute on function platform_hr.read_hr_task_result_projection_state_v71(uuid) to %I',selected_app);
   execute format('grant execute on function platform_hr.claim_hr_task_result_projection_v71(text,integer) to %I',selected_app);
   execute format('grant execute on function platform_hr.complete_hr_task_result_projection_v71(uuid,text,uuid,uuid) to %I',selected_app);

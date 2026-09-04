@@ -36,7 +36,9 @@ class HrTaskMaterial:
     erasure_pending: bool
 
     def __post_init__(self) -> None:
-        if not isinstance(self.attachment_id, UUID) or not isinstance(self.position_id, UUID):
+        if not isinstance(self.attachment_id, UUID) or not isinstance(
+            self.position_id, UUID
+        ):
             raise ValueError("material identifiers invalid")
         if (
             not isinstance(self.sha256, str)
@@ -46,7 +48,10 @@ class HrTaskMaterial:
             raise ValueError("material hash invalid")
         if not isinstance(self.state, str) or not isinstance(self.active, bool):
             raise ValueError("material state invalid")
-        if not isinstance(self.retained_until, datetime) or self.retained_until.tzinfo is None:
+        if (
+            not isinstance(self.retained_until, datetime)
+            or self.retained_until.tzinfo is None
+        ):
             raise ValueError("material retention invalid")
         if not isinstance(self.erasure_pending, bool):
             raise ValueError("material erasure state invalid")
@@ -199,7 +204,8 @@ def _canonical_document(envelope: HrPositionContextEnvelope) -> dict[str, object
         ),
         "position_candidate_id": (
             str(envelope.position_candidate_id)
-            if envelope.position_candidate_id else None
+            if envelope.position_candidate_id
+            else None
         ),
         "position_id": str(envelope.position_id),
         "prompt_context": envelope.prompt_context,
@@ -219,7 +225,9 @@ def canonical_hash(envelope: HrPositionContextEnvelope) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _prompt(scope: HrTaskScope, candidate_fragment: CandidateEnvelopeFragment | None) -> str:
+def _prompt(
+    scope: HrTaskScope, candidate_fragment: CandidateEnvelopeFragment | None
+) -> str:
     official = None
     if scope.official is not None:
         official = {
@@ -302,9 +310,7 @@ class HrTaskContextProvider:
             for value in (owner_id, conversation_id, turn_id)
         ):
             raise ValueError("HR task context identifiers invalid")
-        existing = self._source.existing_for_turn(
-            owner_id, conversation_id, turn_id
-        )
+        existing = self._source.existing_for_turn(owner_id, conversation_id, turn_id)
         if existing is not None:
             if canonical_hash(existing) != existing.canonical_sha256:
                 raise HrTaskContextError("recorded HR task context invalid")
@@ -328,14 +334,21 @@ class HrTaskContextProvider:
             or scope.context.state != "confirmed"
         ):
             raise HrTaskContextError("confirmed position context invalid")
-        candidate_task = scope.task_kind in {"candidate_match", "candidate_interview_plan"}
+        candidate_task = scope.task_kind in {
+            "candidate_match",
+            "candidate_interview_plan",
+        }
         if candidate_task and (scope.context is None or scope.candidate_id is None):
             raise HrTaskContextError("candidate context unavailable")
         if scope.candidate_id is not None and scope.context is None:
             raise HrTaskContextError("candidate context unavailable")
         if scope.task_kind == "candidate_comparison" and scope.candidate_id is not None:
             raise HrTaskContextError("candidate comparison scope invalid")
-        if scope.official is None and scope.context is None and scope.position_title is None:
+        if (
+            scope.official is None
+            and scope.context is None
+            and scope.position_title is None
+        ):
             raise HrTaskContextError("position context unavailable")
         now = datetime.now().astimezone()
         for material in scope.materials:
@@ -362,10 +375,10 @@ class HrTaskContextProvider:
                     scope.position_candidate_id,
                 )
             except (RuntimeError, ValueError):
-                raise HrTaskContextError(
-                    "candidate context unavailable"
-                ) from None
-            candidate_fragment = _validated_candidate_fragment(candidate_fragment, scope)
+                raise HrTaskContextError("candidate context unavailable") from None
+            candidate_fragment = _validated_candidate_fragment(
+                candidate_fragment, scope
+            )
             document_ids = candidate_fragment.document_attachment_ids
             feedback_ids = candidate_fragment.human_feedback_ids
         prompt_context = _prompt(scope, candidate_fragment)
@@ -373,7 +386,8 @@ class HrTaskContextProvider:
             position_id=scope.position_id,
             official_version_id=(
                 scope.official.official_position_version_id
-                if scope.official is not None else None
+                if scope.official is not None
+                else None
             ),
             context_version_id=(
                 scope.context.context_version_id if scope.context is not None else None
@@ -406,9 +420,7 @@ class HrTaskContextProvider:
                 "canonical_sha256": canonical_hash(placeholder),
             }
         )
-        self._source.record_for_turn(
-            owner_id, conversation_id, turn_id, envelope
-        )
+        self._source.record_for_turn(owner_id, conversation_id, turn_id, envelope)
         return envelope
 
 
@@ -417,16 +429,26 @@ class PostgresHrTaskContextSource:
         self,
         database_url: str,
         *,
+        execution_model_version: str,
         task_selection: Callable[
             [UUID, UUID, UUID, UUID], tuple[str, UUID | None, UUID | None]
-        ] | None = None,
+        ]
+        | None = None,
         connect: Callable[..., Any] = psycopg.connect,
     ) -> None:
         if not isinstance(database_url, str) or not database_url:
             raise ValueError("HR task context database URL required")
+        normalized_model_version = (
+            execution_model_version.strip()
+            if isinstance(execution_model_version, str)
+            else ""
+        )
+        if not normalized_model_version or len(normalized_model_version) > 128:
+            raise ValueError("HR execution model version required")
         if task_selection is not None and not callable(task_selection):
             raise ValueError("HR task selection provider invalid")
         self._database_url = database_url
+        self._execution_model_version = normalized_model_version
         self._task_selection = task_selection
         self._connect = connect
 
@@ -451,6 +473,8 @@ class PostgresHrTaskContextSource:
                 ).fetchone()
             if row is None:
                 return None
+            if row["execution_model_version"] != self._execution_model_version:
+                raise HrTaskContextError("HR task model snapshot mismatch")
             return HrPositionContextEnvelope(
                 position_id=row["position_id"],
                 official_version_id=row["official_position_version_id"],
@@ -506,7 +530,9 @@ class PostgresHrTaskContextSource:
                         ),
                     ).fetchone()
                     if official_row is None:
-                        raise HrTaskContextError("official position context unavailable")
+                        raise HrTaskContextError(
+                            "official position context unavailable"
+                        )
                 request_row = connection.execute(
                     "select * from platform_hr.read_position_task_request_v69(%s,%s,%s)",
                     (owner_id, scope["position_id"], scope["client_request_id"]),
@@ -531,7 +557,9 @@ class PostgresHrTaskContextSource:
                         ),
                     ).fetchone()
                     if context_row is None:
-                        raise HrTaskContextError("confirmed position context unavailable")
+                        raise HrTaskContextError(
+                            "confirmed position context unavailable"
+                        )
                 if request_row is not None:
                     material_rows = connection.execute(
                         "select attachment.attachment_id,material.position_id,"
@@ -583,15 +611,17 @@ class PostgresHrTaskContextSource:
             for row in material_rows:
                 if row["position_id"] is None or row["sha256"] is None:
                     raise HrTaskContextError("material scope invalid")
-                materials.append(HrTaskMaterial(
-                    attachment_id=row["attachment_id"],
-                    position_id=row["position_id"],
-                    sha256=row["sha256"],
-                    state=row["state"],
-                    active=row["active"],
-                    retained_until=row["retained_until"],
-                    erasure_pending=row["erasure_pending"],
-                ))
+                materials.append(
+                    HrTaskMaterial(
+                        attachment_id=row["attachment_id"],
+                        position_id=row["position_id"],
+                        sha256=row["sha256"],
+                        state=row["state"],
+                        active=row["active"],
+                        retained_until=row["retained_until"],
+                        erasure_pending=row["erasure_pending"],
+                    )
+                )
             task_kind, candidate_id, position_candidate_id = (
                 self._task_selection(
                     owner_id, scope["position_id"], conversation_id, turn_id
@@ -599,7 +629,8 @@ class PostgresHrTaskContextSource:
                 if self._task_selection is not None
                 else (
                     (
-                        request_row["task_kind"], request_row["candidate_id"],
+                        request_row["task_kind"],
+                        request_row["candidate_id"],
                         request_row["position_candidate_id"],
                     )
                     if request_row is not None
@@ -644,9 +675,9 @@ class PostgresHrTaskContextSource:
                 if request_row is None:
                     raise HrTaskContextError("HR task selection unavailable")
                 return connection.execute(
-                    "select (platform_hr.create_position_task_record_v69("
+                    "select (platform_hr.create_position_task_record_v71("
                     "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,%s::uuid[],"
-                    "%s::uuid[],%s,%s,%s,%s)).*",
+                    "%s::uuid[],%s,%s,%s,%s,%s)).*",
                     (
                         uuid5(envelope.position_id, f"task-record:{turn_id}"),
                         owner_id,
@@ -664,6 +695,7 @@ class PostgresHrTaskContextSource:
                         turn_id,
                         envelope.prompt_context,
                         envelope.canonical_sha256,
+                        self._execution_model_version,
                     ),
                 ).fetchone()
         except (KeyError, TypeError, ValueError, psycopg.Error):
