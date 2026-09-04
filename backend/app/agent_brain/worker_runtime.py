@@ -431,10 +431,14 @@ def _healthcheck() -> int:
                 "select count(*) from platform_control.worker_heartbeats "
                 "where worker_name=any(%s) and status='healthy' "
                 "and last_seen_at>clock_timestamp()-interval '60 seconds'",
-                ((
-                    "agent-brain-step", "hr-candidate-parser",
-                    "agent-brain-adapter", "agent-brain-reaper",
-                ),),
+                (
+                    [
+                        "agent-brain-step",
+                        "hr-candidate-parser",
+                        "agent-brain-adapter",
+                        "agent-brain-reaper",
+                    ],
+                ),
             ).fetchone()[0]
         return 0 if count == 4 else 1
     except Exception:

@@ -235,7 +235,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 72
+    assert max(versions) == 73
 
 
 def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
@@ -537,6 +537,21 @@ def test_fae_workbench_access_migration_is_function_only_for_app_role() -> None:
     assert "grant update on platform_control.fae_workbench_grants" not in sql
     assert "grant insert on platform_control.fae_workbench_grants" not in sql
     assert "grant delete on platform_control.fae_workbench_grants" not in sql
+
+
+def test_fae_workbench_member_resolver_exposes_only_exact_function() -> None:
+    sql = migration_sql("073_fae_workbench_member_resolution.sql")
+    normalized = " ".join(sql.split())
+
+    assert (
+        "create function platform_control.resolve_active_fae_workbench_member_v73"
+        in sql
+    )
+    assert "security definer" in sql
+    assert "grant execute on function" in normalized
+    assert "resolve_active_fae_workbench_member_v73(text) to %i" in normalized
+    assert "grant select on platform_control.directory_" not in normalized
+    assert "revoke select on platform_control.directory_state" in normalized
 
 
 def test_first_control_migration_exists() -> None:
@@ -2314,6 +2329,39 @@ def _grant_seeded_fae_member(
         "parameters": parameters,
         "result": result,
     }
+
+
+@pytest.mark.postgres
+def test_fae_workbench_member_resolution_uses_exact_app_projection(
+    control_database,
+) -> None:
+    from app.control_plane.fae_access import FaeWorkbenchAccessRepository
+
+    environment = control_database["environments"]["production"]
+    seeded = _seed_fae_workbench_directory(environment["admin"])
+    app_url = environment["urls"]["platform_control_app"]
+
+    assert FaeWorkbenchAccessRepository(app_url).active_fae_workbench_member(
+        seeded["unique_name"]
+    ) == {
+        "generation_id": seeded["generation_id"],
+        "member_key": seeded["unique_member_key"],
+    }
+    with pytest.raises(ValueError, match="directory_member_not_found"):
+        FaeWorkbenchAccessRepository(app_url).active_fae_workbench_member(
+            seeded["inactive_name"]
+        )
+    with pytest.raises(ValueError, match="directory_name_not_unique"):
+        FaeWorkbenchAccessRepository(app_url).active_fae_workbench_member(
+            seeded["duplicate_name"]
+        )
+
+    with psycopg.connect(app_url) as connection, pytest.raises(
+        psycopg.errors.InsufficientPrivilege
+    ):
+        connection.execute(
+            "select member_key from platform_control.directory_members limit 1"
+        ).fetchall()
 
 
 @pytest.mark.postgres

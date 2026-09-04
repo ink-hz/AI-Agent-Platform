@@ -60,15 +60,8 @@ class FaeWorkbenchAccessRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select state.active_generation_id as generation_id, "
-                    "member.member_key from platform_control.directory_state state "
-                    "join platform_control.directory_generations generation "
-                    "on generation.generation_id = state.active_generation_id "
-                    "and generation.status = 'complete' "
-                    "join platform_control.directory_members member "
-                    "on member.generation_id = generation.generation_id "
-                    "where state.singleton and member.subject_kind = 'employee' "
-                    "and member.status = 'active' and member.display_name = %s",
+                    "select generation_id,member_key from "
+                    "platform_control.resolve_active_fae_workbench_member_v73(%s)",
                     (display_name,),
                 ).fetchall()
             if len(rows := list(row)) != 1:

@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 
 import yaml
-
+from app.agent_brain import worker_runtime
 from app.agent_brain.worker_runtime import tick, validate_worker_mode
 
 ROOT = Path(__file__).parents[2]
@@ -17,6 +17,47 @@ LATEST_AGENT_BRAIN_MIGRATION = (
     / "control_migrations"
     / "047_agent_brain_collaboration_retention.sql"
 )
+
+
+def test_brain_worker_healthcheck_binds_worker_names_as_postgres_array(
+    monkeypatch,
+) -> None:
+    expected_names = [
+        "agent-brain-step",
+        "hr-candidate-parser",
+        "agent-brain-adapter",
+        "agent-brain-reaper",
+    ]
+
+    class Result:
+        @staticmethod
+        def fetchone() -> tuple[int]:
+            return (4,)
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        @staticmethod
+        def execute(_query, parameters):
+            assert parameters == (expected_names,)
+            return Result()
+
+    monkeypatch.setattr(worker_runtime, "_required_path", lambda _name: Path("/secret"))
+    monkeypatch.setattr(
+        worker_runtime, "read_secret_file", lambda _path: "postgresql://brain"
+    )
+    monkeypatch.setattr(
+        worker_runtime, "validate_control_dsn", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        worker_runtime.psycopg, "connect", lambda *_args, **_kwargs: Connection()
+    )
+
+    assert worker_runtime._healthcheck() == 0
 
 
 def _nginx_location_block(value: str, selector: str) -> str:
