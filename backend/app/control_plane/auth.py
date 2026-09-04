@@ -44,7 +44,7 @@ _SAFE_RETURN_EXACT = frozenset(
         "/", "/account", "/missions", "/conversations", "/agents",
         "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
         "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
-        "/marketing/", "/admin", "/admin/",
+        "/hr/chat", "/marketing/", "/admin", "/admin/",
     }
 )
 _SAFE_RETURN_PATTERNS = tuple(
@@ -58,6 +58,8 @@ _SAFE_RETURN_PATTERNS = tuple(
         rf"/fae/manage/(?:sessions|issues|reports)(?:/{_SAFE_RETURN_ID})?",
         rf"/voc/(?:records|manage/records)(?:/{_SAFE_RETURN_ID})?",
         rf"/hr/conversations/{_SAFE_RETURN_ID}",
+        rf"/hr/positions/[0-9a-fA-F-]{{36}}"
+        rf"(?:/conversations/{_SAFE_RETURN_ID})?",
         rf"/marketing/(?:prospecting|inbound|voice|intelligence|gtm)"
         rf"(?:/conversations/{_SAFE_RETURN_ID})?",
         rf"/admin/fae(?:/(?:sessions(?:/{_SAFE_RETURN_ID})?"
@@ -71,6 +73,7 @@ _SAFE_RETURN_PATTERNS = tuple(
 _CANONICAL_ENCODED_DETAIL = re.compile(
     rf"(?P<prefix>/admin/fae/(?:sessions|reports)|/fae/conversations"
     rf"|/fae/manage/(?:sessions|issues|reports)|/hr/conversations"
+    rf"|/hr/positions/[0-9a-fA-F-]{{36}}/conversations"
     rf"|/marketing/(?:prospecting|inbound|voice|intelligence|gtm)/conversations)"
     rf"/(?P<detail>[^/]+)"
 )

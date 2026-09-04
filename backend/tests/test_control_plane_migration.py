@@ -249,6 +249,7 @@ def test_user_access_history_migration_defines_closed_page_catalog_and_functions
     assert "create function platform_control.append_page_view_v65" in sql
     assert "create function platform_control.read_user_access_events_v65" in sql
     assert "create function platform_control.retain_user_access_events_v65" in sql
+    assert "revoke execute on function platform_control.consume_attempt_and_issue_session_v22" not in normalized
     assert "pg_advisory_xact_lock" in sql
     assert "interval '60 seconds'" in sql
     assert ">= 120" in sql

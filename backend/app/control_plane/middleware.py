@@ -61,7 +61,9 @@ _DIRECT_AGENT_CONVERSATION_RESPONSE = re.compile(
     r"/api/v1/agents/[^/]+/conversations\Z"
 )
 _PUBLIC_HR_WORKSPACE_SHELL = re.compile(
-    r"/hr(?:/?|/conversations/[A-Za-z0-9:._-]+)\Z"
+    r"/hr(?:/?|/chat|/conversations/[A-Za-z0-9:._-]+"
+    r"|/positions/[0-9a-fA-F-]{36}"
+    r"(?:/conversations/[A-Za-z0-9:._-]+)?)\Z"
 )
 _PUBLIC_MARKETING_WORKSPACE_SHELL = re.compile(
     r"/marketing(?:/?|/(?:prospecting|inbound|voice|intelligence|gtm)"

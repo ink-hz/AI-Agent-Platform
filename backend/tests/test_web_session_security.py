@@ -103,6 +103,10 @@ def test_safe_return_path_allows_only_the_exact_office_entry(candidate: str) -> 
         "/voc/manage/records/VOC-1",
         "/hr",
         "/hr/",
+        "/hr/chat",
+        "/hr/positions/11111111-1111-4111-8111-111111111111",
+        "/hr/positions/11111111-1111-4111-8111-111111111111/conversations/hr:one",
+        "/hr/positions/11111111-1111-4111-8111-111111111111/conversations/hr%3Aone",
         "/hr/conversations/hr:one",
         "/hr/conversations/hr%3Aone",
         "/marketing",
@@ -125,6 +129,8 @@ def test_safe_return_path_accepts_canonical_workspace_paths(candidate: str) -> N
         "/fae/manage/unknown",
         "/voc/unknown",
         "/hr/conversations/unsafe/path",
+        "/hr/positions/not-a-uuid",
+        "/hr/positions/11111111-1111-4111-8111-111111111111/unknown",
         "/marketing/unknown",
         "/marketing/voice/conversations/unsafe/path",
         "/marketing/prospecting?next=/admin",
@@ -833,6 +839,7 @@ def test_migration_015_revokes_direct_attempt_and_session_dml(production_environ
         "platform_control.claim_web_login_attempt(bytea,integer,text,text)",
         "platform_control.fail_web_login_attempt(uuid,text)",
         "platform_control.consume_attempt_and_issue_session_v65(uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean)",
+        "platform_control.consume_attempt_and_issue_session_v22(uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean)",
         "platform_control.authenticate_web_session_v22(bytea,integer,integer)",
         "platform_control.revoke_web_session(uuid,text)",
     )
@@ -855,14 +862,6 @@ def test_migration_015_revokes_direct_attempt_and_session_dml(production_environ
             "'authenticate_web_session',"
             "'authenticate_web_session_v22','revoke_web_session')"
         ).fetchone() == (0,)
-        assert connection.execute(
-            "select has_function_privilege('platform_control_app',"
-            "'platform_control.consume_attempt_and_issue_session_v22("
-            "uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean)',"
-            "'execute')"
-        ).fetchone() == (False,)
-
-
 @pytest.mark.postgres
 def test_system_health_read_audit_is_exact_owner_only(production_environment) -> None:
     from app.control_plane.auth import SystemHealthAuditWriter

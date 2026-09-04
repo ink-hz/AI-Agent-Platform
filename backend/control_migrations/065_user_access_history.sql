@@ -481,11 +481,8 @@ begin
     );
   end loop;
 
-  execute format(
-    'revoke execute on function platform_control.consume_attempt_and_issue_session_v22('
-    'uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean) from %I',
-    selected_app
-  );
+  -- Keep v22 executable during the rollback window. Migration 065 can be
+  -- applied before every application node has moved to the v65 wrapper.
   execute format(
     'grant execute on function platform_control.consume_attempt_and_issue_session_v65('
     'uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean) to %I',

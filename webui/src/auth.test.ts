@@ -82,6 +82,9 @@ describe("login return path", () => {
     "/voc/manage/records/VOC-1",
     "/hr",
     "/hr/",
+    "/hr/chat",
+    "/hr/positions/11111111-1111-4111-8111-111111111111",
+    "/hr/positions/11111111-1111-4111-8111-111111111111/conversations/hr:one",
     "/hr/conversations/hr:one",
     "/marketing",
     "/marketing/",
@@ -96,6 +99,8 @@ describe("login return path", () => {
     "/fae/manage/unknown",
     "/voc/unknown",
     "/hr/conversations/unsafe/path",
+    "/hr/positions/not-a-uuid",
+    "/hr/positions/11111111-1111-4111-8111-111111111111/unknown",
     "/marketing/unknown",
     "/marketing/voice/conversations/unsafe/path",
   ])("rejects malformed workspace login return path %s", (path) => {
@@ -104,6 +109,11 @@ describe("login return path", () => {
 
   it.each([
     routePath({ name: "hr-conversation", conversationId: "hr:session-1" }),
+    routePath({
+      name: "hr-position-conversation",
+      positionId: "11111111-1111-4111-8111-111111111111",
+      conversationId: "hr:session-1",
+    }),
     routePath({ name: "marketing-conversation", agentSlug: "voice", conversationId: "mkt:session-1" }),
     routePath({ name: "fae-manage-session", sessionKey: "fae:session-1" }),
     routePath({ name: "fae-manage-report", reportId: "weekly:2026-08-31" }),
