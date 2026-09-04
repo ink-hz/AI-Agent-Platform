@@ -15,7 +15,11 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from app.attachments.conversation_models import AttachmentRecord, UploadRecord
+from app.attachments.conversation_models import (
+    MAX_FILE_BYTES,
+    AttachmentRecord,
+    UploadRecord,
+)
 from app.attachments.conversation_repository import (
     ConversationAttachmentConflict,
     ConversationAttachmentRepository,
@@ -227,31 +231,55 @@ def test_validation_errors_do_not_echo_candidate_controlled_content() -> None:
     assert "candidate-private" not in response.text
 
 
-def test_upload_content_rejects_missing_or_mismatched_content_length() -> None:
+def test_upload_content_accepts_body_without_content_length() -> None:
     client, uploads, _ = api_client()
     headers = authenticate(client)
     path = f"/api/v1/attachments/uploads/{UPLOAD_ID}/content"
-    assert (
-        client.request(
-            "PUT",
-            path,
-            content=b"payload",
-            headers=headers | {"Transfer-Encoding": "chunked"},
-        ).status_code
-        == 411
-    )
-    assert (
-        client.put(
-            path, content=b"payload", headers=headers | {"Content-Length": "8"}
-        ).status_code
-        == 409
-    )
-    assert uploads.calls == []
-    response = client.put(
-        path, content=b"payload", headers=headers | {"Content-Length": "7"}
-    )
+
+    request = client.build_request("PUT", path, content=b"payload", headers=headers)
+    del request.headers["Content-Length"]
+    response = client.send(request)
+
     assert response.status_code == 200
     assert uploads.calls[-1][0:3] == ("write", OWNER_ID, UPLOAD_ID)
+    assert uploads.calls[-1][-1] == 7
+
+
+def test_upload_content_accepts_chunked_body_and_measures_received_bytes() -> None:
+    client, uploads, _ = api_client()
+    headers = authenticate(client)
+    path = f"/api/v1/attachments/uploads/{UPLOAD_ID}/content"
+
+    chunked = client.request(
+        "PUT",
+        path,
+        content=b"payload",
+        headers=headers | {"Transfer-Encoding": "chunked"},
+    )
+    mismatched = client.put(
+        path, content=b"payload", headers=headers | {"Content-Length": "8"}
+    )
+
+    assert chunked.status_code == 200
+    assert mismatched.status_code == 200
+    assert [call[-1] for call in uploads.calls] == [7, 7]
+
+
+def test_upload_content_rejects_empty_or_oversized_body() -> None:
+    client, uploads, _ = api_client()
+    headers = authenticate(client)
+    path = f"/api/v1/attachments/uploads/{UPLOAD_ID}/content"
+
+    empty_request = client.build_request("PUT", path, content=b"", headers=headers)
+    del empty_request.headers["Content-Length"]
+    oversized_request = client.build_request(
+        "PUT", path, content=b"x" * (MAX_FILE_BYTES + 1), headers=headers
+    )
+    del oversized_request.headers["Content-Length"]
+
+    assert client.send(empty_request).status_code == 409
+    assert client.send(oversized_request).status_code == 409
+    assert uploads.calls == []
 
 
 @pytest.mark.asyncio
