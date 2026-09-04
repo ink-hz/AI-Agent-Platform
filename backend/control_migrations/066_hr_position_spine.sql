@@ -1,7 +1,7 @@
 create schema platform_hr authorization current_user;
 revoke all on schema platform_hr from public;
 
-create unique index artifact_owner_identity_v65
+create unique index artifact_owner_identity_v66
   on platform_attachments.artifacts(artifact_id,owner_internal_user_id);
 
 create table platform_hr.positions (
@@ -46,7 +46,7 @@ create table platform_hr.positions (
   unique (owner_internal_user_id,client_request_id)
 );
 
-create unique index positions_official_identity_v65
+create unique index positions_official_identity_v66
   on platform_hr.positions(owner_internal_user_id,official_job_id)
   where source_kind='official_site';
 
@@ -201,7 +201,7 @@ create table platform_hr.position_import_evidence (
   unique (owner_internal_user_id,source_kind,source_key,rule_version)
 );
 
-create function platform_hr.record_import_evidence_v65(
+create function platform_hr.record_import_evidence_v66(
   selected_evidence_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -265,7 +265,7 @@ begin
 end
 $function$;
 
-create function platform_hr.create_position_v65(
+create function platform_hr.create_position_v66(
   selected_position_id uuid,
   selected_owner_internal_user_id uuid,
   client_request_id uuid,
@@ -291,7 +291,7 @@ begin
   ));
   select * into selected from platform_hr.positions
   where owner_internal_user_id=selected_owner_internal_user_id
-    and positions.client_request_id=create_position_v65.client_request_id;
+    and positions.client_request_id=create_position_v66.client_request_id;
   if found then
     if selected.position_id<>selected_position_id
        or selected.source_kind<>selected_source_kind
@@ -324,7 +324,7 @@ begin
 end
 $function$;
 
-create function platform_hr.project_official_position_v65(
+create function platform_hr.project_official_position_v66(
   selected_position_id uuid,
   selected_owner_internal_user_id uuid,
   client_request_id uuid,
@@ -398,7 +398,7 @@ begin
 end
 $function$;
 
-create function platform_hr.confirm_position_draft_v65(
+create function platform_hr.confirm_position_draft_v66(
   selected_draft_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -449,7 +449,7 @@ begin
 end
 $function$;
 
-create function platform_hr.propose_position_draft_v65(
+create function platform_hr.propose_position_draft_v66(
   selected_draft_id uuid,
   selected_owner_internal_user_id uuid,
   client_request_id uuid,
@@ -479,7 +479,7 @@ begin
   ));
   select * into selected from platform_hr.position_drafts
   where owner_internal_user_id=selected_owner_internal_user_id
-    and (position_drafts.client_request_id=propose_position_draft_v65.client_request_id
+    and (position_drafts.client_request_id=propose_position_draft_v66.client_request_id
       or (source_kind=selected_source_kind and source_key=selected_source_key));
   if found then
     if selected.source_kind<>selected_source_kind
@@ -506,7 +506,7 @@ begin
 end
 $function$;
 
-create function platform_hr.merge_position_draft_v65(
+create function platform_hr.merge_position_draft_v66(
   selected_draft_id uuid,
   selected_owner_internal_user_id uuid,
   selected_target_position_id uuid,
@@ -553,7 +553,7 @@ begin
 end
 $function$;
 
-create function platform_hr.dismiss_position_draft_v65(
+create function platform_hr.dismiss_position_draft_v66(
   selected_draft_id uuid,
   selected_owner_internal_user_id uuid,
   client_request_id uuid,
@@ -582,7 +582,7 @@ begin
 end
 $function$;
 
-create function platform_hr.bind_conversation_v65(
+create function platform_hr.bind_conversation_v66(
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
   selected_conversation_id uuid,
@@ -622,7 +622,7 @@ begin
 end
 $function$;
 
-create function platform_hr.attach_conversation_to_draft_v65(
+create function platform_hr.attach_conversation_to_draft_v66(
   selected_owner_internal_user_id uuid,
   selected_draft_id uuid,
   selected_conversation_id uuid,
@@ -659,7 +659,7 @@ begin
 end
 $function$;
 
-create function platform_hr.correct_conversation_binding_v65(
+create function platform_hr.correct_conversation_binding_v66(
   selected_owner_internal_user_id uuid,
   selected_conversation_id uuid,
   selected_previous_position_id uuid,
@@ -713,7 +713,7 @@ begin
   );
   update platform_hr.position_conversations set
     position_id=selected_new_position_id,
-    client_request_id=correct_conversation_binding_v65.client_request_id,
+    client_request_id=correct_conversation_binding_v66.client_request_id,
     binding_kind='manual_correction',
     previous_position_id=selected_previous_position_id
   where conversation_id=selected_conversation_id returning * into selected;
@@ -721,7 +721,7 @@ begin
 end
 $function$;
 
-create function platform_hr.promote_material_v65(
+create function platform_hr.promote_material_v66(
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
   selected_attachment_id uuid,
@@ -753,7 +753,7 @@ begin
 end
 $function$;
 
-create function platform_hr.remove_material_v65(
+create function platform_hr.remove_material_v66(
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
   selected_attachment_id uuid,
@@ -769,7 +769,7 @@ begin
   end if;
   select * into selected from platform_hr.position_materials
   where owner_internal_user_id=selected_owner_internal_user_id
-    and position_materials.client_request_id=remove_material_v65.client_request_id
+    and position_materials.client_request_id=remove_material_v66.client_request_id
   for update;
   if found then
     if selected.position_id<>selected_position_id
@@ -792,7 +792,7 @@ begin
 end
 $function$;
 
-create function platform_hr.link_artifact_v65(
+create function platform_hr.link_artifact_v66(
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
   selected_artifact_id uuid,
@@ -824,43 +824,43 @@ $function$;
 
 revoke all on all tables in schema platform_hr from public;
 revoke all on all functions in schema platform_hr from public;
-revoke all on function platform_hr.record_import_evidence_v65(
+revoke all on function platform_hr.record_import_evidence_v66(
   uuid,uuid,uuid,uuid,uuid,integer,text,text,text,jsonb
 ) from public;
-revoke all on function platform_hr.create_position_v65(
+revoke all on function platform_hr.create_position_v66(
   uuid,uuid,uuid,text,text,text,text,jsonb,text,text
 ) from public;
-revoke all on function platform_hr.project_official_position_v65(
+revoke all on function platform_hr.project_official_position_v66(
   uuid,uuid,uuid,text,text,text,jsonb,text,text,text,timestamptz
 ) from public;
-revoke all on function platform_hr.confirm_position_draft_v65(
+revoke all on function platform_hr.confirm_position_draft_v66(
   uuid,uuid,uuid,uuid,bigint
 ) from public;
-revoke all on function platform_hr.propose_position_draft_v65(
+revoke all on function platform_hr.propose_position_draft_v66(
   uuid,uuid,uuid,text,text,uuid,text,jsonb,jsonb,text
 ) from public;
-revoke all on function platform_hr.merge_position_draft_v65(
+revoke all on function platform_hr.merge_position_draft_v66(
   uuid,uuid,uuid,uuid,bigint
 ) from public;
-revoke all on function platform_hr.dismiss_position_draft_v65(
+revoke all on function platform_hr.dismiss_position_draft_v66(
   uuid,uuid,uuid,bigint
 ) from public;
-revoke all on function platform_hr.bind_conversation_v65(
+revoke all on function platform_hr.bind_conversation_v66(
   uuid,uuid,uuid,uuid,text
 ) from public;
-revoke all on function platform_hr.attach_conversation_to_draft_v65(
+revoke all on function platform_hr.attach_conversation_to_draft_v66(
   uuid,uuid,uuid,uuid
 ) from public;
-revoke all on function platform_hr.correct_conversation_binding_v65(
+revoke all on function platform_hr.correct_conversation_binding_v66(
   uuid,uuid,uuid,uuid,uuid,text
 ) from public;
-revoke all on function platform_hr.promote_material_v65(
+revoke all on function platform_hr.promote_material_v66(
   uuid,uuid,uuid,uuid
 ) from public;
-revoke all on function platform_hr.remove_material_v65(
+revoke all on function platform_hr.remove_material_v66(
   uuid,uuid,uuid,uuid
 ) from public;
-revoke all on function platform_hr.link_artifact_v65(
+revoke all on function platform_hr.link_artifact_v66(
   uuid,uuid,uuid,uuid
 ) from public;
 
@@ -883,62 +883,62 @@ begin
   execute format('grant usage on schema platform_hr to %I,%I',selected_app,selected_brain);
   execute format('grant select on all tables in schema platform_hr to %I',selected_app);
   execute format(
-    'grant execute on function platform_hr.record_import_evidence_v65('
+    'grant execute on function platform_hr.record_import_evidence_v66('
     'uuid,uuid,uuid,uuid,uuid,integer,text,text,text,jsonb) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.create_position_v65('
+    'grant execute on function platform_hr.create_position_v66('
     'uuid,uuid,uuid,text,text,text,text,jsonb,text,text) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.project_official_position_v65('
+    'grant execute on function platform_hr.project_official_position_v66('
     'uuid,uuid,uuid,text,text,text,jsonb,text,text,text,timestamptz) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.confirm_position_draft_v65('
+    'grant execute on function platform_hr.confirm_position_draft_v66('
     'uuid,uuid,uuid,uuid,bigint) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.propose_position_draft_v65('
+    'grant execute on function platform_hr.propose_position_draft_v66('
     'uuid,uuid,uuid,text,text,uuid,text,jsonb,jsonb,text) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.merge_position_draft_v65('
+    'grant execute on function platform_hr.merge_position_draft_v66('
     'uuid,uuid,uuid,uuid,bigint) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.dismiss_position_draft_v65('
+    'grant execute on function platform_hr.dismiss_position_draft_v66('
     'uuid,uuid,uuid,bigint) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.bind_conversation_v65('
+    'grant execute on function platform_hr.bind_conversation_v66('
     'uuid,uuid,uuid,uuid,text) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.attach_conversation_to_draft_v65('
+    'grant execute on function platform_hr.attach_conversation_to_draft_v66('
     'uuid,uuid,uuid,uuid) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.correct_conversation_binding_v65('
+    'grant execute on function platform_hr.correct_conversation_binding_v66('
     'uuid,uuid,uuid,uuid,uuid,text) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.promote_material_v65('
+    'grant execute on function platform_hr.promote_material_v66('
     'uuid,uuid,uuid,uuid) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.remove_material_v65('
+    'grant execute on function platform_hr.remove_material_v66('
     'uuid,uuid,uuid,uuid) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.link_artifact_v65('
+    'grant execute on function platform_hr.link_artifact_v66('
     'uuid,uuid,uuid,uuid) to %I',selected_app
   );
   execute format(
     'grant select on platform_hr.position_conversations to %I',selected_brain
   );
   execute format(
-    'grant execute on function platform_hr.link_artifact_v65('
+    'grant execute on function platform_hr.link_artifact_v66('
     'uuid,uuid,uuid,uuid) to %I',selected_brain
   );
 end

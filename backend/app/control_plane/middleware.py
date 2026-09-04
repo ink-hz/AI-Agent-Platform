@@ -29,6 +29,8 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
         "/api/v1/auth/dingtalk/callback",
         "/api/v1/auth/dingtalk/in-client/exchange",
         "/api/v1/account",
+        "/api/v1/access-events/page-view",
+        "/api/v1/manage/access-events",
         "/api/v1/internal/session/subject",
         "/api/v1/auth/logout",
         "/api/v1/manage/system-health",
@@ -95,6 +97,13 @@ def is_voc_internal_request(method: str, path: str) -> bool:
         ("POST", f"{base}/submitter-directory/resolve"),
         ("GET", f"{base}/submitter-directory/options"),
     }
+
+
+def is_page_access_event_request(method: str, path: str | None) -> bool:
+    return (
+        method == "POST"
+        and path == "/api/v1/access-events/page-view"
+    )
 
 
 def _source_is_voc_service(scope) -> bool:
@@ -340,6 +349,7 @@ class IdentitySecurityMiddleware:
         method = scope["method"].upper()
         path = scope.get("path", "")
         local_path = _unprefixed(path, self.auth.route_prefix)
+        page_access_event = is_page_access_event_request(method, local_path)
         partner_namespace = isinstance(local_path, str) and (
             local_path == "/partner-auth"
             or local_path.startswith("/partner-auth/")
@@ -521,7 +531,7 @@ class IdentitySecurityMiddleware:
         if session is not None:
             context, csrf_digest = session
             limiter = getattr(self.auth, "rate_limiter", None)
-            if limiter is not None:
+            if limiter is not None and not page_access_event:
                 try:
                     limiter.check_authenticated(
                         context.internal_user_id, mutation=method not in _SAFE_METHODS
@@ -605,18 +615,19 @@ class IdentitySecurityMiddleware:
                         headers=_NO_STORE,
                     )(scope, receive, protected_send)
                     return
-                submitted = headers.get("x-csrf-token", "")
-                verified = (
-                    verifier(submitted, csrf_digest)
-                    if verifier is not None
-                    else isinstance(csrf_digest, str)
-                    and hmac.compare_digest(submitted, csrf_digest)
-                )
-                if not verified:
-                    await JSONResponse(
-                        {"detail": "CSRF verification failed"}, status_code=403,
-                        headers=_NO_STORE,
-                    )(scope, receive, protected_send)
-                    return
+                if not page_access_event:
+                    submitted = headers.get("x-csrf-token", "")
+                    verified = (
+                        verifier(submitted, csrf_digest)
+                        if verifier is not None
+                        else isinstance(csrf_digest, str)
+                        and hmac.compare_digest(submitted, csrf_digest)
+                    )
+                    if not verified:
+                        await JSONResponse(
+                            {"detail": "CSRF verification failed"}, status_code=403,
+                            headers=_NO_STORE,
+                        )(scope, receive, protected_send)
+                        return
 
         await self.app(scope, receive, protected_send)

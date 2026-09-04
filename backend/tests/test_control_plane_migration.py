@@ -89,6 +89,9 @@ FAE_WORKBENCH_ACCESS_MIGRATION = (
 CONVERSATION_ATTACHMENTS_MIGRATION = (
     MIGRATIONS / "064_conversation_attachments.sql"
 )
+USER_ACCESS_HISTORY_MIGRATION = (
+    MIGRATIONS / "065_user_access_history.sql"
+)
 DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
     MIGRATIONS / "039_directory_member_employee_profile.sql"
 )
@@ -191,6 +194,8 @@ TABLES = {
     "partner_agent_grants",
     "partner_login_attempts",
     "fae_workbench_grants",
+    "access_page_catalog",
+    "user_access_events",
 }
 
 IMMUTABLE_MIGRATION_SHA256 = {
@@ -230,7 +235,243 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 65
+    assert max(versions) == 66
+
+
+def test_user_access_history_migration_defines_closed_page_catalog_and_functions() -> None:
+    sql = migration_sql("065_user_access_history.sql")
+    normalized = " ".join(sql.split())
+    assert "create table platform_control.access_page_catalog" in sql
+    assert "create table platform_control.user_access_events" in sql
+    assert "references platform_control.web_sessions" not in sql
+    assert "create unique index one_login_event_per_session" in sql
+    assert "create function platform_control.consume_attempt_and_issue_session_v65" in sql
+    assert "create function platform_control.append_page_view_v65" in sql
+    assert "create function platform_control.read_user_access_events_v65" in sql
+    assert "create function platform_control.retain_user_access_events_v65" in sql
+    assert "pg_advisory_xact_lock" in sql
+    assert "interval '60 seconds'" in sql
+    assert ">= 120" in sql
+    assert "interval '90 days'" in sql
+    assert "session_user not in ('platform_control_app','platform_control_app_preview')" in normalized
+    assert "users.role = 'platform_owner'" in normalized
+
+    expected_page_keys = {
+        "platform.brain",
+        "platform.conversations",
+        "platform.conversation",
+        "platform.agent_directory",
+        "platform.missions",
+        "platform.mission_detail",
+        "platform.account",
+        "platform.ai_notes",
+        "platform.ai_note",
+        "hr.workspace",
+        "hr.conversation",
+        "marketing.workspace",
+        "marketing.conversation",
+        "office.chat",
+        "office.services",
+        "office.management",
+        "office.service_detail",
+        "office.feedback",
+        "office.my_feedback",
+        "office.feedback_admin",
+        "office.shuttle",
+        "office.shuttle_admin",
+        "office.lodging",
+        "office.lodging_admin",
+        "office.vehicle_registration",
+        "office.vehicle_registration_admin",
+        "office.notification_admin",
+        "fae.workspace",
+        "fae.conversation",
+        "fae.manage.overview",
+        "fae.manage.sessions",
+        "fae.manage.session_detail",
+        "fae.manage.issues",
+        "fae.manage.issue_detail",
+        "fae.manage.reports",
+        "fae.manage.report_detail",
+        "voc.workspace",
+        "voc.records",
+        "voc.record_detail",
+        "voc.manage",
+        "voc.manage.record_detail",
+        "admin.overview",
+        "admin.agents",
+        "admin.agent_detail",
+        "admin.agent_runtime",
+        "admin.sessions",
+        "admin.session_detail",
+        "admin.review",
+        "admin.activity",
+        "admin.identity",
+        "admin.governance",
+        "admin.access_history",
+    }
+    for page_key in expected_page_keys:
+        assert f"'{page_key}'" in sql
+
+
+@pytest.mark.postgres
+def test_user_access_history_database_enforces_catalog_and_role_boundaries(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    app_role = environment["roles"][1]
+    maintenance_role = environment["roles"][5]
+    with psycopg.connect(environment["admin"]) as connection:
+        page_keys = {
+            row[0]
+            for row in connection.execute(
+                "select page_key from platform_control.access_page_catalog"
+            ).fetchall()
+        }
+        assert len(page_keys) == 52
+        assert {
+            "platform.brain",
+            "hr.workspace",
+            "marketing.conversation",
+            "office.services",
+            "fae.manage.reports",
+            "voc.manage.record_detail",
+            "admin.access_history",
+        } <= page_keys
+
+        foreign_targets = {
+            row[0]
+            for row in connection.execute(
+                "select confrelid::regclass::text from pg_constraint "
+                "where conrelid='platform_control.user_access_events'::regclass "
+                "and contype='f'"
+            ).fetchall()
+        }
+        assert "platform_control.web_sessions" not in foreign_targets
+        assert "platform_control.internal_users" in foreign_targets
+        assert "platform_control.access_page_catalog" in foreign_targets
+
+        for table_name in ("access_page_catalog", "user_access_events"):
+            privileges = connection.execute(
+                "select has_table_privilege(%s,%s,%s)",
+                (app_role, f"platform_control.{table_name}", "select"),
+            ).fetchone()
+            assert privileges == (False,)
+            assert connection.execute(
+                "select has_table_privilege(%s,%s,%s)",
+                (app_role, f"platform_control.{table_name}", "insert"),
+            ).fetchone() == (False,)
+
+        assert connection.execute(
+            "select has_function_privilege(%s,"
+            "'platform_control.append_page_view_v65(uuid,uuid,uuid,text,text,text)',"
+            "'execute')",
+            (app_role,),
+        ).fetchone() == (True,)
+        assert connection.execute(
+            "select has_function_privilege(%s,"
+            "'platform_control.retain_user_access_events_v65(timestamptz)',"
+            "'execute')",
+            (app_role,),
+        ).fetchone() == (False,)
+        assert connection.execute(
+            "select has_function_privilege(%s,"
+            "'platform_control.retain_user_access_events_v65(timestamptz)',"
+            "'execute')",
+            (maintenance_role,),
+        ).fetchone() == (True,)
+
+
+@pytest.mark.postgres
+def test_page_access_append_is_idempotent_and_session_bound(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    actor_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    event_id = uuid.uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values (%s,'Access Actor','active')",
+            (actor_id,),
+        )
+        connection.execute(
+            "insert into platform_control.web_sessions("
+            "session_id,internal_user_id,token_hash,token_hash_key_version,"
+            "csrf_hash,csrf_hash_key_version,idle_expires_at,absolute_expires_at"
+            ") values (%s,%s,%s,1,%s,1,now()+interval '1 hour',"
+            "now()+interval '2 hours')",
+            (session_id, actor_id, uuid.uuid4().bytes * 2, uuid.uuid4().bytes * 2),
+        )
+
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
+        first = connection.execute(
+            "select * from platform_control.append_page_view_v65("
+            "%s,%s,%s,'office','office.services',null)",
+            (event_id, actor_id, session_id),
+        ).fetchone()
+        duplicate = connection.execute(
+            "select * from platform_control.append_page_view_v65("
+            "%s,%s,%s,'office','office.services',null)",
+            (event_id, actor_id, session_id),
+        ).fetchone()
+        assert first == ("inserted", None)
+        assert duplicate == ("duplicate", None)
+
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.user_access_events "
+            "where access_event_id=%s and internal_user_id=%s and session_id=%s",
+            (event_id, actor_id, session_id),
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_access_history_retention_never_deletes_events_younger_than_ninety_days(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    actor_id = uuid.uuid4()
+    old_event_id = uuid.uuid4()
+    fresh_event_id = uuid.uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values (%s,'Retention Actor','active')",
+            (actor_id,),
+        )
+        connection.execute(
+            "insert into platform_control.user_access_events("
+            "access_event_id,internal_user_id,session_id,event_kind,workspace_key,"
+            "page_key,occurred_at) values "
+            "(%s,%s,%s,'page_view','office','office.services',"
+            "now()-interval '91 days'),"
+            "(%s,%s,%s,'page_view','office','office.services',"
+            "now()-interval '89 days')",
+            (
+                old_event_id,
+                actor_id,
+                uuid.uuid4(),
+                fresh_event_id,
+                actor_id,
+                uuid.uuid4(),
+            ),
+        )
+
+    with psycopg.connect(
+        environment["urls"]["platform_control_maintenance"]
+    ) as connection:
+        deleted = connection.execute(
+            "select platform_control.retain_user_access_events_v65("
+            "now()-interval '90 days')"
+        ).fetchone()
+        assert deleted == (1,)
+
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select access_event_id from platform_control.user_access_events "
+            "where access_event_id in (%s,%s)",
+            (old_event_id, fresh_event_id),
+        ).fetchall() == [(fresh_event_id,)]
 
 
 def migration_sql(filename: str) -> str:

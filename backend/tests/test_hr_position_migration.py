@@ -6,7 +6,7 @@ from pathlib import Path
 MIGRATION = (
     Path(__file__).parents[1]
     / "control_migrations"
-    / "065_hr_position_spine.sql"
+    / "066_hr_position_spine.sql"
 )
 
 
@@ -60,11 +60,11 @@ def test_hr_position_migration_has_audited_idempotent_mutation_functions() -> No
     sql = _sql()
 
     for function in (
-        "create_position_v65",
-        "confirm_position_draft_v65",
-        "bind_conversation_v65",
-        "promote_material_v65",
-        "link_artifact_v65",
+        "create_position_v66",
+        "confirm_position_draft_v66",
+        "bind_conversation_v66",
+        "promote_material_v66",
+        "link_artifact_v66",
     ):
         assert f"create function platform_hr.{function}" in sql
         assert f"revoke all on function platform_hr.{function}" in sql

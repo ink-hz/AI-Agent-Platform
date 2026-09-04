@@ -715,11 +715,14 @@ PROVIDER_PROBE=passed
 MIGRATION_COUNT="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.schema_migrations where version in (49,50,51);")"
 WAIT_CURSOR_COLUMNS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from information_schema.columns where table_schema='platform_brain' and table_name='brain_wait_subscriptions' and column_name='cursors';")"
 BRAIN_CURSOR_WATERLINE_COLUMNS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from information_schema.columns where table_schema='platform_brain' and table_name='brain_task_event_cursors' and column_name='delivered_seq';")"
+ACCESS_HISTORY_SCHEMA="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select concat((select count(*) from platform_control.schema_migrations where version=65),'|',(to_regclass('platform_control.user_access_events') is not null)::int,'|',(to_regprocedure('platform_control.append_page_view_v65(uuid,uuid,uuid,text,text,text)') is not null)::int,'|',(to_regprocedure('platform_control.read_user_access_events_v65(uuid,uuid,timestamptz,timestamptz,text,text,text,integer,integer)') is not null)::int);")"
 [[ "$MIGRATION_COUNT" == "3" ]] || fail
 [[ "$WAIT_CURSOR_COLUMNS" == "0" ]] || fail
 [[ "$BRAIN_CURSOR_WATERLINE_COLUMNS" == "1" ]] || fail
+[[ "$ACCESS_HISTORY_SCHEMA" == "1|1|1|1" ]] || fail
 MIGRATIONS_049_050_051=applied
 BRAIN_CURSOR_WATERLINE=passed
+ACCESS_HISTORY_MIGRATION=applied
 V1_NONTERMINAL_MISSIONS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.missions where status in ('planning','delegated','synthesizing');")"
 V2_MISSION_RUN_WRITES="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.mission_runs run join platform_control.missions mission on mission.mission_id=run.mission_id join platform_brain.brain_loops loop on loop.turn_id=mission.turn_id;")"
 [[ "$V1_NONTERMINAL_MISSIONS" == "0" && "$V2_MISSION_RUN_WRITES" == "0" ]] || fail
@@ -729,6 +732,7 @@ printf '%s\n' \
   "MIGRATIONS_049_050_051=$MIGRATIONS_049_050_051" \
   "WAIT_CURSOR_COLUMNS=$WAIT_CURSOR_COLUMNS" \
   "BRAIN_CURSOR_WATERLINE=$BRAIN_CURSOR_WATERLINE" \
+  "ACCESS_HISTORY_MIGRATION=$ACCESS_HISTORY_MIGRATION" \
   "PENDING_ACTION_FORCED_RECOVERY=$PENDING_ACTION_FORCED_RECOVERY" \
   "TASK_PROTOCOL_ISOLATION=$TASK_PROTOCOL_ISOLATION" \
   "VOC_ACTION_EXACTLY_ONCE=$VOC_ACTION_EXACTLY_ONCE" \
@@ -736,7 +740,7 @@ printf '%s\n' \
   "V2_MISSION_RUN_WRITES=$V2_MISSION_RUN_WRITES"
 REMOTE
 )" || fail
-  [[ "$remote_gates" == $'PROVIDER_PROBE=passed\nREFERENCE_RECOVERY=passed\nMIGRATIONS_049_050_051=applied\nWAIT_CURSOR_COLUMNS=0\nBRAIN_CURSOR_WATERLINE=passed\nPENDING_ACTION_FORCED_RECOVERY=passed\nTASK_PROTOCOL_ISOLATION=passed\nVOC_ACTION_EXACTLY_ONCE=passed\nV1_NONTERMINAL_MISSIONS=0\nV2_MISSION_RUN_WRITES=0' ]] || fail
+  [[ "$remote_gates" == $'PROVIDER_PROBE=passed\nREFERENCE_RECOVERY=passed\nMIGRATIONS_049_050_051=applied\nWAIT_CURSOR_COLUMNS=0\nBRAIN_CURSOR_WATERLINE=passed\nACCESS_HISTORY_MIGRATION=applied\nPENDING_ACTION_FORCED_RECOVERY=passed\nTASK_PROTOCOL_ISOLATION=passed\nVOC_ACTION_EXACTLY_ONCE=passed\nV1_NONTERMINAL_MISSIONS=0\nV2_MISSION_RUN_WRITES=0' ]] || fail
   partner_gate="$(remote_partner_gate)" || fail
   [[ "$partner_gate" == $'PARTNER_PROVIDER_CONFIG_VALID=true\nPARTNER_LOGIN_EXPECTED=false\nPARTNER_PROVIDER_KIND=none\nPARTNER_RELEASE_REASON=partner_identity_disabled' ]] || fail
   fae_gate_after="$(remote_fae_snapshot)" || fail
@@ -1308,6 +1312,79 @@ verify_fae_reports_compatibility() {
 verify_fae_viewer_denied() {
   verify_fae_rendered_state "$1" "$2" \
     https://agent.orbbec.com.cn/fae/manage/ viewer-denied fae-viewer
+}
+
+verify_access_history_authorization_contract() {
+  local status_code
+  status_code="$("${curl_owner[@]}" -o "$temporary/access-history.json" -w '%{http_code}' \
+    "$base/api/v1/manage/access-events?limit=1")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/api/v1/manage/access-events?limit=1")" || fail
+  [[ "$status_code" == "403" ]] || fail
+  status_code="$("${curl_viewer[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/api/v1/manage/access-events?limit=1")" || fail
+  [[ "$status_code" == "403" ]] || fail
+}
+
+verify_access_history_browser_contract() {
+  local browser_cookie_file="$1" workspace="$2" status=0 chrome_port page_socket watched_pid result
+  local chrome=/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
+  local node=/opt/homebrew/bin/node
+  local probe="$repository_root/deploy/cloud/access-history-probe.mjs"
+  local profile="$workspace/access-history-chrome-profile"
+  local target_json="$workspace/access-history-chrome-target.json"
+  local output="$workspace/access-history-probe.out"
+  local active_port="$profile/DevToolsActivePort"
+  [[ "$workspace" == /* && -d "$workspace" && ! -L "$workspace" ]] || return 1
+  [[ "$browser_cookie_file" == "$workspace/"* && -f "$browser_cookie_file" && ! -L "$browser_cookie_file" ]] || return 1
+  [[ -x "$chrome" && -x "$node" && -f "$probe" && ! -L "$probe" ]] || return 1
+  [[ ! -e "$profile" && ! -e "$target_json" && ! -e "$output" ]] || return 1
+  /bin/mkdir -m 700 "$profile" || return 1
+  "$chrome" --headless=new --disable-gpu --no-first-run --no-default-browser-check \
+    --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 \
+    --user-data-dir="$profile" about:blank >/dev/null 2>&1 &
+  chrome_pid="$!"
+  for _attempt in $(/usr/bin/seq 1 50); do
+    [[ -s "$active_port" ]] && break
+    /bin/kill -0 "$chrome_pid" >/dev/null 2>&1 || { status=1; break; }
+    /bin/sleep 0.1
+  done
+  if [[ "$status" == "0" && -s "$active_port" ]]; then
+    chrome_port="$(/usr/bin/sed -n '1p' "$active_port")" || status=1
+  else
+    status=1
+  fi
+  if [[ "$status" == "0" && "$chrome_port" =~ ^[0-9]+$ ]]; then
+    /usr/bin/curl --silent --show-error --fail --request PUT --max-time 2 \
+      "http://127.0.0.1:$chrome_port/json/new?about%3Ablank" > "$target_json" || status=1
+  else
+    status=1
+  fi
+  if [[ "$status" == "0" ]]; then
+    page_socket="$($python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["webSocketDebuggerUrl"])' "$target_json")" || status=1
+    [[ "$page_socket" == ws://127.0.0.1:* || "$page_socket" == ws://localhost:* ]] || status=1
+  fi
+  if [[ "$status" == "0" ]]; then
+    "$node" "$probe" "$page_socket" "$browser_cookie_file" 90000 >"$output" &
+    node_pid="$!"; watched_pid="$node_pid"
+    "$python" - "$watched_pid" <<'PY' &
+import os,signal,sys,time
+pid=int(sys.argv[1]); time.sleep(95)
+try: os.kill(pid,signal.SIGTERM)
+except ProcessLookupError: raise SystemExit(0)
+time.sleep(1)
+try: os.kill(pid,signal.SIGKILL)
+except ProcessLookupError: pass
+PY
+    probe_watchdog_pid="$!"
+    if wait "$node_pid"; then node_pid=""; else status="$?"; node_pid=""; fi
+  fi
+  cleanup_fae_report_processes
+  result="$(/bin/cat "$output" 2>/dev/null || true)"
+  /bin/rm -rf -- "$profile"
+  /bin/rm -f -- "$target_json" "$output"
+  [[ "$status" == "0" && "$result" == "ACCESS_HISTORY_BROWSER_OK pages=7 external_fae_events=0" ]]
 }
 
 verify_fae_workbench_cloud_contract() {
@@ -2312,11 +2389,14 @@ accept_v2_real() {
   trap v2_accept_failure ERR EXIT
   cookie_config "$member_cookie_file" "$temporary/member.curl" "$temporary/member.browser.json"
   cookie_config "$owner_cookie_file" "$temporary/owner.curl" "$temporary/owner.browser.json"
+  cookie_config "$owner_cookie_file" "$temporary/access-owner.curl" "$temporary/access-owner.browser.json"
   cookie_config "$viewer_cookie_file" "$temporary/viewer.curl" "$temporary/viewer.browser.json"
   base=https://agent.orbbec.com.cn
   curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
   curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
   curl_viewer=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/viewer.curl" --max-time 15)
+  verify_access_history_authorization_contract
+  verify_access_history_browser_contract "$temporary/access-owner.browser.json" "$temporary"
   verify_fae_workbench_cloud_contract
   verify_platform_workspace_history
   verify_standalone_voc_release

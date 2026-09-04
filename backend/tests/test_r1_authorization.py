@@ -212,6 +212,34 @@ def test_hr_and_marketing_shells_are_authenticated_self_service(
     assert decision.reason == "self_service"
 
 
+@pytest.mark.parametrize("role", list(Role))
+def test_page_access_event_is_authenticated_self_service(role: Role) -> None:
+    context = AuthContext(uuid4(), role, uuid4(), False)
+    decision = AuthorizationService(Grants()).decide(
+        context, "POST", "/api/v1/access-events/page-view", ()
+    )
+
+    assert decision.allowed is True
+    assert decision.reason == "self_service"
+
+
+@pytest.mark.parametrize(
+    ("context", "allowed"),
+    [(OWNER, True), (ADMIN, False), (VIEWER, False), (MEMBER, False)],
+)
+def test_access_history_query_is_exact_platform_owner_only(
+    context: AuthContext, allowed: bool
+) -> None:
+    decision = AuthorizationService(Grants()).decide(
+        context, "GET", "/api/v1/manage/access-events", ()
+    )
+
+    assert decision.allowed is allowed
+    assert decision.reason == (
+        "platform_owner" if allowed else "platform_owner_required"
+    )
+
+
 @pytest.mark.parametrize(
     "route",
     [

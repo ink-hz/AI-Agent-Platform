@@ -84,6 +84,7 @@ def test_maintenance_purges_only_already_expired_data_at_exact_365_days(
     actor = uuid4()
     request_ids = [uuid4(), uuid4()]
     audit_ids = [uuid4(), uuid4()]
+    access_ids = [uuid4(), uuid4()]
     now = datetime.now(timezone.utc)
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
@@ -115,6 +116,16 @@ def test_maintenance_purges_only_already_expired_data_at_exact_365_days(
             "values (%s, 1, 'login', now() - interval '2 days', now() - interval '2 days')",
             (b"expired",),
         )
+        for event_id, occurred_at in (
+            (access_ids[0], now - timedelta(days=91)),
+            (access_ids[1], now - timedelta(days=89)),
+        ):
+            connection.execute(
+                "insert into platform_control.user_access_events "
+                "(access_event_id,internal_user_id,session_id,event_kind,login_kind,occurred_at) "
+                "values (%s,%s,%s,'login_succeeded','qr',%s)",
+                (event_id, actor, uuid4(), occurred_at),
+            )
 
     result = MaintenanceRepository(
         environment["urls"]["platform_control_maintenance"]
@@ -123,6 +134,7 @@ def test_maintenance_purges_only_already_expired_data_at_exact_365_days(
     assert result["audit_events"] == 1
     assert result["login_attempts"] == 1
     assert result["rate_buckets"] == 1
+    assert result["access_events"] == 1
     with psycopg.connect(environment["admin"]) as connection:
         remaining = connection.execute(
             "select audit_event_id from platform_control.audit_events "
@@ -130,6 +142,12 @@ def test_maintenance_purges_only_already_expired_data_at_exact_365_days(
             (audit_ids,),
         ).fetchall()
         assert remaining == [(audit_ids[1],)]
+        remaining_access = connection.execute(
+            "select access_event_id from platform_control.user_access_events "
+            "where access_event_id = any(%s) order by occurred_at",
+            (access_ids,),
+        ).fetchall()
+        assert remaining_access == [(access_ids[1],)]
 
 
 @pytest.mark.postgres

@@ -61,6 +61,16 @@ describe("usage navigation", () => {
     expect(container.querySelector('.admin-nav a[href^="/admin/fae"]')).toBeNull();
     expect(container.querySelector('.admin-nav a[href="/admin/operations"]')).toBeNull();
     expect(container.querySelector(".admin-nav")?.textContent).not.toContain("数据飞轮");
+    expect(container.querySelector<HTMLAnchorElement>('.admin-nav a[href="/admin/access"]')?.textContent).toBe("访问记录");
+  });
+
+  it("never exposes access history navigation to a platform admin", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("deployment unavailable"));
+    await act(async () => root.render(<AppShell
+      route={{ name: "admin-overview" }} account={{ ...member, role: "platform_admin" }}
+    ><p>内容</p></AppShell>));
+
+    expect(container.querySelector('.admin-nav a[href="/admin/access"]')).toBeNull();
   });
 
   it("keeps the scoped FAE product entry selected without using generic admin navigation", async () => {

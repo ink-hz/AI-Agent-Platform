@@ -63,6 +63,10 @@ from .control_plane.authorization import (
     AuthorizationRepository,
     AuthorizationService,
 )
+from .control_plane.access_history import (
+    AccessHistoryRepository,
+    UnavailableAccessHistoryRepository,
+)
 from .control_plane.fae_access import (
     FaeWorkbenchAccessRepository,
     FaeWorkbenchAccessService,
@@ -80,6 +84,7 @@ from .control_plane.partner_provider import (
 from .control_plane.partner_release import validate_partner_release
 from .control_plane.models import DirectoryFreshness, IdentityMode
 from .control_plane.routes_auth import build_auth_router
+from .control_plane.routes_access_history import build_access_history_router
 from .control_plane.office_recipients import (
     OfficeRecipientDirectoryRepository,
     OfficeRecipientDirectoryService,
@@ -722,6 +727,7 @@ def create_app(
     hr_position_service=None,
     agent_use_authorization=None,
     hr_position_scope=None,
+    access_history_repository=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -1226,6 +1232,10 @@ def create_app(
             cloud_mode=cloud_mode,
             read_audit=AuthorizationReadAuditWriter(audit_database_url),
         )
+        if access_history_repository is None:
+            access_history_repository = AccessHistoryRepository(
+                control_database_url
+            )
         if agent_use_authorization is None:
             agent_use_authorization = AgentUseAuthorization(control_database_url)
             app.state.agent_use_authorization = agent_use_authorization
@@ -1331,6 +1341,9 @@ def create_app(
             )
         )
     if identity_enabled:
+        if access_history_repository is None:
+            access_history_repository = UnavailableAccessHistoryRepository()
+        app.include_router(build_access_history_router(access_history_repository))
         app.include_router(routes_manage.router)
         app.include_router(routes_partner.router)
         if partner_auth_broker is not None:

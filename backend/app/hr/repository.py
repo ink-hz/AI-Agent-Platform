@@ -172,7 +172,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.create_position_v65("
+                    "select (platform_hr.create_position_v66("
                     "%s,%s,%s,'manual',null,%s,%s,%s::jsonb,null,null)).*",
                     (
                         command.position_id,
@@ -204,7 +204,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.project_official_position_v65("
+                    "select (platform_hr.project_official_position_v66("
                     "%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)).*",
                     (
                         command.position_id,
@@ -283,7 +283,7 @@ class HrPositionRepository:
         if set(values) != required:
             raise ValueError("position import evidence fields invalid")
         row = connection.execute(
-            "select (platform_hr.record_import_evidence_v65("
+            "select (platform_hr.record_import_evidence_v66("
             "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
             (
                 values["evidence_id"], values["owner_id"],
@@ -308,7 +308,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.propose_position_draft_v65("
+                    "select (platform_hr.propose_position_draft_v66("
                     "%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)).*",
                     (
                         command.draft_id,
@@ -341,7 +341,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.confirm_position_draft_v65("
+                    "select (platform_hr.confirm_position_draft_v66("
                     "%s,%s,%s,%s,%s)).*",
                     (
                         command.draft_id,
@@ -369,7 +369,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.merge_position_draft_v65("
+                    "select (platform_hr.merge_position_draft_v66("
                     "%s,%s,%s,%s,%s)).*",
                     (
                         command.draft_id,
@@ -399,7 +399,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.dismiss_position_draft_v65("
+                    "select (platform_hr.dismiss_position_draft_v66("
                     "%s,%s,%s,%s)).*",
                     (
                         command.draft_id,
@@ -431,7 +431,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.bind_conversation_v65("
+                    "select (platform_hr.bind_conversation_v66("
                     "%s,%s,%s,%s,%s)).*",
                     (
                         command.owner_id,
@@ -486,7 +486,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.attach_conversation_to_draft_v65("
+                    "select (platform_hr.attach_conversation_to_draft_v66("
                     "%s,%s,%s,%s)).*",
                     (owner_id, draft_id, conversation_id, client_request_id),
                 ).fetchone()
@@ -517,7 +517,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.link_artifact_v65(%s,%s,%s,%s)).*",
+                    "select (platform_hr.link_artifact_v66(%s,%s,%s,%s)).*",
                     (owner_id, position_id, artifact_id, client_request_id),
                 ).fetchone()
             if row is None:
@@ -541,7 +541,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.promote_material_v65(%s,%s,%s,%s)).*",
+                    "select (platform_hr.promote_material_v66(%s,%s,%s,%s)).*",
                     (
                         command.owner_id, command.position_id,
                         command.attachment_id, command.client_request_id,
@@ -573,7 +573,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.remove_material_v65(%s,%s,%s,%s)).*",
+                    "select (platform_hr.remove_material_v66(%s,%s,%s,%s)).*",
                     (owner_id, position_id, attachment_id, client_request_id),
                 ).fetchone()
             if row is None:
@@ -596,7 +596,7 @@ class HrPositionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.correct_conversation_binding_v65("
+                    "select (platform_hr.correct_conversation_binding_v66("
                     "%s,%s,%s,%s,%s,%s)).*",
                     (
                         command.owner_id,

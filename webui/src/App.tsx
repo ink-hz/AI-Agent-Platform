@@ -35,6 +35,8 @@ import { AiNotesPage } from "./pages/AiNotesPage";
 import { HrWorkspacePage } from "./workspaces/hr/HrWorkspacePage";
 import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspacePage";
 import { FaeManagementWorkspace } from "./workspaces/fae/FaeManagementWorkspace";
+import { AccessEventReporter } from "./accessEventReporter";
+import { AccessHistoryPage } from "./pages/AccessHistoryPage";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -133,6 +135,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-activity": return <ActivityPage />;
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
+    case "admin-access": return <AccessHistoryPage />;
     case "admin-voc": return <LegacyRedirect to="/voc/manage/" navigation="document" />;
     case "fae-manage-overview":
     case "fae-manage-sessions":
@@ -191,11 +194,15 @@ export default function App() {
   if (!legacyMode && account) {
     const usageRoute = ["brain", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-position", "hr-position-conversation", "hr-conversation", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
     const faeManagementRoute = route.name.startsWith("fae-manage-");
-    const allowed = usageRoute || faeManagementRoute || account.role === "platform_owner" || account.role === "platform_admin"
+    const ownerOnlyRoute = route.name === "admin-access";
+    const allowed = usageRoute || faeManagementRoute || account.role === "platform_owner" || (!ownerOnlyRoute && account.role === "platform_admin")
       || (account.role === "management_viewer" && viewerRouteAllowed(account, route));
     if (!allowed) {
       return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;
     }
   }
-  return <AppShell route={route} account={account}>{productPage(route, account ?? undefined)}</AppShell>;
+  return <AppShell route={route} account={account}>
+    {account && <AccessEventReporter account={account} route={route} />}
+    {productPage(route, account ?? undefined)}
+  </AppShell>;
 }

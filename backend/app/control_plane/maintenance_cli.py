@@ -54,6 +54,12 @@ class MaintenanceRepository:
                 ).fetchone()
                 if row is None:
                     raise RuntimeError("control retention unavailable")
+                access_row = connection.execute(
+                    "select platform_control.retain_user_access_events_v65("
+                    "clock_timestamp() - interval '90 days') as deleted"
+                ).fetchone()
+                if access_row is None:
+                    raise RuntimeError("control retention unavailable")
                 environment = validate_control_dsn(
                     self._database_url, purpose="maintenance"
                 ).environment
@@ -83,6 +89,7 @@ class MaintenanceRepository:
                 "login_attempts": row["login_attempts"],
                 "sessions": row["web_sessions"],
                 "rate_buckets": deleted_rate_buckets,
+                "access_events": access_row["deleted"],
             }
         except psycopg.Error:
             raise RuntimeError("control retention unavailable") from None
