@@ -168,6 +168,10 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
         assert f"grant execute on function platform_hr.{function}" in sql
     assert "for update of draft skip locked" in sql
     assert "lease_expires_at" in sql
+    assert "draft.draft_id=selected_draft_id" in sql
+    assert "draft.owner_internal_user_id=selected_owner_internal_user_id" in sql
+    assert "mission.owner_internal_user_id=selected_owner_internal_user_id" in sql
+    assert "turn.client_request_id=selected_draft.client_request_id" in sql
 
 
 def test_candidate_replaces_position_task_validation_seam_with_exact_scope() -> None:

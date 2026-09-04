@@ -508,6 +508,8 @@ alter table platform_hr.candidate_analysis_versions add check (
 
 create function platform_hr.claim_candidate_draft_v70(
   selected_attempt_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_draft_id uuid,
   selected_worker_id text,
   selected_execution_job_id uuid,
   selected_conversation_id uuid,
@@ -526,6 +528,8 @@ begin
   end if;
   if selected_lease_seconds not between 30 and 900 then raise check_violation; end if;
   payload := jsonb_build_object(
+    'owner_internal_user_id',selected_owner_internal_user_id,
+    'draft_id',selected_draft_id,
     'worker_id',btrim(selected_worker_id),
     'execution_job_id',selected_execution_job_id,
     'conversation_id',selected_conversation_id,'turn_id',selected_turn_id,
@@ -543,10 +547,6 @@ begin
     end if;
     return selected_attempt;
   end if;
-  perform 1 from platform_control.execution_jobs
-  where job_id=selected_execution_job_id
-    and status not in ('completed','failed','cancelled','interrupted');
-  if not found then raise no_data_found; end if;
   with expired as (
     update platform_hr.candidate_draft_processing_attempts set
       state='expired',finished_at=now()
@@ -562,7 +562,9 @@ begin
   join platform_attachments.attachments attachment
     on attachment.attachment_id=draft.attachment_id
     and attachment.owner_internal_user_id=draft.owner_internal_user_id
-  where draft.state='pending'
+  where draft.draft_id=selected_draft_id
+    and draft.owner_internal_user_id=selected_owner_internal_user_id
+    and draft.state='pending'
     and platform_hr.candidate_attachment_usable_v70(
       draft.owner_internal_user_id,draft.attachment_id
     )
@@ -571,8 +573,24 @@ begin
       where active_attempt.draft_id=draft.draft_id
         and active_attempt.state='processing'
     )
-  order by draft.created_at,draft.draft_id
   for update of draft skip locked limit 1;
+  if not found then raise no_data_found; end if;
+  perform 1 from platform_control.execution_jobs execution
+  join platform_control.mission_runs run on run.run_id=execution.run_id
+  join platform_control.missions mission on mission.mission_id=run.mission_id
+  join platform_control.conversation_turns turn
+    on turn.mission_id=mission.mission_id
+    and turn.turn_id=selected_turn_id
+    and turn.conversation_id=selected_conversation_id
+  join platform_control.conversations conversation
+    on conversation.conversation_id=turn.conversation_id
+    and conversation.owner_internal_user_id=mission.owner_internal_user_id
+  where execution.job_id=selected_execution_job_id
+    and execution.agent_id='hr-candidate-bot'
+    and execution.status not in ('completed','failed','cancelled','interrupted')
+    and run.agent_id='hr-candidate-bot'
+    and mission.owner_internal_user_id=selected_owner_internal_user_id
+    and turn.client_request_id=selected_draft.client_request_id;
   if not found then raise no_data_found; end if;
   perform 1 from platform_attachments.attachments attachment
   where attachment.attachment_id=selected_draft.attachment_id
@@ -1575,7 +1593,7 @@ $function$;
 revoke all on all tables in schema platform_hr from public;
 revoke all on all functions in schema platform_hr from public;
 revoke all on function platform_hr.claim_candidate_draft_v70(
-  uuid,text,uuid,uuid,uuid,integer
+  uuid,uuid,uuid,text,uuid,uuid,uuid,integer
 ) from public;
 revoke all on function platform_hr.read_candidate_draft_attempt_v70(
   uuid,uuid
@@ -1637,7 +1655,7 @@ begin
   execute format('grant select on all tables in schema platform_hr to %I',selected_app);
   execute format(
     'grant execute on function platform_hr.claim_candidate_draft_v70('
-    'uuid,text,uuid,uuid,uuid,integer) to %I',selected_brain
+    'uuid,uuid,uuid,text,uuid,uuid,uuid,integer) to %I',selected_brain
   );
   execute format(
     'grant execute on function platform_hr.read_candidate_draft_attempt_v70('

@@ -529,6 +529,8 @@ class CreateCandidateDraftBatch:
 @dataclass(frozen=True, slots=True)
 class ClaimCandidateDraft:
     attempt_id: UUID
+    owner_id: UUID
+    draft_id: UUID
     worker_id: str
     execution_job_id: UUID
     conversation_id: UUID | None = None
@@ -536,8 +538,10 @@ class ClaimCandidateDraft:
     lease_seconds: int = 300
 
     def __post_init__(self) -> None:
-        _uuid(self.attempt_id)
-        _uuid(self.execution_job_id)
+        for value in (
+            self.attempt_id, self.owner_id, self.draft_id, self.execution_job_id
+        ):
+            _uuid(value)
         _optional_uuid(self.conversation_id)
         _optional_uuid(self.turn_id)
         if (self.conversation_id is None) != (self.turn_id is None):

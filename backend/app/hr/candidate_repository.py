@@ -271,9 +271,10 @@ class CandidateRepository:
             with self._connection() as connection:
                 row = connection.execute(
                     "select (platform_hr.claim_candidate_draft_v70("
-                    "%s,%s,%s,%s,%s,%s)).*",
+                    "%s,%s,%s,%s,%s,%s,%s,%s)).*",
                     (
-                        command.attempt_id, command.worker_id,
+                        command.attempt_id, command.owner_id, command.draft_id,
+                        command.worker_id,
                         command.execution_job_id, command.conversation_id,
                         command.turn_id, command.lease_seconds,
                     ),
