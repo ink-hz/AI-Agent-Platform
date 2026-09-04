@@ -18,6 +18,7 @@ function hrConversationPath(conversationId: string): string {
 
 export function HrWorkspacePage(props: { account: Account; conversationId?: string; positionId?: string; section?: HrPositionSection; freeChat?: boolean; positions?: boolean }) {
   const positionsActive = Boolean(props.positions || props.positionId);
+  const positionDetailActive = Boolean(props.positionId);
   const lastChatConversationId = useRef<string | undefined>(undefined);
   if (!positionsActive) lastChatConversationId.current = props.conversationId;
   const chatConversationId = positionsActive
@@ -32,7 +33,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
     chatHref={chatHref}
     current={positionsActive ? "positions" : "chat"}
   >
-    <div className="hr-workspace-chat-panel" hidden={positionsActive}>
+    {!positionDetailActive && <div className="hr-workspace-chat-panel" hidden={positionsActive}>
       <WorkspaceErrorBoundary title="HR 智能工作台">
         <DirectAgentWorkspace
           account={props.account}
@@ -52,7 +53,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           workspaceRootPath="/hr/"
         />
       </WorkspaceErrorBoundary>
-    </div>
+    </div>}
     {positionsActive && <div className="hr-workspace-position-panel">
       <WorkspaceErrorBoundary title="HR 智能工作台">
         {props.positionId

@@ -27,6 +27,10 @@ vi.mock("../../hrApi", async (importOriginal) => ({
   createHrApi: vi.fn(),
 }));
 
+vi.mock("./HrPositionWorkspace", () => ({
+  HrPositionWorkspace: () => <div className="agent-use-workspace" data-agent-id="hr-bot" />,
+}));
+
 
 const account: Account = {
   internal_user_id: "member",
@@ -129,6 +133,13 @@ describe("HrWorkspacePage", () => {
     await act(async () => root.render(<HrWorkspacePage account={account} />));
     expect(container.querySelector<HTMLTextAreaElement>(".hr-workspace-chat-panel textarea")?.value)
       .toBe("不要丢失的岗位需求");
+  });
+
+  it("mounts only the position conversation workspace on a position detail route", async () => {
+    await act(async () => root.render(<HrWorkspacePage account={account} positionId="position-7" />));
+
+    expect(container.querySelector(".hr-workspace-chat-panel")).toBeNull();
+    expect(container.querySelectorAll('.agent-use-workspace[data-agent-id="hr-bot"]')).toHaveLength(1);
   });
 
   it("keeps the current conversation as the chat navigation target", async () => {
