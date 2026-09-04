@@ -58,6 +58,11 @@ def _fae_routes(prefix: str) -> tuple[tuple[str, str], ...]:
 
 
 FAE_ROUTES = _fae_routes("/api/fae") + _fae_routes("/api/admin/fae")
+FAE_SHELL_ROUTES = (
+    ("GET", "/fae/manage"),
+    ("GET", "/fae/manage/"),
+    ("GET", "/fae/manage/{client_path:path}"),
+)
 
 HR_POSITION_ROUTES = (
     ("GET", "/api/hr/positions"),
@@ -159,6 +164,19 @@ def test_fae_navigation_delegates_access_projection_to_route(role):
 @pytest.mark.parametrize("role", list(Role))
 @pytest.mark.parametrize("method,route", FAE_ROUTES)
 def test_fae_routes_delegate_independent_scope_to_router_dependency(
+    role, method, route
+):
+    decision = AuthorizationService(Grants(), cloud_mode=True).decide(
+        AuthContext(uuid4(), role, uuid4(), False), method, route, ()
+    )
+
+    assert decision.allowed is True
+    assert decision.reason == "fae_workbench_route"
+
+
+@pytest.mark.parametrize("role", list(Role))
+@pytest.mark.parametrize("method,route", FAE_SHELL_ROUTES)
+def test_fae_shell_routes_delegate_independent_scope_to_router_dependency(
     role, method, route
 ):
     decision = AuthorizationService(Grants(), cloud_mode=True).decide(

@@ -27,6 +27,12 @@ _MANAGEMENT_SHELL_ROUTES = frozenset({
     ("GET", "/admin/{client_path:path}"),
 })
 
+_FAE_WORKBENCH_SHELL_ROUTES = frozenset({
+    ("GET", "/fae/manage"),
+    ("GET", "/fae/manage/"),
+    ("GET", "/fae/manage/{client_path:path}"),
+})
+
 _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/account"),
     ("GET", "/api/v1/internal/session/subject"),
@@ -215,7 +221,9 @@ _COMPAT_FAE_READ_ROUTES, _COMPAT_FAE_MUTATION_ROUTES = _fae_routes(
     "/api/admin/fae"
 )
 _FAE_WORKBENCH_READ_ROUTES = frozenset(
-    _CANONICAL_FAE_READ_ROUTES | _COMPAT_FAE_READ_ROUTES
+    _CANONICAL_FAE_READ_ROUTES
+    | _COMPAT_FAE_READ_ROUTES
+    | _FAE_WORKBENCH_SHELL_ROUTES
 )
 _FAE_WORKBENCH_MUTATION_ROUTES = frozenset(
     _CANONICAL_FAE_MUTATION_ROUTES | _COMPAT_FAE_MUTATION_ROUTES
