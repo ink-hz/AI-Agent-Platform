@@ -45,6 +45,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
             <h1>今天想推进哪项招聘工作？</h1>
             <p>找岗位、做人才研究、筛简历、准备面试或整理招聘材料，直接告诉我。</p>
           </section>}
+          showTaskStarters={false}
           showWorkspaceBackLink={false}
           workspaceLabel="HR 智能工作台"
           workspaceMark="HR"

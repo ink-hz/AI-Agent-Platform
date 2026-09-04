@@ -100,6 +100,7 @@ describe("HrWorkspacePage", () => {
 
     expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).not.toBeNull();
     expect(container.textContent).not.toContain("官网岗位");
+    expect(container.querySelector(".agent-task-starter")).toBeNull();
     expect(listConversations).toHaveBeenCalled();
   });
 
