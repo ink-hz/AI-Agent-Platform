@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentAttachmentLimits } from "../../brainTypes";
 import type { ConversationAttachment } from "../../conversationTypes";
+import { AttachmentApiError } from "../../attachmentApi";
 import { AttachmentUploader, type AttachmentUploadClient, type UploadQueueItem } from "./AttachmentUploader";
 
 
@@ -158,6 +159,38 @@ describe("AttachmentUploader", () => {
     await act(async () => [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "移除")?.click());
     expect(container.textContent).not.toContain("resume.pdf");
+  });
+
+  it("shows a safe retry message when content upload conflicts", async () => {
+    const api = client();
+    vi.mocked(api.upload).mockRejectedValueOnce(new AttachmentApiError(409, {
+      detail: "declared and streamed content sizes differ",
+    }));
+    await act(async () => root.render(<AttachmentUploader
+      acceptedInputTypes={["pdf"]}
+      client={api}
+      conversationId="conversation-1"
+      csrfToken="csrf"
+      limits={limits}
+    />));
+    const file = new File(["resume"], "resume.pdf", { type: "application/pdf" });
+    const input = container.querySelector<HTMLInputElement>("input[type='file']")!;
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+
+    expect(container.textContent).toContain("文件传输失败，请重试");
+    expect(container.textContent).not.toContain("Attachment API 409");
+  });
+
+  it("keeps an empty queue compact", async () => {
+    await act(async () => root.render(<AttachmentUploader
+      conversationId="conversation-1"
+      csrfToken="csrf"
+      limits={limits}
+    />));
+
+    expect(container.textContent).not.toContain("未选择任何文件");
+    expect(container.textContent).not.toContain("支持选择、拖放或粘贴；单条最多");
   });
 
   it("rejects type, per-file, per-message, and Session quota overflow before upload", async () => {

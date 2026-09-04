@@ -1632,8 +1632,8 @@ body {
 .conversation-composer textarea { display: block; width: 100%; min-height: 92px; resize: vertical; padding: 13px; border: 0; border-radius: 11px; outline: 0; background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 15px; line-height: 1.65; }
 .conversation-composer textarea:focus { box-shadow: inset 0 0 0 2px rgba(36,104,197,.32); background: #f7faff; }
 .conversation-composer textarea:disabled { cursor: not-allowed; opacity: .65; }
-.conversation-composer-attachments { margin-top: 9px; }
-.conversation-composer-attachments .conversation-uploader { margin: 0; padding: 0; border: 0; background: transparent; }
+.conversation-composer-attachments, .agent-direct-attachments { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+.conversation-composer-attachments .conversation-uploader, .agent-direct-attachments .conversation-uploader { margin: 0; padding: 0; border: 0; background: transparent; }
 .conversation-composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 2px 0; }
 .conversation-composer-actions span { color: var(--ink-faint); font-size: 11.5px; }
 .conversation-send, .conversation-retry, .conversation-load-more { min-height: 40px; padding: 9px 17px; border: 0; border-radius: 10px; background: var(--brand); color: #fff; font: inherit; font-size: 12px; font-weight: 780; cursor: pointer; }
@@ -1681,12 +1681,12 @@ body {
 .conversation-attachment-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .conversation-attachment-actions button { min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--brand); font: inherit; font-size: 11.5px; cursor: pointer; }
 .conversation-attachment-actions button.is-danger { color: var(--down); }
-.conversation-uploader { margin-bottom: 10px; padding: 10px; border: 1px dashed #a9bdd3; border-radius: 11px; background: #f7faff; }
-.conversation-upload-button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 7px 10px; border-radius: 8px; background: #e8f1fb; color: var(--brand); font-size: 11.5px; font-weight: 760; cursor: pointer; }
+.conversation-uploader { margin-bottom: 10px; }
+.conversation-upload-toolbar { display: flex; align-items: center; min-height: 30px; }
+.conversation-upload-button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 5px 7px; border-radius: 7px; background: transparent; color: var(--brand); font-size: 11.5px; font-weight: 760; cursor: pointer; }
 .conversation-upload-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.conversation-uploader > small { margin-left: 9px; color: var(--ink-faint); font-size: 11.5px; }
 .conversation-upload-queue { display: grid; gap: 7px; margin: 9px 0 0; padding: 0; list-style: none; }
-.conversation-upload-queue li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; padding: 8px 9px; border-radius: 8px; background: #fff; }
+.conversation-upload-queue li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; padding: 7px 8px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-soft); }
 .conversation-upload-queue li > div { min-width: 0; }
 .conversation-upload-queue strong, .conversation-upload-queue span { display: block; overflow: hidden; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-upload-queue span { margin-top: 2px; color: var(--ink-faint); }
@@ -2122,8 +2122,6 @@ body {
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea { min-height: clamp(220px,28vh,340px); background: #f8fafc; color: #172b42; font-size: 16px; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea:focus { background: #fff; box-shadow: inset 0 0 0 2px rgba(40,120,215,.26); }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments { margin-top: 12px; padding-top: 12px; border-top: 1px solid #dbe3ea; }
-.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments .conversation-uploader { margin: 0; border-color: #b7c7d5; background: #f4f6f8; }
-.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments .conversation-uploader > small { color: #52677c; font-size: 13px; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer-actions > span { color: #52677c; font-size: 13px; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-submit { min-width: 104px; background: #185fa9; font-size: 14px; }
 .hr-position-workspace { min-height: 100%; overflow-x: hidden; overflow-y: auto; background: #f4f7f5; color: #18372e; }

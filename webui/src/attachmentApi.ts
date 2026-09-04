@@ -65,6 +65,22 @@ export class AttachmentApiError extends Error {
   }
 }
 
+export type AttachmentUploadStage = "begin" | "content" | "complete" | "processing";
+
+export function attachmentUploadErrorMessage(error: unknown, stage: AttachmentUploadStage): string {
+  if (error instanceof AttachmentApiError) {
+    if (error.status === 401 || error.status === 403) return "登录状态已失效，请刷新后重试";
+    if (error.status === 413) return "文件超过大小限制，请更换后重试";
+    if (error.status === 415) return "文件类型不受支持，请更换后重试";
+    if (stage === "content") return "文件传输失败，请重试";
+  }
+  if (error instanceof TypeError) return "网络连接异常，请检查网络后重试";
+  if (stage === "begin") return "无法开始上传，请重试";
+  if (stage === "complete") return "文件提交失败，请重试";
+  if (stage === "processing") return "文件处理失败，请稍后重试";
+  return "文件传输失败，请重试";
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
