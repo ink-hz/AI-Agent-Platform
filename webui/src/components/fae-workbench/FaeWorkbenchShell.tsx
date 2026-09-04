@@ -24,7 +24,7 @@ export function FaeWorkbenchShell({ currentSection, children }: Props) {
     <aside className="fae-workbench__sidebar">
       <div><p>AI FAE OPERATIONS</p><h1>FAE 工作台</h1></div>
       <nav aria-label="FAE 工作区" className="fae-workbench__workspace-nav">
-        <a href={platformPath(FAE_DIRECT_PATH)}>Agent</a>
+        <a href={platformPath(FAE_DIRECT_PATH)}>返回 FAE Agent</a>
         <PlatformLink aria-current="page" href={`${FAE_MANAGEMENT_PATH}/`}>管理</PlatformLink>
       </nav>
       <nav aria-label="FAE 管理" className="fae-workbench__sections">{ITEMS.map(([label, href, section]) =>
