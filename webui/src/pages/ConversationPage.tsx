@@ -43,6 +43,7 @@ import type { WorkroomAction } from "../workroomTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
+import type { MessageActionsPresentation } from "../components/conversation/MessageActions";
 import { AttachmentUploader, type UploadQueueItem } from "../components/conversation/AttachmentUploader";
 import { SessionMaterialsDrawer } from "../components/conversation/SessionMaterialsDrawer";
 import { MultiAgentWorkroom } from "../components/conversation/MultiAgentWorkroom";
@@ -125,6 +126,7 @@ export function ConversationPage({
   composerTools,
   threadSupplement,
   materialsPresentation = "sidebar",
+  messageActionsPresentation = "legacy",
 }: {
   conversationId: string;
   account: Account;
@@ -140,6 +142,7 @@ export function ConversationPage({
   composerTools?: ReactNode;
   threadSupplement?: ReactNode;
   materialsPresentation?: "sidebar" | "hidden";
+  messageActionsPresentation?: MessageActionsPresentation;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -470,6 +473,7 @@ export function ConversationPage({
       assistantLabel={assistantLabel}
       messages={messages}
       feedback={feedback}
+      messageActionsPresentation={messageActionsPresentation}
       onDownloadAll={() => void downloadAllArtifacts()}
       onFeedback={readOnly ? undefined : (messageId, rating, reason, comment) => void rate(messageId, rating, reason, comment)}
       onOpenAttachment={(attachment, purpose) => void openAttachment(attachment, purpose)}

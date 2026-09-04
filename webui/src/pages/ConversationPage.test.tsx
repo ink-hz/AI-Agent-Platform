@@ -589,7 +589,7 @@ describe("ConversationPage", () => {
     ));
 
     const helpful = container.querySelector<HTMLButtonElement>(
-      "button[aria-label='有用']",
+      "button[aria-label='这个回答有帮助']",
     );
     expect(helpful).not.toBeNull();
     await act(async () => helpful?.click());
@@ -599,7 +599,7 @@ describe("ConversationPage", () => {
     );
     expect(container.textContent).toContain("已记录你的反馈");
     expect(container.querySelector<HTMLButtonElement>(
-      "button[aria-label='不达标']",
+      "button[aria-label='这个回答需改进']",
     )?.disabled).toBe(true);
   });
 
@@ -613,7 +613,7 @@ describe("ConversationPage", () => {
       account={account} client={client({ submitFeedback })} conversationId={conversationId}
     />));
 
-    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-label='不达标']")?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-label='这个回答需改进']")?.click());
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>(".conversation-feedback-detail button")]
       .find((button) => button.textContent === "信息不完整")?.click());
     const comment = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='补充改进建议']")!;
@@ -628,5 +628,24 @@ describe("ConversationPage", () => {
       "message-2", "unhelpful", "incomplete", "缺少目标公司", account.csrf_token,
       expect.any(AbortSignal),
     );
+  });
+
+  it("uses FAE icon actions only when the presentation is requested", async () => {
+    const submitFeedback = vi.fn().mockResolvedValue({
+      feedback_id: "feedback-3", conversation_id: conversationId,
+      message_id: "message-2", turn_id: "turn-1",
+      rating: "helpful", reason: null, created_at: "2026-08-23T10:03:00Z",
+    });
+    await act(async () => root.render(<ConversationPage
+      account={account} client={client({ submitFeedback })} conversationId={conversationId}
+      messageActionsPresentation="icon"
+    />));
+
+    const helpful = container.querySelector<HTMLButtonElement>("button[aria-label='有用']")!;
+    expect(helpful.querySelector("svg")).not.toBeNull();
+    expect(helpful.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector("button[aria-label='这个回答有帮助']")).toBeNull();
+    await act(async () => helpful.click());
+    expect(helpful.getAttribute("aria-pressed")).toBe("true");
   });
 });

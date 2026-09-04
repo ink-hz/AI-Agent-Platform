@@ -283,6 +283,7 @@ export function DirectAgentWorkspace({
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
           composerTools={composerTools}
+          messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
           materialsPresentation={layout === "focused" ? "hidden" : "sidebar"}
         />

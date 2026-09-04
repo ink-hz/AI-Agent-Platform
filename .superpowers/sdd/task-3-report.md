@@ -267,3 +267,85 @@ backend/tests/test_partner_operator_migration.py
 ```
 
 An independent read-only follow-up review verified the base hash, additive upgrade, validator and rejection behavior, least-privilege grants, PostgreSQL regression, migration expectation, and report. It approved the correction with no Critical, Important, or Minor findings.
+
+---
+
+# Task 3 report: FAE-style answer actions
+
+## Status
+
+Completed and committed as `f0dc95c feat(hr): align answer actions with FAE`.
+
+## Files changed
+
+- `webui/package.json` and `webui/package-lock.json`: added `lucide-react@^0.562.0`.
+- `webui/src/components/conversation/MessageActions.tsx`: replaced copy/helpful/unhelpful text controls with accessible Lucide icon buttons; retained retry, feedback state, the downvote reason panel, and the existing 1,000-code-point optional-comment limit.
+- `webui/src/styles.css`: added the FAE-like 28 px transparent icon-button treatment, including hover, copied, error, and selected states.
+- `webui/src/components/conversation/MessageActions.test.tsx` and `webui/src/pages/HrWorkspace.acceptance.test.tsx`: added assertions for accessible labels, SVG icons, copied state, and the existing downvote-detail workflow.
+- `webui/src/pages/ConversationPage.test.tsx`: updated existing consumers from the retired labels to `有用` and `不达标`.
+
+## TDD evidence
+
+Red command:
+
+```sh
+npm test -- --run src/components/conversation/MessageActions.test.tsx src/pages/HrWorkspace.acceptance.test.tsx
+```
+
+Result: expected failure — 2 failures across the 2 requested tests (new `复制回答` / `有用` / `不达标` controls did not exist in the old text-button UI).
+
+Green command:
+
+```sh
+npm test -- --run src/components/conversation/MessageActions.test.tsx src/pages/HrWorkspace.acceptance.test.tsx src/pages/ConversationPage.test.tsx
+```
+
+Result: 3 test files passed, 25 tests passed.
+
+Additional verification:
+
+```sh
+npm run build
+```
+
+Result: passed (`tsc -b && vite build`).
+## Self-review and concerns
+
+- `onFeedback` payloads remain unchanged: helpful submits `("helpful", null, null)`, and a downvote still submits `("unhelpful", reason, trimmedCommentOrNull)`.
+- The old selected/disabled behavior and retry button remain intact; only the presentation and accessible control labels changed.
+- The build reports Vite's existing large-chunk advisory, and the test run reports Node's localStorage experimental warning; neither caused a failure.
+- `.superpowers/sdd/task-2-report.md` was already modified and was intentionally left unstaged and uncommitted.
+
+## Review fixes
+
+### Scope and selected-state semantics
+
+- Added the explicit `MessageActionsPresentation` variant. `legacy` is the default; it keeps the prior visible copy, helpful, and improvement controls and their styling.
+- Threaded the variant through `ConversationMessages` and `ConversationPage`. `DirectAgentWorkspace` selects `icon` only when `agentId === "hr-bot"`; every other direct Agent selects `legacy`.
+- Added `aria-pressed` to both helpful and unhelpful controls in either presentation, reflecting the server-projected feedback state without changing feedback submission payloads.
+
+### TDD evidence
+
+Red command:
+
+```sh
+npm test -- --run src/components/conversation/MessageActions.test.tsx src/pages/ConversationPage.test.tsx src/pages/AgentUsePage.test.tsx src/pages/HrWorkspace.acceptance.test.tsx
+```
+
+Result: expected failure — 8 assertions failed. The old implementation defaulted to icon controls, did not expose `aria-pressed`, and did not pass a presentation variant through the HR/non-HR path.
+
+Green command:
+
+```sh
+npm test -- --run src/components/conversation/MessageActions.test.tsx src/pages/ConversationPage.test.tsx src/pages/AgentUsePage.test.tsx src/pages/HrWorkspace.acceptance.test.tsx
+```
+
+Result: 4 test files passed, 42 tests passed. The tests cover legacy defaults, HR icon rendering, direct-Workspace HR/non-HR presentation routing, copied state, selected `aria-pressed`, retry-compatible actions, required downvote reasons, and the 1,000-code-point comment cap.
+
+Additional verification:
+
+```sh
+npm run build
+```
+
+Result: passed (`tsc -b && vite build`).

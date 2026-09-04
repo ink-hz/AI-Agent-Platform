@@ -88,6 +88,7 @@ describe("HR workspace core acceptance", () => {
       feedbackState={undefined}
       onCopy={onCopy}
       onFeedback={onFeedback}
+      presentation="icon"
     />));
 
     const copy = container.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')!;
