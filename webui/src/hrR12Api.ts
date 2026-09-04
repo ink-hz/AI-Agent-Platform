@@ -90,13 +90,16 @@ function task(value: unknown, requireCandidateBinding = false): HrTaskRecord {
   if (!["accepted", "running", "completed", "failed"].includes(String(raw.status)) || !TASK_KINDS.has(String(raw.task_kind))) throw new Error("HR R1.2 task response invalid");
   const positionCandidateId = raw.position_candidate_id == null ? null : identifier(raw.position_candidate_id);
   const candidateId = raw.candidate_id == null ? null : identifier(raw.candidate_id);
+  const conversationId = raw.conversation_id == null ? null : identifier(raw.conversation_id);
+  const turnId = raw.turn_id == null ? null : identifier(raw.turn_id);
+  if ((conversationId === null) !== (turnId === null)) throw new Error("HR R1.2 task binding invalid");
   if (requireCandidateBinding && (!positionCandidateId || !candidateId)) throw new Error("HR R1.2 task binding invalid");
   return {
     taskId: string(raw.task_id),
     status: raw.status as HrTaskRecord["status"],
     taskKind: raw.task_kind as HrTaskKind,
     error: raw.error === undefined || raw.error === null ? null : string(raw.error),
-    positionCandidateId, candidateId,
+    conversationId, turnId, positionCandidateId, candidateId,
   };
 }
 

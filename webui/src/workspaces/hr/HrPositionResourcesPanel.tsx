@@ -27,12 +27,14 @@ export function HrPositionResourcesPanel({ api, positionId, readOnly = false, re
   const [resources, setResources] = useState<HrPositionResources | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const mutation = useRef<AbortController | null>(null);
+  useEffect(() => { setResources(null); setSelected([]); setNotice(null); }, [api, positionId]);
   useEffect(() => {
-    const controller = new AbortController(); setResources(null); setSelected([]); setNotice(null);
-    void api.resources(positionId, controller.signal).then((value) => { if (!controller.signal.aborted) setResources(value); }).catch(() => { if (!controller.signal.aborted) setNotice("岗位材料暂时不可用"); });
+    const controller = new AbortController(); setNotice(null);
+    void api.resources(positionId, controller.signal).then((value) => { if (!controller.signal.aborted) setResources(value); }).catch(() => { if (!controller.signal.aborted) setNotice("材料与成果暂时无法读取"); });
     return () => { controller.abort(); mutation.current?.abort(); };
-  }, [api, positionId, refreshGeneration]);
+  }, [api, positionId, refreshGeneration, loadAttempt]);
 
   async function ticket(attachmentId: string, purpose: "preview" | "download", signal: AbortSignal): Promise<string> {
     const operation = retainMutationRequest(`position-resource-ticket:${positionId}:${attachmentId}:${purpose}`, {});
@@ -73,5 +75,5 @@ export function HrPositionResourcesPanel({ api, positionId, readOnly = false, re
     {(item.sourceConversationId || item.sourceTurnId) && <p className="hr-resource-source">{item.sourceConversationId && `来源对话 ${item.sourceConversationId.slice(0, 8)}`}{item.sourceTurnId && ` · 轮次 ${item.sourceTurnId.slice(0, 8)}`}</p>}
     <div className="hr-resource-actions"><label><input disabled={readOnly || !item.downloadAvailable} type="checkbox" value={item.attachmentId} checked={selected.includes(item.attachmentId)} onChange={() => setSelected((ids) => ids.includes(item.attachmentId) ? ids.filter((id) => id !== item.attachmentId) : [...ids, item.attachmentId])} />加入批量下载</label>{item.previewAvailable && <button disabled={readOnly} type="button" onClick={() => void open(item.attachmentId, "preview")}>预览{item.filename}</button>}{item.downloadAvailable && <button disabled={readOnly} type="button" onClick={() => void open(item.attachmentId, "download")}>下载{item.filename}</button>}</div>
   </article>;
-  return <section aria-label="岗位材料与成果" className="hr-r12-panel hr-resources-panel"><header><div><span>POSITION RESOURCES</span><h2>岗位材料与成果</h2></div><button disabled={readOnly || selected.length === 0} type="button" onClick={() => void downloadSelected()}>下载已选 {selected.length} 项</button></header>{!resources && <p aria-live="polite">{notice ?? "正在读取岗位资源…"}</p>}{resources && <><section aria-label="岗位材料"><h3>材料（{resources.materials.length}）</h3>{resources.materials.length === 0 ? <p>当前岗位还没有已绑定材料。</p> : resources.materials.map(render)}</section><section aria-label="生成成果"><h3>成果（{resources.artifacts.length}）</h3>{resources.artifacts.length === 0 ? <p>当前岗位还没有生成成果。</p> : resources.artifacts.map(render)}</section></>}{notice && resources && <p role="status">{notice}</p>}</section>;
+  return <section aria-label="岗位材料与成果" className="hr-r12-panel hr-resources-panel"><header><div><span>POSITION RESOURCES</span><h2>岗位材料与成果</h2></div><button disabled={readOnly || selected.length === 0} type="button" onClick={() => void downloadSelected()}>下载已选 {selected.length} 项</button></header>{!resources && !notice && <p aria-live="polite">正在读取岗位资源…</p>}{!resources && notice && <p role="alert">{notice}。<button type="button" onClick={() => setLoadAttempt((value) => value + 1)}>重试</button></p>}{resources && <><section aria-label="岗位材料"><h3>材料（{resources.materials.length}）</h3>{resources.materials.length === 0 ? <p>暂无岗位材料</p> : resources.materials.map(render)}</section><section aria-label="生成成果"><h3>成果（{resources.artifacts.length}）</h3>{resources.artifacts.length === 0 ? <p>暂无生成成果</p> : resources.artifacts.map(render)}</section></>}{notice && resources && <p role="status">{notice}。<button type="button" onClick={() => setLoadAttempt((value) => value + 1)}>重试</button></p>}</section>;
 }

@@ -16,16 +16,17 @@ function moduleText(value: Record<string, unknown>): string {
   return typeof preferred === "string" ? preferred : JSON.stringify(value, null, 2);
 }
 
-export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly = false, refreshGeneration = 0 }: {
+export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly = false, refreshGeneration = 0, heading = "岗位上下文" }: {
   api: Pick<HrR12Api, "context" | "confirmContext" | "compareContext">; positionId: string;
   onConfirmed?: (context: HrContextVersion) => void; readOnly?: boolean;
-  refreshGeneration?: number;
+  refreshGeneration?: number; heading?: string;
 }) {
   const [data, setData] = useState<ContextState | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ draftId: string; changedModules: string[]; left: Record<string, unknown>; right: Record<string, unknown> } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const mutation = useRef<AbortController | null>(null);
   const historyClose = useRef<HTMLButtonElement>(null);
   const historyOpenButton = useRef<HTMLButtonElement>(null);
@@ -38,11 +39,12 @@ export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly 
     if (!signal?.aborted) setData(value);
     return value;
   }
+  useEffect(() => { setData(null); setNotice(null); setConflict(null); }, [api, positionId]);
   useEffect(() => {
-    const controller = new AbortController(); setData(null); setNotice(null); setConflict(null);
-    void load(controller.signal).catch(() => { if (!controller.signal.aborted) setNotice("上下文暂时不可用"); });
+    const controller = new AbortController(); setNotice(null);
+    void load(controller.signal).catch(() => { if (!controller.signal.aborted) setNotice("岗位理解暂时无法读取"); });
     return () => { controller.abort(); mutation.current?.abort(); };
-  }, [api, positionId, refreshGeneration]);
+  }, [api, positionId, refreshGeneration, loadAttempt]);
 
   async function confirm(draft: HrContextVersion, retry = false) {
     if (readOnly) return;
@@ -72,9 +74,10 @@ export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly 
     }
   }
 
-  return <section aria-label="岗位上下文" className="hr-r12-panel hr-context-panel">
-    <header><div><span>POSITION KNOWLEDGE</span><h2>岗位上下文</h2></div>{data?.current && <strong>当前已确认 v{data.current.displayVersion}</strong>}</header>
-    {!data && <p aria-live="polite">{notice ?? "正在读取岗位上下文…"}</p>}
+  return <section aria-label={heading} className="hr-r12-panel hr-context-panel">
+    <header><div><span>POSITION KNOWLEDGE</span><h2>{heading}</h2></div>{data?.current && <strong>当前已确认 v{data.current.displayVersion}</strong>}</header>
+    {!data && !notice && <p aria-live="polite">正在读取岗位理解…</p>}
+    {!data && notice && <p role="alert">{notice}。<button type="button" onClick={() => setLoadAttempt((value) => value + 1)}>重试</button></p>}
     {data?.current && <article className="hr-context-current"><h3>当前已确认 v{data.current.displayVersion}</h3><p>{data.current.summary}</p></article>}
     {data && <section aria-label="待确认草稿"><h3>{data.drafts.length} 个待确认草稿</h3>
       {data.drafts.length === 0 && <p>当前没有待确认上下文草稿。</p>}
@@ -90,6 +93,6 @@ export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly 
     </section>}
     {data && <button aria-expanded={historyOpen} ref={historyOpenButton} type="button" onClick={() => setHistoryOpen(true)}>历史版本（{data.history.length}）</button>}
     {historyOpen && data && <><button aria-label="关闭历史版本遮罩" className="hr-drawer-backdrop" type="button" onClick={() => setHistoryOpen(false)} /><aside aria-label="岗位上下文历史版本" aria-modal="true" className="hr-mobile-drawer" role="dialog" onKeyDown={(event) => trapDialogFocus(event, () => setHistoryOpen(false))}><header><h3>历史版本（{data.history.length}）</h3><button aria-label="关闭历史版本" ref={historyClose} type="button" onClick={() => setHistoryOpen(false)}>关闭</button></header><ol>{data.history.map((version) => <li key={version.contextVersionId}><strong>v{version.displayVersion}</strong><span>{version.status === "confirmed" ? "已确认" : version.status === "superseded" ? "历史版本" : "草稿"}</span><p>{version.summary}</p></li>)}</ol></aside></>}
-    {notice && <p role="status">{notice}</p>}
+    {notice && data && <p role="status">{notice}。<button type="button" onClick={() => setLoadAttempt((value) => value + 1)}>重试</button></p>}
   </section>;
 }

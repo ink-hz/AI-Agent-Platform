@@ -11,6 +11,7 @@ const DRAFT_ID = "00000000-0000-4000-8000-000000000005";
 const POSITION_CANDIDATE_ID = "00000000-0000-4000-8000-000000000006";
 const CANDIDATE_ID = "00000000-0000-4000-8000-000000000007";
 const CONVERSATION_ID = "00000000-0000-4000-8000-000000000008";
+const TURN_ID = "00000000-0000-4000-8000-000000000009";
 
 
 describe("R1.2 HR API", () => {
@@ -170,6 +171,21 @@ describe("R1.2 HR API", () => {
       material_ids: [],
       conversation_id: CONVERSATION_ID,
     });
+  });
+
+  it("keeps the conversation and turn created for a position task", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      task_id: REQUEST_ID, status: "accepted", task_kind: "jd", error: null,
+      conversation_id: CONVERSATION_ID, turn_id: TURN_ID,
+      position_candidate_id: null, candidate_id: null,
+    }), { status: 202 })));
+
+    const task = await createHrR12Api("csrf").startTask(
+      POSITION_ID, "jd", REQUEST_ID, { materialIds: [] },
+    );
+
+    expect(task.conversationId).toBe(CONVERSATION_ID);
+    expect(task.turnId).toBe(TURN_ID);
   });
 
   it("reads an authoritative terminal candidate task with its exact binding", async () => {

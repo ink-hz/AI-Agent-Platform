@@ -66,6 +66,8 @@ export interface HrTaskRecord {
   status: "accepted" | "running" | "completed" | "failed";
   taskKind: HrTaskKind;
   error: string | null;
+  conversationId?: string | null;
+  turnId?: string | null;
   positionCandidateId?: string | null;
   candidateId?: string | null;
 }

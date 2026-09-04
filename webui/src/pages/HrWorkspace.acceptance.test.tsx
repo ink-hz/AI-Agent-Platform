@@ -60,6 +60,26 @@ describe("HR workspace core acceptance", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps attachment controls below the message field and explains why sending is disabled", async () => {
+    await act(async () => root.render(<ConversationComposer
+      attachmentControls={<button type="button">添加文件或图片</button>}
+      disabled
+      disabledMessage="Hannah 正在处理上一条消息…"
+      onChange={vi.fn()}
+      onSubmit={vi.fn()}
+      pending={false}
+      value=""
+    />));
+
+    const textarea = container.querySelector("textarea")!;
+    const attachmentButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "添加文件或图片")!;
+    expect(textarea.compareDocumentPosition(attachmentButton)
+      & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(container.textContent).toContain("Hannah 正在处理上一条消息…");
+    expect(container.textContent).not.toContain("执行或账号处于只读状态");
+  });
+
   it("supports copying and captures a reason plus free-text details for downvotes", async () => {
     const onCopy = vi.fn().mockResolvedValue(true);
     const onFeedback = vi.fn();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Account } from "../auth";
 import {
@@ -122,6 +122,9 @@ export function ConversationPage({
   positionMaterialIds,
   positionArtifactAttachmentIds,
   onPositionMaterialChange,
+  composerTools,
+  threadSupplement,
+  materialsPresentation = "sidebar",
 }: {
   conversationId: string;
   account: Account;
@@ -134,6 +137,9 @@ export function ConversationPage({
   positionMaterialIds?: readonly string[];
   positionArtifactAttachmentIds?: readonly string[];
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
+  composerTools?: ReactNode;
+  threadSupplement?: ReactNode;
+  materialsPresentation?: "sidebar" | "hidden";
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -482,6 +488,7 @@ export function ConversationPage({
         /> : null;
       }}
     />
+    {threadSupplement}
     <PublicProgress
       active={active && !waitingUser}
       assistantLabel={assistantLabel}
@@ -508,6 +515,15 @@ export function ConversationPage({
       /> : undefined}
       attachmentPending={uploadPending}
       disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || readOnly}
+      disabledMessage={account.hard_stale_read_only
+        ? "当前账号为只读状态。"
+        : detail.conversation.status === "archived"
+          ? "当前对话已归档，不能继续发送消息。"
+          : waitingUser
+            ? "请先回答上方问题。"
+            : active && detail.conversation.mode === "direct_agent"
+              ? `${assistantLabel} 正在处理上一条消息…`
+              : undefined}
       label={active && detail.conversation.mode === "brain" ? "补充当前任务" : "继续对话"}
       onChange={(value) => {
         setText(value); setSendFailure(false);
@@ -520,12 +536,13 @@ export function ConversationPage({
         ? "补充范围、修改优先级，或给正在协作的 Agent 新指令…"
         : undefined}
       value={text}
+      tools={composerTools}
     />
     {readOnly && <p className="conversation-read-only" role="status">当前为只读状态，已有对话仍可查看。</p>}
     {sendFailure && <div className="conversation-action-error" role="alert"><span>消息暂未发送成功，可以使用同一次请求安全重试。</span><button className="conversation-retry" disabled={pending} onClick={() => void send()} type="button">重新发送</button></div>}
     {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
   </div>;
-  return attachmentLimits ? <div className="conversation-workspace-grid">{conversationContent}<SessionMaterialsDrawer
+  return attachmentLimits && materialsPresentation === "sidebar" ? <div className="conversation-workspace-grid">{conversationContent}<SessionMaterialsDrawer
     activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
     onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
     positionMaterialIds={positionMaterialIds} onPositionMaterialChange={onPositionMaterialChange}

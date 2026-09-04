@@ -9,22 +9,26 @@ export function ConversationComposer({
   onSubmit,
   pending,
   disabled,
+  disabledMessage,
   label = "继续对话",
   placeholder = "继续补充目标、背景或希望调整的方向…",
   attachmentControls,
   hasReadyAttachment = false,
   attachmentPending = false,
+  tools,
 }: {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
   pending: boolean;
   disabled: boolean;
+  disabledMessage?: string;
   label?: string;
   placeholder?: string;
   attachmentControls?: ReactNode;
   hasReadyAttachment?: boolean;
   attachmentPending?: boolean;
+  tools?: ReactNode;
 }) {
   const inputTooLarge = conversationInputTooLarge(value.trim());
   const submitDisabled = disabled || pending || attachmentPending
@@ -34,7 +38,6 @@ export function ConversationComposer({
     onSubmit();
   };
   return <form className="conversation-composer" onSubmit={submit}>
-    {attachmentControls}
     <label htmlFor="conversation-message">{label}</label>
     <textarea
       aria-label={label}
@@ -53,8 +56,14 @@ export function ConversationComposer({
       rows={4}
       value={value}
     />
+    {attachmentControls && <div className="conversation-composer-attachments">
+      {attachmentControls}
+    </div>}
     <div className="conversation-composer-actions">
-      <span>{disabled ? "当前对话正在执行或账号处于只读状态。" : "Enter 发送；Shift+Enter 换行。"}</span>
+      {tools && <div className="conversation-composer-tools">{tools}</div>}
+      <span>{disabledMessage ?? (disabled
+        ? "当前暂不可发送。"
+        : "Enter 发送；Shift+Enter 换行。")}</span>
       <button
         className="conversation-send"
         disabled={submitDisabled}

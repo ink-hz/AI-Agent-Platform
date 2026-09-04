@@ -332,6 +332,8 @@ describe("ConversationPage", () => {
 
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>(".conversation-send")?.disabled).toBe(true);
+    expect(container.querySelector(".conversation-composer")?.textContent)
+      .toContain("当前账号为只读状态。");
     expect(container.textContent).toContain("当前为只读状态");
   });
 
@@ -349,6 +351,10 @@ describe("ConversationPage", () => {
     expect(container.textContent).toContain("建议从 GitHub 开始");
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>(".conversation-send")?.disabled).toBe(true);
+    expect(container.querySelector(".conversation-composer")?.textContent)
+      .toContain("当前对话已归档，不能继续发送消息。");
+    expect(container.querySelector(".conversation-composer")?.textContent)
+      .not.toContain("当前账号为只读状态。");
     expect(container.textContent).toContain("当前为只读状态");
     expect(container.querySelector("button[aria-label='这个回答有帮助']")).toBeNull();
   });
@@ -372,6 +378,34 @@ describe("ConversationPage", () => {
     expect(container.querySelector(".multi-agent-workroom")).toBeNull();
   });
 
+  it("supports focused thread supplements and hides the permanent materials column", async () => {
+    const limits = {
+      max_file_bytes: 50 * 1024 * 1024,
+      max_files_per_message: 5,
+      max_bytes_per_message: 50 * 1024 * 1024,
+      max_files_per_conversation: 50,
+      max_bytes_per_conversation: 500 * 1024 * 1024,
+    };
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      attachmentLimits={limits}
+      client={client({ listAttachments: vi.fn().mockResolvedValue([]) })}
+      composerTools={<button type="button">岗位任务</button>}
+      conversationId={conversationId}
+      materialsPresentation="hidden"
+      threadSupplement={<section aria-label="岗位任务进度">执行中</section>}
+    />));
+
+    const messagesNode = container.querySelector(".conversation-messages")!;
+    const supplement = container.querySelector('[aria-label="岗位任务进度"]')!;
+    const composer = container.querySelector(".conversation-composer")!;
+    expect(messagesNode.compareDocumentPosition(supplement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(supplement.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(composer.textContent).toContain("岗位任务");
+    expect(container.querySelector(".session-materials-drawer")).toBeNull();
+    expect(container.querySelector(".conversation-workspace-grid")).toBeNull();
+  });
+
   it("keeps a direct Agent composer locked while its current Turn is active", async () => {
     const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
     const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
@@ -387,6 +421,8 @@ describe("ConversationPage", () => {
     />));
 
     expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(true);
+    expect(container.querySelector(".conversation-composer")?.textContent)
+      .toContain("HR Agent 正在处理上一条消息…");
   });
 
   it("shows progress only for the current direct Agent Turn", async () => {
@@ -485,8 +521,11 @@ describe("ConversationPage", () => {
       status: "waiting_user",
     };
     const stream = deferred<void>();
+    const directConversation = {
+      ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot",
+    };
     const pageClient = client({
-      fetchConversation: vi.fn().mockResolvedValue({ conversation, current_turn: waiting }),
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: directConversation, current_turn: waiting }),
       streamEvents: vi.fn().mockImplementation((_id, options) => {
         options.onEvent({
           ...event,
@@ -497,12 +536,21 @@ describe("ConversationPage", () => {
       }),
     });
     await act(async () => root.render(
-      <ConversationPage account={account} client={pageClient} conversationId={conversationId} />,
+      <ConversationPage
+        account={account}
+        assistantLabel="HR Agent"
+        client={pageClient}
+        conversationId={conversationId}
+      />,
     ));
 
     expect(container.textContent).toContain("请补充岗位级别");
     const input = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='回答 Agent 大脑']");
     expect(input).not.toBeNull();
+    expect(container.querySelector(".conversation-composer")?.textContent)
+      .toContain("请先回答上方问题。");
+    expect(container.querySelector(".conversation-composer")?.textContent)
+      .not.toContain("HR Agent 正在处理上一条消息…");
   });
 
   it("submits one rating for the selected assistant answer", async () => {

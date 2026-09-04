@@ -71,7 +71,7 @@ it("reloads visible resources when the parent refresh generation changes", async
   client.resources.mockResolvedValue({ materials: [], artifacts: [] });
   await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} refreshGeneration={1} />));
   expect(client.resources).toHaveBeenCalledTimes(2);
-  expect(container.textContent).toContain("当前岗位还没有已绑定材料");
+  expect(container.textContent).toContain("暂无岗位材料");
 });
 
 it("does not issue preview or download tickets while read only", async () => {
@@ -92,4 +92,19 @@ it("reuses the ticket request id after an uncertain response", async () => {
   const download = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载面试方案.docx")!;
   await act(async () => download.click()); await act(async () => download.click());
   expect(client.downloadResource.mock.calls[0]?.[2]).toBe(client.downloadResource.mock.calls[1]?.[2]);
+});
+
+it("uses normal empty copy and preserves the last valid resources when refresh fails", async () => {
+  const client = api();
+  client.resources.mockResolvedValueOnce({ materials: [], artifacts: [] });
+  await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} refreshGeneration={0} />));
+  expect(container.textContent).toContain("暂无岗位材料");
+  expect(container.textContent).toContain("暂无生成成果");
+
+  client.resources.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} refreshGeneration={1} />));
+
+  expect(container.textContent).toContain("暂无岗位材料");
+  expect(container.textContent).toContain("材料与成果暂时无法读取");
+  expect([...container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "重试")).toBe(true);
 });

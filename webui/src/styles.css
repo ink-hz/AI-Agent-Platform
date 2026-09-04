@@ -1632,6 +1632,8 @@ body {
 .conversation-composer textarea { display: block; width: 100%; min-height: 92px; resize: vertical; padding: 13px; border: 0; border-radius: 11px; outline: 0; background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 15px; line-height: 1.65; }
 .conversation-composer textarea:focus { box-shadow: inset 0 0 0 2px rgba(36,104,197,.32); background: #f7faff; }
 .conversation-composer textarea:disabled { cursor: not-allowed; opacity: .65; }
+.conversation-composer-attachments { margin-top: 9px; }
+.conversation-composer-attachments .conversation-uploader { margin: 0; padding: 0; border: 0; background: transparent; }
 .conversation-composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 2px 0; }
 .conversation-composer-actions span { color: var(--ink-faint); font-size: 11.5px; }
 .conversation-send, .conversation-retry, .conversation-load-more { min-height: 40px; padding: 9px 17px; border: 0; border-radius: 10px; background: var(--brand); color: #fff; font: inherit; font-size: 12px; font-weight: 780; cursor: pointer; }
