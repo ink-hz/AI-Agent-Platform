@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.control_plane.models import AuthContext
+from app.control_plane.voc_access import VocWorkbenchAccessUnavailable
 
 from .directory import VocDirectoryUnavailable
 from .internal_identity import (
@@ -69,11 +70,18 @@ def _session_subject(auth, request: Request) -> VocBrowserSubject:
         raise HTTPException(503, "identity unavailable", headers=_NO_STORE) from None
     if not isinstance(display_name, str) or not display_name:
         raise HTTPException(503, "identity unavailable", headers=_NO_STORE)
+    access = getattr(request.app.state, "voc_access", None)
+    if access is None or not callable(getattr(access, "allows", None)):
+        raise HTTPException(503, "identity unavailable", headers=_NO_STORE)
+    try:
+        capabilities = capabilities_for(context, access)
+    except VocWorkbenchAccessUnavailable:
+        raise HTTPException(503, "identity unavailable", headers=_NO_STORE) from None
     return VocBrowserSubject(
         internal_user_id=context.internal_user_id,
         display_name=display_name,
         read_only=context.hard_stale_read_only,
-        capabilities=capabilities_for(context),
+        capabilities=capabilities,
         csrf_token=csrf_token,
     )
 

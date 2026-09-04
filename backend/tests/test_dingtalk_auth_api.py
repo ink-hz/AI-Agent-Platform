@@ -80,6 +80,18 @@ class _MutableFaeAccess:
         )
 
 
+class _MutableVocAccess:
+    def __init__(self) -> None:
+        self.allowed_user_ids = set()
+
+    def allows(self, context):
+        return context.role in {
+            Role.MANAGEMENT_VIEWER,
+            Role.PLATFORM_ADMIN,
+            Role.PLATFORM_OWNER,
+        } or context.internal_user_id in self.allowed_user_ids
+
+
 class _FaeOverview:
     async def overview(self, _now):
         return {"agent_id": "ai-fae-agent"}
@@ -330,6 +342,7 @@ def _app(
     partner_service=None,
     partner_provider=None,
     fae_access=None,
+    voc_access=None,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -365,6 +378,9 @@ def _app(
         partner_provider=partner_provider,
     )
     app.state.fae_access = fae_access if fae_access is not None else _NoFaeAccess()
+    app.state.voc_access = (
+        voc_access if voc_access is not None else _MutableVocAccess()
+    )
     return app
 
 
@@ -1335,10 +1351,17 @@ def test_fae_and_voc_management_scopes_are_independent(
 ) -> None:
     auth = FakeAuth()
     access = _MutableFaeAccess()
+    voc_access = _MutableVocAccess()
     auth.context = AuthContext(uuid4(), role, uuid4(), False)
     if has_fae_grant:
         access.allowed_user_ids.add(auth.context.internal_user_id)
-    app = _app(tmp_path, monkeypatch, auth, fae_access=access)
+    app = _app(
+        tmp_path,
+        monkeypatch,
+        auth,
+        fae_access=access,
+        voc_access=voc_access,
+    )
     app.state.fae_workbench_service = _FaeOverview()
     voc_upstream = _VocUpstream()
     app.state.voc_extension_client = voc_upstream
@@ -1354,7 +1377,7 @@ def test_fae_and_voc_management_scopes_are_independent(
 
     assert fae_response.status_code == fae_status
     assert voc_response.status_code == voc_status
-    assert ("voc.read_all" in capabilities_for(auth.context)) is (
+    assert ("voc.read_all" in capabilities_for(auth.context, voc_access)) is (
         voc_status == 200
     )
     assert len(voc_upstream.calls) == (1 if voc_status == 200 else 0)
