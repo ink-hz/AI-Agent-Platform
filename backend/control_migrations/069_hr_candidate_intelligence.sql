@@ -1,3 +1,18 @@
+create table platform_hr.candidate_draft_batches (
+  batch_request_id uuid not null,
+  owner_internal_user_id uuid not null
+    references platform_control.internal_users(internal_user_id),
+  position_id uuid not null,
+  attachment_ids uuid[] not null check (
+    cardinality(attachment_ids) between 1 and 100
+  ),
+  created_at timestamptz not null default now(),
+  foreign key (position_id,owner_internal_user_id)
+    references platform_hr.positions(position_id,owner_internal_user_id),
+  unique (batch_request_id,owner_internal_user_id),
+  unique (owner_internal_user_id,batch_request_id)
+);
+
 create table platform_hr.candidate_drafts (
   draft_id uuid primary key,
   owner_internal_user_id uuid not null
@@ -26,6 +41,10 @@ create table platform_hr.candidate_drafts (
     references platform_hr.positions(position_id,owner_internal_user_id),
   foreign key (attachment_id,owner_internal_user_id)
     references platform_attachments.attachments(attachment_id,owner_internal_user_id),
+  foreign key (batch_request_id,owner_internal_user_id)
+    references platform_hr.candidate_draft_batches(
+      batch_request_id,owner_internal_user_id
+    ),
   check ((state='failed')=(error_code is not null)),
   unique (draft_id,owner_internal_user_id),
   unique (owner_internal_user_id,client_request_id),
@@ -88,8 +107,6 @@ create table platform_hr.position_candidates (
     references platform_hr.positions(position_id,owner_internal_user_id),
   foreign key (candidate_id,owner_internal_user_id)
     references platform_hr.candidates(candidate_id,owner_internal_user_id),
-  foreign key (context_version_id,owner_internal_user_id)
-    references platform_hr.position_context_versions(context_version_id,owner_internal_user_id),
   foreign key (source_draft_id,owner_internal_user_id)
     references platform_hr.candidate_drafts(draft_id,owner_internal_user_id),
   unique (position_candidate_id,owner_internal_user_id),
@@ -137,12 +154,25 @@ create table platform_hr.candidate_analysis_versions (
   ) references platform_hr.position_candidates(
     position_candidate_id,owner_internal_user_id,position_id,candidate_id
   ),
-  foreign key (context_version_id,owner_internal_user_id)
-    references platform_hr.position_context_versions(context_version_id,owner_internal_user_id),
   unique (analysis_version_id,owner_internal_user_id),
   unique (owner_internal_user_id,client_request_id),
   unique (position_candidate_id,version_number)
 );
+
+do $context_foreign_keys$
+begin
+  if to_regclass('platform_hr.position_context_versions') is not null then
+    alter table platform_hr.position_candidates
+      add constraint position_candidates_context_owner_fk_v69
+      foreign key (context_version_id,owner_internal_user_id)
+      references platform_hr.position_context_versions(context_version_id,owner_internal_user_id);
+    alter table platform_hr.candidate_analysis_versions
+      add constraint candidate_analysis_context_owner_fk_v69
+      foreign key (context_version_id,owner_internal_user_id)
+      references platform_hr.position_context_versions(context_version_id,owner_internal_user_id);
+  end if;
+end
+$context_foreign_keys$;
 
 create table platform_hr.candidate_analysis_documents (
   analysis_version_id uuid not null,
@@ -156,6 +186,38 @@ create table platform_hr.candidate_analysis_documents (
   foreign key (document_id,owner_internal_user_id)
     references platform_hr.candidate_documents(document_id,owner_internal_user_id),
   unique (analysis_version_id,document_id)
+);
+
+create table platform_hr.candidate_confirmation_events (
+  client_request_id uuid not null,
+  owner_internal_user_id uuid not null
+    references platform_control.internal_users(internal_user_id),
+  draft_id uuid not null,
+  expected_row_version bigint not null check (expected_row_version>0),
+  requested_candidate_id uuid not null,
+  merge_candidate_id uuid,
+  actual_candidate_id uuid not null,
+  document_id uuid not null,
+  position_candidate_id uuid not null,
+  context_version_id uuid not null,
+  stable_name text not null
+    check (char_length(btrim(stable_name)) between 1 and 500),
+  confirmed_facts jsonb not null check (
+    jsonb_typeof(confirmed_facts)='object'
+    and octet_length(confirmed_facts::text)<=262144
+  ),
+  created_at timestamptz not null default now(),
+  foreign key (draft_id,owner_internal_user_id)
+    references platform_hr.candidate_drafts(draft_id,owner_internal_user_id),
+  foreign key (actual_candidate_id,owner_internal_user_id)
+    references platform_hr.candidates(candidate_id,owner_internal_user_id),
+  foreign key (document_id,owner_internal_user_id)
+    references platform_hr.candidate_documents(document_id,owner_internal_user_id),
+  foreign key (position_candidate_id,owner_internal_user_id)
+    references platform_hr.position_candidates(
+      position_candidate_id,owner_internal_user_id
+    ),
+  unique (owner_internal_user_id,client_request_id)
 );
 
 create table platform_hr.human_feedback (
@@ -201,7 +263,7 @@ create table platform_hr.candidate_analysis_feedback (
   unique (analysis_version_id,feedback_id)
 );
 
-create function platform_hr.reject_candidate_history_mutation_v68()
+create function platform_hr.reject_candidate_history_mutation_v69()
 returns trigger language plpgsql
 set search_path=pg_catalog,platform_hr
 as $function$
@@ -210,23 +272,60 @@ begin
 end
 $function$;
 
-create trigger candidate_analysis_versions_immutable_v68
+create trigger candidate_analysis_versions_immutable_v69
 before update or delete on platform_hr.candidate_analysis_versions
-for each row execute function platform_hr.reject_candidate_history_mutation_v68();
+for each row execute function platform_hr.reject_candidate_history_mutation_v69();
 
-create trigger human_feedback_immutable_v68
+create trigger human_feedback_immutable_v69
 before update or delete on platform_hr.human_feedback
-for each row execute function platform_hr.reject_candidate_history_mutation_v68();
+for each row execute function platform_hr.reject_candidate_history_mutation_v69();
 
-create trigger candidate_analysis_documents_immutable_v68
+create trigger candidate_analysis_documents_immutable_v69
 before update or delete on platform_hr.candidate_analysis_documents
-for each row execute function platform_hr.reject_candidate_history_mutation_v68();
+for each row execute function platform_hr.reject_candidate_history_mutation_v69();
 
-create trigger candidate_analysis_feedback_immutable_v68
+create trigger candidate_analysis_feedback_immutable_v69
 before update or delete on platform_hr.candidate_analysis_feedback
-for each row execute function platform_hr.reject_candidate_history_mutation_v68();
+for each row execute function platform_hr.reject_candidate_history_mutation_v69();
 
-create function platform_hr.create_candidate_draft_v68(
+create function platform_hr.register_candidate_draft_batch_v69(
+  selected_owner_internal_user_id uuid,
+  selected_position_id uuid,
+  selected_batch_request_id uuid,
+  selected_attachment_ids uuid[]
+) returns platform_hr.candidate_draft_batches
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.candidate_draft_batches%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.candidate_draft_batches
+  where owner_internal_user_id=selected_owner_internal_user_id
+    and batch_request_id=selected_batch_request_id;
+  if found then
+    if selected.position_id<>selected_position_id
+       or selected.attachment_ids<>selected_attachment_ids then
+      raise unique_violation using message='candidate batch idempotency mismatch';
+    end if;
+    return selected;
+  end if;
+  if cardinality(selected_attachment_ids)<>cardinality(
+    array(select distinct value from unnest(selected_attachment_ids) value)
+  ) then raise check_violation; end if;
+  insert into platform_hr.candidate_draft_batches(
+    batch_request_id,owner_internal_user_id,position_id,attachment_ids
+  ) values (
+    selected_batch_request_id,selected_owner_internal_user_id,
+    selected_position_id,selected_attachment_ids
+  ) returning * into selected;
+  return selected;
+end
+$function$;
+
+create function platform_hr.create_candidate_draft_v69(
   selected_draft_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -277,7 +376,7 @@ begin
 end
 $function$;
 
-create function platform_hr.start_candidate_draft_v68(
+create function platform_hr.start_candidate_draft_v69(
   selected_owner_internal_user_id uuid,
   selected_draft_id uuid,
   selected_client_request_id uuid,
@@ -307,7 +406,7 @@ begin
 end
 $function$;
 
-create function platform_hr.complete_candidate_draft_v68(
+create function platform_hr.complete_candidate_draft_v69(
   selected_owner_internal_user_id uuid,
   selected_draft_id uuid,
   selected_client_request_id uuid,
@@ -340,7 +439,7 @@ begin
 end
 $function$;
 
-create function platform_hr.fail_candidate_draft_v68(
+create function platform_hr.fail_candidate_draft_v69(
   selected_owner_internal_user_id uuid,
   selected_draft_id uuid,
   selected_client_request_id uuid,
@@ -371,7 +470,7 @@ begin
 end
 $function$;
 
-create function platform_hr.retry_candidate_draft_v68(
+create function platform_hr.retry_candidate_draft_v69(
   selected_owner_internal_user_id uuid,
   selected_draft_id uuid,
   selected_client_request_id uuid,
@@ -401,7 +500,7 @@ begin
 end
 $function$;
 
-create function platform_hr.confirm_candidate_draft_v68(
+create function platform_hr.confirm_candidate_draft_v69(
   selected_owner_internal_user_id uuid,
   selected_draft_id uuid,
   selected_client_request_id uuid,
@@ -419,6 +518,7 @@ set search_path=pg_catalog,platform_hr
 as $function$
 declare selected_draft platform_hr.candidate_drafts%rowtype;
 declare selected_relation platform_hr.position_candidates%rowtype;
+declare prior_event platform_hr.candidate_confirmation_events%rowtype;
 declare actual_candidate_id uuid;
 declare next_document_version bigint;
 declare selected_content_sha256 text;
@@ -426,10 +526,25 @@ begin
   if session_user not in ('platform_control_app','platform_control_app_preview') then
     raise insufficient_privilege;
   end if;
-  select * into selected_relation from platform_hr.position_candidates
+  select * into prior_event from platform_hr.candidate_confirmation_events
   where owner_internal_user_id=selected_owner_internal_user_id
     and client_request_id=selected_client_request_id;
-  if found then return selected_relation; end if;
+  if found then
+    if prior_event.draft_id<>selected_draft_id
+       or prior_event.expected_row_version<>selected_expected_row_version
+       or prior_event.requested_candidate_id<>selected_candidate_id
+       or prior_event.merge_candidate_id is distinct from selected_merge_candidate_id
+       or prior_event.context_version_id<>selected_context_version_id
+       or prior_event.stable_name<>btrim(selected_stable_name)
+       or prior_event.confirmed_facts<>selected_confirmed_facts then
+      raise unique_violation using message='candidate confirmation idempotency mismatch';
+    end if;
+    select * into selected_relation from platform_hr.position_candidates
+    where position_candidate_id=prior_event.position_candidate_id
+      and owner_internal_user_id=selected_owner_internal_user_id;
+    if not found then raise no_data_found; end if;
+    return selected_relation;
+  end if;
   select * into selected_draft from platform_hr.candidate_drafts
   where draft_id=selected_draft_id
     and owner_internal_user_id=selected_owner_internal_user_id for update;
@@ -497,11 +612,23 @@ begin
     last_mutation_request_id=selected_client_request_id,
     row_version=row_version+1,updated_at=now()
   where draft_id=selected_draft_id;
+  insert into platform_hr.candidate_confirmation_events(
+    client_request_id,owner_internal_user_id,draft_id,expected_row_version,
+    requested_candidate_id,merge_candidate_id,actual_candidate_id,
+    document_id,position_candidate_id,context_version_id,stable_name,
+    confirmed_facts
+  ) values (
+    selected_client_request_id,selected_owner_internal_user_id,
+    selected_draft_id,selected_expected_row_version,selected_candidate_id,
+    selected_merge_candidate_id,actual_candidate_id,selected_document_id,
+    selected_relation.position_candidate_id,selected_context_version_id,
+    btrim(selected_stable_name),selected_confirmed_facts
+  );
   return selected_relation;
 end
 $function$;
 
-create function platform_hr.dismiss_candidate_draft_v68(
+create function platform_hr.dismiss_candidate_draft_v69(
   selected_owner_internal_user_id uuid,
   selected_draft_id uuid,
   selected_client_request_id uuid,
@@ -533,7 +660,7 @@ begin
 end
 $function$;
 
-create function platform_hr.create_candidate_analysis_v68(
+create function platform_hr.create_candidate_analysis_v69(
   selected_analysis_version_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_candidate_id uuid,
@@ -569,7 +696,30 @@ begin
   if found then
     if selected.position_candidate_id<>selected_position_candidate_id
        or selected.context_version_id<>selected_context_version_id
-       or selected.analysis_kind<>selected_analysis_kind then
+       or selected.analysis_kind<>selected_analysis_kind
+       or selected.result<>selected_result
+       or selected.evidence<>selected_evidence
+       or selected.unknowns<>selected_unknowns
+       or selected.conflicts<>selected_conflicts
+       or selected.verification_questions<>selected_verification_questions
+       or selected.agent_version<>btrim(selected_agent_version)
+       or selected.model_version<>btrim(selected_model_version)
+       or coalesce((
+         select array_agg(link.document_id order by link.document_id)
+         from platform_hr.candidate_analysis_documents link
+         where link.analysis_version_id=selected.analysis_version_id
+       ),'{}'::uuid[])<>coalesce((
+         select array_agg(value order by value)
+         from unnest(selected_document_ids) value
+       ),'{}'::uuid[])
+       or coalesce((
+         select array_agg(link.feedback_id order by link.feedback_id)
+         from platform_hr.candidate_analysis_feedback link
+         where link.analysis_version_id=selected.analysis_version_id
+       ),'{}'::uuid[])<>coalesce((
+         select array_agg(value order by value)
+         from unnest(selected_feedback_ids) value
+       ),'{}'::uuid[]) then
       raise unique_violation using message='candidate analysis idempotency mismatch';
     end if;
     return selected;
@@ -654,7 +804,7 @@ begin
 end
 $function$;
 
-create function platform_hr.append_human_feedback_v68(
+create function platform_hr.append_human_feedback_v69(
   selected_feedback_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_candidate_id uuid,
@@ -680,7 +830,11 @@ begin
     if selected.position_candidate_id<>selected_position_candidate_id
        or selected.analysis_version_id<>selected_analysis_version_id
        or selected.feedback_kind<>selected_feedback_kind
-       or selected.conclusion_key<>btrim(selected_conclusion_key) then
+       or selected.conclusion_key<>btrim(selected_conclusion_key)
+       or selected.correction is distinct from (case
+         when selected_correction is null then null else btrim(selected_correction)
+       end)
+       or selected.reason<>btrim(selected_reason) then
       raise unique_violation using message='candidate feedback idempotency mismatch';
     end if;
     return selected;
@@ -708,31 +862,34 @@ $function$;
 
 revoke all on all tables in schema platform_hr from public;
 revoke all on all functions in schema platform_hr from public;
-revoke all on function platform_hr.create_candidate_draft_v68(
+revoke all on function platform_hr.register_candidate_draft_batch_v69(
+  uuid,uuid,uuid,uuid[]
+) from public;
+revoke all on function platform_hr.create_candidate_draft_v69(
   uuid,uuid,uuid,uuid,uuid,uuid
 ) from public;
-revoke all on function platform_hr.start_candidate_draft_v68(
+revoke all on function platform_hr.start_candidate_draft_v69(
   uuid,uuid,uuid,bigint
 ) from public;
-revoke all on function platform_hr.complete_candidate_draft_v68(
+revoke all on function platform_hr.complete_candidate_draft_v69(
   uuid,uuid,uuid,bigint,jsonb,uuid[]
 ) from public;
-revoke all on function platform_hr.fail_candidate_draft_v68(
+revoke all on function platform_hr.fail_candidate_draft_v69(
   uuid,uuid,uuid,bigint,text
 ) from public;
-revoke all on function platform_hr.retry_candidate_draft_v68(
+revoke all on function platform_hr.retry_candidate_draft_v69(
   uuid,uuid,uuid,bigint
 ) from public;
-revoke all on function platform_hr.confirm_candidate_draft_v68(
+revoke all on function platform_hr.confirm_candidate_draft_v69(
   uuid,uuid,uuid,bigint,uuid,uuid,uuid,uuid,uuid,text,jsonb
 ) from public;
-revoke all on function platform_hr.dismiss_candidate_draft_v68(
+revoke all on function platform_hr.dismiss_candidate_draft_v69(
   uuid,uuid,uuid,bigint
 ) from public;
-revoke all on function platform_hr.create_candidate_analysis_v68(
+revoke all on function platform_hr.create_candidate_analysis_v69(
   uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],jsonb,jsonb,jsonb,jsonb,jsonb,text,text
 ) from public;
-revoke all on function platform_hr.append_human_feedback_v68(
+revoke all on function platform_hr.append_human_feedback_v69(
   uuid,uuid,uuid,uuid,uuid,text,text,text,text
 ) from public;
 
@@ -755,40 +912,44 @@ begin
   execute format('grant usage on schema platform_hr to %I,%I',selected_app,selected_brain);
   execute format('grant select on all tables in schema platform_hr to %I,%I',selected_app,selected_brain);
   execute format(
-    'grant execute on function platform_hr.create_candidate_draft_v68('
+    'grant execute on function platform_hr.register_candidate_draft_batch_v69('
+    'uuid,uuid,uuid,uuid[]) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.create_candidate_draft_v69('
     'uuid,uuid,uuid,uuid,uuid,uuid) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.start_candidate_draft_v68('
+    'grant execute on function platform_hr.start_candidate_draft_v69('
     'uuid,uuid,uuid,bigint) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.complete_candidate_draft_v68('
+    'grant execute on function platform_hr.complete_candidate_draft_v69('
     'uuid,uuid,uuid,bigint,jsonb,uuid[]) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.fail_candidate_draft_v68('
+    'grant execute on function platform_hr.fail_candidate_draft_v69('
     'uuid,uuid,uuid,bigint,text) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.retry_candidate_draft_v68('
+    'grant execute on function platform_hr.retry_candidate_draft_v69('
     'uuid,uuid,uuid,bigint) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.confirm_candidate_draft_v68('
+    'grant execute on function platform_hr.confirm_candidate_draft_v69('
     'uuid,uuid,uuid,bigint,uuid,uuid,uuid,uuid,uuid,text,jsonb) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.dismiss_candidate_draft_v68('
+    'grant execute on function platform_hr.dismiss_candidate_draft_v69('
     'uuid,uuid,uuid,bigint) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.create_candidate_analysis_v68('
+    'grant execute on function platform_hr.create_candidate_analysis_v69('
     'uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],jsonb,jsonb,jsonb,jsonb,jsonb,text,text) to %I,%I',
     selected_app,selected_brain
   );
   execute format(
-    'grant execute on function platform_hr.append_human_feedback_v68('
+    'grant execute on function platform_hr.append_human_feedback_v69('
     'uuid,uuid,uuid,uuid,uuid,text,text,text,text) to %I',selected_app
   );
 end

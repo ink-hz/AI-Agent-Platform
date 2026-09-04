@@ -21,6 +21,7 @@ from app.hr.candidate_models import (
     PositionCandidate,
     RetryCandidateDraft,
 )
+from app.hr.candidate_repository import CandidateConflict
 from app.hr.candidate_service import (
     CandidateIdentityConflict,
     CandidateScopeViolation,
@@ -55,6 +56,14 @@ class MemoryRepository:
         self.feedback_calls = []
         self.relations = {}
         self.feedback = {}
+        self.batches = {}
+
+    def register_batch(self, command):
+        key = (command.owner_id, command.client_request_id)
+        payload = (command.position_id, command.attachment_ids)
+        if key in self.batches and self.batches[key] != payload:
+            raise CandidateConflict()
+        self.batches[key] = payload
 
     def create_draft(self, draft_id, request_id, command, attachment_id):
         self.create_calls.append((draft_id, request_id, command, attachment_id))
@@ -169,6 +178,20 @@ def test_batch_creation_derives_stable_per_attachment_identities() -> None:
     assert [call[0:2] for call in repository.create_calls[:3]] == [
         call[0:2] for call in repository.create_calls[3:]
     ]
+
+
+def test_batch_replay_rejects_a_changed_attachment_set() -> None:
+    repository = MemoryRepository()
+    service = CandidateService(repository)
+    command = CreateCandidateDraftBatch(
+        uuid4(), uuid4(), (uuid4(), uuid4()), uuid4()
+    )
+    service.create_drafts(command)
+
+    with pytest.raises(CandidateConflict):
+        service.create_drafts(replace(
+            command, attachment_ids=(command.attachment_ids[0], uuid4())
+        ))
 
 
 def test_similar_identity_requires_explicit_merge_target() -> None:

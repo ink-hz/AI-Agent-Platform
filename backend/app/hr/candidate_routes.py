@@ -118,6 +118,13 @@ def _request_id(value: str | None) -> UUID:
         raise HTTPException(422, "Idempotency-Key must be a UUID") from None
 
 
+def _command(factory, *args, **kwargs):
+    try:
+        return factory(*args, **kwargs)
+    except ValueError:
+        raise HTTPException(422, "HR candidate request invalid") from None
+
+
 def _draft(record: CandidateDraft) -> dict[str, object]:
     return {
         "draft_id": str(record.draft_id),
@@ -261,7 +268,8 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
         request_id = _request_id(idempotency_key)
         records = await call(
             service.create_drafts,
-            CreateCandidateDraftBatch(
+            _command(
+                CreateCandidateDraftBatch,
                 owner_id, position_id, body.attachment_ids, request_id
             ),
         )
@@ -295,7 +303,8 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             str | None, Header(alias="Idempotency-Key")
         ] = None,
     ):
-        command = RetryCandidateDraft(
+        command = _command(
+            RetryCandidateDraft,
             await owner(request, writable=True), draft_id,
             _request_id(idempotency_key), body.expected_row_version,
         )
@@ -310,7 +319,8 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             str | None, Header(alias="Idempotency-Key")
         ] = None,
     ):
-        command = RetryCandidateDraft(
+        command = _command(
+            RetryCandidateDraft,
             await owner(request, writable=True), draft_id,
             _request_id(idempotency_key), body.expected_row_version,
         )
@@ -327,7 +337,8 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
     ):
         owner_id = await owner(request, writable=True)
         request_id = _request_id(idempotency_key)
-        command = ConfirmCandidateDraft(
+        command = _command(
+            ConfirmCandidateDraft,
             owner_id=owner_id,
             draft_id=draft_id,
             client_request_id=request_id,
@@ -397,7 +408,8 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             str | None, Header(alias="Idempotency-Key")
         ] = None,
     ):
-        command = CreateCandidateAnalysis(
+        command = _command(
+            CreateCandidateAnalysis,
             owner_id=await owner(request, writable=True),
             position_candidate_id=position_candidate_id,
             context_version_id=body.context_version_id,
@@ -436,7 +448,8 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             str | None, Header(alias="Idempotency-Key")
         ] = None,
     ):
-        command = AppendHumanFeedback(
+        command = _command(
+            AppendHumanFeedback,
             owner_id=await owner(request, writable=True),
             position_candidate_id=position_candidate_id,
             analysis_version_id=body.analysis_version_id,
@@ -460,7 +473,8 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             str | None, Header(alias="Idempotency-Key")
         ] = None,
     ):
-        command = ComparePositionCandidates(
+        command = _command(
+            ComparePositionCandidates,
             owner_id=await owner(request, writable=True),
             position_id=position_id,
             position_candidate_ids=body.position_candidate_ids,

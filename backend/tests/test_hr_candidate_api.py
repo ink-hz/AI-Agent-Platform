@@ -274,6 +274,48 @@ def test_mutations_require_writable_identity_idempotency_and_bounded_payloads() 
     ).status_code == 422
 
 
+def test_domain_validation_failures_are_projected_as_422_not_server_errors() -> None:
+    client, service, _ = _client()
+    confirm = client.post(
+        f"/api/hr/candidate-drafts/{service.draft_record.draft_id}:confirm",
+        json={
+            "expected_row_version": 2,
+            "context_version_id": str(service.context_id),
+            "stable_name": "候选人甲",
+            "confirmed_facts": {"gender": "不应进入招聘判断"},
+            "merge_candidate_id": None,
+        },
+        headers=_headers(),
+    )
+    feedback = client.post(
+        f"/api/hr/position-candidates/{service.relation.position_candidate_id}/feedback",
+        json={
+            "analysis_version_id": str(service.analysis.analysis_version_id),
+            "feedback_kind": "correction",
+            "conclusion_key": "scale",
+            "correction": None,
+            "reason": "HR 电话确认",
+        },
+        headers=_headers(),
+    )
+    comparison = client.post(
+        f"/api/hr/positions/{service.position_id}/candidate-comparisons",
+        json={
+            "position_candidate_ids": [
+                str(service.relation.position_candidate_id),
+                str(service.relation.position_candidate_id),
+            ],
+            "context_version_id": str(service.context_id),
+            "agent_version": "hr-r12",
+            "model_version": "model-v1",
+        },
+        headers=_headers(),
+    )
+
+    assert confirm.status_code == feedback.status_code == comparison.status_code == 422
+    assert not service.calls
+
+
 def test_candidate_errors_have_stable_concealed_http_projection() -> None:
     for error, status in (
         (CandidateNotFound(), 404),

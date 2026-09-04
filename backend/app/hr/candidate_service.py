@@ -36,6 +36,7 @@ def _derived(namespace: UUID, label: str) -> UUID:
 class CandidateService:
     def __init__(self, repository) -> None:
         required = (
+            "register_batch",
             "create_draft",
             "draft_for_owner",
             "retry_draft",
@@ -55,6 +56,7 @@ class CandidateService:
     ) -> tuple[CandidateDraft, ...]:
         if not isinstance(command, CreateCandidateDraftBatch):
             raise ValueError("candidate draft batch required")
+        self._repository.register_batch(command)
         return tuple(
             self._repository.create_draft(
                 _derived(command.client_request_id, f"draft:{attachment_id}"),
