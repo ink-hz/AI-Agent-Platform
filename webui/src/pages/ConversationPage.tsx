@@ -485,7 +485,7 @@ export function ConversationPage({
     <PublicProgress
       active={active && !waitingUser}
       assistantLabel={assistantLabel}
-      events={events}
+      events={events.filter((event) => event.turn_id === detail.current_turn?.turn_id)}
       mode={detail.conversation.mode}
       stopButton={stopButton}
     />

@@ -367,6 +367,35 @@ describe("ConversationPage", () => {
     expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(true);
   });
 
+  it("shows progress only for the current direct Agent Turn", async () => {
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, turn_id: "turn-2", assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const streamEvents = vi.fn().mockImplementation((_id, options) => {
+      options.onEvent({
+        ...event, event_id: "old-progress", turn_id: "turn-1", seq: 1,
+        event_type: "agent.task_progress", payload: { summary: "上一轮进度" },
+      });
+      options.onEvent({
+        ...event, event_id: "current-progress", turn_id: "turn-2", seq: 2,
+        event_type: "agent.task_progress", payload: { summary: "正在处理这一轮" },
+      });
+      return stream.promise;
+    });
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      assistantLabel="HR Agent"
+      client={client({
+        fetchConversation: vi.fn().mockResolvedValue({ conversation: directConversation, current_turn: active }),
+        streamEvents,
+      })}
+      conversationId={conversationId}
+    />));
+
+    expect(container.textContent).toContain("正在处理这一轮");
+    expect(container.textContent).not.toContain("上一轮进度");
+  });
+
   it("embeds a real Agent workroom in its Turn before the final answer", async () => {
     const dispatchedEvent: ConversationEvent = {
       ...event, event_id: "event-dispatched", event_type: "agent.task_dispatched",

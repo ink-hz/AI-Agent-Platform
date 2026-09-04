@@ -1515,6 +1515,10 @@ body {
 .conversation-search-recovery.is-partial { border-color: #b8d2ec; background: #f3f8ff; }
 .conversation-search-recovery button { margin-top: 4px; padding: 6px 10px; border: 0; border-radius: 7px; background: var(--brand); color: #fff; font: inherit; cursor: pointer; }
 .conversation-running { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; padding: 12px 15px; border: 1px solid #b9cee5; border-radius: 11px; background: #edf5ff; color: var(--brand); font-size: 12px; }
+.conversation-running-direct { align-items: flex-start; color: var(--ink); font-size: 13px; }
+.conversation-running-direct strong { color: var(--brand); font-size: 13px; }
+.conversation-running-direct ol { display: grid; gap: 6px; margin: 8px 0 0; padding-left: 20px; color: var(--ink-soft); line-height: 1.55; }
+.conversation-running-direct p { margin: 7px 0 0; color: var(--ink-soft); }
 .conversation-stop { min-height: 36px; padding: 7px 13px; border: 1px solid #e1aaa4; border-radius: 9px; background: #fff; color: var(--down); font: inherit; font-size: 12px; font-weight: 760; cursor: pointer; }
 .conversation-stop:disabled { cursor: not-allowed; opacity: .55; }
 .multi-agent-workroom { width: min(820px, 100%); margin: 0; border: 1px solid #b8cce2; border-radius: 17px; background: linear-gradient(145deg, #f7fbff 0%, #fff 62%); box-shadow: 0 10px 30px rgba(19, 63, 111, .08); }
