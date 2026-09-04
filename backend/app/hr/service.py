@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Protocol
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from .models import (
     BindPositionConversation,
@@ -81,7 +81,7 @@ class HrPositionService:
         self,
         repository: PositionCommandRepository,
         *,
-        uuid_factory: Callable[[], UUID] = uuid4,
+        uuid_factory: Callable[[], UUID] | None = None,
     ) -> None:
         for method in (
             "list_positions",
@@ -90,6 +90,9 @@ class HrPositionService:
             "create_manual",
             "propose_draft",
             "confirm_draft",
+            "create_draft_version",
+            "latest_draft_version",
+            "confirm_package",
             "merge_draft",
             "dismiss_draft",
             "bind_conversation",
@@ -99,10 +102,22 @@ class HrPositionService:
         ):
             if not callable(getattr(repository, method, None)):
                 raise ValueError("HR position repository invalid")
-        if not callable(uuid_factory):
+        if uuid_factory is not None and not callable(uuid_factory):
             raise ValueError("HR UUID factory invalid")
         self._repository = repository
         self._uuid_factory = uuid_factory
+
+    def _new_id(self) -> UUID:
+        if self._uuid_factory is not None:
+            return self._uuid_factory()
+        return uuid4()
+
+    def _resource_id(
+        self, owner_id: UUID, request_id: UUID, operation: str
+    ) -> UUID:
+        if self._uuid_factory is not None:
+            return self._uuid_factory()
+        return uuid5(owner_id, f"hr-position:{operation}:{request_id}")
 
     def list_positions(self, owner_id: UUID, **filters) -> PositionPage:
         return self._repository.list_positions(owner_id, **filters)
@@ -126,7 +141,7 @@ class HrPositionService:
         return self._repository.create_manual(
             CreateManualPosition(
                 owner_id=owner_id,
-                position_id=self._uuid_factory(),
+                position_id=self._new_id(),
                 client_request_id=request_id,
                 title=title,
                 department=department,
@@ -150,7 +165,7 @@ class HrPositionService:
         return self._repository.propose_draft(
             ProposePositionDraft(
                 owner_id=owner_id,
-                draft_id=self._uuid_factory(),
+                draft_id=self._new_id(),
                 client_request_id=request_id,
                 source_kind=source_kind,
                 source_key=source_key,
@@ -174,7 +189,7 @@ class HrPositionService:
             ConfirmPositionDraft(
                 owner_id=owner_id,
                 draft_id=draft_id,
-                position_id=self._uuid_factory(),
+                position_id=self._new_id(),
                 client_request_id=request_id,
                 expected_row_version=expected_row_version,
             )
@@ -197,7 +212,9 @@ class HrPositionService:
         return self._repository.create_draft_version(
             CreatePositionDraftVersion(
                 owner_id=owner_id,
-                draft_version_id=self._uuid_factory(),
+                draft_version_id=self._resource_id(
+                    owner_id, request_id, "draft-version"
+                ),
                 draft_id=draft_id,
                 client_request_id=request_id,
                 title=title,

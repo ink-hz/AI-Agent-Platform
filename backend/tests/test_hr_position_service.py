@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import uuid4, uuid5
 
 import pytest
 
@@ -240,3 +240,51 @@ def test_service_creates_and_confirms_a_versioned_position_package(
         (owner_id, draft_record.draft_id, draft_version_id, confirm_request),
         {"expected_row_version": 1},
     )
+
+
+def test_service_reuses_default_draft_version_id_for_request_replay(
+    position_record, draft_record
+) -> None:
+    repository = RecordingRepository(position_record, draft_record)
+    repository.draft_version = object()
+    service = HrPositionService(repository)
+    owner_id, request_id = uuid4(), uuid4()
+    arguments = {
+        "owner_id": owner_id,
+        "draft_id": draft_record.draft_id,
+        "request_id": request_id,
+        "title": "高级结构工程师",
+        "modules": {
+            "mission": {"text": "M"},
+            "jd": {"text": "JD"},
+            "jr": {"text": "JR"},
+        },
+        "source_conversation_id": uuid4(),
+        "source_turn_id": uuid4(),
+        "source_assistant_message_id": uuid4(),
+        "agent_id": "hr-bot",
+        "model_version": "gpt-5",
+    }
+
+    service.create_draft_version(**arguments)
+    service.create_draft_version(**arguments)
+    first, second = repository.commands[-2:]
+
+    assert first.draft_version_id == second.draft_version_id
+    assert first.draft_version_id == uuid5(
+        owner_id, f"hr-position:draft-version:{request_id}"
+    )
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["create_draft_version", "latest_draft_version", "confirm_package"],
+)
+def test_service_requires_position_package_repository_capabilities(
+    position_record, draft_record, missing
+) -> None:
+    repository = RecordingRepository(position_record, draft_record)
+    setattr(repository, missing, None)
+
+    with pytest.raises(ValueError, match="HR position repository invalid"):
+        HrPositionService(repository)

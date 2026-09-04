@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from uuid import UUID, uuid4
 
 import psycopg
@@ -19,6 +20,14 @@ MODULES = (
     '{"mission":{"text":"负责新产品结构落地"},'
     '"jd":{"text":"负责精密结构设计与量产。"},'
     '"jr":{"text":"具备五年以上结构设计经验。"}}'
+)
+CREATE_CONTEXT = (
+    "select (platform_hr.create_context_draft_v69("
+    "%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s::uuid[],%s,%s,%s)).*"
+)
+CONFIRM_CONTEXT = (
+    "select (platform_hr.confirm_context_modules_v69("
+    "%s,%s,%s,%s,%s,%s,%s::text[],%s)).*"
 )
 
 
@@ -261,6 +270,142 @@ def test_confirmation_atomically_uses_selected_package_and_replays(
                 CONFIRM_PACKAGE,
                 (seed[0], seed[1], uuid4(), confirm_request, 1),
             )
+
+
+@pytest.mark.postgres
+def test_confirmation_replay_keeps_original_context_after_v69_evolution(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        seed = _seed_package(admin)
+    app_url = environment["urls"]["platform_control_app"]
+    confirm_request = uuid4()
+    with psycopg.connect(app_url) as app:
+        version = app.execute(
+            CREATE_VERSION, _create_values(seed, request_id=uuid4())
+        ).fetchone()
+        original = app.execute(
+            CONFIRM_PACKAGE, (seed[0], seed[1], version[0], confirm_request, 1)
+        ).fetchone()
+        position_id, original_context_id, conversation_id = original
+        context_draft_id = uuid4()
+        context_draft = app.execute(
+            CREATE_CONTEXT,
+            (
+                context_draft_id, seed[0], position_id, uuid4(),
+                original_context_id, None,
+                '{"jd":{"text":"后续更新的岗位职责"}}', "后续上下文",
+                conversation_id, seed[3], None, [], "hr-bot", "gpt-5",
+                seed[0],
+            ),
+        ).fetchone()
+        evolved = app.execute(
+            CONFIRM_CONTEXT,
+            (
+                seed[0], position_id, context_draft_id, uuid4(),
+                original_context_id, context_draft[22], ["jd"], seed[0],
+            ),
+        ).fetchone()
+        replay = app.execute(
+            CONFIRM_PACKAGE, (seed[0], seed[1], version[0], confirm_request, 1)
+        ).fetchone()
+        app.commit()
+
+    assert evolved[0] != original_context_id
+    assert replay == (position_id, original_context_id, conversation_id)
+
+
+@pytest.mark.postgres
+def test_create_version_cannot_cross_a_concurrent_confirmation(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        seed = _seed_package(admin)
+        later_turn_id, later_message_id = _add_completed_turn(admin, seed[2], 3)
+        admin.commit()
+    app_url = environment["urls"]["platform_control_app"]
+    with psycopg.connect(app_url) as confirming:
+        selected = confirming.execute(
+            CREATE_VERSION, _create_values(seed, request_id=uuid4())
+        ).fetchone()
+        confirming.commit()
+        confirming.execute(
+            CONFIRM_PACKAGE, (seed[0], seed[1], selected[0], uuid4(), 1)
+        ).fetchone()
+        later_values = (
+            uuid4(), seed[0], seed[1], uuid4(), "竞态产生的版本", MODULES,
+            seed[2], later_turn_id, later_message_id, "hr-bot", "gpt-5",
+        )
+
+        def create_later_version():
+            with psycopg.connect(app_url) as app:
+                return app.execute(CREATE_VERSION, later_values).fetchone()
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(create_later_version)
+            with pytest.raises(FutureTimeout):
+                future.result(timeout=0.5)
+            confirming.commit()
+            with pytest.raises(psycopg.errors.NoDataFound):
+                future.result(timeout=2)
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_hr.position_draft_versions "
+            "where draft_id=%s", (seed[1],),
+        ).fetchone()[0] == 1
+
+
+@pytest.mark.postgres
+def test_idempotent_replay_rejects_null_payload_mismatches(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        seed = _seed_package(admin)
+    app_url = environment["urls"]["platform_control_app"]
+    create_request, confirm_request = uuid4(), uuid4()
+    values = list(_create_values(seed, request_id=create_request))
+    with psycopg.connect(app_url) as app:
+        version = app.execute(CREATE_VERSION, values).fetchone()
+        app.commit()
+        values[9] = None
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            app.execute(CREATE_VERSION, values)
+        app.rollback()
+        app.execute(
+            CONFIRM_PACKAGE, (seed[0], seed[1], version[0], confirm_request, 1)
+        ).fetchone()
+        app.commit()
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            app.execute(
+                CONFIRM_PACKAGE, (seed[0], seed[1], None, confirm_request, 1)
+            )
+
+
+@pytest.mark.postgres
+def test_only_app_role_can_execute_package_functions_or_write_versions(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        seed = _seed_package(admin)
+    values = _create_values(seed, request_id=uuid4())
+    for role in ("platform_brain_worker", "platform_control_maintenance"):
+        with psycopg.connect(environment["urls"][role]) as connection:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(CREATE_VERSION, values)
+            connection.rollback()
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    CONFIRM_PACKAGE, (seed[0], seed[1], uuid4(), uuid4(), 1)
+                )
+            connection.rollback()
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    "insert into platform_hr.position_draft_versions("
+                    "draft_version_id) values (%s)", (uuid4(),),
+                )
 
 
 @pytest.mark.postgres

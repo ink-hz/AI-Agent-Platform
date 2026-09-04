@@ -58,6 +58,8 @@ create table platform_hr.position_draft_versions (
 alter table platform_hr.position_drafts
   add column confirmation_client_request_id uuid,
   add column confirmation_draft_version_id uuid,
+  add column confirmation_context_version_id uuid,
+  add column confirmation_conversation_id uuid,
   add column confirmation_expected_row_version bigint check (
     confirmation_expected_row_version is null
     or confirmation_expected_row_version>0
@@ -66,13 +68,25 @@ alter table platform_hr.position_drafts
     references platform_hr.position_draft_versions(
       draft_version_id,owner_internal_user_id
     ),
+  add foreign key (confirmation_context_version_id,owner_internal_user_id)
+    references platform_hr.position_context_versions(
+      context_version_id,owner_internal_user_id
+    ),
+  add foreign key (confirmation_conversation_id,owner_internal_user_id)
+    references platform_control.conversations(
+      conversation_id,owner_internal_user_id
+    ),
   add unique (owner_internal_user_id,confirmation_client_request_id),
   add check (
     (confirmation_client_request_id is null
       and confirmation_draft_version_id is null
+      and confirmation_context_version_id is null
+      and confirmation_conversation_id is null
       and confirmation_expected_row_version is null)
     or (confirmation_client_request_id is not null
       and confirmation_draft_version_id is not null
+      and confirmation_context_version_id is not null
+      and confirmation_conversation_id is not null
       and confirmation_expected_row_version is not null)
   );
 
@@ -107,11 +121,17 @@ language plpgsql security definer
 set search_path=pg_catalog,platform_hr
 as $function$
 declare selected platform_hr.position_draft_versions%rowtype;
+declare draft platform_hr.position_drafts%rowtype;
 declare next_version integer;
 begin
   if session_user not in ('platform_control_app','platform_control_app_preview') then
     raise insufficient_privilege;
   end if;
+  select * into draft from platform_hr.position_drafts draft_record
+  where draft_record.draft_id=selected_draft_id
+    and draft_record.owner_internal_user_id=selected_owner_internal_user_id
+  for update;
+  if not found then raise no_data_found; end if;
   perform pg_advisory_xact_lock(hashtextextended(
     selected_owner_internal_user_id::text || ':position-draft-version-request:' ||
     selected_client_request_id::text,0
@@ -120,30 +140,27 @@ begin
   where version.owner_internal_user_id=selected_owner_internal_user_id
     and version.client_request_id=selected_client_request_id;
   if found then
-    if selected.draft_version_id<>selected_draft_version_id
-      or selected.draft_id<>selected_draft_id
-      or selected.title<>btrim(selected_title)
-      or selected.modules<>selected_modules
-      or selected.source_conversation_id<>selected_source_conversation_id
-      or selected.source_turn_id<>selected_source_turn_id
-      or selected.source_assistant_message_id<>selected_source_assistant_message_id
-      or selected.agent_id<>btrim(selected_agent_id)
-      or selected.model_version<>btrim(selected_model_version) then
+    if selected.draft_version_id is distinct from selected_draft_version_id
+      or selected.draft_id is distinct from selected_draft_id
+      or selected.title is distinct from btrim(selected_title)
+      or selected.modules is distinct from selected_modules
+      or selected.source_conversation_id
+        is distinct from selected_source_conversation_id
+      or selected.source_turn_id is distinct from selected_source_turn_id
+      or selected.source_assistant_message_id
+        is distinct from selected_source_assistant_message_id
+      or selected.agent_id is distinct from btrim(selected_agent_id)
+      or selected.model_version is distinct from btrim(selected_model_version) then
       raise unique_violation using
         message='position draft version idempotency payload mismatch';
     end if;
     return selected;
   end if;
-  perform pg_advisory_xact_lock(hashtextextended(
-    selected_owner_internal_user_id::text || ':position-draft-version-sequence:' ||
-    selected_draft_id::text,0
-  ));
-  perform 1 from platform_hr.position_drafts draft
-  where draft.draft_id=selected_draft_id
-    and draft.owner_internal_user_id=selected_owner_internal_user_id
-    and draft.state='proposed'
-    and draft.source_conversation_id=selected_source_conversation_id;
-  if not found then raise no_data_found; end if;
+  if draft.state<>'proposed'
+    or draft.source_conversation_id
+      is distinct from selected_source_conversation_id then
+    raise no_data_found;
+  end if;
   perform 1
   from platform_control.conversation_turns turn_record
   join platform_control.conversation_messages assistant
@@ -213,24 +230,19 @@ begin
   for update;
   if not found then raise no_data_found; end if;
   if draft.confirmation_client_request_id is not null then
-    if draft.confirmation_client_request_id<>selected_client_request_id
-      or draft.confirmation_draft_version_id<>selected_draft_version_id
-      or draft.confirmation_expected_row_version<>selected_expected_row_version then
+    if draft.confirmation_client_request_id
+        is distinct from selected_client_request_id
+      or draft.confirmation_draft_version_id
+        is distinct from selected_draft_version_id
+      or draft.confirmation_expected_row_version
+        is distinct from selected_expected_row_version then
       raise unique_violation using
         message='position package confirmation payload mismatch';
     end if;
-    select * into selected_version
-    from platform_hr.position_draft_versions version
-    where version.draft_version_id=draft.confirmation_draft_version_id
-      and version.owner_internal_user_id=selected_owner_internal_user_id
-      and version.draft_id=selected_draft_id;
     return query select
       draft.resolved_position_id,
-      existing_position.current_context_version_id,
-      selected_version.source_conversation_id
-    from platform_hr.positions existing_position
-    where existing_position.position_id=draft.resolved_position_id
-      and existing_position.owner_internal_user_id=selected_owner_internal_user_id;
+      draft.confirmation_context_version_id,
+      draft.confirmation_conversation_id;
     return;
   end if;
   if draft.state<>'proposed'
@@ -287,6 +299,8 @@ begin
     state='confirmed',resolved_position_id=new_position_id,
     confirmation_client_request_id=selected_client_request_id,
     confirmation_draft_version_id=selected_draft_version_id,
+    confirmation_context_version_id=new_context_version_id,
+    confirmation_conversation_id=selected_version.source_conversation_id,
     confirmation_expected_row_version=selected_expected_row_version,
     row_version=row_version+1,updated_at=now()
   where position_drafts.draft_id=selected_draft_id

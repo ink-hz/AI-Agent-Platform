@@ -91,7 +91,9 @@ def test_migration_exposes_app_only_idempotent_package_mutations() -> None:
     assert sql.count("security definer") >= 2
     assert "position draft version idempotency payload mismatch" in sql
     assert "position package confirmation payload mismatch" in sql
-    assert "for update" in sql
+    assert sql.count("for update") >= 2
+    assert "confirmation_context_version_id uuid" in sql
+    assert "confirmation_conversation_id uuid" in sql
     assert "'manual'" in sql
     assert "'active'" in sql
     assert "'confirmed'" in sql
