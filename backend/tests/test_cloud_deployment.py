@@ -237,14 +237,16 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
     assert "npm run build" in dockerfile
     assert "python:3.11" in dockerfile
     assert "https://mirrors.aliyun.com/pypi/simple/" in dockerfile
+    assert "s|http://deb.debian.org|https://mirrors.aliyun.com|g" in dockerfile
     assert dockerfile.index("run pip install") < dockerfile.index("arg release_sha")
     assert "user platform" in dockerfile
     assert "healthcheck" in dockerfile
     assert "uvicorn" in dockerfile
     assert '"--no-proxy-headers"' in dockerfile
     assert "brain-model.release.json" in dockerfile
-    for runtime_package in ("bubblewrap", "clamav", "libmagic1", "poppler-utils"):
+    for runtime_package in ("bubblewrap", "libmagic1", "poppler-utils"):
         assert runtime_package in dockerfile
+    assert "\n      clamav \\\n" not in dockerfile
     for forbidden in (
         "copy .git",
         "copy backend/tests",
