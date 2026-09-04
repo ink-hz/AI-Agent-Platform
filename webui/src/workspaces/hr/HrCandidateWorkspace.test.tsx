@@ -250,6 +250,66 @@ it("renders the frozen resume-extract envelope and bounds unknown nested fallbac
   expect(container.textContent).not.toContain('"experiences":');
 });
 
+it("normalizes and filters protected legacy keys while bounding and escaping safe fallback text", async () => {
+  const client = api();
+  const longKey = `${"😀".repeat(550)}尾部键名`;
+  const longValue = `${"🧪".repeat(550)}尾部内容`;
+  const htmlText = '<script>alert("legacy")</script><img src=x onerror=alert(1)>';
+  const protectedKeys = [
+    "age", "birthdate", "dateofbirth", "disability", "ethnicity", "gender", "health",
+    "maritalstatus", "nationality", "onboarding", "offerstatus", "pipelinestage",
+    "politicalaffiliation", "pregnancy", "race", "religion", "sexualorientation",
+    "storagekey", "storagepath", "objectkey", "objectref", "objectrefciphertext",
+    "immutablelocator", "ats", "atsid", "interviewschedule", "automaticrejection",
+    "beisen", "bosszhipin", "liepin", "年龄", "出生日期", "生日", "残疾", "残障",
+    "民族", "性别", "健康", "健康状况", "婚姻", "婚姻状况", "婚育", "国籍", "入职",
+    "录用状态", "流程阶段", "政治面貌", "怀孕", "孕期", "种族", "宗教", "性取向",
+    "存储键", "存储路径", "对象键", "对象引用", "不可变定位符", "面试安排", "自动淘汰",
+    "object_ref", "storage-path", "immutable-locator", "Object_Ref/Ciphertext",
+    "OBJECT.REF", "ＳＴＯＲＡＧＥ＿ＰＡＴＨ", "Immutable/Locator", "A_T:S", "PIPELINE-STAGE",
+    "Boß-ZhiPin", `storage\u0085path`,
+  ];
+  const protectedPayload = Object.fromEntries(protectedKeys.map((key, index) => [key, `SECRET_PROTECTED_${index}`]));
+  const nestedProtectedValues = ["SECRET_NESTED_REF", "SECRET_NESTED_GENDER"];
+  client.candidateAnalyses.mockResolvedValue([{ ...analysis, analysisKind: "resume_extract", result: {
+    extracted_facts: {
+      stable_name: "候选人1", summary: "正常摘要",
+      ["constructor"]: "正常构造字段", ["__proto__"]: "正常原型字段",
+      safe_profile: { ordinary_field: "正常嵌套字段", html_note: htmlText, nested: {
+        object_ref: nestedProtectedValues[0], deeper: { "ＧＥＮＤＥＲ": nestedProtectedValues[1] },
+      } },
+      [longKey]: longValue,
+      deep: { level_1: { level_2: { level_3: { level_4: { level_5: "深层秘密" } } } } },
+      ...protectedPayload,
+    },
+    identity_candidate_ids: [],
+  } }]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+
+  for (const value of [...Object.values(protectedPayload), ...nestedProtectedValues]) expect(container.textContent).not.toContain(value);
+  expect(container.textContent).toContain("正常嵌套字段");
+  expect(container.textContent).toContain("正常构造字段");
+  expect(container.textContent).toContain("正常原型字段");
+  expect(container.textContent).toContain(htmlText);
+  expect(container.querySelector("script")).toBeNull();
+  expect(container.querySelector("img")).toBeNull();
+  const renderedLabels = [...container.querySelectorAll(".hr-candidate-legacy-fields dt")].map((item) => item.textContent);
+  for (const protectedLabel of ["object ref", "storage-path", "immutable-locator", "Object Ref/Ciphertext"]) {
+    expect(renderedLabels).not.toContain(protectedLabel);
+  }
+  expect(container.textContent).not.toContain("尾部键名");
+  expect(container.textContent).not.toContain("尾部内容");
+  expect(container.textContent).not.toContain("深层秘密");
+  expect(container.textContent).toContain("内容层级过深，未展开");
+  const truncatedKey = [...container.querySelectorAll(".hr-candidate-legacy-fields dt")].find((item) => item.textContent?.startsWith("😀😀😀"));
+  expect(Array.from(truncatedKey?.textContent ?? "")).toHaveLength(501);
+  expect(truncatedKey?.textContent?.endsWith("…")).toBe(true);
+  const truncatedValue = truncatedKey?.parentElement?.querySelector("dd span")?.textContent ?? "";
+  expect(Array.from(truncatedValue)).toHaveLength(501);
+  expect(truncatedValue.endsWith("…")).toBe(true);
+});
+
 it("polls processing drafts with bounded delay and stops at a terminal state", async () => {
   vi.useFakeTimers(); const client = api();
   client.candidateDrafts.mockReset().mockResolvedValueOnce([draft(0, "processing")]).mockResolvedValueOnce([draft(0)]);

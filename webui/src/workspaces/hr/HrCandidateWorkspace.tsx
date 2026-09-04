@@ -67,6 +67,20 @@ function CandidateFacts({ facts }: { facts: Record<string, unknown> }) {
 const LEGACY_MAX_DEPTH = 4;
 const LEGACY_MAX_ITEMS = 50;
 const LEGACY_MAX_TEXT = 500;
+const LEGACY_PROTECTED_KEY_SEPARATORS = /[\s\u001c-\u001f\u0085_.:/-]+/gu;
+// Mirrors backend/app/hr/candidate_models.py `_normalized_fact_key` and
+// `_FORBIDDEN_FACT_KEYS`; legacy rendering remains defense-in-depth for old rows.
+const LEGACY_PROTECTED_KEYS = new Set([
+  "age", "birthdate", "dateofbirth", "disability", "ethnicity", "gender", "health",
+  "maritalstatus", "nationality", "onboarding", "offerstatus", "pipelinestage",
+  "politicalaffiliation", "pregnancy", "race", "religion", "sexualorientation",
+  "storagekey", "storagepath", "objectkey", "objectref", "objectrefciphertext",
+  "immutablelocator", "ats", "atsid", "interviewschedule", "automaticrejection",
+  "beisen", "bosszhipin", "liepin", "年龄", "出生日期", "生日", "残疾", "残障",
+  "民族", "性别", "健康", "健康状况", "婚姻", "婚姻状况", "婚育", "国籍", "入职",
+  "录用状态", "流程阶段", "政治面貌", "怀孕", "孕期", "种族", "宗教", "性取向",
+  "存储键", "存储路径", "对象键", "对象引用", "不可变定位符", "面试安排", "自动淘汰",
+]);
 const LEGACY_FIELD_LABELS: Record<string, string> = {
   stable_name: "候选人姓名", summary: "摘要", contact: "联系方式", education: "教育背景",
   experiences: "经历", projects: "项目", skills: "技能", certifications: "证书",
@@ -82,14 +96,23 @@ function legacyRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function legacyLabel(value: string): string {
-  return LEGACY_FIELD_LABELS[value] ?? value.replace(/_/g, " ");
+  const knownLabel = Object.prototype.hasOwnProperty.call(LEGACY_FIELD_LABELS, value)
+    ? LEGACY_FIELD_LABELS[value]
+    : undefined;
+  return boundedText(knownLabel ?? value.replace(/_/g, " "));
 }
 function boundedText(value: string): string {
   const characters = Array.from(value);
   return characters.length <= LEGACY_MAX_TEXT ? value : `${characters.slice(0, LEGACY_MAX_TEXT).join("")}…`;
 }
+function normalizedLegacyKey(value: string): string {
+  // After NFKC, ß/ẞ -> ss is the only Python casefold expansion that can
+  // produce the ASCII-only protected keys; toLowerCase handles the rest.
+  const casefolded = value.normalize("NFKC").trim().toLowerCase().replace(/ß/gu, "ss");
+  return casefolded.replace(LEGACY_PROTECTED_KEY_SEPARATORS, "");
+}
 function protectedLegacyField(value: string): boolean {
-  return /^(?:immutable_locator|storage_locator|storage_key|object_key|content_path|signed_ticket)$/i.test(value);
+  return LEGACY_PROTECTED_KEYS.has(normalizedLegacyKey(value));
 }
 function LegacyValue({ value, depth = 0 }: { value: unknown; depth?: number }): ReactNode {
   if (value === null || value === undefined) return <span>未提供</span>;
@@ -102,9 +125,10 @@ function LegacyValue({ value, depth = 0 }: { value: unknown; depth?: number }): 
     return <ul className="hr-candidate-legacy-list">{visible.map((item, index) => <li key={index}><LegacyValue depth={depth + 1} value={item} /></li>)}{value.length > visible.length && <li>其余 {value.length - visible.length} 项未展开</li>}</ul>;
   }
   if (legacyRecord(value)) {
-    const entries = Object.entries(value).slice(0, LEGACY_MAX_ITEMS);
+    const safeEntries = Object.entries(value).filter(([key]) => !protectedLegacyField(key));
+    const entries = safeEntries.slice(0, LEGACY_MAX_ITEMS);
     if (entries.length === 0) return <span>暂无</span>;
-    return <dl className="hr-candidate-legacy-fields">{entries.map(([key, item]) => <div key={key}><dt>{legacyLabel(key)}</dt><dd>{protectedLegacyField(key) ? "受保护字段已隐藏" : <LegacyValue depth={depth + 1} value={item} />}</dd></div>)}{Object.keys(value).length > entries.length && <div><dt>更多信息</dt><dd>其余 {Object.keys(value).length - entries.length} 项未展开</dd></div>}</dl>;
+    return <dl className="hr-candidate-legacy-fields">{entries.map(([key, item]) => <div key={key}><dt>{legacyLabel(key)}</dt><dd><LegacyValue depth={depth + 1} value={item} /></dd></div>)}{safeEntries.length > entries.length && <div><dt>更多信息</dt><dd>其余 {safeEntries.length - entries.length} 项未展开</dd></div>}</dl>;
   }
   return <span>未提供</span>;
 }
