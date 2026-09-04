@@ -10,8 +10,8 @@ import pytest
 from app.hr.models import (
     BindPositionConversation,
     CreateManualPosition,
-    PromotePositionMaterial,
     ProjectOfficialPosition,
+    PromotePositionMaterial,
 )
 from app.hr.position_intelligence_models import (
     CreatePositionTaskRequest,
