@@ -24,6 +24,7 @@ import {
   type PendingAdministratorState,
 } from "../pendingAdministrator";
 import { FaeAccessPanel } from "../components/FaeAccessPanel";
+import { VocAccessPanel } from "../components/VocAccessPanel";
 import { PartnerAccessPanel } from "./PartnerAccessPanel";
 
 
@@ -364,6 +365,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       </div>
     </section>
     <FaeAccessPanel account={account} />
+    <VocAccessPanel account={account} />
     {account.role === "platform_owner" && <PartnerAccessPanel account={account} />}
   </>);
 }
