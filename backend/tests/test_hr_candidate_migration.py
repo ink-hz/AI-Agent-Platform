@@ -69,9 +69,6 @@ def test_candidate_mutations_are_audited_idempotent_and_tables_are_private() -> 
     for function in (
         "register_candidate_draft_batch_v70",
         "create_candidate_draft_v70",
-        "start_candidate_draft_v70",
-        "complete_candidate_draft_v70",
-        "fail_candidate_draft_v70",
         "retry_candidate_draft_v70",
         "confirm_candidate_draft_v70",
         "dismiss_candidate_draft_v70",
@@ -87,6 +84,12 @@ def test_candidate_mutations_are_audited_idempotent_and_tables_are_private() -> 
     assert "grant select on all tables in schema platform_hr to %i" in sql
     assert "grant select on all tables in schema platform_hr to %i,%i" not in sql
     assert "grant insert" not in sql
+    for function in (
+        "start_candidate_draft_v70",
+        "complete_candidate_draft_v70",
+        "fail_candidate_draft_v70",
+    ):
+        assert f"grant execute on function platform_hr.{function}" not in sql
 
 
 def test_analysis_and_feedback_are_append_only_and_attachment_bytes_are_not_copied() -> None:
@@ -116,6 +119,14 @@ def test_idempotent_replays_are_bound_to_the_complete_mutation_payload() -> None
         "selected.reason<>btrim(selected_reason)",
     ):
         assert comparison in sql
+
+
+def test_analysis_feedback_is_an_exact_context_pinned_task_snapshot() -> None:
+    sql = _sql()
+
+    assert "cardinality(selected_feedback_ids)>100" in sql
+    assert "analysis.context_version_id=selected_context_version_id" in sql
+    assert "feedback.analysis_version_id=analysis.analysis_version_id" in sql
 
 
 def test_context_foreign_keys_are_guarded_for_the_isolated_subsystem_branch() -> None:
@@ -173,6 +184,8 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
         assert f"grant execute on function platform_hr.{function}" in sql
     assert "for update of draft skip locked" in sql
     assert "lease_expires_at" in sql
+    assert "create index candidate_draft_attempt_expiry_v70" in sql
+    assert "(lease_expires_at) where state='processing'" in sql
     assert "position_id uuid not null" in sql
     assert "attachment_id uuid not null" in sql
     assert "draft_client_request_id uuid not null" in sql
@@ -182,6 +195,14 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
     assert "conversation.direct_agent_id='hr-bot'" in sql
     assert "hr-candidate-bot" not in sql
     assert "turn.client_request_id=selected_attempt.draft_client_request_id" in sql
+    assert "binding.kind='turn_input'" in sql
+    assert "binding.attachment_id<>selected_attempt.attachment_id" in sql
+    assert "candidate_attachment_usable_v70( selected_attempt.owner_internal_user_id" in sql
+    assert "execution.status='completed'" in sql
+    assert "turn.status='completed'" in sql
+    assert "selected_attempt.owner_internal_user_id<>selected_owner_internal_user_id" in sql
+    assert "selected_attempt.draft_id<>selected_draft_id" in sql
+    assert "selected_attempt.worker_id<>selected_worker_id" in sql
     assert "not exists ( select 1 from platform_hr.position_conversations" in sql
     assert "grant select on all tables in schema platform_hr" not in sql.replace(
         "grant select on all tables in schema platform_hr to %i',selected_app", ""

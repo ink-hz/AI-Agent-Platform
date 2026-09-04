@@ -49,17 +49,23 @@ class CandidateParserQueue:
         return self._repository.recover_draft_attempt(attempt_id, worker_id)
 
     def complete(
-        self, attempt_id: UUID, command: CompleteCandidateDraft
+        self, attempt_id: UUID, worker_id: str, command: CompleteCandidateDraft
     ) -> CandidateDraft:
-        if not isinstance(attempt_id, UUID) or not isinstance(
-            command, CompleteCandidateDraft
+        if (
+            not isinstance(attempt_id, UUID)
+            or not isinstance(worker_id, str)
+            or not isinstance(command, CompleteCandidateDraft)
         ):
             raise ValueError("candidate parser completion required")
-        return self._repository.complete_claimed_draft(attempt_id, command)
+        return self._repository.complete_claimed_draft(attempt_id, worker_id, command)
 
     def fail(
-        self, attempt_id: UUID, command: FailCandidateDraft
+        self, attempt_id: UUID, worker_id: str, command: FailCandidateDraft
     ) -> CandidateDraft:
-        if not isinstance(attempt_id, UUID) or not isinstance(command, FailCandidateDraft):
+        if (
+            not isinstance(attempt_id, UUID)
+            or not isinstance(worker_id, str)
+            or not isinstance(command, FailCandidateDraft)
+        ):
             raise ValueError("candidate parser failure required")
-        return self._repository.fail_claimed_draft(attempt_id, command)
+        return self._repository.fail_claimed_draft(attempt_id, worker_id, command)

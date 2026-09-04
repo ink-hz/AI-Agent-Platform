@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-
 from app.hr.candidate_models import CreateCandidateDraftBatch
 from app.hr.candidate_repository import (
     CandidateConflict,
@@ -142,3 +141,29 @@ def test_repository_refuses_missing_or_malformed_rows() -> None:
         empty.draft_for_owner(uuid4(), uuid4())
     with pytest.raises(CandidateUnavailable):
         malformed.draft_for_owner(uuid4(), uuid4())
+
+
+def test_repository_bounds_task_feedback_to_the_exact_context() -> None:
+    connection = FakeConnection((FakeResult(all_rows=()),))
+    repository, _ = _repository(connection)
+    owner_id, relation_id, context_id = uuid4(), uuid4(), uuid4()
+
+    assert repository.feedback_for_candidate_context(
+        owner_id, relation_id, context_id
+    ) == ()
+    sql, parameters = connection.calls[0]
+    assert "candidate_analysis_versions analysis" in sql
+    assert "analysis.context_version_id=%s" in sql
+    assert "order by feedback.created_at desc,feedback.feedback_id desc limit 100" in sql
+    assert parameters == (owner_id, relation_id, context_id)
+
+
+def test_repository_bounds_feedback_listing_to_the_newest_hundred() -> None:
+    connection = FakeConnection((FakeResult(all_rows=()),))
+    repository, _ = _repository(connection)
+    owner_id, relation_id = uuid4(), uuid4()
+
+    assert repository.feedback_for_position_candidate(owner_id, relation_id) == ()
+    sql, parameters = connection.calls[0]
+    assert "order by created_at desc,feedback_id desc limit 100" in sql
+    assert parameters == (owner_id, relation_id)

@@ -327,23 +327,48 @@ class CandidateRepository:
             self._raise_repository_error(error)
 
     def complete_claimed_draft(
-        self, attempt_id: UUID, command: CompleteCandidateDraft
+        self, attempt_id: UUID, worker_id: str, command: CompleteCandidateDraft
     ) -> CandidateDraft:
-        return self._draft_transition(
+        return self._claimed_draft_transition(
             "complete_claimed_candidate_draft_v70", attempt_id,
+            command.owner_id, command.draft_id, worker_id,
             command.client_request_id, command.expected_row_version,
             json.dumps(command.extracted_facts, ensure_ascii=False),
             list(command.identity_candidates),
         )
 
     def fail_claimed_draft(
-        self, attempt_id: UUID, command: FailCandidateDraft
+        self, attempt_id: UUID, worker_id: str, command: FailCandidateDraft
     ) -> CandidateDraft:
-        return self._draft_transition(
+        return self._claimed_draft_transition(
             "fail_claimed_candidate_draft_v70", attempt_id,
+            command.owner_id, command.draft_id, worker_id,
             command.client_request_id, command.expected_row_version,
             command.error_code,
         )
+
+    def _claimed_draft_transition(
+        self, function_name: str, attempt_id: UUID, owner_id: UUID,
+        draft_id: UUID, worker_id: str, request_id: UUID,
+        expected_row_version: int, *extra: object,
+    ) -> CandidateDraft:
+        placeholders = ",".join("%s" for _ in range(6 + len(extra)))
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    f"select (platform_hr.{function_name}({placeholders})).*",
+                    (
+                        attempt_id, owner_id, draft_id, worker_id, request_id,
+                        expected_row_version, *extra,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise CandidateUnavailable("candidate draft mutation unavailable")
+            return _draft(row)
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
 
     def draft_for_owner(self, owner_id: UUID, draft_id: UUID) -> CandidateDraft:
         try:
@@ -412,30 +437,6 @@ class CandidateRepository:
             raise
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise_repository_error(error)
-
-    def start_draft(
-        self, owner_id: UUID, draft_id: UUID, request_id: UUID,
-        expected_row_version: int,
-    ) -> CandidateDraft:
-        return self._draft_transition(
-            "start_candidate_draft_v70", owner_id, draft_id,
-            request_id, expected_row_version,
-        )
-
-    def complete_draft(self, command: CompleteCandidateDraft) -> CandidateDraft:
-        return self._draft_transition(
-            "complete_candidate_draft_v70", command.owner_id, command.draft_id,
-            command.client_request_id, command.expected_row_version,
-            json.dumps(command.extracted_facts, ensure_ascii=False),
-            list(command.identity_candidates),
-        )
-
-    def fail_draft(self, command: FailCandidateDraft) -> CandidateDraft:
-        return self._draft_transition(
-            "fail_candidate_draft_v70", command.owner_id, command.draft_id,
-            command.client_request_id, command.expected_row_version,
-            command.error_code,
-        )
 
     def retry_draft(self, command: RetryCandidateDraft) -> CandidateDraft:
         return self._draft_transition(
@@ -706,6 +707,8 @@ class CandidateRepository:
                     == command.verification_questions
                     and selected.agent_version == command.agent_version
                     and selected.model_version == command.model_version
+                    and tuple(sorted(selected.feedback_ids))
+                    == tuple(sorted(command.feedback_ids))
                 )
             else:
                 candidates = selected.result.get("candidates")
@@ -805,8 +808,31 @@ class CandidateRepository:
                 rows = connection.execute(
                     "select * from platform_hr.human_feedback "
                     "where owner_internal_user_id=%s and position_candidate_id=%s "
-                    "order by created_at,feedback_id",
+                    "order by created_at desc,feedback_id desc limit 100",
                     (owner_id, position_candidate_id),
+                ).fetchall()
+            return tuple(_feedback(row) for row in rows)
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
+    def feedback_for_candidate_context(
+        self, owner_id: UUID, position_candidate_id: UUID,
+        context_version_id: UUID,
+    ) -> tuple[HumanFeedback, ...]:
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select feedback.* from platform_hr.human_feedback feedback "
+                    "join platform_hr.candidate_analysis_versions analysis on "
+                    "analysis.analysis_version_id=feedback.analysis_version_id and "
+                    "analysis.owner_internal_user_id=feedback.owner_internal_user_id "
+                    "where feedback.owner_internal_user_id=%s and "
+                    "feedback.position_candidate_id=%s and "
+                    "analysis.context_version_id=%s "
+                    "order by feedback.created_at desc,feedback.feedback_id desc limit 100",
+                    (owner_id, position_candidate_id, context_version_id),
                 ).fetchall()
             return tuple(_feedback(row) for row in rows)
         except CandidateRepositoryError:

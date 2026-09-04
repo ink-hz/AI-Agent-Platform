@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
 from app.hr.candidate_context import CandidateEnvelopeProvider
 from app.hr.candidate_models import (
     Candidate,
@@ -67,9 +66,12 @@ class ContextRepository:
         assert owner_id == self.owner_id
         return self.document_access[document_id]
 
-    def feedback_for_position_candidate(self, owner_id, position_candidate_id):
+    def feedback_for_candidate_context(
+        self, owner_id, position_candidate_id, context_version_id
+    ):
         assert owner_id == self.owner_id
         assert position_candidate_id == self.relation.position_candidate_id
+        assert context_version_id == self.relation.context_version_id
         return (self.feedback,)
 
 
@@ -131,7 +133,9 @@ def test_fragment_selects_latest_feedback_within_count_and_prompt_budget() -> No
         )
         for index in range(105)
     ]
-    repository.feedback_for_position_candidate = lambda owner, relation: tuple(feedback)
+    repository.feedback_for_candidate_context = (
+        lambda owner, relation, context: tuple(feedback)
+    )
     provider, _ = _provider(repository)
 
     fragment = provider.for_task(

@@ -7,12 +7,10 @@ from .candidate_models import (
     CandidateAnalysisVersion,
     CandidateDraft,
     ComparePositionCandidates,
-    CompleteCandidateDraft,
     ConfirmCandidateDraft,
     ConfirmedCandidate,
     CreateCandidateAnalysis,
     CreateCandidateDraftBatch,
-    FailCandidateDraft,
     HumanFeedback,
     PositionCandidate,
     RetryCandidateDraft,
@@ -45,6 +43,7 @@ class CandidateService:
             "confirm_draft",
             "position_candidate_for_owner",
             "feedback_for_position_candidate",
+            "feedback_for_candidate_context",
             "add_analysis",
             "append_feedback",
             "latest_analysis",
@@ -114,24 +113,6 @@ class CandidateService:
             owner_id, position_candidate_id
         )
 
-    def start_draft(
-        self, owner_id: UUID, draft_id: UUID, request_id: UUID,
-        expected_row_version: int,
-    ) -> CandidateDraft:
-        return self._repository.start_draft(
-            owner_id, draft_id, request_id, expected_row_version
-        )
-
-    def complete_draft(self, command: CompleteCandidateDraft) -> CandidateDraft:
-        if not isinstance(command, CompleteCandidateDraft):
-            raise ValueError("candidate completion command required")
-        return self._repository.complete_draft(command)
-
-    def fail_draft(self, command: FailCandidateDraft) -> CandidateDraft:
-        if not isinstance(command, FailCandidateDraft):
-            raise ValueError("candidate failure command required")
-        return self._repository.fail_draft(command)
-
     def retry_draft(self, command: RetryCandidateDraft) -> CandidateDraft:
         if not isinstance(command, RetryCandidateDraft):
             raise ValueError("candidate retry command required")
@@ -172,15 +153,12 @@ class CandidateService:
             command.owner_id, command.position_candidate_id
         )
         self._require_analysis_scope(command, relation)
-        feedback = self._repository.feedback_for_position_candidate(
-            command.owner_id, command.position_candidate_id
-        )
         return self._repository.add_analysis(
             command,
             analysis_version_id=_derived(
                 command.owner_id, command.client_request_id, "analysis"
             ),
-            feedback_ids=tuple(item.feedback_id for item in feedback),
+            feedback_ids=command.feedback_ids,
         )
 
     @staticmethod
@@ -242,8 +220,9 @@ class CandidateService:
             dict.fromkeys(
                 item.feedback_id
                 for relation in relations
-                for item in self._repository.feedback_for_position_candidate(
-                    command.owner_id, relation.position_candidate_id
+                for item in self._repository.feedback_for_candidate_context(
+                    command.owner_id, relation.position_candidate_id,
+                    command.context_version_id,
                 )
             )
         )
@@ -293,6 +272,7 @@ class CandidateService:
             verification_questions=questions,
             agent_version=command.agent_version,
             model_version=command.model_version,
+            feedback_ids=(),
         )
         return self._repository.add_analysis(
             comparison,

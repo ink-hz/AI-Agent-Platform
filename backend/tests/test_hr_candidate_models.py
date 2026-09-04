@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.hr.candidate_models import (
     AppendHumanFeedback,
     AttachCandidateDraftExecution,
@@ -33,6 +32,7 @@ def test_analysis_requires_exact_context_and_documents() -> None:
     position_candidate_id = uuid4()
     context_version_id = uuid4()
     document_id = uuid4()
+    feedback_id = uuid4()
     request_id = uuid4()
 
     value = CreateCandidateAnalysis(
@@ -49,13 +49,17 @@ def test_analysis_requires_exact_context_and_documents() -> None:
         verification_questions=("请说明量产规模",),
         agent_version="hr-r12",
         model_version="model-v1",
+        feedback_ids=(feedback_id,),
     )
 
     assert value.document_ids == (document_id,)
     assert value.context_version_id == context_version_id
     assert value.unknowns == ("量产规模",)
+    assert value.feedback_ids == (feedback_id,)
     with pytest.raises(ValueError, match="documents required"):
         replace(value, document_ids=())
+    with pytest.raises(ValueError, match="feedback scope invalid"):
+        replace(value, feedback_ids=tuple(uuid4() for _ in range(101)))
 
 
 def test_candidate_records_are_frozen_and_preserve_human_ai_separation() -> None:

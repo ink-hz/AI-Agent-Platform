@@ -82,6 +82,7 @@ class AnalysisBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     context_version_id: UUID
     document_ids: tuple[UUID, ...] = Field(min_length=1, max_length=100)
+    feedback_ids: tuple[UUID, ...] = Field(max_length=100)
     analysis_kind: Literal["resume_extract", "match", "candidate_interview_plan"]
     result: dict[str, object]
     evidence: tuple[dict[str, object], ...] = Field(max_length=500)
@@ -432,6 +433,7 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             position_candidate_id=position_candidate_id,
             context_version_id=body.context_version_id,
             document_ids=body.document_ids,
+            feedback_ids=body.feedback_ids,
             analysis_kind=body.analysis_kind,
             client_request_id=_request_id(idempotency_key),
             result=body.result,

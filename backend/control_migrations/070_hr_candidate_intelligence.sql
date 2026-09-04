@@ -144,6 +144,9 @@ create table platform_hr.candidate_draft_processing_attempts (
 create unique index one_processing_candidate_draft_v70
   on platform_hr.candidate_draft_processing_attempts(draft_id)
   where state='processing';
+create index candidate_draft_attempt_expiry_v70
+  on platform_hr.candidate_draft_processing_attempts(lease_expires_at)
+  where state='processing';
 
 create table platform_hr.candidates (
   candidate_id uuid primary key,
@@ -653,6 +656,12 @@ begin
      or selected_attempt.lease_expires_at<=now() then
     raise serialization_failure;
   end if;
+  perform 1 from platform_attachments.attachments attachment
+  where attachment.attachment_id=selected_attempt.attachment_id
+    and platform_hr.candidate_attachment_usable_v70(
+      selected_attempt.owner_internal_user_id,selected_attempt.attachment_id
+    ) for update;
+  if not found then raise no_data_found; end if;
   perform 1 from platform_control.execution_jobs execution
   join platform_control.mission_runs run on run.run_id=execution.run_id
   join platform_control.missions mission on mission.mission_id=run.mission_id
@@ -665,7 +674,7 @@ begin
     and conversation.owner_internal_user_id=mission.owner_internal_user_id
   where execution.job_id=selected_execution_job_id
     and execution.agent_id='hr-bot'
-    and execution.status in ('queued','leased','dispatched','running','completed')
+    and execution.status='completed'
     and run.agent_id='hr-bot' and run.phase='direct'
     and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
     and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
@@ -675,6 +684,15 @@ begin
     and conversation.started_by_client_request_id=
       selected_attempt.draft_client_request_id
     and turn.client_request_id=selected_attempt.draft_client_request_id
+    and turn.status='completed'
+    and not exists (
+      select 1 from platform_attachments.bindings binding
+      where binding.owner_internal_user_id=selected_attempt.owner_internal_user_id
+        and binding.kind='turn_input'
+        and binding.conversation_id=selected_conversation_id
+        and binding.turn_id=selected_turn_id
+        and binding.attachment_id<>selected_attempt.attachment_id
+    )
     and not exists (
       select 1 from platform_hr.position_conversations position_conversation
       where position_conversation.conversation_id=conversation.conversation_id
@@ -1066,6 +1084,9 @@ $function$;
 
 create function platform_hr.complete_claimed_candidate_draft_v70(
   selected_attempt_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_draft_id uuid,
+  selected_worker_id text,
   selected_client_request_id uuid,
   selected_expected_row_version bigint,
   selected_extracted_facts jsonb,
@@ -1084,6 +1105,11 @@ begin
   from platform_hr.candidate_draft_processing_attempts
   where attempt_id=selected_attempt_id for update;
   if not found then raise no_data_found; end if;
+  if selected_attempt.owner_internal_user_id<>selected_owner_internal_user_id
+     or selected_attempt.draft_id<>selected_draft_id
+     or selected_attempt.worker_id<>selected_worker_id then
+    raise no_data_found;
+  end if;
   if selected_attempt.state<>'processing' then
     if selected_attempt.state='completed'
        and selected_attempt.terminal_request_id=selected_client_request_id then
@@ -1100,6 +1126,22 @@ begin
      or selected_attempt.claimed_row_version<>selected_expected_row_version then
     raise serialization_failure;
   end if;
+  perform 1 from platform_control.execution_jobs execution
+  join platform_control.mission_runs run on run.run_id=execution.run_id
+  join platform_control.missions mission on mission.mission_id=run.mission_id
+  join platform_control.conversation_turns turn
+    on turn.mission_id=mission.mission_id
+    and turn.conversation_id=selected_attempt.conversation_id
+    and turn.turn_id=selected_attempt.turn_id
+  where execution.job_id=selected_attempt.execution_job_id
+    and execution.status='completed' and execution.agent_id='hr-bot'
+    and run.agent_id='hr-bot' and run.phase='direct'
+    and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
+    and mission.client_request_id=selected_attempt.draft_client_request_id
+    and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
+    and turn.client_request_id=selected_attempt.draft_client_request_id
+    and turn.status='completed';
+  if not found then raise serialization_failure; end if;
   selected := platform_hr.complete_candidate_draft_v70(
     selected_attempt.owner_internal_user_id,selected_attempt.draft_id,
     selected_client_request_id,selected_expected_row_version,
@@ -1114,6 +1156,9 @@ $function$;
 
 create function platform_hr.fail_claimed_candidate_draft_v70(
   selected_attempt_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_draft_id uuid,
+  selected_worker_id text,
   selected_client_request_id uuid,
   selected_expected_row_version bigint,
   selected_error_code text
@@ -1131,6 +1176,11 @@ begin
   from platform_hr.candidate_draft_processing_attempts
   where attempt_id=selected_attempt_id for update;
   if not found then raise no_data_found; end if;
+  if selected_attempt.owner_internal_user_id<>selected_owner_internal_user_id
+     or selected_attempt.draft_id<>selected_draft_id
+     or selected_attempt.worker_id<>selected_worker_id then
+    raise no_data_found;
+  end if;
   if selected_attempt.state<>'processing' then
     if selected_attempt.state='failed'
        and selected_attempt.terminal_request_id=selected_client_request_id then
@@ -1146,6 +1196,22 @@ begin
      or selected_attempt.claimed_row_version<>selected_expected_row_version then
     raise serialization_failure;
   end if;
+  perform 1 from platform_control.execution_jobs execution
+  join platform_control.mission_runs run on run.run_id=execution.run_id
+  join platform_control.missions mission on mission.mission_id=run.mission_id
+  join platform_control.conversation_turns turn
+    on turn.mission_id=mission.mission_id
+    and turn.conversation_id=selected_attempt.conversation_id
+    and turn.turn_id=selected_attempt.turn_id
+  where execution.job_id=selected_attempt.execution_job_id
+    and execution.status='completed' and execution.agent_id='hr-bot'
+    and run.agent_id='hr-bot' and run.phase='direct'
+    and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
+    and mission.client_request_id=selected_attempt.draft_client_request_id
+    and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
+    and turn.client_request_id=selected_attempt.draft_client_request_id
+    and turn.status='completed';
+  if not found then raise serialization_failure; end if;
   selected := platform_hr.fail_candidate_draft_v70(
     selected_attempt.owner_internal_user_id,selected_attempt.draft_id,
     selected_client_request_id,selected_expected_row_version,selected_error_code
@@ -1474,6 +1540,12 @@ begin
      or not platform_hr.candidate_json_safe_v70(selected_evidence,false) then
     raise check_violation using message='candidate analysis contains forbidden fields';
   end if;
+  if (selected_analysis_kind<>'comparison' and cardinality(selected_feedback_ids)>100)
+     or cardinality(selected_feedback_ids)<>cardinality(array(
+       select distinct value from unnest(selected_feedback_ids) value
+     )) then
+    raise check_violation using message='candidate feedback snapshot invalid';
+  end if;
   payload := jsonb_build_object(
     'analysis_version_id',selected_analysis_version_id,
     'position_candidate_id',selected_position_candidate_id,
@@ -1566,11 +1638,15 @@ begin
   end loop;
   foreach selected_feedback_id in array selected_feedback_ids loop
     perform 1 from platform_hr.human_feedback feedback
+    join platform_hr.candidate_analysis_versions analysis
+      on feedback.analysis_version_id=analysis.analysis_version_id
+      and feedback.owner_internal_user_id=analysis.owner_internal_user_id
     join platform_hr.position_candidates feedback_relation
       on feedback_relation.position_candidate_id=feedback.position_candidate_id
       and feedback_relation.owner_internal_user_id=feedback.owner_internal_user_id
     where feedback.feedback_id=selected_feedback_id
       and feedback.owner_internal_user_id=selected_owner_internal_user_id
+      and analysis.context_version_id=selected_context_version_id
       and (
         feedback.position_candidate_id=selected_position_candidate_id
         or (
@@ -1699,10 +1775,10 @@ revoke all on function platform_hr.read_candidate_draft_attempt_v70(
   uuid,uuid
 ) from public;
 revoke all on function platform_hr.complete_claimed_candidate_draft_v70(
-  uuid,uuid,bigint,jsonb,uuid[]
+  uuid,uuid,uuid,text,uuid,bigint,jsonb,uuid[]
 ) from public;
 revoke all on function platform_hr.fail_claimed_candidate_draft_v70(
-  uuid,uuid,bigint,text
+  uuid,uuid,uuid,text,uuid,bigint,text
 ) from public;
 revoke all on function platform_hr.register_candidate_draft_batch_v70(
   uuid,uuid,uuid,uuid[]
@@ -1771,11 +1847,11 @@ begin
   );
   execute format(
     'grant execute on function platform_hr.complete_claimed_candidate_draft_v70('
-    'uuid,uuid,bigint,jsonb,uuid[]) to %I',selected_brain
+    'uuid,uuid,uuid,text,uuid,bigint,jsonb,uuid[]) to %I',selected_brain
   );
   execute format(
     'grant execute on function platform_hr.fail_claimed_candidate_draft_v70('
-    'uuid,uuid,bigint,text) to %I',selected_brain
+    'uuid,uuid,uuid,text,uuid,bigint,text) to %I',selected_brain
   );
   execute format(
     'grant execute on function platform_hr.register_candidate_draft_batch_v70('
@@ -1784,18 +1860,6 @@ begin
   execute format(
     'grant execute on function platform_hr.create_candidate_draft_v70('
     'uuid,uuid,uuid,uuid,uuid,uuid) to %I',selected_app
-  );
-  execute format(
-    'grant execute on function platform_hr.start_candidate_draft_v70('
-    'uuid,uuid,uuid,bigint) to %I',selected_app
-  );
-  execute format(
-    'grant execute on function platform_hr.complete_candidate_draft_v70('
-    'uuid,uuid,uuid,bigint,jsonb,uuid[]) to %I',selected_app
-  );
-  execute format(
-    'grant execute on function platform_hr.fail_candidate_draft_v70('
-    'uuid,uuid,uuid,bigint,text) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.retry_candidate_draft_v70('

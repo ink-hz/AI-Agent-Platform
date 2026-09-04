@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
 from app.hr.candidate_models import (
     AppendHumanFeedback,
     Candidate,
@@ -147,6 +146,14 @@ class MemoryRepository:
         return relation
 
     def feedback_for_position_candidate(self, owner_id, position_candidate_id):
+        return self.feedback.get(position_candidate_id, ())
+
+    def feedback_for_candidate_context(
+        self, owner_id, position_candidate_id, context_version_id
+    ):
+        relation = self.position_candidate_for_owner(owner_id, position_candidate_id)
+        if relation.context_version_id != context_version_id:
+            raise AssertionError("context leak")
         return self.feedback.get(position_candidate_id, ())
 
     def add_analysis(self, command, *, analysis_version_id, feedback_ids):
@@ -297,7 +304,7 @@ def test_retry_reuses_the_failed_draft() -> None:
     assert retried.state == "pending"
 
 
-def test_new_analysis_automatically_pins_applicable_feedback() -> None:
+def test_new_analysis_pins_only_the_explicit_task_snapshot_feedback() -> None:
     owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()
     relation = _relation(owner_id, position_id, context_id)
     repository = MemoryRepository()
@@ -306,12 +313,13 @@ def test_new_analysis_automatically_pins_applicable_feedback() -> None:
         uuid4(), owner_id, relation.position_candidate_id, uuid4(),
         "correction", "scope", "量产 100 万台", "HR 核实", NOW,
     )
-    repository.feedback[relation.position_candidate_id] = (feedback,)
+    excluded = replace(feedback, feedback_id=uuid4())
+    repository.feedback[relation.position_candidate_id] = (feedback, excluded)
     service = CandidateService(repository)
     command = CreateCandidateAnalysis(
         owner_id, relation.position_candidate_id, context_id, (uuid4(),),
         "match", uuid4(), {"summary": "待复核"}, (), ("量产经验",), (),
-        ("说明量产规模",), "hr-r12", "model-v1",
+        ("说明量产规模",), "hr-r12", "model-v1", (feedback.feedback_id,),
     )
 
     analysis = service.add_analysis(command)
@@ -387,6 +395,7 @@ def test_reanalysis_creates_a_new_version_and_preserves_the_old_ai_output() -> N
         client_request_id=uuid4(),
         result={"summary": "反馈已作为独立输入"},
         unknowns=(),
+        feedback_ids=(correction.feedback_id,),
     ))
 
     assert second.analysis_version_id != first.analysis_version_id

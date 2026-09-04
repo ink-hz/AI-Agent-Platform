@@ -16,7 +16,7 @@ class CandidateEnvelopeProvider:
             "candidate_for_owner",
             "documents_for_candidate",
             "attachment_state_for_document",
-            "feedback_for_position_candidate",
+            "feedback_for_candidate_context",
         )
         if any(not callable(getattr(repository, name, None)) for name in required):
             raise ValueError("candidate context repository required")
@@ -78,8 +78,8 @@ class CandidateEnvelopeProvider:
                 raise CandidateScopeViolation("candidate document unavailable")
         feedback = tuple(
             reversed(sorted(
-                self._repository.feedback_for_position_candidate(
-                    owner_id, position_candidate_id
+                self._repository.feedback_for_candidate_context(
+                    owner_id, position_candidate_id, relation.context_version_id
                 ),
                 key=lambda value: (value.created_at, value.feedback_id),
             ))

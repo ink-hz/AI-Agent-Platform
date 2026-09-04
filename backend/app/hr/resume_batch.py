@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from .candidate_models import (
     CandidateDraft,
-    CompleteCandidateDraft,
     CreateCandidateDraftBatch,
-    FailCandidateDraft,
     RetryCandidateDraft,
 )
 
@@ -27,8 +25,7 @@ class ResumeBatch:
 class ResumeBatchCoordinator:
     def __init__(self, candidate_service) -> None:
         required = (
-            "create_drafts", "draft", "list_drafts", "start_draft",
-            "complete_draft", "fail_draft", "retry_draft",
+            "create_drafts", "draft", "list_drafts", "retry_draft",
         )
         if any(not callable(getattr(candidate_service, name, None)) for name in required):
             raise ValueError("candidate service required")
@@ -85,42 +82,6 @@ class ResumeBatchCoordinator:
         except KeyError:
             raise ResumeBatchStateError("resume draft scope unavailable") from None
         return self._service.draft(owner_id, draft_id)
-
-    @staticmethod
-    def _request(draft_id: UUID, operation: str, row_version: int) -> UUID:
-        return uuid5(draft_id, f"{operation}:{row_version}")
-
-    def _start_pending(self, draft: CandidateDraft) -> CandidateDraft:
-        if draft.state == "processing":
-            return draft
-        if draft.state != "pending":
-            raise ResumeBatchStateError("resume draft requires explicit retry")
-        return self._service.start_draft(
-            draft.owner_id, draft.draft_id,
-            self._request(draft.draft_id, "start", draft.row_version),
-            draft.row_version,
-        )
-
-    def complete_item(
-        self,
-        draft_id: UUID,
-        extracted_facts: dict[str, object],
-        identity_candidates: tuple[UUID, ...] = (),
-    ) -> CandidateDraft:
-        draft = self._start_pending(self._draft(draft_id))
-        return self._service.complete_draft(CompleteCandidateDraft(
-            draft.owner_id, draft.draft_id,
-            self._request(draft.draft_id, "complete", draft.row_version),
-            draft.row_version, extracted_facts, identity_candidates,
-        ))
-
-    def fail_item(self, draft_id: UUID, error_code: str) -> CandidateDraft:
-        draft = self._start_pending(self._draft(draft_id))
-        return self._service.fail_draft(FailCandidateDraft(
-            draft.owner_id, draft.draft_id,
-            self._request(draft.draft_id, "fail", draft.row_version),
-            draft.row_version, error_code,
-        ))
 
     def retry_item(
         self, draft_id: UUID, *, request_id: UUID, expected_row_version: int

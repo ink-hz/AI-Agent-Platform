@@ -50,12 +50,12 @@ class QueueRepository:
         self.calls.append(("recover", attempt_id, worker_id))
         return _attempt(ClaimNextCandidateDraft(attempt_id, worker_id))
 
-    def complete_claimed_draft(self, attempt_id, command):
-        self.calls.append(("complete", attempt_id, command))
+    def complete_claimed_draft(self, attempt_id, worker_id, command):
+        self.calls.append(("complete", attempt_id, worker_id, command))
         return object()
 
-    def fail_claimed_draft(self, attempt_id, command):
-        self.calls.append(("fail", attempt_id, command))
+    def fail_claimed_draft(self, attempt_id, worker_id, command):
+        self.calls.append(("fail", attempt_id, worker_id, command))
         return object()
 
 
@@ -87,9 +87,11 @@ def test_parser_queue_complete_and_fail_are_attempt_scoped() -> None:
     )
     failure = FailCandidateDraft(uuid4(), uuid4(), uuid4(), 2, "parse_failed")
 
-    queue.complete(attempt_id, complete)
-    queue.fail(attempt_id, failure)
+    worker_id = "candidate-parser-1"
+    queue.complete(attempt_id, worker_id, complete)
+    queue.fail(attempt_id, worker_id, failure)
 
     assert repository.calls == [
-        ("complete", attempt_id, complete), ("fail", attempt_id, failure)
+        ("complete", attempt_id, worker_id, complete),
+        ("fail", attempt_id, worker_id, failure),
     ]

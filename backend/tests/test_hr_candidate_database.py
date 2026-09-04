@@ -2,19 +2,24 @@ from __future__ import annotations
 
 import shutil
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
 import psycopg
 import pytest
 import test_control_plane_migration as control_migration
-
 from app.hr.candidate_models import (
     AttachCandidateDraftExecution,
     ClaimNextCandidateDraft,
     CompleteCandidateDraft,
+    FailCandidateDraft,
 )
-from app.hr.candidate_repository import CandidateNotFound, CandidateRepository
+from app.hr.candidate_repository import (
+    CandidateConflict,
+    CandidateNotFound,
+    CandidateRepository,
+)
 
 BACKEND = Path(__file__).parents[1]
 WORKTREE = BACKEND.parent
@@ -179,6 +184,43 @@ def _seed_execution_identity(connection, owner_id, request_id, *, agent_id="hr-b
     return ids
 
 
+def _bind_turn_input(connection, owner_id, execution, attachment_id):
+    connection.execute(
+        "update platform_attachments.attachments set conversation_id=%s "
+        "where attachment_id=%s and owner_internal_user_id=%s",
+        (execution["conversation"], attachment_id, owner_id),
+    )
+    connection.execute(
+        "insert into platform_attachments.bindings("
+        "binding_id,attachment_id,owner_internal_user_id,kind,conversation_id,turn_id) "
+        "values (%s,%s,%s,'turn_input',%s,%s)",
+        (
+            uuid4(), attachment_id, owner_id,
+            execution["conversation"], execution["turn"],
+        ),
+    )
+
+
+def _complete_execution_identity(connection, execution, relay_worker):
+    connection.execute(
+        "update platform_control.execution_jobs set status='completed',"
+        "lease_worker_id=%s,terminal_at=now() where job_id=%s",
+        (relay_worker, execution["job"]),
+    )
+    connection.execute(
+        "update platform_control.mission_runs set status='completed',terminal_at=now() "
+        "where run_id=%s", (execution["run"],),
+    )
+    connection.execute(
+        "update platform_control.missions set status='completed',terminal_at=now() "
+        "where mission_id=%s", (execution["mission"],),
+    )
+    connection.execute(
+        "update platform_control.conversation_turns set status='completed' "
+        "where turn_id=%s", (execution["turn"],),
+    )
+
+
 @pytest.mark.postgres
 def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
     candidate_database,
@@ -214,6 +256,15 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             (
                 analysis_id, ids["owner"], ids["relation"], ids["context"],
                 uuid4(), ids["document"],
+            ),
+        )
+        stale_feedback_id = uuid4()
+        connection.execute(
+            "select platform_hr.append_human_feedback_v70("
+            "%s,%s,%s,%s,%s,'accepted','summary',null,'old context')",
+            (
+                stale_feedback_id, ids["owner"], ids["relation"],
+                analysis_id, uuid4(),
             ),
         )
         connection.commit()
@@ -314,6 +365,24 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         )
         connection.commit()
 
+    scoped_feedback = CandidateRepository(app_url).feedback_for_candidate_context(
+        ids["owner"], ids["relation"], second["context"]
+    )
+    assert tuple(item.feedback_id for item in scoped_feedback) == (feedback_id,)
+    with psycopg.connect(app_url) as connection:
+        with pytest.raises(psycopg.errors.NoDataFound):
+            connection.execute(
+                "select platform_hr.create_candidate_analysis_v70("
+                "%s,%s,%s,%s,%s,'match',array[%s]::uuid[],array[%s]::uuid[],"
+                "'{\"summary\":\"must reject stale feedback\"}'::jsonb,"
+                "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,"
+                "'hr-r12','model-v1')",
+                (
+                    uuid4(), ids["owner"], ids["relation"], second["context"],
+                    uuid4(), second["document"], stale_feedback_id,
+                ),
+            )
+
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
             "select platform_hr.validate_candidate_task_inputs_v69("
@@ -360,7 +429,7 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             ),
         ).fetchone()[0] is False
     with psycopg.connect(app_url) as connection:
-        with pytest.raises(psycopg.errors.NoDataFound):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
             connection.execute(
                 "select platform_hr.start_candidate_draft_v70(%s,%s,%s,%s)",
                 (ids["owner"], ids["draft"], uuid4(), 3),
@@ -410,16 +479,14 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         attacker = _seed_execution_identity(
             connection, attacker_owner, queued["draft_request"]
         )
+        wrong_request = _seed_execution_identity(
+            connection, ids["owner"], uuid4()
+        )
         relay_worker = f"candidate-test-{uuid4().hex[:12]}"
         connection.execute(
             "insert into platform_control.execution_workers("
             "worker_id,allowed_agent_ids,status) values (%s,array['hr-bot'],'active')",
             (relay_worker,),
-        )
-        connection.execute(
-            "update platform_control.execution_jobs set status='completed',"
-            "lease_worker_id=%s,terminal_at=now() where job_id=%s",
-            (relay_worker, execution["job"]),
         )
 
     brain_url = environment["urls"]["platform_brain_worker"]
@@ -443,7 +510,23 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
     with pytest.raises(CandidateNotFound):
         brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
             attempt.attempt_id, attempt.worker_id,
+            execution["job"], execution["conversation"], execution["turn"],
+        ))
+    with psycopg.connect(environment["admin"]) as connection:
+        _complete_execution_identity(connection, attacker, relay_worker)
+        _complete_execution_identity(connection, execution, relay_worker)
+        _complete_execution_identity(connection, wrong_request, relay_worker)
+
+    with pytest.raises(CandidateNotFound):
+        brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
+            attempt.attempt_id, attempt.worker_id,
             attacker["job"], attacker["conversation"], attacker["turn"],
+        ))
+    with pytest.raises(CandidateNotFound):
+        brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
+            attempt.attempt_id, attempt.worker_id,
+            wrong_request["job"], wrong_request["conversation"],
+            wrong_request["turn"],
         ))
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
@@ -460,6 +543,31 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             "update platform_control.execution_jobs set agent_id='hr-bot' "
             "where job_id=%s", (execution["job"],),
         )
+    extra_attachment = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_attachments.attachments("
+            "attachment_id,owner_internal_user_id,conversation_id,source_kind,"
+            "original_name_ciphertext,original_name_key_version,"
+            "object_ref_ciphertext,object_ref_key_version,immutable_locator,"
+            "sha256,state,ready_at) values ("
+            "%s,%s,%s,'user_input',%s,1,%s,1,'etag:extra-input',%s,'ready',now())",
+            (
+                extra_attachment, ids["owner"], execution["conversation"],
+                b"n" * 29, b"o" * 29, b"x" * 32,
+            ),
+        )
+        _bind_turn_input(connection, ids["owner"], execution, extra_attachment)
+    with pytest.raises(CandidateNotFound):
+        brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
+            attempt.attempt_id, attempt.worker_id,
+            execution["job"], execution["conversation"], execution["turn"],
+        ))
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "delete from platform_attachments.bindings where attachment_id=%s "
+            "and kind='turn_input'", (extra_attachment,),
+        )
     bound = brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
         attempt.attempt_id, attempt.worker_id,
         execution["job"], execution["conversation"], execution["turn"],
@@ -469,8 +577,31 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         {"stable_name": "Queued Candidate", "skills": ["SQL"]}, (),
     )
 
-    ready = brain_repository.complete_claimed_draft(attempt.attempt_id, complete)
-    replay_ready = brain_repository.complete_claimed_draft(attempt.attempt_id, complete)
+    with pytest.raises(CandidateNotFound):
+        brain_repository.complete_claimed_draft(
+            attempt.attempt_id, "different-worker", complete
+        )
+    with pytest.raises(CandidateNotFound):
+        brain_repository.complete_claimed_draft(
+            attempt.attempt_id, attempt.worker_id,
+            replace(complete, owner_id=attacker_owner),
+        )
+    with pytest.raises(CandidateNotFound):
+        brain_repository.complete_claimed_draft(
+            attempt.attempt_id, attempt.worker_id,
+            replace(complete, draft_id=uuid4()),
+        )
+    ready = brain_repository.complete_claimed_draft(
+        attempt.attempt_id, attempt.worker_id, complete
+    )
+    replay_ready = brain_repository.complete_claimed_draft(
+        attempt.attempt_id, attempt.worker_id, complete
+    )
+    with pytest.raises(CandidateConflict):
+        brain_repository.complete_claimed_draft(
+            attempt.attempt_id, attempt.worker_id,
+            replace(complete, extracted_facts={"stable_name": "Changed"}),
+        )
     persisted = brain_repository.recover_draft_attempt(
         attempt.attempt_id, attempt.worker_id
     )
@@ -513,12 +644,10 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             ),
         )
 
-    def start_racing_draft():
-        with psycopg.connect(app_url) as connection:
-            return connection.execute(
-                "select platform_hr.start_candidate_draft_v70(%s,%s,%s,1)",
-                (ids["owner"], racing["draft"], uuid4()),
-            ).fetchone()
+    def claim_racing_draft():
+        return CandidateRepository(brain_url).claim_next_draft(
+            ClaimNextCandidateDraft(uuid4(), "candidate-parser-erasure", 300)
+        )
 
     with psycopg.connect(app_url) as erasure_connection:
         erasure_connection.execute(
@@ -530,9 +659,9 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             ),
         )
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(start_racing_draft)
+            future = executor.submit(claim_racing_draft)
             erasure_connection.commit()
-            with pytest.raises(psycopg.errors.NoDataFound):
+            with pytest.raises(CandidateNotFound):
                 future.result(timeout=5)
 
     with psycopg.connect(environment["admin"]) as connection:
@@ -541,12 +670,8 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             "completed_at=now() where erasure_job_id=%s",
             (racing["erasure"],),
         )
-    with psycopg.connect(app_url) as connection:
-        with pytest.raises(psycopg.errors.NoDataFound):
-            connection.execute(
-                "select platform_hr.start_candidate_draft_v70(%s,%s,%s,1)",
-                (ids["owner"], racing["draft"], uuid4()),
-            )
+    with pytest.raises(CandidateNotFound):
+        claim_racing_draft()
 
     lease = {name: uuid4() for name in (
         "attachment", "batch", "draft", "draft_request", "first", "second"
@@ -584,6 +709,7 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         recovered_execution = _seed_execution_identity(
             connection, ids["owner"], lease["draft_request"]
         )
+        _complete_execution_identity(connection, recovered_execution, relay_worker)
     first_bound = brain_repository.attach_draft_execution(
         AttachCandidateDraftExecution(
             first.attempt_id, first.worker_id, recovered_execution["job"],
@@ -591,11 +717,6 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         )
     )
     with psycopg.connect(environment["admin"]) as connection:
-        connection.execute(
-            "update platform_control.execution_jobs set status='completed',"
-            "lease_worker_id=%s,terminal_at=now() where job_id=%s",
-            (relay_worker, recovered_execution["job"]),
-        )
         connection.execute(
             "update platform_hr.candidate_draft_processing_attempts "
             "set lease_expires_at=now()-interval '1 second' where attempt_id=%s",
@@ -620,3 +741,20 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         )
     )
     assert recovered_bound.execution_job_id == recovered_execution["job"]
+    failure = FailCandidateDraft(
+        ids["owner"], lease["draft"], uuid4(),
+        second.claimed_row_version, "parse_failed",
+    )
+    failed = brain_repository.fail_claimed_draft(
+        second.attempt_id, second.worker_id, failure
+    )
+    replay_failed = brain_repository.fail_claimed_draft(
+        second.attempt_id, second.worker_id, failure
+    )
+    with pytest.raises(CandidateConflict):
+        brain_repository.fail_claimed_draft(
+            second.attempt_id, second.worker_id,
+            replace(failure, error_code="different_failure"),
+        )
+    assert failed == replay_failed
+    assert failed.state == "failed"

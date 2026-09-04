@@ -4,9 +4,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.testclient import TestClient
-
 from app.control_plane.models import AuthContext, Role
 from app.hr.candidate_models import (
     Candidate,
@@ -24,6 +21,8 @@ from app.hr.candidate_repository import (
 )
 from app.hr.candidate_routes import build_candidate_router
 from app.hr.candidate_service import CandidateIdentityConflict, CandidateScopeViolation
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.testclient import TestClient
 
 NOW = datetime.now(UTC)
 
@@ -192,6 +191,7 @@ def test_candidate_api_supports_batch_retry_confirm_match_compare_and_feedback()
         json={
             "context_version_id": str(service.context_id),
             "document_ids": [str(service.document.document_id)],
+            "feedback_ids": [],
             "analysis_kind": "match",
             "result": {"summary": "适配"},
             "evidence": [{"claim": "Python"}],

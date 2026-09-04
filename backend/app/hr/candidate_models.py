@@ -671,6 +671,7 @@ class CreateCandidateAnalysis:
     verification_questions: tuple[str, ...]
     agent_version: str
     model_version: str
+    feedback_ids: tuple[UUID, ...] = ()
 
     def __post_init__(self) -> None:
         for value in (
@@ -683,6 +684,9 @@ class CreateCandidateAnalysis:
         _uuid_tuple(
             self.document_ids, minimum=1, maximum=100,
             message="analysis documents required",
+        )
+        _uuid_tuple(
+            self.feedback_ids, maximum=100, message="feedback scope invalid"
         )
         try:
             _json_object(
