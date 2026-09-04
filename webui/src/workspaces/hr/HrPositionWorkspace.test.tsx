@@ -70,10 +70,15 @@ function submissionResult(): ConversationSubmissionResult {
   };
 }
 
+async function openMaterialDrawer(container: HTMLElement) {
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.startsWith("本轮材料（"))?.click());
+}
+
 function dependencies() {
   const r12Api = {
     resources: vi.fn().mockResolvedValue({ materials: [{ attachmentId: "55555555-5555-4555-8555-555555555555", filename: "岗位说明.pdf", mediaType: "application/pdf", state: "ready", sizeBytes: 10, createdAt: "2026-09-04T00:00:00Z", sourceConversationId: null, sourceTurnId: null, previewAvailable: true, downloadAvailable: true }], artifacts: [] }),
-    context: vi.fn().mockResolvedValue({ current: null, drafts: [], history: [] }), activeTasks: vi.fn().mockResolvedValue([]), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "jd" }),
+    context: vi.fn().mockResolvedValue({ current: null, drafts: [], history: [] }), activeTasks: vi.fn().mockResolvedValue([]), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "jd", error: null }),
     confirmContext: vi.fn(), compareContext: vi.fn(), candidateDrafts: vi.fn().mockResolvedValue([]), positionCandidates: vi.fn().mockResolvedValue([]), candidate: vi.fn(), candidateDocuments: vi.fn(), candidateAnalyses: vi.fn(), candidateFeedback: vi.fn(), retryDraft: vi.fn(), confirmDraft: vi.fn(), createCandidateDraftBatch: vi.fn(), createCandidateAnalysis: vi.fn(), appendCandidateFeedback: vi.fn(), compareCandidates: vi.fn(), downloadResource: vi.fn(),
   };
   return {
@@ -94,7 +99,7 @@ describe("HrPositionWorkspace", () => {
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   });
-  afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); });
+  afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
   it("renders position facts and only the conversations bound to this position", async () => {
     const deps = dependencies();
@@ -161,6 +166,7 @@ describe("HrPositionWorkspace", () => {
     await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成JD")?.click());
     expect(deps.r12Api.startTask).toHaveBeenLastCalledWith(POSITION_ID, "jd", expect.any(String), expect.objectContaining({ materialIds: [], conversationId: undefined }), expect.any(AbortSignal));
+    await openMaterialDrawer(container);
     const material = container.querySelector<HTMLInputElement>('input[name="quick-task-material"]')!;
     expect(material.checked).toBe(false);
     await act(async () => material.click());
@@ -178,7 +184,7 @@ describe("HrPositionWorkspace", () => {
   it("restores durable active tasks and synchronizes a reused route section prop", async () => {
     const deps = dependencies(); deps.r12Api.activeTasks.mockResolvedValue([{ taskId: "durable-task", status: "running", taskKind: "talent_profile" }]);
     await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="chat" {...deps} />));
-    expect(container.textContent).toContain("任务仍在执行，刷新后已恢复状态");
+    expect(container.textContent).toContain("人才画像：执行中");
     await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="candidates" {...deps} />));
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("候选人");
     expect(container.querySelector('[role="tablist"]')).not.toBeNull();
@@ -188,6 +194,89 @@ describe("HrPositionWorkspace", () => {
   it("keeps context and material selection usable when task recovery is temporarily unavailable", async () => {
     const deps = dependencies(); deps.r12Api.activeTasks.mockRejectedValue({ status: 503 });
     await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
+    await openMaterialDrawer(container);
     expect(container.querySelector<HTMLInputElement>('input[name="quick-task-material"]')).not.toBeNull();
+    expect(container.textContent).toContain("任务状态暂时不可用");
+    expect([...container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "刷新任务状态")).toBe(true);
+  });
+
+  it("retains one idempotency key and selected materials after an uncertain failure, then clears on success", async () => {
+    const deps = dependencies(); deps.r12Api.startTask.mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ taskId: "task", status: "accepted", taskKind: "jd" });
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
+    await openMaterialDrawer(container);
+    const material = container.querySelector<HTMLInputElement>('input[name="quick-task-material"]')!;
+    await act(async () => material.click());
+    const start = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成JD")!;
+    await act(async () => start.click());
+    expect(material.checked).toBe(true);
+    await act(async () => start.click());
+    expect(deps.r12Api.startTask.mock.calls[0]?.[2]).toBe(deps.r12Api.startTask.mock.calls[1]?.[2]);
+    expect(material.checked).toBe(false);
+  });
+
+  it("resets per-turn materials when the current conversation changes", async () => {
+    const deps = dependencies();
+    await act(async () => root.render(<HrPositionWorkspace account={account} conversationId={ACTIVE_ID} positionId={POSITION_ID} {...deps} />));
+    await openMaterialDrawer(container);
+    await act(async () => container.querySelector<HTMLInputElement>('input[name="quick-task-material"]')?.click());
+    expect(container.querySelector<HTMLInputElement>('input[name="quick-task-material"]')?.checked).toBe(true);
+    await act(async () => root.render(<HrPositionWorkspace account={account} conversationId={ARCHIVED_ID} positionId={POSITION_ID} {...deps} />));
+    await openMaterialDrawer(container);
+    expect(container.querySelector<HTMLInputElement>('input[name="quick-task-material"]')?.checked).toBe(false);
+  });
+
+  it("polls durable active tasks, names their kind/status, and stops after completion", async () => {
+    vi.useFakeTimers(); const deps = dependencies();
+    deps.r12Api.activeTasks.mockReset().mockResolvedValueOnce([{ taskId: "durable-task", status: "running", taskKind: "talent_profile" }]).mockResolvedValueOnce([]);
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
+    expect(container.textContent).toContain("人才画像：执行中");
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(container.textContent).toContain("当前没有执行中任务");
+    const calls = deps.r12Api.activeTasks.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(20_000));
+    expect(deps.r12Api.activeTasks).toHaveBeenCalledTimes(calls);
+  });
+
+  it("updates the parent context immediately after human confirmation", async () => {
+    const deps = dependencies();
+    const draft = { contextVersionId: "66666666-6666-4666-8666-666666666666", positionId: POSITION_ID, displayVersion: 1, status: "draft", summary: "画像草稿", modules: { talent_profile: { summary: "高级工程师" } }, officialVersionId: null, baseContextVersionId: null, sourceConversationId: null, sourceTurnId: null, sourceArtifactVersionId: null, sourceMaterialAttachmentIds: [], agentId: null, modelVersion: null, rowVersion: 1, createdAt: "2026-09-04T00:00:00Z", confirmedAt: null };
+    const confirmed = { ...draft, contextVersionId: "77777777-7777-4777-8777-777777777777", status: "confirmed", confirmedAt: "2026-09-04T00:01:00Z" };
+    deps.r12Api.context.mockResolvedValue({ current: null, drafts: [draft], history: [draft] });
+    deps.r12Api.confirmContext.mockResolvedValue(confirmed);
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="context" {...deps} />));
+    await act(async () => container.querySelector<HTMLInputElement>('.hr-context-panel input[type="checkbox"]')?.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "确认选中模块")?.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成JD")?.click());
+    expect(deps.r12Api.startTask).toHaveBeenLastCalledWith(POSITION_ID, "jd", expect.any(String), expect.objectContaining({ contextVersionId: confirmed.contextVersionId }), expect.any(AbortSignal));
+  });
+
+  it("keeps the real conversation navigation and composer mounted in every business section", async () => {
+    const deps = dependencies();
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} section="candidates" {...deps} />));
+    expect(container.querySelector('[aria-label="对话列表面板"]')).not.toBeNull();
+    expect(container.querySelector<HTMLTextAreaElement>("#direct-agent-request")).not.toBeNull();
+    expect(container.querySelector('section[aria-label="批量简历导入"]')).not.toBeNull();
+  });
+
+  it("uses an accessible material drawer and roving keyboard tabs", async () => {
+    const deps = dependencies();
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("本轮材料"))?.click());
+    expect(container.querySelector('[role="dialog"][aria-label="本轮任务材料"]')).not.toBeNull();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("关闭本轮材料");
+    const active = container.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')!;
+    expect(active.tabIndex).toBe(0);
+    await act(async () => active.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    expect(container.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.textContent).toBe("上下文");
+    expect(container.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.tabIndex).toBe(0);
+  });
+
+  it("blocks quick tasks and candidate/context writes in hard-stale mode", async () => {
+    const deps = dependencies();
+    await act(async () => root.render(<HrPositionWorkspace account={{ ...account, hard_stale_read_only: true }} positionId={POSITION_ID} section="candidates" {...deps} />));
+    expect([...container.querySelectorAll<HTMLButtonElement>(".hr-position-quick-tasks button")].every((button) => button.disabled)).toBe(true);
+    expect(container.querySelector<HTMLInputElement>('section[aria-label="批量简历导入"] input[type="file"]')?.disabled).toBe(true);
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成JD")?.click());
+    expect(deps.r12Api.startTask).not.toHaveBeenCalled();
   });
 });

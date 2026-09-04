@@ -12,6 +12,8 @@ const attachmentIds = ["00000000-0000-4000-8000-000000000006", "00000000-0000-40
 const candidateIds = ["00000000-0000-4000-8000-000000000009", "00000000-0000-4000-8000-00000000000a"];
 const relationIds = ["00000000-0000-4000-8000-00000000000b", "00000000-0000-4000-8000-00000000000c"];
 const analysisId = "00000000-0000-4000-8000-00000000000d";
+const newestAnalysisId = "00000000-0000-4000-8000-00000000000e";
+const otherContextId = "00000000-0000-4000-8000-00000000000f";
 const now = "2026-09-04T00:00:00Z";
 const draft = (index: number, state: "ready" | "failed" | "processing" = "ready") => ({ draftId: draftIds[index], positionId, attachmentId: attachmentIds[index], batchRequestId: contextId, state, extractedFacts: state === "ready" ? { stable_name: `候选人${index + 1}`, skills: ["Python"] } : {}, identityCandidateIds: [], errorCode: state === "failed" ? "parse_failed" : null, rowVersion: 2, createdAt: now, updatedAt: now });
 const relation = (index: number) => ({ positionCandidateId: relationIds[index], positionId, candidateId: candidateIds[index], contextVersionId: contextId, sourceDraftId: draftIds[index], status: "active", rowVersion: 1, createdAt: now, updatedAt: now });
@@ -20,7 +22,7 @@ const candidateDocument = { documentId: attachmentIds[0], candidateId: candidate
 const analysis = { analysisVersionId: analysisId, positionCandidateId: relationIds[0], positionId, candidateId: candidateIds[0], contextVersionId: contextId, versionNumber: 2, analysisKind: "match", documentIds: [candidateDocument.documentId], feedbackIds: [], result: { summary: "技能匹配" }, evidence: [{ claim: "Python" }], unknowns: ["量产规模"], conflicts: [], verificationQuestions: ["请说明量产规模"], agentVersion: "hr-r12", modelVersion: "model", createdAt: now };
 let container: HTMLDivElement; let root: ReturnType<typeof createRoot>;
 beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true; });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 function api() {
   return {
@@ -32,7 +34,7 @@ function api() {
     candidate: vi.fn().mockImplementation((id: string) => Promise.resolve(candidate(candidateIds.indexOf(id)))),
     candidateDocuments: vi.fn().mockResolvedValue([candidateDocument]), candidateAnalyses: vi.fn().mockResolvedValue([analysis]),
     candidateFeedback: vi.fn().mockResolvedValue([]), appendCandidateFeedback: vi.fn().mockResolvedValue({ feedbackId: contextId, positionCandidateId: relationIds[0], analysisVersionId: analysisId, feedbackKind: "correction", conclusionKey: "overall", correction: "量产经验已电话核实", reason: "HR 人工核实", createdAt: now }),
-    compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison" }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match" }),
+    compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison", conflicts: ["项目规模口径不一致"] }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match" }), activeTasks: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -43,6 +45,7 @@ it("keeps successful resume drafts when a sibling fails and retries only that it
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "重试解析")?.click());
   expect(client.retryDraft).toHaveBeenCalledWith(draftIds[2], 2, expect.any(String), expect.any(AbortSignal));
   expect(container.textContent).toContain("正在解析");
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "审阅候选人1")?.click());
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "确认候选人")?.click());
   expect(client.confirmDraft).toHaveBeenCalledWith(draftIds[0], expect.objectContaining({ contextVersionId: contextId, stableName: "候选人1" }), expect.any(String), expect.any(AbortSignal));
 });
@@ -72,6 +75,8 @@ it("loads candidate detail and versions, launches match/interview, records feedb
   await act(async () => first.click());
   expect(container.textContent).toContain("分析版本 v2");
   expect(container.textContent).toContain("未验证：量产规模");
+  expect(container.textContent).toContain("证据：Python");
+  expect(container.textContent).toContain("hr-r12 · model");
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成专属面试题")?.click());
   expect(client.startTask).toHaveBeenCalledTimes(2);
@@ -92,4 +97,106 @@ it("loads candidate detail and versions, launches match/interview, records feedb
   for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]')) await act(async () => checkbox.click());
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "比较已选候选人")?.click());
   expect(client.compareCandidates).toHaveBeenCalledWith(positionId, relationIds, contextId, expect.any(String), expect.any(AbortSignal));
+  expect(container.textContent).toContain("候选人比较结果");
+  expect(container.textContent).toContain("项目规模口径不一致");
+});
+
+it("polls processing drafts with bounded delay and stops at a terminal state", async () => {
+  vi.useFakeTimers(); const client = api();
+  client.candidateDrafts.mockReset().mockResolvedValueOnce([draft(0, "processing")]).mockResolvedValueOnce([draft(0)]);
+  client.positionCandidates.mockResolvedValue([]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  expect(container.textContent).toContain("正在解析");
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(container.textContent).toContain("待确认");
+  const calls = client.candidateDrafts.mock.calls.length;
+  await act(async () => vi.advanceTimersByTimeAsync(20_000));
+  expect(client.candidateDrafts).toHaveBeenCalledTimes(calls);
+});
+
+it("stops automatic draft polling after the bounded retry budget and leaves manual refresh available", async () => {
+  vi.useFakeTimers(); const client = api();
+  client.candidateDrafts.mockReset().mockImplementation(() => Promise.resolve([draft(0, "processing")]));
+  client.positionCandidates.mockResolvedValue([]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  for (const delay of [1_000, 2_000, 4_000, 8_000, 8_000, 8_000]) {
+    await act(async () => vi.advanceTimersByTimeAsync(delay));
+  }
+  expect(client.candidateDrafts).toHaveBeenCalledTimes(7);
+  expect(container.textContent).toContain("自动刷新已暂停");
+  expect([...container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "刷新候选人状态")).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(client.candidateDrafts).toHaveBeenCalledTimes(7);
+});
+
+it("reuses the candidate task idempotency key after an uncertain start failure", async () => {
+  const client = api();
+  client.startTask.mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ taskId: "task", status: "running", taskKind: "candidate_match", error: null });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  const launch = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")!;
+  await act(async () => launch.click());
+  await act(async () => launch.click());
+  expect(client.startTask.mock.calls[0]?.[2]).toBe(client.startTask.mock.calls[1]?.[2]);
+});
+
+it("previews and edits extracted facts and requires an explicit identity decision", async () => {
+  const client = api();
+  client.candidateDrafts.mockResolvedValue([{ ...draft(0), extractedFacts: { stable_name: "候选人1", skills: ["Python"], unknowns: ["量产规模"] }, identityCandidateIds: [candidateIds[1]] }]);
+  client.positionCandidates.mockResolvedValue([]);
+  client.confirmDraft.mockRejectedValueOnce({ status: 409 }).mockResolvedValueOnce({ candidate: candidate(0), document: candidateDocument, positionCandidate: relation(0) });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "审阅候选人1")?.click());
+  expect(container.textContent).toContain(`来源附件 ${attachmentIds[0]}`);
+  expect(container.textContent).toContain("待人工核实：量产规模");
+  const confirm = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "确认候选人")!;
+  expect(confirm.disabled).toBe(true);
+  const name = container.querySelector<HTMLInputElement>('[aria-label="候选人称谓"]')!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "候选人甲"); name.dispatchEvent(new Event("input", { bubbles: true })); });
+  const facts = container.querySelector<HTMLTextAreaElement>('[aria-label="确认后的候选人事实 JSON"]')!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(facts, '{"skills":["Python","C++"],"unknowns":[]}'); facts.dispatchEvent(new Event("input", { bubbles: true })); });
+  await act(async () => container.querySelector<HTMLInputElement>(`input[value="${candidateIds[1]}"]`)?.click());
+  await act(async () => confirm.click());
+  expect(container.textContent).toContain("身份或版本已变化");
+  expect(name.value).toBe("候选人甲");
+  await act(async () => confirm.click());
+  expect(client.confirmDraft).toHaveBeenLastCalledWith(draftIds[0], expect.objectContaining({ stableName: "候选人甲", confirmedFacts: { skills: ["Python", "C++"], unknowns: [] }, mergeCandidateId: candidateIds[1] }), expect.any(String), expect.any(AbortSignal));
+});
+
+it("binds feedback to the maximum analysis version and excludes another context from comparison", async () => {
+  const client = api();
+  const newest = { ...analysis, analysisVersionId: newestAnalysisId, versionNumber: 5, createdAt: "2026-09-04T02:00:00Z" };
+  client.candidateAnalyses.mockResolvedValue([analysis, newest]);
+  client.positionCandidates.mockResolvedValue([relation(0), { ...relation(1), contextVersionId: otherContextId }]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  const textarea = container.querySelector<HTMLTextAreaElement>('[aria-label="人工纠正"]')!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "以最新分析为准"); textarea.dispatchEvent(new Event("input", { bubbles: true })); });
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "记录人工纠正")?.click());
+  expect(client.appendCandidateFeedback).toHaveBeenCalledWith(relationIds[0], expect.objectContaining({ analysisVersionId: newestAnalysisId }), expect.any(String), expect.any(AbortSignal));
+  const comparisons = container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]');
+  expect(comparisons[0]?.disabled).toBe(false);
+  expect(comparisons[1]?.disabled).toBe(true);
+  expect(container.textContent).toContain("上下文版本不同，需重算后比较");
+});
+
+it("refreshes analysis after a durable candidate task reaches completion", async () => {
+  vi.useFakeTimers(); const client = api();
+  const refreshed = { ...analysis, analysisVersionId: newestAnalysisId, versionNumber: 3 };
+  client.candidateAnalyses.mockResolvedValueOnce([analysis]).mockResolvedValueOnce([analysis, refreshed]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(container.textContent).toContain("分析版本 v3");
+});
+
+it("disables upload and all candidate mutations in hard-stale read-only mode", async () => {
+  const client = api();
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} readOnly />));
+  expect(container.querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
+  const mutationButtons = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) => ["重试解析", "比较已选候选人"].includes(button.textContent ?? ""));
+  expect(mutationButtons.every((button) => button.disabled)).toBe(true);
+  await act(async () => mutationButtons[0]?.click());
+  expect(client.retryDraft).not.toHaveBeenCalled();
 });

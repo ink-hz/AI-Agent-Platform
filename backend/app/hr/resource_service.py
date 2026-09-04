@@ -52,27 +52,37 @@ class PsycopgPositionResourceRepository:
         self._attachments = attachments
 
     def _item(self, owner_id: UUID, row, *, artifact_id: UUID | None = None, artifact_version: int | None = None):
-        attachment = self._attachments.attachment(owner_id, row["attachment_id"])
+        try:
+            attachment = self._attachments.attachment(owner_id, row["attachment_id"])
+        except Exception:  # one unreadable historical name must not hide the other resources
+            attachment = None
         media_type = (
             getattr(attachment, "detected_mime", None)
             or getattr(attachment, "declared_mime", None)
+            or row.get("detected_mime")
+            or row.get("declared_mime")
+            or "application/octet-stream"
         )
-        attachment_state = getattr(attachment, "state", None)
-        state = row.get("resource_state") or attachment_state
-        filename = getattr(attachment, "original_name", None)
+        attachment_state = getattr(attachment, "state", None) or row.get("attachment_state")
+        state = "unavailable" if attachment is None else row.get("resource_state") or attachment_state
+        filename = getattr(attachment, "original_name", None) or f"不可用文件 {str(row['attachment_id'])[:8]}"
         size_bytes = getattr(attachment, "size_bytes", None)
-        created_at = row.get("created_at") or getattr(attachment, "created_at", None)
+        if size_bytes is None:
+            size_bytes = row.get("attachment_size_bytes", 0)
+        created_at = row.get("created_at") or getattr(attachment, "created_at", None) or row.get("attachment_created_at")
         ready = state == "ready" and attachment_state == "ready"
+        download_available = attachment is not None and (bool(row["download_available"]) if "download_available" in row else ready)
+        preview_available = attachment is not None and (bool(row["preview_available"]) if "preview_available" in row else _preview_available(media_type, state) and ready)
         if artifact_id is None:
             return PositionMaterialItem(
                 row["attachment_id"], filename, media_type, state, size_bytes, created_at,
                 row.get("source_conversation_id"), row.get("source_turn_id"),
-                _preview_available(media_type, state) and ready, ready,
+                preview_available and download_available, download_available,
             )
         return PositionArtifactItem(
             artifact_id, row["attachment_id"], artifact_version, filename, media_type, state,
             size_bytes, created_at, row.get("source_conversation_id"), row.get("source_turn_id"),
-            _preview_available(media_type, state) and ready, ready,
+            preview_available and download_available, download_available,
         )
 
     def position_exists(self, owner_id: UUID, position_id: UUID) -> bool:
@@ -96,7 +106,21 @@ class PsycopgPositionResourceRepository:
             "select material.attachment_id, attachment.conversation_id as source_conversation_id, "
             "(select binding.turn_id from platform_attachments.bindings binding "
             "where binding.attachment_id=material.attachment_id and binding.turn_id is not null "
-            "order by binding.created_at desc limit 1) as source_turn_id, material.created_at "
+            "order by binding.created_at desc limit 1) as source_turn_id, material.created_at, "
+            "attachment.state as attachment_state,attachment.detected_mime,attachment.declared_mime,"
+            "attachment.size_bytes as attachment_size_bytes,attachment.created_at as attachment_created_at,"
+            "case when exists(select 1 from platform_attachments.erasure_jobs erasure where "
+            "erasure.attachment_id=attachment.attachment_id) then 'erasure_pending' "
+            "when attachment.retained_until<=now() then 'expired' "
+            "when attachment.state='ready' and attachment.immutable_locator is null then 'unavailable' "
+            "else attachment.state end as resource_state,"
+            "(attachment.state='ready' and attachment.retained_until>now() and "
+            "attachment.immutable_locator is not null and not exists(select 1 from "
+            "platform_attachments.erasure_jobs erasure where erasure.attachment_id=attachment.attachment_id)) "
+            "as download_available,"
+            "exists(select 1 from platform_attachments.derivatives derivative where "
+            "derivative.attachment_id=attachment.attachment_id and derivative.state='ready' and "
+            "derivative.kind in ('thumbnail','preview')) as preview_available "
             "from platform_hr.position_materials material "
             "join platform_attachments.attachments attachment using (attachment_id) "
             "where material.owner_internal_user_id=%s and material.position_id=%s and material.active "
@@ -122,11 +146,28 @@ class PsycopgPositionResourceRepository:
             "where binding.attachment_id=version.attachment_id and binding.kind='message_output' "
             "order by binding.created_at desc limit 1) as source_turn_id, "
             "version.version_no as artifact_version, version.created_at, "
+            "attachment.state as attachment_state,attachment.detected_mime,attachment.declared_mime,"
+            "attachment.size_bytes as attachment_size_bytes,attachment.created_at as attachment_created_at,"
             "case when version.result_status='failed' then 'failed' "
-            "else version.state end as resource_state, version.result_status "
+            "when exists(select 1 from platform_attachments.erasure_jobs erasure where "
+            "erasure.attachment_id=version.attachment_id) then 'erasure_pending' "
+            "when version.retained_until<=now() or attachment.retained_until<=now() then 'expired' "
+            "when version.state='ready' and (version.immutable_locator is null or "
+            "attachment.immutable_locator is null) then 'unavailable' else version.state end as resource_state, "
+            "version.result_status,"
+            "(version.state='ready' and version.result_status='succeeded' and "
+            "version.retained_until>now() and version.immutable_locator is not null and "
+            "attachment.state='ready' and attachment.retained_until>now() and "
+            "attachment.immutable_locator is not null and not exists(select 1 from "
+            "platform_attachments.erasure_jobs erasure where erasure.attachment_id=version.attachment_id)) "
+            "as download_available,"
+            "exists(select 1 from platform_attachments.derivatives derivative where "
+            "derivative.attachment_id=version.attachment_id and derivative.state='ready' and "
+            "derivative.kind in ('thumbnail','preview')) as preview_available "
             "from platform_hr.position_artifacts linked "
             "join platform_attachments.artifacts artifact using (artifact_id) "
             "join platform_attachments.artifact_versions version using (artifact_id) "
+            "join platform_attachments.attachments attachment on attachment.attachment_id=version.attachment_id "
             "where linked.owner_internal_user_id=%s and linked.position_id=%s "
             "order by version.created_at desc,version.version_no desc"
         )

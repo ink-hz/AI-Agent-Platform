@@ -115,8 +115,13 @@ describe("Executive Operations visual contract", () => {
     expect(mobile).toContain(".hr-position-context-metrics { grid-template-columns: 1fr;");
     expect(rule(".hr-position-section-panel")).toContain("overflow: auto");
     expect(rule('.hr-position-sections [role="tablist"]')).toContain("display: flex");
+    expect(rule(".hr-drawer-backdrop")).toContain("position: fixed");
+    expect(rule(".hr-mobile-drawer")).toContain("position: fixed");
+    expect(rule(".hr-mobile-drawer")).toContain("overflow-y: auto");
     expect(mobile).toContain(".hr-position-taskbar");
-    expect(mobile).toContain(".hr-turn-materials");
+    expect(mobile).toContain(".hr-mobile-drawer");
+    expect(mobile).toContain("right: 0");
+    expect(mobile).toContain("bottom: 0");
   });
 
   it("keeps compact FAE workbench navigation in one keyboard-scrollable row", () => {

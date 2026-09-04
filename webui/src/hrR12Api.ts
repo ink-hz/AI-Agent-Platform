@@ -3,7 +3,7 @@ import type {
   HrCandidate, HrCandidateAnalysisKind, HrCandidateAnalysisVersion, HrCandidateDocument,
   HrCandidateDraft, HrConfirmedCandidate, HrContextComparison, HrContextVersion,
   HrDownloadTicket, HrHumanFeedback, HrPositionCandidate, HrPositionResources,
-  HrTaskKind, HrTaskRecord,
+  HrCandidateTaskKind, HrPositionTaskKind, HrStartableTaskKind, HrTaskKind, HrTaskRecord,
 } from "./hrR12Types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -85,16 +85,48 @@ function feedback(value: unknown): HrHumanFeedback {
   const raw = object(value); if (!["accepted", "rejected", "correction"].includes(String(raw.feedback_kind))) throw new Error("HR R1.2 feedback response invalid");
   return { feedbackId: identifier(raw.feedback_id), positionCandidateId: identifier(raw.position_candidate_id), analysisVersionId: identifier(raw.analysis_version_id), feedbackKind: raw.feedback_kind as HrHumanFeedback["feedbackKind"], conclusionKey: string(raw.conclusion_key), correction: raw.correction === null ? null : string(raw.correction), reason: string(raw.reason), createdAt: string(raw.created_at) };
 }
-function task(value: unknown): HrTaskRecord { const raw = object(value); if (!["accepted", "running", "completed", "failed"].includes(String(raw.status)) || !TASK_KINDS.has(String(raw.task_kind))) throw new Error("HR R1.2 task response invalid"); return { taskId: string(raw.task_id), status: raw.status as HrTaskRecord["status"], taskKind: raw.task_kind as HrTaskKind }; }
+function task(value: unknown): HrTaskRecord {
+  const raw = object(value);
+  if (!["accepted", "running", "completed", "failed"].includes(String(raw.status)) || !TASK_KINDS.has(String(raw.task_kind))) throw new Error("HR R1.2 task response invalid");
+  return {
+    taskId: string(raw.task_id),
+    status: raw.status as HrTaskRecord["status"],
+    taskKind: raw.task_kind as HrTaskKind,
+    error: raw.error === undefined || raw.error === null ? null : string(raw.error),
+  };
+}
 
 export interface ConfirmCandidateInput { expectedRowVersion: number; contextVersionId: string; stableName: string; confirmedFacts: Record<string, unknown>; mergeCandidateId: string | null; }
 export interface CandidateAnalysisInput { contextVersionId: string; documentIds: string[]; analysisKind: Exclude<HrCandidateAnalysisKind, "comparison">; result: Record<string, unknown>; evidence: Record<string, unknown>[]; unknowns: string[]; conflicts: string[]; verificationQuestions: string[]; agentVersion: string; modelVersion: string; }
 export interface HumanFeedbackInput { analysisVersionId: string; feedbackKind: HrHumanFeedback["feedbackKind"]; conclusionKey: string; correction: string | null; reason: string; }
-export interface StartTaskInput {
-  contextVersionId?: string;
-  candidate?: { candidateId: string; positionCandidateId: string };
-  materialIds?: string[];
-  conversationId?: string;
+interface BaseTaskInput { materialIds?: string[]; conversationId?: string; }
+export interface PositionTaskInput extends BaseTaskInput {
+  contextVersionId?: string; candidate?: never;
+}
+export interface CandidateTaskInput extends BaseTaskInput {
+  contextVersionId: string;
+  candidate: { candidateId: string; positionCandidateId: string };
+}
+export type StartTaskInput<K extends HrStartableTaskKind> = K extends HrCandidateTaskKind
+  ? CandidateTaskInput : PositionTaskInput;
+
+function taskBody<K extends HrStartableTaskKind>(taskKind: K, input: StartTaskInput<K>) {
+  const candidateKind = taskKind === "candidate_match" || taskKind === "candidate_interview_plan";
+  const candidate = "candidate" in input ? input.candidate : undefined;
+  if (candidateKind && (!candidate || !input.contextVersionId)) throw new Error("candidate task envelope invalid");
+  if (!candidateKind && candidate) throw new Error("position task envelope invalid");
+  return {
+    task_kind: taskKind,
+    context_version_id: input.contextVersionId ? identifier(input.contextVersionId) : null,
+    candidate_id: candidate ? identifier(candidate.candidateId) : null,
+    position_candidate_id: candidate ? identifier(candidate.positionCandidateId) : null,
+    material_ids: (input.materialIds ?? []).map(identifier),
+    conversation_id: input.conversationId ? identifier(input.conversationId) : null,
+  };
+}
+
+function startableTaskKind(value: HrTaskKind): asserts value is HrStartableTaskKind {
+  if (value === "candidate_comparison") throw new Error("task kind invalid");
 }
 
 export function createHrR12Api(csrfToken: string) {
@@ -122,7 +154,7 @@ export function createHrR12Api(csrfToken: string) {
     candidateFeedback(positionCandidateId: string, signal?: AbortSignal): Promise<HrHumanFeedback[]> { return request(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/feedback`, { signal }).then((value) => items(value).map(feedback)); },
     appendCandidateFeedback(positionCandidateId: string, input: HumanFeedbackInput, requestId: string, signal?: AbortSignal): Promise<HrHumanFeedback> { return write(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/feedback`, requestId, { analysis_version_id: identifier(input.analysisVersionId), feedback_kind: input.feedbackKind, conclusion_key: input.conclusionKey, correction: input.correction, reason: input.reason }, signal).then(feedback); },
     compareCandidates(positionId: string, positionCandidateIds: string[], contextVersionId: string, requestId: string, signal?: AbortSignal): Promise<HrCandidateAnalysisVersion> { return write(positionPath(positionId, "/candidate-comparisons"), requestId, { position_candidate_ids: positionCandidateIds.map(identifier), context_version_id: identifier(contextVersionId), agent_version: "hr-r12", model_version: "platform" }, signal).then(analysis); },
-    startTask(positionId: string, taskKind: HrTaskKind, requestId: string, input: StartTaskInput = {}, signal?: AbortSignal): Promise<HrTaskRecord> { return write(positionPath(positionId, "/tasks"), requestId, { task_kind: taskKind, context_version_id: input.contextVersionId ? identifier(input.contextVersionId) : null, candidate_id: input.candidate ? identifier(input.candidate.candidateId) : null, position_candidate_id: input.candidate ? identifier(input.candidate.positionCandidateId) : null, material_ids: (input.materialIds ?? []).map(identifier), conversation_id: input.conversationId ? identifier(input.conversationId) : null }, signal).then(task); },
+    startTask<K extends HrStartableTaskKind>(positionId: string, taskKind: K, requestId: string, input: StartTaskInput<K>, signal?: AbortSignal): Promise<HrTaskRecord> { startableTaskKind(taskKind); return write(positionPath(positionId, "/tasks"), requestId, taskBody(taskKind, input), signal).then(task); },
     activeTasks(positionId: string, signal?: AbortSignal): Promise<HrTaskRecord[]> { return request(positionPath(positionId, "/tasks?status=active"), { signal }).then((value) => items(value).map(task)); },
   };
 }

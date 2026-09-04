@@ -26,18 +26,33 @@ export function HrPositionResourcesPanel({ api, positionId }: {
     return () => { controller.abort(); mutation.current?.abort(); };
   }, [api, positionId]);
 
-  async function ticket(attachmentId: string, purpose: "preview" | "download", signal: AbortSignal) {
+  async function ticket(attachmentId: string, purpose: "preview" | "download", signal: AbortSignal): Promise<string> {
     const issued = await api.downloadResource(positionId, attachmentId, crypto.randomUUID(), purpose, signal);
-    if (!signal.aborted) window.open(platformPath(issued.contentPath), "_blank", "noopener,noreferrer");
+    return platformPath(issued.contentPath);
+  }
+  function preopen(): Window | null {
+    const target = window.open("about:blank", "_blank");
+    if (target) target.opener = null;
+    return target;
   }
   async function open(attachmentId: string, purpose: "preview" | "download") {
     mutation.current?.abort(); const controller = new AbortController(); mutation.current = controller;
-    try { await ticket(attachmentId, purpose, controller.signal); } catch { if (!controller.signal.aborted) setNotice(purpose === "preview" ? "预览未完成，请重试。" : "下载未完成，请重试。"); }
+    const target = preopen();
+    if (!target) { setNotice("浏览器阻止了新窗口，请允许弹出窗口后重试。"); return; }
+    try { target.location.replace(await ticket(attachmentId, purpose, controller.signal)); } catch { target.close(); if (!controller.signal.aborted) setNotice(purpose === "preview" ? "预览未完成，请重试。" : "下载未完成，请重试。"); }
   }
   async function downloadSelected() {
     mutation.current?.abort(); const controller = new AbortController(); mutation.current = controller;
+    const targets = selected.map(() => preopen());
+    if (targets.some((target) => target === null)) { targets.forEach((target) => target?.close()); setNotice("浏览器阻止了批量下载窗口，请允许弹出窗口后重试。"); return; }
     setNotice(`正在准备 ${selected.length} 项安全下载…`);
-    try { for (const attachmentId of selected) await ticket(attachmentId, "download", controller.signal); if (!controller.signal.aborted) setNotice(`已打开 ${selected.length} 项下载。`); } catch { if (!controller.signal.aborted) setNotice("部分下载未完成，已下载的文件不受影响，可以重试其余项目。"); }
+    try {
+      for (let index = 0; index < selected.length; index += 1) {
+        try { targets[index]!.location.replace(await ticket(selected[index], "download", controller.signal)); }
+        catch (error) { for (let pending = index; pending < targets.length; pending += 1) targets[pending]?.close(); throw error; }
+      }
+      if (!controller.signal.aborted) setNotice(`已打开 ${selected.length} 项下载。`);
+    } catch { if (!controller.signal.aborted) setNotice("部分下载未完成，已下载的文件不受影响，可以重试其余项目。"); }
   }
   const render = (item: ResourceItem) => <article key={`${isArtifact(item) ? item.artifactId : "material"}:${item.attachmentId}`}>
     <div><strong>{item.filename}</strong><span>{isArtifact(item) ? `成果 v${item.artifactVersion}` : "岗位材料"}</span></div>

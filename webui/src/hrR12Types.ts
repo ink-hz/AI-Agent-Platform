@@ -1,6 +1,9 @@
 export type HrTaskKind = "jd" | "jr" | "talent_profile" | "sourcing_strategy"
   | "position_interview_plan" | "candidate_match" | "candidate_interview_plan"
   | "candidate_comparison";
+export type HrCandidateTaskKind = "candidate_match" | "candidate_interview_plan";
+export type HrPositionTaskKind = "jd" | "jr" | "talent_profile" | "sourcing_strategy" | "position_interview_plan";
+export type HrStartableTaskKind = HrCandidateTaskKind | HrPositionTaskKind;
 export type HrPositionSection = "chat" | "context" | "candidates" | "artifacts";
 export type HrDraftState = "pending" | "processing" | "ready" | "failed" | "confirmed" | "dismissed";
 
@@ -58,4 +61,9 @@ export interface HrHumanFeedback {
   feedbackKind: "accepted" | "rejected" | "correction"; conclusionKey: string;
   correction: string | null; reason: string; createdAt: string;
 }
-export interface HrTaskRecord { taskId: string; status: "accepted" | "running" | "completed" | "failed"; taskKind: HrTaskKind; }
+export interface HrTaskRecord {
+  taskId: string;
+  status: "accepted" | "running" | "completed" | "failed";
+  taskKind: HrTaskKind;
+  error: string | null;
+}

@@ -126,16 +126,18 @@ describe("R1.2 HR API", () => {
 
   it("starts durable tasks with a position context envelope and paired candidate identity", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      task_id: REQUEST_ID, status: "accepted", task_kind: "candidate_match",
+      task_id: REQUEST_ID, status: "accepted", task_kind: "candidate_match", error: "worker unavailable",
     }), { status: 202 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await createHrR12Api("csrf").startTask(POSITION_ID, "candidate_match", REQUEST_ID, {
+    const task = await createHrR12Api("csrf").startTask(POSITION_ID, "candidate_match", REQUEST_ID, {
       contextVersionId: CONTEXT_ID,
       candidate: { candidateId: CANDIDATE_ID, positionCandidateId: POSITION_CANDIDATE_ID },
       materialIds: [],
       conversationId: CONVERSATION_ID,
     });
+
+    expect(task.error).toBe("worker unavailable");
 
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       task_kind: "candidate_match",
@@ -145,5 +147,15 @@ describe("R1.2 HR API", () => {
       material_ids: [],
       conversation_id: CONVERSATION_ID,
     });
+  });
+
+  it("rejects malformed task envelopes before making a request", () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const unsafe = createHrR12Api("csrf").startTask as unknown as (...args: unknown[]) => unknown;
+
+    expect(() => unsafe(POSITION_ID, "candidate_match", REQUEST_ID, { contextVersionId: CONTEXT_ID })).toThrow("candidate task envelope invalid");
+    expect(() => unsafe(POSITION_ID, "jd", REQUEST_ID, { candidate: { candidateId: CANDIDATE_ID, positionCandidateId: POSITION_CANDIDATE_ID } })).toThrow("position task envelope invalid");
+    expect(() => unsafe(POSITION_ID, "candidate_comparison", REQUEST_ID, {})).toThrow("task kind invalid");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

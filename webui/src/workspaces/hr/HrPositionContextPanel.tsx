@@ -4,7 +4,8 @@ import type { HrContextVersion } from "../../hrR12Types";
 
 const MODULE_LABELS: Record<string, string> = {
   mission: "岗位使命", jd: "JD", jr: "JR", competencies: "能力要求",
-  profile: "人才画像", sourcing: "搜寻策略", interview_standard: "面试标准", unknowns: "未知项",
+  profile: "人才画像", talent_profile: "人才画像", sourcing: "搜寻策略",
+  sourcing_strategy: "搜寻策略", interview_standard: "面试标准", unknowns: "未知项",
 };
 type ContextState = { current: HrContextVersion | null; drafts: HrContextVersion[]; history: HrContextVersion[] };
 
@@ -13,14 +14,19 @@ function moduleText(value: Record<string, unknown>): string {
   return typeof preferred === "string" ? preferred : JSON.stringify(value, null, 2);
 }
 
-export function HrPositionContextPanel({ api, positionId }: {
+export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly = false }: {
   api: Pick<HrR12Api, "context" | "confirmContext" | "compareContext">; positionId: string;
+  onConfirmed?: (context: HrContextVersion) => void; readOnly?: boolean;
 }) {
   const [data, setData] = useState<ContextState | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const [conflict, setConflict] = useState<{ draftId: string; changedModules: string[] } | null>(null);
+  const [conflict, setConflict] = useState<{ draftId: string; changedModules: string[]; left: Record<string, unknown>; right: Record<string, unknown> } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const mutation = useRef<AbortController | null>(null);
+  const historyClose = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => { if (historyOpen) historyClose.current?.focus(); }, [historyOpen]);
 
   async function load(signal?: AbortSignal): Promise<ContextState> {
     const value = await api.context(positionId, signal);
@@ -34,14 +40,15 @@ export function HrPositionContextPanel({ api, positionId }: {
   }, [api, positionId]);
 
   async function confirm(draft: HrContextVersion, retry = false) {
+    if (readOnly) return;
     const modules = selected[draft.contextVersionId] ?? [];
     if (modules.length === 0) return;
     mutation.current?.abort(); const controller = new AbortController(); mutation.current = controller;
     setNotice(null);
     try {
       const baseline = retry ? data?.current?.contextVersionId ?? null : draft.baseContextVersionId;
-      await api.confirmContext(positionId, draft.contextVersionId, baseline, modules, draft.rowVersion, crypto.randomUUID(), controller.signal);
-      if (!controller.signal.aborted) { setConflict(null); setNotice("已确认岗位上下文"); await load(controller.signal); }
+      const confirmed = await api.confirmContext(positionId, draft.contextVersionId, baseline, modules, draft.rowVersion, crypto.randomUUID(), controller.signal);
+      if (!controller.signal.aborted) { setData((value) => value ? { ...value, current: confirmed } : value); onConfirmed?.(confirmed); setConflict(null); setNotice("已确认岗位上下文"); await load(controller.signal); }
     } catch (error) {
       if (controller.signal.aborted) return;
       if ((error as { status?: number }).status !== 409) { setNotice("确认未完成，请重试。"); return; }
@@ -50,9 +57,11 @@ export function HrPositionContextPanel({ api, positionId }: {
         const refreshedDraft = fresh.drafts.find((item) => item.contextVersionId === draft.contextVersionId) ?? draft;
         let changedModules: string[] = [];
         if (refreshedDraft.baseContextVersionId && fresh.current && refreshedDraft.baseContextVersionId !== fresh.current.contextVersionId) {
-          changedModules = (await api.compareContext(positionId, refreshedDraft.baseContextVersionId, fresh.current.contextVersionId, controller.signal)).changedModules;
+          const comparison = await api.compareContext(positionId, refreshedDraft.baseContextVersionId, fresh.current.contextVersionId, controller.signal);
+          changedModules = comparison.changedModules;
+          if (!controller.signal.aborted) setConflict({ draftId: draft.contextVersionId, changedModules, left: comparison.left, right: comparison.right });
         }
-        if (!controller.signal.aborted) { setConflict({ draftId: draft.contextVersionId, changedModules }); setNotice("基线已变化，请比较差异后按新基线重试。"); }
+        if (!controller.signal.aborted) { if (!refreshedDraft.baseContextVersionId || !fresh.current || refreshedDraft.baseContextVersionId === fresh.current.contextVersionId) setConflict({ draftId: draft.contextVersionId, changedModules, left: {}, right: {} }); setNotice("基线已变化，请比较差异后按新基线重试。"); }
       } catch { if (!controller.signal.aborted) setNotice("基线已变化，重新读取失败，请稍后重试。"); }
     }
   }
@@ -67,13 +76,14 @@ export function HrPositionContextPanel({ api, positionId }: {
         const chosen = selected[draft.contextVersionId] ?? [];
         const thisConflict = conflict?.draftId === draft.contextVersionId ? conflict : null;
         return <article data-context-draft key={draft.contextVersionId}><h4>草稿 v{draft.displayVersion}</h4><p>{draft.summary}</p>
-          <fieldset><legend>选择要确认的模块</legend>{Object.entries(draft.modules).map(([key, value]) => <label key={key}><input type="checkbox" checked={chosen.includes(key)} onChange={() => setSelected((current) => ({ ...current, [draft.contextVersionId]: chosen.includes(key) ? chosen.filter((item) => item !== key) : [...chosen, key] }))} /><span><strong>{MODULE_LABELS[key] ?? key}</strong>{moduleText(value)}</span></label>)}</fieldset>
-          <button disabled={chosen.length === 0} type="button" onClick={() => void confirm(draft)}>确认选中模块</button>
-          {thisConflict && <div className="hr-context-conflict" role="alert"><p>基线已变化{thisConflict.changedModules.length > 0 ? `：${thisConflict.changedModules.map((key) => MODULE_LABELS[key] ?? key).join("、")}` : "，请核对当前版本"}。</p><button type="button" onClick={() => void confirm(draft, true)}>按新基线重试</button></div>}
+          <fieldset disabled={readOnly}><legend>选择要确认的模块</legend>{Object.entries(draft.modules).map(([key, value]) => <label key={key}><input type="checkbox" checked={chosen.includes(key)} onChange={() => setSelected((current) => ({ ...current, [draft.contextVersionId]: chosen.includes(key) ? chosen.filter((item) => item !== key) : [...chosen, key] }))} /><span><strong>{MODULE_LABELS[key] ?? key}</strong>{moduleText(value)}</span></label>)}</fieldset>
+          <button disabled={readOnly || chosen.length === 0} type="button" onClick={() => void confirm(draft)}>确认选中模块</button>
+          {thisConflict && <div className="hr-context-conflict" role="alert"><p>基线已变化{thisConflict.changedModules.length > 0 ? `：${thisConflict.changedModules.map((key) => MODULE_LABELS[key] ?? key).join("、")}` : "，请核对当前版本"}。</p>{thisConflict.changedModules.map((key) => <section key={key}><h5>{MODULE_LABELS[key] ?? key}</h5><p>确认前：{moduleText((thisConflict.left[key] as Record<string, unknown> | undefined) ?? {})}</p><p>当前基线：{moduleText((thisConflict.right[key] as Record<string, unknown> | undefined) ?? {})}</p></section>)}<button disabled={readOnly} type="button" onClick={() => void confirm(draft, true)}>按新基线重试</button></div>}
         </article>;
       })}
     </section>}
-    {data && <details><summary>历史版本（{data.history.length}）</summary><ol>{data.history.map((version) => <li key={version.contextVersionId}><strong>v{version.displayVersion}</strong><span>{version.status === "confirmed" ? "已确认" : version.status === "superseded" ? "历史版本" : "草稿"}</span><p>{version.summary}</p></li>)}</ol></details>}
+    {data && <button aria-expanded={historyOpen} type="button" onClick={() => setHistoryOpen(true)}>历史版本（{data.history.length}）</button>}
+    {historyOpen && data && <><button aria-label="关闭历史版本遮罩" className="hr-drawer-backdrop" type="button" onClick={() => setHistoryOpen(false)} /><aside aria-label="岗位上下文历史版本" aria-modal="true" className="hr-mobile-drawer" role="dialog" onKeyDown={(event) => { if (event.key === "Escape") setHistoryOpen(false); }}><header><h3>历史版本（{data.history.length}）</h3><button aria-label="关闭历史版本" ref={historyClose} type="button" onClick={() => setHistoryOpen(false)}>关闭</button></header><ol>{data.history.map((version) => <li key={version.contextVersionId}><strong>v{version.displayVersion}</strong><span>{version.status === "confirmed" ? "已确认" : version.status === "superseded" ? "历史版本" : "草稿"}</span><p>{version.summary}</p></li>)}</ol></aside></>}
     {notice && <p role="status">{notice}</p>}
   </section>;
 }

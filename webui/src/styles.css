@@ -2096,10 +2096,11 @@ body {
 .hr-position-quick-tasks button,.hr-position-taskbar summary,.hr-r12-panel button { min-height: 36px; padding: 7px 11px; border: 1px solid #b9d3c8; border-radius: 8px; background: #fff; color: #23614d; font: inherit; font-size: 11.5px; font-weight: 760; cursor: pointer; }
 .hr-position-quick-tasks button:hover,.hr-position-quick-tasks button:focus-visible,.hr-r12-panel button:hover:not(:disabled),.hr-r12-panel button:focus-visible { border-color: #6ea18e; background: #eef6f2; outline: none; }
 .hr-r12-panel button:disabled { cursor: not-allowed; opacity: .5; }
-.hr-turn-materials { position: relative; min-width: 220px; }
-.hr-turn-materials summary { list-style: none; }
-.hr-turn-materials[open] { padding: 0 10px 10px; border: 1px solid #c8d9d1; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(31,74,58,.1); }
-.hr-turn-materials[open] summary { margin: 0 -10px 8px; border: 0; border-bottom: 1px solid #d8e2dd; border-radius: 10px 10px 0 0; }
+.hr-drawer-backdrop { position: fixed; z-index: 39; inset: 0; border: 0; background: rgba(15,35,28,.32); cursor: default; }
+.hr-mobile-drawer { position: fixed; z-index: 40; top: 0; right: 0; bottom: 0; width: min(390px,calc(100vw - 32px)); box-sizing: border-box; overflow-y: auto; padding: 18px; border: 0; border-left: 1px solid #c8d9d1; background: #fff; box-shadow: -16px 0 42px rgba(31,74,58,.16); }
+.hr-mobile-drawer > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.hr-mobile-drawer > header h2 { margin: 0; font-size: 17px; }
+.hr-turn-materials { min-width: 220px; }
 .hr-turn-materials label { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: 12px; }
 .hr-turn-materials small { display: block; max-width: 260px; margin-top: 6px; color: #657970; font-size: 11.5px; line-height: 1.5; }
 .hr-task-recovery { margin: 0; padding: 9px clamp(24px,4vw,52px); background: #e7f3ed; color: #235f4c; font-size: 12px; font-weight: 740; }
@@ -2159,7 +2160,7 @@ body {
   .hr-position-quick-tasks { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
   .hr-position-quick-tasks button { flex: 0 0 auto; }
   .hr-turn-materials { min-width: 0; }
-  .hr-turn-materials[open] { position: fixed; z-index: 30; right: 10px; bottom: 10px; left: 10px; max-height: 70vh; overflow: auto; }
+  .hr-mobile-drawer { top: auto; right: 0; bottom: 0; left: 0; width: 100%; max-height: 76vh; border-top: 1px solid #c8d9d1; border-left: 0; border-radius: 16px 16px 0 0; }
   .hr-candidate-workspace { grid-template-columns: 1fr; }
   .hr-candidate-workspace > header,.hr-candidate-workspace > [role="status"],.hr-candidate-import,.hr-candidate-detail { grid-column: auto; }
   .hr-r12-panel { padding: 18px 14px 100px; }

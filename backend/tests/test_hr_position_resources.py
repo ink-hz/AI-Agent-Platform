@@ -17,6 +17,7 @@ OTHER = UUID("00000000-0000-4000-8000-000000000003")
 MATERIAL = UUID("00000000-0000-4000-8000-000000000004")
 ARTIFACT = UUID("00000000-0000-4000-8000-000000000005")
 TURN = UUID("00000000-0000-4000-8000-000000000006")
+EXPIRED = UUID("00000000-0000-4000-8000-000000000007")
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 
 
@@ -86,15 +87,16 @@ def test_cross_position_resource_is_not_visible(service):
 
 
 class Connection:
-    def __init__(self):
+    def __init__(self, rows=None):
         self.queries = []
+        self.rows = rows
 
     def execute(self, query, params):
         self.queries.append((query, params))
         return self
 
     def fetchall(self):
-        return [{"attachment_id": MATERIAL, "source_conversation_id": None, "source_turn_id": None, "created_at": NOW}]
+        return self.rows or [{"attachment_id": MATERIAL, "source_conversation_id": None, "source_turn_id": None, "created_at": NOW}]
 
     def __enter__(self):
         return self
@@ -151,3 +153,48 @@ def test_artifact_projection_reads_all_versions_and_uses_version_creation_time()
     assert "version.created_at" in query
     assert "version.result_status" in query
     assert params == (OWNER, POSITION)
+
+
+def test_resource_projection_uses_download_boundaries_and_degrades_one_unreadable_row():
+    rows = [
+        {
+            "attachment_id": EXPIRED, "source_conversation_id": None,
+            "source_turn_id": None, "created_at": NOW,
+            "attachment_state": "ready", "detected_mime": "application/pdf",
+            "declared_mime": "application/pdf", "attachment_size_bytes": 7,
+            "attachment_created_at": NOW, "resource_state": "ready",
+            "download_available": True, "preview_available": True,
+        },
+        {
+            "attachment_id": MATERIAL, "source_conversation_id": None,
+            "source_turn_id": None, "created_at": NOW,
+            "attachment_state": "ready", "detected_mime": "application/pdf",
+            "declared_mime": "application/pdf", "attachment_size_bytes": 12,
+            "attachment_created_at": NOW, "resource_state": "ready",
+            "download_available": True, "preview_available": True,
+        },
+    ]
+
+    class PartiallyUnreadable(Attachments):
+        def attachment(self, owner_id, attachment_id):
+            if attachment_id == EXPIRED:
+                raise RuntimeError("encrypted metadata unavailable")
+            return super().attachment(owner_id, attachment_id)
+
+    connection = Connection(rows)
+    repository = PsycopgPositionResourceRepository(lambda: connection, PartiallyUnreadable())
+
+    resources = repository.materials_for_position(OWNER, POSITION)
+
+    assert len(resources) == 2
+    assert resources[0].filename.startswith("不可用文件")
+    assert resources[0].state == "unavailable"
+    assert resources[0].download_available is False
+    assert resources[0].preview_available is False
+    assert resources[1].filename == "岗位说明.pdf"
+    assert resources[1].preview_available is True
+    query, _ = connection.queries[0]
+    assert "retained_until>now()" in query
+    assert "immutable_locator is not null" in query
+    assert "erasure_jobs" in query
+    assert "derivatives" in query

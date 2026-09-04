@@ -18,21 +18,47 @@ function api() {
 }
 
 it("shows exact resource metadata with user-language availability and a prefixed safe download", async () => {
-  vi.spyOn(window, "open").mockImplementation(() => null); const client = api();
+  const replace = vi.fn(); const popup = { opener: window, location: { replace }, close: vi.fn() };
+  vi.spyOn(window, "open").mockImplementation(() => popup as never); const client = api();
   await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} />));
   expect(container.textContent).toContain("成果 v2"); expect(container.textContent).toContain("4 KB");
   expect(container.textContent).toContain("来源对话 00000000"); expect(container.textContent).toContain("正在安全检查，暂不可使用");
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载面试方案.docx")?.click());
   expect(client.downloadResource).toHaveBeenCalledWith(positionId, artifactId, expect.any(String), "download", expect.any(AbortSignal));
-  expect(window.open).toHaveBeenCalledWith(`/_preview/dingtalk-r1${ticketPath}`, "_blank", "noopener,noreferrer");
+  expect(window.open).toHaveBeenCalledWith("about:blank", "_blank");
+  expect(popup.opener).toBeNull();
+  expect(replace).toHaveBeenCalledWith(`/_preview/dingtalk-r1${ticketPath}`);
+  expect(vi.mocked(window.open).mock.invocationCallOrder[0]).toBeLessThan(client.downloadResource.mock.invocationCallOrder[0]);
 });
 
 it("downloads only explicitly selected available resources as a safe batch", async () => {
-  vi.spyOn(window, "open").mockImplementation(() => null); const client = api();
+  const replace = vi.fn(); const popup = { opener: window, location: { replace }, close: vi.fn() };
+  vi.spyOn(window, "open").mockImplementation(() => popup as never); const client = api();
   await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} />));
   const checkbox = container.querySelector<HTMLInputElement>(`input[value="${artifactId}"]`)!;
   await act(async () => checkbox.click());
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载已选 1 项")?.click());
   expect(client.downloadResource).toHaveBeenCalledTimes(1);
   expect(client.downloadResource).toHaveBeenCalledWith(positionId, artifactId, expect.any(String), "download", expect.any(AbortSignal));
+  expect(window.open).toHaveBeenCalledBefore(client.downloadResource);
+  expect(replace).toHaveBeenCalledWith(`/_preview/dingtalk-r1${ticketPath}`);
+});
+
+it("closes synchronously pre-opened batch windows when a ticket fails", async () => {
+  const first = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+  const second = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+  vi.spyOn(window, "open").mockReturnValueOnce(first as never).mockReturnValueOnce(second as never);
+  const client = api(); const secondId = "00000000-0000-4000-8000-000000000006";
+  const original = (await api().resources()).artifacts[0];
+  client.resources.mockResolvedValue({ materials: [], artifacts: [
+    { ...original, attachmentId: artifactId },
+    { ...original, artifactId: secondId, attachmentId: secondId, filename: "画像.pdf" },
+  ] });
+  client.downloadResource.mockResolvedValueOnce({ contentPath: ticketPath, expiresAt: "2026-09-04T00:05:00Z" }).mockRejectedValueOnce({ status: 503 });
+  await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} />));
+  for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) await act(async () => checkbox.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载已选 2 项")?.click());
+  expect(window.open).toHaveBeenCalledTimes(2);
+  expect(first.location.replace).toHaveBeenCalled();
+  expect(second.close).toHaveBeenCalled();
 });

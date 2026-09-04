@@ -25,11 +25,11 @@ it("renders current context, every draft, and immutable history", async () => {
   expect(container.querySelectorAll("article[data-context-draft]")).toHaveLength(2);
 });
 
-it("reloads and compares a changed baseline while retaining selected modules for retry", async () => {
+it("reloads and renders before/after values for a changed baseline while retaining selected modules", async () => {
   const api = {
     context: vi.fn().mockResolvedValueOnce({ current: base, history: [base], drafts: [draft] }).mockResolvedValueOnce({ current, history: [current, base], drafts: [draft] }),
     confirmContext: vi.fn().mockRejectedValueOnce({ status: 409 }).mockResolvedValueOnce(current),
-    compareContext: vi.fn().mockResolvedValue({ leftVersionId: baseId, rightVersionId: currentId, changedModules: ["profile"], left: {}, right: {} }),
+    compareContext: vi.fn().mockResolvedValue({ leftVersionId: baseId, rightVersionId: currentId, changedModules: ["profile"], left: { profile: { title: "工程师" } }, right: { profile: { title: "技术负责人" } } }),
   };
   await act(async () => root.render(<HrPositionContextPanel api={api as never} positionId={positionId} />));
   const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
@@ -37,7 +37,37 @@ it("reloads and compares a changed baseline while retaining selected modules for
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "确认选中模块")?.click());
   expect(container.textContent).toContain("基线已变化");
   expect(container.textContent).toContain("画像");
+  expect(container.textContent).toContain("工程师");
+  expect(container.textContent).toContain("技术负责人");
   expect(checkbox.checked).toBe(true);
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "按新基线重试")?.click());
   expect(api.confirmContext).toHaveBeenLastCalledWith(positionId, draftId, currentId, ["profile"], 2, expect.any(String), expect.any(AbortSignal));
+});
+
+it("reports a confirmed context immediately and blocks every write while read-only", async () => {
+  const confirmed = { ...base, contextVersionId: currentId, displayVersion: 2 };
+  const api = { context: vi.fn().mockResolvedValue({ current: base, history: [base], drafts: [{ ...draft, modules: { talent_profile: { summary: "画像" }, sourcing_strategy: { summary: "搜索" } } }] }), confirmContext: vi.fn().mockResolvedValue(confirmed), compareContext: vi.fn() };
+  const onConfirmed = vi.fn();
+  await act(async () => root.render(<HrPositionContextPanel api={api as never} onConfirmed={onConfirmed} positionId={positionId} />));
+  expect(container.textContent).toContain("人才画像");
+  expect(container.textContent).toContain("搜寻策略");
+  const checks = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+  await act(async () => checks[0]?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "确认选中模块")?.click());
+  expect(onConfirmed).toHaveBeenCalledWith(confirmed);
+
+  api.confirmContext.mockClear();
+  await act(async () => root.render(<HrPositionContextPanel api={api as never} onConfirmed={onConfirmed} positionId={positionId} readOnly />));
+  expect([...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].every((item) => item.matches(":disabled"))).toBe(true);
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "确认选中模块")?.click());
+  expect(api.confirmContext).not.toHaveBeenCalled();
+});
+
+it("opens history in an accessible focusable drawer", async () => {
+  const api = { context: vi.fn().mockResolvedValue({ current: base, history: [base], drafts: [] }), confirmContext: vi.fn(), compareContext: vi.fn() };
+  await act(async () => root.render(<HrPositionContextPanel api={api as never} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("历史版本"))?.click());
+  const drawer = container.querySelector('[role="dialog"][aria-modal="true"]');
+  expect(drawer?.getAttribute("aria-label")).toBe("岗位上下文历史版本");
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("关闭历史版本");
 });
