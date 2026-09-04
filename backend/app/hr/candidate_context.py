@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+import json
+from uuid import UUID
+
+from .candidate_models import CandidateEnvelopeFragment
+from .candidate_service import CandidateScopeViolation
+
+
+class CandidateEnvelopeProvider:
+    def __init__(self, repository, context_is_confirmed) -> None:
+        required = (
+            "position_candidate_for_owner",
+            "candidate_for_owner",
+            "documents_for_candidate",
+            "attachment_state_for_document",
+            "feedback_for_position_candidate",
+        )
+        if any(not callable(getattr(repository, name, None)) for name in required):
+            raise ValueError("candidate context repository required")
+        if not callable(context_is_confirmed):
+            raise ValueError("confirmed position context resolver required")
+        self._repository = repository
+        self._context_is_confirmed = context_is_confirmed
+
+    def for_task(
+        self,
+        owner_id: UUID,
+        position_id: UUID,
+        candidate_id: UUID | None,
+        position_candidate_id: UUID | None,
+    ) -> CandidateEnvelopeFragment:
+        if any(not isinstance(value, UUID) for value in (owner_id, position_id)):
+            raise ValueError("candidate task identifiers invalid")
+        if not isinstance(candidate_id, UUID) or not isinstance(
+            position_candidate_id, UUID
+        ):
+            raise CandidateScopeViolation("candidate task scope is incomplete")
+        relation = self._repository.position_candidate_for_owner(
+            owner_id, position_candidate_id
+        )
+        if (
+            relation.status != "active"
+            or relation.position_id != position_id
+            or relation.candidate_id != candidate_id
+        ):
+            raise CandidateScopeViolation("candidate task relation mismatch")
+        if self._context_is_confirmed(
+            owner_id, position_id, relation.context_version_id
+        ) is not True:
+            raise CandidateScopeViolation("candidate position context is not confirmed")
+        candidate = self._repository.candidate_for_owner(owner_id, candidate_id)
+        if candidate.owner_id != owner_id or candidate.candidate_id != candidate_id:
+            raise CandidateScopeViolation("candidate identity mismatch")
+        documents = tuple(
+            document
+            for document in self._repository.documents_for_candidate(
+                owner_id, candidate_id
+            )
+            if document.status == "active"
+        )
+        if not documents:
+            raise CandidateScopeViolation("candidate has no active document")
+        ordered_documents = tuple(
+            sorted(documents, key=lambda value: (value.version_number, value.document_id))
+        )
+        for document in ordered_documents:
+            if (
+                document.owner_id != owner_id
+                or document.candidate_id != candidate_id
+                or self._repository.attachment_state_for_document(
+                    owner_id, document.document_id
+                )
+                != "ready"
+            ):
+                raise CandidateScopeViolation("candidate document unavailable")
+        feedback = tuple(
+            sorted(
+                self._repository.feedback_for_position_candidate(
+                    owner_id, position_candidate_id
+                ),
+                key=lambda value: (value.created_at, value.feedback_id),
+            )
+        )
+        if any(
+            item.owner_id != owner_id
+            or item.position_candidate_id != position_candidate_id
+            for item in feedback
+        ):
+            raise CandidateScopeViolation("candidate feedback scope mismatch")
+        prompt = "\n".join(
+            (
+                "CONFIRMED_CANDIDATE_FACTS",
+                json.dumps(
+                    {
+                        "candidate_id": str(candidate.candidate_id),
+                        "stable_name": candidate.stable_name,
+                        "facts": candidate.facts,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                "EXACT_CANDIDATE_DOCUMENT_VERSIONS",
+                json.dumps(
+                    [
+                        {
+                            "document_id": str(document.document_id),
+                            "attachment_id": str(document.attachment_id),
+                            "version_number": document.version_number,
+                            "content_sha256": document.content_sha256,
+                        }
+                        for document in ordered_documents
+                    ],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                "HUMAN_FEEDBACK_DO_NOT_REWRITE_AS_AI_FACT",
+                json.dumps(
+                    [
+                        {
+                            "feedback_id": str(item.feedback_id),
+                            "analysis_version_id": str(item.analysis_version_id),
+                            "feedback_kind": item.feedback_kind,
+                            "conclusion_key": item.conclusion_key,
+                            "correction": item.correction,
+                            "reason": item.reason,
+                        }
+                        for item in feedback
+                    ],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+        )
+        try:
+            return CandidateEnvelopeFragment(
+                candidate_id=candidate_id,
+                position_candidate_id=position_candidate_id,
+                context_version_id=relation.context_version_id,
+                document_ids=tuple(
+                    document.document_id for document in ordered_documents
+                ),
+                document_attachment_ids=tuple(
+                    document.attachment_id for document in ordered_documents
+                ),
+                human_feedback_ids=tuple(item.feedback_id for item in feedback),
+                prompt_context=prompt,
+            )
+        except ValueError:
+            raise CandidateScopeViolation("candidate context is not usable") from None

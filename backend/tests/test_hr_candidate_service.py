@@ -273,3 +273,34 @@ def test_feedback_remains_a_separate_append_only_record() -> None:
 
     assert feedback.correction == "带过 6 人团队"
     assert repository.feedback_calls[-1][0] is command
+
+
+def test_reanalysis_creates_a_new_version_and_preserves_the_old_ai_output() -> None:
+    owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()
+    relation = _relation(owner_id, position_id, context_id)
+    repository = MemoryRepository()
+    repository.relations[relation.position_candidate_id] = relation
+    service = CandidateService(repository)
+    first_command = CreateCandidateAnalysis(
+        owner_id, relation.position_candidate_id, context_id, (uuid4(),),
+        "match", uuid4(), {"summary": "待验证"}, (), ("团队规模",), (),
+        ("团队有多大",), "hr-r12", "model-v1",
+    )
+    first = service.add_analysis(first_command)
+    correction = service.append_feedback(AppendHumanFeedback(
+        owner_id, relation.position_candidate_id, first.analysis_version_id,
+        "correction", "team_scale", "带过 6 人团队", "HR 电话确认", uuid4(),
+    ))
+
+    second = service.add_analysis(replace(
+        first_command,
+        client_request_id=uuid4(),
+        result={"summary": "反馈已作为独立输入"},
+        unknowns=(),
+    ))
+
+    assert second.analysis_version_id != first.analysis_version_id
+    assert second.version_number > first.version_number
+    assert first.result == {"summary": "待验证"}
+    assert first.feedback_ids == ()
+    assert second.feedback_ids == (correction.feedback_id,)

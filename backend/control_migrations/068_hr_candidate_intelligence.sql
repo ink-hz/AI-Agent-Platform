@@ -610,9 +610,20 @@ begin
   end loop;
   foreach selected_feedback_id in array selected_feedback_ids loop
     perform 1 from platform_hr.human_feedback feedback
+    join platform_hr.position_candidates feedback_relation
+      on feedback_relation.position_candidate_id=feedback.position_candidate_id
+      and feedback_relation.owner_internal_user_id=feedback.owner_internal_user_id
     where feedback.feedback_id=selected_feedback_id
       and feedback.owner_internal_user_id=selected_owner_internal_user_id
-      and feedback.position_candidate_id=selected_position_candidate_id;
+      and (
+        feedback.position_candidate_id=selected_position_candidate_id
+        or (
+          selected_analysis_kind='comparison'
+          and feedback_relation.position_id=relation.position_id
+          and feedback_relation.context_version_id=selected_context_version_id
+          and feedback_relation.status='active'
+        )
+      );
     if not found then raise no_data_found; end if;
   end loop;
   select coalesce(max(version_number),0)+1 into next_version

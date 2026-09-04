@@ -407,6 +407,37 @@ class CandidateRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise_repository_error(error)
 
+    def attachment_state_for_document(
+        self, owner_id: UUID, document_id: UUID
+    ) -> str:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select document.status as document_status,"
+                    "attachment.state as attachment_state,"
+                    "attachment.deleted_at is not null as deleted,"
+                    "attachment.retained_until>now() as retained "
+                    "from platform_hr.candidate_documents document "
+                    "join platform_attachments.attachments attachment "
+                    "on attachment.attachment_id=document.attachment_id "
+                    "and attachment.owner_internal_user_id="
+                    "document.owner_internal_user_id "
+                    "where document.owner_internal_user_id=%s "
+                    "and document.document_id=%s",
+                    (owner_id, document_id),
+                ).fetchone()
+            if row is None:
+                raise CandidateNotFound("candidate document not found")
+            if row["document_status"] == "erased" or row["deleted"]:
+                return "erased"
+            if not row["retained"]:
+                return "expired"
+            return row["attachment_state"]
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
     def position_candidate_for_owner(
         self, owner_id: UUID, position_candidate_id: UUID
     ) -> PositionCandidate:
