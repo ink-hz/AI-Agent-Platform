@@ -12,6 +12,7 @@ from app.fae_workbench.repository import (
     PsycopgFaeWorkbenchRepository,
     ReplicaFaeWorkbenchRepository,
 )
+from app.hr.resource_service import HrPositionResourceService
 from app.main import (
     agent_brain_loop,
     build_office_recipient_directory,
@@ -710,6 +711,15 @@ def test_create_app_mounts_injected_hr_intelligence_candidate_and_task_routes(
         }
     )
     tasks = SimpleNamespace(start=Mock(), recoverable=Mock(), get=Mock())
+    resource_repository = SimpleNamespace(
+        position_exists=Mock(),
+        materials_for_position=Mock(),
+        artifacts_for_position=Mock(),
+    )
+    resources = HrPositionResourceService(
+        resource_repository,
+        SimpleNamespace(issue_ticket=Mock()),
+    )
     authorization = SimpleNamespace(
         decide_for_user_id=Mock(), permitted_catalog_for_user_id=Mock()
     )
@@ -720,6 +730,7 @@ def test_create_app_mounts_injected_hr_intelligence_candidate_and_task_routes(
         start_poller=False,
         hr_position_intelligence_service=intelligence,
         hr_candidate_service=candidate,
+        hr_resource_service=resources,
         hr_position_task_service=tasks,
         agent_use_authorization=authorization,
     )
@@ -739,9 +750,11 @@ def test_create_app_mounts_injected_hr_intelligence_candidate_and_task_routes(
         "/api/hr/positions/{position_id}/candidate-drafts:batch",
         "/api/hr/positions/{position_id}/tasks",
         "/api/hr/positions/{position_id}/tasks/{task_id}",
+        "/api/hr/positions/{position_id}/resources",
     }.issubset(paths)
     assert app.state.hr_position_intelligence_service is intelligence
     assert app.state.hr_candidate_service is candidate
+    assert app.state.hr_resource_service is resources
     assert app.state.hr_position_task_service is tasks
 
 

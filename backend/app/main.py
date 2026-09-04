@@ -159,6 +159,11 @@ from .hr.position_intelligence_repository import PositionIntelligenceRepository
 from .hr.position_intelligence_routes import build_position_intelligence_router
 from .hr.position_intelligence_service import PositionIntelligenceService
 from .hr.repository import HrPositionRepository
+from .hr.resource_routes import build_hr_resource_router
+from .hr.resource_service import (
+    HrPositionResourceService,
+    PsycopgPositionResourceRepository,
+)
 from .hr.routes import build_hr_position_router
 from .hr.service import HrPositionService
 from .hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
@@ -1084,6 +1089,26 @@ def create_app(
             candidate_repository = CandidateRepository(control_database_url)
         if hr_candidate_service is None:
             hr_candidate_service = CandidateService(candidate_repository)
+        if (
+            hr_resource_service is None
+            and conversation_attachment_download_service is not None
+        ):
+
+            def hr_resource_connection():
+                return psycopg.connect(
+                    control_database_url,
+                    connect_timeout=3,
+                    options="-c statement_timeout=10000 -c timezone=UTC",
+                    row_factory=dict_row,
+                )
+
+            hr_resource_service = HrPositionResourceService(
+                PsycopgPositionResourceRepository(
+                    hr_resource_connection,
+                    conversation_attachment_download_service,
+                ),
+                conversation_attachment_download_service,
+            )
         if hr_task_context_provider is None:
             def context_is_confirmed(owner_id, position_id, context_version_id):
                 current = position_intelligence_repository.current(
@@ -1379,7 +1404,10 @@ def create_app(
         context = getattr(request.state, "auth_context", None)
         if not isinstance(context, AuthContext):
             raise HTTPException(401, "authentication required")
-        if writable and context.hard_stale_read_only:
+        if (
+            (writable or request.method not in {"GET", "HEAD", "OPTIONS"})
+            and context.hard_stale_read_only
+        ):
             raise HTTPException(503, "account is read only")
         try:
             decision = await asyncio.to_thread(
@@ -1406,6 +1434,10 @@ def create_app(
     if hr_candidate_service is not None and agent_use_authorization is not None:
         app.include_router(
             build_candidate_router(hr_candidate_service, require_hr_access)
+        )
+    if hr_resource_service is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_hr_resource_router(hr_resource_service, require_hr_access)
         )
     if hr_position_task_service is not None and agent_use_authorization is not None:
         app.include_router(
