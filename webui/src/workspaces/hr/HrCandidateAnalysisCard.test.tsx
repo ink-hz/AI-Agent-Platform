@@ -54,6 +54,8 @@ describe("HrCandidateAnalysisCard", () => {
     }
     expect(container.querySelector("pre")).toBeNull();
     expect(container.textContent).not.toContain('{"');
+    expect(container.querySelector("footer footer")).toBeNull();
+    expect(container.querySelector(".hr-candidate-analysis-footer")?.tagName).toBe("DIV");
 
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')?.click());
     expect(onCopy).toHaveBeenCalledWith(expect.stringContaining("匹配证据"));

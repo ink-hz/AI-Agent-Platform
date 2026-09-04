@@ -2285,6 +2285,20 @@ body {
 .hr-candidate-facts dl div { display: grid; grid-template-columns: minmax(90px,.25fr) minmax(0,1fr); gap: 10px; }
 .hr-candidate-facts dt { color: #526f64; font-size: 11.5px; font-weight: 720; }
 .hr-candidate-facts dd { overflow-wrap: anywhere; margin: 0; color: #203c33; font-size: 12.5px; }
+.hr-candidate-legacy-analysis-card { overflow: hidden; padding: 0 !important; border-color: #aec7bc !important; }
+.hr-candidate-legacy-analysis-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #d8e5df; background: #f7fbf9; }
+.hr-candidate-legacy-analysis-card > .hr-candidate-legacy-result { display: grid; align-items: stretch; gap: 0; }
+.hr-candidate-legacy-result > section,.hr-candidate-legacy-analysis-card > section { padding: 14px 18px; border-bottom: 1px solid #e1ebe6; }
+.hr-candidate-legacy-result h5,.hr-candidate-legacy-analysis-card > section h5 { margin: 0 0 8px; color: #1d4e3f; font-size: 13px; }
+.hr-candidate-legacy-result h6 { margin: 0 0 6px; color: #183f33; font-size: 13px; }
+.hr-candidate-comparison-result > section > ol { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.hr-candidate-comparison-result > section > ol > li { padding: 12px; border: 1px solid #dce8e2; border-radius: 9px; background: #fafcfb; }
+.hr-candidate-legacy-fields { display: grid; gap: 8px; margin: 0; }
+.hr-candidate-legacy-fields > div { display: grid; grid-template-columns: minmax(100px,.28fr) minmax(0,1fr); gap: 10px; }
+.hr-candidate-legacy-fields dt { color: #526f64; font-size: 11.5px; font-weight: 720; }
+.hr-candidate-legacy-fields dd { min-width: 0; overflow-wrap: anywhere; margin: 0; color: #203c33; font-size: 12.5px; }
+.hr-candidate-legacy-list { display: grid; gap: 5px; margin: 0; padding-left: 20px; }
+.hr-candidate-legacy-analysis-card > small { display: block; overflow-wrap: anywhere; padding: 12px 18px; color: #526f64; }
 .hr-resources-panel > section { display: grid; gap: 10px; }
 .hr-resources-panel dl { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; }
 .hr-resources-panel dl div { display: flex; gap: 4px; font-size: 11.5px; }

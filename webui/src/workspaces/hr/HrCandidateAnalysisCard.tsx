@@ -99,7 +99,7 @@ export function HrCandidateAnalysisCard({
         <div className="hr-interview-question-lists"><section><h6>递进追问</h6><TextList empty="无" items={item.follow_ups} /></section><section><h6>有效证据</h6><TextList empty="无" items={item.strong_evidence} /></section><section><h6>风险信号</h6><TextList empty="无" items={item.risk_signals} /></section></div>
       </section>)}
     </div>}
-    <footer className="hr-candidate-analysis-footer">
+    <div className="hr-candidate-analysis-footer">
       <dl className="hr-candidate-analysis-provenance"><div><dt>来源岗位版本</dt><dd>{analysis.contextVersionId}</dd></div><div><dt>来源简历版本</dt><dd>{analysis.documentIds.join("、")}</dd></div>{analysis.feedbackIds.length > 0 && <div><dt>参考反馈版本</dt><dd>{analysis.feedbackIds.join("、")}</dd></div>}<div><dt>生成方</dt><dd>{analysis.agentVersion} · {analysis.modelVersion}</dd></div></dl>
       {!match && (analysis.sourceArtifactVersionId === null
         ? <p className="hr-candidate-pdf-missing" role="status">PDF 尚未生成，重试本任务</p>
@@ -107,6 +107,6 @@ export function HrCandidateAnalysisCard({
       {downloadState === "error" && <p role="alert">PDF 下载未完成，请重试本任务</p>}
       {retryUnavailableReason && <p className="hr-candidate-retry-unavailable" role="status">{retryUnavailableReason}</p>}
       <MessageActions copyText={copyText} feedbackState={feedbackState} onCopy={onCopy} onFeedback={readOnly ? undefined : onFeedback} onRetry={readOnly ? undefined : onRetry} presentation="icon" />
-    </footer>
+    </div>
   </article>;
 }

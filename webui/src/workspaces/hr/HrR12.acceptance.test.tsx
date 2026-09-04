@@ -7,7 +7,8 @@ import type { Account } from "../../auth";
 import type { AgentCapabilityCard } from "../../brainTypes";
 import type { AttachmentUploadClient } from "../../components/conversation/AttachmentUploader";
 import type { ConversationAttachment } from "../../conversationTypes";
-import type { HrCandidateAnalysisVersion, HrCandidateDraft, HrPositionCandidate } from "../../hrR12Types";
+import { createHrR12Api, type HrR12Api } from "../../hrR12Api";
+import type { HrCandidateAnalysisVersion, HrCandidateDraft, HrPositionArtifactItem, HrPositionCandidate } from "../../hrR12Types";
 import { HrCandidateWorkspace } from "./HrCandidateWorkspace";
 import { HrPositionWorkspace } from "./HrPositionWorkspace";
 
@@ -17,6 +18,7 @@ const contextId = "00000000-0000-4000-8000-000000000003";
 const artifactId = "00000000-0000-4000-8000-000000000004";
 const artifactAttachmentId = "00000000-0000-4000-8000-000000000005";
 const candidateArtifactVersionId = "00000000-0000-4000-8000-000000000006";
+const artifactVersionId = "00000000-0000-4000-8000-000000000007";
 const now = "2026-09-04T00:00:00Z";
 const account: Account = {
   internal_user_id: "member", display_name: "HR", role: "member", departments: [], gender: null,
@@ -53,10 +55,10 @@ const material = {
   previewAvailable: true, downloadAvailable: true,
 };
 const artifact = {
-  ...material, artifactId, attachmentId: artifactAttachmentId, filename: "人才画像.docx",
+  ...material, artifactId, artifactVersionId, attachmentId: artifactAttachmentId, filename: "人才画像.docx",
   mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   artifactVersion: 1, previewAvailable: false,
-};
+} satisfies HrPositionArtifactItem;
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -113,7 +115,8 @@ function workspaceHarness() {
     state.completed = true;
     return [];
   });
-  const r12Api = {
+  const r12Api: HrR12Api = {
+    ...createHrR12Api(account.csrf_token),
     startTask, activeTasks, taskStatus: vi.fn(), resources,
     downloadResource: vi.fn().mockResolvedValue({ contentPath: `/api/attachments/content/ticket-${artifactAttachmentId}`, expiresAt: now }),
     context: vi.fn().mockResolvedValue({ current: confirmedContext, drafts: [], history: [confirmedContext] }),
@@ -126,7 +129,7 @@ function workspaceHarness() {
   const props = {
     account, positionId, section: "chat" as const,
     api: { position, promoteMaterial: vi.fn(), removeMaterial: vi.fn() },
-    r12Api: r12Api as never, loadPositionConversations: vi.fn().mockResolvedValue([]),
+    r12Api, loadPositionConversations: vi.fn().mockResolvedValue([]),
     loadCatalog: vi.fn().mockResolvedValue([card]), onOpenConversation,
   };
   return { onOpenConversation, position, props, r12Api, resources, startTask };
@@ -332,7 +335,13 @@ function candidateHarness(preconfirmed = false) {
     }),
     compareCandidates: vi.fn().mockResolvedValue({
       ...analysis(0, "match", 1), analysisVersionId: "60000000-0000-4000-8000-000000000003",
-      analysisKind: "comparison", versionNumber: 3, result: { recommendation: "候选人1更匹配" },
+      analysisKind: "comparison", versionNumber: 3, result: {
+        candidates: [
+          { position_candidate_id: relationIds[0], candidate_id: candidateIds[0], summary: "候选人1更匹配", evidence_coverage: 2, unknown_count: 0 },
+          { position_candidate_id: relationIds[1], candidate_id: candidateIds[1], summary: "结构经验需补充", evidence_coverage: 1, unknown_count: 1 },
+        ],
+        ranking: null, comparison_basis: "same_position_context",
+      },
       conflicts: ["量产规模口径待统一"],
     }),
   };
@@ -407,6 +416,7 @@ describe("HR R1.2 candidate journey", () => {
     expect(journey.api.compareCandidates).toHaveBeenCalledWith(positionId, relationIds, contextId,
       expect.any(String), expect.any(AbortSignal));
     expect(container.textContent).toContain("候选人1更匹配");
+    expect(container.textContent).toContain("证据覆盖");
     expect(container.textContent).toContain("冲突：量产规模口径待统一");
   });
 

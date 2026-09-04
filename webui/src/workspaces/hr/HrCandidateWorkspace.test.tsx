@@ -39,7 +39,12 @@ function api() {
     resources: vi.fn().mockResolvedValue({ materials: [], artifacts: [] }),
     downloadResource: vi.fn().mockResolvedValue({ contentPath: `/api/v1/attachments/content/${"b".repeat(32)}`, expiresAt: now }),
     candidateFeedback: vi.fn().mockResolvedValue([]), appendCandidateFeedback: vi.fn().mockResolvedValue({ feedbackId: contextId, positionCandidateId: relationIds[0], analysisVersionId: analysisId, feedbackKind: "correction", conclusionKey: "overall", correction: "量产经验已电话核实", reason: "HR 人工核实", createdAt: now }),
-    compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison", conflicts: ["项目规模口径不一致"] }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match" }), activeTasks: vi.fn().mockResolvedValue([]), taskStatus: vi.fn().mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null, positionCandidateId: relationIds[0], candidateId: candidateIds[0] }),
+    compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison", result: {
+      candidates: [
+        { position_candidate_id: relationIds[0], candidate_id: candidateIds[0], summary: "量产经验匹配", evidence_coverage: 2, unknown_count: 1 },
+        { position_candidate_id: relationIds[1], candidate_id: candidateIds[1], summary: "交付经验匹配", evidence_coverage: 1, unknown_count: 2 },
+      ], ranking: null, comparison_basis: "same_position_context",
+    }, conflicts: ["项目规模口径不一致"] }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match" }), activeTasks: vi.fn().mockResolvedValue([]), taskStatus: vi.fn().mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null, positionCandidateId: relationIds[0], candidateId: candidateIds[0] }),
   };
 }
 
@@ -199,6 +204,50 @@ it("loads candidate detail and versions, launches match/interview, records feedb
   expect(client.compareCandidates).toHaveBeenCalledWith(positionId, relationIds, contextId, expect.any(String), expect.any(AbortSignal));
   expect(container.textContent).toContain("候选人比较结果");
   expect(container.textContent).toContain("项目规模口径不一致");
+});
+
+it("renders the frozen comparison contract with candidate summaries and coverage instead of dropping nested data", async () => {
+  const client = api();
+  client.compareCandidates.mockResolvedValue({ ...analysis, analysisKind: "comparison", result: {
+    candidates: [
+      { position_candidate_id: relationIds[0], candidate_id: candidateIds[0], summary: "量产经验更完整", evidence_coverage: 3, unknown_count: 1 },
+      { position_candidate_id: relationIds[1], candidate_id: candidateIds[1], summary: "海外交付更突出", evidence_coverage: 2, unknown_count: 2 },
+    ],
+    ranking: null,
+    comparison_basis: "same_position_context",
+  } });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]')) await act(async () => checkbox.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "比较已选候选人")?.click());
+
+  for (const text of ["同一岗位上下文", "候选人1", "量产经验更完整", "证据覆盖", "3 条", "待验证项", "1 项", "候选人2", "海外交付更突出", "未提供单一排序"]) {
+    expect(container.textContent).toContain(text);
+  }
+  expect(container.querySelector(".hr-candidate-comparison pre")).toBeNull();
+  expect(container.textContent).not.toContain('"candidates":');
+});
+
+it("renders the frozen resume-extract envelope and bounds unknown nested fallback content", async () => {
+  const client = api();
+  client.candidateAnalyses.mockResolvedValue([{ ...analysis, analysisKind: "resume_extract", result: {
+    extracted_facts: {
+      stable_name: "候选人1", summary: "结构与量产复合背景", skills: ["Python", "机械设计"],
+      experiences: [{ company: "星海制造", role: "结构工程师", achievements: ["良率提升至 98%"] }],
+      projects: [{ name: "喷嘴量产", details: { responsibility: "主导验证" } }],
+      unknowns: Array.from({ length: 60 }, (_, index) => `补充事实 ${index + 1}`),
+      sources: [{ document_id: candidateDocument.documentId, custom_signal: ["可迁移的量产方法"] }],
+    },
+    identity_candidate_ids: [],
+  } }]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+
+  for (const text of ["简历提取", "候选人身份", "候选人1", "结构与量产复合背景", "技能", "Python", "经历", "星海制造", "良率提升至 98%", "喷嘴量产", "主导验证", "可迁移的量产方法", "其余 10 项未展开"]) {
+    expect(container.textContent).toContain(text);
+  }
+  expect(container.textContent).not.toContain("补充事实 60");
+  expect(container.querySelector(".hr-candidate-detail pre")).toBeNull();
+  expect(container.textContent).not.toContain('"experiences":');
 });
 
 it("polls processing drafts with bounded delay and stops at a terminal state", async () => {

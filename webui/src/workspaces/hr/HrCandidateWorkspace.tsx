@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { platformPath } from "../../auth";
 import type { HrR12Api } from "../../hrR12Api";
 import type { ConversationFeedbackRating, ConversationFeedbackReason } from "../../conversationTypes";
@@ -47,9 +47,6 @@ function draftEdit(draft: HrCandidateDraft): DraftEdit {
 function taskStatus(status: HrTaskRecord["status"]): string {
   return status === "accepted" ? "已受理" : status === "running" ? "执行中" : status === "completed" ? "已完成" : "执行失败";
 }
-function legacyAnalysisText(item: HrCandidateAnalysisVersion): string[] {
-  return Object.values(item.result).filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
-}
 function factLabel(value: string): string {
   const labels: Record<string, string> = { skills: "技能", experience: "经历", years: "年限", education: "教育背景", location: "所在地" };
   return labels[value] ?? value.replace(/_/g, " ");
@@ -65,6 +62,91 @@ function CandidateFacts({ facts }: { facts: Record<string, unknown> }) {
   return <section aria-label="候选人事实" className="hr-candidate-facts"><h4>候选人事实</h4>{entries.length === 0
     ? <p>暂无已确认事实</p>
     : <dl>{entries.map(([key, value]) => <div key={key}><dt>{factLabel(key)}</dt><dd>{factValue(value)}</dd></div>)}</dl>}</section>;
+}
+
+const LEGACY_MAX_DEPTH = 4;
+const LEGACY_MAX_ITEMS = 50;
+const LEGACY_MAX_TEXT = 500;
+const LEGACY_FIELD_LABELS: Record<string, string> = {
+  stable_name: "候选人姓名", summary: "摘要", contact: "联系方式", education: "教育背景",
+  experiences: "经历", projects: "项目", skills: "技能", certifications: "证书",
+  languages: "语言", awards: "奖项", publications: "公开发表", unknowns: "待验证信息",
+  sources: "来源", company: "公司", role: "角色", achievements: "成果", name: "名称",
+  details: "详情", responsibility: "职责", availability: "可工作地点", unknown_list: "补充信息",
+  additional_facts: "其他事实", additional_context: "其他比较信息", delivery_difference: "交付差异",
+  position_candidate_id: "岗位候选关系", candidate_id: "候选人 ID", evidence_coverage: "证据覆盖",
+  unknown_count: "待验证项", comparison_basis: "比较基准", ranking: "候选排序",
+};
+
+function legacyRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function legacyLabel(value: string): string {
+  return LEGACY_FIELD_LABELS[value] ?? value.replace(/_/g, " ");
+}
+function boundedText(value: string): string {
+  const characters = Array.from(value);
+  return characters.length <= LEGACY_MAX_TEXT ? value : `${characters.slice(0, LEGACY_MAX_TEXT).join("")}…`;
+}
+function protectedLegacyField(value: string): boolean {
+  return /^(?:immutable_locator|storage_locator|storage_key|object_key|content_path|signed_ticket)$/i.test(value);
+}
+function LegacyValue({ value, depth = 0 }: { value: unknown; depth?: number }): ReactNode {
+  if (value === null || value === undefined) return <span>未提供</span>;
+  if (typeof value === "string") return <span>{boundedText(value)}</span>;
+  if (typeof value === "number" || typeof value === "boolean") return <span>{String(value)}</span>;
+  if (depth >= LEGACY_MAX_DEPTH) return <span>内容层级过深，未展开</span>;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span>暂无</span>;
+    const visible = value.slice(0, LEGACY_MAX_ITEMS);
+    return <ul className="hr-candidate-legacy-list">{visible.map((item, index) => <li key={index}><LegacyValue depth={depth + 1} value={item} /></li>)}{value.length > visible.length && <li>其余 {value.length - visible.length} 项未展开</li>}</ul>;
+  }
+  if (legacyRecord(value)) {
+    const entries = Object.entries(value).slice(0, LEGACY_MAX_ITEMS);
+    if (entries.length === 0) return <span>暂无</span>;
+    return <dl className="hr-candidate-legacy-fields">{entries.map(([key, item]) => <div key={key}><dt>{legacyLabel(key)}</dt><dd>{protectedLegacyField(key) ? "受保护字段已隐藏" : <LegacyValue depth={depth + 1} value={item} />}</dd></div>)}{Object.keys(value).length > entries.length && <div><dt>更多信息</dt><dd>其余 {Object.keys(value).length - entries.length} 项未展开</dd></div>}</dl>;
+  }
+  return <span>未提供</span>;
+}
+
+function ComparisonResult({ candidateNames, result }: { candidateNames: Map<string, string>; result: Record<string, unknown> }) {
+  const candidates = Array.isArray(result.candidates) ? result.candidates.filter(legacyRecord).slice(0, LEGACY_MAX_ITEMS) : [];
+  const comparisonBasis = result.comparison_basis === "same_position_context" ? "同一岗位上下文" : result.comparison_basis;
+  const remaining = Object.fromEntries(Object.entries(result).filter(([key]) => !["candidates", "ranking", "comparison_basis"].includes(key)));
+  return <div className="hr-candidate-legacy-result hr-candidate-comparison-result">
+    <section><h5>比较基准</h5><LegacyValue value={comparisonBasis} /></section>
+    <section><h5>候选人对比</h5>{candidates.length === 0 ? <p>暂无候选人比较明细</p> : <ol>{candidates.map((candidate, index) => {
+      const candidateId = typeof candidate.candidate_id === "string" ? candidate.candidate_id : null;
+      const relationId = typeof candidate.position_candidate_id === "string" ? candidate.position_candidate_id : null;
+      const name = candidateId ? candidateNames.get(candidateId) : null;
+      const candidateRemaining = Object.fromEntries(Object.entries(candidate).filter(([key]) => !["position_candidate_id", "candidate_id", "summary", "evidence_coverage", "unknown_count"].includes(key)));
+      return <li key={relationId ?? candidateId ?? index}><h6>{name ?? candidateId ?? relationId ?? `候选人 ${index + 1}`}</h6>{candidateId && name && <small>候选人 ID：{candidateId}</small>}<p>{typeof candidate.summary === "string" ? boundedText(candidate.summary) : "暂无比较摘要"}</p><dl><div><dt>证据覆盖</dt><dd>{typeof candidate.evidence_coverage === "number" ? `${candidate.evidence_coverage} 条` : "未提供"}</dd></div><div><dt>待验证项</dt><dd>{typeof candidate.unknown_count === "number" ? `${candidate.unknown_count} 项` : "未提供"}</dd></div></dl>{Object.keys(candidateRemaining).length > 0 && <LegacyValue value={candidateRemaining} />}</li>;
+    })}</ol>}</section>
+    <section><h5>候选排序</h5>{result.ranking === null || result.ranking === undefined ? <p>未提供单一排序</p> : <LegacyValue value={result.ranking} />}</section>
+    {Object.keys(remaining).length > 0 && <section><h5>其他比较信息</h5><LegacyValue value={remaining} /></section>}
+  </div>;
+}
+
+function ResumeExtractResult({ result }: { result: Record<string, unknown> }) {
+  const facts = legacyRecord(result.extracted_facts) ? result.extracted_facts : result;
+  const identities = Array.isArray(result.identity_candidate_ids) ? result.identity_candidate_ids : [];
+  const remaining = legacyRecord(result.extracted_facts)
+    ? Object.fromEntries(Object.entries(result).filter(([key]) => !["extracted_facts", "identity_candidate_ids"].includes(key)))
+    : {};
+  return <div className="hr-candidate-legacy-result hr-candidate-resume-extract-result">
+    <section><h5>候选人身份</h5><p>{typeof facts.stable_name === "string" ? boundedText(facts.stable_name) : "姓名待确认"}</p>{identities.length > 0 && <><h6>可能关联的候选人</h6><LegacyValue value={identities} /></>}</section>
+    <section><h5>提取事实</h5><LegacyValue value={Object.fromEntries(Object.entries(facts).filter(([key]) => key !== "stable_name"))} /></section>
+    {Object.keys(remaining).length > 0 && <section><h5>其他提取信息</h5><LegacyValue value={remaining} /></section>}
+  </div>;
+}
+
+function LegacyAnalysisCard({ analysis, candidateNames }: { analysis: Extract<HrCandidateAnalysisVersion, { analysisKind: "resume_extract" | "comparison" }>; candidateNames: Map<string, string> }) {
+  return <article aria-label={analysis.analysisKind === "comparison" ? "候选人比较" : "简历提取"} className="hr-candidate-legacy-analysis-card">
+    <header><strong>分析版本 v{analysis.versionNumber}</strong><span>{analysis.analysisKind === "comparison" ? "候选人比较" : "简历提取"}</span></header>
+    {analysis.analysisKind === "comparison" ? <ComparisonResult candidateNames={candidateNames} result={analysis.result} /> : <ResumeExtractResult result={analysis.result} />}
+    {analysis.conflicts.length > 0 && <section><h5>冲突信息</h5>{analysis.conflicts.map((value) => <p key={value}>冲突：{value}</p>)}</section>}
+    <small>岗位上下文 {analysis.contextVersionId} · 文档版本 {analysis.documentIds.join("、")} · {analysis.agentVersion} · {analysis.modelVersion}</small>
+  </article>;
 }
 
 export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContextVersionId, uploadClient, readOnly = false }: {
@@ -322,6 +404,7 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
 
   const readyUploads = queue.filter((item) => item.state === "ready" && item.attachment).length;
   const orderedAnalyses = useMemo(() => [...(selected?.analyses ?? [])].sort((left, right) => right.versionNumber - left.versionNumber), [selected?.analyses]);
+  const candidateNames = useMemo(() => new Map(relations.map((item) => [item.candidate.candidateId, item.candidate.stableName])), [relations]);
   const renderAnalysis = (item: HrCandidateAnalysisVersion) => {
     const canRetry = !readOnly && Boolean(currentContextVersionId) && selected?.relation.contextVersionId === currentContextVersionId;
     const retryUnavailableReason = readOnly ? undefined : !currentContextVersionId
@@ -338,7 +421,7 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
       onRetry={canRetry ? () => void launch(item.analysisKind === "match" ? "candidate_match" : "candidate_interview_plan") : undefined}
       retryUnavailableReason={retryUnavailableReason}
       />
-      : <article key={item.analysisVersionId}><strong>分析版本 v{item.versionNumber}</strong><span>{item.analysisKind === "comparison" ? "候选人比较" : "简历提取"}</span>{legacyAnalysisText(item).map((value) => <p key={value}>{value}</p>)}{item.conflicts.map((value) => <p key={value}>冲突：{value}</p>)}</article>;
+      : <LegacyAnalysisCard analysis={item} candidateNames={candidateNames} key={item.analysisVersionId} />;
   };
   return <section aria-label="候选人" className="hr-r12-panel hr-candidate-workspace">
     <header><div><span>CANDIDATE INTELLIGENCE</span><h2>候选人</h2></div><div><strong>{relations.length} 位已确认</strong><button type="button" onClick={() => void refresh()}>刷新候选人状态</button></div></header>
