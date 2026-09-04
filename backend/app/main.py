@@ -97,10 +97,6 @@ from .control_plane.fae_access import (
     FaeWorkbenchAccessRepository,
     FaeWorkbenchAccessService,
 )
-from .control_plane.voc_access import (
-    VocWorkbenchAccessRepository,
-    VocWorkbenchAccessService,
-)
 from .control_plane.identity import IdentityResolver
 from .control_plane.in_client_apps import load_trusted_in_client_apps
 from .control_plane.middleware import (
@@ -125,6 +121,10 @@ from .control_plane.rate_limit import ControlRateLimiter
 from .control_plane.routes_access_history import build_access_history_router
 from .control_plane.routes_auth import build_auth_router
 from .control_plane.routes_manage import ManagementRepository, ManagementService
+from .control_plane.voc_access import (
+    VocWorkbenchAccessRepository,
+    VocWorkbenchAccessService,
+)
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
 from .execution_relay.content_crypto import ContentCodec
@@ -170,6 +170,11 @@ from .hr.context import HrPositionScope
 from .hr.position_intelligence_repository import PositionIntelligenceRepository
 from .hr.position_intelligence_routes import build_position_intelligence_router
 from .hr.position_intelligence_service import PositionIntelligenceService
+from .hr.position_package_projection import (
+    PositionPackageProjectionRepository,
+    PositionPackageProjector,
+    position_package_projection_loop,
+)
 from .hr.repository import HrPositionRepository
 from .hr.resource_routes import build_hr_resource_router
 from .hr.resource_service import (
@@ -240,10 +245,36 @@ def _optional_hr_bot_model_version(contract_path: str) -> str | None:
         return _hr_bot_model_version(contract_path)
     except RuntimeError:
         logger.warning(
-            "HR task context disabled because exact runtime model provenance "
-            "is unavailable"
+            "HR runtime features disabled because exact model provenance is unavailable"
         )
         return None
+
+
+def _build_position_package_projector(
+    *,
+    identity_enabled: bool,
+    direct_agent_enabled: bool,
+    database_url: str | None,
+    positions: object | None,
+    content_codec: object | None,
+    model_version: str | None,
+) -> PositionPackageProjector | None:
+    if (
+        not identity_enabled
+        or not direct_agent_enabled
+        or database_url is None
+        or positions is None
+        or content_codec is None
+        or model_version is None
+    ):
+        return None
+    return PositionPackageProjector(
+        PositionPackageProjectionRepository(database_url),
+        positions,
+        content_codec,
+        worker_id=f"platform-position-package-{uuid4().hex}",
+        model_version=model_version,
+    )
 
 
 class _UnavailableFaeWorkbenchRepository:
@@ -792,6 +823,7 @@ def create_app(
     hr_candidate_parser_submission_coordinator=None,
     hr_candidate_parser_input_provider=None,
     hr_task_result_reconciler=None,
+    hr_position_package_projector=None,
     agent_use_authorization=None,
     hr_position_scope=None,
     access_history_repository=None,
@@ -1120,6 +1152,8 @@ def create_app(
         hr_position_scope = HrPositionScope(hr_position_repository)
     position_intelligence_repository = None
     candidate_repository = None
+    hr_model_version = None
+    hr_model_version_checked = False
     if identity_enabled and control_database_url is not None:
         if hr_position_intelligence_service is None or hr_task_context_provider is None:
             position_intelligence_repository = PositionIntelligenceRepository(
@@ -1192,6 +1226,7 @@ def create_app(
             hr_model_version = _optional_hr_bot_model_version(
                 cluster_contract_path or config.metabot_contract_path
             )
+            hr_model_version_checked = True
             if hr_model_version is not None:
                 hr_task_context_provider = HrTaskContextProvider(
                     PostgresHrTaskContextSource(
@@ -1227,6 +1262,24 @@ def create_app(
                 hr_candidate_service,
                 content_codec,
                 worker_id=f"platform-hr-projection-{uuid4().hex}",
+            )
+        if hr_position_package_projector is None:
+            direct_hr_runtime = (
+                "direct_agent" in v1_mission_modes
+                and content_codec is not None
+                and hr_position_service is not None
+            )
+            if direct_hr_runtime and not hr_model_version_checked:
+                hr_model_version = _optional_hr_bot_model_version(
+                    cluster_contract_path or config.metabot_contract_path
+                )
+            hr_position_package_projector = _build_position_package_projector(
+                identity_enabled=identity_enabled,
+                direct_agent_enabled="direct_agent" in v1_mission_modes,
+                database_url=control_database_url,
+                positions=hr_position_service,
+                content_codec=content_codec,
+                model_version=hr_model_version,
             )
     if v1_mission_modes:
         if (
@@ -1350,6 +1403,10 @@ def create_app(
             tasks.append(asyncio.create_task(
                 hr_task_result_projection_loop(hr_task_result_reconciler)
             ))
+        if hr_position_package_projector is not None:
+            tasks.append(asyncio.create_task(
+                position_package_projection_loop(hr_position_package_projector)
+            ))
         try:
             yield
         finally:
@@ -1414,6 +1471,7 @@ def create_app(
         hr_candidate_parser_input_provider
     )
     app.state.hr_task_result_reconciler = hr_task_result_reconciler
+    app.state.hr_position_package_projector = hr_position_package_projector
     app.state.fae_access = None
     app.state.voc_access = None
     app.state.fae_session_read_audit = None

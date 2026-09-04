@@ -55,6 +55,71 @@ create table platform_hr.position_draft_versions (
   unique (owner_internal_user_id,draft_id,source_assistant_message_id)
 );
 
+create table platform_hr.position_package_projections (
+  projection_id uuid primary key,
+  projection_request_id uuid not null,
+  owner_internal_user_id uuid not null
+    references platform_control.internal_users(internal_user_id),
+  draft_id uuid not null,
+  conversation_id uuid not null,
+  turn_id uuid not null,
+  assistant_message_id uuid not null,
+  state text not null check (
+    state in ('pending','processing','completed','skipped','failed')
+  ),
+  worker_id text,
+  lease_expires_at timestamptz,
+  available_at timestamptz not null default now(),
+  attempt_count integer not null default 0 check (attempt_count>=0),
+  draft_version_id uuid,
+  error_code text check (
+    error_code is null or error_code in (
+      'envelope_invalid','projection_scope_invalid','projection_unavailable'
+    )
+  ),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  terminal_at timestamptz,
+  foreign key (draft_id,owner_internal_user_id)
+    references platform_hr.position_drafts(draft_id,owner_internal_user_id),
+  foreign key (conversation_id,owner_internal_user_id)
+    references platform_control.conversations(
+      conversation_id,owner_internal_user_id
+    ),
+  foreign key (conversation_id,turn_id)
+    references platform_control.conversation_turns(conversation_id,turn_id),
+  foreign key (conversation_id,assistant_message_id)
+    references platform_control.conversation_messages(
+      conversation_id,message_id
+    ),
+  foreign key (draft_version_id,owner_internal_user_id)
+    references platform_hr.position_draft_versions(
+      draft_version_id,owner_internal_user_id
+    ),
+  unique (projection_request_id),
+  unique (assistant_message_id),
+  check (
+    (state='processing' and worker_id is not null and lease_expires_at is not null)
+    or (state<>'processing' and worker_id is null and lease_expires_at is null)
+  ),
+  check ((state='completed')=(draft_version_id is not null)),
+  check (
+    (state in ('completed','skipped','failed'))=(terminal_at is not null)
+  ),
+  check (
+    (state='failed' and error_code in (
+      'envelope_invalid','projection_scope_invalid'
+    ))
+    or (state='pending' and error_code is not distinct from 'projection_unavailable')
+    or (state in ('processing','completed','skipped') and error_code is null)
+  )
+);
+
+create index position_package_projections_available_v76
+  on platform_hr.position_package_projections(
+    state,available_at,lease_expires_at,created_at
+  );
+
 alter table platform_hr.position_drafts
   add column confirmation_client_request_id uuid,
   add column confirmation_draft_version_id uuid,
@@ -311,7 +376,268 @@ begin
 end
 $function$;
 
+create function platform_hr.claim_position_package_projection_v76(
+  selected_worker_id text,
+  selected_lease_seconds integer
+) returns table(
+  projection_id uuid,
+  projection_request_id uuid,
+  owner_internal_user_id uuid,
+  draft_id uuid,
+  conversation_id uuid,
+  turn_id uuid,
+  assistant_message_id uuid,
+  agent_id text,
+  content_ciphertext bytea,
+  encryption_key_version integer
+)
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected_projection_id uuid;
+declare selected_owner_id uuid;
+declare selected_draft_id uuid;
+declare selected_conversation_id uuid;
+declare selected_turn_id uuid;
+declare selected_message_id uuid;
+declare selected_conversation_title text;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or selected_worker_id is null
+     or selected_worker_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+     or selected_lease_seconds not between 30 and 900 then
+    raise insufficient_privilege;
+  end if;
+
+  select conversation.owner_internal_user_id,projection.draft_id,
+    conversation.conversation_id,turn.turn_id,message.message_id,
+    conversation.title
+  into selected_owner_id,selected_draft_id,selected_conversation_id,
+    selected_turn_id,selected_message_id,selected_conversation_title
+  from platform_control.conversation_messages message
+  join platform_control.conversation_turns turn
+    on turn.conversation_id=message.conversation_id
+   and turn.turn_id=message.turn_id
+   and turn.assistant_message_id=message.message_id
+   and turn.status='completed'
+  join platform_control.conversations conversation
+    on conversation.conversation_id=message.conversation_id
+   and conversation.mode='direct_agent'
+   and conversation.direct_agent_id='hr-bot'
+  left join platform_hr.position_package_projections projection
+    on projection.assistant_message_id=message.message_id
+  where message.role='assistant'
+    and message.delivery_status='completed'
+    and octet_length(message.content_ciphertext)>0
+    and (
+      projection.projection_id is null
+      or (projection.state='pending' and projection.available_at<=now())
+      or (projection.state='processing' and projection.lease_expires_at<=now())
+    )
+  order by message.created_at,message.message_id
+  for update of message skip locked
+  limit 1;
+
+  if selected_message_id is null then return; end if;
+
+  if selected_draft_id is null then
+    select draft.draft_id into selected_draft_id
+    from platform_hr.position_drafts draft
+    where draft.owner_internal_user_id=selected_owner_id
+      and draft.source_conversation_id=selected_conversation_id
+      and draft.state='proposed'
+    order by draft.created_at,draft.draft_id
+    limit 1;
+  end if;
+
+  if selected_draft_id is null then
+    selected_draft_id := md5(
+      selected_owner_id::text || ':position-package:conversation:' ||
+      selected_conversation_id::text || ':draft'
+    )::uuid;
+    insert into platform_hr.position_drafts(
+      draft_id,owner_internal_user_id,client_request_id,source_kind,
+      source_key,source_conversation_id,title,proposal,evidence,
+      discovery_rule_version
+    ) values (
+      selected_draft_id,selected_owner_id,
+      md5(
+        selected_owner_id::text || ':position-package:conversation:' ||
+        selected_conversation_id::text || ':draft-request'
+      )::uuid,
+      'new_conversation','conversation:' || selected_conversation_id::text,
+      selected_conversation_id,selected_conversation_title,'{}'::jsonb,
+      '{}'::jsonb,'interactive-v1'
+    )
+    on conflict do nothing;
+    select draft.draft_id into selected_draft_id
+    from platform_hr.position_drafts draft
+    where draft.owner_internal_user_id=selected_owner_id
+      and draft.source_kind='new_conversation'
+      and draft.source_key='conversation:' || selected_conversation_id::text
+      and draft.source_conversation_id=selected_conversation_id;
+    if selected_draft_id is null then raise no_data_found; end if;
+  end if;
+
+  insert into platform_hr.position_package_projections(
+    projection_id,projection_request_id,owner_internal_user_id,draft_id,
+    conversation_id,turn_id,assistant_message_id,state,worker_id,
+    lease_expires_at,attempt_count
+  ) values (
+    md5(selected_message_id::text || ':position-package-ledger')::uuid,
+    md5(selected_message_id::text || ':position-package-projection')::uuid,
+    selected_owner_id,selected_draft_id,selected_conversation_id,
+    selected_turn_id,selected_message_id,'processing',selected_worker_id,
+    now()+make_interval(secs=>selected_lease_seconds),1
+  )
+  on conflict on constraint
+    position_package_projections_assistant_message_id_key do update set
+    state='processing',worker_id=excluded.worker_id,
+    lease_expires_at=excluded.lease_expires_at,
+    attempt_count=platform_hr.position_package_projections.attempt_count+1,
+    error_code=null,updated_at=now()
+  where (platform_hr.position_package_projections.state='pending'
+      and platform_hr.position_package_projections.available_at<=now())
+    or (platform_hr.position_package_projections.state='processing'
+      and platform_hr.position_package_projections.lease_expires_at<=now())
+  returning platform_hr.position_package_projections.projection_id
+    into selected_projection_id;
+
+  if selected_projection_id is null then return; end if;
+
+  return query
+  select projection.projection_id,projection.projection_request_id,
+    projection.owner_internal_user_id,projection.draft_id,
+    projection.conversation_id,projection.turn_id,
+    projection.assistant_message_id,'hr-bot'::text,
+    message.content_ciphertext,message.encryption_key_version
+  from platform_hr.position_package_projections projection
+  join platform_control.conversation_messages message
+    on message.conversation_id=projection.conversation_id
+   and message.message_id=projection.assistant_message_id
+  where projection.projection_id=selected_projection_id
+    and projection.state='processing'
+    and projection.worker_id=selected_worker_id;
+end
+$function$;
+
+create function platform_hr.complete_position_package_projection_v76(
+  selected_projection_id uuid,
+  selected_worker_id text,
+  selected_projection_request_id uuid,
+  selected_draft_version_id uuid
+) returns boolean
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or selected_worker_id is null
+     or selected_worker_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' then
+    raise insufficient_privilege;
+  end if;
+  update platform_hr.position_package_projections projection set
+    state=case when selected_draft_version_id is null
+      then 'skipped' else 'completed' end,
+    worker_id=null,lease_expires_at=null,
+    draft_version_id=selected_draft_version_id,error_code=null,
+    terminal_at=now(),updated_at=now()
+  where projection.projection_id=selected_projection_id
+    and projection.projection_request_id=selected_projection_request_id
+    and projection.state='processing'
+    and projection.worker_id=selected_worker_id
+    and projection.lease_expires_at>now()
+    and (
+      selected_draft_version_id is null
+      or exists(
+        select 1 from platform_hr.position_draft_versions version
+        where version.draft_version_id=selected_draft_version_id
+          and version.owner_internal_user_id=projection.owner_internal_user_id
+          and version.draft_id=projection.draft_id
+          and version.client_request_id=projection.projection_request_id
+          and version.source_conversation_id=projection.conversation_id
+          and version.source_turn_id=projection.turn_id
+          and version.source_assistant_message_id=projection.assistant_message_id
+      )
+    );
+  if found then return true; end if;
+  return exists(
+    select 1 from platform_hr.position_package_projections projection
+    where projection.projection_id=selected_projection_id
+      and projection.projection_request_id=selected_projection_request_id
+      and (
+        (selected_draft_version_id is null and projection.state='skipped'
+          and projection.draft_version_id is null)
+        or (selected_draft_version_id is not null
+          and projection.state='completed'
+          and projection.draft_version_id=selected_draft_version_id)
+      )
+  );
+end
+$function$;
+
+create function platform_hr.fail_position_package_projection_v76(
+  selected_projection_id uuid,
+  selected_worker_id text,
+  selected_projection_request_id uuid,
+  selected_error_code text
+) returns boolean
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or selected_error_code not in (
+       'envelope_invalid','projection_scope_invalid'
+     ) then
+    raise insufficient_privilege;
+  end if;
+  update platform_hr.position_package_projections set
+    state='failed',worker_id=null,lease_expires_at=null,
+    draft_version_id=null,error_code=selected_error_code,
+    terminal_at=now(),updated_at=now()
+  where projection_id=selected_projection_id
+    and projection_request_id=selected_projection_request_id
+    and state='processing' and worker_id=selected_worker_id
+    and lease_expires_at>now();
+  if found then return true; end if;
+  return exists(
+    select 1 from platform_hr.position_package_projections
+    where projection_id=selected_projection_id
+      and projection_request_id=selected_projection_request_id
+      and state='failed' and error_code=selected_error_code
+  );
+end
+$function$;
+
+create function platform_hr.release_position_package_projection_v76(
+  selected_projection_id uuid,
+  selected_worker_id text,
+  selected_projection_request_id uuid,
+  selected_error_code text
+) returns boolean
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or selected_error_code<>'projection_unavailable' then
+    raise insufficient_privilege;
+  end if;
+  update platform_hr.position_package_projections set
+    state='pending',worker_id=null,lease_expires_at=null,
+    available_at=now()+interval '1 second',draft_version_id=null,
+    error_code=selected_error_code,terminal_at=null,updated_at=now()
+  where projection_id=selected_projection_id
+    and projection_request_id=selected_projection_request_id
+    and state='processing' and worker_id=selected_worker_id
+    and lease_expires_at>now();
+  return found;
+end
+$function$;
+
 revoke all on table platform_hr.position_draft_versions from public;
+revoke all on table platform_hr.position_package_projections from public;
 revoke all on function platform_hr.guard_position_draft_version_immutability_v76()
   from public;
 revoke all on function platform_hr.create_position_draft_version_v76(
@@ -319,6 +645,18 @@ revoke all on function platform_hr.create_position_draft_version_v76(
 ) from public;
 revoke all on function platform_hr.confirm_position_package_v76(
   uuid,uuid,uuid,uuid,bigint
+) from public;
+revoke all on function platform_hr.claim_position_package_projection_v76(
+  text,integer
+) from public;
+revoke all on function platform_hr.complete_position_package_projection_v76(
+  uuid,text,uuid,uuid
+) from public;
+revoke all on function platform_hr.fail_position_package_projection_v76(
+  uuid,text,uuid,text
+) from public;
+revoke all on function platform_hr.release_position_package_projection_v76(
+  uuid,text,uuid,text
 ) from public;
 
 do $migration$
@@ -338,12 +676,31 @@ begin
     'grant select on platform_hr.position_draft_versions to %I',selected_app
   );
   execute format(
+    'grant select on platform_hr.position_package_projections to %I',selected_app
+  );
+  execute format(
     'grant execute on function platform_hr.create_position_draft_version_v76('
     'uuid,uuid,uuid,uuid,text,jsonb,uuid,uuid,uuid,text,text) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.confirm_position_package_v76('
     'uuid,uuid,uuid,uuid,bigint) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.claim_position_package_projection_v76('
+    'text,integer) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.complete_position_package_projection_v76('
+    'uuid,text,uuid,uuid) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.fail_position_package_projection_v76('
+    'uuid,text,uuid,text) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.release_position_package_projection_v76('
+    'uuid,text,uuid,text) to %I',selected_app
   );
 end
 $migration$;
