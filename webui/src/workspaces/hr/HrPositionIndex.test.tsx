@@ -179,3 +179,53 @@ it("requires an explicit visible target before merging a draft", async () => {
     draft.draftId, third.positionId, draft.rowVersion, expect.any(String),
   );
 });
+
+
+it("loads every position page instead of hiding records after the first page", async () => {
+  const later = {
+    ...manual,
+    positionId: "55555555-5555-4555-8555-555555555555",
+    title: "第二页光学岗位",
+  };
+  const listPositions = vi.fn()
+    .mockResolvedValueOnce({ items: [official], nextCursor: "page-2" })
+    .mockResolvedValueOnce({ items: [later], nextCursor: null });
+  await act(async () => root.render(<HrPositionIndex
+    account={account} api={api({ listPositions }) as never}
+  />));
+
+  expect(listPositions).toHaveBeenNthCalledWith(
+    1, { limit: 100 }, expect.any(AbortSignal),
+  );
+  expect(listPositions).toHaveBeenNthCalledWith(
+    2, { limit: 100, cursor: "page-2" }, expect.any(AbortSignal),
+  );
+  expect(container.textContent).toContain("第二页光学岗位");
+});
+
+
+it("reuses draft and conversation idempotency after a partial new-position failure", async () => {
+  const client = api();
+  const start = vi.fn()
+    .mockRejectedValueOnce(new Error("temporary"))
+    .mockResolvedValueOnce({ conversationId: "conversation-new" });
+  await act(async () => root.render(
+    <HrPositionIndex account={account} api={client as never} startDraftConversation={start} />,
+  ));
+  await act(async () => [...container.querySelectorAll("button")]
+    .find((button) => button.textContent === "用对话新建岗位")?.click());
+  const input = container.querySelector<HTMLTextAreaElement>("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")
+      ?.set?.call(input, "新岗位需求");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const submit = () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "开始梳理")!;
+  await act(async () => submit().click());
+  await act(async () => submit().click());
+
+  expect(client.proposeDraft).toHaveBeenCalledTimes(2);
+  expect(client.proposeDraft.mock.calls[0][1]).toBe(client.proposeDraft.mock.calls[1][1]);
+  expect(start.mock.calls[0][0].requestId).toBe(start.mock.calls[1][0].requestId);
+});

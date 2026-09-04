@@ -141,10 +141,11 @@ function parsePage(value: unknown): PositionPage {
 function parseDetail(value: unknown): HrPositionDetail {
   const raw = object(value);
   const counts = [raw.conversation_count, raw.material_count, raw.artifact_count];
-  const detailKeys = new Set(["conversation_count", "material_count", "artifact_count", "conversation_ids", "material_attachment_ids", "artifact_ids"]);
+  const detailKeys = new Set(["conversation_count", "material_count", "artifact_count", "conversation_ids", "material_attachment_ids", "artifact_ids", "artifact_attachment_ids"]);
   const base = Object.fromEntries(Object.entries(raw).filter(([key]) => !detailKeys.has(key)));
-  if (Object.keys(raw).length !== POSITION_KEYS.size + 6 || counts.some((count) => !integer(count))
-    || !idList(raw.conversation_ids) || !idList(raw.material_attachment_ids) || !idList(raw.artifact_ids)) {
+  if (Object.keys(raw).length !== POSITION_KEYS.size + 7 || counts.some((count) => !integer(count))
+    || !idList(raw.conversation_ids) || !idList(raw.material_attachment_ids)
+    || !idList(raw.artifact_ids) || !idList(raw.artifact_attachment_ids)) {
     throw new Error("HR position response invalid");
   }
   return {
@@ -152,6 +153,7 @@ function parseDetail(value: unknown): HrPositionDetail {
     materialCount: Number(raw.material_count), artifactCount: Number(raw.artifact_count),
     conversationIds: raw.conversation_ids, materialAttachmentIds: raw.material_attachment_ids,
     artifactIds: raw.artifact_ids,
+    artifactAttachmentIds: raw.artifact_attachment_ids,
   };
 }
 

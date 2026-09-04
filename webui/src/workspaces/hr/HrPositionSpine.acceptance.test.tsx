@@ -26,6 +26,7 @@ const detail: HrPositionDetail = {
   sourceVersion: "sync-v2", rowVersion: 1, createdAt: "2026-09-01T00:00:00Z",
   updatedAt: "2026-09-04T00:00:00Z", conversationCount: 1, materialCount: 0, artifactCount: 1,
   conversationIds: [CONVERSATION_ID], materialAttachmentIds: [], artifactIds: ["44444444-4444-4444-8444-444444444444"],
+  artifactAttachmentIds: [],
 };
 const card: AgentCapabilityCard = {
   agent_id: "hr-bot", display_name: "HR Agent", domain_group: "HR", persona_subtitle: "Hannah",

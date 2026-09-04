@@ -8,20 +8,25 @@ function initialOpen(): boolean { try { return window.localStorage?.getItem(STOR
 
 export function SessionMaterialsDrawer({ attachments, activeAttachmentIds, activeIds, limits,
   onActiveIdsChange, onToggle, onPreview, onDownload, onOpen, onDelete,
-  positionMaterialIds = [], onPositionMaterialChange, readOnly = false }: {
+  positionMaterialIds = [], positionArtifactAttachmentIds,
+  onPositionMaterialChange, readOnly = false }: {
   attachments: ConversationAttachment[]; activeAttachmentIds?: string[]; activeIds?: string[]; limits?: AgentAttachmentLimits;
   onActiveIdsChange?: (ids: string[]) => void; onToggle?: (attachmentId: string, active: boolean) => void;
   onPreview?: (attachment: ConversationAttachment) => void; onDownload?: (attachment: ConversationAttachment) => void;
   onOpen?: (attachment: ConversationAttachment, purpose: "preview" | "download") => void;
   onDelete?: (attachment: ConversationAttachment) => void | Promise<void>;
   positionMaterialIds?: readonly string[];
+  positionArtifactAttachmentIds?: readonly string[];
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
   readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(initialOpen);
   const selectedIds = activeAttachmentIds ?? activeIds ?? [];
   const user = attachments.filter((item) => item.source === "user");
-  const output = attachments.filter((item) => item.source === "agent");
+  const output = attachments.filter((item) => item.source === "agent" && (
+    positionArtifactAttachmentIds === undefined
+    || positionArtifactAttachmentIds.includes(item.attachmentId)
+  ));
   const active = user.filter((item) => selectedIds.includes(item.attachmentId));
   const toggle = (attachmentId: string, enabled: boolean) => {
     onToggle?.(attachmentId, enabled);

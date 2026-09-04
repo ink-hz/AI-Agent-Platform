@@ -99,4 +99,18 @@ describe("SessionMaterialsDrawer", () => {
       .find((button) => button.textContent === "下载")?.click());
     expect(onOpen).toHaveBeenCalledWith(generated, "download");
   });
+
+  it("shows only generated attachments explicitly linked to the position", async () => {
+    const other = {
+      ...generated, attachmentId: "agent-other", displayName: "其他岗位结果.docx",
+    };
+    await act(async () => root.render(<SessionMaterialsDrawer
+      attachments={[generated, other]}
+      limits={limits}
+      positionArtifactAttachmentIds={[generated.attachmentId]}
+    />));
+
+    expect(container.textContent).toContain("面试方案.docx");
+    expect(container.textContent).not.toContain("其他岗位结果.docx");
+  });
 });

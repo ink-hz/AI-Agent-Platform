@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Account } from "../../auth";
 import { PlatformLink } from "../../components/PlatformLink";
-import { startConversation } from "../../conversationApi";
+import { startConversation, type ConversationSubmission } from "../../conversationApi";
 import { createHrApi, type HrApi } from "../../hrApi";
 import type { HrPosition, HrPositionDraft } from "../../hrTypes";
 import { navigate } from "../../router";
@@ -12,6 +12,7 @@ type DraftStarter = (request: {
   draftId: string;
   text: string;
   csrfToken: string;
+  requestId: string;
 }) => Promise<{ conversationId: string }>;
 
 
@@ -29,6 +30,23 @@ function officialStatus(status: HrPosition["officialStatus"]): string {
   return ({
     active: "在招", stale: "信息较旧", suspected_inactive: "疑似下线", inactive: "已下线",
   } as const)[status ?? "active"];
+}
+
+
+async function loadEveryPosition(api: HrApi, signal: AbortSignal): Promise<HrPosition[]> {
+  const found = new Map<string, HrPosition>();
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await api.listPositions(
+      cursor ? { limit: 100, cursor } : { limit: 100 }, signal,
+    );
+    for (const item of page.items) found.set(item.positionId, item);
+    if (!page.nextCursor || seenCursors.has(page.nextCursor)) break;
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  } while (!signal.aborted);
+  return [...found.values()];
 }
 
 
@@ -55,15 +73,21 @@ export function HrPositionIndex({
   const [working, setWorking] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
+  const newAttempt = useRef<{
+    text: string;
+    draftRequestId: string;
+    conversationRequestId: string;
+    submission?: ConversationSubmission;
+  } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     setState("loading");
     void Promise.all([
-      api.listPositions({ limit: 100 }, controller.signal),
+      loadEveryPosition(api, controller.signal),
       api.listDrafts("proposed", controller.signal),
-    ]).then(([page, pending]) => {
-      setPositions(page.items); setDrafts(pending); setState("ready");
+    ]).then(([loadedPositions, pending]) => {
+      setPositions(loadedPositions); setDrafts(pending); setState("ready");
     }).catch(() => {
       if (!controller.signal.aborted) setState("error");
     });
@@ -103,19 +127,33 @@ export function HrPositionIndex({
     if (!text) return;
     setWorking("new"); setNotice(null);
     try {
-      const idempotency = requestId();
+      if (!newAttempt.current || newAttempt.current.text !== text) {
+        newAttempt.current = {
+          text,
+          draftRequestId: requestId(),
+          conversationRequestId: requestId(),
+        };
+      }
+      const attempt = newAttempt.current;
       const draft = await api.proposeDraft({
-        sourceKind: "new_conversation", sourceKey: `request:${idempotency}`,
+        sourceKind: "new_conversation", sourceKey: `request:${attempt.draftRequestId}`,
         sourceConversationId: null, title: text.slice(0, 500), proposal: { request: text },
         evidence: { source: "hr_position_index" }, discoveryRuleVersion: "interactive-v1",
-      }, idempotency);
-      const starter = startDraftConversation ?? (async ({ draftId, text: prompt, csrfToken }) => {
-        const result = await startConversation(
-          prompt, csrfToken, "hr-bot", { positionDraftId: draftId },
-        ).send();
-        return { conversationId: result.conversation.conversation_id };
-      });
-      const result = await starter({ draftId: draft.draftId, text, csrfToken: account.csrf_token });
+      }, attempt.draftRequestId);
+      let result: { conversationId: string };
+      if (startDraftConversation) {
+        result = await startDraftConversation({
+          draftId: draft.draftId, text, csrfToken: account.csrf_token,
+          requestId: attempt.conversationRequestId,
+        });
+      } else {
+        attempt.submission ??= startConversation(
+          text, account.csrf_token, "hr-bot", { positionDraftId: draft.draftId },
+        );
+        const created = await attempt.submission.send();
+        result = { conversationId: created.conversation.conversation_id };
+      }
+      newAttempt.current = null;
       navigate(`/hr/conversations/${encodeURIComponent(result.conversationId)}`);
     } catch { setNotice("岗位对话暂时没有创建成功，可以直接重试。"); }
     finally { setWorking(null); }

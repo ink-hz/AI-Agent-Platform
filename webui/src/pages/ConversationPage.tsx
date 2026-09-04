@@ -120,6 +120,7 @@ export function ConversationPage({
   personaSubtitle,
   attachmentLimits,
   positionMaterialIds,
+  positionArtifactAttachmentIds,
   onPositionMaterialChange,
 }: {
   conversationId: string;
@@ -131,6 +132,7 @@ export function ConversationPage({
   personaSubtitle?: string | null;
   attachmentLimits?: { max_file_bytes: number; max_files_per_message: number; max_bytes_per_message: number; max_files_per_conversation: number; max_bytes_per_conversation: number } | null;
   positionMaterialIds?: readonly string[];
+  positionArtifactAttachmentIds?: readonly string[];
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
@@ -527,6 +529,7 @@ export function ConversationPage({
     activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
     onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
     positionMaterialIds={positionMaterialIds} onPositionMaterialChange={onPositionMaterialChange}
+    positionArtifactAttachmentIds={positionArtifactAttachmentIds}
     readOnly={readOnly}
   /></div> : conversationContent;
 }

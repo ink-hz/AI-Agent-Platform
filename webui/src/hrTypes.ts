@@ -25,6 +25,7 @@ export interface HrPositionDetail extends HrPosition {
   conversationIds: string[];
   materialAttachmentIds: string[];
   artifactIds: string[];
+  artifactAttachmentIds: string[];
 }
 
 export interface HrPositionDraft {

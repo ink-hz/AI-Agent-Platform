@@ -21,6 +21,7 @@ const position = {
 const positionDetail = {
   ...position, conversation_count: 1, material_count: 0, artifact_count: 0,
   conversation_ids: [CONVERSATION_ID], material_attachment_ids: [], artifact_ids: [],
+  artifact_attachment_ids: [],
 };
 const draft = {
   draft_id: DRAFT_ID, source_kind: "new_conversation", source_key: "conversation:new",
@@ -59,7 +60,7 @@ it("parses position scope identifiers without crossing resource boundaries", asy
 
   await expect(createHrApi("csrf").position(POSITION_ID)).resolves.toMatchObject({
     positionId: POSITION_ID, conversationIds: [CONVERSATION_ID],
-    materialAttachmentIds: [], artifactIds: [],
+    materialAttachmentIds: [], artifactIds: [], artifactAttachmentIds: [],
   });
 });
 

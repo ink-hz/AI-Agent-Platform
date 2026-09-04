@@ -7,6 +7,7 @@ import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmis
 import { createHrApi, type HrApi } from "../../hrApi";
 import type { HrPositionDetail } from "../../hrTypes";
 import type { ConversationPageClient } from "../../pages/ConversationPage";
+import { PlatformLink } from "../../components/PlatformLink";
 import { navigate } from "../../router";
 import { DirectAgentWorkspace, type AgentHistoryClient } from "../direct/DirectAgentWorkspace";
 
@@ -137,7 +138,7 @@ export function HrPositionWorkspace({
 
   const header = <header className="hr-position-context">
     <div className="hr-position-context-main">
-      <a href="/hr/">← 所有岗位</a>
+      <PlatformLink href="/hr/">← 所有岗位</PlatformLink>
       <div><span className="hr-position-eyebrow">POSITION CONTEXT</span>
         <h1>{detail.title}</h1>
         <p>{[detail.department, ...detail.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
@@ -170,6 +171,7 @@ export function HrPositionWorkspace({
       onOpenConversation={onOpenConversation}
       onPositionMaterialChange={account.hard_stale_read_only ? undefined : changePositionMaterial}
       positionMaterialIds={materialIds}
+      positionArtifactAttachmentIds={detail.artifactAttachmentIds}
       workspaceLabel="岗位智能工作台"
       workspaceMark="HR"
       workspaceRootPath={`/hr/positions/${encodeURIComponent(positionId)}`}

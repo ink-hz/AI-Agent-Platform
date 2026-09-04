@@ -36,6 +36,7 @@ export interface DirectAgentWorkspaceProps {
   newConversationScope?: ConversationStartScope;
   autoFocusComposer?: boolean;
   positionMaterialIds?: readonly string[];
+  positionArtifactAttachmentIds?: readonly string[];
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
 }
 
@@ -75,6 +76,7 @@ export function DirectAgentWorkspace({
   newConversationScope,
   autoFocusComposer = false,
   positionMaterialIds,
+  positionArtifactAttachmentIds,
   onPositionMaterialChange,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
@@ -260,6 +262,7 @@ export function DirectAgentWorkspace({
           expectedAgentId={agentId}
           attachmentLimits={card.attachment_limits}
           positionMaterialIds={positionMaterialIds}
+          positionArtifactAttachmentIds={positionArtifactAttachmentIds}
           onPositionMaterialChange={onPositionMaterialChange}
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}

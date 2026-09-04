@@ -27,6 +27,7 @@ const detail: HrPositionDetail = {
   createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-04T00:00:00Z",
   conversationCount: 2, materialCount: 1, artifactCount: 3,
   conversationIds: [ACTIVE_ID, ARCHIVED_ID], materialAttachmentIds: [], artifactIds: [],
+  artifactAttachmentIds: [],
 };
 const card: AgentCapabilityCard = {
   agent_id: "hr-bot", display_name: "HR Agent", domain_group: "HR",
