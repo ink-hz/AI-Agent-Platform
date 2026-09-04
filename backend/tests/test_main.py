@@ -1,30 +1,29 @@
 import asyncio
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
-import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from fastapi import APIRouter
-from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
-
 from app.config import load_config
-from app.main import (
-    agent_brain_loop,
-    build_operations,
-    build_office_recipient_directory,
-    build_review_service,
-    cancel_tasks,
-    create_app,
-)
 from app.control_plane.models import ControlPlaneConfig, IdentityMode
-from app.operations.repository import OperationsRepository
 from app.fae_workbench.repository import (
     PsycopgFaeWorkbenchRepository,
     ReplicaFaeWorkbenchRepository,
 )
+from app.main import (
+    agent_brain_loop,
+    build_office_recipient_directory,
+    build_operations,
+    build_review_service,
+    cancel_tasks,
+    create_app,
+)
+from app.operations.repository import OperationsRepository
+from fastapi import APIRouter
+from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 
 def test_build_office_recipient_directory_uses_control_reader_and_identity_codec(
@@ -666,6 +665,84 @@ def test_create_app_registers_injected_hr_position_service(tmp_path):
         getattr(route, "path", None) == "/api/hr/positions"
         for route in routes
     )
+
+
+def test_create_app_mounts_injected_hr_intelligence_candidate_and_task_routes(
+    tmp_path,
+):
+    registry, contract = _fae_app_paths(tmp_path)
+    intelligence = SimpleNamespace(
+        **{
+            name: Mock()
+            for name in (
+                "current",
+                "history",
+                "drafts",
+                "create_draft",
+                "confirm_modules",
+                "compare",
+                "official_versions",
+                "official_version",
+            )
+        }
+    )
+    candidate = SimpleNamespace(
+        **{
+            name: Mock()
+            for name in (
+                "create_drafts",
+                "list_drafts",
+                "draft",
+                "retry_draft",
+                "dismiss_draft",
+                "confirm_draft",
+                "list_position_candidates",
+                "candidate",
+                "documents",
+                "candidate_document",
+                "position_candidate",
+                "list_analyses",
+                "add_analysis",
+                "list_feedback",
+                "append_feedback",
+                "compare",
+            )
+        }
+    )
+    tasks = SimpleNamespace(start=Mock(), recoverable=Mock(), get=Mock())
+    authorization = SimpleNamespace(
+        decide_for_user_id=Mock(), permitted_catalog_for_user_id=Mock()
+    )
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        hr_position_intelligence_service=intelligence,
+        hr_candidate_service=candidate,
+        hr_position_task_service=tasks,
+        agent_use_authorization=authorization,
+    )
+
+    routes = [
+        context
+        for route in app.router.routes
+        for context in (
+            route.effective_route_contexts()
+            if callable(getattr(route, "effective_route_contexts", None))
+            else (route,)
+        )
+    ]
+    paths = {getattr(route, "path", None) for route in routes}
+    assert {
+        "/api/hr/positions/{position_id}/context",
+        "/api/hr/positions/{position_id}/candidate-drafts:batch",
+        "/api/hr/positions/{position_id}/tasks",
+        "/api/hr/positions/{position_id}/tasks/{task_id}",
+    }.issubset(paths)
+    assert app.state.hr_position_intelligence_service is intelligence
+    assert app.state.hr_candidate_service is candidate
+    assert app.state.hr_position_task_service is tasks
 
 
 def test_create_app_builds_local_fae_workbench_from_analyst_boundary(
