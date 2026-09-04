@@ -132,7 +132,12 @@ export const vocAccessApi = {
       }),
     });
     const value = await checked(response, requestId);
-    if (!isObject(value) || value.status !== "ok") {
+    if (!isObject(value)
+      || !exactKeys(value, ["status", "internal_user_id", "row_version"])
+      || value.status !== "ok"
+      || !uuid(value.internal_user_id)
+      || !Number.isSafeInteger(value.row_version)
+      || Number(value.row_version) < 0) {
       throw new Error("VOC access response invalid");
     }
   },
@@ -156,7 +161,11 @@ export const vocAccessApi = {
       },
     );
     const value = await checked(response, requestId);
-    if (!isObject(value) || value.status !== "ok") {
+    if (!isObject(value)
+      || !exactKeys(value, ["status", "row_version"])
+      || value.status !== "ok"
+      || !Number.isSafeInteger(value.row_version)
+      || Number(value.row_version) < 0) {
       throw new Error("VOC access response invalid");
     }
   },

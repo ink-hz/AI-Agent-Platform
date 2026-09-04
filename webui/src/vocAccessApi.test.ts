@@ -80,6 +80,21 @@ describe("VOC access API", () => {
     });
   });
 
+  it("rejects incomplete successful mutation responses", async () => {
+    const requestId = "d2c33f73-b942-4417-8264-35f11af6ff1e";
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )));
+
+    await expect(vocAccessApi.grant(account, "稻夫", requestId))
+      .rejects.toThrow("VOC access response invalid");
+    await expect(vocAccessApi.revoke(account, grant, requestId))
+      .rejects.toThrow("VOC access response invalid");
+  });
+
   it("revokes with row version and preserves indeterminate request ids", async () => {
     const requestId = "f7f20643-7c73-462f-8a4f-d1c084c18bd2";
     const fetchMock = vi.fn()

@@ -91,6 +91,9 @@ class _MutableVocAccess:
             Role.PLATFORM_OWNER,
         } or context.internal_user_id in self.allowed_user_ids
 
+    def list_grants(self):
+        return []
+
 
 class _FaeOverview:
     async def overview(self, _now):
@@ -1332,13 +1335,20 @@ def test_fae_navigation_fails_closed_without_leaking_account_data(
 
 
 @pytest.mark.parametrize(
-    ("role", "has_fae_grant", "fae_status", "voc_status"),
     (
-        (Role.PLATFORM_OWNER, False, 200, 200),
-        (Role.MEMBER, True, 200, 403),
-        (Role.MANAGEMENT_VIEWER, False, 403, 200),
-        (Role.PLATFORM_ADMIN, False, 403, 200),
-        (Role.MEMBER, False, 403, 403),
+        "role",
+        "has_fae_grant",
+        "has_voc_grant",
+        "fae_status",
+        "voc_status",
+    ),
+    (
+        (Role.PLATFORM_OWNER, False, False, 200, 200),
+        (Role.MEMBER, True, False, 200, 403),
+        (Role.MANAGEMENT_VIEWER, False, False, 403, 200),
+        (Role.PLATFORM_ADMIN, False, False, 403, 200),
+        (Role.MEMBER, False, False, 403, 403),
+        (Role.MEMBER, False, True, 403, 200),
     ),
 )
 def test_fae_and_voc_management_scopes_are_independent(
@@ -1346,6 +1356,7 @@ def test_fae_and_voc_management_scopes_are_independent(
     monkeypatch,
     role,
     has_fae_grant,
+    has_voc_grant,
     fae_status,
     voc_status,
 ) -> None:
@@ -1355,6 +1366,8 @@ def test_fae_and_voc_management_scopes_are_independent(
     auth.context = AuthContext(uuid4(), role, uuid4(), False)
     if has_fae_grant:
         access.allowed_user_ids.add(auth.context.internal_user_id)
+    if has_voc_grant:
+        voc_access.allowed_user_ids.add(auth.context.internal_user_id)
     app = _app(
         tmp_path,
         monkeypatch,
@@ -1385,6 +1398,28 @@ def test_fae_and_voc_management_scopes_are_independent(
         assert fae_response.json() == {
             "detail": "fae workbench access required"
         }
+
+
+def test_voc_grant_list_is_owner_only_in_full_application(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    auth.context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+    app = _app(tmp_path, monkeypatch, auth)
+    client = TestClient(app)
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    assert client.get(
+        "/api/v1/manage/voc-workbench/grants", cookies=cookies
+    ).status_code == 200
+    auth.context = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), False)
+    response = client.get(
+        "/api/v1/manage/voc-workbench/grants", cookies=cookies
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "platform owner required"}
 
 
 def test_revoked_fae_grant_denies_the_next_request_without_breaking_direct_use(

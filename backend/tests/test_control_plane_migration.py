@@ -3012,6 +3012,17 @@ def test_voc_grant_is_independent_from_fae_and_keeps_member_role(
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "update platform_control.internal_users set status='active',"
+            "locally_invalidated_at=clock_timestamp() where internal_user_id=%s",
+            (member_id,),
+        )
+    with psycopg.connect(app_url) as connection:
+        assert connection.execute(
+            "select platform_control.has_voc_workbench_access_v75(%s)",
+            (member_id,),
+        ).fetchone() == (False,)
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.internal_users set "
             "locally_invalidated_at=null where internal_user_id=%s",
             (member_id,),
         )
@@ -3045,6 +3056,117 @@ def test_voc_grant_is_independent_from_fae_and_keeps_member_role(
             "platform_control.has_voc_workbench_access_v75(%s)",
             (member_id, member_id),
         ).fetchone() == (True, False)
+
+
+@pytest.mark.postgres
+def test_voc_workbench_grant_rejects_directory_resolution_failures(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    seeded = _seed_fae_workbench_directory(environment["admin"])
+    app_url = environment["urls"]["platform_control_app"]
+    audit_url = environment["urls"]["platform_audit_append"]
+    cases = (
+        (
+            f"VOC Missing {uuid.uuid4()}",
+            uuid.uuid4(),
+            seeded["generation_id"],
+            "directory_member_not_found",
+        ),
+        (
+            seeded["duplicate_name"],
+            seeded["duplicate_member_key"],
+            seeded["generation_id"],
+            "directory_name_not_unique",
+        ),
+        (
+            seeded["inactive_name"],
+            seeded["inactive_member_key"],
+            seeded["generation_id"],
+            "directory_member_inactive",
+        ),
+        (
+            seeded["unique_name"],
+            seeded["unique_member_key"],
+            uuid.uuid4(),
+            "directory_generation_changed",
+        ),
+    )
+    for display_name, member_key, generation_id, error_code in cases:
+        operation_id = uuid.uuid4()
+        audit_event_id = uuid.uuid4()
+        _append_voc_workbench_request(
+            audit_url,
+            event_id=audit_event_id,
+            operation_id=operation_id,
+            actor_id=seeded["owner_id"],
+            target_id=member_key,
+            action="grant",
+            metadata={
+                "expected_generation_id": str(generation_id),
+                "expected_member_key": str(member_key),
+            },
+        )
+        with psycopg.connect(app_url) as connection, pytest.raises(
+            psycopg.errors.CheckViolation,
+            match=error_code,
+        ):
+            connection.execute(
+                "select platform_control.grant_voc_workbench_access_v75("
+                + ",".join(("%s",) * 9)
+                + ")",
+                (
+                    operation_id,
+                    seeded["owner_id"],
+                    display_name,
+                    generation_id,
+                    member_key,
+                    uuid.uuid4(),
+                    uuid.uuid4(),
+                    uuid.uuid4(),
+                    audit_event_id,
+                ),
+            )
+
+
+@pytest.mark.postgres
+def test_voc_workbench_grant_requires_owner_and_matching_audit(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    seeded = _seed_fae_workbench_directory(environment["admin"])
+    parameters = (
+        uuid.uuid4(),
+        uuid.uuid4(),
+        seeded["unique_name"],
+        seeded["generation_id"],
+        seeded["unique_member_key"],
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+    )
+    app_url = environment["urls"]["platform_control_app"]
+    with psycopg.connect(app_url) as connection, pytest.raises(
+        psycopg.errors.InsufficientPrivilege,
+        match="active platform owner required",
+    ):
+        connection.execute(
+            "select platform_control.grant_voc_workbench_access_v75("
+            + ",".join(("%s",) * 9)
+            + ")",
+            parameters,
+        )
+    with psycopg.connect(app_url) as connection, pytest.raises(
+        psycopg.errors.CheckViolation,
+        match="matching_audit_intent_required",
+    ):
+        connection.execute(
+            "select platform_control.grant_voc_workbench_access_v75("
+            + ",".join(("%s",) * 9)
+            + ")",
+            (parameters[0], seeded["owner_id"], *parameters[2:]),
+        )
 
 
 @pytest.mark.postgres
