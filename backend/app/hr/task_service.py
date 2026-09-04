@@ -102,6 +102,9 @@ class TaskProjectionRepository(Protocol):
     def recoverable_tasks(
         self, owner_id: UUID, position_id: UUID
     ) -> tuple[HrPositionTask, ...]: ...
+    def task(
+        self, owner_id: UUID, position_id: UUID, task_id: UUID
+    ) -> HrPositionTask | None: ...
 
 
 def _canonical_payload(
@@ -163,7 +166,7 @@ class HrPositionTaskService:
             raise ValueError("HR position scope required")
         if any(
             not callable(getattr(projection, name, None))
-            for name in ("position_exists", "recoverable_tasks")
+            for name in ("position_exists", "recoverable_tasks", "task")
         ):
             raise ValueError("HR position task projection required")
         self._intelligence = intelligence
@@ -309,3 +312,18 @@ class HrPositionTaskService:
             raise
         except Exception as error:
             raise HrPositionTaskUnavailable("position tasks unavailable") from error
+
+    def get(
+        self, owner_id: UUID, position_id: UUID, task_id: UUID
+    ) -> HrPositionTask:
+        if any(not isinstance(value, UUID) for value in (owner_id, position_id, task_id)):
+            raise TypeError("HR position task identifiers invalid")
+        try:
+            task = self._projection.task(owner_id, position_id, task_id)
+            if task is None:
+                raise HrPositionTaskNotFound("position task not found")
+            return task
+        except HrPositionTaskError:
+            raise
+        except Exception as error:
+            raise HrPositionTaskUnavailable("position task unavailable") from error

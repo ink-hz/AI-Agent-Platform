@@ -5,14 +5,6 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from test_agent_brain_conversation_repository import (
-    conversation_database,  # noqa: F401
-    repository,  # noqa: F401
-)
-from test_control_plane_migration import control_database  # noqa: F401
-
 from app.agent_brain.conversation_service import ConversationCommandService
 from app.hr.context import HrPositionScope
 from app.hr.models import CreateManualPosition
@@ -28,6 +20,13 @@ from app.hr.task_service import (
     HrPositionTaskNotFound,
     HrPositionTaskService,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from test_agent_brain_conversation_repository import (
+    conversation_database,  # noqa: F401
+    repository,  # noqa: F401
+)
+from test_control_plane_migration import control_database  # noqa: F401
 
 OWNER = UUID("00000000-0000-4000-8000-000000000001")
 POSITION = UUID("00000000-0000-4000-8000-000000000002")
@@ -122,6 +121,10 @@ class Projection:
     def recoverable_tasks(self, owner_id, position_id):
         assert (owner_id, position_id) == (OWNER, POSITION)
         return self.rows
+
+    def task(self, owner_id, position_id, task_id):
+        assert (owner_id, position_id) == (OWNER, POSITION)
+        return next((item for item in self.rows if item.task_id == task_id), None)
 
 
 def dependencies():
@@ -281,6 +284,25 @@ def test_get_recovery_conceals_missing_position_and_returns_durable_states():
         service.recoverable(OWNER, POSITION)
 
 
+def test_get_one_task_returns_exact_durable_projection_and_conceals_missing():
+    service, _, _, _, projection, _ = dependencies()
+    task = HrPositionTask(
+        uuid4(),
+        "candidate_match",
+        "completed",
+        None,
+        CONVERSATION,
+        uuid4(),
+        CANDIDATE,
+        RELATION,
+    )
+    projection.rows = (task,)
+
+    assert service.get(OWNER, POSITION, task.task_id) == task
+    with pytest.raises(HrPositionTaskNotFound):
+        service.get(OWNER, POSITION, uuid4())
+
+
 class RouteService:
     def __init__(self) -> None:
         self.calls = []
@@ -307,6 +329,12 @@ class RouteService:
         if self.error:
             raise self.error
         return (self.task,)
+
+    def get(self, *args):
+        self.calls.append(("get", args))
+        if self.error:
+            raise self.error
+        return self.task
 
 
 def route_client():
@@ -344,6 +372,40 @@ def test_task_routes_validate_candidate_pair_and_project_recoverable_status():
     assert recovered.status_code == 200
     assert recovered.json()["items"][0]["status"] == "accepted"
     assert service.calls[0] == ("access", True)
+
+
+def test_task_detail_route_returns_authoritative_terminal_candidate_binding():
+    client, service = route_client()
+    service.task = HrPositionTask(
+        service.task.task_id,
+        "candidate_match",
+        "failed",
+        "execution_failed",
+        CONVERSATION,
+        service.task.turn_id,
+        CANDIDATE,
+        RELATION,
+    )
+
+    response = client.get(
+        f"/api/hr/positions/{POSITION}/tasks/{service.task.task_id}"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "task_id": str(service.task.task_id),
+        "task_kind": "candidate_match",
+        "status": "failed",
+        "error": "execution_failed",
+        "conversation_id": str(CONVERSATION),
+        "turn_id": str(service.task.turn_id),
+        "candidate_id": str(CANDIDATE),
+        "position_candidate_id": str(RELATION),
+    }
+    assert service.calls == [
+        ("access", False),
+        ("get", (OWNER, POSITION, service.task.task_id)),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -482,6 +544,39 @@ def test_postgres_projection_fails_closed_on_duplicate_turns_for_one_task_reques
 
     with pytest.raises(Exception, match="position tasks unavailable"):
         task_repository.recoverable_tasks(OWNER, POSITION)
+
+
+def test_postgres_projection_reads_one_exact_owner_position_task():
+    task_id, turn_id = uuid4(), uuid4()
+    row = {
+        "task_id": task_id,
+        "task_kind": "candidate_match",
+        "status": "completed",
+        "error": None,
+        "conversation_id": CONVERSATION,
+        "turn_id": turn_id,
+        "candidate_id": CANDIDATE,
+        "position_candidate_id": RELATION,
+    }
+    connection = Connection([QueryResult(rows=[row])])
+    task_repository = PostgresHrPositionTaskRepository(
+        "postgresql://platform_control_app@localhost/control",
+        connect=lambda *_args, **_kwargs: connection,
+    )
+
+    assert task_repository.task(OWNER, POSITION, task_id) == HrPositionTask(
+        task_id,
+        "candidate_match",
+        "completed",
+        None,
+        CONVERSATION,
+        turn_id,
+        CANDIDATE,
+        RELATION,
+    )
+    query, params = connection.queries[0]
+    assert "where task_id=%s" in query
+    assert params == (OWNER, POSITION, task_id)
 
 
 @pytest.mark.postgres

@@ -113,7 +113,8 @@ def _task(record: HrPositionTask) -> dict[str, object]:
 
 def build_hr_position_task_router(service, require_hr_access) -> APIRouter:
     if any(
-        not callable(getattr(service, name, None)) for name in ("start", "recoverable")
+        not callable(getattr(service, name, None))
+        for name in ("start", "recoverable", "get")
     ):
         raise ValueError("HR position task service required")
     if not callable(require_hr_access):
@@ -175,5 +176,15 @@ def build_hr_position_task_router(service, require_hr_access) -> APIRouter:
         owner_id = await owner(request)
         records = await call(service.recoverable, owner_id, position_id)
         return {"items": [_task(record) for record in records]}
+
+    @router.get("/api/hr/positions/{position_id}/tasks/{task_id}")
+    async def task_status(
+        request: Request,
+        position_id: Annotated[UUID, Path()],
+        task_id: Annotated[UUID, Path()],
+    ):
+        owner_id = await owner(request)
+        record = await call(service.get, owner_id, position_id, task_id)
+        return _task(record)
 
     return router
