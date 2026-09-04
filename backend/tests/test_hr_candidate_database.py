@@ -8,6 +8,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 import test_control_plane_migration as control_migration
+
 from app.hr.candidate_models import (
     AttachCandidateDraftExecution,
     ClaimNextCandidateDraft,

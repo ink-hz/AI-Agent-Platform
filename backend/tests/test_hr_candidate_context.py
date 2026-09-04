@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+
 from app.hr.candidate_context import CandidateEnvelopeProvider
 from app.hr.candidate_models import (
     Candidate,

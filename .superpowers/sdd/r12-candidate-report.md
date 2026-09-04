@@ -9,7 +9,7 @@ Base: `578c1caaa704569715497d2911257c3b5e25a24a`
 
 `DONE_WITH_CONCERNS`
 
-The candidate subsystem and its production-grade durable parser boundary are implemented. Focused tests pass, and candidate migration 070 was applied successfully after master-owned 067/068 and position-owned 069 in disposable production and preview databases. Parent integration must still connect the existing MetaBot dispatch/result runtime to the new claim/complete/fail interface before upload-to-ready is a complete product path.
+The candidate subsystem and its durable two-phase parser queue are implemented. Focused tests pass, and candidate migration 070 was applied successfully after master-owned 067/068 and position-owned 069 in disposable production and preview databases. Parent integration must still connect the existing MissionOrchestrator/MetaBot dispatch and result decoder to `CandidateParserQueue` before upload-to-ready is a complete product path.
 
 ## Commits
 
@@ -20,6 +20,7 @@ The candidate subsystem and its production-grade durable parser boundary are imp
 - `21a11e30c42fded85b92ad41748e0c2bbc5e65ee` — `fix(hr): harden and renumber candidate migration`
 - `0f7e808a8e7c3cbf606fe808ab9d6cbae7cc0bb4` — `fix(hr): harden candidate processing boundaries`
 - `e6337bd78966169b6a227dd21c51eba729e88cf0` — `fix(hr): bind parser claims to exact owner scope`
+- `db4c76ea7ab0b6b8003671831b423ebf2770cb5e` — `fix(hr): make candidate parsing durably recoverable`
 
 ## TDD evidence
 
@@ -128,13 +129,17 @@ collection error: CompleteCandidateDraft absent (plus expected migration/detail-
 
 Review GREEN evidence covers the real `state='confirmed'` position contract; persistent canonical request digests and historical replay snapshots; owner-namespaced UUIDs; replay-before-mutable-feedback; nested ATS/locator/protected-field rejection; typed parser completion/failure commands; pending/completed/racing erasure rejection; precise brain grants; relation rebase with immutable old analysis; owner-concealed document/relation detail routes; 409 row conflicts; and feedback-shape validation.
 
-The later business-readiness RED cycle added a durable parser-attempt model and failed at import because it was absent. GREEN adds atomic exact-owner/exact-draft `FOR UPDATE ... SKIP LOCKED` claim, mission/job/turn ownership and request-identity validation, leases with expired-attempt recovery, exact attempt reads, and idempotent claimed complete/fail functions available only to the brain worker. The real database test includes a second-owner job substitution attack and verifies fail-closed behavior.
+The first business-readiness RED cycle added a durable parser-attempt model and failed at import because it was absent. A later pre-integration review proved that its combined claim/bind API could not discover work globally after restart and required a job before the caller knew the draft. The replacement RED cycle failed because `ClaimNextCandidateDraft`, `AttachCandidateDraftExecution`, and `CandidateParserQueue` were absent. GREEN provides a database-only two-phase contract: global atomic `claim_next` with `FOR UPDATE ... SKIP LOCKED`, an initially unbound attempt containing owner/draft/position/attachment/request identity, exact-worker recovery, and a separately idempotent execution attach.
+
+The attach function accepts only the repository-supported `hr-bot`, validates the complete job/run/mission/turn/conversation owner and deterministic request chain, rejects position-bound conversations, and permits completed jobs so a restarted worker can collect an already-produced result. Real PostgreSQL coverage includes crash-before-attach recovery, second-owner job substitution, wrong-agent rejection, completed-job attach, lease expiry/requeue, and reuse of the same deterministic execution identity by the new attempt. Brain workers receive only function execution grants, never table-wide SELECT.
+
+The position cross-contract RED cycle showed that 101 feedback rows or large corrections could exceed the downstream fragment limits. GREEN keeps all feedback persisted/readable while deterministically selecting newest-first feedback, at most 100 rows, under a 65,536-byte UTF-8 prompt budget. Only injected feedback IDs are returned for later analysis provenance.
 
 Final focused regression:
 
 ```text
 python -m pytest -q tests/test_hr_candidate_*.py tests/test_hr_resume_batch.py tests/test_conversation_attachment_binding.py
-89 passed, 10 warnings
+94 passed, 10 warnings
 ```
 
 Final static gate before the hardening commit:
@@ -171,4 +176,4 @@ tests/test_hr_candidate_database.py
 2. Candidate 070's context owner foreign keys and position task validation seam were exercised with the actual position 069 migration in disposable production and preview databases.
 3. The 10 warnings are pre-existing Starlette `TestClient` cookie deprecation warnings in `test_conversation_attachment_binding.py`.
 4. No production migration or data apply was run.
-5. Blocking parent-integration dependency: wire MetaBot execution dispatch and result decoding to `CandidateService.claim_draft`, `processing_attempt`, `complete_claimed_draft`, and `fail_claimed_draft`. Until that wiring is merged and acceptance-tested, an uploaded draft has a durable queue/worker contract but no automatically scheduled parser in this branch alone.
+5. Blocking parent-integration dependency: wire MissionOrchestrator/MetaBot dispatch and result decoding to `CandidateParserQueue.claim_next`, `attach_execution`, `recover_attempt`, `complete`, and `fail`. Until that wiring is merged and acceptance-tested, an uploaded draft has a durable queue/worker contract but no automatically scheduled parser in this branch alone.

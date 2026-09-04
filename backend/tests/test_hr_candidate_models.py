@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+
 from app.hr.candidate_models import (
     AppendHumanFeedback,
     AttachCandidateDraftExecution,
