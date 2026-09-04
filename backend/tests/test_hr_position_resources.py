@@ -3,13 +3,13 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.attachments.conversation_models import AttachmentRecord
 from app.hr.resource_models import PositionArtifactItem, PositionMaterialItem
 from app.hr.resource_service import (
     HrPositionResourceService,
     PsycopgPositionResourceRepository,
     ResourceNotFound,
 )
-
 
 OWNER = UUID("00000000-0000-4000-8000-000000000001")
 POSITION = UUID("00000000-0000-4000-8000-000000000002")
@@ -21,6 +21,9 @@ NOW = datetime(2026, 9, 4, tzinfo=UTC)
 
 
 class Resources:
+    def position_exists(self, owner_id, position_id):
+        return (owner_id, position_id) == (OWNER, POSITION)
+
     def materials_for_position(self, owner_id, position_id):
         if (owner_id, position_id) != (OWNER, POSITION):
             raise ResourceNotFound("position resource not found")
@@ -103,10 +106,12 @@ class Connection:
 class Attachments:
     def attachment(self, owner_id, attachment_id):
         assert (owner_id, attachment_id) == (OWNER, MATERIAL)
-        return type("Attachment", (), {
-            "display_name": "岗位说明.pdf", "detected_mime": "application/pdf",
-            "size_bytes": 12, "state": "ready", "created_at": NOW,
-        })()
+        return AttachmentRecord(
+            attachment_id=attachment_id, owner_id=owner_id, conversation_id=None,
+            original_name="岗位说明.pdf", declared_mime="application/pdf",
+            detected_mime=None, size_bytes=12, sha256=b"a" * 32, state="ready",
+            created_at=NOW, retained_until=datetime(2027, 9, 4, tzinfo=UTC),
+        )
 
 
 def test_psycopg_projection_queries_one_exact_owner_position_binding():
@@ -115,7 +120,34 @@ def test_psycopg_projection_queries_one_exact_owner_position_binding():
 
     materials = repository.materials_for_position(OWNER, POSITION)
 
-    assert materials[0].attachment_id == MATERIAL
+    assert materials[0].filename == "岗位说明.pdf"
     query, params = connection.queries[0]
     assert "position_id=%s" in query and "owner_internal_user_id=%s" in query
+    assert params == (OWNER, POSITION)
+
+
+def test_repository_conceals_missing_position_before_returning_empty_resources():
+    class MissingConnection(Connection):
+        def fetchone(self):
+            return None
+
+    repository = PsycopgPositionResourceRepository(lambda: MissingConnection(), Attachments())
+
+    assert repository.position_exists(OWNER, OTHER) is False
+
+
+def test_artifact_projection_reads_all_versions_and_uses_version_creation_time():
+    connection = Connection()
+    repository = PsycopgPositionResourceRepository(lambda: connection, Attachments())
+
+    try:
+        repository.artifacts_for_position(OWNER, POSITION)
+    except Exception:
+        pass
+
+    query, params = connection.queries[0]
+    assert "artifact_versions version" in query
+    assert "current_artifact_versions" not in query
+    assert "version.created_at" in query
+    assert "version.result_status" in query
     assert params == (OWNER, POSITION)

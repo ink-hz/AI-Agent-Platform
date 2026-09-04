@@ -102,7 +102,9 @@ describe("Executive Operations visual contract", () => {
   });
 
   it("keeps the position context visible across the three-column HR workspace", () => {
-    expect(rule(".hr-position-workspace")).toContain("height: 100%");
+    expect(rule(".hr-position-workspace")).toContain("min-height: 100%");
+    expect(rule(".hr-position-workspace")).toContain("overflow-y: auto");
+    expect(rule(".hr-position-workspace")).not.toContain("overflow: hidden");
     expect(rule(".hr-position-context")).toContain("position: sticky");
     expect(rule(".hr-position-context-metrics")).toContain("grid-template-columns: repeat(3,minmax(0,1fr))");
     expect(rule(".session-material-position-action")).toContain("min-height: 34px");
@@ -111,6 +113,10 @@ describe("Executive Operations visual contract", () => {
       ".hr-position-context-metrics",
     );
     expect(mobile).toContain(".hr-position-context-metrics { grid-template-columns: 1fr;");
+    expect(rule(".hr-position-section-panel")).toContain("overflow: auto");
+    expect(rule('.hr-position-sections [role="tablist"]')).toContain("display: flex");
+    expect(mobile).toContain(".hr-position-taskbar");
+    expect(mobile).toContain(".hr-turn-materials");
   });
 
   it("keeps compact FAE workbench navigation in one keyboard-scrollable row", () => {

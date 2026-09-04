@@ -23,6 +23,8 @@ class ResourceUnavailable(RuntimeError):
 
 
 class PositionResourceRepository(Protocol):
+    def position_exists(self, owner_id: UUID, position_id: UUID) -> bool: ...
+
     def materials_for_position(self, owner_id: UUID, position_id: UUID) -> tuple[PositionMaterialItem, ...]: ...
 
     def artifacts_for_position(self, owner_id: UUID, position_id: UUID) -> tuple[PositionArtifactItem, ...]: ...
@@ -51,22 +53,41 @@ class PsycopgPositionResourceRepository:
 
     def _item(self, owner_id: UUID, row, *, artifact_id: UUID | None = None, artifact_version: int | None = None):
         attachment = self._attachments.attachment(owner_id, row["attachment_id"])
-        media_type = getattr(attachment, "detected_mime", None) or getattr(attachment, "media_type", None)
-        state = getattr(attachment, "state", None)
-        filename = getattr(attachment, "display_name", None)
+        media_type = (
+            getattr(attachment, "detected_mime", None)
+            or getattr(attachment, "declared_mime", None)
+        )
+        attachment_state = getattr(attachment, "state", None)
+        state = row.get("resource_state") or attachment_state
+        filename = getattr(attachment, "original_name", None)
         size_bytes = getattr(attachment, "size_bytes", None)
         created_at = row.get("created_at") or getattr(attachment, "created_at", None)
+        ready = state == "ready" and attachment_state == "ready"
         if artifact_id is None:
             return PositionMaterialItem(
                 row["attachment_id"], filename, media_type, state, size_bytes, created_at,
                 row.get("source_conversation_id"), row.get("source_turn_id"),
-                _preview_available(media_type, state), state == "ready",
+                _preview_available(media_type, state) and ready, ready,
             )
         return PositionArtifactItem(
             artifact_id, row["attachment_id"], artifact_version, filename, media_type, state,
             size_bytes, created_at, row.get("source_conversation_id"), row.get("source_turn_id"),
-            _preview_available(media_type, state), state == "ready",
+            _preview_available(media_type, state) and ready, ready,
         )
+
+    def position_exists(self, owner_id: UUID, position_id: UUID) -> bool:
+        if not isinstance(owner_id, UUID) or not isinstance(position_id, UUID):
+            raise ValueError("position resource identifiers required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select 1 from platform_hr.positions where "
+                    "owner_internal_user_id=%s and position_id=%s",
+                    (owner_id, position_id),
+                ).fetchone()
+            return row is not None
+        except Exception as error:
+            raise ResourceUnavailable("position resources unavailable") from error
 
     def materials_for_position(self, owner_id: UUID, position_id: UUID) -> tuple[PositionMaterialItem, ...]:
         if not isinstance(owner_id, UUID) or not isinstance(position_id, UUID):
@@ -100,12 +121,14 @@ class PsycopgPositionResourceRepository:
             "on message.conversation_id=binding.conversation_id and message.message_id=binding.message_id "
             "where binding.attachment_id=version.attachment_id and binding.kind='message_output' "
             "order by binding.created_at desc limit 1) as source_turn_id, "
-            "version.version_no as artifact_version, linked.created_at "
+            "version.version_no as artifact_version, version.created_at, "
+            "case when version.result_status='failed' then 'failed' "
+            "else version.state end as resource_state, version.result_status "
             "from platform_hr.position_artifacts linked "
             "join platform_attachments.artifacts artifact using (artifact_id) "
-            "join platform_attachments.current_artifact_versions version using (artifact_id) "
+            "join platform_attachments.artifact_versions version using (artifact_id) "
             "where linked.owner_internal_user_id=%s and linked.position_id=%s "
-            "order by linked.created_at desc"
+            "order by version.created_at desc,version.version_no desc"
         )
         try:
             with self._connection() as connection:
@@ -133,7 +156,7 @@ def _ticket(value) -> PositionResourceTicket:
 class HrPositionResourceService:
     def __init__(self, repository: PositionResourceRepository, tickets: AttachmentTicketService) -> None:
         for target, methods, message in (
-            (repository, ("materials_for_position", "artifacts_for_position"), "position resource repository required"),
+            (repository, ("position_exists", "materials_for_position", "artifacts_for_position"), "position resource repository required"),
             (tickets, ("issue_ticket",), "position resource ticket service required"),
         ):
             if any(not callable(getattr(target, method, None)) for method in methods):
@@ -145,6 +168,8 @@ class HrPositionResourceService:
         if not isinstance(owner_id, UUID) or not isinstance(position_id, UUID):
             raise ValueError("position resource identifiers required")
         try:
+            if not self._repository.position_exists(owner_id, position_id):
+                raise ResourceNotFound("position resource not found")
             materials = self._repository.materials_for_position(owner_id, position_id)
             artifacts = self._repository.artifacts_for_position(owner_id, position_id)
         except ResourceNotFound:

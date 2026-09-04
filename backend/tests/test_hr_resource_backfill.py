@@ -7,7 +7,6 @@ from app.hr.resource_backfill import (
     discover_resource_bindings,
 )
 
-
 OWNER = UUID("00000000-0000-4000-8000-000000000001")
 POSITION = UUID("00000000-0000-4000-8000-000000000002")
 OTHER_POSITION = UUID("00000000-0000-4000-8000-000000000003")
@@ -44,14 +43,26 @@ def test_backfill_apply_is_replay_safe_and_never_changes_turns():
 
     summary = apply_resource_bindings(
         discovered,
-        lambda binding: applied.append((binding.resource_kind, binding.position_id, binding.resource_id, binding.request_id)),
+        lambda binding: not applied.append((binding.resource_kind, binding.position_id, binding.resource_id, binding.request_id)),
     )
     replay = apply_resource_bindings(
         discovered,
-        lambda binding: applied.append((binding.resource_kind, binding.position_id, binding.resource_id, binding.request_id)),
+        lambda binding: False,
     )
 
     assert summary.applied_count == 2
-    assert replay.applied_count == 2
-    assert applied[0] == applied[2]
+    assert summary.noop_count == 0
+    assert replay.applied_count == 0
+    assert replay.noop_count == 2
     assert {item[0] for item in applied} == {"material", "artifact"}
+
+
+def test_backfill_rejects_callbacks_that_do_not_report_applied_or_noop():
+    discovered = discover_resource_bindings(CONVERSATIONS, POSITION_BINDINGS)
+
+    try:
+        apply_resource_bindings(discovered, lambda _binding: None)
+    except ValueError as error:
+        assert str(error) == "resource binding result invalid"
+    else:
+        raise AssertionError("ambiguous backfill count accepted")

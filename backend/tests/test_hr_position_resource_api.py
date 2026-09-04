@@ -8,7 +8,6 @@ from app.hr.resource_models import PositionArtifactItem, PositionMaterialItem
 from app.hr.resource_routes import build_hr_resource_router
 from app.hr.resource_service import HrPositionResourceService, ResourceNotFound
 
-
 OWNER = UUID("00000000-0000-4000-8000-000000000001")
 POSITION = UUID("00000000-0000-4000-8000-000000000002")
 OTHER = UUID("00000000-0000-4000-8000-000000000003")
@@ -17,6 +16,9 @@ NOW = datetime(2026, 9, 4, tzinfo=UTC)
 
 
 class Resources:
+    def position_exists(self, owner_id, position_id):
+        return (owner_id, position_id) == (OWNER, POSITION)
+
     def _allowed(self, owner_id, position_id):
         if (owner_id, position_id) != (OWNER, POSITION):
             raise ResourceNotFound("position resource not found")
@@ -69,5 +71,11 @@ def test_resources_return_exact_public_metadata_without_storage_locator():
 
 def test_cross_position_resource_is_not_visible():
     response = client().get(f"/api/hr/positions/{OTHER}/resources/{MATERIAL}")
+
+    assert response.status_code == 404
+
+
+def test_missing_position_resource_collection_is_concealed_as_not_found():
+    response = client().get(f"/api/hr/positions/{OTHER}/resources")
 
     assert response.status_code == 404

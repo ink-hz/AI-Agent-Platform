@@ -7,7 +7,6 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from uuid import UUID, uuid5
 
-
 _BACKFILL_NAMESPACE = UUID("d0562681-7d4a-4cf0-9e11-f2aab1e227cb")
 
 
@@ -94,6 +93,7 @@ class ResourceBindingDiscovery:
 @dataclass(frozen=True, slots=True)
 class AppliedResourceBindings:
     applied_count: int
+    noop_count: int
     material_count: int
     artifact_count: int
     ambiguous_attachment_count: int
@@ -137,14 +137,24 @@ def discover_resource_bindings(
 
 def apply_resource_bindings(
     discovery: ResourceBindingDiscovery,
-    apply: Callable[[ResourceBinding], object],
+    apply: Callable[[ResourceBinding], bool],
 ) -> AppliedResourceBindings:
     """Apply a discovery using deterministic request ids; callers can safely replay it."""
     if not isinstance(discovery, ResourceBindingDiscovery) or not callable(apply):
         raise ValueError("resource binding application invalid")
+    applied: list[ResourceBinding] = []
+    noop_count = 0
     for binding in discovery.bindings:
-        apply(binding)
+        result = apply(binding)
+        if type(result) is not bool:
+            raise ValueError("resource binding result invalid")
+        if result:
+            applied.append(binding)
+        else:
+            noop_count += 1
     return AppliedResourceBindings(
-        len(discovery.bindings), len(discovery.exact_material_ids), len(discovery.exact_artifact_ids),
+        len(applied), noop_count,
+        sum(value.resource_kind == "material" for value in applied),
+        sum(value.resource_kind == "artifact" for value in applied),
         len(discovery.ambiguous_attachment_ids), len(discovery.ambiguous_artifact_ids),
     )

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Account } from "../../auth";
 import type { AgentCapabilityCard } from "../../brainTypes";
@@ -6,7 +6,7 @@ import { listConversations, type ConversationStartScope, type ConversationSubmis
 import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmission } from "../../conversationTypes";
 import { createHrApi, type HrApi } from "../../hrApi";
 import { createHrR12Api, type HrR12Api } from "../../hrR12Api";
-import type { HrPositionSection, HrTaskKind } from "../../hrR12Types";
+import type { HrContextVersion, HrPositionMaterialItem, HrPositionSection, HrTaskKind, HrTaskRecord } from "../../hrR12Types";
 import type { HrPositionDetail } from "../../hrTypes";
 import type { ConversationPageClient } from "../../pages/ConversationPage";
 import { PlatformLink } from "../../components/PlatformLink";
@@ -80,7 +80,6 @@ export function HrPositionWorkspace({
   onOpenConversation = navigate,
   r12Api,
   section = "chat",
-  runningTask = false,
 }: {
   account: Account;
   positionId: string;
@@ -95,7 +94,6 @@ export function HrPositionWorkspace({
   onOpenConversation?: (path: string) => void;
   r12Api?: HrR12Api;
   section?: HrPositionSection;
-  runningTask?: boolean;
 }) {
   const defaultApi = useMemo(() => createHrApi(account.csrf_token), [account.csrf_token]);
   const client = api ?? defaultApi;
@@ -103,11 +101,18 @@ export function HrPositionWorkspace({
   const r12 = r12Api ?? defaultR12Api;
   const [detail, setDetail] = useState<HrPositionDetail | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [materialIds, setMaterialIds] = useState<string[]>([]);
+  const [promotedMaterialIds, setPromotedMaterialIds] = useState<string[]>([]);
+  const [turnMaterialIds, setTurnMaterialIds] = useState<string[]>([]);
+  const [availableMaterials, setAvailableMaterials] = useState<HrPositionMaterialItem[]>([]);
+  const [currentContext, setCurrentContext] = useState<HrContextVersion | null>(null);
+  const [activeTasks, setActiveTasks] = useState<HrTaskRecord[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [materialNotice, setMaterialNotice] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<HrPositionSection>(section);
+  const taskController = useRef<AbortController | null>(null);
+
+  useEffect(() => setActiveSection(section), [section]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -117,12 +122,27 @@ export function HrPositionWorkspace({
       if (controller.signal.aborted) return;
       const allowed = new Set(loaded.conversationIds);
       setDetail(loaded);
-      setMaterialIds(loaded.materialAttachmentIds);
+      setPromotedMaterialIds(loaded.materialAttachmentIds);
       setConversations(loadedConversations.filter((item) => allowed.has(item.conversation_id)));
       setState("ready");
     }).catch(() => { if (!controller.signal.aborted) setState("error"); });
     return () => controller.abort();
   }, [attempt, client, loadScopedConversations, positionId]);
+
+  useEffect(() => {
+    const controller = new AbortController(); setTurnMaterialIds([]); setAvailableMaterials([]); setCurrentContext(null); setActiveTasks([]);
+    void Promise.allSettled([
+      r12.resources(positionId, controller.signal),
+      r12.context(positionId, controller.signal),
+      r12.activeTasks(positionId, controller.signal),
+    ]).then(([resources, context, tasks]) => {
+      if (controller.signal.aborted) return;
+      if (resources.status === "fulfilled") setAvailableMaterials(resources.value.materials.filter((item) => item.state === "ready" && item.downloadAvailable));
+      if (context.status === "fulfilled") setCurrentContext(context.value.current);
+      if (tasks.status === "fulfilled") setActiveTasks(tasks.value);
+    });
+    return () => { controller.abort(); taskController.current?.abort(); };
+  }, [attempt, positionId, r12]);
 
   const historyClient = useMemo(() => historyFrom(conversations), [conversations]);
 
@@ -142,7 +162,7 @@ export function HrPositionWorkspace({
     try {
       if (active) await client.promoteMaterial(positionId, attachment.attachmentId, crypto.randomUUID());
       else await client.removeMaterial(positionId, attachment.attachmentId, crypto.randomUUID());
-      setMaterialIds((current) => active
+      setPromotedMaterialIds((current) => active
         ? current.includes(attachment.attachmentId) ? current : [...current, attachment.attachmentId]
         : current.filter((id) => id !== attachment.attachmentId));
     } catch {
@@ -170,19 +190,26 @@ export function HrPositionWorkspace({
   </header>;
 
   async function quickTask(taskKind: HrTaskKind) {
-    try { await r12.startTask(positionId, taskKind, crypto.randomUUID(), { materialIds }); }
-    catch { setMaterialNotice("岗位任务未启动，请重试。"); }
+    taskController.current?.abort(); const controller = new AbortController(); taskController.current = controller;
+    try {
+      const started = await r12.startTask(positionId, taskKind, crypto.randomUUID(), {
+        ...(currentContext ? { contextVersionId: currentContext.contextVersionId } : {}),
+        materialIds: turnMaterialIds,
+        conversationId: selectedConversationId,
+      }, controller.signal);
+      if (!controller.signal.aborted && ["accepted", "running"].includes(started.status)) setActiveTasks((items) => [started, ...items.filter((item) => item.taskId !== started.taskId)]);
+    } catch { if (!controller.signal.aborted) setMaterialNotice("岗位任务未启动，请重试。"); }
   }
   const sections: Array<[HrPositionSection, string]> = [["chat", "对话"], ["context", "上下文"], ["candidates", "候选人"], ["artifacts", "材料与成果"]];
-  const navigation = <nav className="hr-position-sections" aria-label="岗位工作台分区">{sections.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={activeSection === value} onClick={() => { setActiveSection(value); onOpenConversation(`/hr/positions/${encodeURIComponent(positionId)}/${value}`); }}>{label}</button>)}</nav>;
-  const quickTasks = <div className="hr-position-quick-tasks"><button type="button" onClick={() => void quickTask("jd")}>生成JD</button><button type="button" onClick={() => void quickTask("jr")}>生成JR</button><button type="button" onClick={() => void quickTask("talent_profile")}>生成人才画像</button><button type="button" onClick={() => void quickTask("sourcing_strategy")}>生成搜寻策略</button><button type="button" onClick={() => void quickTask("position_interview_plan")}>生成面试方案</button></div>;
+  const navigation = <nav className="hr-position-sections" aria-label="岗位工作台分区"><div role="tablist">{sections.map(([value, label]) => <button aria-controls={`hr-position-panel-${value}`} id={`hr-position-tab-${value}`} key={value} type="button" role="tab" aria-selected={activeSection === value} onClick={() => { setActiveSection(value); onOpenConversation(`/hr/positions/${encodeURIComponent(positionId)}/${value}`); }}>{label}</button>)}</div></nav>;
+  const quickTasks = <section className="hr-position-taskbar" aria-label="岗位快捷任务"><div className="hr-position-quick-tasks"><button type="button" onClick={() => void quickTask("jd")}>生成JD</button><button type="button" onClick={() => void quickTask("jr")}>生成JR</button><button type="button" onClick={() => void quickTask("talent_profile")}>生成人才画像</button><button type="button" onClick={() => void quickTask("sourcing_strategy")}>生成搜寻策略</button><button type="button" onClick={() => void quickTask("position_interview_plan")}>生成面试方案</button></div><details className="hr-turn-materials"><summary>本轮材料（已选 {turnMaterialIds.length}）</summary>{availableMaterials.length === 0 ? <p>当前没有可用岗位材料。</p> : availableMaterials.map((material) => <label key={material.attachmentId}><input name="quick-task-material" type="checkbox" checked={turnMaterialIds.includes(material.attachmentId)} onChange={() => setTurnMaterialIds((ids) => ids.includes(material.attachmentId) ? ids.filter((id) => id !== material.attachmentId) : [...ids, material.attachmentId])} />{material.filename}</label>)}<small>默认不选；只会把本轮明确勾选的材料交给 Agent。</small></details></section>;
   const sectionView = activeSection === "context" ? <HrPositionContextPanel api={r12} positionId={positionId} />
-    : activeSection === "candidates" ? <HrCandidateWorkspace api={r12} positionId={positionId} />
+    : activeSection === "candidates" ? <HrCandidateWorkspace api={r12} csrfToken={account.csrf_token} currentContextVersionId={currentContext?.contextVersionId ?? null} positionId={positionId} />
       : <HrPositionResourcesPanel api={r12} positionId={positionId} />;
 
   return <main className="hr-position-workspace" data-position-id={positionId}>
-    {header}{navigation}{quickTasks}{runningTask && <p role="status">任务仍在执行，刷新后已恢复状态。</p>}
-    {activeSection === "chat" ? <DirectAgentWorkspace
+    {header}{navigation}{quickTasks}{activeTasks.length > 0 && <p className="hr-task-recovery" role="status">任务仍在执行，刷新后已恢复状态（{activeTasks.length}）</p>}
+    <section aria-label={sections.find(([value]) => value === activeSection)?.[1]} aria-labelledby={`hr-position-tab-${activeSection}`} className="hr-position-section-panel" id={`hr-position-panel-${activeSection}`} role="tabpanel">{activeSection === "chat" ? <DirectAgentWorkspace
       account={account}
       agentId="hr-bot"
       autoFocusComposer
@@ -196,11 +223,11 @@ export function HrPositionWorkspace({
       newConversationScope={scope}
       onOpenConversation={onOpenConversation}
       onPositionMaterialChange={account.hard_stale_read_only ? undefined : changePositionMaterial}
-      positionMaterialIds={materialIds}
+      positionMaterialIds={promotedMaterialIds}
       positionArtifactAttachmentIds={detail.artifactAttachmentIds}
       workspaceLabel="岗位智能工作台"
       workspaceMark="HR"
       workspaceRootPath={`/hr/positions/${encodeURIComponent(positionId)}`}
-    /> : sectionView}
+    /> : sectionView}</section>
   </main>;
 }
