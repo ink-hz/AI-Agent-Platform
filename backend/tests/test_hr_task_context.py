@@ -10,6 +10,7 @@ import pytest
 from app.hr.models import (
     BindPositionConversation,
     CreateManualPosition,
+    PromotePositionMaterial,
     ProjectOfficialPosition,
 )
 from app.hr.position_intelligence_models import (
@@ -356,6 +357,91 @@ def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
             (owner_id, turn_request_id),
         ).fetchone()
     assert implicit == ("freeform", "consumed")
+
+
+@pytest.mark.postgres
+def test_explicit_task_uses_owned_position_material_from_another_conversation(
+    conversation_database,
+    repository,
+    request,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position = positions.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "跨会话材料岗位")
+    )
+    source = repository.start(
+        owner_id, uuid4(), "上传岗位材料",
+        mode="direct_agent", direct_agent_id="hr-bot",
+    )
+    target_request_id = uuid4()
+    target = repository.start(
+        owner_id, target_request_id, "基于已选材料生成岗位说明",
+        mode="direct_agent", direct_agent_id="hr-bot",
+    )
+    for started in (source, target):
+        positions.bind_conversation(BindPositionConversation(
+            owner_id, position.position_id, started.conversation.conversation_id,
+            uuid4(), "created_in_position",
+        ))
+    attachment_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_attachments.attachments("
+            "attachment_id,owner_internal_user_id,conversation_id,source_kind,"
+            "original_name_ciphertext,original_name_key_version,object_ref_ciphertext,"
+            "object_ref_key_version,immutable_locator,size_bytes,sha256,retained_until,"
+            "state,ready_at) values (%s,%s,%s,'user_input',%s,1,%s,1,'version:v1',1,%s,"
+            "now()+interval '1 day','ready',now())",
+            (attachment_id, owner_id, source.conversation.conversation_id,
+             b"x" * 29, b"y" * 29, b"z" * 32),
+        )
+    positions.promote_material(PromotePositionMaterial(
+        owner_id, position.position_id, attachment_id, uuid4()
+    ))
+    PositionIntelligenceRepository(
+        environment["urls"]["platform_control_app"]
+    ).create_task_request(CreatePositionTaskRequest(
+        uuid4(), owner_id, position.position_id, target_request_id,
+        "a" * 64, "jd", None, (attachment_id,),
+    ))
+
+    def cleanup() -> None:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_hr.position_task_records "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_task_requests "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_materials where attachment_id=%s",
+                (attachment_id,),
+            )
+            connection.execute(
+                "delete from platform_attachments.attachments where attachment_id=%s",
+                (attachment_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_conversations "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.positions "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+
+    request.addfinalizer(cleanup)
+    envelope = HrTaskContextProvider(PostgresHrTaskContextSource(
+        environment["urls"]["platform_control_app"]
+    )).build_for_turn(
+        owner_id, target.conversation.conversation_id, target.turn.turn_id
+    )
+
+    assert envelope.task_kind == "jd"
+    assert envelope.material_attachment_ids == (attachment_id,)
 
 
 @pytest.mark.postgres

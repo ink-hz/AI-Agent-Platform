@@ -831,7 +831,7 @@ declare request platform_hr.position_task_requests%rowtype;
 declare current_official_id uuid;
 declare current_context_id uuid;
 declare turn_request_id uuid;
-declare exact_material_ids uuid[];
+declare bound_material_ids uuid[];
 declare request_is_explicit boolean := false;
 begin
   if session_user not in (
@@ -918,14 +918,21 @@ begin
     if not found then raise no_data_found; end if;
   end if;
   select coalesce(array_agg(binding.attachment_id order by binding.attachment_id),'{}'::uuid[])
-    into exact_material_ids
+    into bound_material_ids
   from platform_attachments.bindings binding
   where binding.owner_internal_user_id=selected_owner_internal_user_id
     and binding.conversation_id=selected_conversation_id
     and binding.turn_id=selected_turn_id and binding.kind='turn_input';
-  if exact_material_ids<>selected_material_attachment_ids
+  if request_is_explicit then
+    if request.material_attachment_ids<>selected_material_attachment_ids
+      or not bound_material_ids<@selected_material_attachment_ids
+      or not platform_hr.validate_position_materials_v69(
+        selected_owner_internal_user_id,selected_position_id,
+        selected_material_attachment_ids
+      ) then raise no_data_found; end if;
+  elsif bound_material_ids<>selected_material_attachment_ids
     or not platform_hr.validate_position_materials_v69(
-      selected_owner_internal_user_id,selected_position_id,exact_material_ids
+      selected_owner_internal_user_id,selected_position_id,bound_material_ids
     ) then raise no_data_found; end if;
   if not platform_hr.validate_candidate_task_inputs_v69(
     selected_owner_internal_user_id,selected_position_id,

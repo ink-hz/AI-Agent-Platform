@@ -532,26 +532,53 @@ class PostgresHrTaskContextSource:
                     ).fetchone()
                     if context_row is None:
                         raise HrTaskContextError("confirmed position context unavailable")
-                material_rows = connection.execute(
-                    "select attachment.attachment_id,material.position_id,"
-                    "encode(attachment.sha256,'hex') as sha256,attachment.state,"
-                    "coalesce(material.active,false) as active,"
-                    "attachment.retained_until,exists(select 1 from "
-                    "platform_attachments.erasure_jobs erasure where "
-                    "erasure.attachment_id=attachment.attachment_id) as erasure_pending "
-                    "from platform_attachments.bindings binding "
-                    "join platform_attachments.attachments attachment "
-                    "on attachment.attachment_id=binding.attachment_id "
-                    "and attachment.owner_internal_user_id=binding.owner_internal_user_id "
-                    "left join platform_hr.position_materials material "
-                    "on material.attachment_id=attachment.attachment_id "
-                    "and material.owner_internal_user_id=attachment.owner_internal_user_id "
-                    "and material.position_id=%s "
-                    "where binding.owner_internal_user_id=%s "
-                    "and binding.conversation_id=%s and binding.turn_id=%s "
-                    "and binding.kind='turn_input' order by attachment.attachment_id",
-                    (scope["position_id"], owner_id, conversation_id, turn_id),
-                ).fetchall()
+                if request_row is not None:
+                    material_rows = connection.execute(
+                        "select attachment.attachment_id,material.position_id,"
+                        "encode(attachment.sha256,'hex') as sha256,attachment.state,"
+                        "coalesce(material.active,false) as active,"
+                        "attachment.retained_until,exists(select 1 from "
+                        "platform_attachments.erasure_jobs erasure where "
+                        "erasure.attachment_id=attachment.attachment_id) "
+                        "as erasure_pending from unnest(%s::uuid[]) with ordinality "
+                        "selected(attachment_id,ordinal) join "
+                        "platform_hr.position_materials material "
+                        "on material.attachment_id=selected.attachment_id "
+                        "and material.owner_internal_user_id=%s "
+                        "and material.position_id=%s join "
+                        "platform_attachments.attachments attachment "
+                        "on attachment.attachment_id=material.attachment_id "
+                        "and attachment.owner_internal_user_id="
+                        "material.owner_internal_user_id order by selected.ordinal",
+                        (
+                            list(request_row["material_attachment_ids"]),
+                            owner_id,
+                            scope["position_id"],
+                        ),
+                    ).fetchall()
+                else:
+                    material_rows = connection.execute(
+                        "select attachment.attachment_id,material.position_id,"
+                        "encode(attachment.sha256,'hex') as sha256,attachment.state,"
+                        "coalesce(material.active,false) as active,"
+                        "attachment.retained_until,exists(select 1 from "
+                        "platform_attachments.erasure_jobs erasure where "
+                        "erasure.attachment_id=attachment.attachment_id) "
+                        "as erasure_pending from platform_attachments.bindings binding "
+                        "join platform_attachments.attachments attachment "
+                        "on attachment.attachment_id=binding.attachment_id "
+                        "and attachment.owner_internal_user_id="
+                        "binding.owner_internal_user_id left join "
+                        "platform_hr.position_materials material "
+                        "on material.attachment_id=attachment.attachment_id "
+                        "and material.owner_internal_user_id="
+                        "attachment.owner_internal_user_id "
+                        "and material.position_id=%s where "
+                        "binding.owner_internal_user_id=%s "
+                        "and binding.conversation_id=%s and binding.turn_id=%s "
+                        "and binding.kind='turn_input' order by attachment.attachment_id",
+                        (scope["position_id"], owner_id, conversation_id, turn_id),
+                    ).fetchall()
             materials = []
             for row in material_rows:
                 if row["position_id"] is None or row["sha256"] is None:

@@ -762,11 +762,17 @@ class MissionOrchestrator:
         if self._attachment_grants is not None and run.task_id is not None:
             card = self._pinned_card(run)
             request = self._request(mission)
-            active_attachment_ids = (
-                request.active_attachment_ids
-                if isinstance(request, ConversationContext)
-                else ()
-            )
+            active_attachment_ids: tuple[UUID, ...] = ()
+            if isinstance(request, ConversationContext):
+                selected = list(request.active_attachment_ids)
+                hr_context = request.hr_position_context
+                if hr_context is not None:
+                    selected.extend(hr_context.material_attachment_ids)
+                    selected.extend(hr_context.document_attachment_ids)
+                # Preserve the stable, user-visible selection order while avoiding
+                # duplicate grants when a position material also belongs to the
+                # current Conversation.
+                active_attachment_ids = tuple(dict.fromkeys(selected))
             if card.supports_attachments_in:
                 input_attachment_grants = tuple(
                     TaskAttachmentGrantPayload.model_validate(
