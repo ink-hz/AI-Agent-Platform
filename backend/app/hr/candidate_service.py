@@ -110,7 +110,7 @@ class CandidateService:
         purpose: Literal["preview", "download"],
     ):
         if not isinstance(owner_id, UUID) or not isinstance(document_id, UUID):
-            raise ValueError("candidate document ticket identity invalid")
+            raise TypeError("candidate document ticket identity invalid")
         if purpose not in {"preview", "download"}:
             raise ValueError("candidate document ticket purpose invalid")
         if self._document_tickets is None:
