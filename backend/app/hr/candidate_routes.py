@@ -218,7 +218,8 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
     required = (
         "create_drafts", "list_drafts", "draft", "retry_draft",
         "dismiss_draft", "confirm_draft", "list_position_candidates",
-        "candidate", "documents", "list_analyses", "add_analysis",
+        "candidate", "documents", "candidate_document", "position_candidate",
+        "list_analyses", "add_analysis",
         "list_feedback", "append_feedback", "compare",
     )
     if any(not callable(getattr(service, name, None)) for name in required):
@@ -343,7 +344,7 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             draft_id=draft_id,
             client_request_id=request_id,
             expected_row_version=body.expected_row_version,
-            candidate_id=uuid5(request_id, "candidate"),
+            candidate_id=uuid5(owner_id, f"{request_id}:candidate"),
             stable_name=body.stable_name,
             confirmed_facts=body.confirmed_facts,
             merge_candidate_id=body.merge_candidate_id,
@@ -385,6 +386,23 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             service.documents, await owner(request), candidate_id
         )
         return {"items": [_document(item) for item in records]}
+
+    @router.get("/api/hr/candidate-documents/{document_id}")
+    async def candidate_document_detail(
+        request: Request, document_id: Annotated[UUID, Path()]
+    ):
+        return _document(
+            await call(service.candidate_document, await owner(request), document_id)
+        )
+
+    @router.get("/api/hr/position-candidates/{position_candidate_id}")
+    async def position_candidate_detail(
+        request: Request,
+        position_candidate_id: Annotated[UUID, Path()],
+    ):
+        return _position_candidate(await call(
+            service.position_candidate, await owner(request), position_candidate_id
+        ))
 
     @router.get("/api/hr/position-candidates/{position_candidate_id}/analyses")
     async def list_analyses(

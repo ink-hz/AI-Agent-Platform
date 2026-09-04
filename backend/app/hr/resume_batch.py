@@ -5,7 +5,9 @@ from uuid import UUID, uuid5
 
 from .candidate_models import (
     CandidateDraft,
+    CompleteCandidateDraft,
     CreateCandidateDraftBatch,
+    FailCandidateDraft,
     RetryCandidateDraft,
 )
 
@@ -106,19 +108,19 @@ class ResumeBatchCoordinator:
         identity_candidates: tuple[UUID, ...] = (),
     ) -> CandidateDraft:
         draft = self._start_pending(self._draft(draft_id))
-        return self._service.complete_draft(
+        return self._service.complete_draft(CompleteCandidateDraft(
             draft.owner_id, draft.draft_id,
             self._request(draft.draft_id, "complete", draft.row_version),
             draft.row_version, extracted_facts, identity_candidates,
-        )
+        ))
 
     def fail_item(self, draft_id: UUID, error_code: str) -> CandidateDraft:
         draft = self._start_pending(self._draft(draft_id))
-        return self._service.fail_draft(
+        return self._service.fail_draft(FailCandidateDraft(
             draft.owner_id, draft.draft_id,
             self._request(draft.draft_id, "fail", draft.row_version),
             draft.row_version, error_code,
-        )
+        ))
 
     def retry_item(
         self, draft_id: UUID, *, request_id: UUID, expected_row_version: int

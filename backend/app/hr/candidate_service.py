@@ -6,11 +6,15 @@ from .candidate_models import (
     AppendHumanFeedback,
     CandidateAnalysisVersion,
     CandidateDraft,
+    CandidateDraftProcessingAttempt,
+    ClaimCandidateDraft,
     ComparePositionCandidates,
+    CompleteCandidateDraft,
     ConfirmCandidateDraft,
     ConfirmedCandidate,
     CreateCandidateAnalysis,
     CreateCandidateDraftBatch,
+    FailCandidateDraft,
     HumanFeedback,
     PositionCandidate,
     RetryCandidateDraft,
@@ -29,8 +33,8 @@ class CandidateScopeViolation(CandidateServiceError):
     pass
 
 
-def _derived(namespace: UUID, label: str) -> UUID:
-    return uuid5(namespace, label)
+def _derived(owner_id: UUID, request_id: UUID, label: str) -> UUID:
+    return uuid5(owner_id, f"{request_id}:{label}")
 
 
 class CandidateService:
@@ -46,6 +50,12 @@ class CandidateService:
             "add_analysis",
             "append_feedback",
             "latest_analysis",
+            "analysis_for_request",
+            "document_for_owner",
+            "claim_draft",
+            "processing_attempt",
+            "complete_claimed_draft",
+            "fail_claimed_draft",
         )
         if any(not callable(getattr(repository, name, None)) for name in required):
             raise ValueError("candidate repository required")
@@ -59,8 +69,8 @@ class CandidateService:
         self._repository.register_batch(command)
         return tuple(
             self._repository.create_draft(
-                _derived(command.client_request_id, f"draft:{attachment_id}"),
-                _derived(command.client_request_id, f"item:{attachment_id}"),
+                _derived(command.owner_id, command.client_request_id, f"draft:{attachment_id}"),
+                _derived(command.owner_id, command.client_request_id, f"item:{attachment_id}"),
                 command,
                 attachment_id,
             )
@@ -69,6 +79,34 @@ class CandidateService:
 
     def draft(self, owner_id: UUID, draft_id: UUID) -> CandidateDraft:
         return self._repository.draft_for_owner(owner_id, draft_id)
+
+    def claim_draft(
+        self, command: ClaimCandidateDraft
+    ) -> CandidateDraftProcessingAttempt:
+        if not isinstance(command, ClaimCandidateDraft):
+            raise ValueError("candidate claim command required")
+        return self._repository.claim_draft(command)
+
+    def processing_attempt(
+        self, owner_id: UUID, attempt_id: UUID
+    ) -> CandidateDraftProcessingAttempt:
+        return self._repository.processing_attempt(owner_id, attempt_id)
+
+    def complete_claimed_draft(
+        self, attempt_id: UUID, command: CompleteCandidateDraft
+    ) -> CandidateDraft:
+        if not isinstance(attempt_id, UUID) or not isinstance(
+            command, CompleteCandidateDraft
+        ):
+            raise ValueError("candidate claimed completion required")
+        return self._repository.complete_claimed_draft(attempt_id, command)
+
+    def fail_claimed_draft(
+        self, attempt_id: UUID, command: FailCandidateDraft
+    ) -> CandidateDraft:
+        if not isinstance(attempt_id, UUID) or not isinstance(command, FailCandidateDraft):
+            raise ValueError("candidate claimed failure required")
+        return self._repository.fail_claimed_draft(attempt_id, command)
 
     def list_drafts(
         self, owner_id: UUID, position_id: UUID, *, batch_request_id: UUID | None = None
@@ -87,6 +125,16 @@ class CandidateService:
 
     def documents(self, owner_id: UUID, candidate_id: UUID):
         return self._repository.documents_for_candidate(owner_id, candidate_id)
+
+    def candidate_document(self, owner_id: UUID, document_id: UUID):
+        return self._repository.document_for_owner(owner_id, document_id)
+
+    def position_candidate(
+        self, owner_id: UUID, position_candidate_id: UUID
+    ) -> PositionCandidate:
+        return self._repository.position_candidate_for_owner(
+            owner_id, position_candidate_id
+        )
 
     def list_analyses(
         self, owner_id: UUID, position_candidate_id: UUID
@@ -108,23 +156,15 @@ class CandidateService:
             owner_id, draft_id, request_id, expected_row_version
         )
 
-    def complete_draft(
-        self, owner_id: UUID, draft_id: UUID, request_id: UUID,
-        expected_row_version: int, extracted_facts: dict[str, object],
-        identity_candidates: tuple[UUID, ...] = (),
-    ) -> CandidateDraft:
-        return self._repository.complete_draft(
-            owner_id, draft_id, request_id, expected_row_version,
-            extracted_facts, identity_candidates,
-        )
+    def complete_draft(self, command: CompleteCandidateDraft) -> CandidateDraft:
+        if not isinstance(command, CompleteCandidateDraft):
+            raise ValueError("candidate completion command required")
+        return self._repository.complete_draft(command)
 
-    def fail_draft(
-        self, owner_id: UUID, draft_id: UUID, request_id: UUID,
-        expected_row_version: int, error_code: str,
-    ) -> CandidateDraft:
-        return self._repository.fail_draft(
-            owner_id, draft_id, request_id, expected_row_version, error_code
-        )
+    def fail_draft(self, command: FailCandidateDraft) -> CandidateDraft:
+        if not isinstance(command, FailCandidateDraft):
+            raise ValueError("candidate failure command required")
+        return self._repository.fail_draft(command)
 
     def retry_draft(self, command: RetryCandidateDraft) -> CandidateDraft:
         if not isinstance(command, RetryCandidateDraft):
@@ -143,23 +183,13 @@ class CandidateService:
             raise ValueError("candidate confirmation command required")
         if not isinstance(context_version_id, UUID):
             raise ValueError("candidate context version required")
-        draft = self._repository.draft_for_owner(command.owner_id, command.draft_id)
-        if draft.state != "ready" or draft.row_version != command.expected_row_version:
-            raise CandidateScopeViolation("candidate draft is not confirmable")
-        if draft.identity_candidates and command.merge_candidate_id is None:
-            raise CandidateIdentityConflict(
-                "candidate identity requires an explicit merge target"
-            )
-        if (
-            command.merge_candidate_id is not None
-            and command.merge_candidate_id not in draft.identity_candidates
-        ):
-            raise CandidateIdentityConflict("candidate merge target was not proposed")
         return self._repository.confirm_draft(
             command,
-            document_id=_derived(command.client_request_id, "document"),
+            document_id=_derived(
+                command.owner_id, command.client_request_id, "document"
+            ),
             position_candidate_id=_derived(
-                command.client_request_id, "position-candidate"
+                command.owner_id, command.client_request_id, "position-candidate"
             ),
             context_version_id=context_version_id,
         )
@@ -169,6 +199,9 @@ class CandidateService:
     ) -> CandidateAnalysisVersion:
         if not isinstance(command, CreateCandidateAnalysis):
             raise ValueError("candidate analysis command required")
+        replay = self._repository.analysis_for_request(command)
+        if replay is not None:
+            return replay
         relation = self._repository.position_candidate_for_owner(
             command.owner_id, command.position_candidate_id
         )
@@ -178,7 +211,9 @@ class CandidateService:
         )
         return self._repository.add_analysis(
             command,
-            analysis_version_id=_derived(command.client_request_id, "analysis"),
+            analysis_version_id=_derived(
+                command.owner_id, command.client_request_id, "analysis"
+            ),
             feedback_ids=tuple(item.feedback_id for item in feedback),
         )
 
@@ -197,7 +232,9 @@ class CandidateService:
             raise ValueError("candidate feedback command required")
         return self._repository.append_feedback(
             command,
-            feedback_id=_derived(command.client_request_id, "human-feedback"),
+            feedback_id=_derived(
+                command.owner_id, command.client_request_id, "human-feedback"
+            ),
         )
 
     def compare(
@@ -205,6 +242,9 @@ class CandidateService:
     ) -> CandidateAnalysisVersion:
         if not isinstance(command, ComparePositionCandidates):
             raise ValueError("candidate comparison command required")
+        replay = self._repository.analysis_for_request(command)
+        if replay is not None:
+            return replay
         relations = tuple(
             self._repository.position_candidate_for_owner(command.owner_id, value)
             for value in command.position_candidate_ids
@@ -290,6 +330,8 @@ class CandidateService:
         )
         return self._repository.add_analysis(
             comparison,
-            analysis_version_id=_derived(command.client_request_id, "comparison"),
+            analysis_version_id=_derived(
+                command.owner_id, command.client_request_id, "comparison"
+            ),
             feedback_ids=feedback,
         )

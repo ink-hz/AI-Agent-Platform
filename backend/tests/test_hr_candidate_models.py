@@ -12,11 +12,14 @@ from app.hr.candidate_models import (
     CandidateAnalysisVersion,
     CandidateDocument,
     CandidateDraft,
+    CandidateDraftProcessingAttempt,
     CandidateEnvelopeFragment,
     ComparePositionCandidates,
+    CompleteCandidateDraft,
     ConfirmCandidateDraft,
     CreateCandidateAnalysis,
     CreateCandidateDraftBatch,
+    FailCandidateDraft,
     PositionCandidate,
     RetryCandidateDraft,
 )
@@ -186,3 +189,66 @@ def test_uuid_fields_do_not_accept_strings() -> None:
             owner_id=UUID(int=1), draft_id="not-a-uuid",  # type: ignore[arg-type]
             client_request_id=UUID(int=2), expected_row_version=1,
         )
+
+
+def test_complete_and_fail_commands_validate_before_repository_writes() -> None:
+    owner_id, draft_id, request_id = uuid4(), uuid4(), uuid4()
+    complete = CompleteCandidateDraft(
+        owner_id, draft_id, request_id, 2,
+        {"skills": ["Python"], "projects": [{"name": "平台"}]}, (),
+    )
+    fail = FailCandidateDraft(owner_id, draft_id, uuid4(), 2, "parse_failed")
+
+    assert complete.expected_row_version == fail.expected_row_version == 2
+    with pytest.raises(ValueError, match="candidate facts contain forbidden fields"):
+        replace(complete, extracted_facts={"profile": {"gender": "女"}})
+    with pytest.raises(ValueError, match="candidate facts invalid"):
+        replace(complete, extracted_facts={"unreviewed_blob": "raw"})
+    with pytest.raises(ValueError, match="draft error code invalid"):
+        replace(fail, error_code=" ")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {"summary": "x", "details": {"pipeline_stage": "screen"}},
+        {"summary": "x", "sources": [{"immutable_locator": "secret"}]},
+        {"summary": "x", "nested": {"object_ref": "secret"}},
+    ),
+)
+def test_analysis_rejects_nested_ats_locator_and_protected_fields(payload) -> None:
+    with pytest.raises(ValueError, match="analysis .* forbidden fields"):
+        CreateCandidateAnalysis(
+            uuid4(), uuid4(), uuid4(), (uuid4(),), "match", uuid4(),
+            payload, ({"claim": "x"},), (), (), (), "hr-r12", "model-v1",
+        )
+
+
+def test_evidence_rejects_nested_locator_fields() -> None:
+    with pytest.raises(ValueError, match="analysis evidence contains forbidden fields"):
+        CreateCandidateAnalysis(
+            uuid4(), uuid4(), uuid4(), (uuid4(),), "match", uuid4(),
+            {"summary": "x"},
+            ({"claim": "x", "source": {"storage_path": "/private"}},),
+            (), (), (), "hr-r12", "model-v1",
+        )
+
+
+def test_non_correction_feedback_cannot_carry_correction_text() -> None:
+    with pytest.raises(ValueError, match="feedback correction invalid"):
+        AppendHumanFeedback(
+            uuid4(), uuid4(), uuid4(), "accepted", "summary", "changed",
+            "reviewed", uuid4(),
+        )
+
+
+def test_processing_attempt_keeps_durable_execution_identity() -> None:
+    attempt = CandidateDraftProcessingAttempt(
+        uuid4(), uuid4(), uuid4(), "candidate-parser-1", uuid4(), None, None,
+        "processing", 2, 3, NOW, NOW, None, None,
+    )
+
+    assert attempt.execution_job_id is not None
+    assert attempt.state == "processing"
+    with pytest.raises(ValueError, match="processing attempt state invalid"):
+        replace(attempt, state="unknown")

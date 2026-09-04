@@ -76,7 +76,7 @@ def _repository(connection):
     return CandidateRepository("postgresql://candidate", connect=connect), connect_calls
 
 
-def test_repository_creates_owner_scoped_draft_through_v69_function() -> None:
+def test_repository_creates_owner_scoped_draft_through_v70_function() -> None:
     owner_id, position_id, attachment_id, batch_id, request_id = (
         uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
     )
@@ -91,7 +91,7 @@ def test_repository_creates_owner_scoped_draft_through_v69_function() -> None:
 
     assert draft.owner_id == owner_id
     assert draft.attachment_id == attachment_id
-    assert "platform_hr.create_candidate_draft_v69" in connection.calls[0][0]
+    assert "platform_hr.create_candidate_draft_v70" in connection.calls[0][0]
     assert connection.calls[0][1] == (
         row["draft_id"], owner_id, position_id, attachment_id, batch_id, request_id
     )

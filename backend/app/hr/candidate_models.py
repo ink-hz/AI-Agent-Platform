@@ -15,6 +15,9 @@ AnalysisKind = Literal[
     "resume_extract", "match", "candidate_interview_plan", "comparison"
 ]
 FeedbackKind = Literal["accepted", "rejected", "correction"]
+CandidateProcessingAttemptState = Literal[
+    "processing", "completed", "failed", "expired"
+]
 
 _DRAFT_STATES = {
     "pending", "processing", "ready", "failed", "confirmed", "dismissed"
@@ -25,6 +28,7 @@ _ANALYSIS_KINDS = {
     "resume_extract", "match", "candidate_interview_plan", "comparison"
 }
 _FEEDBACK_KINDS = {"accepted", "rejected", "correction"}
+_PROCESSING_ATTEMPT_STATES = {"processing", "completed", "failed", "expired"}
 _FORBIDDEN_FACT_KEYS = {
     "age",
     "birth_date",
@@ -43,6 +47,24 @@ _FORBIDDEN_FACT_KEYS = {
     "race",
     "religion",
     "sexual_orientation",
+    "storage_key",
+    "storage_path",
+    "object_key",
+    "object_ref",
+    "object_ref_ciphertext",
+    "immutable_locator",
+    "ats",
+    "ats_id",
+    "interview_schedule",
+    "automatic_rejection",
+    "beisen",
+    "boss_zhipin",
+    "liepin",
+}
+_CANDIDATE_FACT_KEYS = {
+    "stable_name", "summary", "contact", "education", "experiences",
+    "projects", "skills", "certifications", "languages", "awards",
+    "publications", "unknowns", "sources",
 }
 
 
@@ -118,8 +140,19 @@ def _json_object(
     return value
 
 
+def _candidate_facts(value: dict[str, object]) -> dict[str, object]:
+    validated = _json_object(
+        value, maximum=262144, message="candidate facts invalid",
+        reject_protected=True,
+    )
+    if any(str(key).strip().lower() not in _CANDIDATE_FACT_KEYS for key in value):
+        raise ValueError("candidate facts invalid")
+    return validated
+
+
 def _json_objects(
-    values: tuple[dict[str, object], ...], *, maximum: int, message: str
+    values: tuple[dict[str, object], ...], *, maximum: int, message: str,
+    reject_protected: bool = False,
 ) -> tuple[dict[str, object], ...]:
     if not isinstance(values, tuple) or len(values) > 500:
         raise ValueError(message)
@@ -131,6 +164,8 @@ def _json_objects(
         type(value) is not dict for value in values
     ):
         raise ValueError(message)
+    if reject_protected and _contains_forbidden_key(values):
+        raise ValueError("analysis evidence contains forbidden fields")
     return values
 
 
@@ -182,10 +217,7 @@ class CandidateDraft:
             _uuid(value)
         if self.state not in _DRAFT_STATES:
             raise ValueError("candidate draft state invalid")
-        _json_object(
-            self.extracted_facts, maximum=262144,
-            message="candidate draft facts invalid", reject_protected=True,
-        )
+        _candidate_facts(self.extracted_facts)
         _uuid_tuple(
             self.identity_candidates, maximum=100,
             message="identity candidates invalid",
@@ -198,6 +230,50 @@ class CandidateDraft:
         _positive(self.row_version, "row version invalid")
         _aware(self.created_at)
         _aware(self.updated_at)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateDraftProcessingAttempt:
+    attempt_id: UUID
+    owner_id: UUID
+    draft_id: UUID
+    worker_id: str
+    execution_job_id: UUID
+    conversation_id: UUID | None
+    turn_id: UUID | None
+    state: CandidateProcessingAttemptState
+    starting_row_version: int
+    claimed_row_version: int
+    claimed_at: datetime
+    lease_expires_at: datetime
+    finished_at: datetime | None
+    terminal_request_id: UUID | None
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.attempt_id, self.owner_id, self.draft_id, self.execution_job_id
+        ):
+            _uuid(value)
+        _optional_uuid(self.conversation_id)
+        _optional_uuid(self.turn_id)
+        _optional_uuid(self.terminal_request_id)
+        if (self.conversation_id is None) != (self.turn_id is None):
+            raise ValueError("processing attempt turn identity invalid")
+        object.__setattr__(self, "worker_id", _text(
+            self.worker_id, maximum=64, message="processing worker invalid"
+        ))
+        if self.state not in _PROCESSING_ATTEMPT_STATES:
+            raise ValueError("processing attempt state invalid")
+        _positive(self.starting_row_version, "row version invalid")
+        _positive(self.claimed_row_version, "row version invalid")
+        _aware(self.claimed_at)
+        _aware(self.lease_expires_at)
+        if self.finished_at is not None:
+            _aware(self.finished_at)
+        if (self.state == "processing") != (self.finished_at is None):
+            raise ValueError("processing attempt terminal state invalid")
+        if self.state == "expired" and self.terminal_request_id is not None:
+            raise ValueError("processing attempt terminal state invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,10 +291,7 @@ class Candidate:
         object.__setattr__(self, "stable_name", _text(
             self.stable_name, maximum=500, message="candidate name invalid"
         ))
-        _json_object(
-            self.facts, maximum=262144, message="candidate facts invalid",
-            reject_protected=True,
-        )
+        _candidate_facts(self.facts)
         _aware(self.created_at)
         _aware(self.updated_at)
 
@@ -338,8 +411,19 @@ class CandidateAnalysisVersion:
             message="analysis documents required",
         )
         _uuid_tuple(self.feedback_ids, maximum=500, message="feedback scope invalid")
-        _json_object(self.result, maximum=524288, message="analysis result invalid")
-        _json_objects(self.evidence, maximum=524288, message="analysis evidence invalid")
+        try:
+            _json_object(
+                self.result, maximum=524288, message="analysis result invalid",
+                reject_protected=True,
+            )
+        except ValueError as error:
+            if "forbidden" in str(error):
+                raise ValueError("analysis result contains forbidden fields") from None
+            raise
+        _json_objects(
+            self.evidence, maximum=524288, message="analysis evidence invalid",
+            reject_protected=True,
+        )
         for field in (self.unknowns, self.conflicts, self.verification_questions):
             _strings(
                 field, maximum_items=500, maximum_text=4000,
@@ -382,6 +466,8 @@ class HumanFeedback:
         ))
         if self.feedback_kind == "correction" and self.correction is None:
             raise ValueError("feedback correction required")
+        if self.feedback_kind != "correction" and self.correction is not None:
+            raise ValueError("feedback correction invalid")
         object.__setattr__(self, "reason", _text(
             self.reason, maximum=4000, message="feedback reason invalid"
         ))
@@ -441,6 +527,33 @@ class CreateCandidateDraftBatch:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimCandidateDraft:
+    attempt_id: UUID
+    worker_id: str
+    execution_job_id: UUID
+    conversation_id: UUID | None = None
+    turn_id: UUID | None = None
+    lease_seconds: int = 300
+
+    def __post_init__(self) -> None:
+        _uuid(self.attempt_id)
+        _uuid(self.execution_job_id)
+        _optional_uuid(self.conversation_id)
+        _optional_uuid(self.turn_id)
+        if (self.conversation_id is None) != (self.turn_id is None):
+            raise ValueError("processing attempt turn identity invalid")
+        object.__setattr__(self, "worker_id", _text(
+            self.worker_id, maximum=64, message="processing worker invalid"
+        ))
+        if (
+            isinstance(self.lease_seconds, bool)
+            or not isinstance(self.lease_seconds, int)
+            or not 30 <= self.lease_seconds <= 900
+        ):
+            raise ValueError("processing lease invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class RetryCandidateDraft:
     owner_id: UUID
     draft_id: UUID
@@ -451,6 +564,43 @@ class RetryCandidateDraft:
         for value in (self.owner_id, self.draft_id, self.client_request_id):
             _uuid(value)
         _positive(self.expected_row_version, "row version invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CompleteCandidateDraft:
+    owner_id: UUID
+    draft_id: UUID
+    client_request_id: UUID
+    expected_row_version: int
+    extracted_facts: dict[str, object]
+    identity_candidates: tuple[UUID, ...] = ()
+
+    def __post_init__(self) -> None:
+        for value in (self.owner_id, self.draft_id, self.client_request_id):
+            _uuid(value)
+        _positive(self.expected_row_version, "row version invalid")
+        _candidate_facts(self.extracted_facts)
+        _uuid_tuple(
+            self.identity_candidates, maximum=100,
+            message="identity candidates invalid",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FailCandidateDraft:
+    owner_id: UUID
+    draft_id: UUID
+    client_request_id: UUID
+    expected_row_version: int
+    error_code: str
+
+    def __post_init__(self) -> None:
+        for value in (self.owner_id, self.draft_id, self.client_request_id):
+            _uuid(value)
+        _positive(self.expected_row_version, "row version invalid")
+        object.__setattr__(self, "error_code", _text(
+            self.error_code, maximum=128, message="draft error code invalid"
+        ))
 
 
 @dataclass(frozen=True, slots=True)
@@ -476,10 +626,7 @@ class ConfirmCandidateDraft:
         object.__setattr__(self, "stable_name", _text(
             self.stable_name, maximum=500, message="candidate name invalid"
         ))
-        _json_object(
-            self.confirmed_facts, maximum=262144,
-            message="candidate facts invalid", reject_protected=True,
-        )
+        _candidate_facts(self.confirmed_facts)
 
 
 @dataclass(frozen=True, slots=True)
@@ -510,8 +657,19 @@ class CreateCandidateAnalysis:
             self.document_ids, minimum=1, maximum=100,
             message="analysis documents required",
         )
-        _json_object(self.result, maximum=524288, message="analysis result invalid")
-        _json_objects(self.evidence, maximum=524288, message="analysis evidence invalid")
+        try:
+            _json_object(
+                self.result, maximum=524288, message="analysis result invalid",
+                reject_protected=True,
+            )
+        except ValueError as error:
+            if "forbidden" in str(error):
+                raise ValueError("analysis result contains forbidden fields") from None
+            raise
+        _json_objects(
+            self.evidence, maximum=524288, message="analysis evidence invalid",
+            reject_protected=True,
+        )
         for field in (self.unknowns, self.conflicts, self.verification_questions):
             _strings(
                 field, maximum_items=500, maximum_text=4000,
@@ -552,6 +710,8 @@ class AppendHumanFeedback:
         ))
         if self.feedback_kind == "correction" and self.correction is None:
             raise ValueError("feedback correction required")
+        if self.feedback_kind != "correction" and self.correction is not None:
+            raise ValueError("feedback correction invalid")
         object.__setattr__(self, "reason", _text(
             self.reason, maximum=4000, message="feedback reason invalid"
         ))

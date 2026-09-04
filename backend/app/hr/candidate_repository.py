@@ -14,10 +14,15 @@ from .candidate_models import (
     CandidateAnalysisVersion,
     CandidateDocument,
     CandidateDraft,
+    CandidateDraftProcessingAttempt,
+    ClaimCandidateDraft,
+    ComparePositionCandidates,
+    CompleteCandidateDraft,
     ConfirmCandidateDraft,
     ConfirmedCandidate,
     CreateCandidateAnalysis,
     CreateCandidateDraftBatch,
+    FailCandidateDraft,
     HumanFeedback,
     PositionCandidate,
     RetryCandidateDraft,
@@ -69,6 +74,25 @@ def _candidate(row: dict[str, Any]) -> Candidate:
         facts=row["facts"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+    )
+
+
+def _processing_attempt(row: dict[str, Any]) -> CandidateDraftProcessingAttempt:
+    return CandidateDraftProcessingAttempt(
+        attempt_id=row["attempt_id"],
+        owner_id=row["owner_internal_user_id"],
+        draft_id=row["draft_id"],
+        worker_id=row["worker_id"],
+        execution_job_id=row["execution_job_id"],
+        conversation_id=row["conversation_id"],
+        turn_id=row["turn_id"],
+        state=row["state"],
+        starting_row_version=row["starting_row_version"],
+        claimed_row_version=row["claimed_row_version"],
+        claimed_at=row["claimed_at"],
+        lease_expires_at=row["lease_expires_at"],
+        finished_at=row["finished_at"],
+        terminal_request_id=row["terminal_request_id"],
     )
 
 
@@ -200,7 +224,7 @@ class CandidateRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.create_candidate_draft_v69("
+                    "select (platform_hr.create_candidate_draft_v70("
                     "%s,%s,%s,%s,%s,%s)).*",
                     (
                         draft_id, command.owner_id, command.position_id,
@@ -219,7 +243,7 @@ class CandidateRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.register_candidate_draft_batch_v69("
+                    "select (platform_hr.register_candidate_draft_batch_v70("
                     "%s,%s,%s,%s)).*",
                     (
                         command.owner_id, command.position_id,
@@ -239,6 +263,64 @@ class CandidateRepository:
             raise
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise_repository_error(error)
+
+    def claim_draft(
+        self, command: ClaimCandidateDraft
+    ) -> CandidateDraftProcessingAttempt:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.claim_candidate_draft_v70("
+                    "%s,%s,%s,%s,%s,%s)).*",
+                    (
+                        command.attempt_id, command.worker_id,
+                        command.execution_job_id, command.conversation_id,
+                        command.turn_id, command.lease_seconds,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise CandidateNotFound("candidate draft claim unavailable")
+            return _processing_attempt(row)
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
+    def processing_attempt(
+        self, owner_id: UUID, attempt_id: UUID
+    ) -> CandidateDraftProcessingAttempt:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.read_candidate_draft_attempt_v70(%s,%s)).*",
+                    (owner_id, attempt_id),
+                ).fetchone()
+            if row is None:
+                raise CandidateNotFound("candidate processing attempt not found")
+            return _processing_attempt(row)
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
+    def complete_claimed_draft(
+        self, attempt_id: UUID, command: CompleteCandidateDraft
+    ) -> CandidateDraft:
+        return self._draft_transition(
+            "complete_claimed_candidate_draft_v70", attempt_id,
+            command.client_request_id, command.expected_row_version,
+            json.dumps(command.extracted_facts, ensure_ascii=False),
+            list(command.identity_candidates),
+        )
+
+    def fail_claimed_draft(
+        self, attempt_id: UUID, command: FailCandidateDraft
+    ) -> CandidateDraft:
+        return self._draft_transition(
+            "fail_claimed_candidate_draft_v70", attempt_id,
+            command.client_request_id, command.expected_row_version,
+            command.error_code,
+        )
 
     def draft_for_owner(self, owner_id: UUID, draft_id: UUID) -> CandidateDraft:
         try:
@@ -313,40 +395,34 @@ class CandidateRepository:
         expected_row_version: int,
     ) -> CandidateDraft:
         return self._draft_transition(
-            "start_candidate_draft_v69", owner_id, draft_id,
+            "start_candidate_draft_v70", owner_id, draft_id,
             request_id, expected_row_version,
         )
 
-    def complete_draft(
-        self, owner_id: UUID, draft_id: UUID, request_id: UUID,
-        expected_row_version: int, extracted_facts: dict[str, object],
-        identity_candidates: tuple[UUID, ...] = (),
-    ) -> CandidateDraft:
+    def complete_draft(self, command: CompleteCandidateDraft) -> CandidateDraft:
         return self._draft_transition(
-            "complete_candidate_draft_v69", owner_id, draft_id,
-            request_id, expected_row_version,
-            json.dumps(extracted_facts, ensure_ascii=False),
-            list(identity_candidates),
+            "complete_candidate_draft_v70", command.owner_id, command.draft_id,
+            command.client_request_id, command.expected_row_version,
+            json.dumps(command.extracted_facts, ensure_ascii=False),
+            list(command.identity_candidates),
         )
 
-    def fail_draft(
-        self, owner_id: UUID, draft_id: UUID, request_id: UUID,
-        expected_row_version: int, error_code: str,
-    ) -> CandidateDraft:
+    def fail_draft(self, command: FailCandidateDraft) -> CandidateDraft:
         return self._draft_transition(
-            "fail_candidate_draft_v69", owner_id, draft_id,
-            request_id, expected_row_version, error_code,
+            "fail_candidate_draft_v70", command.owner_id, command.draft_id,
+            command.client_request_id, command.expected_row_version,
+            command.error_code,
         )
 
     def retry_draft(self, command: RetryCandidateDraft) -> CandidateDraft:
         return self._draft_transition(
-            "retry_candidate_draft_v69", command.owner_id, command.draft_id,
+            "retry_candidate_draft_v70", command.owner_id, command.draft_id,
             command.client_request_id, command.expected_row_version,
         )
 
     def dismiss_draft(self, command: RetryCandidateDraft) -> CandidateDraft:
         return self._draft_transition(
-            "dismiss_candidate_draft_v69", command.owner_id, command.draft_id,
+            "dismiss_candidate_draft_v70", command.owner_id, command.draft_id,
             command.client_request_id, command.expected_row_version,
         )
 
@@ -361,7 +437,7 @@ class CandidateRepository:
         try:
             with self._connection() as connection:
                 relation_row = connection.execute(
-                    "select (platform_hr.confirm_candidate_draft_v69("
+                    "select (platform_hr.confirm_candidate_draft_v70("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
                     (
                         command.owner_id, command.draft_id,
@@ -421,12 +497,46 @@ class CandidateRepository:
         try:
             with self._connection() as connection:
                 rows = connection.execute(
-                    "select * from platform_hr.candidate_documents "
-                    "where owner_internal_user_id=%s and candidate_id=%s "
+                    "select document.*,(case when document.status='erased' "
+                    "or attachment.deleted_at is not null or attachment.state='deleted' "
+                    "or exists (select 1 from platform_attachments.erasure_jobs erasure "
+                    "where erasure.attachment_id=document.attachment_id) "
+                    "then 'erased' else 'active' end) as status "
+                    "from platform_hr.candidate_documents document "
+                    "join platform_attachments.attachments attachment on "
+                    "attachment.attachment_id=document.attachment_id and "
+                    "attachment.owner_internal_user_id=document.owner_internal_user_id "
+                    "where document.owner_internal_user_id=%s and document.candidate_id=%s "
                     "order by version_number,document_id",
                     (owner_id, candidate_id),
                 ).fetchall()
             return tuple(_document(row) for row in rows)
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
+    def document_for_owner(
+        self, owner_id: UUID, document_id: UUID
+    ) -> CandidateDocument:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select document.*,(case when document.status='erased' "
+                    "or attachment.deleted_at is not null or attachment.state='deleted' "
+                    "or exists (select 1 from platform_attachments.erasure_jobs erasure "
+                    "where erasure.attachment_id=document.attachment_id) "
+                    "then 'erased' else 'active' end) as status "
+                    "from platform_hr.candidate_documents document "
+                    "join platform_attachments.attachments attachment on "
+                    "attachment.attachment_id=document.attachment_id and "
+                    "attachment.owner_internal_user_id=document.owner_internal_user_id "
+                    "where document.owner_internal_user_id=%s and document.document_id=%s",
+                    (owner_id, document_id),
+                ).fetchone()
+            if row is None:
+                raise CandidateNotFound("candidate document not found")
+            return _document(row)
         except CandidateRepositoryError:
             raise
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
@@ -441,7 +551,9 @@ class CandidateRepository:
                     "select document.status as document_status,"
                     "attachment.state as attachment_state,"
                     "attachment.deleted_at is not null as deleted,"
-                    "attachment.retained_until>now() as retained "
+                    "attachment.retained_until>now() as retained,"
+                    "exists (select 1 from platform_attachments.erasure_jobs erasure "
+                    "where erasure.attachment_id=document.attachment_id) as erasing "
                     "from platform_hr.candidate_documents document "
                     "join platform_attachments.attachments attachment "
                     "on attachment.attachment_id=document.attachment_id "
@@ -453,7 +565,7 @@ class CandidateRepository:
                 ).fetchone()
             if row is None:
                 raise CandidateNotFound("candidate document not found")
-            if row["document_status"] == "erased" or row["deleted"]:
+            if row["document_status"] == "erased" or row["deleted"] or row["erasing"]:
                 return "erased"
             if not row["retained"]:
                 return "expired"
@@ -510,7 +622,7 @@ class CandidateRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.create_candidate_analysis_v69("
+                    "select (platform_hr.create_candidate_analysis_v70("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,"
                     "%s::jsonb,%s::jsonb,%s::jsonb,%s,%s)).*",
                     (
@@ -537,6 +649,61 @@ class CandidateRepository:
             if projected is None:
                 raise CandidateUnavailable("candidate analysis projection unavailable")
             return _analysis(projected)
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
+    def analysis_for_request(
+        self, command: CreateCandidateAnalysis | ComparePositionCandidates
+    ) -> CandidateAnalysisVersion | None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    _ANALYSIS_SELECT
+                    + " where analysis.owner_internal_user_id=%s "
+                    "and analysis.client_request_id=%s",
+                    (command.owner_id, command.client_request_id),
+                ).fetchone()
+            if row is None:
+                return None
+            selected = _analysis(row)
+            if isinstance(command, CreateCandidateAnalysis):
+                matches = (
+                    selected.position_candidate_id == command.position_candidate_id
+                    and selected.context_version_id == command.context_version_id
+                    and selected.analysis_kind == command.analysis_kind
+                    and tuple(sorted(selected.document_ids))
+                    == tuple(sorted(command.document_ids))
+                    and selected.result == command.result
+                    and selected.evidence == command.evidence
+                    and selected.unknowns == command.unknowns
+                    and selected.conflicts == command.conflicts
+                    and selected.verification_questions
+                    == command.verification_questions
+                    and selected.agent_version == command.agent_version
+                    and selected.model_version == command.model_version
+                )
+            else:
+                candidates = selected.result.get("candidates")
+                selected_ids = (
+                    tuple(item.get("position_candidate_id") for item in candidates)
+                    if isinstance(candidates, list)
+                    and all(isinstance(item, dict) for item in candidates)
+                    else ()
+                )
+                matches = (
+                    selected.position_id == command.position_id
+                    and selected.context_version_id == command.context_version_id
+                    and selected.analysis_kind == "comparison"
+                    and selected_ids
+                    == tuple(str(value) for value in command.position_candidate_ids)
+                    and selected.agent_version == command.agent_version
+                    and selected.model_version == command.model_version
+                )
+            if not matches:
+                raise CandidateConflict("candidate analysis replay mismatch")
+            return selected
         except CandidateRepositoryError:
             raise
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
@@ -589,7 +756,7 @@ class CandidateRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.append_human_feedback_v69("
+                    "select (platform_hr.append_human_feedback_v70("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s)).*",
                     (
                         feedback_id, command.owner_id,

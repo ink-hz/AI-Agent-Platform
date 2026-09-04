@@ -107,6 +107,14 @@ class FakeService:
         self.calls.append(("documents", owner_id, candidate_id))
         return self._result((self.document,))
 
+    def candidate_document(self, owner_id, document_id):
+        self.calls.append(("document", owner_id, document_id))
+        return self._result(self.document)
+
+    def position_candidate(self, owner_id, position_candidate_id):
+        self.calls.append(("position_candidate", owner_id, position_candidate_id))
+        return self._result(self.relation)
+
     def list_analyses(self, owner_id, position_candidate_id):
         self.calls.append(("analyses", owner_id, position_candidate_id))
         return self._result((self.analysis,))
@@ -239,6 +247,10 @@ def test_candidate_reads_are_private_explicit_and_do_not_leak_storage_fields() -
         client.get(
             f"/api/hr/candidates/{service.candidate_record.candidate_id}/documents"
         ),
+        client.get(f"/api/hr/candidate-documents/{service.document.document_id}"),
+        client.get(
+            f"/api/hr/position-candidates/{service.relation.position_candidate_id}"
+        ),
         client.get(
             f"/api/hr/position-candidates/"
             f"{service.relation.position_candidate_id}/analyses"
@@ -256,6 +268,24 @@ def test_candidate_reads_are_private_explicit_and_do_not_leak_storage_fields() -
     assert "storage" not in serialized
     assert "object_ref" not in serialized
     assert "immutable_locator" not in serialized
+
+
+def test_feedback_shape_rejects_non_correction_text_as_422() -> None:
+    client, service, _ = _client()
+    response = client.post(
+        f"/api/hr/position-candidates/{service.relation.position_candidate_id}/feedback",
+        json={
+            "analysis_version_id": str(service.analysis.analysis_version_id),
+            "feedback_kind": "accepted",
+            "conclusion_key": "summary",
+            "correction": "must not be present",
+            "reason": "reviewed",
+        },
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert not service.calls
 
 
 def test_mutations_require_writable_identity_idempotency_and_bounded_payloads() -> None:

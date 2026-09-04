@@ -46,28 +46,23 @@ class BatchService:
         self.drafts[draft_id] = value
         return value
 
-    def complete_draft(
-        self, owner_id, draft_id, request_id, expected_row_version,
-        extracted_facts, identity_candidates=(),
-    ):
-        value = self.draft(owner_id, draft_id)
+    def complete_draft(self, command):
+        value = self.draft(command.owner_id, command.draft_id)
         value = replace(
-            value, state="ready", extracted_facts=extracted_facts,
-            identity_candidates=identity_candidates,
+            value, state="ready", extracted_facts=command.extracted_facts,
+            identity_candidates=command.identity_candidates,
             row_version=value.row_version + 1,
         )
-        self.drafts[draft_id] = value
+        self.drafts[command.draft_id] = value
         return value
 
-    def fail_draft(
-        self, owner_id, draft_id, request_id, expected_row_version, error_code
-    ):
-        value = self.draft(owner_id, draft_id)
+    def fail_draft(self, command):
+        value = self.draft(command.owner_id, command.draft_id)
         value = replace(
-            value, state="failed", error_code=error_code,
+            value, state="failed", error_code=command.error_code,
             row_version=value.row_version + 1,
         )
-        self.drafts[draft_id] = value
+        self.drafts[command.draft_id] = value
         return value
 
     def retry_draft(self, command):

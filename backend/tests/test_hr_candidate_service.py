@@ -57,6 +57,7 @@ class MemoryRepository:
         self.relations = {}
         self.feedback = {}
         self.batches = {}
+        self.analysis_replays = {}
 
     def register_batch(self, command):
         key = (command.owner_id, command.client_request_id)
@@ -64,6 +65,18 @@ class MemoryRepository:
         if key in self.batches and self.batches[key] != payload:
             raise CandidateConflict()
         self.batches[key] = payload
+
+    def claim_draft(self, command):
+        raise AssertionError("not used")
+
+    def processing_attempt(self, owner_id, attempt_id):
+        raise AssertionError("not used")
+
+    def complete_claimed_draft(self, attempt_id, command):
+        raise AssertionError("not used")
+
+    def fail_claimed_draft(self, attempt_id, command):
+        raise AssertionError("not used")
 
     def create_draft(self, draft_id, request_id, command, attachment_id):
         self.create_calls.append((draft_id, request_id, command, attachment_id))
@@ -102,6 +115,14 @@ class MemoryRepository:
         self.confirm_calls.append(
             (command, document_id, position_candidate_id, context_version_id)
         )
+        draft = self.drafts[command.draft_id]
+        if draft.identity_candidates and command.merge_candidate_id is None:
+            raise CandidateIdentityConflict()
+        if (
+            command.merge_candidate_id is not None
+            and command.merge_candidate_id not in draft.identity_candidates
+        ):
+            raise CandidateIdentityConflict()
         candidate_id = command.merge_candidate_id or command.candidate_id
         candidate = Candidate(
             candidate_id, command.owner_id, command.stable_name,
@@ -133,7 +154,7 @@ class MemoryRepository:
         relation = self.position_candidate_for_owner(
             command.owner_id, command.position_candidate_id
         )
-        return CandidateAnalysisVersion(
+        value = CandidateAnalysisVersion(
             analysis_version_id, command.owner_id, command.position_candidate_id,
             relation.position_id, relation.candidate_id, command.context_version_id,
             len(self.analysis_calls), command.analysis_kind, command.document_ids,
@@ -141,6 +162,14 @@ class MemoryRepository:
             command.conflicts, command.verification_questions,
             command.agent_version, command.model_version, NOW,
         )
+        self.analysis_replays[(command.owner_id, command.client_request_id)] = value
+        return value
+
+    def analysis_for_request(self, command):
+        return self.analysis_replays.get((command.owner_id, command.client_request_id))
+
+    def document_for_owner(self, owner_id, document_id):
+        raise AssertionError("not used")
 
     def append_feedback(self, command, *, feedback_id):
         self.feedback_calls.append((command, feedback_id))
@@ -206,13 +235,51 @@ def test_similar_identity_requires_explicit_merge_target() -> None:
 
     with pytest.raises(CandidateIdentityConflict):
         service.confirm_draft(command, context_version_id=uuid4())
-    assert not repository.confirm_calls
+    assert len(repository.confirm_calls) == 1
 
     confirmed = service.confirm_draft(
         replace(command, client_request_id=uuid4(), merge_candidate_id=existing_candidate_id),
         context_version_id=uuid4(),
     )
     assert confirmed.candidate.candidate_id == existing_candidate_id
+
+
+def test_identifiers_are_namespaced_by_owner_even_for_the_same_request() -> None:
+    request_id, position_id, attachment_id = uuid4(), uuid4(), uuid4()
+    repository = MemoryRepository()
+    service = CandidateService(repository)
+
+    left = service.create_drafts(CreateCandidateDraftBatch(
+        uuid4(), position_id, (attachment_id,), request_id
+    ))[0]
+    right = service.create_drafts(CreateCandidateDraftBatch(
+        uuid4(), position_id, (attachment_id,), request_id
+    ))[0]
+
+    assert left.draft_id != right.draft_id
+
+
+def test_analysis_replay_returns_before_mutable_feedback_is_recomputed() -> None:
+    owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()
+    relation = _relation(owner_id, position_id, context_id)
+    repository = MemoryRepository()
+    repository.relations[relation.position_candidate_id] = relation
+    service = CandidateService(repository)
+    command = CreateCandidateAnalysis(
+        owner_id, relation.position_candidate_id, context_id, (uuid4(),),
+        "match", uuid4(), {"summary": "stable"}, (), (), (), (),
+        "hr-r12", "model-v1",
+    )
+    first = service.add_analysis(command)
+    repository.feedback[relation.position_candidate_id] = (HumanFeedback(
+        uuid4(), owner_id, relation.position_candidate_id, first.analysis_version_id,
+        "accepted", "summary", None, "reviewed", NOW,
+    ),)
+
+    replay = service.add_analysis(command)
+
+    assert replay == first
+    assert len(repository.analysis_calls) == 1
 
 
 def test_retry_reuses_the_failed_draft() -> None:
