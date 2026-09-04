@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Account } from "../../auth";
 import { fetchAgentCatalog } from "../../brainApi";
 import type { AgentCapabilityCard } from "../../brainTypes";
-import { listConversations } from "../../conversationApi";
+import { listConversations, startConversation } from "../../conversationApi";
 import { createHrApi } from "../../hrApi";
 import { HrWorkspacePage } from "./HrWorkspacePage";
 
@@ -20,6 +20,7 @@ vi.mock("../../brainApi", async (importOriginal) => ({
 vi.mock("../../conversationApi", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../conversationApi")>(),
   listConversations: vi.fn(),
+  startConversation: vi.fn(),
 }));
 
 vi.mock("../../hrApi", async (importOriginal) => ({
@@ -197,6 +198,46 @@ describe("HrWorkspacePage", () => {
     await act(async () => root.render(<HrWorkspacePage account={{ ...account, internal_user_id: "other-user" }} />));
     expect(container.querySelector<HTMLTextAreaElement>("#direct-agent-request")?.value).toBe("");
     expect(container.querySelector(".conversation-upload-chip")).toBeNull();
+  });
+
+  it("does not restore or submit a ready attachment removed before a position detail visit", async () => {
+    vi.mocked(fetchAgentCatalog).mockResolvedValue([{ ...hrCard,
+      accepted_input_types: ["text", "image", "pdf", "office"], supports_attachments_in: true,
+      attachment_limits: {
+        max_file_bytes: 50 * 1024 * 1024, max_files_per_message: 5,
+        max_bytes_per_message: 50 * 1024 * 1024, max_files_per_conversation: 50,
+        max_bytes_per_conversation: 500 * 1024 * 1024,
+      },
+    }]);
+    vi.mocked(startConversation).mockReturnValue({
+      idempotencyKey: "removed-ready-attachment",
+      send: vi.fn().mockRejectedValue(new Error("stop after submission capture")),
+    });
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    const fileInput = container.querySelector<HTMLInputElement>('.agent-direct-attachments input[type="file"]')!;
+    Object.defineProperty(fileInput, "files", {
+      configurable: true,
+      value: [new File(["resume"], "候选人简历.pdf", { type: "application/pdf" })],
+    });
+    await act(async () => fileInput.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(container.querySelector('.conversation-upload-chip[data-state="ready"]')).not.toBeNull();
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "移除")?.click());
+    await act(async () => root.render(<HrWorkspacePage account={account} positionId="position-7" />));
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+
+    expect(container.querySelector(".conversation-upload-chip")).toBeNull();
+    expect(container.querySelector(".conversation-attachment-card")).toBeNull();
+    const textarea = container.querySelector<HTMLTextAreaElement>("#direct-agent-request")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "继续招聘工作");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(".agent-direct-submit")?.click());
+    expect(startConversation).toHaveBeenCalledWith({
+      text: "继续招聘工作", attachmentIds: [], activeAttachmentIds: [],
+    }, "csrf", "hr-bot");
   });
 
   it("keeps the current conversation as the chat navigation target", async () => {

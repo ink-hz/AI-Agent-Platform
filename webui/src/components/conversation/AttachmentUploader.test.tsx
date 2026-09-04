@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act } from "react";
+import { StrictMode, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -204,20 +204,80 @@ describe("AttachmentUploader", () => {
     expect(container.textContent).not.toContain("支持选择、拖放或粘贴；单条最多");
   });
 
-  it("restarts a restored pending upload instead of leaving a frozen queue item", async () => {
+  it("cancels the exact restored upload before restarting it on every mount", async () => {
     const api = client();
     const file = new File(["resume"], "restored.pdf", { type: "application/pdf" });
-    await act(async () => root.render(<AttachmentUploader
+    const calls: string[] = [];
+    let cancelAttempts = 0;
+    vi.mocked(api.cancel).mockImplementation(async (uploadId) => {
+      calls.push(`cancel:${uploadId}`);
+      cancelAttempts += 1;
+      if (cancelAttempts === 2) throw new Error("already expired");
+    });
+    vi.mocked(api.begin).mockImplementation(async (_conversationId, selected) => {
+      calls.push(`begin:${selected.name}`);
+      return {
+        uploadId: `upload-${selected.name}`, attachmentId: `attachment-${selected.name}`,
+        conversationId: "conversation-1", displayName: selected.name,
+        declaredMime: selected.type, declaredSize: selected.size, state: "uploading",
+        uploadedBytes: 0, expiresAt: "2026-09-04T10:00:00Z",
+      };
+    });
+    const uploader = <AttachmentUploader
+        acceptedInputTypes={["pdf"]}
+        client={api}
+        conversationId="conversation-1"
+        csrfToken="csrf"
+        initialItems={[{ localId: "restored-upload", file, progress: 35, state: "uploading", uploadId: "stale-upload" }]}
+        limits={limits}
+      />;
+
+    await act(async () => root.render(uploader));
+    expect(calls).toEqual(["cancel:stale-upload", "begin:restored.pdf"]);
+    expect(api.cancel).toHaveBeenNthCalledWith(1, "stale-upload", "csrf", expect.any(AbortSignal));
+
+    await act(async () => root.render(null));
+    await act(async () => root.render(uploader));
+
+    expect(calls).toEqual([
+      "cancel:stale-upload", "begin:restored.pdf",
+      "cancel:stale-upload", "begin:restored.pdf",
+    ]);
+    expect(api.cancel).toHaveBeenNthCalledWith(2, "stale-upload", "csrf", expect.any(AbortSignal));
+    expect(api.begin).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('.conversation-upload-chip[data-state="ready"]')?.textContent).toContain("restored.pdf");
+  });
+
+  it("keeps the current restored upload abortable through a StrictMode restart", async () => {
+    const api = client();
+    const file = new File(["resume"], "strict-restored.pdf", { type: "application/pdf" });
+    const cancelResolvers: Array<() => void> = [];
+    const cancelSignals: AbortSignal[] = [];
+    vi.mocked(api.cancel).mockImplementation((_uploadId, _csrfToken, signal) => new Promise<void>((resolve) => {
+      cancelSignals.push(signal!);
+      cancelResolvers.push(resolve);
+    }));
+    const uploader = <AttachmentUploader
       acceptedInputTypes={["pdf"]}
       client={api}
       conversationId="conversation-1"
       csrfToken="csrf"
-      initialItems={[{ localId: "restored-upload", file, progress: 35, state: "uploading", uploadId: "stale-upload" }]}
+      initialItems={[{ localId: "strict-restored", file, progress: 35, state: "uploading", uploadId: "strict-stale" }]}
       limits={limits}
-    />));
+    />;
 
-    expect(api.begin).toHaveBeenCalledWith("conversation-1", file, "csrf", expect.any(AbortSignal));
-    expect(container.querySelector('.conversation-upload-chip[data-state="ready"]')?.textContent).toContain("restored.pdf");
+    await act(async () => root.render(<StrictMode>{uploader}</StrictMode>));
+    expect(api.cancel).toHaveBeenCalledTimes(2);
+    expect(cancelSignals[0]?.aborted).toBe(true);
+    expect(cancelSignals[1]?.aborted).toBe(false);
+
+    await act(async () => cancelResolvers[0]?.());
+    await act(async () => root.render(null));
+    const currentUploadWasAborted = cancelSignals[1]?.aborted;
+    await act(async () => cancelResolvers[1]?.());
+
+    expect(currentUploadWasAborted).toBe(true);
+    expect(api.begin).not.toHaveBeenCalled();
   });
 
   it("rejects type, per-file, per-message, and Session quota overflow before upload", async () => {

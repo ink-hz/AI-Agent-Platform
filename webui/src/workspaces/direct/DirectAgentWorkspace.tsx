@@ -356,7 +356,12 @@ export function DirectAgentWorkspace({
               <AttachmentUploader ref={uploaderRef} acceptedInputTypes={card.accepted_input_types} conversationId={null}
                 compact={agentId === "hr-bot"} csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
                 initialItems={initialDraftSnapshot?.uploadQueue} limits={card.attachment_limits} onChange={setUploadQueue} onError={setAttachmentError}
-                onReady={(attachment) => { setAttachments((current) => [...current, attachment]); setFailure(false); retained.current = null; }} />
+                onReady={(attachment) => { setAttachments((current) => [...current, attachment]); setFailure(false); retained.current = null; }}
+                onRemoveReady={(attachment) => {
+                  setAttachments((current) => current.filter((item) => item.attachmentId !== attachment.attachmentId));
+                  setFailure(false);
+                  retained.current = null;
+                }} />
               {attachments.map((attachment) => <AttachmentCard active attachment={attachment} key={attachment.attachmentId}
                 onActiveChange={() => undefined} />)}
               {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}

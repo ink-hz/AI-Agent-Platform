@@ -171,6 +171,15 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
     controllers.current.set(localId, controller);
     let stage: AttachmentUploadStage = "begin";
     try {
+      if (item.uploadId) {
+        try {
+          await client.cancel(item.uploadId, csrfToken, controller.signal);
+        } catch {
+          if (controller.signal.aborted) return;
+          // Cancellation is best effort: an expired upload must not block a clean restart.
+        }
+      }
+      if (controller.signal.aborted) return;
       update(localId, {
         error: undefined, errorMessage: undefined, progress: 10, state: "uploading", uploadId: undefined,
       });
@@ -202,7 +211,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
         showError(message);
       }
     } finally {
-      controllers.current.delete(localId);
+      if (controllers.current.get(localId) === controller) controllers.current.delete(localId);
     }
   };
 
@@ -259,10 +268,7 @@ export const AttachmentUploader = forwardRef<AttachmentUploaderHandle, {
   };
   useImperativeHandle(forwardedRef, () => ({ addFiles }));
 
-  const retry = async (item: UploadQueueItem) => {
-    if (item.uploadId) {
-      try { await client.cancel(item.uploadId, csrfToken); } catch { /* stale uploads expire server-side */ }
-    }
+  const retry = (item: UploadQueueItem) => {
     void process(item.localId);
   };
   const remove = async (item: UploadQueueItem) => {
