@@ -84,6 +84,7 @@ describe("login return path", () => {
     "/hr/",
     "/hr/chat",
     "/hr/positions/11111111-1111-4111-8111-111111111111",
+    "/hr/positions/11111111-1111-4111-8111-111111111111/candidates",
     "/hr/positions/11111111-1111-4111-8111-111111111111/conversations/hr:one",
     "/hr/conversations/hr:one",
     "/marketing",

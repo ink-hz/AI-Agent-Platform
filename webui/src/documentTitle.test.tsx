@@ -37,6 +37,7 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "admin-activity" })).toBe("运行记录 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-voc" })).toBe("VOC 管理 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "hr" })).toBe("HR Agent · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "hr-position-section", positionId: "11111111-1111-4111-8111-111111111111", section: "artifacts" })).toBe("岗位智能工作台 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "hr-conversation", conversationId: "one" })).toBe("HR Agent · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "marketing", agentSlug: "inbound" })).toBe("Marketing Inbound · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "marketing-conversation", agentSlug: "gtm", conversationId: "one" })).toBe("Marketing GTM · Orbbec Agent Platform");

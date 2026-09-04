@@ -229,3 +229,46 @@ it("reuses draft and conversation idempotency after a partial new-position failu
   expect(client.proposeDraft.mock.calls[0][1]).toBe(client.proposeDraft.mock.calls[1][1]);
   expect(start.mock.calls[0][0].requestId).toBe(start.mock.calls[1][0].requestId);
 });
+
+
+it("reuses the persisted conversation id through the real production start path after remount", async () => {
+  sessionStorage.clear();
+  const ids: ReturnType<Crypto["randomUUID"]>[] = [
+    "55555555-5555-4555-8555-555555555551",
+    "55555555-5555-4555-8555-555555555552",
+    "55555555-5555-4555-8555-555555555553",
+    "55555555-5555-4555-8555-555555555554",
+  ];
+  vi.spyOn(crypto, "randomUUID").mockImplementation(() => ids.shift()!);
+  const created = {
+    conversation: { conversation_id: "conversation-new", mode: "direct_agent", direct_agent_id: "hr-bot", title: "新岗位需求", status: "active", summary_through_seq: 0, created_at: base.createdAt, updated_at: base.updatedAt, archived_at: null },
+    message: { message_id: "message-new", conversation_id: "conversation-new", seq: 1, role: "user", content: "新岗位需求", turn_id: "turn-new", delivery_status: "accepted", created_at: base.createdAt, completed_at: null, input_attachments: [], output_attachments: [], active_attachment_ids: [] },
+    turn: { turn_id: "turn-new", conversation_id: "conversation-new", user_message_id: "message-new", assistant_message_id: null, retry_of_turn_id: null, status: "accepted", created_at: base.createdAt, updated_at: base.updatedAt },
+  };
+  const fetchMock = vi.fn()
+    .mockRejectedValueOnce(new TypeError("response lost"))
+    .mockResolvedValueOnce(new Response(JSON.stringify(created), { status: 201, headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  const client = api();
+
+  async function submit() {
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "用对话新建岗位")?.click());
+    const input = container.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(input, "新岗位需求");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "开始梳理")?.click());
+  }
+
+  await act(async () => root.render(<HrPositionIndex account={account} api={client as never} />));
+  await submit();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(<HrPositionIndex account={account} api={client as never} />));
+  await submit();
+
+  const requestIds = fetchMock.mock.calls.map(([, init]) => (init as RequestInit).headers as Record<string, string>)
+    .map((headers) => headers["Idempotency-Key"]);
+  expect(requestIds).toEqual([requestIds[0], requestIds[0]]);
+});

@@ -4,6 +4,7 @@ import { WorkspaceErrorBoundary } from "../../shared/WorkspaceErrorBoundary";
 import { DirectAgentWorkspace } from "../direct/DirectAgentWorkspace";
 import { HrPositionIndex } from "./HrPositionIndex";
 import { HrPositionWorkspace } from "./HrPositionWorkspace";
+import type { HrPositionSection } from "../../hrR12Types";
 
 
 function hrConversationPath(conversationId: string): string {
@@ -12,7 +13,7 @@ function hrConversationPath(conversationId: string): string {
 }
 
 
-export function HrWorkspacePage(props: { account: Account; conversationId?: string; positionId?: string; freeChat?: boolean }) {
+export function HrWorkspacePage(props: { account: Account; conversationId?: string; positionId?: string; section?: HrPositionSection; freeChat?: boolean }) {
   if (!props.conversationId && !props.positionId && !props.freeChat) {
     return <WorkspaceErrorBoundary title="HR Agent">
       <HrPositionIndex account={props.account} />
@@ -20,7 +21,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   }
   if (props.positionId) {
     return <WorkspaceErrorBoundary title="HR Agent">
-      <HrPositionWorkspace account={props.account} conversationId={props.conversationId} positionId={props.positionId} />
+      <HrPositionWorkspace account={props.account} conversationId={props.conversationId} positionId={props.positionId} section={props.section} />
     </WorkspaceErrorBoundary>;
   }
   return <WorkspaceErrorBoundary title="HR Agent">

@@ -19,6 +19,15 @@ afterEach(() => {
 
 
 describe("Platform router", () => {
+  it("round-trips every HR position section", () => {
+    const positionId = "00000000-0000-4000-8000-000000000001";
+    for (const section of ["chat", "context", "candidates", "artifacts"] as const) {
+      expect(parseRoute(routePath({ name: "hr-position-section", positionId, section }))).toEqual(
+        { name: "hr-position-section", positionId, section },
+      );
+    }
+  });
+
   const compatibilityRoutes = [
     ["/agents/hr-bot", "/hr/", "spa"],
     ["/agents/hr-bot/conversations/hr%3Aone", "/hr/conversations/hr%3Aone", "spa"],

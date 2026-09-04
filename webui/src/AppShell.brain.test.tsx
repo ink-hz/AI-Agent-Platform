@@ -41,6 +41,18 @@ describe("usage navigation", () => {
     expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 
+  it("uses the full-height workspace shell for an HR position section deep link", async () => {
+    await act(async () => root.render(<AppShell route={{
+      name: "hr-position-section",
+      positionId: "11111111-1111-4111-8111-111111111111",
+      section: "candidates",
+    }} account={member}><p>候选人</p></AppShell>));
+
+    expect(container.querySelector(".app.is-brain-workspace-shell")).not.toBeNull();
+    expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
+    expect(container.querySelector("footer.site-foot")).toBeNull();
+  });
+
   it("adds one quiet management entry for owners without replacing use navigation", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("deployment unavailable"));
     await act(async () => root.render(<AppShell
