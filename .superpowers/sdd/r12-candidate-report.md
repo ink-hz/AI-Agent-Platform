@@ -1,15 +1,15 @@
 # HR R1.2 Candidate Intelligence Execution Report
 
-Date: 2026-09-04  
-Branch: `feat/hr-r12-candidate`  
-Worktree: `/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-r12-candidate`  
+Date: 2026-09-04
+Branch: `feat/hr-r12-candidate`
+Worktree: `/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-r12-candidate`
 Base: `578c1caaa704569715497d2911257c3b5e25a24a`
 
 ## Final status
 
-`DONE`
+`DONE_WITH_CONCERNS`
 
-The candidate subsystem plan is implemented, focused tests pass, and candidate migration 069 was applied successfully after the actual master 067 and position-owned 068 migrations in disposable production and preview databases.
+The candidate subsystem and its production-grade durable parser boundary are implemented. Focused tests pass, and candidate migration 070 was applied successfully after master-owned 067/068 and position-owned 069 in disposable production and preview databases. Parent integration must still connect the existing MetaBot dispatch/result runtime to the new claim/complete/fail interface before upload-to-ready is a complete product path.
 
 ## Commits
 
@@ -18,6 +18,8 @@ The candidate subsystem plan is implemented, focused tests pass, and candidate m
 - `22fb6f98e20fd641281fec3954140e4e16fb67c0` — `feat(hr): expose candidate intelligence APIs`
 - `66190319c69bfeda7b3b0f1889d18248ef255a29` — `feat(hr): bind candidate context and analysis versions`
 - `21a11e30c42fded85b92ad41748e0c2bbc5e65ee` — `fix(hr): harden and renumber candidate migration`
+- `0f7e808a8e7c3cbf606fe808ab9d6cbae7cc0bb4` — `fix(hr): harden candidate processing boundaries`
+- `e6337bd78966169b6a227dd21c51eba729e88cf0` — `fix(hr): bind parser claims to exact owner scope`
 
 ## TDD evidence
 
@@ -102,7 +104,7 @@ Task 1–4 aggregate before commit: `41 passed`.
 
 ### Task 5 — security, recovery, and review hardening
 
-The first exact regression run exposed that the isolated candidate branch had candidate migration 068 but not the then-position-owned migration 067: candidate tests passed, while the attachment fixture reported 21 setup errors because `platform_hr.position_context_versions` did not exist. A focused RED test was added for safe isolated migration behavior. Migration foreign keys are now installed conditionally when the position table exists; the integrated 068→069 order installs them normally.
+The first exact regression run exposed an isolated migration ordering mismatch. The final allocation is master 067/068, position 069, and candidate 070; the integrated test assembles that exact chain without merging master into this worktree.
 
 Additional review RED/GREEN evidence:
 
@@ -117,34 +119,43 @@ RED: 2 failed
 GREEN: 2 passed
 ```
 
-The coordination allocation changed during execution: current `master` owns migration 067, position intelligence owns 068, and candidate intelligence was renumbered to migration 069 with all database functions and repository calls renamed from `v68` to `v69`.
+Independent review RED evidence:
 
-Final focused regression before the hardening commit:
+```text
+python -m pytest -q tests/test_hr_candidate_migration.py tests/test_hr_candidate_models.py tests/test_hr_candidate_api.py
+collection error: CompleteCandidateDraft absent (plus expected migration/detail-route failures)
+```
+
+Review GREEN evidence covers the real `state='confirmed'` position contract; persistent canonical request digests and historical replay snapshots; owner-namespaced UUIDs; replay-before-mutable-feedback; nested ATS/locator/protected-field rejection; typed parser completion/failure commands; pending/completed/racing erasure rejection; precise brain grants; relation rebase with immutable old analysis; owner-concealed document/relation detail routes; 409 row conflicts; and feedback-shape validation.
+
+The later business-readiness RED cycle added a durable parser-attempt model and failed at import because it was absent. GREEN adds atomic exact-owner/exact-draft `FOR UPDATE ... SKIP LOCKED` claim, mission/job/turn ownership and request-identity validation, leases with expired-attempt recovery, exact attempt reads, and idempotent claimed complete/fail functions available only to the brain worker. The real database test includes a second-owner job substitution attack and verifies fail-closed behavior.
+
+Final focused regression:
 
 ```text
 python -m pytest -q tests/test_hr_candidate_*.py tests/test_hr_resume_batch.py tests/test_conversation_attachment_binding.py
-73 passed, 10 warnings
+89 passed, 10 warnings
 ```
 
 Final static gate before the hardening commit:
 
 ```text
-python -m compileall -q app
+python -m compileall -q app/hr
 ruff check --select I app/hr tests/test_hr_candidate_*.py tests/test_hr_resume_batch.py
 git diff --check
 All checks passed
 ```
 
-Integrated migration-order verification used an automatically cleaned temporary migration directory containing the candidate-branch migrations through 066, current master migration 067, the position branch's actual migration 068, and candidate migration 069. It invoked the existing disposable PostgreSQL control-database fixture and produced:
+Integrated migration-order verification uses an automatically cleaned temporary migration directory containing the candidate-branch migrations through 066, current master migrations 067/068, position migration 069, and candidate migration 070. The committed PostgreSQL test invokes the existing disposable control-database fixture for both environments and actually calls candidate confirmation and parser functions:
 
 ```text
-integrated migrations applied: ['067_access_history_subject_index.sql', '068_hr_position_intelligence.sql', '069_hr_candidate_intelligence.sql']
-environments: ['preview', 'production']
+tests/test_hr_candidate_database.py
+1 passed
 ```
 
 ## Scope and behavior covered
 
-- CandidateDraft, Candidate, CandidateDocument, PositionCandidate, immutable CandidateAnalysisVersion, and append-only HumanFeedback.
+- CandidateDraft, durable CandidateDraftProcessingAttempt, Candidate, CandidateDocument, PositionCandidate, immutable CandidateAnalysisVersion, and append-only HumanFeedback.
 - Protected/unrelated personal-fact rejection and no recruiting workflow fields.
 - Batch request payload binding, deterministic per-file identities, isolated ready/failed siblings, retry in place, and persisted batch reconstruction.
 - Explicit identity ambiguity handling; no candidate creation or merging from a name alone.
@@ -152,10 +163,12 @@ environments: ['preview', 'production']
 - Match, candidate interview-plan, comparison analysis kinds, same-context comparison, evidence/unknown/conflict/question separation, and no score-only ranking.
 - Human feedback remains separate and is referenced by later analysis versions without modifying old AI output.
 - Private/no-store API responses and 404/409/422/503 projections.
+- Exact candidate task-input validation replaces the position 069 fail-closed seam and checks relation, context, ready/unexpired/non-erasing document attachments, and feedback provenance.
 
 ## Integration notes
 
-1. Parent integration confirmed the shared integration plan was updated at `6268292` to existing master 067, position 068, and candidate 069. The final integration layer still owns router mounting, dependency composition, the migration ceiling, and end-to-end acceptance; none were changed here.
-2. Candidate 069's two context owner foreign keys were exercised with the actual position 068 migration in disposable production and preview databases.
+1. Final migration allocation is master 067/068, position 069, candidate 070. Parent integration still owns router mounting, dependency composition, the migration ceiling, and end-to-end acceptance; none were changed here.
+2. Candidate 070's context owner foreign keys and position task validation seam were exercised with the actual position 069 migration in disposable production and preview databases.
 3. The 10 warnings are pre-existing Starlette `TestClient` cookie deprecation warnings in `test_conversation_attachment_binding.py`.
 4. No production migration or data apply was run.
+5. Blocking parent-integration dependency: wire MetaBot execution dispatch and result decoding to `CandidateService.claim_draft`, `processing_attempt`, `complete_claimed_draft`, and `fail_claimed_draft`. Until that wiring is merged and acceptance-tested, an uploaded draft has a durable queue/worker contract but no automatically scheduled parser in this branch alone.
