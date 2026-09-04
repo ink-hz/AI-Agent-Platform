@@ -153,6 +153,8 @@ services:
     image: ${PLATFORM_MINIO_MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z}
     restart: "no"
     read_only: true
+    environment:
+      MC_CONFIG_DIR: /tmp/.mc
     cap_drop:
       - ALL
     security_opt:
@@ -188,6 +190,10 @@ services:
     restart: unless-stopped
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
     security_opt:
       - no-new-privileges:true
     volumes:

@@ -180,10 +180,19 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         "/data/orbbec-agent-platform/attachments:/data",
         "platform-attachment-storage-secrets:/run/secrets:ro",
     ]
+    storage_init = services["platform-attachment-storage-init"]
+    assert storage_init["read_only"] is True
+    assert storage_init["environment"]["MC_CONFIG_DIR"] == "/tmp/.mc"
     assert "ports" not in services["platform-clamav"]
     assert services["platform-clamav"]["networks"] == {
         "platform-internal": {"ipv4_address": "172.30.0.9"}
     }
+    assert services["platform-clamav"]["cap_drop"] == ["ALL"]
+    assert services["platform-clamav"]["cap_add"] == [
+        "CHOWN",
+        "SETGID",
+        "SETUID",
+    ]
     worker = services["platform-attachments"]
     assert worker["command"] == [
         "python", "-m", "app.attachments.worker_runtime", "all"
