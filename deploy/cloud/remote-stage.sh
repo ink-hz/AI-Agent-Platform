@@ -858,7 +858,15 @@ done
 /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_V2_ENABLED=$PLATFORM_AGENT_BRAIN_V2_ENABLED" <<<"$api_environment" || fail
 brain_container="$("${compose[@]}" ps -q platform-brain)"
 [[ -n "$brain_container" ]] || fail
-[[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$brain_container")" == "healthy" ]] || fail
+brain_health_ready=0
+for _attempt in $(/usr/bin/seq 1 40); do
+  if [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$brain_container" 2>/dev/null || true)" == "healthy" ]]; then
+    brain_health_ready=1
+    break
+  fi
+  /bin/sleep 1
+done
+[[ "$brain_health_ready" == "1" ]] || fail
 if [[ -n "$previous_release" ]]; then
   /usr/bin/printf '%s\n' "$previous_release" > "$release_metadata_path/PREVIOUS_RELEASE"
   /bin/chown root:root "$release_metadata_path/PREVIOUS_RELEASE"

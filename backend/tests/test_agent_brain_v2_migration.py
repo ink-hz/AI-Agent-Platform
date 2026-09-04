@@ -13,6 +13,11 @@ MIGRATION = (
     / "control_migrations"
     / "041_agent_brain_durable_loop.sql"
 )
+HR_HEARTBEAT_MIGRATION = (
+    Path(__file__).parents[1]
+    / "control_migrations"
+    / "072_hr_candidate_parser_heartbeat.sql"
+)
 BRAIN_TABLES = {
     "authorization_snapshots",
     "brain_loops",
@@ -39,6 +44,56 @@ BRAIN_WORKER_NAMES = {
 
 def test_v2_migration_file_exists() -> None:
     assert MIGRATION.is_file(), f"missing migration: {MIGRATION}"
+
+
+def test_hr_candidate_parser_heartbeat_migration_and_repository_are_versioned() -> None:
+    assert HR_HEARTBEAT_MIGRATION.is_file()
+    sql = " ".join(
+        HR_HEARTBEAT_MIGRATION.read_text(encoding="utf-8").lower().split()
+    )
+    repository = (
+        Path(__file__).parents[1] / "app" / "agent_brain" / "loop_repository.py"
+    ).read_text(encoding="utf-8")
+
+    assert "'hr-candidate-parser'" in sql
+    assert "upsert_brain_worker_heartbeat_v72" in sql
+    assert '"hr-candidate-parser"' in repository
+    assert "upsert_brain_worker_heartbeat_v72" in repository
+
+
+@pytest.mark.postgres
+def test_hr_candidate_parser_heartbeat_is_function_scoped(control_database) -> None:
+    for environment in control_database["environments"].values():
+        brain_role = next(
+            role for role in environment["roles"] if "brain_worker" in role
+        )
+        with psycopg.connect(environment["admin"]) as connection:
+            function = connection.execute(
+                "select oid,prosecdef,proconfig from pg_proc "
+                "where pronamespace='platform_control'::regnamespace "
+                "and proname='upsert_brain_worker_heartbeat_v72'"
+            ).fetchone()
+            assert function is not None
+            oid, security_definer, config = function
+            assert security_definer is True
+            assert config == ["search_path=pg_catalog, platform_control"]
+            assert connection.execute(
+                "select has_function_privilege(%s,%s,'execute'),"
+                "has_table_privilege(%s,'platform_control.worker_heartbeats','insert'),"
+                "has_table_privilege(%s,'platform_control.worker_heartbeats','update')",
+                (brain_role, oid, brain_role, brain_role),
+            ).fetchone() == (True, False, False)
+
+        with psycopg.connect(environment["urls"][brain_role]) as worker:
+            assert worker.execute(
+                "select platform_control.upsert_brain_worker_heartbeat_v72("
+                "'hr-candidate-parser','healthy',null,clock_timestamp())"
+            ).fetchone() == (True,)
+            with pytest.raises(psycopg.errors.CheckViolation):
+                worker.execute(
+                    "select platform_control.upsert_brain_worker_heartbeat_v72("
+                    "'dingtalk-directory-event','healthy',null,clock_timestamp())"
+                )
 
 
 @pytest.mark.postgres
