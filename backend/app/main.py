@@ -1098,7 +1098,8 @@ def create_app(
         if hr_candidate_service is None:
             hr_candidate_service = CandidateService(candidate_repository)
         if (
-            conversation_command_service is not None
+            "direct_agent" in v1_mission_modes
+            and conversation_command_service is not None
             and (
                 hr_candidate_parser_submission_coordinator is None
                 or hr_candidate_parser_input_provider is None
