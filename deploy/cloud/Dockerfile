@@ -12,10 +12,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 WORKDIR /app/backend
 COPY backend/requirements.cloud.txt ./requirements.cloud.txt
-RUN apt-get update \
+RUN sed -i \
+      -e 's|http://deb.debian.org|https://mirrors.aliyun.com|g' \
+      -e 's|https://deb.debian.org|https://mirrors.aliyun.com|g' \
+      /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install --yes --no-install-recommends \
       bubblewrap \
-      clamav \
       libmagic1 \
       poppler-utils \
     && rm -rf /var/lib/apt/lists/*
