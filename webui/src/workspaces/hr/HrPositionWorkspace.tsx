@@ -114,6 +114,7 @@ export function HrPositionWorkspace({
   const [attempt, setAttempt] = useState(0);
   const [materialNotice, setMaterialNotice] = useState<string | null>(null);
   const [resourceRefreshGeneration, setResourceRefreshGeneration] = useState(0);
+  const [contextRefreshGeneration, setContextRefreshGeneration] = useState(0);
   const [activeSection, setActiveSection] = useState<HrPositionSection>(section);
   const [materialDrawerOpen, setMaterialDrawerOpen] = useState(false);
   const taskController = useRef<AbortController | null>(null);
@@ -194,6 +195,7 @@ export function HrPositionWorkspace({
           const nextActiveIds = new Set(tasks.filter((task) => task.status === "accepted" || task.status === "running").map((task) => task.taskId));
           if (activeTasks.some((task) => (task.status === "accepted" || task.status === "running") && !nextActiveIds.has(task.taskId))) {
             setResourceRefreshGeneration((value) => value + 1);
+            setContextRefreshGeneration((value) => value + 1);
             void refreshArtifactProjection();
           }
           setActiveTasks(tasks); setTaskState("ready");
@@ -273,6 +275,7 @@ export function HrPositionWorkspace({
         setActiveTasks((items) => [started, ...items.filter((item) => item.taskId !== started.taskId)]);
         if (started.status === "completed") {
           setResourceRefreshGeneration((value) => value + 1);
+          setContextRefreshGeneration((value) => value + 1);
           void refreshArtifactProjection();
         }
       }
@@ -290,7 +293,7 @@ export function HrPositionWorkspace({
   const navigation = <nav className="hr-position-sections" aria-label="岗位工作台分区"><div role="tablist">{sections.map(([value, label]) => <button aria-controls={`hr-position-panel-${value}`} id={`hr-position-tab-${value}`} key={value} ref={(element) => { tabRefs.current[value] = element; }} tabIndex={activeSection === value ? 0 : -1} type="button" role="tab" aria-selected={activeSection === value} onKeyDown={(event) => tabKey(event, value)} onClick={() => activateSection(value)}>{label}</button>)}</div></nav>;
   const materialChoices = <>{availableMaterials.length === 0 ? <p>当前没有可用岗位材料。</p> : availableMaterials.map((material) => <label key={material.attachmentId}><input disabled={account.hard_stale_read_only} name="quick-task-material" type="checkbox" checked={turnMaterialIds.includes(material.attachmentId)} onChange={() => setTurnMaterialIds((ids) => ids.includes(material.attachmentId) ? ids.filter((id) => id !== material.attachmentId) : [...ids, material.attachmentId])} />{material.filename}</label>)}<small>默认不选；只会把本轮明确勾选的材料交给 Agent。</small></>;
   const quickTasks = <section className="hr-position-taskbar" aria-label="岗位快捷任务"><div className="hr-position-quick-tasks"><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("jd")}>生成JD</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("jr")}>生成JR</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("talent_profile")}>生成人才画像</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("sourcing_strategy")}>生成搜寻策略</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("position_interview_plan")}>生成面试方案</button></div><button aria-expanded={materialDrawerOpen} ref={materialDrawerButton} type="button" onClick={() => setMaterialDrawerOpen(true)}>本轮材料（已选 {turnMaterialIds.length}）</button>{materialDrawerOpen && <><button aria-label="关闭本轮材料遮罩" className="hr-drawer-backdrop" type="button" onClick={() => setMaterialDrawerOpen(false)} /><aside aria-label="本轮任务材料" aria-modal="true" className="hr-mobile-drawer hr-turn-materials" role="dialog" onKeyDown={(event) => trapDialogFocus(event, () => setMaterialDrawerOpen(false))}><header><h2>本轮任务材料</h2><button aria-label="关闭本轮材料" ref={materialDrawerClose} type="button" onClick={() => setMaterialDrawerOpen(false)}>关闭</button></header>{materialChoices}</aside></>}</section>;
-  const sectionView = activeSection === "context" ? <HrPositionContextPanel api={r12} onConfirmed={setCurrentContext} positionId={positionId} readOnly={account.hard_stale_read_only} />
+  const sectionView = activeSection === "context" ? <HrPositionContextPanel api={r12} onConfirmed={setCurrentContext} positionId={positionId} readOnly={account.hard_stale_read_only} refreshGeneration={contextRefreshGeneration} />
     : activeSection === "candidates" ? <HrCandidateWorkspace api={r12} csrfToken={account.csrf_token} currentContextVersionId={currentContext?.contextVersionId ?? null} positionId={positionId} readOnly={account.hard_stale_read_only} />
       : <HrPositionResourcesPanel api={r12} positionId={positionId} readOnly={account.hard_stale_read_only} refreshGeneration={resourceRefreshGeneration} />;
 

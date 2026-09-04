@@ -16,9 +16,10 @@ function moduleText(value: Record<string, unknown>): string {
   return typeof preferred === "string" ? preferred : JSON.stringify(value, null, 2);
 }
 
-export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly = false }: {
+export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly = false, refreshGeneration = 0 }: {
   api: Pick<HrR12Api, "context" | "confirmContext" | "compareContext">; positionId: string;
   onConfirmed?: (context: HrContextVersion) => void; readOnly?: boolean;
+  refreshGeneration?: number;
 }) {
   const [data, setData] = useState<ContextState | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
@@ -41,7 +42,7 @@ export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly 
     const controller = new AbortController(); setData(null); setNotice(null); setConflict(null);
     void load(controller.signal).catch(() => { if (!controller.signal.aborted) setNotice("上下文暂时不可用"); });
     return () => { controller.abort(); mutation.current?.abort(); };
-  }, [api, positionId]);
+  }, [api, positionId, refreshGeneration]);
 
   async function confirm(draft: HrContextVersion, retry = false) {
     if (readOnly) return;
