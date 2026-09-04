@@ -6,30 +6,40 @@ as $function$
 declare authority text;
 declare selected_host text;
 declare selected_port text;
+declare selected_path text;
 begin
   if selected_url is null or char_length(selected_url) not between 9 and 2048
-    or selected_url !~ '^https://[^/?#]+([/?#][^[:space:]]*)?$' then
+    or selected_url !~ '^https://[^/?#]+([/?#][^[:space:]]*)?$'
+    or position(chr(92) in selected_url)>0
+    or selected_url ~ '%([^0-9A-F]|$)|%[0-9A-F]([^0-9A-F]|$)'
+    or selected_url ~* '%(2e|2f|5c)' then
     return false;
   end if;
   authority := substring(selected_url from '^https://([^/?#]+)');
-  if authority is null or authority like '%@%' or authority like '[%' then
+  if authority is null or authority<>lower(authority)
+    or position('@' in authority)>0 or left(authority,1)='[' then
     return false;
   end if;
-  if authority like '%:%' then
+  if position(':' in authority)>0 then
     if authority !~ '^[^:]+:[0-9]{1,5}$' then return false; end if;
-    selected_host := lower(split_part(authority,':',1));
+    selected_host := split_part(authority,':',1);
     selected_port := split_part(authority,':',2);
-    if selected_port::integer not between 1 and 65535 then return false; end if;
+    if selected_port<>'443' then return false; end if;
   else
-    selected_host := lower(authority);
+    selected_host := authority;
   end if;
   if selected_host='localhost' or selected_host like '%.localhost'
-    or selected_host ~ '^[0-9]+([.][0-9]+){3}$'
+    or selected_host ~ '^[0-9]+([.][0-9]+){0,3}$'
+    or selected_host ~ '^0x[0-9a-f]+$'
+    or selected_host ~
+      '^((0x[0-9a-f]+|[0-9]+)[.]){0,3}(0x[0-9a-f]+|[0-9]+)$'
     or selected_host !~
       '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)([.]'
       '([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))+$' then
     return false;
   end if;
+  selected_path := substring(selected_url from '^https://[^/?#]+([^?#]*)');
+  if selected_path ~ '(^|/)[.]{1,2}(/|$)' then return false; end if;
   return true;
 end
 $function$;
@@ -84,11 +94,27 @@ language sql immutable
 set search_path=pg_catalog
 as $function$
   select platform_hr.public_https_url_is_valid_v79(selected_url)
+    and jsonb_typeof(selected_approved_urls)='array'
+    and not exists (
+      select 1
+      from jsonb_array_elements_text(selected_approved_urls) approved_url
+      where not platform_hr.public_https_url_is_valid_v79(approved_url)
+    )
     and exists (
       select 1
       from jsonb_array_elements_text(selected_approved_urls) approved_url
       where selected_url=approved_url
-        or selected_url like rtrim(approved_url,'/') || '/%'
+        or (
+          position('?' in approved_url)=0
+          and position('#' in approved_url)=0
+          and (
+            (right(approved_url,1)='/'
+              and left(selected_url,char_length(approved_url))=approved_url)
+            or (right(approved_url,1)<>'/' and left(
+              selected_url,char_length(approved_url)+1
+            )=approved_url || '/')
+          )
+        )
     )
 $function$;
 
@@ -149,6 +175,25 @@ as $function$
     )
 $function$;
 
+create function platform_hr.timestamptz_text_is_valid_v79(selected_value text)
+returns boolean
+language plpgsql immutable
+set search_path=pg_catalog
+as $function$
+begin
+  if selected_value is null or char_length(selected_value) not between 20 and 35
+    or selected_value !~
+      '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+      '([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$' then
+    return false;
+  end if;
+  perform selected_value::timestamptz;
+  return true;
+exception when others then
+  return false;
+end
+$function$;
+
 create function platform_hr.insight_payload_is_valid_v79(
   selected_facts jsonb,
   selected_inferences jsonb,
@@ -175,17 +220,25 @@ begin
   end if;
   for fact in select value from jsonb_array_elements(selected_facts) loop
     if jsonb_typeof(fact) is distinct from 'object'
+      or platform_hr.jsonb_object_size_v79(fact)<>6
       or jsonb_typeof(fact->'fact_id') is distinct from 'string'
       or jsonb_typeof(fact->'text') is distinct from 'string'
+      or jsonb_typeof(fact->'snapshot_id') is distinct from 'string'
+      or jsonb_typeof(fact->'observation_id') is distinct from 'string'
       or jsonb_typeof(fact->'source_url') is distinct from 'string'
       or jsonb_typeof(fact->'observed_at') is distinct from 'string' then
       return false;
     end if;
     if char_length(btrim(fact->>'fact_id')) not between 1 and 128
       or char_length(btrim(fact->>'text')) not between 1 and 8000
-      or char_length(fact->>'observed_at') not between 20 and 35
-      or fact->>'observed_at' !~
-        '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$' then
+      or fact->>'snapshot_id' !~
+        '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+      or fact->>'observation_id' !~
+        '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+      or not platform_hr.public_https_url_is_valid_v79(fact->>'source_url')
+      or not platform_hr.timestamptz_text_is_valid_v79(
+        fact->>'observed_at'
+      ) then
       return false;
     end if;
     fact_ids := array_append(fact_ids,btrim(fact->>'fact_id'));
@@ -199,6 +252,7 @@ begin
     select value from jsonb_array_elements(selected_inferences)
   loop
     if jsonb_typeof(inference) is distinct from 'object'
+      or platform_hr.jsonb_object_size_v79(inference)<>2
       or jsonb_typeof(inference->'text') is distinct from 'string'
       or jsonb_typeof(inference->'basis_fact_ids') is distinct from 'array' then
       return false;
@@ -220,6 +274,7 @@ begin
     select value from jsonb_array_elements(selected_unknowns)
   loop
     if jsonb_typeof(unknown_item) is distinct from 'object'
+      or platform_hr.jsonb_object_size_v79(unknown_item)<>1
       or jsonb_typeof(unknown_item->'text') is distinct from 'string'
       or char_length(btrim(unknown_item->>'text')) not between 1 and 8000 then
       return false;
@@ -412,6 +467,7 @@ create table platform_hr.public_job_snapshot_requests (
   owner_internal_user_id uuid not null
     references platform_control.internal_users(internal_user_id),
   client_request_id uuid not null,
+  observation_id uuid not null,
   requested_snapshot_id uuid not null,
   run_id uuid not null,
   source_id uuid not null,
@@ -437,8 +493,9 @@ create table platform_hr.public_job_snapshot_requests (
       snapshot_id,owner_internal_user_id
     ),
   unique (owner_internal_user_id,client_request_id),
+  unique (owner_internal_user_id,observation_id),
   unique (
-    owner_internal_user_id,client_request_id,source_id,public_job_key,
+    owner_internal_user_id,observation_id,source_id,public_job_key,
     result_snapshot_id
   )
 );
@@ -465,7 +522,7 @@ create table platform_hr.public_job_current_snapshots (
     char_length(btrim(public_job_key)) between 1 and 512
   ),
   snapshot_id uuid not null,
-  latest_observation_client_request_id uuid not null,
+  latest_observation_id uuid not null,
   updated_at timestamptz not null default now(),
   foreign key (source_id,owner_internal_user_id)
     references platform_hr.talent_sources(
@@ -476,10 +533,10 @@ create table platform_hr.public_job_current_snapshots (
       snapshot_id,owner_internal_user_id
     ),
   foreign key (
-    owner_internal_user_id,latest_observation_client_request_id,
+    owner_internal_user_id,latest_observation_id,
     source_id,public_job_key,snapshot_id
   ) references platform_hr.public_job_snapshot_requests(
-    owner_internal_user_id,client_request_id,source_id,public_job_key,
+    owner_internal_user_id,observation_id,source_id,public_job_key,
     result_snapshot_id
   ),
   primary key (owner_internal_user_id,source_id,public_job_key)
@@ -648,15 +705,103 @@ before update or delete on platform_hr.talent_insight_versions
 for each row execute function
   platform_hr.guard_talent_insight_immutability_v79();
 
-create trigger guard_talent_insight_sources_immutability_v79
-before update or delete on platform_hr.talent_insight_sources
-for each row execute function
-  platform_hr.guard_talent_insight_immutability_v79();
+create function platform_hr.guard_talent_insight_links_v79()
+returns trigger language plpgsql
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if tg_op='INSERT' and pg_trigger_depth()=2 then return new; end if;
+  raise check_violation using message='talent insight links are sealed';
+end
+$function$;
 
-create trigger guard_talent_insight_snapshots_immutability_v79
-before update or delete on platform_hr.talent_insight_snapshots
+create trigger guard_talent_insight_sources_v79
+before insert or update or delete on platform_hr.talent_insight_sources
+for each row execute function platform_hr.guard_talent_insight_links_v79();
+
+create trigger guard_talent_insight_snapshots_v79
+before insert or update or delete on platform_hr.talent_insight_snapshots
+for each row execute function platform_hr.guard_talent_insight_links_v79();
+
+create function platform_hr.populate_talent_insight_links_v79()
+returns trigger language plpgsql
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  insert into platform_hr.talent_insight_sources(
+    insight_version_id,owner_internal_user_id,source_id,source_ordinal
+  )
+  select new.insight_version_id,new.owner_internal_user_id,
+    source_id,ordinality
+  from unnest(new.selected_source_ids)
+    with ordinality source(source_id,ordinality);
+  insert into platform_hr.talent_insight_snapshots(
+    insight_version_id,owner_internal_user_id,snapshot_id,snapshot_ordinal
+  )
+  select new.insight_version_id,new.owner_internal_user_id,
+    snapshot_id,ordinality
+  from unnest(new.snapshot_ids)
+    with ordinality snapshot(snapshot_id,ordinality);
+  return new;
+end
+$function$;
+
+create trigger populate_talent_insight_links_v79
+after insert on platform_hr.talent_insight_versions
+for each row execute function platform_hr.populate_talent_insight_links_v79();
+
+create function platform_hr.guard_position_insight_retrieval_immutability_v79()
+returns trigger language plpgsql
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  raise check_violation using
+    message='position insight retrieval is immutable';
+end
+$function$;
+
+create trigger guard_position_insight_retrieval_immutability_v79
+before update or delete on platform_hr.position_insight_retrievals
 for each row execute function
-  platform_hr.guard_talent_insight_immutability_v79();
+  platform_hr.guard_position_insight_retrieval_immutability_v79();
+
+create function platform_hr.guard_position_insight_retrieval_links_v79()
+returns trigger language plpgsql
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if tg_op='INSERT' and pg_trigger_depth()=2 then return new; end if;
+  raise check_violation using
+    message='position insight retrieval links are sealed';
+end
+$function$;
+
+create trigger guard_position_insight_retrieval_links_v79
+before insert or update or delete
+on platform_hr.position_insight_retrieval_versions
+for each row execute function
+  platform_hr.guard_position_insight_retrieval_links_v79();
+
+create function platform_hr.populate_position_insight_retrieval_links_v79()
+returns trigger language plpgsql
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  insert into platform_hr.position_insight_retrieval_versions(
+    retrieval_id,owner_internal_user_id,insight_version_id,insight_ordinal
+  )
+  select new.retrieval_id,new.owner_internal_user_id,
+    insight_version_id,ordinality
+  from unnest(new.insight_version_ids)
+    with ordinality insight(insight_version_id,ordinality);
+  return new;
+end
+$function$;
+
+create trigger populate_position_insight_retrieval_links_v79
+after insert on platform_hr.position_insight_retrievals
+for each row execute function
+  platform_hr.populate_position_insight_retrieval_links_v79();
 
 create function platform_hr.create_talent_source_v79(
   selected_source_id uuid,
@@ -944,6 +1089,7 @@ declare replay platform_hr.public_job_snapshot_requests%rowtype;
 declare payload jsonb;
 declare payload_hash bytea;
 declare current_observed_at timestamptz;
+declare current_observation_id uuid;
 begin
   if session_user not in ('platform_control_app','platform_control_app_preview')
      or (current_database()='agent_platform_control') <>
@@ -1026,30 +1172,32 @@ begin
     ) returning * into selected;
   end if;
   insert into platform_hr.public_job_snapshot_requests(
-    owner_internal_user_id,client_request_id,requested_snapshot_id,run_id,
-    source_id,public_job_key,result_snapshot_id,source_url,observed_at,status,
-    payload_sha256
+    owner_internal_user_id,client_request_id,observation_id,
+    requested_snapshot_id,run_id,source_id,public_job_key,result_snapshot_id,
+    source_url,observed_at,status,payload_sha256
   ) values (
     selected_owner_internal_user_id,selected_client_request_id,
-    selected_snapshot_id,selected_run_id,selected_source_id,
+    selected_client_request_id,selected_snapshot_id,selected_run_id,
+    selected_source_id,
     btrim(selected_public_job_key),selected.snapshot_id,selected_source_url,
     selected_observed_at,selected_status,payload_hash
   );
-  select observation.observed_at into current_observed_at
+  select observation.observed_at,observation.observation_id
+  into current_observed_at,current_observation_id
   from platform_hr.public_job_current_snapshots current_snapshot
   join platform_hr.public_job_snapshot_requests observation
     on observation.owner_internal_user_id=
       current_snapshot.owner_internal_user_id
-    and observation.client_request_id=
-      current_snapshot.latest_observation_client_request_id
+    and observation.observation_id=current_snapshot.latest_observation_id
   where current_snapshot.owner_internal_user_id=
       selected_owner_internal_user_id
     and current_snapshot.source_id=selected_source_id
     and current_snapshot.public_job_key=btrim(selected_public_job_key);
-  if not found or selected_observed_at>=current_observed_at then
+  if not found or (selected_observed_at,selected_client_request_id)>
+      (current_observed_at,current_observation_id) then
     insert into platform_hr.public_job_current_snapshots(
       owner_internal_user_id,source_id,public_job_key,snapshot_id,
-      latest_observation_client_request_id
+      latest_observation_id
     ) values (
       selected_owner_internal_user_id,selected_source_id,
       btrim(selected_public_job_key),selected.snapshot_id,
@@ -1057,8 +1205,7 @@ begin
     ) on conflict (owner_internal_user_id,source_id,public_job_key)
       do update set
         snapshot_id=excluded.snapshot_id,
-        latest_observation_client_request_id=
-          excluded.latest_observation_client_request_id,
+        latest_observation_id=excluded.latest_observation_id,
         updated_at=now();
   end if;
   return selected;
@@ -1185,19 +1332,37 @@ begin
   if not platform_hr.insight_payload_is_valid_v79(
       selected_facts,selected_inferences,selected_unknowns
     )
-    or not platform_hr.facts_have_https_urls_v79(selected_facts)
-    or exists (
-      select 1 from jsonb_array_elements(selected_facts) fact
-      where not exists (
-        select 1 from platform_hr.talent_sources source
-        where source.owner_internal_user_id=selected_owner_internal_user_id
-          and source.source_id=any(selected_source_ids)
-          and platform_hr.url_is_approved_v79(
-            fact->>'source_url',source.approved_public_urls
-          )
-      )
-    ) then
+    or not platform_hr.facts_have_https_urls_v79(selected_facts) then
     raise check_violation using message='talent insight fact source invalid';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(selected_facts) fact
+    where not exists (
+      select 1
+      from platform_hr.public_job_snapshot_requests observation
+      join platform_hr.public_job_snapshots snapshot
+        on snapshot.owner_internal_user_id=
+          observation.owner_internal_user_id
+        and snapshot.snapshot_id=observation.result_snapshot_id
+        and snapshot.source_id=observation.source_id
+      join platform_hr.talent_sources source
+        on source.owner_internal_user_id=observation.owner_internal_user_id
+        and source.source_id=observation.source_id
+      where observation.owner_internal_user_id=
+          selected_owner_internal_user_id
+        and observation.observation_id=(fact->>'observation_id')::uuid
+        and observation.result_snapshot_id=(fact->>'snapshot_id')::uuid
+        and observation.result_snapshot_id=any(selected_snapshot_ids)
+        and observation.source_id=any(selected_source_ids)
+        and observation.source_url=fact->>'source_url'
+        and observation.observed_at=(fact->>'observed_at')::timestamptz
+        and platform_hr.url_is_approved_v79(
+          fact->>'source_url',source.approved_public_urls
+        )
+    )
+  ) then
+    raise check_violation using
+      message='talent insight fact observation binding invalid';
   end if;
   perform pg_advisory_xact_lock(hashtextextended(
     selected_owner_internal_user_id::text || ':talent-insight-version',0
@@ -1218,19 +1383,6 @@ begin
     selected_source_conversation_id,selected_source_turn_id,
     btrim(selected_agent_id),btrim(selected_model_version)
   ) returning * into selected;
-  insert into platform_hr.talent_insight_sources(
-    insight_version_id,owner_internal_user_id,source_id,source_ordinal
-  )
-  select selected_insight_version_id,selected_owner_internal_user_id,
-    source_id,ordinality
-  from unnest(selected_source_ids) with ordinality source(source_id,ordinality);
-  insert into platform_hr.talent_insight_snapshots(
-    insight_version_id,owner_internal_user_id,snapshot_id,snapshot_ordinal
-  )
-  select selected_insight_version_id,selected_owner_internal_user_id,
-    snapshot_id,ordinality
-  from unnest(selected_snapshot_ids)
-    with ordinality snapshot(snapshot_id,ordinality);
   return selected;
 end
 $function$;
@@ -1333,13 +1485,6 @@ begin
     selected_turn_id,selected_insight_version_ids,selected_query_sha256,
     selected_retrieved_excerpts
   ) returning * into selected;
-  insert into platform_hr.position_insight_retrieval_versions(
-    retrieval_id,owner_internal_user_id,insight_version_id,insight_ordinal
-  )
-  select selected_retrieval_id,selected_owner_internal_user_id,
-    insight_version_id,ordinality
-  from unnest(selected_insight_version_ids)
-    with ordinality insight(insight_version_id,ordinality);
   return selected;
 end
 $function$;

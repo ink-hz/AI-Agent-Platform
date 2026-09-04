@@ -105,6 +105,10 @@ def test_migration_enforces_owner_exact_references_and_bounded_values() -> None:
     assert "public_https_url_is_valid_v79" in sql
     assert "jsonb_https_url_array_v79" in sql
     assert "url_is_approved_v79" in sql
+    assert "selected_url like" not in sql
+    assert re.search(r"left\(\s*selected_url,char_length\(approved_url\)\+1\s*\)", sql)
+    assert "selected_port<>'443'" in sql
+    assert "selected_url ~* '%(2e|2f|5c)'" in sql
     assert "content_sha256 ~ '^[a-f0-9]{64}$'" in sql
     assert "query_sha256 ~ '^[a-f0-9]{64}$'" in sql
     assert "error_code ~ '^[a-z][a-z0-9_]{0,63}$'" in sql
@@ -131,7 +135,12 @@ def test_snapshot_identity_currentness_and_insights_are_historical() -> None:
         "unique (owner_internal_user_id,source_id,public_job_key,content_sha256)" in sql
     )
     assert "create table platform_hr.public_job_current_snapshots" in sql
-    assert "latest_observation_client_request_id uuid not null" in sql
+    assert "observation_id uuid not null" in sql
+    assert "latest_observation_id uuid not null" in sql
+    assert (
+        "(selected_observed_at,selected_client_request_id)> "
+        "(current_observed_at,current_observation_id)" in sql
+    )
     assert "update platform_hr.public_job_snapshots" not in sql
     assert "guard_public_job_snapshot_immutability_v79" in sql
     assert "guard_public_job_observation_immutability_v79" in sql
@@ -142,8 +151,19 @@ def test_snapshot_identity_currentness_and_insights_are_historical() -> None:
         sql.count(
             "execute function platform_hr.guard_talent_insight_immutability_v79()"
         )
-        >= 3
+        >= 1
     )
+    assert "populate_talent_insight_links_v79" in sql
+    assert "after insert on platform_hr.talent_insight_versions" in sql
+    assert "guard_talent_insight_links_v79" in sql
+    assert "populate_position_insight_retrieval_links_v79" in sql
+    assert "after insert on platform_hr.position_insight_retrievals" in sql
+    assert "guard_position_insight_retrieval_immutability_v79" in sql
+    assert "guard_position_insight_retrieval_links_v79" in sql
+    assert "platform_hr.jsonb_object_size_v79(fact)<>6" in sql
+    assert "platform_hr.jsonb_object_size_v79(inference)<>2" in sql
+    assert "platform_hr.jsonb_object_size_v79(unknown_item)<>1" in sql
+    assert "talent insight fact observation binding invalid" in sql
     assert "delete from platform_hr.public_job_snapshots" not in sql
     assert (
         "state in ( 'queued','running','completed','partially_completed','failed' )"

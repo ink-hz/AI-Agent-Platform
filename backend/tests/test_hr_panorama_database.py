@@ -1,6 +1,7 @@
 # ruff: noqa: F811
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from threading import Barrier
@@ -165,7 +166,7 @@ def _snapshot_values(
     )
 
 
-def _insight_values(scope, run_id, source_id, snapshot_id):
+def _insight_values(scope, run_id, source_id, snapshot_id, observation_id):
     return (
         uuid4(),
         scope["owner"],
@@ -173,10 +174,18 @@ def _insight_values(scope, run_id, source_id, snapshot_id):
         run_id,
         [source_id],
         [snapshot_id],
-        (
-            '[{"fact_id":"f1","text":"公开招聘结构工程师",'
-            '"source_url":"https://example.com/jobs/001",'
-            '"observed_at":"2026-09-05T08:00:00Z"}]'
+        json.dumps(
+            [
+                {
+                    "fact_id": "f1",
+                    "text": "公开招聘结构工程师",
+                    "snapshot_id": str(snapshot_id),
+                    "observation_id": str(observation_id),
+                    "source_url": "https://example.com/jobs/001",
+                    "observed_at": "2026-09-05T08:00:00Z",
+                }
+            ],
+            ensure_ascii=False,
         ),
         '[{"text":"结构岗位增加","basis_fact_ids":["f1"]}]',
         '[{"text":"招聘人数未知"}]',
@@ -291,11 +300,18 @@ def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
 @pytest.mark.postgres
 def test_panorama_lists_reject_null_limits(control_database) -> None:
     environment = control_database["environments"]["production"]
-    with (
-        psycopg.connect(environment["urls"]["platform_control_app"]) as app,
-        pytest.raises(psycopg.errors.CheckViolation),
-    ):
-        app.execute(LIST_SOURCES, (uuid4(), False, None))
+    calls = (
+        (LIST_SOURCES, (uuid4(), False, None)),
+        (LIST_RUNS, (uuid4(), None)),
+        (LIST_SNAPSHOTS, (uuid4(), uuid4(), None)),
+        (LIST_INSIGHTS, (uuid4(), None)),
+        (LIST_RETRIEVALS, (uuid4(), uuid4(), None)),
+    )
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        for statement, parameters in calls:
+            with pytest.raises(psycopg.errors.CheckViolation):
+                app.execute(statement, parameters)
+            app.rollback()
 
 
 @pytest.mark.postgres
@@ -337,16 +353,72 @@ def test_source_create_replays_rejects_mismatch_and_lists_only_one_owner(
             "https:///jobs",
             "https://localhost/jobs",
             "https://127.0.0.1/jobs",
+            "https://127.1/jobs",
+            "https://0x7f000001/jobs",
+            "https://0x7f.0.0.1/jobs",
+            "https://2130706433/jobs",
+            "https://0177.0.0.1/jobs",
             "https://10.0.0.8/jobs",
             "https://100.64.0.1/jobs",
             "https://169.254.169.254/latest/meta-data",
             "https://[::1]/jobs",
+            "https://Example.com/jobs",
+            "https://example.com:8443/jobs",
             "https://example.com:65536/jobs",
+            "https://example.com/jobs/../admin",
+            "https://example.com/jobs/%2e%2e/admin",
+            "https://example.com/jobs/%2E%2E/admin",
+            "https://example.com/jobs/%2fadmin",
+            "https://example.com/jobs/%5Cadmin",
+            "https://example.com/jobs\\admin",
         ):
             invalid = list(_source_values(owner, request_id=uuid4()))
-            invalid[6] = f'["{invalid_url}"]'
+            invalid[6] = json.dumps([invalid_url])
             with pytest.raises(psycopg.errors.CheckViolation):
                 app.execute(CREATE_SOURCE, invalid)
+            app.rollback()
+
+
+@pytest.mark.postgres
+def test_approved_url_prefix_is_canonical_and_uses_literal_path_boundaries(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Literal URL Owner")
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        source_values = list(_source_values(scope, request_id=uuid4()))
+        source_values[6] = '["https://example.com/jobs_100%25"]'
+        source = app.execute(CREATE_SOURCE, source_values).fetchone()
+        run_id, _ = _create_running_run(app, scope, source[0])
+        allowed = app.execute(
+            CREATE_SNAPSHOT,
+            _snapshot_values(
+                scope,
+                source[0],
+                run_id,
+                request_id=uuid4(),
+                source_url="https://example.com/jobs_100%25/001",
+            ),
+        ).fetchone()
+        assert allowed[0]
+        app.commit()
+        for unapproved in (
+            "https://example.com/jobsX100ZZ25/001",
+            "https://example.com/jobs_100%25-evil/001",
+            "https://example.com/other/jobs_100%25/001",
+        ):
+            values = list(
+                _snapshot_values(
+                    scope,
+                    source[0],
+                    run_id,
+                    request_id=uuid4(),
+                    source_url=unapproved,
+                )
+            )
+            with pytest.raises(psycopg.errors.CheckViolation):
+                app.execute(CREATE_SNAPSHOT, values)
             app.rollback()
 
 
@@ -407,16 +479,23 @@ def test_concurrent_snapshot_collection_deduplicates_and_supersedes_current(
         app.commit()
     barrier = Barrier(2)
 
-    def create_once() -> tuple[object, ...]:
+    def create_once() -> tuple[tuple[object, ...], UUID]:
+        observation_id = uuid4()
         values = _snapshot_values(
-            scope, source[0], run_id, request_id=uuid4(), snapshot_id=uuid4()
+            scope,
+            source[0],
+            run_id,
+            request_id=observation_id,
+            snapshot_id=uuid4(),
         )
         with psycopg.connect(app_url) as app:
             barrier.wait(timeout=3)
-            return app.execute(CREATE_SNAPSHOT, values).fetchone()
+            return app.execute(CREATE_SNAPSHOT, values).fetchone(), observation_id
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        first, second = tuple(pool.map(lambda _: create_once(), range(2)))
+        first_result, second_result = tuple(pool.map(lambda _: create_once(), range(2)))
+    first, first_observation_id = first_result
+    second, _ = second_result
     assert first[0] == second[0]
     with psycopg.connect(environment["admin"]) as admin:
         evidence_before = admin.execute(
@@ -429,7 +508,13 @@ def test_concurrent_snapshot_collection_deduplicates_and_supersedes_current(
     with psycopg.connect(app_url) as app:
         historical_insight = app.execute(
             CREATE_INSIGHT,
-            _insight_values(scope, run_id, source[0], first[0]),
+            _insight_values(
+                scope,
+                run_id,
+                source[0],
+                first[0],
+                first_observation_id,
+            ),
         ).fetchone()
         changed = app.execute(
             CREATE_SNAPSHOT,
@@ -481,8 +566,8 @@ def test_concurrent_snapshot_collection_deduplicates_and_supersedes_current(
             "current_snapshot join platform_hr.public_job_snapshot_requests observation "
             "on observation.owner_internal_user_id="
             "current_snapshot.owner_internal_user_id and "
-            "observation.client_request_id="
-            "current_snapshot.latest_observation_client_request_id "
+            "observation.observation_id="
+            "current_snapshot.latest_observation_id "
             "where current_snapshot.owner_internal_user_id=%s and "
             "current_snapshot.source_id=%s and current_snapshot.public_job_key=%s",
             (scope["owner"], source[0], "job-001"),
@@ -591,6 +676,85 @@ def test_concurrent_distinct_job_keys_keep_independent_current_projections(
             (scope["owner"], source[0]),
         ).fetchall()
     assert projections == [("job-002", created[0][0]), ("job-003", created[1][0])]
+
+
+@pytest.mark.postgres
+def test_current_projection_tie_break_and_late_observation_are_deterministic(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Deterministic Projection Owner")
+    observation_ids = [UUID(int=value) for value in range(1, 7)]
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        source = app.execute(
+            CREATE_SOURCE, _source_values(scope, request_id=uuid4())
+        ).fetchone()
+        run_id, _ = _create_running_run(app, scope, source[0])
+        app.commit()
+        for job_key, observations in (
+            (
+                "tie-low-then-high",
+                ((observation_ids[0], "a"), (observation_ids[1], "b")),
+            ),
+            (
+                "tie-high-then-low",
+                ((observation_ids[3], "b"), (observation_ids[2], "a")),
+            ),
+        ):
+            for observation_id, hash_character in observations:
+                app.execute(
+                    CREATE_SNAPSHOT,
+                    _snapshot_values(
+                        scope,
+                        source[0],
+                        run_id,
+                        request_id=observation_id,
+                        public_job_key=job_key,
+                        source_url=f"https://example.com/jobs/{job_key}",
+                        content_sha256=hash_character * 64,
+                    ),
+                )
+                app.commit()
+        for observation_id, hash_character, observed_at in (
+            (observation_ids[4], "c", "2026-09-06T08:00:00+00:00"),
+            (observation_ids[5], "d", "2026-09-04T08:00:00+00:00"),
+        ):
+            app.execute(
+                CREATE_SNAPSHOT,
+                _snapshot_values(
+                    scope,
+                    source[0],
+                    run_id,
+                    request_id=observation_id,
+                    public_job_key="older-arrives-late",
+                    source_url="https://example.com/jobs/older-arrives-late",
+                    content_sha256=hash_character * 64,
+                    observed_at=observed_at,
+                ),
+            )
+            app.commit()
+    with psycopg.connect(environment["admin"]) as admin:
+        current = admin.execute(
+            "select projection.public_job_key,observation.observation_id,"
+            "snapshot.content_sha256 "
+            "from platform_hr.public_job_current_snapshots projection "
+            "join platform_hr.public_job_snapshot_requests observation "
+            "on observation.owner_internal_user_id="
+            "projection.owner_internal_user_id and observation.observation_id="
+            "projection.latest_observation_id "
+            "join platform_hr.public_job_snapshots snapshot "
+            "on snapshot.owner_internal_user_id=projection.owner_internal_user_id "
+            "and snapshot.snapshot_id=projection.snapshot_id "
+            "where projection.owner_internal_user_id=%s "
+            "order by projection.public_job_key",
+            (scope["owner"],),
+        ).fetchall()
+    assert current == [
+        ("older-arrives-late", observation_ids[4], "c" * 64),
+        ("tie-high-then-low", observation_ids[3], "b" * 64),
+        ("tie-low-then-high", observation_ids[1], "b" * 64),
+    ]
 
 
 @pytest.mark.postgres
@@ -798,9 +962,15 @@ def test_insight_is_append_only_and_retrieval_is_position_owner_scoped(
             CREATE_SOURCE, _source_values(scope, request_id=uuid4())
         ).fetchone()
         run_id, _ = _create_running_run(app, scope, source[0])
+        snapshot_observation_id = uuid4()
         snapshot = app.execute(
             CREATE_SNAPSHOT,
-            _snapshot_values(scope, source[0], run_id, request_id=uuid4()),
+            _snapshot_values(
+                scope,
+                source[0],
+                run_id,
+                request_id=snapshot_observation_id,
+            ),
         ).fetchone()
         app.commit()
         missing_fact_url = (
@@ -810,9 +980,17 @@ def test_insight_is_append_only_and_retrieval_is_position_owner_scoped(
             run_id,
             [source[0]],
             [snapshot[0]],
-            (
-                '[{"fact_id":"missing-url","text":"缺少来源",'
-                '"observed_at":"2026-09-05T08:00:00Z"}]'
+            json.dumps(
+                [
+                    {
+                        "fact_id": "missing-url",
+                        "text": "缺少来源",
+                        "snapshot_id": str(snapshot[0]),
+                        "observation_id": str(snapshot_observation_id),
+                        "observed_at": "2026-09-05T08:00:00Z",
+                    }
+                ],
+                ensure_ascii=False,
             ),
             "[]",
             "[]",
@@ -833,11 +1011,13 @@ def test_insight_is_append_only_and_retrieval_is_position_owner_scoped(
             run_id,
             [source[0]],
             [snapshot[0]],
-            (
-                '[{"fact_id":"f1","text":"公开岗位",'
-                '"source_url":"https://example.com/jobs/001",'
-                '"observed_at":"2026-09-05T08:00:00Z"}]'
-            ),
+            _insight_values(
+                scope,
+                run_id,
+                source[0],
+                snapshot[0],
+                snapshot_observation_id,
+            )[6],
             '[{"text":"无证据推断","basis_fact_ids":["missing"]}]',
             "[]",
             "{}",
@@ -856,28 +1036,14 @@ def test_insight_is_append_only_and_retrieval_is_position_owner_scoped(
         with pytest.raises(psycopg.errors.CheckViolation):
             app.execute(CREATE_INSIGHT, empty_basis)
         app.rollback()
-        insight_id, insight_request = uuid4(), uuid4()
-        insight_values = (
-            insight_id,
-            scope["owner"],
-            insight_request,
+        insight_values = _insight_values(
+            scope,
             run_id,
-            [source[0]],
-            [snapshot[0]],
-            (
-                '[{"fact_id":"f1","text":"公开招聘结构工程师",'
-                '"source_url":"https://example.com/jobs/001",'
-                '"observed_at":"2026-09-05T08:00:00Z"}]'
-            ),
-            '[{"text":"结构岗位增加","basis_fact_ids":["f1"]}]',
-            '[{"text":"招聘人数未知"}]',
-            '{"结构":4}',
-            "结构人才需求上升",
-            scope["conversation"],
-            scope["turn"],
-            "hr-bot",
-            "gpt-5",
+            source[0],
+            snapshot[0],
+            snapshot_observation_id,
         )
+        insight_id = insight_values[0]
         insight = app.execute(CREATE_INSIGHT, insight_values).fetchone()
         assert app.execute(CREATE_INSIGHT, insight_values).fetchone() == insight
         assert (
@@ -931,10 +1097,68 @@ def test_insight_is_append_only_and_retrieval_is_position_owner_scoped(
         with pytest.raises(psycopg.errors.NoDataFound):
             app.execute(CREATE_RETRIEVAL, cross_owner)
     with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select source_id,source_ordinal from platform_hr.talent_insight_sources "
+            "where insight_version_id=%s order by source_ordinal",
+            (insight_id,),
+        ).fetchall() == [(source[0], 1)]
+        assert admin.execute(
+            "select snapshot_id,snapshot_ordinal "
+            "from platform_hr.talent_insight_snapshots "
+            "where insight_version_id=%s order by snapshot_ordinal",
+            (insight_id,),
+        ).fetchall() == [(snapshot[0], 1)]
+        assert admin.execute(
+            "select insight_version_id,insight_ordinal "
+            "from platform_hr.position_insight_retrieval_versions "
+            "where retrieval_id=%s order by insight_ordinal",
+            (retrieval_id,),
+        ).fetchall() == [(insight_id, 1)]
+        for statement, parameters, message in (
+            (
+                (
+                    "insert into platform_hr.talent_insight_sources("
+                    "insight_version_id,owner_internal_user_id,source_id,"
+                    "source_ordinal) values (%s,%s,%s,2)"
+                ),
+                (insight_id, scope["owner"], source[0]),
+                "talent insight links are sealed",
+            ),
+            (
+                (
+                    "insert into platform_hr.talent_insight_snapshots("
+                    "insight_version_id,owner_internal_user_id,snapshot_id,"
+                    "snapshot_ordinal) values (%s,%s,%s,2)"
+                ),
+                (insight_id, scope["owner"], snapshot[0]),
+                "talent insight links are sealed",
+            ),
+            (
+                (
+                    "update platform_hr.position_insight_retrieval_versions "
+                    "set insight_ordinal=insight_ordinal where retrieval_id=%s"
+                ),
+                (retrieval_id,),
+                "position insight retrieval links are sealed",
+            ),
+        ):
+            with pytest.raises(psycopg.errors.CheckViolation, match=message):
+                admin.execute(statement, parameters)
+            admin.rollback()
+        with pytest.raises(
+            psycopg.errors.CheckViolation,
+            match="position insight retrieval is immutable",
+        ):
+            admin.execute(
+                "update platform_hr.position_insight_retrievals "
+                "set insight_version_ids=insight_version_ids where retrieval_id=%s",
+                (retrieval_id,),
+            )
+        admin.rollback()
         for table in ("talent_insight_sources", "talent_insight_snapshots"):
             with pytest.raises(
                 psycopg.errors.CheckViolation,
-                match="talent insight version is immutable",
+                match="talent insight links are sealed",
             ):
                 admin.execute(
                     f"delete from platform_hr.{table} where insight_version_id=%s",
@@ -960,3 +1184,203 @@ def test_insight_is_append_only_and_retrieval_is_position_owner_scoped(
                 "where insight_version_id=%s",
                 (insight_id,),
             )
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "invalid_case",
+    (
+        "extra_fact_key",
+        "fact_not_object",
+        "unselected_snapshot",
+        "unknown_observation",
+        "mismatched_source_url",
+        "mismatched_observed_at",
+        "invalid_observed_at",
+        "extra_inference_key",
+        "inference_not_object",
+        "extra_unknown_key",
+        "unknown_not_object",
+    ),
+)
+def test_insight_payload_requires_exact_observation_bound_schemas(
+    control_database,
+    invalid_case,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, f"Exact Insight {invalid_case}")
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        source = app.execute(
+            CREATE_SOURCE, _source_values(scope, request_id=uuid4())
+        ).fetchone()
+        run_id, _ = _create_running_run(app, scope, source[0])
+        observation_id = uuid4()
+        snapshot = app.execute(
+            CREATE_SNAPSHOT,
+            _snapshot_values(
+                scope,
+                source[0],
+                run_id,
+                request_id=observation_id,
+            ),
+        ).fetchone()
+        app.commit()
+        fact = {
+            "fact_id": "f1",
+            "text": "公开招聘结构工程师",
+            "snapshot_id": str(snapshot[0]),
+            "observation_id": str(observation_id),
+            "source_url": "https://example.com/jobs/001",
+            "observed_at": "2026-09-05T08:00:00Z",
+        }
+        inference = {"text": "结构岗位增加", "basis_fact_ids": ["f1"]}
+        unknown = {"text": "招聘人数未知"}
+        if invalid_case == "extra_fact_key":
+            fact["unexpected"] = True
+        elif invalid_case == "unselected_snapshot":
+            fact["snapshot_id"] = str(uuid4())
+        elif invalid_case == "unknown_observation":
+            fact["observation_id"] = str(uuid4())
+        elif invalid_case == "mismatched_source_url":
+            fact["source_url"] = "https://example.com/jobs/other"
+        elif invalid_case == "mismatched_observed_at":
+            fact["observed_at"] = "2026-09-05T09:00:00Z"
+        elif invalid_case == "invalid_observed_at":
+            fact["observed_at"] = "2026-02-30T08:00:00Z"
+        elif invalid_case == "extra_inference_key":
+            inference["unexpected"] = True
+        elif invalid_case == "extra_unknown_key":
+            unknown["unexpected"] = True
+        facts: list[object] = [fact]
+        inferences: list[object] = [inference]
+        unknowns: list[object] = [unknown]
+        if invalid_case == "fact_not_object":
+            facts = ["not-an-object"]
+        elif invalid_case == "inference_not_object":
+            inferences = ["not-an-object"]
+        elif invalid_case == "unknown_not_object":
+            unknowns = ["not-an-object"]
+        values = list(
+            _insight_values(
+                scope,
+                run_id,
+                source[0],
+                snapshot[0],
+                observation_id,
+            )
+        )
+        values[6] = json.dumps(facts, ensure_ascii=False)
+        values[7] = json.dumps(inferences, ensure_ascii=False)
+        values[8] = json.dumps(unknowns, ensure_ascii=False)
+        with pytest.raises(psycopg.errors.CheckViolation):
+            app.execute(CREATE_INSIGHT, values)
+
+
+@pytest.mark.postgres
+def test_normalized_links_exactly_mirror_parent_arrays(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Exact Normalized Links")
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        sources = (
+            app.execute(
+                CREATE_SOURCE,
+                _source_values(
+                    scope,
+                    request_id=uuid4(),
+                    company_key="first-company",
+                    canonical_name="第一家公司",
+                ),
+            ).fetchone(),
+            app.execute(
+                CREATE_SOURCE,
+                _source_values(
+                    scope,
+                    request_id=uuid4(),
+                    company_key="second-company",
+                    canonical_name="第二家公司",
+                ),
+            ).fetchone(),
+        )
+        run_id, _ = _create_running_run(app, scope, [sources[1][0], sources[0][0]])
+        observation_ids = (uuid4(), uuid4())
+        snapshots = tuple(
+            app.execute(
+                CREATE_SNAPSHOT,
+                _snapshot_values(
+                    scope,
+                    source[0],
+                    run_id,
+                    request_id=observation_id,
+                    public_job_key=f"job-{ordinal}",
+                    source_url=f"https://example.com/jobs/{ordinal}",
+                    content_sha256=str(ordinal) * 64,
+                ),
+            ).fetchone()
+            for ordinal, (source, observation_id) in enumerate(
+                zip(sources, observation_ids, strict=True), start=1
+            )
+        )
+        facts = [
+            {
+                "fact_id": f"f{ordinal}",
+                "text": f"公开岗位 {ordinal}",
+                "snapshot_id": str(snapshot[0]),
+                "observation_id": str(observation_id),
+                "source_url": f"https://example.com/jobs/{ordinal}",
+                "observed_at": "2026-09-05T08:00:00Z",
+            }
+            for ordinal, (snapshot, observation_id) in enumerate(
+                zip(snapshots, observation_ids, strict=True), start=1
+            )
+        ]
+        insight_values = list(
+            _insight_values(
+                scope,
+                run_id,
+                sources[0][0],
+                snapshots[0][0],
+                observation_ids[0],
+            )
+        )
+        insight_values[4] = [sources[1][0], sources[0][0]]
+        insight_values[5] = [snapshots[1][0], snapshots[0][0]]
+        insight_values[6] = json.dumps(facts, ensure_ascii=False)
+        insight_values[7] = '[{"text":"综合推断","basis_fact_ids":["f1","f2"]}]'
+        first_insight = app.execute(CREATE_INSIGHT, insight_values).fetchone()
+        insight_values[0], insight_values[2] = uuid4(), uuid4()
+        second_insight = app.execute(CREATE_INSIGHT, insight_values).fetchone()
+        retrieval_id = uuid4()
+        app.execute(
+            CREATE_RETRIEVAL,
+            (
+                retrieval_id,
+                scope["owner"],
+                uuid4(),
+                scope["position"],
+                scope["conversation"],
+                scope["turn"],
+                [second_insight[0], first_insight[0]],
+                "e" * 64,
+                "[]",
+            ),
+        )
+        app.commit()
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select source_id from platform_hr.talent_insight_sources "
+            "where insight_version_id=%s order by source_ordinal",
+            (first_insight[0],),
+        ).fetchall() == [(sources[1][0],), (sources[0][0],)]
+        assert admin.execute(
+            "select snapshot_id from platform_hr.talent_insight_snapshots "
+            "where insight_version_id=%s order by snapshot_ordinal",
+            (first_insight[0],),
+        ).fetchall() == [(snapshots[1][0],), (snapshots[0][0],)]
+        assert admin.execute(
+            "select insight_version_id "
+            "from platform_hr.position_insight_retrieval_versions "
+            "where retrieval_id=%s order by insight_ordinal",
+            (retrieval_id,),
+        ).fetchall() == [(second_insight[0],), (first_insight[0],)]
