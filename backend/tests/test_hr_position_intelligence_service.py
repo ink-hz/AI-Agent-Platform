@@ -48,6 +48,14 @@ class RecordingRepository:
         self.calls.append(("official_detail", args))
         return None
 
+    def create_task_request(self, command):
+        self.calls.append(("task_request", command))
+        return command
+
+    def task_request(self, *args):
+        self.calls.append(("task_request_read", args))
+        return None
+
 
 def test_service_builds_draft_and_human_confirmation_commands() -> None:
     owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()
@@ -86,3 +94,23 @@ def test_service_delegates_scoped_reads_and_compare() -> None:
     assert service.compare(owner_id, position_id, context_id, context_id) == {
         "changed_modules": ()
     }
+
+
+def test_service_builds_durable_task_request_before_conversation() -> None:
+    owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()
+    repository = RecordingRepository(_context(owner_id, position_id, context_id))
+    generated_id = uuid4()
+    service = PositionIntelligenceService(repository, uuid_factory=lambda: generated_id)
+    request_id = uuid4()
+
+    result = service.create_task_request(
+        owner_id=owner_id, position_id=position_id, request_id=request_id,
+        canonical_payload_sha256="a" * 64, task_kind="jd",
+        expected_context_version_id=context_id,
+        material_attachment_ids=(), candidate_id=None,
+        position_candidate_id=None,
+    )
+
+    assert result.task_request_id == generated_id
+    assert result.client_request_id == request_id
+    assert repository.calls[-1] == ("task_request", result)

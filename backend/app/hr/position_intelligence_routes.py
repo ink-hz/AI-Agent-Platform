@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .position_intelligence_models import CONTEXT_MODULES
+from .position_intelligence_models import CONTEXT_MODULES, thaw_json
 from .position_intelligence_repository import (
     PositionContextConflict,
     PositionContextNotFound,
@@ -135,7 +135,7 @@ def _context(record) -> dict[str, object]:
         "position_id": str(record.position_id),
         "version_number": record.version_number,
         "state": record.state,
-        "modules": record.modules,
+        "modules": thaw_json(record.modules),
         "summary": record.summary,
         "official_version_id": (
             str(record.official_version_id)
@@ -197,6 +197,8 @@ def _official(record) -> dict[str, object]:
         "last_observed_at": record.last_observed_at.isoformat(),
         "official_status": record.official_status,
         "status_reason": record.status_reason,
+        "consecutive_misses": record.consecutive_misses,
+        "official_status_code": record.official_status_code,
         "created_at": record.created_at.isoformat(),
     }
 

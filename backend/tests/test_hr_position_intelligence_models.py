@@ -4,13 +4,13 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
 from app.hr.position_intelligence_models import (
     ConfirmContextModules,
     CreateContextDraft,
     HrPositionContextEnvelope,
     OfficialPositionVersion,
     PositionContextVersion,
+    ProjectOfficialVersion,
 )
 
 
@@ -58,11 +58,37 @@ def test_official_version_preserves_complete_published_facts() -> None:
         first_observed_at=now, last_observed_at=now,
         official_status="active", status_reason="published",
         evidence={"snapshot_sha256": "b" * 64}, created_at=now,
+        consecutive_misses=0, official_status_code=1,
     )
 
     assert record.official_job_id == "J11014"
     assert record.duty == "Build."
     assert record.requirement == "Test."
+    assert record.headcount == 1
+    assert record.official_status_code == 1
+
+
+def test_frozen_models_deeply_isolate_mapping_inputs() -> None:
+    modules = {"mission": {"items": ["first"]}}
+    command = CreateContextDraft(
+        uuid4(), uuid4(), uuid4(), None, None, modules, "draft", uuid4(),
+    )
+    modules["mission"]["items"].append("mutated")
+
+    assert command.modules == {"mission": {"items": ("first",)}}
+    with pytest.raises(TypeError):
+        command.modules["mission"] = {}  # type: ignore[index]
+
+    now = datetime.now(UTC)
+    evidence = {"source": {"ids": ["one"]}}
+    official = ProjectOfficialVersion(
+        uuid4(), uuid4(), uuid4(), uuid4(), "J11014", "Title", None, (),
+        "Category", None, 0, None, "Full time", "Unknown", "Duty",
+        "Requirement", "v1", now, "a" * 64, now, now, "active",
+        "published", evidence,
+    )
+    evidence["source"]["ids"].append("mutated")
+    assert official.evidence == {"source": {"ids": ("one",)}}
 
 
 def test_context_version_rejects_mutable_or_inconsistent_state() -> None:

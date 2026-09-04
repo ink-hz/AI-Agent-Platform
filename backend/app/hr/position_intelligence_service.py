@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from .position_intelligence_models import (
     ConfirmContextModules,
     CreateContextDraft,
+    CreatePositionTaskRequest,
     PositionContextVersion,
 )
 
@@ -19,6 +20,8 @@ class PositionIntelligenceCommands(Protocol):
     def compare(self, owner_id: UUID, position_id: UUID, left: UUID, right: UUID) -> dict[str, object]: ...
     def official_versions(self, owner_id: UUID, position_id: UUID) -> tuple[object, ...]: ...
     def official_version(self, owner_id: UUID, position_id: UUID, official_version_id: UUID) -> object: ...
+    def create_task_request(self, command: CreatePositionTaskRequest) -> object: ...
+    def task_request(self, owner_id: UUID, position_id: UUID, client_request_id: UUID) -> object | None: ...
 
 
 class PositionIntelligenceService:
@@ -31,6 +34,7 @@ class PositionIntelligenceService:
         for name in (
             "current", "list_versions", "create_draft", "confirm_modules",
             "compare", "official_versions", "official_version",
+            "create_task_request", "task_request",
         ):
             if not callable(getattr(repository, name, None)):
                 raise ValueError("position intelligence repository invalid")
@@ -57,6 +61,37 @@ class PositionIntelligenceService:
         return self._repository.official_version(
             owner_id, position_id, official_version_id
         )
+
+    def create_task_request(
+        self,
+        *,
+        owner_id: UUID,
+        position_id: UUID,
+        request_id: UUID,
+        canonical_payload_sha256: str,
+        task_kind: str,
+        expected_context_version_id: UUID | None,
+        material_attachment_ids: tuple[UUID, ...] = (),
+        candidate_id: UUID | None = None,
+        position_candidate_id: UUID | None = None,
+    ) -> object:
+        return self._repository.create_task_request(CreatePositionTaskRequest(
+            task_request_id=self._uuid_factory(),
+            owner_id=owner_id,
+            position_id=position_id,
+            client_request_id=request_id,
+            canonical_payload_sha256=canonical_payload_sha256,
+            task_kind=task_kind,
+            expected_context_version_id=expected_context_version_id,
+            material_attachment_ids=material_attachment_ids,
+            candidate_id=candidate_id,
+            position_candidate_id=position_candidate_id,
+        ))
+
+    def task_request(
+        self, owner_id: UUID, position_id: UUID, request_id: UUID
+    ) -> object | None:
+        return self._repository.task_request(owner_id, position_id, request_id)
 
     def create_draft(
         self,

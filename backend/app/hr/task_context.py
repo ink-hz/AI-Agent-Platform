@@ -16,6 +16,7 @@ from .position_intelligence_models import (
     HrPositionContextEnvelope,
     OfficialPositionVersion,
     PositionContextVersion,
+    thaw_json,
 )
 from .position_intelligence_repository import _context, _official
 
@@ -64,6 +65,7 @@ class HrTaskScope:
     candidate_id: UUID | None
     position_candidate_id: UUID | None
     position_title: str | None = None
+    client_request_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -91,6 +93,10 @@ class HrTaskScope:
             or len(self.position_title) > 500
         ):
             raise ValueError("position title invalid")
+        if self.client_request_id is not None and not isinstance(
+            self.client_request_id, UUID
+        ):
+            raise ValueError("HR task request identifier invalid")
 
 
 class HrTaskContextSource(Protocol):
@@ -118,7 +124,32 @@ class CandidateEnvelopeProvider(Protocol):
         position_id: UUID,
         candidate_id: UUID | None,
         position_candidate_id: UUID | None,
-    ) -> object: ...
+    ) -> CandidateEnvelopeFragment: ...
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateEnvelopeFragment:
+    candidate_id: UUID
+    position_candidate_id: UUID
+    context_version_id: UUID
+    document_attachment_ids: tuple[UUID, ...]
+    human_feedback_ids: tuple[UUID, ...]
+    prompt_context: str
+
+    def __post_init__(self) -> None:
+        if any(not isinstance(value, UUID) for value in (
+            self.candidate_id, self.position_candidate_id, self.context_version_id,
+        )):
+            raise ValueError("candidate context identifiers invalid")
+        for values in (self.document_attachment_ids, self.human_feedback_ids):
+            if not isinstance(values, tuple) or any(
+                not isinstance(value, UUID) for value in values
+            ) or len(values) != len(set(values)) or len(values) > 100:
+                raise ValueError("candidate context identifiers invalid")
+        if not self.document_attachment_ids:
+            raise ValueError("candidate documents unavailable")
+        if not isinstance(self.prompt_context, str) or not self.prompt_context.strip():
+            raise ValueError("candidate prompt context invalid")
 
 
 def _canonical_document(envelope: HrPositionContextEnvelope) -> dict[str, object]:
@@ -159,7 +190,7 @@ def canonical_hash(envelope: HrPositionContextEnvelope) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _prompt(scope: HrTaskScope, candidate_fragment: object | None) -> str:
+def _prompt(scope: HrTaskScope, candidate_fragment: CandidateEnvelopeFragment | None) -> str:
     official = None
     if scope.official is not None:
         official = {
@@ -168,9 +199,21 @@ def _prompt(scope: HrTaskScope, candidate_fragment: object | None) -> str:
             "title": scope.official.title,
             "department": scope.official.department,
             "locations": list(scope.official.locations),
+            "category": scope.official.category,
+            "subcategory": scope.official.subcategory,
+            "headcount": scope.official.headcount,
+            "degree": scope.official.degree,
+            "employment_type": scope.official.employment_type,
+            "salary": scope.official.salary,
             "duty": scope.official.duty,
             "requirement": scope.official.requirement,
             "status": scope.official.official_status,
+            "status_code": scope.official.official_status_code,
+            "status_reason": scope.official.status_reason,
+            "consecutive_misses": scope.official.consecutive_misses,
+            "source_changed_at": scope.official.source_changed_at.isoformat(),
+            "first_observed_at": scope.official.first_observed_at.isoformat(),
+            "last_observed_at": scope.official.last_observed_at.isoformat(),
             "source_version": scope.official.source_version,
             "content_hash": scope.official.content_hash,
         }
@@ -180,7 +223,7 @@ def _prompt(scope: HrTaskScope, candidate_fragment: object | None) -> str:
             "version_id": str(scope.context.context_version_id),
             "version_number": scope.context.version_number,
             "summary": scope.context.summary,
-            "modules": scope.context.modules,
+            "modules": thaw_json(scope.context.modules),
         }
     document: dict[str, object] = {
         "boundary": "Use only this position and these explicitly selected inputs.",
@@ -195,9 +238,7 @@ def _prompt(scope: HrTaskScope, candidate_fragment: object | None) -> str:
         ],
     }
     if candidate_fragment is not None:
-        document["candidate_context"] = getattr(
-            candidate_fragment, "prompt_context", None
-        )
+        document["candidate_context"] = candidate_fragment.prompt_context
     return json.dumps(
         document,
         ensure_ascii=False,
@@ -257,6 +298,13 @@ class HrTaskContextProvider:
             or scope.context.state != "confirmed"
         ):
             raise HrTaskContextError("confirmed position context invalid")
+        candidate_task = scope.task_kind in {"candidate_match", "candidate_interview_plan"}
+        if candidate_task and (scope.context is None or scope.candidate_id is None):
+            raise HrTaskContextError("candidate context unavailable")
+        if scope.candidate_id is not None and scope.context is None:
+            raise HrTaskContextError("candidate context unavailable")
+        if scope.task_kind == "candidate_comparison" and scope.candidate_id is not None:
+            raise HrTaskContextError("candidate comparison scope invalid")
         if scope.official is None and scope.context is None and scope.position_title is None:
             raise HrTaskContextError("position context unavailable")
         now = datetime.now().astimezone()
@@ -287,10 +335,14 @@ class HrTaskContextProvider:
                 raise HrTaskContextError(
                     "candidate context unavailable"
                 ) from None
+            if not isinstance(candidate_fragment, CandidateEnvelopeFragment):
+                raise HrTaskContextError("candidate context scope invalid")
             if (
                 getattr(candidate_fragment, "candidate_id", None) != scope.candidate_id
                 or getattr(candidate_fragment, "position_candidate_id", None)
                 != scope.position_candidate_id
+                or candidate_fragment.context_version_id
+                != scope.context.context_version_id
             ):
                 raise HrTaskContextError("candidate context scope invalid")
             document_ids = tuple(
@@ -299,6 +351,8 @@ class HrTaskContextProvider:
             feedback_ids = tuple(
                 getattr(candidate_fragment, "human_feedback_ids", ())
             )
+            if not document_ids:
+                raise HrTaskContextError("candidate documents unavailable")
         prompt_context = _prompt(scope, candidate_fragment)
         placeholder = HrPositionContextEnvelope(
             position_id=scope.position_id,
@@ -404,7 +458,7 @@ class PostgresHrTaskContextSource:
         try:
             with self._connection() as connection:
                 scope = connection.execute(
-                    "select position.position_id,position.title,"
+                    "select position.position_id,position.title,turn.client_request_id,"
                     "position.current_official_version_id,"
                     "position.current_context_version_id "
                     "from platform_control.conversations conversation "
@@ -438,8 +492,15 @@ class PostgresHrTaskContextSource:
                     ).fetchone()
                     if official_row is None:
                         raise HrTaskContextError("official position context unavailable")
+                request_row = connection.execute(
+                    "select * from platform_hr.read_position_task_request_v69(%s,%s,%s)",
+                    (owner_id, scope["position_id"], scope["client_request_id"]),
+                ).fetchone()
+                if request_row is None or request_row["status"] != "active":
+                    raise HrTaskContextError("HR task selection unavailable")
                 context_row = None
-                if scope["current_context_version_id"] is not None:
+                expected_context_id = request_row["expected_context_version_id"]
+                if expected_context_id is not None:
                     context_row = connection.execute(
                         "select * from platform_hr.position_context_versions "
                         "where owner_internal_user_id=%s and position_id=%s "
@@ -447,7 +508,7 @@ class PostgresHrTaskContextSource:
                         (
                             owner_id,
                             scope["position_id"],
-                            scope["current_context_version_id"],
+                            expected_context_id,
                         ),
                     ).fetchone()
                     if context_row is None:
@@ -490,7 +551,10 @@ class PostgresHrTaskContextSource:
                     owner_id, scope["position_id"], conversation_id, turn_id
                 )
                 if self._task_selection is not None
-                else ("freeform", None, None)
+                else (
+                    request_row["task_kind"], request_row["candidate_id"],
+                    request_row["position_candidate_id"],
+                )
             )
             return HrTaskScope(
                 owner_id=owner_id,
@@ -504,6 +568,7 @@ class PostgresHrTaskContextSource:
                 candidate_id=candidate_id,
                 position_candidate_id=position_candidate_id,
                 position_title=scope["title"],
+                client_request_id=scope["client_request_id"],
             )
         except HrTaskContextError:
             raise
@@ -521,15 +586,22 @@ class PostgresHrTaskContextSource:
             raise ValueError("HR task context envelope required")
         try:
             with self._connection() as connection:
+                request_row = connection.execute(
+                    "select client_request_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and turn_id=%s",
+                    (conversation_id, turn_id),
+                ).fetchone()
+                if request_row is None:
+                    raise HrTaskContextError("HR task selection unavailable")
                 return connection.execute(
-                    "select (platform_hr.create_position_task_record_v68("
+                    "select (platform_hr.create_position_task_record_v69("
                     "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,%s::uuid[],"
                     "%s::uuid[],%s,%s,%s,%s)).*",
                     (
                         uuid5(envelope.position_id, f"task-record:{turn_id}"),
                         owner_id,
                         envelope.position_id,
-                        turn_id,
+                        request_row["client_request_id"],
                         envelope.task_kind,
                         envelope.official_version_id,
                         envelope.context_version_id,

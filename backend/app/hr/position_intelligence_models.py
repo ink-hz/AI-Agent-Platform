@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from typing import Literal
 from uuid import UUID
 
@@ -74,6 +76,28 @@ def _positive(value: int, message: str) -> int:
     return value
 
 
+def _nonnegative(value: int, message: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(message)
+    return value
+
+
+def freeze_json(value: object) -> object:
+    if type(value) is dict:
+        return MappingProxyType({key: freeze_json(item) for key, item in value.items()})
+    if type(value) is list:
+        return tuple(freeze_json(item) for item in value)
+    return value
+
+
+def thaw_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [thaw_json(item) for item in value]
+    return value
+
+
 def _uuids(values: tuple[UUID, ...], message: str) -> tuple[UUID, ...]:
     if (
         not isinstance(values, tuple)
@@ -85,26 +109,26 @@ def _uuids(values: tuple[UUID, ...], message: str) -> tuple[UUID, ...]:
     return values
 
 
-def _object(value: dict[str, object], maximum: int, message: str) -> dict[str, object]:
-    if type(value) is not dict:
+def _object(value: Mapping[str, object], maximum: int, message: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
         raise ValueError(message)
     try:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        encoded = json.dumps(thaw_json(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     except (TypeError, ValueError):
         raise ValueError(message) from None
     if len(encoded.encode("utf-8")) > maximum:
         raise ValueError(message)
-    return value
+    return freeze_json(dict(value))  # type: ignore[return-value]
 
 
-def _modules(value: dict[str, object]) -> dict[str, object]:
-    _object(value, 512 * 1024, "context modules invalid")
+def _modules(value: Mapping[str, object]) -> Mapping[str, object]:
+    frozen = _object(value, 512 * 1024, "context modules invalid")
     if not value or not set(value).issubset(CONTEXT_MODULES):
         raise ValueError("context modules invalid")
     for module in value.values():
-        if type(module) is not dict:
+        if not isinstance(module, Mapping):
             raise ValueError("context modules invalid")
-    return value
+    return frozen
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +157,8 @@ class OfficialPositionVersion:
     status_reason: str
     evidence: dict[str, object]
     created_at: datetime
+    consecutive_misses: int = 0
+    official_status_code: int = 0
 
     def __post_init__(self) -> None:
         for value in (self.official_position_version_id, self.owner_id, self.position_id):
@@ -150,7 +176,9 @@ class OfficialPositionVersion:
         object.__setattr__(self, "locations", tuple(_text(item, 500, "official locations invalid") for item in self.locations))
         object.__setattr__(self, "category", _text(self.category, 500, "official category invalid"))
         object.__setattr__(self, "subcategory", _optional_text(self.subcategory, 500, "official subcategory invalid"))
-        _positive(self.headcount, "official headcount invalid")
+        _nonnegative(self.headcount, "official headcount invalid")
+        _nonnegative(self.consecutive_misses, "official consecutive misses invalid")
+        _nonnegative(self.official_status_code, "official status code invalid")
         for name, maximum in (
             ("degree", 500), ("employment_type", 500), ("salary", 1000),
             ("duty", 131072), ("requirement", 131072), ("source_version", 256),
@@ -167,7 +195,7 @@ class OfficialPositionVersion:
             _aware(value)
         if self.first_observed_at > self.last_observed_at:
             raise ValueError("official observation range invalid")
-        _object(self.evidence, 65536, "official evidence invalid")
+        object.__setattr__(self, "evidence", _object(self.evidence, 65536, "official evidence invalid"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +224,8 @@ class ProjectOfficialVersion:
     official_status: str
     status_reason: str
     evidence: dict[str, object]
+    consecutive_misses: int = 0
+    official_status_code: int = 0
 
     def __post_init__(self) -> None:
         for value in (
@@ -205,7 +235,7 @@ class ProjectOfficialVersion:
             self.client_request_id,
         ):
             _uuid(value)
-        OfficialPositionVersion(
+        normalized = OfficialPositionVersion(
             official_position_version_id=self.official_position_version_id,
             owner_id=self.owner_id,
             position_id=self.position_id,
@@ -230,7 +260,22 @@ class ProjectOfficialVersion:
             status_reason=self.status_reason,
             evidence=self.evidence,
             created_at=self.first_observed_at,
+            consecutive_misses=self.consecutive_misses,
+            official_status_code=self.official_status_code,
         )
+        object.__setattr__(self, "official_job_id", normalized.official_job_id)
+        object.__setattr__(self, "title", normalized.title)
+        object.__setattr__(self, "department", normalized.department)
+        object.__setattr__(self, "category", normalized.category)
+        object.__setattr__(self, "subcategory", normalized.subcategory)
+        object.__setattr__(self, "degree", normalized.degree)
+        object.__setattr__(self, "employment_type", normalized.employment_type)
+        object.__setattr__(self, "salary", normalized.salary)
+        object.__setattr__(self, "duty", normalized.duty)
+        object.__setattr__(self, "requirement", normalized.requirement)
+        object.__setattr__(self, "official_status", normalized.official_status)
+        object.__setattr__(self, "status_reason", normalized.status_reason)
+        object.__setattr__(self, "evidence", normalized.evidence)
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,7 +314,7 @@ class PositionContextVersion:
         _positive(self.row_version, "row version invalid")
         if self.state not in {"draft", "confirmed", "superseded"}:
             raise ValueError("context state invalid")
-        _modules(self.modules)
+        object.__setattr__(self, "modules", _modules(self.modules))
         object.__setattr__(self, "summary", _text(self.summary, 32768, "context summary invalid"))
         _uuids(self.source_material_attachment_ids, "context material identifiers invalid")
         object.__setattr__(self, "agent_id", _optional_text(self.agent_id, 128, "context agent invalid"))
@@ -307,7 +352,7 @@ class CreateContextDraft:
             _uuid(value)
         for value in (self.base_context_version_id, self.official_version_id, self.source_conversation_id, self.source_turn_id, self.source_artifact_version_id):
             _optional_uuid(value)
-        _modules(self.modules)
+        object.__setattr__(self, "modules", _modules(self.modules))
         object.__setattr__(self, "summary", _text(self.summary, 32768, "context summary invalid"))
         _uuids(self.source_material_attachment_ids, "context material identifiers invalid")
         if self.source_turn_id is not None and self.source_conversation_id is None:
@@ -345,6 +390,80 @@ class ConfirmContextModules:
             or not set(self.module_names).issubset(CONTEXT_MODULES)
         ):
             raise ValueError("confirmed modules invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CreatePositionTaskRequest:
+    task_request_id: UUID
+    owner_id: UUID
+    position_id: UUID
+    client_request_id: UUID
+    canonical_payload_sha256: str
+    task_kind: str
+    expected_context_version_id: UUID | None
+    material_attachment_ids: tuple[UUID, ...] = ()
+    candidate_id: UUID | None = None
+    position_candidate_id: UUID | None = None
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.task_request_id, self.owner_id, self.position_id,
+            self.client_request_id,
+        ):
+            _uuid(value)
+        for value in (
+            self.expected_context_version_id, self.candidate_id,
+            self.position_candidate_id,
+        ):
+            _optional_uuid(value)
+        if _SHA256.fullmatch(self.canonical_payload_sha256) is None:
+            raise ValueError("position task request hash invalid")
+        if self.task_kind not in TASK_KINDS:
+            raise ValueError("HR task kind invalid")
+        _uuids(self.material_attachment_ids, "task input identifiers invalid")
+        if (self.candidate_id is None) != (self.position_candidate_id is None):
+            raise ValueError("candidate identifiers invalid")
+        if self.task_kind in {"candidate_match", "candidate_interview_plan"} and (
+            self.candidate_id is None or self.expected_context_version_id is None
+        ):
+            raise ValueError("candidate task selection invalid")
+        if self.task_kind == "candidate_comparison" and self.candidate_id is not None:
+            raise ValueError("candidate comparison selection invalid")
+        if self.task_kind not in {
+            "candidate_match", "candidate_interview_plan", "candidate_comparison",
+        } and self.candidate_id is not None:
+            raise ValueError("candidate task selection invalid")
+        object.__setattr__(self, "material_attachment_ids", tuple(
+            sorted(self.material_attachment_ids, key=str)
+        ))
+
+
+@dataclass(frozen=True, slots=True)
+class PositionTaskRequest:
+    task_request_id: UUID
+    owner_id: UUID
+    position_id: UUID
+    client_request_id: UUID
+    canonical_payload_sha256: str
+    task_kind: str
+    expected_context_version_id: UUID | None
+    material_attachment_ids: tuple[UUID, ...]
+    candidate_id: UUID | None
+    position_candidate_id: UUID | None
+    status: str
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        CreatePositionTaskRequest(
+            self.task_request_id, self.owner_id, self.position_id,
+            self.client_request_id, self.canonical_payload_sha256,
+            self.task_kind, self.expected_context_version_id,
+            self.material_attachment_ids, self.candidate_id,
+            self.position_candidate_id,
+        )
+        if self.status not in {"active", "consumed", "cancelled"}:
+            raise ValueError("position task request status invalid")
+        _aware(self.created_at)
 
 
 @dataclass(frozen=True, slots=True)

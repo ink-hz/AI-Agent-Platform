@@ -11,9 +11,12 @@ from psycopg.rows import dict_row
 from .position_intelligence_models import (
     ConfirmContextModules,
     CreateContextDraft,
+    CreatePositionTaskRequest,
     OfficialPositionVersion,
     PositionContextVersion,
+    PositionTaskRequest,
     ProjectOfficialVersion,
+    thaw_json,
 )
 
 
@@ -88,6 +91,25 @@ def _official(row: dict[str, Any]) -> OfficialPositionVersion:
         status_reason=row["status_reason"],
         evidence=row["evidence"],
         created_at=row["created_at"],
+        consecutive_misses=row["consecutive_misses"],
+        official_status_code=row["official_status_code"],
+    )
+
+
+def _task_request(row: dict[str, Any]) -> PositionTaskRequest:
+    return PositionTaskRequest(
+        task_request_id=row["task_request_id"],
+        owner_id=row["owner_internal_user_id"],
+        position_id=row["position_id"],
+        client_request_id=row["client_request_id"],
+        canonical_payload_sha256=row["canonical_payload_sha256"],
+        task_kind=row["task_kind"],
+        expected_context_version_id=row["expected_context_version_id"],
+        material_attachment_ids=tuple(row["material_attachment_ids"]),
+        candidate_id=row["candidate_id"],
+        position_candidate_id=row["position_candidate_id"],
+        status=row["status"],
+        created_at=row["created_at"],
     )
 
 
@@ -110,6 +132,54 @@ class PositionIntelligenceRepository:
             options="-c statement_timeout=10000",
             row_factory=dict_row,
         )
+
+    def create_task_request(
+        self, command: CreatePositionTaskRequest
+    ) -> PositionTaskRequest:
+        if not isinstance(command, CreatePositionTaskRequest):
+            raise ValueError("position task request required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.create_position_task_request_v69("
+                    "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s)).*",
+                    (
+                        command.task_request_id, command.owner_id,
+                        command.position_id, command.client_request_id,
+                        command.canonical_payload_sha256, command.task_kind,
+                        command.expected_context_version_id,
+                        list(command.material_attachment_ids),
+                        command.candidate_id, command.position_candidate_id,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PositionIntelligenceUnavailable("position task request unavailable")
+            return _task_request(row)
+        except psycopg.errors.NoDataFound:
+            raise PositionContextNotFound("position task request inputs unavailable") from None
+        except (psycopg.errors.SerializationFailure, psycopg.errors.UniqueViolation):
+            raise PositionContextConflict("position task request conflict") from None
+        except PositionIntelligenceError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise PositionIntelligenceUnavailable("position task request unavailable") from None
+
+    def task_request(
+        self, owner_id: UUID, position_id: UUID, client_request_id: UUID
+    ) -> PositionTaskRequest | None:
+        if any(not isinstance(value, UUID) for value in (
+            owner_id, position_id, client_request_id,
+        )):
+            raise ValueError("position task request identifiers invalid")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_hr.read_position_task_request_v69(%s,%s,%s)",
+                    (owner_id, position_id, client_request_id),
+                ).fetchone()
+            return None if row is None else _task_request(row)
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise PositionIntelligenceUnavailable("position task request unavailable") from None
 
     def current(
         self, owner_id: UUID, position_id: UUID
@@ -141,9 +211,9 @@ class PositionIntelligenceRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.project_official_version_v68("
+                    "select (platform_hr.project_official_version_v69("
                     "%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,"
-                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)).*",
                     (
                         command.official_position_version_id,
                         command.owner_id,
@@ -168,7 +238,9 @@ class PositionIntelligenceRepository:
                         command.last_observed_at,
                         command.official_status,
                         command.status_reason,
-                        json.dumps(command.evidence, ensure_ascii=False),
+                        json.dumps(thaw_json(command.evidence), ensure_ascii=False),
+                        command.consecutive_misses,
+                        command.official_status_code,
                     ),
                 ).fetchone()
             if row is None:
@@ -242,7 +314,7 @@ class PositionIntelligenceRepository:
             raise ValueError("context state invalid")
         try:
             statement = (
-                "select * from platform_hr.read_position_context_versions_v68(%s,%s)"
+                "select * from platform_hr.read_position_context_versions_v69(%s,%s)"
             )
             values: tuple[object, ...] = (owner_id, position_id)
             if state is not None:
@@ -262,7 +334,7 @@ class PositionIntelligenceRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.create_context_draft_v68("
+                    "select (platform_hr.create_context_draft_v69("
                     "%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s::uuid[],%s,%s,%s)).*",
                     (
                         command.context_version_id,
@@ -271,7 +343,7 @@ class PositionIntelligenceRepository:
                         command.client_request_id,
                         command.base_context_version_id,
                         command.official_version_id,
-                        json.dumps(command.modules, ensure_ascii=False),
+                        json.dumps(thaw_json(command.modules), ensure_ascii=False),
                         command.summary,
                         command.source_conversation_id,
                         command.source_turn_id,
@@ -302,7 +374,7 @@ class PositionIntelligenceRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.confirm_context_modules_v68("
+                    "select (platform_hr.confirm_context_modules_v69("
                     "%s,%s,%s,%s,%s,%s,%s::text[],%s)).*",
                     (
                         command.owner_id,

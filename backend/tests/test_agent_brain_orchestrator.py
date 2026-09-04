@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-import json
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-
 from app.agent_brain.conversation_context import (
     ContextMessage,
     ConversationContext,
@@ -33,6 +32,11 @@ from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
 from app.execution_relay.models import RelayEvent
 from app.execution_relay.repository import ExecutionRelayRepository
+from app.hr.models import BindPositionConversation, CreateManualPosition
+from app.hr.position_intelligence_models import CreatePositionTaskRequest
+from app.hr.position_intelligence_repository import PositionIntelligenceRepository
+from app.hr.repository import HrPositionRepository
+from app.hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
 from test_control_plane_migration import control_database
 
 
@@ -1610,6 +1614,86 @@ def test_exact_32kib_direct_request_persists_compact_run_input(brain_database):
     )
     assert restarted.advance_pending(limit=50) == 1
     assert next(iter(relay.payloads.values())) == original_payload
+
+
+@pytest.mark.postgres
+def test_hr_direct_relay_recovery_reuses_durable_position_envelope(
+    brain_database, request,
+):
+    environment, owner_id = brain_database
+    codec = _codec()
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=codec
+    )
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        mission_repository=missions,
+    )
+    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position = positions.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "恢复测试岗位")
+    )
+    request_id = uuid4()
+    PositionIntelligenceRepository(
+        environment["urls"]["platform_control_app"]
+    ).create_task_request(CreatePositionTaskRequest(
+        uuid4(), owner_id, position.position_id, request_id,
+        "9" * 64, "freeform", None,
+    ))
+    started = conversations.start(
+        owner_id, request_id, "生成岗位说明",
+        mode="direct_agent", direct_agent_id="hr-bot",
+    )
+    positions.bind_conversation(BindPositionConversation(
+        owner_id, position.position_id, started.conversation.conversation_id,
+        uuid4(), "created_in_position",
+    ))
+    context_builder = ConversationContextBuilder(
+        conversations,
+        hr_task_context_provider=HrTaskContextProvider(
+            PostgresHrTaskContextSource(environment["urls"]["platform_control_app"])
+        ),
+    )
+    card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
+    relay = ScriptedRelay()
+    service = MissionOrchestrator(
+        missions, relay, capability_provider=lambda _owner: (card,),
+        conversation_context_builder=context_builder,
+        conversation_projection=ConversationProjection(conversations),
+    )
+
+    assert service.advance_pending(limit=50) == 1
+    original_payload = next(iter(relay.payloads.values()))
+    original_document = json.loads(original_payload.prompt.split("\n", 1)[1])
+    assert original_document["hr_position_context"]["position_id"] == str(
+        position.position_id
+    )
+    relay.payloads.clear()
+    relay.states.clear()
+    restarted = MissionOrchestrator(
+        missions, relay, capability_provider=lambda _owner: (card,),
+        conversation_context_builder=context_builder,
+        conversation_projection=ConversationProjection(conversations),
+    )
+    assert restarted.advance_pending(limit=50) == 1
+    assert next(iter(relay.payloads.values())) == original_payload
+
+    def cleanup():
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_hr.position_task_records "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_task_requests "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_conversations "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+    request.addfinalizer(cleanup)
 
 
 @pytest.mark.postgres

@@ -242,7 +242,8 @@ def project_official_jobs(
             continue
         official_version = project_version(ProjectOfficialVersion(
             official_position_version_id=uuid5(
-                position_id, f"official-version:{job.content_hash}"
+                position_id,
+                f"official-version:{snapshot.version}:{job.content_hash}",
             ),
             owner_id=owner_id,
             position_id=position_id,
@@ -274,6 +275,8 @@ def project_official_jobs(
                 "snapshot_version": snapshot.version,
                 "last_successful_sync_at": snapshot.last_successful_sync_at.isoformat(),
             },
+            consecutive_misses=job.consecutive_misses,
+            official_status_code=job.official_status,
         ))
         projected.append(OfficialPositionProjection(record, official_version))
     return tuple(projected)

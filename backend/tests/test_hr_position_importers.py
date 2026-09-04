@@ -4,7 +4,6 @@ import json
 from uuid import uuid4
 
 import pytest
-
 from app.hr.importers import (
     HistoricalConversation,
     HistoricalMessage,
@@ -123,6 +122,8 @@ def test_official_import_preserves_duty_requirement_and_hash() -> None:
     assert projected[0].official_version.requirement == "Test the system."
     assert projected[0].official_version.content_hash == "a" * 64
     assert projected[0].official_version.position_id == projected[0].position.position_id
+    assert projected[0].official_version.consecutive_misses == 0
+    assert projected[0].official_version.official_status_code == 1
 
 
 def test_historical_discovery_links_only_one_known_complete_job_id() -> None:
