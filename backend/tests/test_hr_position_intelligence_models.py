@@ -91,6 +91,28 @@ def test_frozen_models_deeply_isolate_mapping_inputs() -> None:
     assert official.evidence == {"source": {"ids": ("one",)}}
 
 
+def test_frozen_models_copy_mutable_values_nested_inside_tuples() -> None:
+    nested = {"items": ["first"]}
+    command = CreateContextDraft(
+        uuid4(), uuid4(), uuid4(), None, None,
+        {"mission": {"groups": (nested,)}}, "draft", uuid4(),
+    )
+
+    nested["items"].append("mutated")
+
+    assert command.modules == {
+        "mission": {"groups": ({"items": ("first",)},)},
+    }
+
+
+def test_json_models_reject_nonfinite_numbers() -> None:
+    with pytest.raises(ValueError, match="context modules invalid"):
+        CreateContextDraft(
+            uuid4(), uuid4(), uuid4(), None, None,
+            {"mission": {"score": float("nan")}}, "draft", uuid4(),
+        )
+
+
 def test_context_version_rejects_mutable_or_inconsistent_state() -> None:
     now = datetime.now(UTC)
     with pytest.raises(ValueError, match="context confirmation invalid"):

@@ -83,9 +83,9 @@ def _nonnegative(value: int, message: str) -> int:
 
 
 def freeze_json(value: object) -> object:
-    if type(value) is dict:
+    if isinstance(value, Mapping):
         return MappingProxyType({key: freeze_json(item) for key, item in value.items()})
-    if type(value) is list:
+    if isinstance(value, (list, tuple)):
         return tuple(freeze_json(item) for item in value)
     return value
 
@@ -93,7 +93,7 @@ def freeze_json(value: object) -> object:
 def thaw_json(value: object) -> object:
     if isinstance(value, Mapping):
         return {key: thaw_json(item) for key, item in value.items()}
-    if isinstance(value, tuple):
+    if isinstance(value, (list, tuple)):
         return [thaw_json(item) for item in value]
     return value
 
@@ -113,7 +113,10 @@ def _object(value: Mapping[str, object], maximum: int, message: str) -> Mapping[
     if not isinstance(value, Mapping):
         raise ValueError(message)
     try:
-        encoded = json.dumps(thaw_json(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        encoded = json.dumps(
+            thaw_json(value), ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        )
     except (TypeError, ValueError):
         raise ValueError(message) from None
     if len(encoded.encode("utf-8")) > maximum:
