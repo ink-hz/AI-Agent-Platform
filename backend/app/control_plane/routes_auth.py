@@ -5,7 +5,12 @@ from ipaddress import ip_address
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.health.platform import build_public_platform_health
@@ -417,6 +422,27 @@ def build_auth_router(
         if account_contract_v2:
             payload["workspace_scopes"] = workspace_scopes
         return payload
+
+    @router.get("/api/v1/workspaces/fae/navigation")
+    async def fae_workspace_navigation(request: Request):
+        context: AuthContext = request.state.auth_context
+        fae_access = getattr(request.app.state, "fae_access", None)
+        try:
+            allowed = fae_access is not None and fae_access.allows(context)
+        except FaeWorkbenchAccessUnavailable:
+            raise HTTPException(
+                503,
+                "workspace navigation unavailable",
+                headers=_NO_STORE,
+            ) from None
+        return JSONResponse(
+            {
+                "management_workspace_url": (
+                    "/fae/manage/" if allowed else None
+                )
+            },
+            headers=_NO_STORE,
+        )
 
     @router.get("/api/v1/internal/session/subject")
     async def internal_session_subject(request: Request):
