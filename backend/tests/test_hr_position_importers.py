@@ -125,6 +125,41 @@ def test_historical_discovery_links_only_one_known_complete_job_id() -> None:
     assert discovered.drafts == ()
 
 
+def test_historical_title_evidence_is_not_misattributed_to_message_one() -> None:
+    owner_id, request_id, conversation_id, position_id = (
+        uuid4(), uuid4(), uuid4(), uuid4()
+    )
+    discovery = discover_historical_positions(
+        [HistoricalConversation(conversation_id, "J11014 算法岗位分析", ())],
+        {"J11014": "算法工程师"},
+        rule_version="history-v1",
+    )
+    repository = RecordingHistoricalRepository()
+
+    apply_historical_discovery(
+        discovery, {"J11014": position_id}, repository, owner_id, request_id
+    )
+
+    assert discovery.exact_links[0].message_sequence is None
+    assert repository.evidence[0]["source_message_seq"] is None
+    assert repository.evidence[0]["evidence"]["source_location"] == "title"
+
+
+def test_historical_title_only_draft_records_title_provenance() -> None:
+    conversation_id = uuid4()
+    discovery = discover_historical_positions(
+        [HistoricalConversation(conversation_id, "高级结构工程师招聘", ())],
+        {},
+        rule_version="history-v1",
+    )
+
+    assert discovery.drafts[0].evidence == {
+        "job_ids": [],
+        "message_seq": None,
+        "source_location": "title",
+    }
+
+
 def test_historical_discovery_keeps_ambiguous_and_multi_position_work_unbound() -> None:
     ambiguous_id, multi_id, unrelated_id = uuid4(), uuid4(), uuid4()
     discovered = discover_historical_positions(

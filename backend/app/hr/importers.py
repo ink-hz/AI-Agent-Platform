@@ -255,7 +255,8 @@ class HistoricalConversation:
 class HistoricalExactLink:
     conversation_id: UUID
     official_job_id: str
-    message_sequence: int
+    message_sequence: int | None
+    source_location: str
     rule_version: str
 
 
@@ -316,36 +317,68 @@ def discover_historical_positions(
         ).upper()
         ids = tuple(dict.fromkeys(_JOB_REFERENCE.findall(evidence_text)))
         known = tuple(job_id for job_id in ids if job_id in normalized_official)
-        matching_messages = {
-            job_id: next(
-                (message.sequence for message in conversation.messages
-                 if job_id in message.text.upper()),
-                1,
+        title_text = conversation.title.upper()
+        matching_evidence = {
+            job_id: (
+                (None, "title")
+                if job_id in title_text
+                else next(
+                    (
+                        (message.sequence, "message")
+                        for message in conversation.messages
+                        if job_id in message.text.upper()
+                    ),
+                    (None, "title"),
+                )
             )
             for job_id in ids
         }
         if len(ids) == 1 and len(known) == 1:
+            message_sequence, source_location = matching_evidence[known[0]]
             exact.append(HistoricalExactLink(
                 conversation.conversation_id, known[0],
-                matching_messages[known[0]], rule,
+                message_sequence, source_location, rule,
             ))
             continue
         if len(ids) > 1:
-            for index, job_id in enumerate(ids):
+            for job_id in ids:
+                message_sequence, source_location = matching_evidence[job_id]
                 drafts.append(HistoricalDraftProposal(
                     conversation.conversation_id,
                     normalized_official.get(job_id, conversation.title.strip()),
                     f"conversation:{conversation.conversation_id}:job:{job_id}",
-                    {"job_id": job_id, "message_seq": matching_messages[job_id], "multi_position": True},
+                    {
+                        "job_id": job_id,
+                        "message_seq": message_sequence,
+                        "source_location": source_location,
+                        "multi_position": True,
+                    },
                     rule,
                 ))
             continue
         if ids or _POSITION_INTENT.search(evidence_text):
+            if ids:
+                message_sequence, source_location = matching_evidence[ids[0]]
+            elif _POSITION_INTENT.search(title_text):
+                message_sequence, source_location = None, "title"
+            else:
+                message_sequence, source_location = next(
+                    (
+                        (message.sequence, "message")
+                        for message in conversation.messages
+                        if _POSITION_INTENT.search(message.text.upper())
+                    ),
+                    (None, "message"),
+                )
             drafts.append(HistoricalDraftProposal(
                 conversation.conversation_id,
                 conversation.title.strip(),
                 f"conversation:{conversation.conversation_id}:draft:1",
-                {"job_ids": list(ids), "message_seq": conversation.messages[0].sequence if conversation.messages else 1},
+                {
+                    "job_ids": list(ids),
+                    "message_seq": message_sequence,
+                    "source_location": source_location,
+                },
                 rule,
             ))
         else:
@@ -389,7 +422,10 @@ def apply_historical_discovery(
             "source_kind": "historical_exact",
             "source_key": key,
             "rule_version": link.rule_version,
-            "evidence": {"official_job_id": link.official_job_id},
+            "evidence": {
+                "official_job_id": link.official_job_id,
+                "source_location": link.source_location,
+            },
         }
         binding = repository.bind_conversation(BindPositionConversation(
             owner_id=owner_id,
