@@ -36,6 +36,7 @@ _FAE_WORKBENCH_SHELL_ROUTES = frozenset({
 _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/account"),
     ("GET", "/api/v1/internal/session/subject"),
+    ("GET", "/api/v1/internal/voc/browser-subject"),
     ("GET", "/api/v1/workspaces/fae/navigation"),
     ("POST", "/api/v1/access-events/page-view"),
     ("POST", "/api/v1/auth/logout"),
