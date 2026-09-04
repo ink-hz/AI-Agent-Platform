@@ -326,6 +326,43 @@ class CandidateRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise_repository_error(error)
 
+    def recover_next_draft_attempt(
+        self, worker_id: str
+    ) -> CandidateDraftProcessingAttempt:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.recover_next_candidate_draft_attempt_v70("
+                    "%s)).*", (worker_id,),
+                ).fetchone()
+            if row is None:
+                raise CandidateNotFound("candidate processing attempt not found")
+            return _processing_attempt(row)
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
+    def discover_draft_execution(
+        self, attempt_id: UUID, worker_id: str
+    ) -> AttachCandidateDraftExecution:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_hr.discover_candidate_draft_execution_v70("
+                    "%s,%s)", (attempt_id, worker_id),
+                ).fetchone()
+            if row is None:
+                raise CandidateNotFound("candidate processing execution not found")
+            return AttachCandidateDraftExecution(
+                attempt_id, worker_id, row["execution_job_id"],
+                row["conversation_id"], row["turn_id"],
+            )
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
     def complete_claimed_draft(
         self, attempt_id: UUID, worker_id: str, command: CompleteCandidateDraft
     ) -> CandidateDraft:

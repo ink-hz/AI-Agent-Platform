@@ -176,6 +176,8 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
         "claim_next_candidate_draft_v70",
         "attach_candidate_draft_execution_v70",
         "recover_candidate_draft_attempt_v70",
+        "recover_next_candidate_draft_attempt_v70",
+        "discover_candidate_draft_execution_v70",
         "read_candidate_draft_attempt_v70",
         "complete_claimed_candidate_draft_v70",
         "fail_claimed_candidate_draft_v70",
@@ -183,6 +185,8 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
         assert f"create function platform_hr.{function}" in sql
         assert f"grant execute on function platform_hr.{function}" in sql
     assert "for update of draft skip locked" in sql
+    assert "order by claimed_at,attempt_id for update skip locked limit 1" in sql
+    assert "candidate execution identity is ambiguous" in sql
     assert "lease_expires_at" in sql
     assert "create index candidate_draft_attempt_expiry_v70" in sql
     assert "(lease_expires_at) where state='processing'" in sql
@@ -200,6 +204,8 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
     assert "candidate_attachment_usable_v70( selected_attempt.owner_internal_user_id" in sql
     assert "execution.status='completed'" in sql
     assert "turn.status='completed'" in sql
+    assert "execution.status in ('completed','failed','cancelled','interrupted')" in sql
+    assert "turn.status in ('completed','failed','cancelled','interrupted')" in sql
     assert "selected_attempt.owner_internal_user_id<>selected_owner_internal_user_id" in sql
     assert "selected_attempt.draft_id<>selected_draft_id" in sql
     assert "selected_attempt.worker_id<>selected_worker_id" in sql

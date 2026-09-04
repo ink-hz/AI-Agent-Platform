@@ -674,7 +674,7 @@ begin
     and conversation.owner_internal_user_id=mission.owner_internal_user_id
   where execution.job_id=selected_execution_job_id
     and execution.agent_id='hr-bot'
-    and execution.status='completed'
+    and execution.status in ('completed','failed','cancelled','interrupted')
     and run.agent_id='hr-bot' and run.phase='direct'
     and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
     and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
@@ -684,7 +684,7 @@ begin
     and conversation.started_by_client_request_id=
       selected_attempt.draft_client_request_id
     and turn.client_request_id=selected_attempt.draft_client_request_id
-    and turn.status='completed'
+    and turn.status in ('completed','failed','cancelled','interrupted')
     and not exists (
       select 1 from platform_attachments.bindings binding
       where binding.owner_internal_user_id=selected_attempt.owner_internal_user_id
@@ -724,6 +724,110 @@ begin
   where attempt_id=selected_attempt_id and worker_id=selected_worker_id;
   if not found then raise no_data_found; end if;
   return selected;
+end
+$function$;
+
+create function platform_hr.recover_next_candidate_draft_attempt_v70(
+  selected_worker_id text
+) returns platform_hr.candidate_draft_processing_attempts
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.candidate_draft_processing_attempts%rowtype;
+begin
+  if session_user not in ('platform_brain_worker','platform_brain_worker_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected
+  from platform_hr.candidate_draft_processing_attempts
+  where worker_id=selected_worker_id
+    and state='processing' and lease_expires_at>now()
+  order by claimed_at,attempt_id
+  for update skip locked limit 1;
+  if not found then raise no_data_found; end if;
+  return selected;
+end
+$function$;
+
+create function platform_hr.discover_candidate_draft_execution_v70(
+  selected_attempt_id uuid,
+  selected_worker_id text
+) returns table(execution_job_id uuid,conversation_id uuid,turn_id uuid)
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected_attempt platform_hr.candidate_draft_processing_attempts%rowtype;
+declare selected_count bigint;
+declare discovered_job_id uuid;
+declare discovered_conversation_id uuid;
+declare discovered_turn_id uuid;
+begin
+  if session_user not in ('platform_brain_worker','platform_brain_worker_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected_attempt
+  from platform_hr.candidate_draft_processing_attempts
+  where attempt_id=selected_attempt_id and worker_id=selected_worker_id
+    and state='processing' and lease_expires_at>now()
+  for update;
+  if not found then raise no_data_found; end if;
+  if not platform_hr.candidate_attachment_usable_v70(
+    selected_attempt.owner_internal_user_id,selected_attempt.attachment_id
+  ) then raise no_data_found; end if;
+  select count(*),min(candidate.job_id::text)::uuid,
+    min(candidate.conversation_id::text)::uuid,min(candidate.turn_id::text)::uuid
+  into selected_count,discovered_job_id,discovered_conversation_id,
+    discovered_turn_id
+  from (
+    select execution.job_id,conversation.conversation_id,turn.turn_id
+    from platform_control.execution_jobs execution
+    join platform_control.mission_runs run on run.run_id=execution.run_id
+    join platform_control.missions mission on mission.mission_id=run.mission_id
+    join platform_control.conversation_turns turn
+      on turn.mission_id=mission.mission_id
+    join platform_control.conversations conversation
+      on conversation.conversation_id=turn.conversation_id
+      and conversation.owner_internal_user_id=mission.owner_internal_user_id
+    where execution.agent_id='hr-bot'
+      and execution.status in ('completed','failed','cancelled','interrupted')
+      and run.agent_id='hr-bot' and run.phase='direct'
+      and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
+      and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
+      and mission.client_request_id=selected_attempt.draft_client_request_id
+      and conversation.mode='direct_agent' and conversation.direct_agent_id='hr-bot'
+      and conversation.started_by_client_request_id=
+        selected_attempt.draft_client_request_id
+      and turn.client_request_id=selected_attempt.draft_client_request_id
+      and turn.status in ('completed','failed','cancelled','interrupted')
+      and not exists (
+        select 1 from platform_attachments.bindings binding
+        where binding.owner_internal_user_id=
+          selected_attempt.owner_internal_user_id
+          and binding.kind='turn_input'
+          and binding.conversation_id=conversation.conversation_id
+          and binding.turn_id=turn.turn_id
+          and binding.attachment_id<>selected_attempt.attachment_id
+      )
+      and not exists (
+        select 1 from platform_hr.position_conversations position_conversation
+        where position_conversation.conversation_id=conversation.conversation_id
+      )
+    order by execution.created_at,execution.job_id
+    limit 2
+  ) candidate;
+  if selected_count=0 then raise no_data_found; end if;
+  if selected_count<>1 then
+    raise check_violation using message='candidate execution identity is ambiguous';
+  end if;
+  if selected_attempt.execution_job_id is not null and (
+    selected_attempt.execution_job_id<>discovered_job_id
+    or selected_attempt.conversation_id<>discovered_conversation_id
+    or selected_attempt.turn_id<>discovered_turn_id
+  ) then
+    raise check_violation using message='candidate execution identity mismatch';
+  end if;
+  return query select discovered_job_id,discovered_conversation_id,
+    discovered_turn_id;
 end
 $function$;
 
@@ -1204,13 +1308,14 @@ begin
     and turn.conversation_id=selected_attempt.conversation_id
     and turn.turn_id=selected_attempt.turn_id
   where execution.job_id=selected_attempt.execution_job_id
-    and execution.status='completed' and execution.agent_id='hr-bot'
+    and execution.status in ('completed','failed','cancelled','interrupted')
+    and execution.agent_id='hr-bot'
     and run.agent_id='hr-bot' and run.phase='direct'
     and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
     and mission.client_request_id=selected_attempt.draft_client_request_id
     and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
     and turn.client_request_id=selected_attempt.draft_client_request_id
-    and turn.status='completed';
+    and turn.status in ('completed','failed','cancelled','interrupted');
   if not found then raise serialization_failure; end if;
   selected := platform_hr.fail_candidate_draft_v70(
     selected_attempt.owner_internal_user_id,selected_attempt.draft_id,
@@ -1771,6 +1876,12 @@ revoke all on function platform_hr.attach_candidate_draft_execution_v70(
 revoke all on function platform_hr.recover_candidate_draft_attempt_v70(
   uuid,text
 ) from public;
+revoke all on function platform_hr.recover_next_candidate_draft_attempt_v70(
+  text
+) from public;
+revoke all on function platform_hr.discover_candidate_draft_execution_v70(
+  uuid,text
+) from public;
 revoke all on function platform_hr.read_candidate_draft_attempt_v70(
   uuid,uuid
 ) from public;
@@ -1839,6 +1950,14 @@ begin
   );
   execute format(
     'grant execute on function platform_hr.recover_candidate_draft_attempt_v70('
+    'uuid,text) to %I',selected_brain
+  );
+  execute format(
+    'grant execute on function platform_hr.recover_next_candidate_draft_attempt_v70('
+    'text) to %I',selected_brain
+  );
+  execute format(
+    'grant execute on function platform_hr.discover_candidate_draft_execution_v70('
     'uuid,text) to %I',selected_brain
   );
   execute format(

@@ -221,6 +221,26 @@ def _complete_execution_identity(connection, execution, relay_worker):
     )
 
 
+def _fail_execution_identity(connection, execution, relay_worker):
+    connection.execute(
+        "update platform_control.execution_jobs set status='failed',"
+        "lease_worker_id=%s,terminal_at=now() where job_id=%s",
+        (relay_worker, execution["job"]),
+    )
+    connection.execute(
+        "update platform_control.mission_runs set status='failed',terminal_at=now() "
+        "where run_id=%s", (execution["run"],),
+    )
+    connection.execute(
+        "update platform_control.missions set status='failed',terminal_at=now() "
+        "where mission_id=%s", (execution["mission"],),
+    )
+    connection.execute(
+        "update platform_control.conversation_turns set status='failed' "
+        "where turn_id=%s", (execution["turn"],),
+    )
+
+
 @pytest.mark.postgres
 def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
     candidate_database,
@@ -506,6 +526,33 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         attempt.attempt_id, attempt.worker_id
     )
     assert recovered == attempt
+    recovered_without_memory = CandidateRepository(
+        brain_url
+    ).recover_next_draft_attempt(attempt.worker_id)
+    assert recovered_without_memory == attempt
+    with pytest.raises(CandidateNotFound):
+        brain_repository.recover_next_draft_attempt("different-worker")
+    with psycopg.connect(environment["admin"]) as locked_connection:
+        locked_connection.execute(
+            "select 1 from platform_hr.candidate_draft_processing_attempts "
+            "where attempt_id=%s for update", (attempt.attempt_id,),
+        )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            locked_recovery = executor.submit(
+                CandidateRepository(brain_url).recover_next_draft_attempt,
+                attempt.worker_id,
+            )
+            with pytest.raises(CandidateNotFound):
+                locked_recovery.result(timeout=5)
+
+    with pytest.raises(CandidateNotFound):
+        brain_repository.discover_draft_execution(
+            attempt.attempt_id, attempt.worker_id
+        )
+    with pytest.raises(CandidateNotFound):
+        brain_repository.discover_draft_execution(
+            attempt.attempt_id, "different-worker"
+        )
 
     with pytest.raises(CandidateNotFound):
         brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
@@ -516,6 +563,14 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         _complete_execution_identity(connection, attacker, relay_worker)
         _complete_execution_identity(connection, execution, relay_worker)
         _complete_execution_identity(connection, wrong_request, relay_worker)
+
+    discovered = brain_repository.discover_draft_execution(
+        attempt.attempt_id, attempt.worker_id
+    )
+    assert discovered == AttachCandidateDraftExecution(
+        attempt.attempt_id, attempt.worker_id,
+        execution["job"], execution["conversation"], execution["turn"],
+    )
 
     with pytest.raises(CandidateNotFound):
         brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
@@ -532,6 +587,10 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         connection.execute(
             "update platform_control.execution_jobs set agent_id='unregistered-parser' "
             "where job_id=%s", (execution["job"],),
+        )
+    with pytest.raises(CandidateNotFound):
+        brain_repository.discover_draft_execution(
+            attempt.attempt_id, attempt.worker_id
         )
     with pytest.raises(CandidateNotFound):
         brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
@@ -610,6 +669,71 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
     assert ready.state == "ready"
     assert persisted.state == "completed"
     assert bound.execution_job_id == execution["job"]
+
+    execution_failure = {name: uuid4() for name in (
+        "attachment", "batch", "draft", "draft_request", "attempt"
+    )}
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_attachments.attachments("
+            "attachment_id,owner_internal_user_id,source_kind,"
+            "original_name_ciphertext,original_name_key_version,"
+            "object_ref_ciphertext,object_ref_key_version,immutable_locator,"
+            "sha256,state,ready_at) values ("
+            "%s,%s,'user_input',%s,1,%s,1,'etag:failed-execution',%s,'ready',now())",
+            (
+                execution_failure["attachment"], ids["owner"], b"n" * 29,
+                b"o" * 29, b"f" * 32,
+            ),
+        )
+        connection.execute(
+            "insert into platform_hr.candidate_draft_batches("
+            "batch_request_id,owner_internal_user_id,position_id,attachment_ids) "
+            "values (%s,%s,%s,array[%s]::uuid[])",
+            (
+                execution_failure["batch"], ids["owner"], ids["position"],
+                execution_failure["attachment"],
+            ),
+        )
+        connection.execute(
+            "insert into platform_hr.candidate_drafts("
+            "draft_id,owner_internal_user_id,position_id,attachment_id,"
+            "batch_request_id,client_request_id,state) "
+            "values (%s,%s,%s,%s,%s,%s,'pending')",
+            (
+                execution_failure["draft"], ids["owner"], ids["position"],
+                execution_failure["attachment"], execution_failure["batch"],
+                execution_failure["draft_request"],
+            ),
+        )
+        failed_execution = _seed_execution_identity(
+            connection, ids["owner"], execution_failure["draft_request"]
+        )
+        _fail_execution_identity(connection, failed_execution, relay_worker)
+    failed_attempt = brain_repository.claim_next_draft(ClaimNextCandidateDraft(
+        execution_failure["attempt"], "candidate-parser-execution-failed", 300,
+    ))
+    failed_identity = brain_repository.discover_draft_execution(
+        failed_attempt.attempt_id, failed_attempt.worker_id
+    )
+    brain_repository.attach_draft_execution(failed_identity)
+    with pytest.raises(CandidateConflict):
+        brain_repository.complete_claimed_draft(
+            failed_attempt.attempt_id, failed_attempt.worker_id,
+            CompleteCandidateDraft(
+                ids["owner"], execution_failure["draft"], uuid4(),
+                failed_attempt.claimed_row_version, {"stable_name": "Invalid"},
+            ),
+        )
+    execution_failure_command = FailCandidateDraft(
+        ids["owner"], execution_failure["draft"], uuid4(),
+        failed_attempt.claimed_row_version, "execution_failed",
+    )
+    execution_failed_draft = brain_repository.fail_claimed_draft(
+        failed_attempt.attempt_id, failed_attempt.worker_id,
+        execution_failure_command,
+    )
+    assert execution_failed_draft.state == "failed"
 
     racing = {name: uuid4() for name in (
         "attachment", "batch", "draft", "draft_request", "erasure"

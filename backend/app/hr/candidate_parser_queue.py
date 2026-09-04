@@ -20,6 +20,8 @@ class CandidateParserQueue:
             "claim_next_draft",
             "attach_draft_execution",
             "recover_draft_attempt",
+            "recover_next_draft_attempt",
+            "discover_draft_execution",
             "complete_claimed_draft",
             "fail_claimed_draft",
         )
@@ -47,6 +49,18 @@ class CandidateParserQueue:
         if not isinstance(attempt_id, UUID) or not isinstance(worker_id, str):
             raise ValueError("candidate parser recovery identity required")
         return self._repository.recover_draft_attempt(attempt_id, worker_id)
+
+    def recover_next(self, worker_id: str) -> CandidateDraftProcessingAttempt:
+        if not isinstance(worker_id, str) or not worker_id:
+            raise ValueError("candidate parser recovery worker required")
+        return self._repository.recover_next_draft_attempt(worker_id)
+
+    def discover_execution(
+        self, attempt_id: UUID, worker_id: str
+    ) -> AttachCandidateDraftExecution:
+        if not isinstance(attempt_id, UUID) or not isinstance(worker_id, str):
+            raise ValueError("candidate parser execution discovery identity required")
+        return self._repository.discover_draft_execution(attempt_id, worker_id)
 
     def complete(
         self, attempt_id: UUID, worker_id: str, command: CompleteCandidateDraft

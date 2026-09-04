@@ -50,6 +50,16 @@ class QueueRepository:
         self.calls.append(("recover", attempt_id, worker_id))
         return _attempt(ClaimNextCandidateDraft(attempt_id, worker_id))
 
+    def recover_next_draft_attempt(self, worker_id):
+        self.calls.append(("recover_next", worker_id))
+        return _attempt(ClaimNextCandidateDraft(uuid4(), worker_id))
+
+    def discover_draft_execution(self, attempt_id, worker_id):
+        self.calls.append(("discover", attempt_id, worker_id))
+        return AttachCandidateDraftExecution(
+            attempt_id, worker_id, uuid4(), uuid4(), uuid4()
+        )
+
     def complete_claimed_draft(self, attempt_id, worker_id, command):
         self.calls.append(("complete", attempt_id, worker_id, command))
         return object()
@@ -72,10 +82,18 @@ def test_parser_queue_exposes_database_backed_two_phase_worker_contract() -> Non
     recovered = CandidateParserQueue(repository).recover_attempt(
         attempt.attempt_id, attempt.worker_id
     )
+    recovered_next = CandidateParserQueue(repository).recover_next(attempt.worker_id)
+    discovered = CandidateParserQueue(repository).discover_execution(
+        attempt.attempt_id, attempt.worker_id
+    )
 
     assert bound.execution_job_id == attach.execution_job_id
     assert recovered.attempt_id == attempt.attempt_id
-    assert [call[0] for call in repository.calls] == ["claim", "attach", "recover"]
+    assert recovered_next.worker_id == attempt.worker_id
+    assert discovered.attempt_id == attempt.attempt_id
+    assert [call[0] for call in repository.calls] == [
+        "claim", "attach", "recover", "recover_next", "discover"
+    ]
 
 
 def test_parser_queue_complete_and_fail_are_attempt_scoped() -> None:
