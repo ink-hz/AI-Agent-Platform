@@ -529,12 +529,15 @@ export interface ConversationSubmission<TResult = ConversationSubmissionResult> 
 
 function submission(
   path: string, input: string | TurnSubmission, csrfToken: string,
-  scope?: ConversationStartScope,
+  scope?: ConversationStartScope, retainedIdempotencyKey?: string,
 ): ConversationSubmission {
   const selected = normalizedSubmission(input);
   if (scope?.positionId && scope.positionDraftId) throw new Error("Conversation position scope invalid");
   const body = submissionBody(selected, scope);
-  const idempotencyKey = crypto.randomUUID();
+  const idempotencyKey = retainedIdempotencyKey ?? crypto.randomUUID();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
+    throw new Error("Conversation idempotency key invalid");
+  }
   return Object.freeze({
     idempotencyKey,
     async send(signal?: AbortSignal): Promise<ConversationSubmissionResult> {
@@ -561,11 +564,12 @@ export function startConversation(
   csrfToken: string,
   agentId?: string,
   scope?: ConversationStartScope,
+  retainedIdempotencyKey?: string,
 ): ConversationSubmission {
   const path = agentId
     ? `/api/v1/agents/${encodeURIComponent(agentId)}/conversations`
     : "/api/v1/conversations";
-  return submission(path, input, csrfToken, scope);
+  return submission(path, input, csrfToken, scope, retainedIdempotencyKey);
 }
 
 

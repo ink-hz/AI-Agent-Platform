@@ -1,30 +1,31 @@
 import asyncio
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
-import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from fastapi import APIRouter
-from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
-
 from app.config import load_config
-from app.main import (
-    agent_brain_loop,
-    build_operations,
-    build_office_recipient_directory,
-    build_review_service,
-    cancel_tasks,
-    create_app,
-)
 from app.control_plane.models import ControlPlaneConfig, IdentityMode
-from app.operations.repository import OperationsRepository
 from app.fae_workbench.repository import (
     PsycopgFaeWorkbenchRepository,
     ReplicaFaeWorkbenchRepository,
 )
+from app.hr.resource_service import HrPositionResourceService
+from app.main import (
+    _hr_bot_model_version,
+    agent_brain_loop,
+    build_office_recipient_directory,
+    build_operations,
+    build_review_service,
+    cancel_tasks,
+    create_app,
+)
+from app.operations.repository import OperationsRepository
+from fastapi import APIRouter
+from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 
 def test_build_office_recipient_directory_uses_control_reader_and_identity_codec(
@@ -666,6 +667,204 @@ def test_create_app_registers_injected_hr_position_service(tmp_path):
         getattr(route, "path", None) == "/api/hr/positions"
         for route in routes
     )
+
+
+def test_create_app_mounts_injected_hr_intelligence_candidate_and_task_routes(
+    tmp_path,
+):
+    registry, contract = _fae_app_paths(tmp_path)
+    intelligence = SimpleNamespace(
+        **{
+            name: Mock()
+            for name in (
+                "current",
+                "history",
+                "drafts",
+                "create_draft",
+                "confirm_modules",
+                "compare",
+                "official_versions",
+                "official_version",
+            )
+        }
+    )
+    candidate = SimpleNamespace(
+        **{
+            name: Mock()
+            for name in (
+                "create_drafts",
+                "list_drafts",
+                "draft",
+                "retry_draft",
+                "dismiss_draft",
+                "confirm_draft",
+                "list_position_candidates",
+                "candidate",
+                "documents",
+                "candidate_document",
+                "candidate_document_ticket",
+                "position_candidate",
+                "list_analyses",
+                "add_analysis",
+                "list_feedback",
+                "append_feedback",
+                "compare",
+            )
+        }
+    )
+    tasks = SimpleNamespace(start=Mock(), recoverable=Mock(), get=Mock())
+    resource_repository = SimpleNamespace(
+        position_exists=Mock(),
+        materials_for_position=Mock(),
+        artifacts_for_position=Mock(),
+    )
+    resources = HrPositionResourceService(
+        resource_repository,
+        SimpleNamespace(issue_ticket=Mock()),
+    )
+    authorization = SimpleNamespace(
+        decide_for_user_id=Mock(), permitted_catalog_for_user_id=Mock()
+    )
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        hr_position_intelligence_service=intelligence,
+        hr_candidate_service=candidate,
+        hr_resource_service=resources,
+        hr_position_task_service=tasks,
+        agent_use_authorization=authorization,
+    )
+
+    routes = [
+        context
+        for route in app.router.routes
+        for context in (
+            route.effective_route_contexts()
+            if callable(getattr(route, "effective_route_contexts", None))
+            else (route,)
+        )
+    ]
+    paths = {getattr(route, "path", None) for route in routes}
+    assert {
+        "/api/hr/positions/{position_id}/context",
+        "/api/hr/positions/{position_id}/candidate-drafts:batch",
+        "/api/hr/candidate-documents/{document_id}/ticket",
+        "/api/hr/positions/{position_id}/tasks",
+        "/api/hr/positions/{position_id}/tasks/{task_id}",
+        "/api/hr/positions/{position_id}/resources",
+    }.issubset(paths)
+    assert app.state.hr_position_intelligence_service is intelligence
+    assert app.state.hr_candidate_service is candidate
+    assert app.state.hr_resource_service is resources
+    assert app.state.hr_position_task_service is tasks
+
+
+@pytest.mark.asyncio
+async def test_create_app_runs_injected_candidate_parser_submission_lane(
+    tmp_path, monkeypatch,
+) -> None:
+    from app import main as app_main
+
+    registry, contract = _fae_app_paths(tmp_path)
+    coordinator = object()
+    provider = object()
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def parser_loop(selected):
+        assert selected is coordinator
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(app_main, "candidate_parser_submission_loop", parser_loop)
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        hr_candidate_parser_submission_coordinator=coordinator,
+        hr_candidate_parser_input_provider=provider,
+    )
+
+    async with app.router.lifespan_context(app):
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert app.state.hr_candidate_parser_submission_coordinator is coordinator
+        assert app.state.hr_candidate_parser_input_provider is provider
+
+    assert cancelled.is_set()
+
+
+def test_hr_bot_model_version_comes_from_exact_runtime_contract(tmp_path) -> None:
+    contract = tmp_path / "metabot.runtime-contract.json"
+    contract.write_text(json.dumps({"bots": [
+        {
+            "name": "hr-bot",
+            "model": "claude-opus-5",
+            "instance": {"pm2Name": "metabot-hr", "apiPort": 9101},
+        },
+        {
+            "name": "other-bot",
+            "model": "other-model",
+            "instance": {"pm2Name": "metabot-other", "apiPort": 9102},
+        },
+    ]}), encoding="utf-8")
+
+    assert _hr_bot_model_version(str(contract)) == "claude-opus-5"
+
+
+@pytest.mark.parametrize("bots", [
+    [],
+    [{
+        "name": "hr-bot",
+        "instance": {"pm2Name": "metabot-hr", "apiPort": 9101},
+    }],
+])
+def test_hr_bot_model_version_fails_closed_without_exact_model(
+    tmp_path, bots,
+) -> None:
+    contract = tmp_path / "metabot.runtime-contract.json"
+    contract.write_text(json.dumps({"bots": bots}), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="model provenance unavailable"):
+        _hr_bot_model_version(str(contract))
+
+
+@pytest.mark.asyncio
+async def test_create_app_runs_injected_hr_task_result_projection_lane(
+    tmp_path, monkeypatch,
+) -> None:
+    from app import main as app_main
+
+    registry, contract = _fae_app_paths(tmp_path)
+    reconciler = object()
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def projection_loop(selected):
+        assert selected is reconciler
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(app_main, "hr_task_result_projection_loop", projection_loop)
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        hr_task_result_reconciler=reconciler,
+    )
+
+    async with app.router.lifespan_context(app):
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert app.state.hr_task_result_reconciler is reconciler
+
+    assert cancelled.is_set()
 
 
 def test_create_app_builds_local_fae_workbench_from_analyst_boundary(

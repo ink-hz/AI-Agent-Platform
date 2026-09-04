@@ -48,6 +48,11 @@ class DownloadNotFound(DownloadError):
         super().__init__("attachment unavailable")
 
 
+class DownloadUnavailable(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("attachment service unavailable")
+
+
 class DownloadConflict(DownloadError):
     def __init__(self) -> None:
         super().__init__("attachment operation unavailable")
@@ -302,6 +307,10 @@ class ConversationAttachmentAccessRepository:
             return self._asset_from_row(base)
         except DownloadError:
             raise
+        except DownloadUnavailable:
+            raise
+        except psycopg.Error:
+            raise DownloadUnavailable() from None
         except Exception:  # noqa: BLE001 - database boundary is intentionally opaque
             raise DownloadNotFound() from None
 
@@ -339,8 +348,11 @@ class ConversationAttachmentAccessRepository:
                     "where erasure.attachment_id=attachment.attachment_id)",
                     (attachment_id, owner_id),
                 ).fetchone()
-            if row is None:
-                raise DownloadNotFound()
+        except Exception:  # noqa: BLE001 - preserve an opaque operational failure type
+            raise DownloadUnavailable() from None
+        if row is None:
+            raise DownloadNotFound()
+        try:
             name = self._unseal(
                 attachment_name_subject(attachment_id),
                 row["original_name_ciphertext"],
@@ -361,7 +373,7 @@ class ConversationAttachmentAccessRepository:
             )
         except DownloadError:
             raise
-        except Exception:  # noqa: BLE001 - database boundary is intentionally opaque
+        except Exception:  # noqa: BLE001 - corrupt row remains indistinguishable from absence
             raise DownloadNotFound() from None
 
     def list_conversation(
@@ -389,7 +401,7 @@ class ConversationAttachmentAccessRepository:
             return tuple(
                 self.attachment(owner_id, row["attachment_id"]) for row in rows
             )
-        except DownloadError:
+        except (DownloadError, DownloadUnavailable):
             raise
         except Exception:  # noqa: BLE001 - database boundary is intentionally opaque
             raise DownloadNotFound() from None

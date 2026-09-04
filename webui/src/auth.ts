@@ -170,7 +170,7 @@ function safeLoginReturnPath(value: string): boolean {
     || /^\/fae\/manage\/(?:sessions|issues|reports)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)
     || /^\/voc\/(?:records|manage\/records)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)
     || /^\/hr\/conversations\/[A-Za-z0-9:._-]+$/.test(value)
-    || /^\/hr\/positions\/[0-9a-fA-F-]{36}(?:\/conversations\/[A-Za-z0-9:._-]+)?$/.test(value)
+    || /^\/hr\/positions\/[0-9a-fA-F-]{36}(?:(?:\/chat|\/context|\/candidates|\/artifacts)|\/conversations\/[A-Za-z0-9:._-]+)?$/.test(value)
     || /^\/marketing\/(?:prospecting|inbound|voice|intelligence|gtm)(?:\/conversations\/[A-Za-z0-9:._-]+)?$/.test(value)
     || /^\/admin\/fae(?:\/(?:sessions(?:\/[A-Za-z0-9:._-]+)?|issues(?:\/[0-9a-fA-F-]{36})?|reports(?:\/[A-Za-z0-9._:-]+)?))?$/.test(value)
     || /^\/admin\/(?:overview|review|activity|operations|identity|governance|voc|agents(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\/runtime)?)?|sessions(?:\/[A-Za-z0-9:._-]+)?)$/.test(value);

@@ -4,7 +4,6 @@ import json
 from uuid import uuid4
 
 import pytest
-
 from app.hr.importers import (
     HistoricalConversation,
     HistoricalMessage,
@@ -76,11 +75,16 @@ def test_official_snapshot_rejects_noncanonical_or_duplicate_ids(job_id: str) ->
 class RecordingOfficialRepository:
     def __init__(self) -> None:
         self.commands = []
+        self.versions = []
         self.evidence = []
 
     def project_official(self, command, *, import_evidence=None):
         self.commands.append(command)
         self.evidence.append(import_evidence)
+        return command
+
+    def project_official_version(self, command):
+        self.versions.append(command)
         return command
 
 
@@ -105,6 +109,21 @@ def test_official_projection_is_deterministic_and_preserves_registry_status() ->
     assert repository.commands[2].official_status == "suspected_inactive"
     assert repository.commands[2].source_version == changed.version
     assert all(repository.evidence)
+
+
+def test_official_import_preserves_duty_requirement_and_hash() -> None:
+    owner_id, request_id = uuid4(), uuid4()
+    repository = RecordingOfficialRepository()
+    snapshot = OfficialJobSnapshot.parse(_snapshot())
+
+    projected = project_official_jobs(snapshot, repository, owner_id, request_id)
+
+    assert projected[0].official_version.duty == "Build the system."
+    assert projected[0].official_version.requirement == "Test the system."
+    assert projected[0].official_version.content_hash == "a" * 64
+    assert projected[0].official_version.position_id == projected[0].position.position_id
+    assert projected[0].official_version.consecutive_misses == 0
+    assert projected[0].official_version.official_status_code == 1
 
 
 def test_historical_discovery_links_only_one_known_complete_job_id() -> None:

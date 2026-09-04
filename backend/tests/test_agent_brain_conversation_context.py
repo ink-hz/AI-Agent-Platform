@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import uuid4
 
 import psycopg
 import pytest
+from test_agent_brain_conversation_repository import (
+    conversation_database,
+    repository,
+)
+from test_control_plane_migration import control_database
 
 from app.agent_brain.conversation_context import (
     MAX_CONTEXT_BYTES,
     ConversationContextBuilder,
 )
 from app.agent_brain.conversation_projection import ConversationProjection
-from test_agent_brain_conversation_repository import (
-    conversation_database,
-    repository,
-)
-from test_control_plane_migration import control_database
+from app.hr.models import BindPositionConversation, CreateManualPosition
+from app.hr.position_intelligence_models import HrPositionContextEnvelope
+from app.hr.repository import HrPositionRepository
+from app.hr.task_context import canonical_hash
 
 
 @pytest.mark.postgres
@@ -73,6 +78,137 @@ def test_context_never_reads_another_conversation(
     rendered = "\n".join(item.content for item in context.messages)
     assert rendered == "第一段对话"
     assert "另一段" not in rendered
+
+
+@pytest.mark.postgres
+def test_verified_hr_position_turn_receives_exactly_one_pinned_envelope(
+    conversation_database,
+    repository,
+    request,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position = positions.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "结构工程师")
+    )
+
+    def cleanup():
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_hr.position_conversations "
+                "where owner_internal_user_id=%s",
+                (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.positions where owner_internal_user_id=%s",
+                (owner_id,),
+            )
+
+    request.addfinalizer(cleanup)
+    started = repository.start(
+        owner_id, uuid4(), "生成 JD", mode="direct_agent", direct_agent_id="hr-bot"
+    )
+    positions.bind_conversation(BindPositionConversation(
+        owner_id, position.position_id, started.conversation.conversation_id,
+        uuid4(), "created_in_position",
+    ))
+    envelope = HrPositionContextEnvelope(
+        position.position_id, None, None, "jd", (), None, None, (), (),
+        "Pinned position", "a" * 64,
+    )
+    envelope = replace(envelope, canonical_sha256=canonical_hash(envelope))
+
+    class Provider:
+        def __init__(self):
+            self.calls = []
+
+        def build_for_turn(self, selected_owner, conversation_id, turn_id):
+            self.calls.append((selected_owner, conversation_id, turn_id))
+            return envelope
+
+    provider = Provider()
+    context = ConversationContextBuilder(
+        repository, hr_task_context_provider=provider
+    ).build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.hr_position_context is envelope
+    assert provider.calls == [(
+        owner_id, started.conversation.conversation_id, started.turn.turn_id
+    )]
+
+
+@pytest.mark.postgres
+def test_unbound_hr_turn_does_not_call_position_provider(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    started = repository.start(
+        owner_id, uuid4(), "普通 HR 问题",
+        mode="direct_agent", direct_agent_id="hr-bot",
+    )
+
+    class Provider:
+        def build_for_turn(self, *_args):
+            raise AssertionError("unbound conversation must not use HR provider")
+
+    context = ConversationContextBuilder(
+        repository, hr_task_context_provider=Provider()
+    ).build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.hr_position_context is None
+
+
+@pytest.mark.postgres
+def test_unbound_candidate_parser_turn_receives_only_verified_special_input(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    request_id = uuid4()
+    attachment_id = uuid4()
+    started = repository.start(
+        owner_id, request_id, "parse one resume",
+        mode="direct_agent", direct_agent_id="hr-bot",
+    )
+
+    class Provider:
+        def __init__(self):
+            self.calls = []
+
+        def for_turn(self, selected_owner, conversation_id, turn_id):
+            self.calls.append((selected_owner, conversation_id, turn_id))
+            return attachment_id
+
+    provider = Provider()
+    context = ConversationContextBuilder(
+        repository, candidate_parser_input_provider=provider
+    ).build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.active_attachment_ids == (attachment_id,)
+    assert context.hr_position_context is None
+    assert provider.calls == [(
+        owner_id, started.conversation.conversation_id, started.turn.turn_id
+    )]
+
+
+@pytest.mark.postgres
+def test_non_hr_turn_never_receives_candidate_parser_input(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    started = repository.start(owner_id, uuid4(), "ordinary request")
+
+    class Provider:
+        def for_turn(self, *_args):
+            raise AssertionError("ordinary conversation must not use parser input")
+
+    context = ConversationContextBuilder(
+        repository, candidate_parser_input_provider=Provider()
+    ).build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.active_attachment_ids == ()
 
 
 @pytest.mark.postgres

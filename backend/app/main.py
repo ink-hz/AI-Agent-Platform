@@ -1,95 +1,82 @@
 import asyncio
+import ipaddress
 import logging
 import os
-import ipaddress
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import FastAPI, Request
 import psycopg
+from fastapi import FastAPI, HTTPException, Request
 from psycopg.rows import dict_row
 
-from .attachments import routes as attachment_routes
-from .attachments.artifact_service import ArtifactOutputService, ArtifactRepository
-from .attachments.citation_service import CitationRepository, CitationService
-from .attachments.conversation_routes import build_conversation_attachment_router
+from .agent_brain.action_service import ActionCommandService
+from .agent_brain.authorization import (
+    AgentUseAuthorization,
+    AgentUseAuthorizationUnavailable,
+)
+from .agent_brain.conversation_context import ConversationContextBuilder
+from .agent_brain.conversation_projection import ConversationProjection
+from .agent_brain.conversation_repository import ConversationRepository
+from .agent_brain.conversation_routes import (
+    ConversationCursorCodec,
+    build_conversation_router,
+)
+from .agent_brain.conversation_service import ConversationCommandService
+from .agent_brain.orchestrator import MissionOrchestrator
+from .agent_brain.repository import MissionRepository
+from .agent_brain.routes import MissionCursorCodec, build_agent_brain_router
+from .agent_catalog.routes import build_agent_catalog_router
 from .ai_notes.repository import AiNotesContentError, AiNotesRepository
 from .ai_notes.routes import (
     AiNotesReader,
     UnavailableAiNotesReader,
     build_ai_notes_router,
 )
-from .attachments.logging import install_attachment_ticket_redaction
+from .attachments import routes as attachment_routes
+from .attachments.artifact_service import ArtifactOutputService, ArtifactRepository
+from .attachments.citation_service import CitationRepository, CitationService
 from .attachments.conversation_repository import ConversationAttachmentRepository
+from .attachments.conversation_routes import build_conversation_attachment_router
 from .attachments.download_service import (
     ConversationAttachmentAccessRepository,
     ConversationAttachmentDownloadService,
     S3ImmutableAttachmentStore,
 )
 from .attachments.grant_service import AttachmentGrantService, TaskGrantRepository
+from .attachments.logging import install_attachment_ticket_redaction
 from .attachments.object_writer import AttachmentObjectWriter
-from .attachments.result_projection import ConversationResultProjection
 from .attachments.repository import AttachmentRepository
+from .attachments.result_projection import ConversationResultProjection
 from .attachments.service import AttachmentService
 from .attachments.store import AttachmentStore
 from .attachments.upload_service import AttachmentUploadService
-from .cluster import routes as cluster_routes
-from .cluster.monitor import ClusterMonitor, cluster_poll_loop
-from .config import Config, is_cloud_mode, load_config
 from .cloud_replica.crypto import FieldCipher, read_key_file
-from .cloud_replica.repository import (
-    ReplicaFlywheelRepository,
-    ReplicaObservabilityRepository,
-)
 from .cloud_replica.management_repository import (
     ReplicaFaeReportRepository,
     ReplicaOperationsRepository,
     ReplicaReviewRepository,
 )
-from .control_room import routes as control_room_routes
-from .control_room.service import ControlRoomService
+from .cloud_replica.repository import (
+    ReplicaFlywheelRepository,
+    ReplicaObservabilityRepository,
+)
+from .cluster import routes as cluster_routes
+from .cluster.contract import ContractLoadError, load_targets
+from .cluster.monitor import ClusterMonitor, cluster_poll_loop
+from .config import Config, is_cloud_mode, load_config
+from .control_plane import routes_manage, routes_partner
+from .control_plane.access_history import (
+    AccessHistoryRepository,
+    UnavailableAccessHistoryRepository,
+)
 from .control_plane.agent_launch import (
     AgentLaunchRepository,
     AgentLaunchService,
     build_agent_launch_router,
 )
-from .control_plane.middleware import (
-    DisabledExecutionWorkerNamespaceMiddleware,
-    IdentitySecurityMiddleware,
-)
-from .control_plane.authorization import (
-    AuthorizationReadAuditWriter,
-    AuthorizationRepository,
-    AuthorizationService,
-)
-from .control_plane.access_history import (
-    AccessHistoryRepository,
-    UnavailableAccessHistoryRepository,
-)
-from .control_plane.fae_access import (
-    FaeWorkbenchAccessRepository,
-    FaeWorkbenchAccessService,
-)
-from .control_plane import routes_manage, routes_partner
 from .control_plane.audit import AuditWriter
-from .control_plane.routes_manage import ManagementRepository, ManagementService
-from .control_plane.partner_service import PartnerService
-from .control_plane.partner_provider import (
-    PartnerAuthenticationBroker,
-    PartnerIdentityProvider,
-    create_registered_partner_provider,
-    partner_provider_release_registered,
-)
-from .control_plane.partner_release import validate_partner_release
-from .control_plane.models import DirectoryFreshness, IdentityMode
-from .control_plane.routes_auth import build_auth_router
-from .control_plane.routes_access_history import build_access_history_router
-from .control_plane.office_recipients import (
-    OfficeRecipientDirectoryRepository,
-    OfficeRecipientDirectoryService,
-    build_office_recipient_router,
-)
 from .control_plane.auth import (
     AuthSecrets,
     DingTalkWebAuth,
@@ -98,12 +85,57 @@ from .control_plane.auth import (
     SystemHealthAuditWriter,
     WebSessionRepository,
 )
+from .control_plane.authorization import (
+    AuthorizationReadAuditWriter,
+    AuthorizationRepository,
+    AuthorizationService,
+)
 from .control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
 from .control_plane.dingtalk import DingTalkClient
 from .control_plane.dsn import validate_control_dsn
+from .control_plane.fae_access import (
+    FaeWorkbenchAccessRepository,
+    FaeWorkbenchAccessService,
+)
 from .control_plane.identity import IdentityResolver
 from .control_plane.in_client_apps import load_trusted_in_client_apps
+from .control_plane.middleware import (
+    DisabledExecutionWorkerNamespaceMiddleware,
+    IdentitySecurityMiddleware,
+)
+from .control_plane.models import AuthContext, DirectoryFreshness, IdentityMode
+from .control_plane.office_recipients import (
+    OfficeRecipientDirectoryRepository,
+    OfficeRecipientDirectoryService,
+    build_office_recipient_router,
+)
+from .control_plane.partner_provider import (
+    PartnerAuthenticationBroker,
+    PartnerIdentityProvider,
+    create_registered_partner_provider,
+    partner_provider_release_registered,
+)
+from .control_plane.partner_release import validate_partner_release
+from .control_plane.partner_service import PartnerService
 from .control_plane.rate_limit import ControlRateLimiter
+from .control_plane.routes_access_history import build_access_history_router
+from .control_plane.routes_auth import build_auth_router
+from .control_plane.routes_manage import ManagementRepository, ManagementService
+from .control_room import routes as control_room_routes
+from .control_room.service import ControlRoomService
+from .execution_relay.content_crypto import ContentCodec
+from .execution_relay.repository import ExecutionRelayRepository
+from .execution_relay.routes import build_execution_relay_router
+from .execution_relay.worker_auth import WorkerRequestVerifier
+from .fae_reports.repository import PsycopgFaeReportRepository
+from .fae_reports.service import FaeReportService
+from .fae_workbench import routes as fae_workbench_routes
+from .fae_workbench.repository import (
+    FaeWorkbenchReadError,
+    PsycopgFaeWorkbenchRepository,
+    ReplicaFaeWorkbenchRepository,
+)
+from .fae_workbench.service import FaeWorkbenchService
 from .fleet import routes as fleet_routes
 from .fleet.cache import UsageCache
 from .fleet.catalog import AgentCatalog
@@ -113,15 +145,6 @@ from .fleet.repository import (
     UnavailableFlywheelRepository,
 )
 from .fleet.service import FleetReadService
-from .fae_workbench import routes as fae_workbench_routes
-from .fae_workbench.repository import (
-    FaeWorkbenchReadError,
-    PsycopgFaeWorkbenchRepository,
-    ReplicaFaeWorkbenchRepository,
-)
-from .fae_workbench.service import FaeWorkbenchService
-from .fae_reports.repository import PsycopgFaeReportRepository
-from .fae_reports.service import FaeReportService
 from .health import routes as health_routes
 from .health.platform import (
     build_deployment_status,
@@ -129,28 +152,37 @@ from .health.platform import (
     build_public_platform_health,
 )
 from .health.poller import HealthCache, poll_loop
-from .execution_relay.content_crypto import ContentCodec
-from .execution_relay.repository import ExecutionRelayRepository
-from .execution_relay.routes import build_execution_relay_router
-from .execution_relay.worker_auth import WorkerRequestVerifier
-from .agent_brain.authorization import AgentUseAuthorization
-from .agent_brain.action_service import ActionCommandService
-from .agent_brain.conversation_context import ConversationContextBuilder
-from .agent_brain.conversation_projection import ConversationProjection
-from .agent_brain.conversation_repository import ConversationRepository
-from .agent_brain.conversation_service import ConversationCommandService
-from .agent_brain.conversation_routes import (
-    ConversationCursorCodec,
-    build_conversation_router,
+from .hr.candidate_context import CandidateEnvelopeProvider
+from .hr.candidate_parser_runtime import (
+    CandidateParserAppRepository,
+    CandidateParserInputProvider,
+    CandidateParserSubmissionCoordinator,
+    candidate_parser_submission_loop,
 )
-from .agent_brain.orchestrator import MissionOrchestrator
-from .agent_brain.repository import MissionRepository
-from .agent_brain.routes import MissionCursorCodec, build_agent_brain_router
-from .agent_catalog.routes import build_agent_catalog_router
-from .hr.repository import HrPositionRepository
+from .hr.candidate_repository import CandidateRepository
+from .hr.candidate_routes import build_candidate_router
+from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
+from .hr.position_intelligence_repository import PositionIntelligenceRepository
+from .hr.position_intelligence_routes import build_position_intelligence_router
+from .hr.position_intelligence_service import PositionIntelligenceService
+from .hr.repository import HrPositionRepository
+from .hr.resource_routes import build_hr_resource_router
+from .hr.resource_service import (
+    HrPositionResourceService,
+    PsycopgPositionResourceRepository,
+)
 from .hr.routes import build_hr_position_router
 from .hr.service import HrPositionService
+from .hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
+from .hr.task_repository import PostgresHrPositionTaskRepository
+from .hr.task_result_projection import (
+    HrTaskResultProjectionRepository,
+    HrTaskResultReconciler,
+    hr_task_result_projection_loop,
+)
+from .hr.task_routes import build_hr_position_task_router
+from .hr.task_service import HrPositionTaskService
 from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
 from .observability.repository import (
@@ -169,8 +201,8 @@ from .registry.repository import YamlRepository
 from .remote_health.monitor import RemoteHealthMonitor, remote_poll_loop
 from .review import routes as review_routes
 from .review.database import resolve_review_database_url
-from .review.repository import PsycopgReviewRepository
 from .review.replay import ReplayRunner
+from .review.repository import PsycopgReviewRepository
 from .review.service import ReviewService, UnavailableReviewService
 from .spa import SpaStaticFiles, load_public_asset_manifest
 from .voc_extension.client import VocExtensionClient
@@ -183,8 +215,20 @@ from .voc_extension.internal_identity import (
 from .voc_extension.internal_routes import build_voc_internal_router
 from .voc_extension.routes import build_voc_extension_router
 
-
 logger = logging.getLogger(__name__)
+
+
+def _hr_bot_model_version(contract_path: str) -> str:
+    try:
+        matches = [target for target in load_targets(contract_path) if target.id == "hr-bot"]
+    except ContractLoadError as error:
+        raise RuntimeError("HR task result model provenance unavailable") from error
+    if len(matches) != 1:
+        raise RuntimeError("HR task result model provenance unavailable")
+    model = matches[0].declared_model
+    if not isinstance(model, str) or not model.strip():
+        raise RuntimeError("HR task result model provenance unavailable")
+    return model.strip()
 
 
 class _UnavailableFaeWorkbenchRepository:
@@ -725,6 +769,14 @@ def create_app(
     fae_workbench_service=None,
     fae_report_service=None,
     hr_position_service=None,
+    hr_position_intelligence_service=None,
+    hr_candidate_service=None,
+    hr_resource_service=None,
+    hr_task_context_provider=None,
+    hr_position_task_service=None,
+    hr_candidate_parser_submission_coordinator=None,
+    hr_candidate_parser_input_provider=None,
+    hr_task_result_reconciler=None,
     agent_use_authorization=None,
     hr_position_scope=None,
     access_history_repository=None,
@@ -1042,6 +1094,122 @@ def create_app(
         service is not None for service in attachment_services
     ):
         raise RuntimeError("conversation attachment services unavailable")
+    if (
+        hr_position_service is None
+        and identity_enabled
+        and control_database_url is not None
+        and agent_use_authorization is not None
+    ):
+        hr_position_repository = HrPositionRepository(control_database_url)
+        hr_position_service = HrPositionService(hr_position_repository)
+        hr_position_scope = HrPositionScope(hr_position_repository)
+    position_intelligence_repository = None
+    candidate_repository = None
+    if identity_enabled and control_database_url is not None:
+        if hr_position_intelligence_service is None or hr_task_context_provider is None:
+            position_intelligence_repository = PositionIntelligenceRepository(
+                control_database_url
+            )
+        if hr_position_intelligence_service is None:
+            hr_position_intelligence_service = PositionIntelligenceService(
+                position_intelligence_repository
+            )
+        if hr_candidate_service is None or hr_task_context_provider is None:
+            candidate_repository = CandidateRepository(control_database_url)
+        if hr_candidate_service is None:
+            hr_candidate_service = CandidateService(
+                candidate_repository,
+                document_tickets=conversation_attachment_download_service,
+            )
+        if (
+            "direct_agent" in v1_mission_modes
+            and conversation_command_service is not None
+            and (
+                hr_candidate_parser_submission_coordinator is None
+                or hr_candidate_parser_input_provider is None
+            )
+        ):
+            candidate_parser_repository = CandidateParserAppRepository(
+                control_database_url
+            )
+            if hr_candidate_parser_submission_coordinator is None:
+                hr_candidate_parser_submission_coordinator = (
+                    CandidateParserSubmissionCoordinator(
+                        candidate_parser_repository,
+                        conversation_command_service,
+                    )
+                )
+            if hr_candidate_parser_input_provider is None:
+                hr_candidate_parser_input_provider = CandidateParserInputProvider(
+                    candidate_parser_repository
+                )
+        if (
+            hr_resource_service is None
+            and conversation_attachment_download_service is not None
+        ):
+
+            def hr_resource_connection():
+                return psycopg.connect(
+                    control_database_url,
+                    connect_timeout=3,
+                    options="-c statement_timeout=10000 -c timezone=UTC",
+                    row_factory=dict_row,
+                )
+
+            hr_resource_service = HrPositionResourceService(
+                PsycopgPositionResourceRepository(
+                    hr_resource_connection,
+                    conversation_attachment_download_service,
+                ),
+                conversation_attachment_download_service,
+            )
+        if hr_task_context_provider is None:
+            def context_is_confirmed(owner_id, position_id, context_version_id):
+                current = position_intelligence_repository.current(
+                    owner_id, position_id
+                )
+                return (
+                    current is not None
+                    and current.state == "confirmed"
+                    and current.context_version_id == context_version_id
+                )
+
+            hr_task_context_provider = HrTaskContextProvider(
+                PostgresHrTaskContextSource(
+                    control_database_url,
+                    execution_model_version=_hr_bot_model_version(
+                        cluster_contract_path or config.metabot_contract_path
+                    ),
+                ),
+                candidate_provider=CandidateEnvelopeProvider(
+                    candidate_repository, context_is_confirmed
+                ),
+            )
+        if (
+            hr_position_task_service is None
+            and conversation_command_service is not None
+            and hr_position_scope is not None
+        ):
+            hr_position_task_service = HrPositionTaskService(
+                hr_position_intelligence_service,
+                conversation_command_service,
+                hr_position_scope,
+                PostgresHrPositionTaskRepository(control_database_url),
+            )
+        if (
+            hr_task_result_reconciler is None
+            and "direct_agent" in v1_mission_modes
+            and content_codec is not None
+            and hr_position_intelligence_service is not None
+            and hr_candidate_service is not None
+        ):
+            hr_task_result_reconciler = HrTaskResultReconciler(
+                HrTaskResultProjectionRepository(control_database_url),
+                hr_position_intelligence_service,
+                hr_candidate_service,
+                content_codec,
+                worker_id=f"platform-hr-projection-{uuid4().hex}",
+            )
     if v1_mission_modes:
         if (
             mission_repository is None
@@ -1055,7 +1223,11 @@ def create_app(
             execution_relay_repository,
             capability_provider=agent_use_authorization.permitted_agents_for_user_id,
             conversation_context_builder=ConversationContextBuilder(
-                conversation_repository
+                conversation_repository,
+                hr_task_context_provider=hr_task_context_provider,
+                candidate_parser_input_provider=(
+                    hr_candidate_parser_input_provider
+                ),
             ),
             conversation_projection=ConversationProjection(
                 conversation_repository,
@@ -1152,6 +1324,14 @@ def create_app(
         # time, so they continue while Brain itself is disabled or on V2.
         if agent_brain_orchestrator is not None:
             tasks.append(asyncio.create_task(agent_brain_loop(agent_brain_orchestrator)))
+        if hr_candidate_parser_submission_coordinator is not None:
+            tasks.append(asyncio.create_task(candidate_parser_submission_loop(
+                hr_candidate_parser_submission_coordinator
+            )))
+        if hr_task_result_reconciler is not None:
+            tasks.append(asyncio.create_task(
+                hr_task_result_projection_loop(hr_task_result_reconciler)
+            ))
         try:
             yield
         finally:
@@ -1204,6 +1384,18 @@ def create_app(
     app.state.fae_workbench_service = fae_workbench_service
     app.state.fae_report_service = fae_report_service
     app.state.hr_position_service = hr_position_service
+    app.state.hr_position_intelligence_service = hr_position_intelligence_service
+    app.state.hr_candidate_service = hr_candidate_service
+    app.state.hr_resource_service = hr_resource_service
+    app.state.hr_task_context_provider = hr_task_context_provider
+    app.state.hr_position_task_service = hr_position_task_service
+    app.state.hr_candidate_parser_submission_coordinator = (
+        hr_candidate_parser_submission_coordinator
+    )
+    app.state.hr_candidate_parser_input_provider = (
+        hr_candidate_parser_input_provider
+    )
+    app.state.hr_task_result_reconciler = hr_task_result_reconciler
     app.state.fae_access = None
     app.state.fae_session_read_audit = None
     authorization_service = None
@@ -1240,15 +1432,6 @@ def create_app(
             agent_use_authorization = AgentUseAuthorization(control_database_url)
             app.state.agent_use_authorization = agent_use_authorization
 
-    if (
-        hr_position_service is None
-        and identity_enabled
-        and control_database_url is not None
-        and agent_use_authorization is not None
-    ):
-        hr_position_repository = HrPositionRepository(control_database_url)
-        hr_position_service = HrPositionService(hr_position_repository)
-        hr_position_scope = HrPositionScope(hr_position_repository)
     app.state.hr_position_service = hr_position_service
     app.state.hr_position_scope = hr_position_scope
     app.state.agent_use_authorization = agent_use_authorization
@@ -1308,9 +1491,50 @@ def create_app(
         app.include_router(execution_relay_router)
     if agent_use_authorization is not None:
         app.include_router(build_agent_catalog_router(agent_use_authorization))
+    async def require_hr_access(request: Request, *, writable: bool = False):
+        context = getattr(request.state, "auth_context", None)
+        if not isinstance(context, AuthContext):
+            raise HTTPException(401, "authentication required")
+        if (
+            (writable or request.method not in {"GET", "HEAD", "OPTIONS"})
+            and context.hard_stale_read_only
+        ):
+            raise HTTPException(503, "account is read only")
+        try:
+            decision = await asyncio.to_thread(
+                agent_use_authorization.decide_for_user_id,
+                context.internal_user_id,
+                "hr-bot",
+            )
+        except AgentUseAuthorizationUnavailable:
+            raise HTTPException(503, "HR Agent authorization unavailable") from None
+        if not getattr(decision, "allowed", False):
+            raise HTTPException(403, "HR Agent use denied")
+        return context.internal_user_id
+
     if hr_position_service is not None and agent_use_authorization is not None:
         app.include_router(
             build_hr_position_router(hr_position_service, agent_use_authorization)
+        )
+    if hr_position_intelligence_service is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_position_intelligence_router(
+                hr_position_intelligence_service, require_hr_access
+            )
+        )
+    if hr_candidate_service is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_candidate_router(hr_candidate_service, require_hr_access)
+        )
+    if hr_resource_service is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_hr_resource_router(hr_resource_service, require_hr_access)
+        )
+    if hr_position_task_service is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_hr_position_task_router(
+                hr_position_task_service, require_hr_access
+            )
         )
     if mission_repository is not None and agent_use_authorization is not None:
         app.include_router(

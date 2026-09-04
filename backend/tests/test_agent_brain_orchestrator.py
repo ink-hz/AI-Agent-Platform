@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-import json
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-
 from app.agent_brain.conversation_context import (
     ContextMessage,
     ConversationContext,
@@ -33,6 +32,14 @@ from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
 from app.execution_relay.models import RelayEvent
 from app.execution_relay.repository import ExecutionRelayRepository
+from app.hr.models import BindPositionConversation, CreateManualPosition
+from app.hr.position_intelligence_models import (
+    CreatePositionTaskRequest,
+    HrPositionContextEnvelope,
+)
+from app.hr.position_intelligence_repository import PositionIntelligenceRepository
+from app.hr.repository import HrPositionRepository
+from app.hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
 from test_control_plane_migration import control_database
 
 
@@ -389,6 +396,94 @@ def test_direct_agent_enqueue_uses_only_active_context_attachment_grants() -> No
     assert payload.output_write_grant.task_id == task_id
     assert grants.reads == [(task_id, attachment_id, "hr-bot")]
     assert grants.outputs == [(task_id, "hr-bot")]
+
+
+def test_hr_direct_enqueue_grants_pinned_position_and_candidate_inputs() -> None:
+    conversation_attachment_id = uuid4()
+    position_material_id = uuid4()
+    candidate_document_id = uuid4()
+    task_id = uuid4()
+    now = datetime.now(timezone.utc)
+    card = next(
+        card for card in load_capability_cards() if card.agent_id == "hr-bot"
+    ).model_copy(
+        update={
+            "supports_attachments": True,
+            "supports_attachments_in": True,
+            "supports_attachments_out": False,
+        }
+    )
+
+    class Grants:
+        def __init__(self) -> None:
+            self.reads: list[UUID] = []
+
+        def issue_attachment(self, selected_task, selected_attachment, agent_id):
+            self.reads.append(selected_attachment)
+            return TaskAttachmentGrant(
+                attachment_id=selected_attachment,
+                display_name="input.pdf",
+                detected_mime="application/pdf",
+                size_bytes=128,
+                sha256_hex="a" * 64,
+                download_url=(
+                    f"/api/v1/execution-worker/attachments/{selected_attachment}/content"
+                ),
+                bearer_token="A" * 43,
+                expires_at=now + timedelta(minutes=5),
+            )
+
+    envelope = HrPositionContextEnvelope(
+        position_id=uuid4(),
+        official_version_id=None,
+        context_version_id=uuid4(),
+        task_kind="candidate_match",
+        material_attachment_ids=(position_material_id, conversation_attachment_id),
+        candidate_id=uuid4(),
+        position_candidate_id=uuid4(),
+        document_attachment_ids=(candidate_document_id,),
+        human_feedback_ids=(),
+        prompt_context="pinned HR context",
+        canonical_sha256="a" * 64,
+    )
+    context = ConversationContext(
+        summary=None,
+        messages=(ContextMessage(role="user", content="分析候选人"),),
+        estimated_utf8_bytes=64,
+        active_attachment_ids=(conversation_attachment_id,),
+        hr_position_context=envelope,
+    )
+    relay = ScriptedRelay()
+    grants = Grants()
+    service = MissionOrchestrator(
+        object(), relay, capability_provider=lambda _owner_id: (card,),
+        attachment_grants=grants,
+    )
+    service._request = lambda _mission: context
+    mission = MissionRecord(
+        mission_id=uuid4(), owner_internal_user_id=uuid4(),
+        client_request_id=uuid4(), mode="direct_agent", direct_agent_id="hr-bot",
+        status="delegated", cancel_requested=False, row_version=1,
+        created_at=now, updated_at=now, terminal_at=None, prompt="分析候选人",
+    )
+    run = MissionRun(
+        run_id=uuid4(), mission_id=mission.mission_id, task_id=task_id,
+        phase="direct", agent_id="hr-bot", status="queued", created_at=now,
+        updated_at=now, started_at=None, terminal_at=None, relay_event_cursor=0,
+        input_payload={"capability_card": card.model_dump(mode="json")},
+    )
+
+    assert service._enqueue(mission, run, "prompt") is True
+
+    assert grants.reads == [
+        conversation_attachment_id,
+        position_material_id,
+        candidate_document_id,
+    ]
+    assert tuple(
+        item.attachment_id
+        for item in relay.payloads[run.run_id].input_attachment_grants
+    ) == tuple(grants.reads)
 
 
 @pytest.mark.postgres
@@ -1610,6 +1705,89 @@ def test_exact_32kib_direct_request_persists_compact_run_input(brain_database):
     )
     assert restarted.advance_pending(limit=50) == 1
     assert next(iter(relay.payloads.values())) == original_payload
+
+
+@pytest.mark.postgres
+def test_hr_direct_relay_recovery_reuses_durable_position_envelope(
+    brain_database, request,
+):
+    environment, owner_id = brain_database
+    codec = _codec()
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=codec
+    )
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        mission_repository=missions,
+    )
+    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position = positions.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "恢复测试岗位")
+    )
+    request_id = uuid4()
+    PositionIntelligenceRepository(
+        environment["urls"]["platform_control_app"]
+    ).create_task_request(CreatePositionTaskRequest(
+        uuid4(), owner_id, position.position_id, request_id,
+        "9" * 64, "freeform", None,
+    ))
+    started = conversations.start(
+        owner_id, request_id, "生成岗位说明",
+        mode="direct_agent", direct_agent_id="hr-bot",
+    )
+    positions.bind_conversation(BindPositionConversation(
+        owner_id, position.position_id, started.conversation.conversation_id,
+        uuid4(), "created_in_position",
+    ))
+    context_builder = ConversationContextBuilder(
+        conversations,
+        hr_task_context_provider=HrTaskContextProvider(
+            PostgresHrTaskContextSource(
+                environment["urls"]["platform_control_app"],
+                execution_model_version="hr-runtime-test-v1",
+            )
+        ),
+    )
+    card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
+    relay = ScriptedRelay()
+    service = MissionOrchestrator(
+        missions, relay, capability_provider=lambda _owner: (card,),
+        conversation_context_builder=context_builder,
+        conversation_projection=ConversationProjection(conversations),
+    )
+
+    assert service.advance_pending(limit=50) == 1
+    original_payload = next(iter(relay.payloads.values()))
+    original_document = json.loads(original_payload.prompt.split("\n", 1)[1])
+    assert original_document["hr_position_context"]["position_id"] == str(
+        position.position_id
+    )
+    relay.payloads.clear()
+    relay.states.clear()
+    restarted = MissionOrchestrator(
+        missions, relay, capability_provider=lambda _owner: (card,),
+        conversation_context_builder=context_builder,
+        conversation_projection=ConversationProjection(conversations),
+    )
+    assert restarted.advance_pending(limit=50) == 1
+    assert next(iter(relay.payloads.values())) == original_payload
+
+    def cleanup():
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_hr.position_task_records "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_task_requests "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_conversations "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+    request.addfinalizer(cleanup)
 
 
 @pytest.mark.postgres

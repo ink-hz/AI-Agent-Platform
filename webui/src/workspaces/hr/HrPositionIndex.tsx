@@ -6,6 +6,7 @@ import { startConversation, type ConversationSubmission } from "../../conversati
 import { createHrApi, type HrApi } from "../../hrApi";
 import type { HrPosition, HrPositionDraft } from "../../hrTypes";
 import { navigate } from "../../router";
+import { completeMutationRequest, retainMutationRequest } from "./hrMutationRequest";
 
 
 type DraftStarter = (request: {
@@ -14,11 +15,6 @@ type DraftStarter = (request: {
   csrfToken: string;
   requestId: string;
 }) => Promise<{ conversationId: string }>;
-
-
-function requestId(): string {
-  return crypto.randomUUID();
-}
 
 
 function sourceLabel(position: HrPosition): string {
@@ -109,14 +105,17 @@ export function HrPositionIndex({
     action: "confirm" | "merge" | "dismiss",
   ) {
     setWorking(draft.draftId); setNotice(null);
+    const payload = { action, rowVersion: draft.rowVersion, targetPositionId: mergeTargets[draft.draftId] ?? null };
+    const operation = retainMutationRequest(`position-draft:${draft.draftId}:${action}`, payload);
     try {
-      if (action === "confirm") await api.confirmDraft(draft.draftId, draft.rowVersion, requestId());
+      if (action === "confirm") await api.confirmDraft(draft.draftId, draft.rowVersion, operation.requestId);
       if (action === "merge") {
         const targetPositionId = mergeTargets[draft.draftId];
         if (!targetPositionId) { setNotice("请先明确选择要合并到的正式岗位。"); return; }
-        await api.mergeDraft(draft.draftId, targetPositionId, draft.rowVersion, requestId());
+        await api.mergeDraft(draft.draftId, targetPositionId, draft.rowVersion, operation.requestId);
       }
-      if (action === "dismiss") await api.dismissDraft(draft.draftId, draft.rowVersion, requestId());
+      if (action === "dismiss") await api.dismissDraft(draft.draftId, draft.rowVersion, operation.requestId);
+      completeMutationRequest(operation.key);
       setDrafts((current) => current.filter((item) => item.draftId !== draft.draftId));
     } catch { setNotice("操作未完成，请刷新后重试。"); }
     finally { setWorking(null); }
@@ -128,10 +127,12 @@ export function HrPositionIndex({
     setWorking("new"); setNotice(null);
     try {
       if (!newAttempt.current || newAttempt.current.text !== text) {
+        const draftOperation = retainMutationRequest("position-new-draft", { text });
+        const conversationOperation = retainMutationRequest("position-new-conversation", { text });
         newAttempt.current = {
           text,
-          draftRequestId: requestId(),
-          conversationRequestId: requestId(),
+          draftRequestId: draftOperation.requestId,
+          conversationRequestId: conversationOperation.requestId,
         };
       }
       const attempt = newAttempt.current;
@@ -149,11 +150,14 @@ export function HrPositionIndex({
       } else {
         attempt.submission ??= startConversation(
           text, account.csrf_token, "hr-bot", { positionDraftId: draft.draftId },
+          attempt.conversationRequestId,
         );
         const created = await attempt.submission.send();
         result = { conversationId: created.conversation.conversation_id };
       }
       newAttempt.current = null;
+      completeMutationRequest(retainMutationRequest("position-new-draft", { text }).key);
+      completeMutationRequest(retainMutationRequest("position-new-conversation", { text }).key);
       navigate(`/hr/conversations/${encodeURIComponent(result.conversationId)}`);
     } catch { setNotice("岗位对话暂时没有创建成功，可以直接重试。"); }
     finally { setWorking(null); }
