@@ -715,11 +715,11 @@ PROVIDER_PROBE=passed
 MIGRATION_COUNT="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.schema_migrations where version in (49,50,51);")"
 WAIT_CURSOR_COLUMNS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from information_schema.columns where table_schema='platform_brain' and table_name='brain_wait_subscriptions' and column_name='cursors';")"
 BRAIN_CURSOR_WATERLINE_COLUMNS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from information_schema.columns where table_schema='platform_brain' and table_name='brain_task_event_cursors' and column_name='delivered_seq';")"
-ACCESS_HISTORY_SCHEMA="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select concat((select count(*) from platform_control.schema_migrations where version=65),'|',(to_regclass('platform_control.user_access_events') is not null)::int,'|',(to_regprocedure('platform_control.append_page_view_v65(uuid,uuid,uuid,text,text,text)') is not null)::int,'|',(to_regprocedure('platform_control.read_user_access_events_v65(uuid,uuid,timestamptz,timestamptz,text,text,text,integer,integer)') is not null)::int);")"
+ACCESS_HISTORY_SCHEMA="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select concat((select count(*) from platform_control.schema_migrations where version=67),'|',(to_regclass('platform_control.user_access_events') is not null)::int,'|',(to_regprocedure('platform_control.append_page_view_v65(uuid,uuid,uuid,text,text,text)') is not null)::int,'|',(to_regprocedure('platform_control.read_user_access_events_v67(uuid,uuid,timestamptz,timestamptz,text,text,text,integer,integer)') is not null)::int,'|',(to_regprocedure('platform_control.read_access_subjects_v67(uuid,uuid,timestamptz,timestamptz,text,text,text,integer,integer)') is not null)::int);")"
 [[ "$MIGRATION_COUNT" == "3" ]] || fail
 [[ "$WAIT_CURSOR_COLUMNS" == "0" ]] || fail
 [[ "$BRAIN_CURSOR_WATERLINE_COLUMNS" == "1" ]] || fail
-[[ "$ACCESS_HISTORY_SCHEMA" == "1|1|1|1" ]] || fail
+[[ "$ACCESS_HISTORY_SCHEMA" == "1|1|1|1|1" ]] || fail
 MIGRATIONS_049_050_051=applied
 BRAIN_CURSOR_WATERLINE=passed
 ACCESS_HISTORY_MIGRATION=applied
@@ -1319,11 +1319,20 @@ verify_access_history_authorization_contract() {
   status_code="$("${curl_owner[@]}" -o "$temporary/access-history.json" -w '%{http_code}' \
     "$base/api/v1/manage/access-events?limit=1")" || fail
   [[ "$status_code" == "200" ]] || fail
+  status_code="$("${curl_owner[@]}" -o "$temporary/access-subjects.json" -w '%{http_code}' \
+    "$base/api/v1/manage/access-subjects?limit=1")" || fail
+  [[ "$status_code" == "200" ]] || fail
   status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
     "$base/api/v1/manage/access-events?limit=1")" || fail
   [[ "$status_code" == "403" ]] || fail
+  status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/api/v1/manage/access-subjects?limit=1")" || fail
+  [[ "$status_code" == "403" ]] || fail
   status_code="$("${curl_viewer[@]}" -o /dev/null -w '%{http_code}' \
     "$base/api/v1/manage/access-events?limit=1")" || fail
+  [[ "$status_code" == "403" ]] || fail
+  status_code="$("${curl_viewer[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/api/v1/manage/access-subjects?limit=1")" || fail
   [[ "$status_code" == "403" ]] || fail
 }
 
