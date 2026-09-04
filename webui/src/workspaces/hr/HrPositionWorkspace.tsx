@@ -5,11 +5,16 @@ import type { AgentCapabilityCard } from "../../brainTypes";
 import { listConversations, type ConversationStartScope, type ConversationSubmission } from "../../conversationApi";
 import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmission } from "../../conversationTypes";
 import { createHrApi, type HrApi } from "../../hrApi";
+import { createHrR12Api, type HrR12Api } from "../../hrR12Api";
+import type { HrPositionSection, HrTaskKind } from "../../hrR12Types";
 import type { HrPositionDetail } from "../../hrTypes";
 import type { ConversationPageClient } from "../../pages/ConversationPage";
 import { PlatformLink } from "../../components/PlatformLink";
 import { navigate } from "../../router";
 import { DirectAgentWorkspace, type AgentHistoryClient } from "../direct/DirectAgentWorkspace";
+import { HrPositionContextPanel } from "./HrPositionContextPanel";
+import { HrCandidateWorkspace } from "./HrCandidateWorkspace";
+import { HrPositionResourcesPanel } from "./HrPositionResourcesPanel";
 
 
 type PositionWorkspaceApi = Pick<HrApi, "position" | "promoteMaterial" | "removeMaterial">;
@@ -73,6 +78,9 @@ export function HrPositionWorkspace({
   createSubmission,
   conversationClient,
   onOpenConversation = navigate,
+  r12Api,
+  section = "chat",
+  runningTask = false,
 }: {
   account: Account;
   positionId: string;
@@ -85,15 +93,21 @@ export function HrPositionWorkspace({
   ) => ConversationSubmission;
   conversationClient?: ConversationPageClient;
   onOpenConversation?: (path: string) => void;
+  r12Api?: HrR12Api;
+  section?: HrPositionSection;
+  runningTask?: boolean;
 }) {
   const defaultApi = useMemo(() => createHrApi(account.csrf_token), [account.csrf_token]);
   const client = api ?? defaultApi;
+  const defaultR12Api = useMemo(() => createHrR12Api(account.csrf_token), [account.csrf_token]);
+  const r12 = r12Api ?? defaultR12Api;
   const [detail, setDetail] = useState<HrPositionDetail | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [materialIds, setMaterialIds] = useState<string[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [materialNotice, setMaterialNotice] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<HrPositionSection>(section);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -155,8 +169,20 @@ export function HrPositionWorkspace({
     {materialNotice && <p className="hr-position-scope-error" role="status">{materialNotice}</p>}
   </header>;
 
+  async function quickTask(taskKind: HrTaskKind) {
+    try { await r12.startTask(positionId, taskKind, crypto.randomUUID(), { materialIds }); }
+    catch { setMaterialNotice("岗位任务未启动，请重试。"); }
+  }
+  const sections: Array<[HrPositionSection, string]> = [["chat", "对话"], ["context", "上下文"], ["candidates", "候选人"], ["artifacts", "材料与成果"]];
+  const navigation = <nav className="hr-position-sections" aria-label="岗位工作台分区">{sections.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={activeSection === value} onClick={() => { setActiveSection(value); onOpenConversation(`/hr/positions/${encodeURIComponent(positionId)}/${value}`); }}>{label}</button>)}</nav>;
+  const quickTasks = <div className="hr-position-quick-tasks"><button type="button" onClick={() => void quickTask("jd")}>生成JD</button><button type="button" onClick={() => void quickTask("jr")}>生成JR</button><button type="button" onClick={() => void quickTask("talent_profile")}>生成人才画像</button><button type="button" onClick={() => void quickTask("sourcing_strategy")}>生成搜寻策略</button><button type="button" onClick={() => void quickTask("position_interview_plan")}>生成面试方案</button></div>;
+  const sectionView = activeSection === "context" ? <HrPositionContextPanel api={r12} positionId={positionId} />
+    : activeSection === "candidates" ? <HrCandidateWorkspace api={r12} positionId={positionId} />
+      : <HrPositionResourcesPanel api={r12} positionId={positionId} />;
+
   return <main className="hr-position-workspace" data-position-id={positionId}>
-    <DirectAgentWorkspace
+    {header}{navigation}{quickTasks}{runningTask && <p role="status">任务仍在执行，刷新后已恢复状态。</p>}
+    {activeSection === "chat" ? <DirectAgentWorkspace
       account={account}
       agentId="hr-bot"
       autoFocusComposer
@@ -164,7 +190,7 @@ export function HrPositionWorkspace({
       conversationId={selectedConversationId}
       conversationPath={(id) => positionConversationPath(positionId, id)}
       createSubmission={createSubmission}
-      header={header}
+      header={null}
       historyClient={historyClient}
       loadCatalog={loadCatalog}
       newConversationScope={scope}
@@ -175,6 +201,6 @@ export function HrPositionWorkspace({
       workspaceLabel="岗位智能工作台"
       workspaceMark="HR"
       workspaceRootPath={`/hr/positions/${encodeURIComponent(positionId)}`}
-    />
+    /> : sectionView}
   </main>;
 }
