@@ -1,0 +1,176 @@
+"""Read exact HR position resources without exposing attachment storage details."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Literal, Protocol
+from uuid import UUID
+
+from .resource_models import (
+    PositionArtifactItem,
+    PositionMaterialItem,
+    PositionResources,
+    PositionResourceTicket,
+)
+
+
+class ResourceNotFound(RuntimeError):
+    """The caller does not own this exact position resource."""
+
+
+class ResourceUnavailable(RuntimeError):
+    """A resource projection or attachment ticket could not be read safely."""
+
+
+class PositionResourceRepository(Protocol):
+    def materials_for_position(self, owner_id: UUID, position_id: UUID) -> tuple[PositionMaterialItem, ...]: ...
+
+    def artifacts_for_position(self, owner_id: UUID, position_id: UUID) -> tuple[PositionArtifactItem, ...]: ...
+
+
+class AttachmentTicketService(Protocol):
+    def issue_ticket(self, owner_id: UUID, attachment_id: UUID, purpose: Literal["preview", "download"]): ...
+
+
+def _preview_available(media_type: str, state: str) -> bool:
+    return state == "ready" and (media_type.startswith("image/") or media_type == "application/pdf")
+
+
+class PsycopgPositionResourceRepository:
+    """Projects only rows already bound to an owned HR position.
+
+    Attachment names and metadata stay behind the existing attachment reader, which
+    has the encryption and retention checks required for a public projection.
+    """
+
+    def __init__(self, connection_factory: Callable[[], object], attachments) -> None:
+        if not callable(connection_factory) or not callable(getattr(attachments, "attachment", None)):
+            raise ValueError("position resource repository invalid")
+        self._connection = connection_factory
+        self._attachments = attachments
+
+    def _item(self, owner_id: UUID, row, *, artifact_id: UUID | None = None, artifact_version: int | None = None):
+        attachment = self._attachments.attachment(owner_id, row["attachment_id"])
+        media_type = getattr(attachment, "detected_mime", None) or getattr(attachment, "media_type", None)
+        state = getattr(attachment, "state", None)
+        filename = getattr(attachment, "display_name", None)
+        size_bytes = getattr(attachment, "size_bytes", None)
+        created_at = row.get("created_at") or getattr(attachment, "created_at", None)
+        if artifact_id is None:
+            return PositionMaterialItem(
+                row["attachment_id"], filename, media_type, state, size_bytes, created_at,
+                row.get("source_conversation_id"), row.get("source_turn_id"),
+                _preview_available(media_type, state), state == "ready",
+            )
+        return PositionArtifactItem(
+            artifact_id, row["attachment_id"], artifact_version, filename, media_type, state,
+            size_bytes, created_at, row.get("source_conversation_id"), row.get("source_turn_id"),
+            _preview_available(media_type, state), state == "ready",
+        )
+
+    def materials_for_position(self, owner_id: UUID, position_id: UUID) -> tuple[PositionMaterialItem, ...]:
+        if not isinstance(owner_id, UUID) or not isinstance(position_id, UUID):
+            raise ValueError("position resource identifiers required")
+        query = (
+            "select material.attachment_id, attachment.conversation_id as source_conversation_id, "
+            "(select binding.turn_id from platform_attachments.bindings binding "
+            "where binding.attachment_id=material.attachment_id and binding.turn_id is not null "
+            "order by binding.created_at desc limit 1) as source_turn_id, material.created_at "
+            "from platform_hr.position_materials material "
+            "join platform_attachments.attachments attachment using (attachment_id) "
+            "where material.owner_internal_user_id=%s and material.position_id=%s and material.active "
+            "order by material.updated_at desc"
+        )
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(query, (owner_id, position_id)).fetchall()
+            return tuple(self._item(owner_id, row) for row in rows)
+        except ResourceNotFound:
+            raise
+        except Exception as error:
+            raise ResourceUnavailable("position resources unavailable") from error
+
+    def artifacts_for_position(self, owner_id: UUID, position_id: UUID) -> tuple[PositionArtifactItem, ...]:
+        if not isinstance(owner_id, UUID) or not isinstance(position_id, UUID):
+            raise ValueError("position resource identifiers required")
+        query = (
+            "select linked.artifact_id, version.attachment_id, artifact.conversation_id as source_conversation_id, "
+            "(select message.turn_id from platform_attachments.bindings binding "
+            "join platform_control.conversation_messages message "
+            "on message.conversation_id=binding.conversation_id and message.message_id=binding.message_id "
+            "where binding.attachment_id=version.attachment_id and binding.kind='message_output' "
+            "order by binding.created_at desc limit 1) as source_turn_id, "
+            "version.version_no as artifact_version, linked.created_at "
+            "from platform_hr.position_artifacts linked "
+            "join platform_attachments.artifacts artifact using (artifact_id) "
+            "join platform_attachments.current_artifact_versions version using (artifact_id) "
+            "where linked.owner_internal_user_id=%s and linked.position_id=%s "
+            "order by linked.created_at desc"
+        )
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(query, (owner_id, position_id)).fetchall()
+            return tuple(self._item(
+                owner_id, row, artifact_id=row["artifact_id"], artifact_version=row["artifact_version"],
+            ) for row in rows)
+        except ResourceNotFound:
+            raise
+        except Exception as error:
+            raise ResourceUnavailable("position resources unavailable") from error
+
+
+def _ticket(value) -> PositionResourceTicket:
+    if isinstance(value, PositionResourceTicket):
+        return value
+    content_path = getattr(value, "content_path", None)
+    expires_at = getattr(value, "expires_at", None)
+    if isinstance(value, dict):
+        content_path = value.get("content_path", content_path)
+        expires_at = value.get("expires_at", expires_at)
+    return PositionResourceTicket(content_path=content_path, expires_at=expires_at)
+
+
+class HrPositionResourceService:
+    def __init__(self, repository: PositionResourceRepository, tickets: AttachmentTicketService) -> None:
+        for target, methods, message in (
+            (repository, ("materials_for_position", "artifacts_for_position"), "position resource repository required"),
+            (tickets, ("issue_ticket",), "position resource ticket service required"),
+        ):
+            if any(not callable(getattr(target, method, None)) for method in methods):
+                raise ValueError(message)
+        self._repository = repository
+        self._tickets = tickets
+
+    def for_position(self, owner_id: UUID, position_id: UUID) -> PositionResources:
+        if not isinstance(owner_id, UUID) or not isinstance(position_id, UUID):
+            raise ValueError("position resource identifiers required")
+        try:
+            materials = self._repository.materials_for_position(owner_id, position_id)
+            artifacts = self._repository.artifacts_for_position(owner_id, position_id)
+        except ResourceNotFound:
+            raise
+        except Exception as error:  # storage and database errors intentionally remain opaque
+            raise ResourceUnavailable("position resources unavailable") from error
+        return PositionResources(tuple(materials), tuple(artifacts))
+
+    def ticket(
+        self,
+        owner_id: UUID,
+        position_id: UUID,
+        attachment_id: UUID,
+        purpose: Literal["preview", "download"],
+    ) -> PositionResourceTicket:
+        if not all(isinstance(value, UUID) for value in (owner_id, position_id, attachment_id)):
+            raise ValueError("position resource identifiers required")
+        if purpose not in {"preview", "download"}:
+            raise ValueError("position resource purpose invalid")
+        resources = self.for_position(owner_id, position_id)
+        item = next((value for value in (*resources.materials, *resources.artifacts) if value.attachment_id == attachment_id), None)
+        if item is None or not item.download_available or (purpose == "preview" and not item.preview_available):
+            raise ResourceNotFound("position resource not found")
+        try:
+            return _ticket(self._tickets.issue_ticket(owner_id, attachment_id, purpose))
+        except ResourceNotFound:
+            raise
+        except Exception as error:  # ticket service must not reveal attachment ownership or storage detail
+            raise ResourceUnavailable("position resource unavailable") from error
