@@ -7,7 +7,7 @@ import type {
 
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const JOB_ID = /^J[0-9]{4,12}$/;
+const JOB_ID = /^(?:J[0-9]{4,12}|JOBAD:[0-9]{1,20})$/;
 const POSITION_SOURCES = new Set(["official_site", "manual"]);
 const OFFICIAL_STATUSES = new Set(["active", "stale", "suspected_inactive", "inactive"]);
 const INTERNAL_STATUSES = new Set(["draft", "active", "archived"]);

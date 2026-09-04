@@ -53,6 +53,16 @@ it("encodes position filters, credentials, and AbortSignal", async () => {
   expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: "same-origin", signal });
 });
 
+it("accepts fallback JOBAD identifiers returned by the official job registry", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    items: [{ ...position, official_job_id: "JOBAD:113485" }], next_cursor: null,
+  }), { status: 200 })));
+
+  await expect(createHrApi("csrf").listPositions({})).resolves.toMatchObject({
+    items: [{ officialJobId: "JOBAD:113485" }], nextCursor: null,
+  });
+});
+
 it("parses position scope identifiers without crossing resource boundaries", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
     JSON.stringify(positionDetail), { status: 200 },
