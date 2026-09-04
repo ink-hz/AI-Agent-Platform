@@ -259,7 +259,12 @@ class BrainLoopRepository:
     ) -> None:
         if (
             worker_name
-            not in {"agent-brain-step", "agent-brain-adapter", "agent-brain-reaper"}
+            not in {
+                "agent-brain-step",
+                "agent-brain-adapter",
+                "agent-brain-reaper",
+                "hr-candidate-parser",
+            }
             or status not in {"healthy", "degraded"}
             or (
                 error_code is not None
@@ -270,7 +275,7 @@ class BrainLoopRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select platform_control.upsert_brain_worker_heartbeat_v41("
+                    "select platform_control.upsert_brain_worker_heartbeat_v72("
                     "%s,%s,%s,clock_timestamp()) as accepted",
                     (worker_name, status, error_code),
                 ).fetchone()
