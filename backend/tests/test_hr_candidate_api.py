@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.testclient import TestClient
 
 from app.control_plane.models import AuthContext, Role
 from app.hr.candidate_models import (
@@ -21,8 +25,6 @@ from app.hr.candidate_repository import (
 )
 from app.hr.candidate_routes import build_candidate_router
 from app.hr.candidate_service import CandidateIdentityConflict, CandidateScopeViolation
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.testclient import TestClient
 
 NOW = datetime.now(UTC)
 
@@ -275,6 +277,37 @@ def test_candidate_reads_are_private_explicit_and_do_not_leak_storage_fields() -
     assert "storage" not in serialized
     assert "object_ref" not in serialized
     assert "immutable_locator" not in serialized
+
+
+def test_candidate_analysis_serializes_nullable_artifact_version_identity() -> None:
+    client, service, _ = _client()
+    artifact_version_id = uuid4()
+    service.analysis = replace(
+        service.analysis,
+        analysis_kind="candidate_interview_plan",
+        source_artifact_version_id=artifact_version_id,
+    )
+
+    response = client.get(
+        f"/api/hr/position-candidates/"
+        f"{service.relation.position_candidate_id}/analyses"
+    )
+
+    assert response.status_code == 200
+    analysis = response.json()["items"][0]
+    assert analysis["source_artifact_version_id"] == str(artifact_version_id)
+    assert "immutable_locator" not in response.text
+
+    service.analysis = replace(
+        service.analysis,
+        analysis_kind="match",
+        source_artifact_version_id=None,
+    )
+    without_pdf = client.get(
+        f"/api/hr/position-candidates/"
+        f"{service.relation.position_candidate_id}/analyses"
+    )
+    assert without_pdf.json()["items"][0]["source_artifact_version_id"] is None
 
 
 def test_candidate_document_ticket_is_private_owner_scoped_and_hard_stale_guarded() -> None:

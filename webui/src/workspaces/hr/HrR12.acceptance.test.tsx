@@ -16,6 +16,7 @@ const materialId = "00000000-0000-4000-8000-000000000002";
 const contextId = "00000000-0000-4000-8000-000000000003";
 const artifactId = "00000000-0000-4000-8000-000000000004";
 const artifactAttachmentId = "00000000-0000-4000-8000-000000000005";
+const candidateArtifactVersionId = "00000000-0000-4000-8000-000000000006";
 const now = "2026-09-04T00:00:00Z";
 const account: Account = {
   internal_user_id: "member", display_name: "HR", role: "member", departments: [], gender: null,
@@ -237,13 +238,29 @@ function candidateDocument(index: number) {
 }
 
 function analysis(index: number, kind: "match" | "candidate_interview_plan", versionNumber: number): HrCandidateAnalysisVersion {
-  return {
+  const common = {
     analysisVersionId: analysisIds[versionNumber - 1], positionCandidateId: relationIds[index], positionId,
-    candidateId: candidateIds[index], contextVersionId: contextId, versionNumber, analysisKind: kind,
+    candidateId: candidateIds[index], contextVersionId: contextId, versionNumber,
     documentIds: [documentIds[index]], feedbackIds: [],
-    result: kind === "match" ? { conclusion: "喷嘴结构经验匹配" } : { questions: ["如何控制挤出背压？"] },
     evidence: [{ document_id: documentIds[index], locator: "page:2" }], unknowns: [], conflicts: [],
     verificationQuestions: [], agentVersion: "hr-r12", modelVersion: "model", createdAt: now,
+  };
+  if (kind === "match") return {
+    ...common, analysisKind: kind,
+    result: {
+      summary: "喷嘴结构经验匹配", dimensions: { technical: "匹配" },
+      evidence: [{ resume_fact: "有喷嘴结构经验" }], gaps: [], risks: [], unknowns: [],
+      verification_questions: [],
+    }, sourceArtifactVersionId: null,
+  };
+  return {
+    ...common, analysisKind: kind,
+    result: { title: "候选人专属面试题", questions: [{
+      verification_goal: "验证挤出工艺能力", candidate_reason: "简历提及喷嘴结构经验",
+      question: "如何控制挤出背压？", follow_ups: ["如何验证稳定性？"],
+      strong_evidence: ["说明可量化指标"], risk_signals: ["无法区分本人贡献"],
+    }] },
+    sourceArtifactVersionId: candidateArtifactVersionId,
   };
 }
 

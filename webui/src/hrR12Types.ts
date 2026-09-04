@@ -12,7 +12,9 @@ export interface HrPositionMaterialItem {
   sizeBytes: number; createdAt: string; sourceConversationId: string | null;
   sourceTurnId: string | null; previewAvailable: boolean; downloadAvailable: boolean;
 }
-export interface HrPositionArtifactItem extends HrPositionMaterialItem { artifactId: string; artifactVersion: number; }
+export interface HrPositionArtifactItem extends HrPositionMaterialItem {
+  artifactId: string; artifactVersionId: string; artifactVersion: number;
+}
 export interface HrPositionResources { materials: HrPositionMaterialItem[]; artifacts: HrPositionArtifactItem[]; }
 export interface HrDownloadTicket { contentPath: string; expiresAt: string; }
 
@@ -48,14 +50,42 @@ export interface HrPositionCandidate {
 }
 export interface HrConfirmedCandidate { candidate: HrCandidate; document: HrCandidateDocument; positionCandidate: HrPositionCandidate; }
 export type HrCandidateAnalysisKind = "resume_extract" | "match" | "candidate_interview_plan" | "comparison";
-export interface HrCandidateAnalysisVersion {
+export interface HrCandidateMatchResult {
+  summary: string;
+  dimensions: Record<string, unknown>;
+  evidence: Record<string, unknown>[];
+  gaps: string[];
+  risks: string[];
+  unknowns: string[];
+  verification_questions: string[];
+}
+export interface HrCandidateInterviewQuestion {
+  verification_goal: string;
+  candidate_reason: string;
+  question: string;
+  follow_ups: string[];
+  strong_evidence: string[];
+  risk_signals: string[];
+}
+export interface HrCandidateInterviewPlanResult {
+  title: string;
+  questions: HrCandidateInterviewQuestion[];
+}
+export type HrCandidateAnalysisResult = HrCandidateMatchResult | HrCandidateInterviewPlanResult;
+export type HrCandidateLegacyAnalysisResult = Record<string, unknown>;
+interface HrCandidateAnalysisBase {
   analysisVersionId: string; positionCandidateId: string; positionId: string;
   candidateId: string; contextVersionId: string; versionNumber: number;
-  analysisKind: HrCandidateAnalysisKind; documentIds: string[]; feedbackIds: string[];
-  result: Record<string, unknown>; evidence: Record<string, unknown>[]; unknowns: string[];
+  documentIds: string[]; feedbackIds: string[];
+  evidence: Record<string, unknown>[]; unknowns: string[];
   conflicts: string[]; verificationQuestions: string[]; agentVersion: string;
-  modelVersion: string; createdAt: string;
+  modelVersion: string; createdAt: string; sourceArtifactVersionId: string | null;
 }
+export type HrCandidateAnalysisVersion = HrCandidateAnalysisBase & (
+  | { analysisKind: "match"; result: HrCandidateMatchResult }
+  | { analysisKind: "candidate_interview_plan"; result: HrCandidateInterviewPlanResult }
+  | { analysisKind: "resume_extract" | "comparison"; result: HrCandidateLegacyAnalysisResult }
+);
 export interface HrHumanFeedback {
   feedbackId: string; positionCandidateId: string; analysisVersionId: string;
   feedbackKind: "accepted" | "rejected" | "correction"; conclusionKey: string;

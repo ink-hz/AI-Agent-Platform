@@ -215,6 +215,10 @@ def _analysis(record: CandidateAnalysisVersion) -> dict[str, object]:
         "agent_version": record.agent_version,
         "model_version": record.model_version,
         "created_at": record.created_at.isoformat(),
+        "source_artifact_version_id": (
+            str(record.source_artifact_version_id)
+            if record.source_artifact_version_id is not None else None
+        ),
     }
 
 
