@@ -12,6 +12,7 @@ from .models import (
     ProjectOfficialPosition,
     ProposePositionDraft,
 )
+from .position_intelligence_models import ProjectOfficialVersion
 
 _REGISTRY_FIELDS = {"version", "lastSuccessfulSyncAt", "jobs"}
 _JOB_FIELDS = {
@@ -174,6 +175,21 @@ class OfficialProjectionRepository(Protocol):
         import_evidence: dict[str, object] | None = None,
     ): ...
 
+    def project_official_version(self, command: ProjectOfficialVersion): ...
+
+
+@dataclass(frozen=True, slots=True)
+class OfficialPositionProjection:
+    position: object
+    official_version: object
+
+    @property
+    def position_id(self) -> UUID:
+        value = getattr(self.position, "position_id", None)
+        if not isinstance(value, UUID):
+            raise ValueError("official position projection invalid")
+        return value
+
 
 def project_official_jobs(
     snapshot: OfficialJobSnapshot,
@@ -220,7 +236,50 @@ def project_official_jobs(
             content_hash=job.content_hash,
             source_synced_at=snapshot.last_successful_sync_at,
         ), import_evidence=evidence)
-        projected.append(record)
+        project_version = getattr(repository, "project_official_version", None)
+        if not callable(project_version):
+            projected.append(record)
+            continue
+        official_version = project_version(ProjectOfficialVersion(
+            official_position_version_id=uuid5(
+                position_id,
+                f"official-version:{snapshot.version}:{job.content_hash}",
+            ),
+            owner_id=owner_id,
+            position_id=position_id,
+            client_request_id=uuid5(
+                request_id, f"official-version:{job.canonical_id}:{job.content_hash}"
+            ),
+            official_job_id=job.canonical_id,
+            title=job.title,
+            department=job.organization,
+            locations=job.locations,
+            category=job.category,
+            subcategory=job.subcategory,
+            headcount=job.headcount,
+            degree=job.degree,
+            employment_type=job.employment_type,
+            salary=job.salary,
+            duty=job.duty,
+            requirement=job.requirement,
+            source_version=snapshot.version,
+            source_changed_at=job.source_changed_at,
+            content_hash=job.content_hash,
+            first_observed_at=job.first_seen_at,
+            last_observed_at=job.last_seen_at,
+            official_status=job.status,
+            status_reason=job.status_reason,
+            evidence={
+                "job_ad_id": str(job.job_ad_id),
+                "source_record_ids": list(job.source_record_ids),
+                "snapshot_version": snapshot.version,
+                "last_successful_sync_at": snapshot.last_successful_sync_at.isoformat(),
+            },
+            consecutive_misses=job.consecutive_misses,
+            official_status_code=job.official_status,
+            source_snapshot_at=snapshot.last_successful_sync_at,
+        ))
+        projected.append(OfficialPositionProjection(record, official_version))
     return tuple(projected)
 
 
