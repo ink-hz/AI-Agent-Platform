@@ -2134,6 +2134,44 @@ body {
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments { margin-top: 12px; padding-top: 12px; border-top: 1px solid #dbe3ea; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer-actions > span { color: #52677c; font-size: 13px; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-submit { min-width: 104px; background: #185fa9; font-size: 14px; }
+.hr-workspace-chat-panel.is-position-conversation { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+.hr-workspace-chat-panel.is-position-conversation > .agent-use-workspace { min-height: 0; flex: 1; }
+.hr-confirmed-position-bar { display: grid; min-height: 58px; box-sizing: border-box; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 14px; padding: 8px clamp(18px,3vw,34px); border-bottom: 1px solid #cfddd6; background: #fbfcfb; color: #18372e; }
+.hr-confirmed-position-bar[hidden] { display: none; }
+.hr-confirmed-position-bar > a { color: #2c6c58; font-size: 12px; font-weight: 760; text-decoration: none; }
+.hr-confirmed-position-bar div { min-width: 0; }
+.hr-confirmed-position-bar span { color: #526f64; font-size: 11px; font-weight: 760; }
+.hr-confirmed-position-bar h1 { overflow: hidden; margin: 2px 0 0; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.hr-confirmed-position-bar > strong { padding: 5px 9px; border-radius: 999px; background: #e5f1ec; color: #28624f; font-size: 11.5px; }
+.hr-confirmed-position-actions { display: flex; align-items: center; gap: 8px; }
+.hr-confirmed-position-actions strong { padding: 5px 9px; border-radius: 999px; background: #e5f1ec; color: #28624f; font-size: 11.5px; }
+.hr-confirmed-position-actions button { min-height: 34px; padding: 6px 10px; border: 1px solid #bfd0c8; border-radius: 8px; background: #fff; color: #315f50; font: inherit; font-size: 11.5px; font-weight: 740; }
+.conversation-flow-supplement { width: min(820px,100%); margin: 18px 0 2px; }
+.hr-position-proposal-card { overflow: hidden; border: 1px solid #aebfd0; border-radius: 16px; background: #fff; color: #172b42; box-shadow: 0 10px 30px rgba(38,72,111,.1); }
+.hr-position-proposal-card > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding: 18px 20px 14px; border-bottom: 1px solid #dbe5ee; }
+.hr-position-proposal-card > header span { color: #2468c5; font-size: 11px; font-weight: 820; letter-spacing: .09em; }
+.hr-position-proposal-card > header h2 { margin: 5px 0 0; color: #17345c; font-size: 21px; }
+.hr-position-proposal-card > header > strong { overflow: hidden; color: #344d67; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.hr-position-proposal-tabs { display: flex; gap: 4px; padding: 10px 14px; border-bottom: 1px solid #e1e9f1; background: #f5f8fb; }
+.hr-position-proposal-tabs button { min-height: 34px; padding: 6px 13px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #405b76; font: inherit; font-size: 12.5px; font-weight: 760; cursor: pointer; }
+.hr-position-proposal-tabs button:hover,.hr-position-proposal-tabs button:focus-visible { border-color: #9bbddd; outline: none; }
+.hr-position-proposal-tabs button[aria-selected="true"] { border-color: #bad2e9; background: #fff; color: #185fa9; box-shadow: 0 2px 8px rgba(38,72,111,.08); }
+.hr-position-proposal-content { max-height: 360px; overflow: auto; padding: 18px 20px; color: #1f344b; font-size: 14px; line-height: 1.65; }
+.hr-position-proposal-content .message-markdown > :first-child { margin-top: 0; }
+.hr-position-proposal-content .message-markdown > :last-child { margin-bottom: 0; }
+.hr-position-proposal-card > footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-top: 1px solid #e1e9f1; background: #fafcfe; }
+.hr-position-proposal-icon-actions { display: flex; gap: 5px; }
+.hr-position-proposal-icon-actions button { display: inline-grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #526b84; cursor: pointer; }
+.hr-position-proposal-icon-actions button:hover,.hr-position-proposal-icon-actions button:focus-visible { border-color: #bad2e9; background: #eaf3fc; color: #185fa9; outline: none; }
+.hr-position-proposal-icon-actions button.copied { color: #1d7259; }
+.hr-position-proposal-icon-actions button.error { color: #a13c3c; }
+.hr-position-proposal-confirm { min-height: 38px; padding: 8px 15px; border: 1px solid #185fa9; border-radius: 9px; background: #185fa9; color: #fff; font: inherit; font-size: 12.5px; font-weight: 780; cursor: pointer; }
+.hr-position-proposal-confirm:hover:not(:disabled),.hr-position-proposal-confirm:focus-visible { background: #124f8f; outline: 2px solid rgba(40,120,215,.25); outline-offset: 2px; }
+.hr-position-proposal-confirm:disabled { cursor: not-allowed; opacity: .62; }
+.hr-position-proposal-notice { margin: 0; padding: 10px 14px; border-top: 1px solid #ead99f; background: #fff9e8; color: #684b0f; font-size: 12.5px; }
+.hr-position-proposal-refresh { min-height: 36px; margin-top: 8px; padding: 7px 11px; border: 1px solid #9f7931; border-radius: 8px; background: #fff; color: #684b0f; font: inherit; font-size: 12px; font-weight: 760; cursor: pointer; }
+.hr-position-proposal-state { display: flex; align-items: center; gap: 10px; padding: 13px 15px; border: 1px solid #d7baba; border-radius: 12px; background: #fff8f8; color: #7f2929; }
+.hr-position-proposal-state p { margin: 0; }
 .hr-position-workspace { position: relative; display: flex; min-width: 0; height: 100%; min-height: 0; overflow: hidden; flex-direction: column; background: #f4f7f5; color: #18372e; }
 .hr-position-bar { z-index: 8; display: grid; height: 64px; min-height: 64px; box-sizing: border-box; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 12px; padding: 8px clamp(18px,3vw,34px); border-bottom: 1px solid #cfddd6; background: rgba(251,252,251,.98); box-shadow: 0 6px 20px rgba(31,74,58,.05); }
 .hr-position-bar > a { color: #2c6c58; font-size: 12px; font-weight: 760; text-decoration: none; white-space: nowrap; }
