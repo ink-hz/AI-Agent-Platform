@@ -758,6 +758,43 @@ def test_create_app_mounts_injected_hr_intelligence_candidate_and_task_routes(
     assert app.state.hr_position_task_service is tasks
 
 
+@pytest.mark.asyncio
+async def test_create_app_runs_injected_candidate_parser_submission_lane(
+    tmp_path, monkeypatch,
+) -> None:
+    from app import main as app_main
+
+    registry, contract = _fae_app_paths(tmp_path)
+    coordinator = object()
+    provider = object()
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def parser_loop(selected):
+        assert selected is coordinator
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(app_main, "candidate_parser_submission_loop", parser_loop)
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        hr_candidate_parser_submission_coordinator=coordinator,
+        hr_candidate_parser_input_provider=provider,
+    )
+
+    async with app.router.lifespan_context(app):
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert app.state.hr_candidate_parser_submission_coordinator is coordinator
+        assert app.state.hr_candidate_parser_input_provider is provider
+
+    assert cancelled.is_set()
+
+
 def test_create_app_builds_local_fae_workbench_from_analyst_boundary(
     tmp_path, monkeypatch
 ):

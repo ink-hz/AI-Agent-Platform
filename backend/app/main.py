@@ -151,6 +151,12 @@ from .health.platform import (
 )
 from .health.poller import HealthCache, poll_loop
 from .hr.candidate_context import CandidateEnvelopeProvider
+from .hr.candidate_parser_runtime import (
+    CandidateParserAppRepository,
+    CandidateParserInputProvider,
+    CandidateParserSubmissionCoordinator,
+    candidate_parser_submission_loop,
+)
 from .hr.candidate_repository import CandidateRepository
 from .hr.candidate_routes import build_candidate_router
 from .hr.candidate_service import CandidateService
@@ -748,6 +754,8 @@ def create_app(
     hr_resource_service=None,
     hr_task_context_provider=None,
     hr_position_task_service=None,
+    hr_candidate_parser_submission_coordinator=None,
+    hr_candidate_parser_input_provider=None,
     agent_use_authorization=None,
     hr_position_scope=None,
     access_history_repository=None,
@@ -1090,6 +1098,27 @@ def create_app(
         if hr_candidate_service is None:
             hr_candidate_service = CandidateService(candidate_repository)
         if (
+            conversation_command_service is not None
+            and (
+                hr_candidate_parser_submission_coordinator is None
+                or hr_candidate_parser_input_provider is None
+            )
+        ):
+            candidate_parser_repository = CandidateParserAppRepository(
+                control_database_url
+            )
+            if hr_candidate_parser_submission_coordinator is None:
+                hr_candidate_parser_submission_coordinator = (
+                    CandidateParserSubmissionCoordinator(
+                        candidate_parser_repository,
+                        conversation_command_service,
+                    )
+                )
+            if hr_candidate_parser_input_provider is None:
+                hr_candidate_parser_input_provider = CandidateParserInputProvider(
+                    candidate_parser_repository
+                )
+        if (
             hr_resource_service is None
             and conversation_attachment_download_service is not None
         ):
@@ -1152,6 +1181,9 @@ def create_app(
             conversation_context_builder=ConversationContextBuilder(
                 conversation_repository,
                 hr_task_context_provider=hr_task_context_provider,
+                candidate_parser_input_provider=(
+                    hr_candidate_parser_input_provider
+                ),
             ),
             conversation_projection=ConversationProjection(
                 conversation_repository,
@@ -1248,6 +1280,10 @@ def create_app(
         # time, so they continue while Brain itself is disabled or on V2.
         if agent_brain_orchestrator is not None:
             tasks.append(asyncio.create_task(agent_brain_loop(agent_brain_orchestrator)))
+        if hr_candidate_parser_submission_coordinator is not None:
+            tasks.append(asyncio.create_task(candidate_parser_submission_loop(
+                hr_candidate_parser_submission_coordinator
+            )))
         try:
             yield
         finally:
@@ -1305,6 +1341,12 @@ def create_app(
     app.state.hr_resource_service = hr_resource_service
     app.state.hr_task_context_provider = hr_task_context_provider
     app.state.hr_position_task_service = hr_position_task_service
+    app.state.hr_candidate_parser_submission_coordinator = (
+        hr_candidate_parser_submission_coordinator
+    )
+    app.state.hr_candidate_parser_input_provider = (
+        hr_candidate_parser_input_provider
+    )
     app.state.fae_access = None
     app.state.fae_session_read_audit = None
     authorization_service = None
