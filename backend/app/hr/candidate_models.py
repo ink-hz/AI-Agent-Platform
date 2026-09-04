@@ -252,6 +252,7 @@ class CandidateDraftProcessingAttempt:
     execution_attached_at: datetime | None
     finished_at: datetime | None
     terminal_request_id: UUID | None
+    assistant_message_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -263,6 +264,7 @@ class CandidateDraftProcessingAttempt:
         _optional_uuid(self.conversation_id)
         _optional_uuid(self.turn_id)
         _optional_uuid(self.terminal_request_id)
+        _optional_uuid(self.assistant_message_id)
         if len({
             self.execution_job_id is None,
             self.conversation_id is None,
@@ -281,6 +283,8 @@ class CandidateDraftProcessingAttempt:
         if self.execution_attached_at is not None:
             _aware(self.execution_attached_at)
         if (self.execution_job_id is None) != (self.execution_attached_at is None):
+            raise ValueError("processing attempt execution identity invalid")
+        if self.execution_job_id is None and self.assistant_message_id is not None:
             raise ValueError("processing attempt execution identity invalid")
         if self.finished_at is not None:
             _aware(self.finished_at)

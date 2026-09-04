@@ -92,6 +92,7 @@ create table platform_hr.candidate_draft_processing_attempts (
     references platform_control.execution_jobs(job_id),
   conversation_id uuid,
   turn_id uuid,
+  assistant_message_id uuid,
   state text not null check (state in ('processing','completed','failed','expired')),
   starting_row_version bigint not null check (starting_row_version>0),
   claimed_row_version bigint not null check (claimed_row_version>0),
@@ -125,8 +126,11 @@ create table platform_hr.candidate_draft_processing_attempts (
     ),
   foreign key (conversation_id,turn_id)
     references platform_control.conversation_turns(conversation_id,turn_id),
+  foreign key (conversation_id,assistant_message_id)
+    references platform_control.conversation_messages(conversation_id,message_id),
   check (
     (execution_job_id is null and conversation_id is null and turn_id is null
+      and assistant_message_id is null
       and execution_attached_at is null and execution_payload is null
       and execution_payload_sha256 is null)
     or (execution_job_id is not null and conversation_id is not null
@@ -628,6 +632,7 @@ language plpgsql security definer
 set search_path=pg_catalog,platform_hr
 as $function$
 declare selected_attempt platform_hr.candidate_draft_processing_attempts%rowtype;
+declare selected_assistant_message_id uuid;
 declare payload jsonb;
 begin
   if session_user not in ('platform_brain_worker','platform_brain_worker_preview') then
@@ -662,7 +667,8 @@ begin
       selected_attempt.owner_internal_user_id,selected_attempt.attachment_id
     ) for update;
   if not found then raise no_data_found; end if;
-  perform 1 from platform_control.execution_jobs execution
+  select turn.assistant_message_id into selected_assistant_message_id
+  from platform_control.execution_jobs execution
   join platform_control.mission_runs run on run.run_id=execution.run_id
   join platform_control.missions mission on mission.mission_id=run.mission_id
   join platform_control.conversation_turns turn
@@ -682,8 +688,8 @@ begin
     and conversation.mode='direct_agent'
     and conversation.direct_agent_id='hr-bot'
     and conversation.started_by_client_request_id=
-      selected_attempt.draft_client_request_id
-    and turn.client_request_id=selected_attempt.draft_client_request_id
+      selected_attempt.attempt_id
+    and turn.client_request_id=selected_attempt.attempt_id
     and turn.status in ('completed','failed','cancelled','interrupted')
     and not exists (
       select 1 from platform_attachments.bindings binding
@@ -701,6 +707,7 @@ begin
   update platform_hr.candidate_draft_processing_attempts set
     execution_job_id=selected_execution_job_id,
     conversation_id=selected_conversation_id,turn_id=selected_turn_id,
+    assistant_message_id=selected_assistant_message_id,
     execution_attached_at=now(),execution_payload=payload,
     execution_payload_sha256=sha256(convert_to(payload::text,'UTF8'))
   where attempt_id=selected_attempt_id returning * into selected_attempt;
@@ -774,6 +781,40 @@ begin
   if not platform_hr.candidate_attachment_usable_v70(
     selected_attempt.owner_internal_user_id,selected_attempt.attachment_id
   ) then raise no_data_found; end if;
+  if selected_attempt.execution_job_id is not null then
+    perform 1 from platform_control.execution_jobs execution
+    join platform_control.mission_runs run on run.run_id=execution.run_id
+    join platform_control.missions mission on mission.mission_id=run.mission_id
+    join platform_control.conversation_turns turn
+      on turn.mission_id=mission.mission_id
+      and turn.turn_id=selected_attempt.turn_id
+      and turn.conversation_id=selected_attempt.conversation_id
+    join platform_control.conversations conversation
+      on conversation.conversation_id=turn.conversation_id
+      and conversation.owner_internal_user_id=mission.owner_internal_user_id
+    where execution.job_id=selected_attempt.execution_job_id
+      and execution.agent_id='hr-bot'
+      and execution.status in ('completed','failed','cancelled','interrupted')
+      and run.agent_id='hr-bot' and run.phase='direct'
+      and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
+      and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
+      and mission.client_request_id=turn.turn_id
+      and conversation.mode='direct_agent'
+      and conversation.direct_agent_id='hr-bot'
+      and conversation.started_by_client_request_id=selected_attempt.attempt_id
+      and turn.client_request_id=selected_attempt.attempt_id
+      and turn.status in ('completed','failed','cancelled','interrupted')
+      and turn.assistant_message_id is not distinct from
+        selected_attempt.assistant_message_id
+      and not exists (
+        select 1 from platform_hr.position_conversations position_conversation
+        where position_conversation.conversation_id=conversation.conversation_id
+      );
+    if not found then raise no_data_found; end if;
+    return query select selected_attempt.execution_job_id,
+      selected_attempt.conversation_id,selected_attempt.turn_id;
+    return;
+  end if;
   select count(*),min(candidate.job_id::text)::uuid,
     min(candidate.conversation_id::text)::uuid,min(candidate.turn_id::text)::uuid
   into selected_count,discovered_job_id,discovered_conversation_id,
@@ -796,8 +837,8 @@ begin
       and mission.client_request_id=turn.turn_id
       and conversation.mode='direct_agent' and conversation.direct_agent_id='hr-bot'
       and conversation.started_by_client_request_id=
-        selected_attempt.draft_client_request_id
-      and turn.client_request_id=selected_attempt.draft_client_request_id
+        selected_attempt.attempt_id
+      and turn.client_request_id=selected_attempt.attempt_id
       and turn.status in ('completed','failed','cancelled','interrupted')
       and not exists (
         select 1 from platform_attachments.bindings binding
@@ -818,13 +859,6 @@ begin
   if selected_count=0 then raise no_data_found; end if;
   if selected_count<>1 then
     raise check_violation using message='candidate execution identity is ambiguous';
-  end if;
-  if selected_attempt.execution_job_id is not null and (
-    selected_attempt.execution_job_id<>discovered_job_id
-    or selected_attempt.conversation_id<>discovered_conversation_id
-    or selected_attempt.turn_id<>discovered_turn_id
-  ) then
-    raise check_violation using message='candidate execution identity mismatch';
   end if;
   return query select discovered_job_id,discovered_conversation_id,
     discovered_turn_id;
@@ -872,7 +906,7 @@ begin
   ) then raise insufficient_privilege; end if;
   return query
   select execution.status::text,turn.status::text,
-    conversation.conversation_id,turn.assistant_message_id,
+    conversation.conversation_id,selected_attempt.assistant_message_id,
     message.content_ciphertext,message.encryption_key_version
   from platform_hr.candidate_draft_processing_attempts selected_attempt
   join platform_control.execution_jobs execution
@@ -890,18 +924,18 @@ begin
     on turn.mission_id=mission.mission_id
     and turn.turn_id=selected_attempt.turn_id
     and turn.conversation_id=selected_attempt.conversation_id
-    and turn.client_request_id=selected_attempt.draft_client_request_id
+    and turn.client_request_id=selected_attempt.attempt_id
     and turn.status in ('completed','failed','cancelled','interrupted')
   join platform_control.conversations conversation
     on conversation.conversation_id=turn.conversation_id
     and conversation.owner_internal_user_id=selected_attempt.owner_internal_user_id
     and conversation.started_by_client_request_id=
-      selected_attempt.draft_client_request_id
+      selected_attempt.attempt_id
     and conversation.mode='direct_agent'
     and conversation.direct_agent_id='hr-bot'
   left join platform_control.conversation_messages message
     on message.conversation_id=conversation.conversation_id
-    and message.message_id=turn.assistant_message_id
+    and message.message_id=selected_attempt.assistant_message_id
     and message.turn_id=turn.turn_id
     and message.mission_id=mission.mission_id and message.role='assistant'
     and message.delivery_status='completed'
@@ -910,11 +944,74 @@ begin
     and selected_attempt.state='processing'
     and selected_attempt.lease_expires_at>now()
     and mission.client_request_id=turn.turn_id
+    and turn.assistant_message_id is not distinct from
+      selected_attempt.assistant_message_id
     and not exists (
       select 1 from platform_hr.position_conversations position_conversation
       where position_conversation.conversation_id=conversation.conversation_id
     );
   if not found then raise no_data_found; end if;
+end
+$function$;
+
+create function platform_hr.fail_candidate_parser_submission_collision_v70(
+  selected_owner_internal_user_id uuid,
+  selected_attempt_id uuid
+) returns platform_hr.candidate_drafts
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected_attempt platform_hr.candidate_draft_processing_attempts%rowtype;
+declare selected_draft platform_hr.candidate_drafts%rowtype;
+begin
+  if session_user not in (
+    'platform_control_app','platform_control_app_preview'
+  ) then raise insufficient_privilege; end if;
+  select * into selected_attempt
+  from platform_hr.candidate_draft_processing_attempts
+  where attempt_id=selected_attempt_id
+    and owner_internal_user_id=selected_owner_internal_user_id
+  for update;
+  if not found then raise no_data_found; end if;
+  if selected_attempt.state='failed'
+     and selected_attempt.terminal_request_id=selected_attempt.attempt_id then
+    select * into selected_draft from platform_hr.candidate_drafts
+    where draft_id=selected_attempt.draft_id
+      and owner_internal_user_id=selected_owner_internal_user_id;
+    if not found then raise no_data_found; end if;
+    return selected_draft;
+  end if;
+  if selected_attempt.state<>'processing'
+     or selected_attempt.lease_expires_at<=now()
+     or selected_attempt.execution_job_id is not null then
+    raise serialization_failure;
+  end if;
+  perform 1 from platform_control.conversations conversation
+  where conversation.owner_internal_user_id=selected_owner_internal_user_id
+    and conversation.started_by_client_request_id=selected_attempt.attempt_id
+    and (
+      conversation.mode<>'direct_agent'
+      or conversation.direct_agent_id is distinct from 'hr-bot'
+      or exists (
+        select 1 from platform_hr.position_conversations scope
+        where scope.conversation_id=conversation.conversation_id
+      )
+      or not exists (
+        select 1 from platform_control.conversation_turns turn
+        where turn.conversation_id=conversation.conversation_id
+          and turn.client_request_id=selected_attempt.attempt_id
+      )
+    );
+  if not found then raise no_data_found; end if;
+  selected_draft := platform_hr.fail_candidate_draft_v70(
+    selected_owner_internal_user_id,selected_attempt.draft_id,
+    selected_attempt.attempt_id,selected_attempt.claimed_row_version,
+    'parser_request_collision'
+  );
+  update platform_hr.candidate_draft_processing_attempts set
+    state='failed',finished_at=now(),terminal_request_id=attempt_id
+  where attempt_id=selected_attempt.attempt_id;
+  return selected_draft;
 end
 $function$;
 
@@ -1119,6 +1216,8 @@ as $function$
 declare selected platform_hr.candidate_drafts%rowtype;
 declare prior_event platform_hr.candidate_draft_mutation_events%rowtype;
 declare payload jsonb;
+declare selected_content_sha256 text;
+declare derived_identity_candidates uuid[];
 begin
   if session_user not in (
     'platform_control_app','platform_control_app_preview',
@@ -1128,6 +1227,11 @@ begin
   end if;
   if not platform_hr.candidate_json_safe_v70(selected_extracted_facts,true) then
     raise check_violation using message='candidate facts contain forbidden fields';
+  end if;
+  if selected_identity_candidates is null
+     or cardinality(selected_identity_candidates)<>0 then
+    raise check_violation using
+      message='candidate identity suggestions must be server derived';
   end if;
   payload := jsonb_build_object(
     'draft_id',selected_draft_id,'expected_row_version',selected_expected_row_version,
@@ -1156,7 +1260,8 @@ begin
   where draft_id=selected_draft_id
     and owner_internal_user_id=selected_owner_internal_user_id for update;
   if not found then raise no_data_found; end if;
-  perform 1 from platform_attachments.attachments attachment
+  select encode(attachment.sha256,'hex') into selected_content_sha256
+  from platform_attachments.attachments attachment
   where attachment.attachment_id=selected.attachment_id
     and platform_hr.candidate_attachment_usable_v70(
       selected_owner_internal_user_id,selected.attachment_id
@@ -1164,9 +1269,38 @@ begin
   if not found then raise no_data_found; end if;
   if selected.row_version<>selected_expected_row_version
      or selected.state<>'processing' then raise serialization_failure; end if;
+  select coalesce(
+    array_agg(suggestion.candidate_id order by
+      suggestion.exact_content_match desc,suggestion.candidate_id),
+    '{}'::uuid[]
+  ) into derived_identity_candidates
+  from (
+    select candidate.candidate_id,
+      bool_or(document.content_sha256=selected_content_sha256)
+        as exact_content_match
+    from platform_hr.candidates candidate
+    join platform_hr.candidate_documents document
+      on document.candidate_id=candidate.candidate_id
+      and document.owner_internal_user_id=candidate.owner_internal_user_id
+      and document.status='active'
+    where candidate.owner_internal_user_id=selected_owner_internal_user_id
+      and (
+        document.content_sha256=selected_content_sha256
+        or (
+          jsonb_typeof(selected_extracted_facts->'stable_name')='string'
+          and lower(regexp_replace(btrim(candidate.stable_name),
+            '[[:space:]]+',' ','g'))=
+            lower(regexp_replace(btrim(selected_extracted_facts->>'stable_name'),
+              '[[:space:]]+',' ','g'))
+        )
+      )
+    group by candidate.candidate_id
+    order by exact_content_match desc,candidate.candidate_id
+    limit 100
+  ) suggestion;
   update platform_hr.candidate_drafts set
     state='ready',extracted_facts=selected_extracted_facts,
-    identity_candidates=selected_identity_candidates,error_code=null,
+    identity_candidates=derived_identity_candidates,error_code=null,
     last_mutation_request_id=selected_client_request_id,
     row_version=row_version+1,updated_at=now()
   where draft_id=selected_draft_id returning * into selected;
@@ -1309,7 +1443,9 @@ begin
     and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
     and mission.client_request_id=turn.turn_id
     and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
-    and turn.client_request_id=selected_attempt.draft_client_request_id
+    and turn.client_request_id=selected_attempt.attempt_id
+    and turn.assistant_message_id is not distinct from
+      selected_attempt.assistant_message_id
     and turn.status='completed';
   if not found then raise serialization_failure; end if;
   selected := platform_hr.complete_candidate_draft_v70(
@@ -1380,7 +1516,9 @@ begin
     and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
     and mission.client_request_id=turn.turn_id
     and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
-    and turn.client_request_id=selected_attempt.draft_client_request_id
+    and turn.client_request_id=selected_attempt.attempt_id
+    and turn.assistant_message_id is not distinct from
+      selected_attempt.assistant_message_id
     and turn.status in ('completed','failed','cancelled','interrupted');
   if not found then raise serialization_failure; end if;
   selected := platform_hr.fail_candidate_draft_v70(
@@ -1522,10 +1660,6 @@ begin
   if not found then raise no_data_found; end if;
   if selected_draft.row_version<>selected_expected_row_version
      or selected_draft.state<>'ready' then raise serialization_failure; end if;
-  if cardinality(selected_draft.identity_candidates)>0
-     and selected_merge_candidate_id is null then
-    raise unique_violation using message='candidate identity requires explicit merge target';
-  end if;
   perform 1 from platform_attachments.attachments attachment
   where attachment.attachment_id=selected_draft.attachment_id
     and platform_hr.candidate_attachment_usable_v70(
@@ -1975,6 +2109,9 @@ revoke all on function platform_hr.fail_candidate_draft_v70(
 revoke all on function platform_hr.read_candidate_draft_execution_result_v70(
   uuid,text
 ) from public;
+revoke all on function platform_hr.fail_candidate_parser_submission_collision_v70(
+  uuid,uuid
+) from public;
 revoke all on function platform_hr.retry_candidate_draft_v70(
   uuid,uuid,uuid,bigint
 ) from public;
@@ -2036,6 +2173,10 @@ begin
   execute format(
     'grant execute on function platform_hr.read_candidate_draft_execution_result_v70(uuid,text) '
     'to %I',selected_brain
+  );
+  execute format(
+    'grant execute on function platform_hr.fail_candidate_parser_submission_collision_v70(uuid,uuid) '
+    'to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.complete_claimed_candidate_draft_v70('

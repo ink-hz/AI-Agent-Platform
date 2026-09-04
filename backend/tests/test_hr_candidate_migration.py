@@ -121,6 +121,17 @@ def test_idempotent_replays_are_bound_to_the_complete_mutation_payload() -> None
         assert comparison in sql
 
 
+def test_identity_suggestions_are_server_derived_owner_scoped_and_replay_safe() -> None:
+    sql = _sql()
+
+    assert "cardinality(selected_identity_candidates)<>0" in sql
+    assert "candidate.owner_internal_user_id=selected_owner_internal_user_id" in sql
+    assert "document.status='active'" in sql
+    assert "document.content_sha256=selected_content_sha256" in sql
+    assert "limit 100" in sql
+    assert "identity_candidates=derived_identity_candidates" in sql
+
+
 def test_analysis_feedback_is_an_exact_context_pinned_task_snapshot() -> None:
     sql = _sql()
 
@@ -172,6 +183,7 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
     assert "create table platform_hr.candidate_draft_processing_attempts" in sql
     assert "execution_job_id uuid references" in sql
     assert "conversation_id uuid" in sql and "turn_id uuid" in sql
+    assert "assistant_message_id uuid" in sql
     for function in (
         "claim_next_candidate_draft_v70",
         "attach_candidate_draft_execution_v70",
@@ -198,7 +210,8 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
     assert "mission.direct_agent_id='hr-bot'" in sql
     assert "conversation.direct_agent_id='hr-bot'" in sql
     assert "hr-candidate-bot" not in sql
-    assert "turn.client_request_id=selected_attempt.draft_client_request_id" in sql
+    assert "turn.client_request_id=selected_attempt.attempt_id" in sql
+    assert "selected_draft.client_request_id,selected_worker_id" in sql
     assert "binding.kind='turn_input'" in sql
     assert "binding.attachment_id<>selected_attempt.attachment_id" in sql
     assert "candidate_attachment_usable_v70( selected_attempt.owner_internal_user_id" in sql
@@ -223,12 +236,32 @@ def test_candidate_parser_result_reader_is_exact_and_brain_only() -> None:
     assert "turn.assistant_message_id" in sql
     assert "message.role='assistant'" in sql
     assert "message.mission_id=mission.mission_id" in sql
+    assert "message.message_id=selected_attempt.assistant_message_id" in sql
+    assert (
+        "turn.assistant_message_id is not distinct from "
+        "selected_attempt.assistant_message_id"
+        in sql
+    )
     assert (
         "grant execute on function "
         "platform_hr.read_candidate_draft_execution_result_v70(uuid,text)"
         in sql
     )
     assert "to %i',selected_brain" in sql
+
+
+def test_candidate_parser_submission_collision_is_app_scoped_and_terminal() -> None:
+    sql = _sql()
+
+    assert "create function platform_hr.fail_candidate_parser_submission_collision_v70" in sql
+    assert "conversation.started_by_client_request_id=selected_attempt.attempt_id" in sql
+    assert "'parser_request_collision'" in sql
+    assert (
+        "grant execute on function "
+        "platform_hr.fail_candidate_parser_submission_collision_v70(uuid,uuid)"
+        in sql
+    )
+    assert "to %i',selected_app" in sql
 
 
 def test_resume_processing_uses_an_agent_supported_by_brain_and_relay() -> None:

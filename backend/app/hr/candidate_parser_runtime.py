@@ -20,6 +20,7 @@ from app.execution_relay.content_crypto import (
 )
 
 from .candidate_models import (
+    AttachCandidateDraftExecution,
     CandidateDraftProcessingAttempt,
     ClaimNextCandidateDraft,
     CompleteCandidateDraft,
@@ -36,7 +37,7 @@ _PARSER_PROMPT = """你正在执行一份候选人简历的结构化提取任务
 只返回一个 JSON 对象，不要 Markdown 代码围栏、解释或前后缀。
 对象必须且只能包含两个键：
 1. extracted_facts：可核验的候选人事实对象，只允许 stable_name、summary、contact、education、experiences、projects、skills、certifications、languages、awards、publications、unknowns、sources。
-2. identity_candidate_ids：无法从简历可靠确定已有候选人身份时必须为空数组；禁止猜测 ID。
+2. identity_candidate_ids：必须始终为空数组；禁止猜测或生成数据库候选人 ID。
 不得提取或推断年龄、出生日期、性别、民族、宗教、婚育、健康、残障、政治面貌等受保护信息，也不得输出 ATS、流程阶段、Offer、排期、自动淘汰或存储定位字段。
 材料没有证明的内容写入 unknowns，不得当作负面能力结论。"""
 
@@ -57,7 +58,9 @@ class CandidateParserSubmission:
     owner_id: UUID
     draft_id: UUID
     attachment_id: UUID
+    draft_client_request_id: UUID
     client_request_id: UUID
+    request_collision: bool = False
 
     @classmethod
     def from_attempt(
@@ -71,6 +74,7 @@ class CandidateParserSubmission:
             attempt.draft_id,
             attempt.attachment_id,
             attempt.draft_client_request_id,
+            attempt.attempt_id,
         )
 
 
@@ -111,6 +115,8 @@ def decode_candidate_parser_response(value: str) -> DecodedCandidateParserRespon
         raw_facts = document["extracted_facts"]
         raw_identities = document["identity_candidate_ids"]
         if type(raw_facts) is not dict or type(raw_identities) is not list:
+            raise ValueError
+        if raw_identities:
             raise ValueError
         identities = tuple(UUID(item) for item in raw_identities)
         # Reuse the public candidate command as the single protected/ATS field,
@@ -170,14 +176,13 @@ class CandidateParserAppRepository:
                     "as position_bound,"
                     "exists(select 1 from platform_control.conversation_turns turn "
                     "where turn.conversation_id=conversation.conversation_id "
-                    "and turn.client_request_id=attempt.draft_client_request_id) "
+                    "and turn.client_request_id=attempt.attempt_id) "
                     "as exact_turn "
                     "from platform_hr.candidate_draft_processing_attempts attempt "
                     "left join platform_control.conversations conversation on "
                     "conversation.owner_internal_user_id="
                     "attempt.owner_internal_user_id and "
-                    "conversation.started_by_client_request_id="
-                    "attempt.draft_client_request_id "
+                    "conversation.started_by_client_request_id=attempt.attempt_id "
                     "where attempt.state='processing' "
                     "and attempt.lease_expires_at>now() and ("
                     "conversation.conversation_id is null or conversation.mode<>"
@@ -186,19 +191,19 @@ class CandidateParserAppRepository:
                     "where scope.conversation_id=conversation.conversation_id) or "
                     "not exists(select 1 from platform_control.conversation_turns turn "
                     "where turn.conversation_id=conversation.conversation_id and "
-                    "turn.client_request_id=attempt.draft_client_request_id)) "
+                    "turn.client_request_id=attempt.attempt_id)) "
                     "order by attempt.claimed_at,attempt.attempt_id limit 1"
                 ).fetchone()
             if row is None:
                 return None
-            if row["conversation_id"] is not None:
-                raise CandidateConflict("candidate parser request collision")
             return CandidateParserSubmission(
                 row["attempt_id"],
                 row["owner_internal_user_id"],
                 row["draft_id"],
                 row["attachment_id"],
                 row["draft_client_request_id"],
+                row["attempt_id"],
+                row["conversation_id"] is not None,
             )
         except (CandidateConflict, CandidateUnavailable):
             raise
@@ -235,9 +240,12 @@ class CandidateParserAppRepository:
                     "join platform_hr.candidate_draft_processing_attempts attempt on "
                     "attempt.owner_internal_user_id="
                     "conversation.owner_internal_user_id and "
-                    "attempt.draft_client_request_id=turn.client_request_id and "
-                    "attempt.draft_client_request_id="
-                    "conversation.started_by_client_request_id "
+                    "attempt.attempt_id=turn.client_request_id and "
+                    "attempt.attempt_id=conversation.started_by_client_request_id "
+                    "join platform_hr.candidate_drafts draft on "
+                    "draft.draft_id=attempt.draft_id and "
+                    "draft.owner_internal_user_id=attempt.owner_internal_user_id and "
+                    "draft.client_request_id=attempt.draft_client_request_id "
                     "join platform_attachments.attachments attachment on "
                     "attachment.attachment_id=attempt.attachment_id and "
                     "attachment.owner_internal_user_id="
@@ -273,6 +281,28 @@ class CandidateParserAppRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise CandidateUnavailable("candidate parser input unavailable") from None
 
+    def fail_submission_collision(
+        self, submission: CandidateParserSubmission
+    ) -> None:
+        if (
+            not isinstance(submission, CandidateParserSubmission)
+            or not submission.request_collision
+        ):
+            raise ValueError("candidate parser collision required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.fail_candidate_parser_submission_collision_v70("
+                    "%s,%s)).*",
+                    (submission.owner_id, submission.attempt_id),
+                ).fetchone()
+            if row is None or row["draft_id"] != submission.draft_id:
+                raise CandidateUnavailable("candidate parser collision unavailable")
+        except CandidateUnavailable:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise CandidateUnavailable("candidate parser collision unavailable") from None
+
 
 class CandidateParserSubmissionCoordinator:
     def __init__(self, repository: object, commands: object) -> None:
@@ -289,6 +319,14 @@ class CandidateParserSubmissionCoordinator:
             return False
         if not isinstance(selected, CandidateParserSubmission):
             raise CandidateUnavailable("candidate parser submission unavailable")
+        if selected.request_collision:
+            fail_collision = getattr(
+                self._repository, "fail_submission_collision", None
+            )
+            if not callable(fail_collision):
+                raise CandidateUnavailable("candidate parser collision unavailable")
+            fail_collision(selected)
+            return True
         self._commands.start(
             selected.owner_id,
             selected.client_request_id,
@@ -434,12 +472,21 @@ class CandidateParserRuntime:
                 claimed = True
             except CandidateNotFound:
                 return False
-        try:
-            identity = self._queue.discover_execution(
-                attempt.attempt_id, self._worker_id
+        if attempt.execution_job_id is not None:
+            identity = AttachCandidateDraftExecution(
+                attempt.attempt_id,
+                self._worker_id,
+                attempt.execution_job_id,
+                attempt.conversation_id,
+                attempt.turn_id,
             )
-        except CandidateNotFound:
-            return claimed
+        else:
+            try:
+                identity = self._queue.discover_execution(
+                    attempt.attempt_id, self._worker_id
+                )
+            except CandidateNotFound:
+                return claimed
         self._queue.attach_execution(identity)
         try:
             result = self._result_reader.read(attempt.attempt_id, self._worker_id)

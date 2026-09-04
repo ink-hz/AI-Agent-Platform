@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+
 from app.hr.candidate_models import (
     AttachCandidateDraftExecution,
     CreateCandidateDraftBatch,
@@ -134,6 +135,7 @@ def test_repository_recovers_work_and_discovers_execution_without_process_memory
         "execution_job_id": None,
         "conversation_id": None,
         "turn_id": None,
+        "assistant_message_id": None,
         "state": "processing",
         "starting_row_version": 1,
         "claimed_row_version": 2,

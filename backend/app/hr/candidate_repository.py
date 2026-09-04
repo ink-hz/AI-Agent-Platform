@@ -98,6 +98,7 @@ def _processing_attempt(row: dict[str, Any]) -> CandidateDraftProcessingAttempt:
         execution_attached_at=row["execution_attached_at"],
         finished_at=row["finished_at"],
         terminal_request_id=row["terminal_request_id"],
+        assistant_message_id=row["assistant_message_id"],
     )
 
 

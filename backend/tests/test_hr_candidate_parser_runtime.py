@@ -67,16 +67,23 @@ def test_submission_coordinator_starts_exact_unbound_hr_conversation() -> None:
     assert coordinator.submit_one() is True
     assert commands.calls[0][0][:2] == (
         attempt.owner_id,
-        attempt.draft_client_request_id,
+        attempt.attempt_id,
     )
     prompt = commands.calls[0][0][2]
     assert "extracted_facts" in prompt
     assert "identity_candidate_ids" in prompt
+    assert "必须始终为空数组" in prompt
     assert str(attempt.attachment_id) not in prompt
     assert commands.calls[0][1] == {
         "mode": "direct_agent",
         "direct_agent_id": "hr-bot",
     }
+
+    retried = CandidateParserSubmission.from_attempt(
+        replace(attempt, attempt_id=UUID(int=7))
+    )
+    assert retried.client_request_id != selected.client_request_id
+    assert retried.draft_client_request_id == selected.draft_client_request_id
 
 
 def test_submission_response_loss_replays_same_request_without_side_effects() -> None:
@@ -107,6 +114,33 @@ def test_submission_response_loss_replays_same_request_without_side_effects() ->
     assert coordinator.submit_one() is True
     assert commands.calls[0] == commands.calls[1]
     assert len(commands.persisted) == 1
+
+
+def test_submission_collision_is_failed_and_does_not_call_conversation_service() -> None:
+    selected = replace(
+        CandidateParserSubmission.from_attempt(_attempt()),
+        request_collision=True,
+    )
+
+    class Repository:
+        def __init__(self):
+            self.failed = []
+
+        def next_submission(self):
+            return selected
+
+        def fail_submission_collision(self, submission):
+            self.failed.append(submission)
+
+    class Commands:
+        def start(self, *_args, **_kwargs):
+            raise AssertionError("collision must never create or replay a conversation")
+
+    repository = Repository()
+    coordinator = CandidateParserSubmissionCoordinator(repository, Commands())
+
+    assert coordinator.submit_one() is True
+    assert repository.failed == [selected]
 
 
 def test_submission_loop_retries_transient_failures() -> None:
@@ -145,14 +179,14 @@ def test_submission_loop_retries_transient_failures() -> None:
 def test_decoder_accepts_only_the_exact_candidate_parser_contract() -> None:
     parsed = decode_candidate_parser_response(
         '{"extracted_facts":{"stable_name":"Lin","skills":["Python"]},'
-        '"identity_candidate_ids":["00000000-0000-0000-0000-000000000009"]}'
+        '"identity_candidate_ids":[]}'
     )
 
     assert parsed.extracted_facts == {
         "stable_name": "Lin",
         "skills": ["Python"],
     }
-    assert parsed.identity_candidate_ids == (UUID(int=9),)
+    assert parsed.identity_candidate_ids == ()
     assert decode_candidate_parser_response(
         '\n {"extracted_facts":{},"identity_candidate_ids":[]} \n'
     ).extracted_facts == {}
@@ -161,8 +195,14 @@ def test_decoder_accepts_only_the_exact_candidate_parser_contract() -> None:
         "```json\n{}\n```",
         '{"extracted_facts":{},"identity_candidate_ids":[],"extra":true}',
         '{"extracted_facts":{},"identity_candidate_ids":"no"}',
-        '{"extracted_facts":{"offer_status":"pending"},'
-        '"identity_candidate_ids":[]}',
+        (
+            '{"extracted_facts":{},"identity_candidate_ids":'
+            '["00000000-0000-0000-0000-000000000009"]}'
+        ),
+        (
+            '{"extracted_facts":{"offer_status":"pending"},'
+            '"identity_candidate_ids":[]}'
+        ),
     ):
         with pytest.raises(CandidateParserProtocolError):
             decode_candidate_parser_response(invalid)
@@ -261,6 +301,35 @@ def test_runtime_completes_valid_terminal_result_with_stable_request_id() -> Non
     assert command.extracted_facts == {"stable_name": "Lin"}
     assert command.client_request_id == runtime.terminal_request_id(attempt.attempt_id)
     assert queue.failed == []
+
+
+def test_runtime_uses_persisted_execution_pin_before_discovery() -> None:
+    attempt = _attempt(
+        execution_job_id=UUID(int=20),
+        conversation_id=UUID(int=21),
+        turn_id=UUID(int=22),
+        assistant_message_id=UUID(int=23),
+        execution_attached_at=datetime.now(timezone.utc),
+    )
+    queue = _Queue(recovered=attempt)
+
+    def reject_discovery(*_args):
+        raise AssertionError("a persisted execution pin must win over later matches")
+
+    queue.discover_execution = reject_discovery
+    runtime = CandidateParserRuntime(
+        queue,
+        _Reader(CandidateParserExecutionResult(
+            "completed",
+            "completed",
+            '{"extracted_facts":{"stable_name":"Pinned"},'
+            '"identity_candidate_ids":[]}',
+        )),
+        worker_id=attempt.worker_id,
+    )
+
+    assert runtime.tick() is True
+    assert queue.completed[0][2].extracted_facts == {"stable_name": "Pinned"}
 
 
 @pytest.mark.parametrize(

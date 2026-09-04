@@ -125,6 +125,67 @@ def _seed_candidate_scope(environment):
     return ids
 
 
+@pytest.mark.postgres
+def test_candidate_confirmation_can_explicitly_create_despite_identity_matches(
+    candidate_database,
+) -> None:
+    environment = candidate_database["environments"]["production"]
+    ids = _seed_candidate_scope(environment)
+    proposed_candidate_id = uuid4()
+    unproposed_candidate_id = uuid4()
+    new_candidate_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_hr.candidates("
+            "candidate_id,owner_internal_user_id,confirmation_request_id,"
+            "stable_name,facts) values (%s,%s,%s,'Existing', '{}'::jsonb),"
+            "(%s,%s,%s,'Different', '{}'::jsonb)",
+            (
+                proposed_candidate_id, ids["owner"], uuid4(),
+                unproposed_candidate_id, ids["owner"], uuid4(),
+            ),
+        )
+        connection.execute(
+            "update platform_hr.candidate_drafts set identity_candidates=array[%s]::uuid[] "
+            "where draft_id=%s",
+            (proposed_candidate_id, ids["draft"]),
+        )
+
+    statement = (
+        "select (platform_hr.confirm_candidate_draft_v70("
+        "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*"
+    )
+    base = (
+        ids["owner"], ids["draft"], uuid4(), 2, new_candidate_id,
+        unproposed_candidate_id, ids["document"], ids["relation"],
+        ids["context"], "Same Name, Different Person", '{"skills":["Python"]}',
+    )
+    app_url = environment["urls"]["platform_control_app"]
+    with psycopg.connect(app_url) as connection:
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            connection.execute(statement, base)
+        connection.rollback()
+        created = connection.execute(
+            statement,
+            (
+                base[0], base[1], uuid4(), base[3], base[4], None,
+                base[6], base[7], base[8], base[9], base[10],
+            ),
+        ).fetchone()
+        connection.commit()
+
+    assert created[3] == new_candidate_id
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select stable_name from platform_hr.candidates where candidate_id=%s",
+            (new_candidate_id,),
+        ).fetchone()[0] == "Same Name, Different Person"
+        assert connection.execute(
+            "select stable_name from platform_hr.candidates where candidate_id=%s",
+            (proposed_candidate_id,),
+        ).fetchone()[0] == "Existing"
+
+
 def _seed_execution_identity(connection, owner_id, request_id, *, agent_id="hr-bot"):
     ids = {name: uuid4() for name in (
         "mission", "task", "run", "job", "conversation", "message", "turn"
@@ -456,6 +517,11 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
                 (ids["owner"], ids["draft"], uuid4(), 3),
             )
 
+    cross_scope = _seed_candidate_scope(environment)
+    suggestions = {name: uuid4() for name in (
+        "exact", "exact_document", "name", "name_document",
+        "erased", "erased_document", "cross", "cross_document",
+    )}
     queued = {name: uuid4() for name in (
         "attachment", "batch", "draft", "draft_request", "attempt"
     )}
@@ -488,8 +554,46 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
                 queued["attachment"], queued["batch"], queued["draft_request"],
             ),
         )
+        connection.execute(
+            "insert into platform_hr.candidates("
+            "candidate_id,owner_internal_user_id,confirmation_request_id,"
+            "stable_name,facts) values "
+            "(%s,%s,%s,'Different Name','{}'::jsonb),"
+            "(%s,%s,%s,'  queued   CANDIDATE  ','{}'::jsonb),"
+            "(%s,%s,%s,'Queued Candidate','{}'::jsonb),"
+            "(%s,%s,%s,'Queued Candidate','{}'::jsonb)",
+            (
+                suggestions["exact"], ids["owner"], uuid4(),
+                suggestions["name"], ids["owner"], uuid4(),
+                suggestions["erased"], ids["owner"], uuid4(),
+                suggestions["cross"], cross_scope["owner"], uuid4(),
+            ),
+        )
+        connection.execute(
+            "insert into platform_hr.candidate_documents("
+            "document_id,owner_internal_user_id,candidate_id,attachment_id,"
+            "source_draft_id,document_kind,version_number,content_sha256,status) "
+            "values (%s,%s,%s,%s,%s,'resume',1,%s,'active'),"
+            "(%s,%s,%s,%s,%s,'resume',1,%s,'active'),"
+            "(%s,%s,%s,%s,%s,'resume',1,%s,'erased'),"
+            "(%s,%s,%s,%s,%s,'resume',1,%s,'active')",
+            (
+                suggestions["exact_document"], ids["owner"],
+                suggestions["exact"], queued["attachment"], queued["draft"],
+                "6a" * 32,
+                suggestions["name_document"], ids["owner"],
+                suggestions["name"], ids["attachment"], ids["draft"],
+                "68" * 32,
+                suggestions["erased_document"], ids["owner"],
+                suggestions["erased"], ids["attachment"], ids["draft"],
+                "68" * 32,
+                suggestions["cross_document"], cross_scope["owner"],
+                suggestions["cross"], cross_scope["attachment"],
+                cross_scope["draft"], "6a" * 32,
+            ),
+        )
         execution = _seed_execution_identity(
-            connection, ids["owner"], queued["draft_request"]
+            connection, ids["owner"], queued["attempt"]
         )
         attacker_owner = uuid4()
         connection.execute(
@@ -498,7 +602,7 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             (attacker_owner,),
         )
         attacker = _seed_execution_identity(
-            connection, attacker_owner, queued["draft_request"]
+            connection, attacker_owner, queued["attempt"]
         )
         wrong_request = _seed_execution_identity(
             connection, ids["owner"], uuid4()
@@ -651,9 +755,32 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             attempt.attempt_id, attempt.worker_id,
             replace(complete, draft_id=uuid4()),
         )
+    with pytest.raises(CandidateConflict):
+        brain_repository.complete_claimed_draft(
+            attempt.attempt_id, attempt.worker_id,
+            replace(complete, identity_candidates=(suggestions["exact"],)),
+        )
     ready = brain_repository.complete_claimed_draft(
         attempt.attempt_id, attempt.worker_id, complete
     )
+    late_candidate_id, late_document_id = uuid4(), uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_hr.candidates("
+            "candidate_id,owner_internal_user_id,confirmation_request_id,"
+            "stable_name,facts) values (%s,%s,%s,'Queued Candidate','{}'::jsonb)",
+            (late_candidate_id, ids["owner"], uuid4()),
+        )
+        connection.execute(
+            "insert into platform_hr.candidate_documents("
+            "document_id,owner_internal_user_id,candidate_id,attachment_id,"
+            "source_draft_id,document_kind,version_number,content_sha256,status) "
+            "values (%s,%s,%s,%s,%s,'resume',1,%s,'active')",
+            (
+                late_document_id, ids["owner"], late_candidate_id,
+                ids["attachment"], ids["draft"], "68" * 32,
+            ),
+        )
     replay_ready = brain_repository.complete_claimed_draft(
         attempt.attempt_id, attempt.worker_id, complete
     )
@@ -668,6 +795,12 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
 
     assert ready == replay_ready
     assert ready.state == "ready"
+    assert ready.identity_candidates == (
+        suggestions["exact"], suggestions["name"],
+    )
+    assert suggestions["erased"] not in ready.identity_candidates
+    assert suggestions["cross"] not in ready.identity_candidates
+    assert late_candidate_id not in replay_ready.identity_candidates
     assert persisted.state == "completed"
     assert bound.execution_job_id == execution["job"]
 
@@ -708,7 +841,7 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
             ),
         )
         failed_execution = _seed_execution_identity(
-            connection, ids["owner"], execution_failure["draft_request"]
+            connection, ids["owner"], execution_failure["attempt"]
         )
         _fail_execution_identity(connection, failed_execution, relay_worker)
     failed_attempt = brain_repository.claim_next_draft(ClaimNextCandidateDraft(
@@ -832,7 +965,7 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
     ))
     with psycopg.connect(environment["admin"]) as connection:
         recovered_execution = _seed_execution_identity(
-            connection, ids["owner"], lease["draft_request"]
+            connection, ids["owner"], lease["first"]
         )
         _complete_execution_identity(connection, recovered_execution, relay_worker)
     first_bound = brain_repository.attach_draft_execution(
@@ -859,13 +992,18 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
     assert second.draft_id == first.draft_id
     assert second.claimed_row_version == first.claimed_row_version + 2
 
+    with psycopg.connect(environment["admin"]) as connection:
+        restarted_execution = _seed_execution_identity(
+            connection, ids["owner"], lease["second"]
+        )
+        _complete_execution_identity(connection, restarted_execution, relay_worker)
     recovered_bound = brain_repository.attach_draft_execution(
         AttachCandidateDraftExecution(
-            second.attempt_id, second.worker_id, recovered_execution["job"],
-            recovered_execution["conversation"], recovered_execution["turn"],
+            second.attempt_id, second.worker_id, restarted_execution["job"],
+            restarted_execution["conversation"], restarted_execution["turn"],
         )
     )
-    assert recovered_bound.execution_job_id == recovered_execution["job"]
+    assert recovered_bound.execution_job_id == restarted_execution["job"]
     failure = FailCandidateDraft(
         ids["owner"], lease["draft"], uuid4(),
         second.claimed_row_version, "parse_failed",
