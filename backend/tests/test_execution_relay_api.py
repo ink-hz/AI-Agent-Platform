@@ -839,6 +839,8 @@ def test_create_app_enabled_probes_mounts_and_exposes_repository(tmp_path, monke
 
     assert probes == [CONTROL_DSN]
     assert app.state.execution_relay_repository is not None
+    assert app.state.hr_task_context_provider is None
+    assert app.state.hr_position_task_service is None
     assert response.status_code == 401
     assert response.headers["cache-control"] == "no-store"
 

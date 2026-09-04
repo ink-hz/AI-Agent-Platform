@@ -1202,6 +1202,7 @@ def create_app(
             hr_position_task_service is None
             and conversation_command_service is not None
             and hr_position_scope is not None
+            and hr_task_context_provider is not None
         ):
             hr_position_task_service = HrPositionTaskService(
                 hr_position_intelligence_service,
