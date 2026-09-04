@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import psycopg
 import pytest
 from test_control_plane_migration import control_database
 
-from app.hr.models import CreateManualPosition
+from app.hr.models import CreateManualPosition, ProjectOfficialPosition
 from app.hr.position_intelligence_models import (
     ConfirmContextModules,
     CreateContextDraft,
+    ProjectOfficialVersion,
 )
 from app.hr.position_intelligence_repository import (
     PositionContextConflict,
@@ -47,6 +50,15 @@ def test_context_confirmation_is_replay_stable_and_rejects_a_stale_baseline(
         owner_id, uuid4(), position.position_id, None, None,
         {"mission": {"text": "Build reliable robots"}}, "Initial context", uuid4(),
     ))
+    replay_draft_command = CreateContextDraft(
+        owner_id, uuid4(), position.position_id, None, None,
+        {"jr": {"skills": ["CAD"]}}, "Stable draft", uuid4(),
+    )
+    repository.create_draft(replay_draft_command)
+    with pytest.raises(PositionContextConflict):
+        repository.create_draft(replace(
+            replay_draft_command, summary="changed replay"
+        ))
     first_command = ConfirmContextModules(
         owner_id, position.position_id, first_draft.context_version_id, uuid4(),
         None, first_draft.row_version, ("mission",), owner_id,
@@ -54,6 +66,10 @@ def test_context_confirmation_is_replay_stable_and_rejects_a_stale_baseline(
 
     first = repository.confirm_modules(first_command)
     assert repository.confirm_modules(first_command) == first
+    with pytest.raises(PositionContextConflict):
+        repository.confirm_modules(replace(
+            first_command, draft_context_version_id=uuid4()
+        ))
     second_draft = repository.create_draft(CreateContextDraft(
         owner_id, uuid4(), position.position_id, first.context_version_id, None,
         {"jd": {"duty": "Design structures"}}, "Second context", uuid4(),
@@ -127,3 +143,39 @@ def test_repository_conceals_cross_owner_contexts(control_database) -> None:
             other_id, position.position_id, draft.context_version_id,
             draft.context_version_id,
         )
+
+
+@pytest.mark.postgres
+def test_official_version_replay_rejects_any_payload_change(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Official Version Replay Owner")
+    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position_id = uuid4()
+    positions.project_official(ProjectOfficialPosition(
+        owner_id, position_id, uuid4(), "J11014", "算法工程师", "机器人",
+        ("深圳",), "active", "sync-v1", "a" * 64,
+        datetime(2026, 9, 4, tzinfo=UTC),
+    ))
+    repository = PositionIntelligenceRepository(
+        environment["urls"]["platform_control_app"]
+    )
+    now = datetime(2026, 9, 4, tzinfo=UTC)
+    command = ProjectOfficialVersion(
+        uuid4(), owner_id, position_id, uuid4(), "J11014", "算法工程师",
+        "机器人", ("深圳",), "研发", "算法", 1, "本科", "全职",
+        "20K-30K", "Build.", "Test.", "sync-v1", now, "a" * 64,
+        now, now, "active", "published", {"snapshot": "sync-v1"},
+    )
+
+    first = repository.project_official_version(command)
+    assert repository.project_official_version(command) == first
+    assert repository.official_version(
+        owner_id, position_id, first.official_position_version_id
+    ) == first
+    with pytest.raises(PositionContextNotFound):
+        repository.official_version(
+            uuid4(), position_id, first.official_position_version_id
+        )
+    with pytest.raises(PositionContextConflict):
+        repository.project_official_version(replace(command, duty="Changed."))

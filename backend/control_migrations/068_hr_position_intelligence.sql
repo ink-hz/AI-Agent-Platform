@@ -78,6 +78,7 @@ create table platform_hr.position_context_versions (
   confirmed_by uuid references platform_control.internal_users(internal_user_id),
   confirmed_at timestamptz,
   confirmed_module_names text[] not null default '{}'::text[],
+  confirmation_source_draft_id uuid,
   row_version bigint not null default 1 check (row_version>0),
   created_at timestamptz not null default now(),
   foreign key (position_id,owner_internal_user_id)
@@ -87,6 +88,10 @@ create table platform_hr.position_context_versions (
       official_position_version_id,owner_internal_user_id
     ),
   foreign key (base_context_version_id,owner_internal_user_id)
+    references platform_hr.position_context_versions(
+      context_version_id,owner_internal_user_id
+    ),
+  foreign key (confirmation_source_draft_id,owner_internal_user_id)
     references platform_hr.position_context_versions(
       context_version_id,owner_internal_user_id
     ),
@@ -106,7 +111,7 @@ create table platform_hr.position_context_versions (
   )
 );
 
-create unique index one_current_confirmed_context_v67
+create unique index one_current_confirmed_context_v68
   on platform_hr.position_context_versions(position_id)
   where state='confirmed';
 
@@ -175,7 +180,7 @@ create table platform_hr.position_task_records (
   unique (owner_internal_user_id,conversation_id,turn_id)
 );
 
-create function platform_hr.guard_context_version_immutability_v67()
+create function platform_hr.guard_context_version_immutability_v68()
 returns trigger language plpgsql
 set search_path=pg_catalog,platform_hr
 as $function$
@@ -195,11 +200,11 @@ begin
 end
 $function$;
 
-create trigger guard_context_version_immutability_v67
+create trigger guard_context_version_immutability_v68
 before update or delete on platform_hr.position_context_versions
-for each row execute function platform_hr.guard_context_version_immutability_v67();
+for each row execute function platform_hr.guard_context_version_immutability_v68();
 
-create function platform_hr.project_official_version_v67(
+create function platform_hr.project_official_version_v68(
   selected_official_position_version_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -243,7 +248,26 @@ begin
   if found then
     if selected.position_id<>selected_position_id
       or selected.content_hash<>selected_content_hash
-      or selected.official_position_version_id<>selected_official_position_version_id then
+      or selected.official_position_version_id<>selected_official_position_version_id
+      or selected.official_job_id<>selected_official_job_id
+      or selected.title<>btrim(selected_title)
+      or selected.department is distinct from nullif(btrim(selected_department),'')
+      or selected.locations<>selected_locations
+      or selected.category<>btrim(selected_category)
+      or selected.subcategory is distinct from nullif(btrim(selected_subcategory),'')
+      or selected.headcount<>selected_headcount
+      or selected.degree is distinct from nullif(btrim(selected_degree),'')
+      or selected.employment_type<>btrim(selected_employment_type)
+      or selected.salary<>btrim(selected_salary)
+      or selected.duty<>btrim(selected_duty)
+      or selected.requirement<>btrim(selected_requirement)
+      or selected.source_version<>selected_source_version
+      or selected.source_changed_at<>selected_source_changed_at
+      or selected.first_observed_at<>selected_first_observed_at
+      or selected.last_observed_at<>selected_last_observed_at
+      or selected.official_status<>selected_official_status
+      or selected.status_reason<>btrim(selected_status_reason)
+      or selected.evidence<>selected_evidence then
       raise unique_violation using message='official version idempotency payload mismatch';
     end if;
     return selected;
@@ -292,7 +316,7 @@ begin
 end
 $function$;
 
-create function platform_hr.create_context_draft_v67(
+create function platform_hr.create_context_draft_v68(
   selected_context_version_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -331,7 +355,15 @@ begin
       or selected.position_id<>selected_position_id
       or selected.base_context_version_id is distinct from selected_base_context_version_id
       or selected.official_position_version_id is distinct from selected_official_position_version_id
-      or selected.modules<>selected_modules then
+      or selected.modules<>selected_modules
+      or selected.summary<>btrim(selected_summary)
+      or selected.source_conversation_id is distinct from selected_source_conversation_id
+      or selected.source_turn_id is distinct from selected_source_turn_id
+      or selected.source_artifact_version_id is distinct from selected_source_artifact_version_id
+      or selected.source_material_attachment_ids<>selected_source_material_attachment_ids
+      or selected.agent_id is distinct from selected_agent_id
+      or selected.model_version is distinct from selected_model_version
+      or selected.created_by<>selected_created_by then
       raise unique_violation using message='context draft idempotency payload mismatch';
     end if;
     return selected;
@@ -382,7 +414,7 @@ begin
 end
 $function$;
 
-create function platform_hr.confirm_context_modules_v67(
+create function platform_hr.confirm_context_modules_v68(
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
   selected_draft_context_version_id uuid,
@@ -414,8 +446,10 @@ begin
     and client_request_id=selected_client_request_id;
   if found then
     if selected.position_id<>selected_position_id
+      or selected.confirmation_source_draft_id<>selected_draft_context_version_id
       or selected.base_context_version_id is distinct from selected_expected_current_context_version_id
-      or selected.confirmed_module_names<>selected_module_names then
+      or selected.confirmed_module_names<>selected_module_names
+      or selected.confirmed_by<>selected_confirmed_by then
       raise unique_violation using message='context confirmation idempotency payload mismatch';
     end if;
     return selected;
@@ -465,7 +499,7 @@ begin
     base_context_version_id,source_conversation_id,source_turn_id,
     source_artifact_version_id,source_material_attachment_ids,agent_id,
     model_version,created_by,confirmed_by,confirmed_at,
-    confirmed_module_names
+    confirmed_module_names,confirmation_source_draft_id
   ) values (
     new_context_id,selected_owner_internal_user_id,selected_position_id,
     selected_client_request_id,
@@ -475,7 +509,8 @@ begin
     selected_expected_current_context_version_id,draft.source_conversation_id,
     draft.source_turn_id,draft.source_artifact_version_id,
     draft.source_material_attachment_ids,draft.agent_id,draft.model_version,
-    draft.created_by,selected_confirmed_by,now(),selected_module_names
+    draft.created_by,selected_confirmed_by,now(),selected_module_names,
+    selected_draft_context_version_id
   ) returning * into selected;
   if remaining_modules='{}'::jsonb then
     update platform_hr.position_context_versions set state='superseded',
@@ -493,7 +528,7 @@ begin
 end
 $function$;
 
-create function platform_hr.create_position_task_record_v67(
+create function platform_hr.create_position_task_record_v68(
   selected_task_record_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -566,7 +601,7 @@ begin
 end
 $function$;
 
-create function platform_hr.read_position_context_versions_v67(
+create function platform_hr.read_position_context_versions_v68(
   selected_owner_internal_user_id uuid,
   selected_position_id uuid
 ) returns setof platform_hr.position_context_versions
@@ -581,20 +616,20 @@ $function$;
 
 revoke all on all tables in schema platform_hr from public;
 revoke all on all functions in schema platform_hr from public;
-revoke all on function platform_hr.project_official_version_v67(
+revoke all on function platform_hr.project_official_version_v68(
   uuid,uuid,uuid,uuid,text,text,text,jsonb,text,text,integer,text,text,text,
   text,text,text,timestamptz,text,timestamptz,timestamptz,text,text,jsonb
 ) from public;
-revoke all on function platform_hr.create_context_draft_v67(
+revoke all on function platform_hr.create_context_draft_v68(
   uuid,uuid,uuid,uuid,uuid,uuid,jsonb,text,uuid,uuid,uuid,uuid[],text,text,uuid
 ) from public;
-revoke all on function platform_hr.confirm_context_modules_v67(
+revoke all on function platform_hr.confirm_context_modules_v68(
   uuid,uuid,uuid,uuid,uuid,bigint,text[],uuid
 ) from public;
-revoke all on function platform_hr.create_position_task_record_v67(
+revoke all on function platform_hr.create_position_task_record_v68(
   uuid,uuid,uuid,uuid,text,uuid,uuid,uuid[],uuid,uuid,uuid[],uuid[],uuid,uuid,text,text
 ) from public;
-revoke all on function platform_hr.read_position_context_versions_v67(
+revoke all on function platform_hr.read_position_context_versions_v68(
   uuid,uuid
 ) from public;
 
@@ -617,27 +652,27 @@ begin
   execute format('grant usage on schema platform_hr to %I,%I',selected_app,selected_brain);
   execute format('grant select on all tables in schema platform_hr to %I',selected_app);
   execute format(
-    'grant execute on function platform_hr.project_official_version_v67('
+    'grant execute on function platform_hr.project_official_version_v68('
     'uuid,uuid,uuid,uuid,text,text,text,jsonb,text,text,integer,text,text,text,'
     'text,text,text,timestamptz,text,timestamptz,timestamptz,text,text,jsonb) to %I',
     selected_app
   );
   execute format(
-    'grant execute on function platform_hr.create_context_draft_v67('
+    'grant execute on function platform_hr.create_context_draft_v68('
     'uuid,uuid,uuid,uuid,uuid,uuid,jsonb,text,uuid,uuid,uuid,uuid[],text,text,uuid) to %I',
     selected_app
   );
   execute format(
-    'grant execute on function platform_hr.confirm_context_modules_v67('
+    'grant execute on function platform_hr.confirm_context_modules_v68('
     'uuid,uuid,uuid,uuid,uuid,bigint,text[],uuid) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_hr.create_position_task_record_v67('
+    'grant execute on function platform_hr.create_position_task_record_v68('
     'uuid,uuid,uuid,uuid,text,uuid,uuid,uuid[],uuid,uuid,uuid[],uuid[],uuid,uuid,text,text) to %I,%I',
     selected_app,selected_brain
   );
   execute format(
-    'grant execute on function platform_hr.read_position_context_versions_v67('
+    'grant execute on function platform_hr.read_position_context_versions_v68('
     'uuid,uuid) to %I,%I',selected_app,selected_brain
   );
   execute format('grant select on platform_hr.position_task_records to %I',selected_brain);

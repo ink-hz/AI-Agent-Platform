@@ -141,7 +141,7 @@ class PositionIntelligenceRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.project_official_version_v67("
+                    "select (platform_hr.project_official_version_v68("
                     "%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,"
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
                     (
@@ -202,6 +202,33 @@ class PositionIntelligenceRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise PositionIntelligenceUnavailable("official versions unavailable") from None
 
+    def official_version(
+        self,
+        owner_id: UUID,
+        position_id: UUID,
+        official_version_id: UUID,
+    ) -> OfficialPositionVersion:
+        if any(
+            not isinstance(value, UUID)
+            for value in (owner_id, position_id, official_version_id)
+        ):
+            raise ValueError("official version identifiers invalid")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_hr.official_position_versions "
+                    "where owner_internal_user_id=%s and position_id=%s "
+                    "and official_position_version_id=%s",
+                    (owner_id, position_id, official_version_id),
+                ).fetchone()
+            if row is None:
+                raise PositionContextNotFound("official version not found")
+            return _official(row)
+        except PositionIntelligenceError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise PositionIntelligenceUnavailable("official version unavailable") from None
+
     def list_versions(
         self,
         owner_id: UUID,
@@ -215,7 +242,7 @@ class PositionIntelligenceRepository:
             raise ValueError("context state invalid")
         try:
             statement = (
-                "select * from platform_hr.read_position_context_versions_v67(%s,%s)"
+                "select * from platform_hr.read_position_context_versions_v68(%s,%s)"
             )
             values: tuple[object, ...] = (owner_id, position_id)
             if state is not None:
@@ -235,7 +262,7 @@ class PositionIntelligenceRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.create_context_draft_v67("
+                    "select (platform_hr.create_context_draft_v68("
                     "%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s::uuid[],%s,%s,%s)).*",
                     (
                         command.context_version_id,
@@ -275,7 +302,7 @@ class PositionIntelligenceRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.confirm_context_modules_v67("
+                    "select (platform_hr.confirm_context_modules_v68("
                     "%s,%s,%s,%s,%s,%s,%s::text[],%s)).*",
                     (
                         command.owner_id,

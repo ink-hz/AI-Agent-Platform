@@ -255,12 +255,6 @@ class HrTaskContextProvider:
             scope.context.owner_id != owner_id
             or scope.context.position_id != scope.position_id
             or scope.context.state != "confirmed"
-            or (
-                scope.context.official_version_id is not None
-                and scope.official is not None
-                and scope.context.official_version_id
-                != scope.official.official_position_version_id
-            )
         ):
             raise HrTaskContextError("confirmed position context invalid")
         if scope.official is None and scope.context is None and scope.position_title is None:
@@ -282,12 +276,17 @@ class HrTaskContextProvider:
         if scope.candidate_id is not None:
             if self._candidate_provider is None:
                 raise HrTaskContextError("candidate context unavailable")
-            candidate_fragment = self._candidate_provider.for_task(
-                owner_id,
-                scope.position_id,
-                scope.candidate_id,
-                scope.position_candidate_id,
-            )
+            try:
+                candidate_fragment = self._candidate_provider.for_task(
+                    owner_id,
+                    scope.position_id,
+                    scope.candidate_id,
+                    scope.position_candidate_id,
+                )
+            except (RuntimeError, ValueError):
+                raise HrTaskContextError(
+                    "candidate context unavailable"
+                ) from None
             if (
                 getattr(candidate_fragment, "candidate_id", None) != scope.candidate_id
                 or getattr(candidate_fragment, "position_candidate_id", None)
@@ -523,7 +522,7 @@ class PostgresHrTaskContextSource:
         try:
             with self._connection() as connection:
                 return connection.execute(
-                    "select (platform_hr.create_position_task_record_v67("
+                    "select (platform_hr.create_position_task_record_v68("
                     "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,%s::uuid[],"
                     "%s::uuid[],%s,%s,%s,%s)).*",
                     (

@@ -5,7 +5,7 @@ from pathlib import Path
 MIGRATION = (
     Path(__file__).parents[1]
     / "control_migrations"
-    / "067_hr_position_intelligence.sql"
+    / "068_hr_position_intelligence.sql"
 )
 
 
@@ -33,10 +33,10 @@ def test_migration_defines_versioned_position_intelligence_spine() -> None:
 def test_confirmed_context_is_immutable_and_one_current_version_per_position() -> None:
     sql = _sql()
 
-    assert "create unique index one_current_confirmed_context_v67" in sql
+    assert "create unique index one_current_confirmed_context_v68" in sql
     assert "where state='confirmed'" in sql
-    assert "create function platform_hr.guard_context_version_immutability_v67" in sql
-    assert "create trigger guard_context_version_immutability_v67" in sql
+    assert "create function platform_hr.guard_context_version_immutability_v68" in sql
+    assert "create trigger guard_context_version_immutability_v68" in sql
     assert "confirmed context version is immutable" in sql
     assert "revoke all on all tables in schema platform_hr from public" in sql
     assert "grant select on all tables in schema platform_hr" in sql
@@ -49,10 +49,10 @@ def test_migration_exposes_only_bounded_idempotent_mutations() -> None:
     sql = _sql()
 
     for function in (
-        "project_official_version_v67",
-        "create_context_draft_v67",
-        "confirm_context_modules_v67",
-        "create_position_task_record_v67",
+        "project_official_version_v68",
+        "create_context_draft_v68",
+        "confirm_context_modules_v68",
+        "create_position_task_record_v68",
     ):
         assert f"create function platform_hr.{function}" in sql
         assert f"revoke all on function platform_hr.{function}" in sql

@@ -83,6 +83,11 @@ class CandidateProvider:
         )
 
 
+class FailingCandidateProvider:
+    def for_task(self, *_args):
+        raise RuntimeError("candidate repository detail")
+
+
 def test_envelope_pins_position_context_materials_and_candidate_fragment() -> None:
     owner_id, position_id, official, context, material = _records()
     conversation_id, turn_id, candidate_id, position_candidate_id = (
@@ -147,7 +152,6 @@ def test_provider_fails_closed_on_scope_mismatch_or_missing_candidate_provider()
         HrTaskContextProvider(mismatched).build_for_turn(
             owner_id, conversation_id, turn_id
         )
-
     candidate_scope = Source(HrTaskScope(
         owner_id, position_id, conversation_id, turn_id, "candidate_match",
         official, context, (material,), uuid4(), uuid4(),
@@ -156,7 +160,33 @@ def test_provider_fails_closed_on_scope_mismatch_or_missing_candidate_provider()
         HrTaskContextProvider(candidate_scope).build_for_turn(
             owner_id, conversation_id, turn_id
         )
+    with pytest.raises(HrTaskContextError, match="candidate context unavailable"):
+        HrTaskContextProvider(
+            candidate_scope, candidate_provider=FailingCandidateProvider()
+        ).build_for_turn(owner_id, conversation_id, turn_id)
 
+
+def test_new_official_facts_do_not_invalidate_confirmed_internal_context() -> None:
+    owner_id, position_id, official, context, material = _records()
+    conversation_id, turn_id = uuid4(), uuid4()
+    newer_official = replace(
+        official,
+        official_position_version_id=uuid4(),
+        content_hash="c" * 64,
+        source_version="sync-v2",
+    )
+    source = Source(HrTaskScope(
+        owner_id, position_id, conversation_id, turn_id, "jd", newer_official,
+        context, (material,), None, None,
+    ))
+
+    envelope = HrTaskContextProvider(source).build_for_turn(
+        owner_id, conversation_id, turn_id
+    )
+
+    assert envelope.official_version_id == newer_official.official_position_version_id
+    assert envelope.context_version_id == context.context_version_id
+    assert context.official_version_id == official.official_position_version_id
 
 def test_recovery_returns_the_recorded_envelope_without_rereading_newer_context() -> None:
     owner_id, position_id, official, context, material = _records()

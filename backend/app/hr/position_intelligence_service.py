@@ -18,6 +18,7 @@ class PositionIntelligenceCommands(Protocol):
     def confirm_modules(self, command: ConfirmContextModules) -> PositionContextVersion: ...
     def compare(self, owner_id: UUID, position_id: UUID, left: UUID, right: UUID) -> dict[str, object]: ...
     def official_versions(self, owner_id: UUID, position_id: UUID) -> tuple[object, ...]: ...
+    def official_version(self, owner_id: UUID, position_id: UUID, official_version_id: UUID) -> object: ...
 
 
 class PositionIntelligenceService:
@@ -29,7 +30,7 @@ class PositionIntelligenceService:
     ) -> None:
         for name in (
             "current", "list_versions", "create_draft", "confirm_modules",
-            "compare", "official_versions",
+            "compare", "official_versions", "official_version",
         ):
             if not callable(getattr(repository, name, None)):
                 raise ValueError("position intelligence repository invalid")
@@ -49,6 +50,13 @@ class PositionIntelligenceService:
 
     def official_versions(self, owner_id: UUID, position_id: UUID) -> tuple[object, ...]:
         return self._repository.official_versions(owner_id, position_id)
+
+    def official_version(
+        self, owner_id: UUID, position_id: UUID, official_version_id: UUID
+    ) -> object:
+        return self._repository.official_version(
+            owner_id, position_id, official_version_id
+        )
 
     def create_draft(
         self,

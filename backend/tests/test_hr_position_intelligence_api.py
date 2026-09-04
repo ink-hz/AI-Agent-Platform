@@ -6,7 +6,10 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.hr.position_intelligence_models import PositionContextVersion
+from app.hr.position_intelligence_models import (
+    OfficialPositionVersion,
+    PositionContextVersion,
+)
 from app.hr.position_intelligence_repository import (
     PositionContextConflict,
     PositionContextNotFound,
@@ -28,6 +31,13 @@ class Service:
     def __init__(self, owner_id, position_id):
         self.current_record = _context(owner_id, position_id)
         self.draft_record = _context(owner_id, position_id, "draft")
+        now = datetime.now(UTC)
+        self.official_record = OfficialPositionVersion(
+            uuid4(), owner_id, position_id, "J11014", "算法工程师", "机器人",
+            ("深圳",), "研发", "算法", 1, "本科", "全职", "20K-30K",
+            "Build.", "Test.", "sync-v1", now, "a" * 64, now, now,
+            "active", "published", {"snapshot": "sync-v1"}, now,
+        )
         self.calls = []
         self.error = None
 
@@ -66,7 +76,11 @@ class Service:
 
     def official_versions(self, *args):
         self.calls.append(("official", args))
-        return self._result(())
+        return self._result((self.official_record,))
+
+    def official_version(self, *args):
+        self.calls.append(("official_detail", args))
+        return self._result(self.official_record)
 
 
 def _client():
@@ -100,6 +114,20 @@ def test_context_api_returns_current_history_drafts_and_diff() -> None:
     assert compared.json()["changed_modules"] == ["mission"]
     assert ("current", (owner_id, position_id)) in service.calls
     assert current.headers["cache-control"] == "private, no-store"
+
+
+def test_official_fact_api_returns_list_and_exact_version_detail() -> None:
+    client, service, _, position_id = _client()
+
+    listed = client.get(f"/api/hr/positions/{position_id}/official-versions")
+    detail = client.get(
+        f"/api/hr/positions/{position_id}/official-versions/"
+        f"{service.official_record.official_position_version_id}"
+    )
+
+    assert listed.status_code == detail.status_code == 200
+    assert listed.json()["items"][0]["duty"] == "Build."
+    assert detail.json()["requirement"] == "Test."
 
 
 def test_context_api_creates_and_human_confirms_selected_modules() -> None:

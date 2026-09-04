@@ -210,6 +210,7 @@ def build_position_intelligence_router(service, require_hr_access) -> APIRouter:
         "confirm_modules",
         "compare",
         "official_versions",
+        "official_version",
     ):
         if not callable(getattr(service, name, None)):
             raise ValueError("position intelligence service required")
@@ -245,6 +246,23 @@ def build_position_intelligence_router(service, require_hr_access) -> APIRouter:
         owner_id = await owner(request)
         records = await call(service.official_versions, owner_id, position_id)
         return {"items": [_official(record) for record in records]}
+
+    @router.get(
+        "/api/hr/positions/{position_id}/official-versions/{official_version_id}"
+    )
+    async def official_version(
+        request: Request,
+        position_id: Annotated[UUID, Path()],
+        official_version_id: Annotated[UUID, Path()],
+    ):
+        owner_id = await owner(request)
+        record = await call(
+            service.official_version,
+            owner_id,
+            position_id,
+            official_version_id,
+        )
+        return _official(record)
 
     @router.get("/api/hr/positions/{position_id}/context")
     async def current_context(

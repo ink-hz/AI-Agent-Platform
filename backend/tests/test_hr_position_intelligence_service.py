@@ -44,6 +44,10 @@ class RecordingRepository:
         self.calls.append(("official", args))
         return ()
 
+    def official_version(self, *args):
+        self.calls.append(("official_detail", args))
+        return None
+
 
 def test_service_builds_draft_and_human_confirmation_commands() -> None:
     owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()
