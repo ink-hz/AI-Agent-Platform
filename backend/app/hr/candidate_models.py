@@ -283,6 +283,27 @@ class PositionCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class ConfirmedCandidate:
+    candidate: Candidate
+    document: CandidateDocument
+    position_candidate: PositionCandidate
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.candidate, Candidate)
+            or not isinstance(self.document, CandidateDocument)
+            or not isinstance(self.position_candidate, PositionCandidate)
+            or self.candidate.owner_id != self.document.owner_id
+            or self.candidate.owner_id != self.position_candidate.owner_id
+            or self.candidate.candidate_id != self.document.candidate_id
+            or self.candidate.candidate_id != self.position_candidate.candidate_id
+            or self.document.source_draft_id
+            != self.position_candidate.source_draft_id
+        ):
+            raise ValueError("confirmed candidate scope invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class CandidateAnalysisVersion:
     analysis_version_id: UUID
     owner_id: UUID

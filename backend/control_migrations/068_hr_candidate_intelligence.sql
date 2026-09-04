@@ -412,8 +412,7 @@ create function platform_hr.confirm_candidate_draft_v68(
   selected_position_candidate_id uuid,
   selected_context_version_id uuid,
   selected_stable_name text,
-  selected_confirmed_facts jsonb,
-  selected_content_sha256 text
+  selected_confirmed_facts jsonb
 ) returns platform_hr.position_candidates
 language plpgsql security definer
 set search_path=pg_catalog,platform_hr
@@ -422,6 +421,7 @@ declare selected_draft platform_hr.candidate_drafts%rowtype;
 declare selected_relation platform_hr.position_candidates%rowtype;
 declare actual_candidate_id uuid;
 declare next_document_version bigint;
+declare selected_content_sha256 text;
 begin
   if session_user not in ('platform_control_app','platform_control_app_preview') then
     raise insufficient_privilege;
@@ -467,6 +467,13 @@ begin
   select coalesce(max(version_number),0)+1 into next_document_version
   from platform_hr.candidate_documents
   where candidate_id=actual_candidate_id;
+  select encode(sha256,'hex') into selected_content_sha256
+  from platform_attachments.attachments
+  where attachment_id=selected_draft.attachment_id
+    and owner_internal_user_id=selected_owner_internal_user_id
+    and state='ready' and sha256 is not null
+    and deleted_at is null and retained_until>now();
+  if not found then raise no_data_found; end if;
   insert into platform_hr.candidate_documents(
     document_id,owner_internal_user_id,candidate_id,attachment_id,
     source_draft_id,document_kind,version_number,content_sha256,status
@@ -706,7 +713,7 @@ revoke all on function platform_hr.retry_candidate_draft_v68(
   uuid,uuid,uuid,bigint
 ) from public;
 revoke all on function platform_hr.confirm_candidate_draft_v68(
-  uuid,uuid,uuid,bigint,uuid,uuid,uuid,uuid,uuid,text,jsonb,text
+  uuid,uuid,uuid,bigint,uuid,uuid,uuid,uuid,uuid,text,jsonb
 ) from public;
 revoke all on function platform_hr.dismiss_candidate_draft_v68(
   uuid,uuid,uuid,bigint
@@ -758,7 +765,7 @@ begin
   );
   execute format(
     'grant execute on function platform_hr.confirm_candidate_draft_v68('
-    'uuid,uuid,uuid,bigint,uuid,uuid,uuid,uuid,uuid,text,jsonb,text) to %I',selected_app
+    'uuid,uuid,uuid,bigint,uuid,uuid,uuid,uuid,uuid,text,jsonb) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.dismiss_candidate_draft_v68('
