@@ -318,4 +318,25 @@ describe("professional Agent use pages", () => {
     expect(container.querySelector(".agent-use-profile")).toBeNull();
     expect(container.querySelector("textarea")).not.toBeNull();
   });
+
+  it("uses an overlay history and composer tools in focused layout", async () => {
+    await act(async () => root.render(<DirectAgentWorkspace
+      account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
+      historyClient={historyClient} onOpenConversation={vi.fn()}
+      conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
+      layout="focused" composerTools={<button type="button">岗位任务</button>}
+    />));
+
+    const workspace = container.querySelector(".agent-use-workspace");
+    expect(workspace?.classList).toContain("is-focused");
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="打开对话记录"]');
+    expect(trigger).not.toBeNull();
+    expect(container.querySelector('[aria-label="对话列表面板"]')).not.toBeNull();
+    expect(container.textContent).toContain("岗位任务");
+
+    await act(async () => trigger?.click());
+
+    expect(container.querySelector('[role="dialog"][aria-label="对话列表"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="关闭对话列表遮罩"]')).not.toBeNull();
+  });
 });

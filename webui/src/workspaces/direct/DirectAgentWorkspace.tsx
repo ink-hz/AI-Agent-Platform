@@ -41,6 +41,9 @@ export interface DirectAgentWorkspaceProps {
   positionArtifactAttachmentIds?: readonly string[];
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
   showTaskStarters?: boolean;
+  layout?: "standard" | "focused";
+  composerTools?: ReactNode;
+  threadSupplement?: ReactNode;
 }
 
 export interface AgentHistoryClient {
@@ -84,6 +87,9 @@ export function DirectAgentWorkspace({
   positionArtifactAttachmentIds,
   onPositionMaterialChange,
   showTaskStarters = true,
+  layout = "standard",
+  composerTools,
+  threadSupplement,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
   historyClient = DEFAULT_HISTORY_CLIENT,
@@ -232,9 +238,9 @@ export function DirectAgentWorkspace({
     return <>{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}<ErrorState /></>;
   }
 
-  return <div className="brain-workspace agent-use-workspace" data-agent-id={agentId}>
-    <button aria-expanded={mobileOpen} aria-label="打开对话列表" className="brain-workspace-menu" onClick={() => setMobileOpen(true)} type="button">☰</button>
-    {mobileOpen && <button aria-label="关闭对话列表" className="conversation-sidebar-backdrop" onClick={() => setMobileOpen(false)} type="button" />}
+  return <div className={`brain-workspace agent-use-workspace${layout === "focused" ? " is-focused" : ""}`} data-agent-id={agentId}>
+    <button aria-expanded={mobileOpen} aria-label={layout === "focused" ? "打开对话记录" : "打开对话列表"} className="brain-workspace-menu" onClick={() => setMobileOpen(true)} type="button">☰</button>
+    {mobileOpen && <button aria-label={layout === "focused" ? "关闭对话列表遮罩" : "关闭对话列表"} className="conversation-sidebar-backdrop" onClick={() => setMobileOpen(false)} type="button" />}
     <ConversationSidebar
       archivedConversations={archivedConversations}
       conversationHref={conversationPath}
@@ -276,6 +282,9 @@ export function DirectAgentWorkspace({
           onPositionMaterialChange={onPositionMaterialChange}
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
+          composerTools={composerTools}
+          threadSupplement={threadSupplement}
+          materialsPresentation={layout === "focused" ? "hidden" : "sidebar"}
         />
         : <div className="agent-use-page">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}
           {newConversationHeader ?? <section className="agent-use-profile is-compact"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
@@ -329,7 +338,7 @@ export function DirectAgentWorkspace({
                 onActiveChange={() => undefined} />)}
               {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
             </section>}
-            <div className="agent-direct-composer-actions"><span>Enter 发送；Shift+Enter 换行。文字、图片和文件会随本轮一起发送。</span><button className="agent-direct-submit" disabled={submitDisabled} type="submit">{pending ? "正在创建…" : "发送"}</button></div>
+            <div className="agent-direct-composer-actions">{composerTools && <div className="conversation-composer-tools">{composerTools}</div>}<span>Enter 发送；Shift+Enter 换行。文字、图片和文件会随本轮一起发送。</span><button className="agent-direct-submit" disabled={submitDisabled} type="submit">{pending ? "正在创建…" : "发送"}</button></div>
           </form>
           {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
           {failure && <div className="brain-submit-error" role="alert"><span>对话暂未创建成功，可安全重试。</span><button onClick={() => void send()} type="button">重新提交</button></div>}

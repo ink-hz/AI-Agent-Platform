@@ -14,6 +14,7 @@ export function ConversationComposer({
   attachmentControls,
   hasReadyAttachment = false,
   attachmentPending = false,
+  tools,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -25,6 +26,7 @@ export function ConversationComposer({
   attachmentControls?: ReactNode;
   hasReadyAttachment?: boolean;
   attachmentPending?: boolean;
+  tools?: ReactNode;
 }) {
   const inputTooLarge = conversationInputTooLarge(value.trim());
   const submitDisabled = disabled || pending || attachmentPending
@@ -54,6 +56,7 @@ export function ConversationComposer({
       value={value}
     />
     <div className="conversation-composer-actions">
+      {tools && <div className="conversation-composer-tools">{tools}</div>}
       <span>{disabled ? "当前对话正在执行或账号处于只读状态。" : "Enter 发送；Shift+Enter 换行。"}</span>
       <button
         className="conversation-send"
