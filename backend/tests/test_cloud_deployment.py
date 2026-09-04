@@ -404,6 +404,17 @@ def test_remote_stage_requires_consecutive_loopback_health_checks():
     ) not in script
 
 
+def test_remote_stage_waits_for_brain_health_instead_of_sampling_once():
+    script = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    assert "brain_health_ready=0" in script
+    assert '[[ "$brain_health_ready" == "1" ]] || fail' in script
+    assert (
+        '[[ "$(/usr/bin/docker inspect --format \'{{.State.Health.Status}}\' '
+        '"$brain_container")" == "healthy" ]] || fail'
+    ) not in script
+
+
 def test_remote_stage_enforces_data_disk_and_bounded_release_retention():
     script = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
 
