@@ -8,8 +8,11 @@ from uuid import uuid4
 import psycopg
 import pytest
 import test_control_plane_migration as control_migration
-
-from app.hr.candidate_models import ClaimCandidateDraft, CompleteCandidateDraft
+from app.hr.candidate_models import (
+    AttachCandidateDraftExecution,
+    ClaimNextCandidateDraft,
+    CompleteCandidateDraft,
+)
 from app.hr.candidate_repository import CandidateNotFound, CandidateRepository
 
 BACKEND = Path(__file__).parents[1]
@@ -115,43 +118,42 @@ def _seed_candidate_scope(environment):
     return ids
 
 
-def _seed_execution_identity(connection, owner_id, request_id):
+def _seed_execution_identity(connection, owner_id, request_id, *, agent_id="hr-bot"):
     ids = {name: uuid4() for name in (
         "mission", "task", "run", "job", "conversation", "message", "turn"
     )}
     connection.execute(
         "insert into platform_control.missions("
         "mission_id,owner_internal_user_id,client_request_id,mode,"
-        "direct_agent_id,status) values (%s,%s,%s,'direct_agent',"
-        "'hr-candidate-bot','delegated')",
-        (ids["mission"], owner_id, request_id),
+        "direct_agent_id,status) values (%s,%s,%s,'direct_agent',%s,'delegated')",
+        (ids["mission"], owner_id, request_id, agent_id),
     )
     connection.execute(
         "insert into platform_control.mission_tasks("
         "task_id,mission_id,agent_id,objective_ciphertext,"
         "encryption_key_version,status) values ("
-        "%s,%s,'hr-candidate-bot',%s,1,'queued')",
-        (ids["task"], ids["mission"], b"o" * 29),
+        "%s,%s,%s,%s,1,'queued')",
+        (ids["task"], ids["mission"], agent_id, b"o" * 29),
     )
     connection.execute(
         "insert into platform_control.mission_runs("
         "run_id,mission_id,task_id,phase,agent_id,status,input_ciphertext,"
         "encryption_key_version) values ("
-        "%s,%s,%s,'direct','hr-candidate-bot','queued',%s,1)",
-        (ids["run"], ids["mission"], ids["task"], b"i" * 29),
+        "%s,%s,%s,'direct',%s,'queued',%s,1)",
+        (ids["run"], ids["mission"], ids["task"], agent_id, b"i" * 29),
     )
     connection.execute(
         "insert into platform_control.execution_jobs("
         "job_id,run_id,agent_id,payload_ciphertext,encryption_key_version,status) "
-        "values (%s,%s,'hr-candidate-bot',%s,1,'queued')",
-        (ids["job"], ids["run"], b"payload"),
+        "values (%s,%s,%s,%s,1,'queued')",
+        (ids["job"], ids["run"], agent_id, b"payload"),
     )
     connection.execute(
         "insert into platform_control.conversations("
         "conversation_id,owner_internal_user_id,started_by_client_request_id,"
         "mode,direct_agent_id,title) values ("
-        "%s,%s,%s,'direct_agent','hr-candidate-bot','Resume extraction')",
-        (ids["conversation"], owner_id, uuid4()),
+        "%s,%s,%s,'direct_agent',%s,'Resume extraction')",
+        (ids["conversation"], owner_id, request_id, agent_id),
     )
     connection.execute("set constraints all deferred")
     connection.execute(
@@ -407,20 +409,60 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
         attacker = _seed_execution_identity(
             connection, attacker_owner, queued["draft_request"]
         )
+        relay_worker = f"candidate-test-{uuid4().hex[:12]}"
+        connection.execute(
+            "insert into platform_control.execution_workers("
+            "worker_id,allowed_agent_ids,status) values (%s,array['hr-bot'],'active')",
+            (relay_worker,),
+        )
+        connection.execute(
+            "update platform_control.execution_jobs set status='completed',"
+            "lease_worker_id=%s,terminal_at=now() where job_id=%s",
+            (relay_worker, execution["job"]),
+        )
 
     brain_url = environment["urls"]["platform_brain_worker"]
     brain_repository = CandidateRepository(brain_url)
-    with pytest.raises(CandidateNotFound):
-        brain_repository.claim_draft(ClaimCandidateDraft(
-            uuid4(), ids["owner"], queued["draft"], "candidate-parser-1",
-            attacker["job"], attacker["conversation"], attacker["turn"], 300,
-        ))
-    claim = ClaimCandidateDraft(
-        queued["attempt"], ids["owner"], queued["draft"],
-        "candidate-parser-1", execution["job"], execution["conversation"],
-        execution["turn"], 300,
+    claim = ClaimNextCandidateDraft(
+        queued["attempt"], "candidate-parser-1", 300,
     )
-    attempt = brain_repository.claim_draft(claim)
+    attempt = brain_repository.claim_next_draft(claim)
+
+    assert attempt.owner_id == ids["owner"]
+    assert attempt.draft_id == queued["draft"]
+    assert attempt.position_id == ids["position"]
+    assert attempt.attachment_id == queued["attachment"]
+    assert attempt.draft_client_request_id == queued["draft_request"]
+    assert attempt.execution_job_id is None
+    recovered = CandidateRepository(brain_url).recover_draft_attempt(
+        attempt.attempt_id, attempt.worker_id
+    )
+    assert recovered == attempt
+
+    with pytest.raises(CandidateNotFound):
+        brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
+            attempt.attempt_id, attempt.worker_id,
+            attacker["job"], attacker["conversation"], attacker["turn"],
+        ))
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs set agent_id='unregistered-parser' "
+            "where job_id=%s", (execution["job"],),
+        )
+    with pytest.raises(CandidateNotFound):
+        brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
+            attempt.attempt_id, attempt.worker_id,
+            execution["job"], execution["conversation"], execution["turn"],
+        ))
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs set agent_id='hr-bot' "
+            "where job_id=%s", (execution["job"],),
+        )
+    bound = brain_repository.attach_draft_execution(AttachCandidateDraftExecution(
+        attempt.attempt_id, attempt.worker_id,
+        execution["job"], execution["conversation"], execution["turn"],
+    ))
     complete = CompleteCandidateDraft(
         ids["owner"], queued["draft"], uuid4(), attempt.claimed_row_version,
         {"stable_name": "Queued Candidate", "skills": ["SQL"]}, (),
@@ -428,12 +470,14 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
 
     ready = brain_repository.complete_claimed_draft(attempt.attempt_id, complete)
     replay_ready = brain_repository.complete_claimed_draft(attempt.attempt_id, complete)
-    persisted = brain_repository.processing_attempt(ids["owner"], attempt.attempt_id)
+    persisted = brain_repository.recover_draft_attempt(
+        attempt.attempt_id, attempt.worker_id
+    )
 
     assert ready == replay_ready
     assert ready.state == "ready"
     assert persisted.state == "completed"
-    assert persisted.execution_job_id == execution["job"]
+    assert bound.execution_job_id == execution["job"]
 
     racing = {name: uuid4() for name in (
         "attachment", "batch", "draft", "draft_request", "erasure"
@@ -502,3 +546,76 @@ def test_real_068_069_070_confirmation_replay_rebase_and_erasure_boundary(
                 "select platform_hr.start_candidate_draft_v70(%s,%s,%s,1)",
                 (ids["owner"], racing["draft"], uuid4()),
             )
+
+    lease = {name: uuid4() for name in (
+        "attachment", "batch", "draft", "draft_request", "first", "second"
+    )}
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_attachments.attachments("
+            "attachment_id,owner_internal_user_id,source_kind,"
+            "original_name_ciphertext,original_name_key_version,"
+            "object_ref_ciphertext,object_ref_key_version,immutable_locator,"
+            "sha256,state,ready_at) values ("
+            "%s,%s,'user_input',%s,1,%s,1,'etag:lease-resume',%s,'ready',now())",
+            (lease["attachment"], ids["owner"], b"n" * 29, b"o" * 29, b"l" * 32),
+        )
+        connection.execute(
+            "insert into platform_hr.candidate_draft_batches("
+            "batch_request_id,owner_internal_user_id,position_id,attachment_ids) "
+            "values (%s,%s,%s,array[%s]::uuid[])",
+            (lease["batch"], ids["owner"], ids["position"], lease["attachment"]),
+        )
+        connection.execute(
+            "insert into platform_hr.candidate_drafts("
+            "draft_id,owner_internal_user_id,position_id,attachment_id,"
+            "batch_request_id,client_request_id,state) "
+            "values (%s,%s,%s,%s,%s,%s,'pending')",
+            (
+                lease["draft"], ids["owner"], ids["position"], lease["attachment"],
+                lease["batch"], lease["draft_request"],
+            ),
+        )
+    first = brain_repository.claim_next_draft(ClaimNextCandidateDraft(
+        lease["first"], "candidate-parser-crashed", 30,
+    ))
+    with psycopg.connect(environment["admin"]) as connection:
+        recovered_execution = _seed_execution_identity(
+            connection, ids["owner"], lease["draft_request"]
+        )
+    first_bound = brain_repository.attach_draft_execution(
+        AttachCandidateDraftExecution(
+            first.attempt_id, first.worker_id, recovered_execution["job"],
+            recovered_execution["conversation"], recovered_execution["turn"],
+        )
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs set status='completed',"
+            "lease_worker_id=%s,terminal_at=now() where job_id=%s",
+            (relay_worker, recovered_execution["job"]),
+        )
+        connection.execute(
+            "update platform_hr.candidate_draft_processing_attempts "
+            "set lease_expires_at=now()-interval '1 second' where attempt_id=%s",
+            (first.attempt_id,),
+        )
+    second = CandidateRepository(brain_url).claim_next_draft(ClaimNextCandidateDraft(
+        lease["second"], "candidate-parser-restarted", 300,
+    ))
+    expired = brain_repository.recover_draft_attempt(
+        first.attempt_id, first.worker_id
+    )
+
+    assert expired.state == "expired"
+    assert first_bound.execution_job_id == recovered_execution["job"]
+    assert second.draft_id == first.draft_id
+    assert second.claimed_row_version == first.claimed_row_version + 2
+
+    recovered_bound = brain_repository.attach_draft_execution(
+        AttachCandidateDraftExecution(
+            second.attempt_id, second.worker_id, recovered_execution["job"],
+            recovered_execution["conversation"], recovered_execution["turn"],
+        )
+    )
+    assert recovered_bound.execution_job_id == recovered_execution["job"]

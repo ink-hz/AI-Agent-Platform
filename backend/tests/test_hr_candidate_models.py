@@ -5,15 +5,16 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.hr.candidate_models import (
     AppendHumanFeedback,
+    AttachCandidateDraftExecution,
     Candidate,
     CandidateAnalysisVersion,
     CandidateDocument,
     CandidateDraft,
     CandidateDraftProcessingAttempt,
     CandidateEnvelopeFragment,
+    ClaimNextCandidateDraft,
     ComparePositionCandidates,
     CompleteCandidateDraft,
     ConfirmCandidateDraft,
@@ -164,6 +165,10 @@ def test_batch_retry_compare_and_envelope_require_precise_nonempty_scope() -> No
         replace(comparison, position_candidate_ids=(uuid4(),))
     with pytest.raises(ValueError, match="document scope invalid"):
         replace(fragment, document_ids=())
+    with pytest.raises(ValueError, match="feedback scope invalid"):
+        replace(fragment, human_feedback_ids=tuple(uuid4() for _ in range(101)))
+    with pytest.raises(ValueError, match="candidate prompt context invalid"):
+        replace(fragment, prompt_context="候" * 65537)
 
 
 def test_protected_or_unrelated_personal_fields_are_rejected_from_facts() -> None:
@@ -244,11 +249,24 @@ def test_non_correction_feedback_cannot_carry_correction_text() -> None:
 
 def test_processing_attempt_keeps_durable_execution_identity() -> None:
     attempt = CandidateDraftProcessingAttempt(
-        uuid4(), uuid4(), uuid4(), "candidate-parser-1", uuid4(), None, None,
-        "processing", 2, 3, NOW, NOW, None, None,
+        uuid4(), uuid4(), uuid4(), uuid4(), uuid4(), uuid4(),
+        "candidate-parser-1", None, None, None, "processing", 2, 3,
+        NOW, NOW, None, None, None,
     )
 
-    assert attempt.execution_job_id is not None
+    assert attempt.execution_job_id is None
     assert attempt.state == "processing"
     with pytest.raises(ValueError, match="processing attempt state invalid"):
         replace(attempt, state="unknown")
+
+
+def test_parser_queue_commands_separate_claim_from_execution_binding() -> None:
+    claim = ClaimNextCandidateDraft(uuid4(), "candidate-parser-1", 300)
+    attach = AttachCandidateDraftExecution(
+        claim.attempt_id, claim.worker_id, uuid4(), uuid4(), uuid4()
+    )
+
+    assert claim.lease_seconds == 300
+    assert attach.execution_job_id is not None
+    with pytest.raises(ValueError, match="processing lease invalid"):
+        replace(claim, lease_seconds=29)

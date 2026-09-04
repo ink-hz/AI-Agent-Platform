@@ -10,12 +10,13 @@ from psycopg.rows import dict_row
 
 from .candidate_models import (
     AppendHumanFeedback,
+    AttachCandidateDraftExecution,
     Candidate,
     CandidateAnalysisVersion,
     CandidateDocument,
     CandidateDraft,
     CandidateDraftProcessingAttempt,
-    ClaimCandidateDraft,
+    ClaimNextCandidateDraft,
     ComparePositionCandidates,
     CompleteCandidateDraft,
     ConfirmCandidateDraft,
@@ -82,6 +83,9 @@ def _processing_attempt(row: dict[str, Any]) -> CandidateDraftProcessingAttempt:
         attempt_id=row["attempt_id"],
         owner_id=row["owner_internal_user_id"],
         draft_id=row["draft_id"],
+        position_id=row["position_id"],
+        attachment_id=row["attachment_id"],
+        draft_client_request_id=row["draft_client_request_id"],
         worker_id=row["worker_id"],
         execution_job_id=row["execution_job_id"],
         conversation_id=row["conversation_id"],
@@ -91,6 +95,7 @@ def _processing_attempt(row: dict[str, Any]) -> CandidateDraftProcessingAttempt:
         claimed_row_version=row["claimed_row_version"],
         claimed_at=row["claimed_at"],
         lease_expires_at=row["lease_expires_at"],
+        execution_attached_at=row["execution_attached_at"],
         finished_at=row["finished_at"],
         terminal_request_id=row["terminal_request_id"],
     )
@@ -264,20 +269,15 @@ class CandidateRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise_repository_error(error)
 
-    def claim_draft(
-        self, command: ClaimCandidateDraft
+    def claim_next_draft(
+        self, command: ClaimNextCandidateDraft
     ) -> CandidateDraftProcessingAttempt:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.claim_candidate_draft_v70("
-                    "%s,%s,%s,%s,%s,%s,%s,%s)).*",
-                    (
-                        command.attempt_id, command.owner_id, command.draft_id,
-                        command.worker_id,
-                        command.execution_job_id, command.conversation_id,
-                        command.turn_id, command.lease_seconds,
-                    ),
+                    "select (platform_hr.claim_next_candidate_draft_v70("
+                    "%s,%s,%s)).*",
+                    (command.attempt_id, command.worker_id, command.lease_seconds),
                 ).fetchone()
             if row is None:
                 raise CandidateNotFound("candidate draft claim unavailable")
@@ -287,14 +287,36 @@ class CandidateRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise_repository_error(error)
 
-    def processing_attempt(
-        self, owner_id: UUID, attempt_id: UUID
+    def attach_draft_execution(
+        self, command: AttachCandidateDraftExecution
     ) -> CandidateDraftProcessingAttempt:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.read_candidate_draft_attempt_v70(%s,%s)).*",
-                    (owner_id, attempt_id),
+                    "select (platform_hr.attach_candidate_draft_execution_v70("
+                    "%s,%s,%s,%s,%s)).*",
+                    (
+                        command.attempt_id, command.worker_id,
+                        command.execution_job_id, command.conversation_id,
+                        command.turn_id,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise CandidateNotFound("candidate processing execution unavailable")
+            return _processing_attempt(row)
+        except CandidateRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise_repository_error(error)
+
+    def recover_draft_attempt(
+        self, attempt_id: UUID, worker_id: str
+    ) -> CandidateDraftProcessingAttempt:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.recover_candidate_draft_attempt_v70("
+                    "%s,%s)).*", (attempt_id, worker_id),
                 ).fetchone()
             if row is None:
                 raise CandidateNotFound("candidate processing attempt not found")

@@ -6,6 +6,8 @@ from uuid import UUID
 from .candidate_models import CandidateEnvelopeFragment
 from .candidate_service import CandidateScopeViolation
 
+_PROMPT_BUDGET_BYTES = 65_536
+
 
 class CandidateEnvelopeProvider:
     def __init__(self, repository, context_is_confirmed) -> None:
@@ -75,12 +77,12 @@ class CandidateEnvelopeProvider:
             ):
                 raise CandidateScopeViolation("candidate document unavailable")
         feedback = tuple(
-            sorted(
+            reversed(sorted(
                 self._repository.feedback_for_position_candidate(
                     owner_id, position_candidate_id
                 ),
                 key=lambda value: (value.created_at, value.feedback_id),
-            )
+            ))
         )
         if any(
             item.owner_id != owner_id
@@ -88,8 +90,7 @@ class CandidateEnvelopeProvider:
             for item in feedback
         ):
             raise CandidateScopeViolation("candidate feedback scope mismatch")
-        prompt = "\n".join(
-            (
+        prompt_sections = (
                 "CONFIRMED_CANDIDATE_FACTS",
                 json.dumps(
                     {
@@ -117,23 +118,35 @@ class CandidateEnvelopeProvider:
                     separators=(",", ":"),
                 ),
                 "HUMAN_FEEDBACK_DO_NOT_REWRITE_AS_AI_FACT",
-                json.dumps(
-                    [
-                        {
-                            "feedback_id": str(item.feedback_id),
-                            "analysis_version_id": str(item.analysis_version_id),
-                            "feedback_kind": item.feedback_kind,
-                            "conclusion_key": item.conclusion_key,
-                            "correction": item.correction,
-                            "reason": item.reason,
-                        }
-                        for item in feedback
-                    ],
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ),
-            )
+        )
+        feedback_payloads = tuple(
+            {
+                "feedback_id": str(item.feedback_id),
+                "analysis_version_id": str(item.analysis_version_id),
+                "feedback_kind": item.feedback_kind,
+                "conclusion_key": item.conclusion_key,
+                "correction": item.correction,
+                "reason": item.reason,
+            }
+            for item in feedback[:100]
+        )
+        selected_feedback = []
+        prompt = ""
+        for item_payload in feedback_payloads:
+            candidate_prompt = "\n".join((*prompt_sections, json.dumps(
+                [*selected_feedback, item_payload], ensure_ascii=False,
+                sort_keys=True, separators=(",", ":"),
+            )))
+            if len(candidate_prompt.encode("utf-8")) > _PROMPT_BUDGET_BYTES:
+                break
+            selected_feedback.append(item_payload)
+            prompt = candidate_prompt
+        if not prompt:
+            prompt = "\n".join((*prompt_sections, "[]"))
+        if len(prompt.encode("utf-8")) > _PROMPT_BUDGET_BYTES:
+            raise CandidateScopeViolation("candidate context exceeds prompt budget")
+        selected_feedback_ids = tuple(
+            UUID(item["feedback_id"]) for item in selected_feedback
         )
         try:
             return CandidateEnvelopeFragment(
@@ -146,7 +159,7 @@ class CandidateEnvelopeProvider:
                 document_attachment_ids=tuple(
                     document.attachment_id for document in ordered_documents
                 ),
-                human_feedback_ids=tuple(item.feedback_id for item in feedback),
+                human_feedback_ids=selected_feedback_ids,
                 prompt_context=prompt,
             )
         except ValueError:

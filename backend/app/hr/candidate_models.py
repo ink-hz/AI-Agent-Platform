@@ -237,8 +237,11 @@ class CandidateDraftProcessingAttempt:
     attempt_id: UUID
     owner_id: UUID
     draft_id: UUID
+    position_id: UUID
+    attachment_id: UUID
+    draft_client_request_id: UUID
     worker_id: str
-    execution_job_id: UUID
+    execution_job_id: UUID | None
     conversation_id: UUID | None
     turn_id: UUID | None
     state: CandidateProcessingAttemptState
@@ -246,18 +249,25 @@ class CandidateDraftProcessingAttempt:
     claimed_row_version: int
     claimed_at: datetime
     lease_expires_at: datetime
+    execution_attached_at: datetime | None
     finished_at: datetime | None
     terminal_request_id: UUID | None
 
     def __post_init__(self) -> None:
         for value in (
-            self.attempt_id, self.owner_id, self.draft_id, self.execution_job_id
+            self.attempt_id, self.owner_id, self.draft_id, self.position_id,
+            self.attachment_id, self.draft_client_request_id,
         ):
             _uuid(value)
+        _optional_uuid(self.execution_job_id)
         _optional_uuid(self.conversation_id)
         _optional_uuid(self.turn_id)
         _optional_uuid(self.terminal_request_id)
-        if (self.conversation_id is None) != (self.turn_id is None):
+        if len({
+            self.execution_job_id is None,
+            self.conversation_id is None,
+            self.turn_id is None,
+        }) != 1:
             raise ValueError("processing attempt turn identity invalid")
         object.__setattr__(self, "worker_id", _text(
             self.worker_id, maximum=64, message="processing worker invalid"
@@ -268,6 +278,10 @@ class CandidateDraftProcessingAttempt:
         _positive(self.claimed_row_version, "row version invalid")
         _aware(self.claimed_at)
         _aware(self.lease_expires_at)
+        if self.execution_attached_at is not None:
+            _aware(self.execution_attached_at)
+        if (self.execution_job_id is None) != (self.execution_attached_at is None):
+            raise ValueError("processing attempt execution identity invalid")
         if self.finished_at is not None:
             _aware(self.finished_at)
         if (self.state == "processing") != (self.finished_at is None):
@@ -500,13 +514,15 @@ class CandidateEnvelopeFragment:
         if len(self.document_ids) != len(self.document_attachment_ids):
             raise ValueError("document scope invalid")
         _uuid_tuple(
-            self.human_feedback_ids, maximum=500,
+            self.human_feedback_ids, maximum=100,
             message="feedback scope invalid",
         )
         object.__setattr__(self, "prompt_context", _text(
-            self.prompt_context, maximum=131072,
+            self.prompt_context, maximum=65536,
             message="candidate prompt context invalid",
         ))
+        if len(self.prompt_context.encode("utf-8")) > 65536:
+            raise ValueError("candidate prompt context invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -527,25 +543,13 @@ class CreateCandidateDraftBatch:
 
 
 @dataclass(frozen=True, slots=True)
-class ClaimCandidateDraft:
+class ClaimNextCandidateDraft:
     attempt_id: UUID
-    owner_id: UUID
-    draft_id: UUID
     worker_id: str
-    execution_job_id: UUID
-    conversation_id: UUID | None = None
-    turn_id: UUID | None = None
     lease_seconds: int = 300
 
     def __post_init__(self) -> None:
-        for value in (
-            self.attempt_id, self.owner_id, self.draft_id, self.execution_job_id
-        ):
-            _uuid(value)
-        _optional_uuid(self.conversation_id)
-        _optional_uuid(self.turn_id)
-        if (self.conversation_id is None) != (self.turn_id is None):
-            raise ValueError("processing attempt turn identity invalid")
+        _uuid(self.attempt_id)
         object.__setattr__(self, "worker_id", _text(
             self.worker_id, maximum=64, message="processing worker invalid"
         ))
@@ -555,6 +559,25 @@ class ClaimCandidateDraft:
             or not 30 <= self.lease_seconds <= 900
         ):
             raise ValueError("processing lease invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class AttachCandidateDraftExecution:
+    attempt_id: UUID
+    worker_id: str
+    execution_job_id: UUID
+    conversation_id: UUID
+    turn_id: UUID
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.attempt_id, self.execution_job_id,
+            self.conversation_id, self.turn_id,
+        ):
+            _uuid(value)
+        object.__setattr__(self, "worker_id", _text(
+            self.worker_id, maximum=64, message="processing worker invalid"
+        ))
 
 
 @dataclass(frozen=True, slots=True)

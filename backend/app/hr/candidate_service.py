@@ -6,8 +6,6 @@ from .candidate_models import (
     AppendHumanFeedback,
     CandidateAnalysisVersion,
     CandidateDraft,
-    CandidateDraftProcessingAttempt,
-    ClaimCandidateDraft,
     ComparePositionCandidates,
     CompleteCandidateDraft,
     ConfirmCandidateDraft,
@@ -52,10 +50,6 @@ class CandidateService:
             "latest_analysis",
             "analysis_for_request",
             "document_for_owner",
-            "claim_draft",
-            "processing_attempt",
-            "complete_claimed_draft",
-            "fail_claimed_draft",
         )
         if any(not callable(getattr(repository, name, None)) for name in required):
             raise ValueError("candidate repository required")
@@ -79,34 +73,6 @@ class CandidateService:
 
     def draft(self, owner_id: UUID, draft_id: UUID) -> CandidateDraft:
         return self._repository.draft_for_owner(owner_id, draft_id)
-
-    def claim_draft(
-        self, command: ClaimCandidateDraft
-    ) -> CandidateDraftProcessingAttempt:
-        if not isinstance(command, ClaimCandidateDraft):
-            raise ValueError("candidate claim command required")
-        return self._repository.claim_draft(command)
-
-    def processing_attempt(
-        self, owner_id: UUID, attempt_id: UUID
-    ) -> CandidateDraftProcessingAttempt:
-        return self._repository.processing_attempt(owner_id, attempt_id)
-
-    def complete_claimed_draft(
-        self, attempt_id: UUID, command: CompleteCandidateDraft
-    ) -> CandidateDraft:
-        if not isinstance(attempt_id, UUID) or not isinstance(
-            command, CompleteCandidateDraft
-        ):
-            raise ValueError("candidate claimed completion required")
-        return self._repository.complete_claimed_draft(attempt_id, command)
-
-    def fail_claimed_draft(
-        self, attempt_id: UUID, command: FailCandidateDraft
-    ) -> CandidateDraft:
-        if not isinstance(attempt_id, UUID) or not isinstance(command, FailCandidateDraft):
-            raise ValueError("candidate claimed failure required")
-        return self._repository.fail_claimed_draft(attempt_id, command)
 
     def list_drafts(
         self, owner_id: UUID, position_id: UUID, *, batch_request_id: UUID | None = None

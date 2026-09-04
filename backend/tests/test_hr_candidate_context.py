@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
 from app.hr.candidate_context import CandidateEnvelopeProvider
 from app.hr.candidate_models import (
     Candidate,
@@ -117,6 +117,43 @@ def test_fragment_separates_confirmed_candidate_facts_from_human_feedback() -> N
     assert "量产 100 万台" in fragment.prompt_context
     assert str(repository.resume.document_id) in fragment.prompt_context
     assert "storage" not in fragment.prompt_context.lower()
+
+
+def test_fragment_selects_latest_feedback_within_count_and_prompt_budget() -> None:
+    repository = ContextRepository()
+    feedback = [
+        HumanFeedback(
+            uuid4(), repository.owner_id,
+            repository.relation.position_candidate_id, uuid4(), "correction",
+            f"conclusion-{index}", f"latest correction {index} " + "修" * 7900,
+            f"reason-{index}", NOW,
+        )
+        for index in range(105)
+    ]
+    repository.feedback_for_position_candidate = lambda owner, relation: tuple(feedback)
+    provider, _ = _provider(repository)
+
+    fragment = provider.for_task(
+        repository.owner_id, repository.position_id,
+        repository.candidate.candidate_id,
+        repository.relation.position_candidate_id,
+    )
+    expected_newest = tuple(
+        item.feedback_id
+        for item in reversed(sorted(feedback, key=lambda item: (
+            item.created_at, item.feedback_id
+        )))
+    )
+    injected = json.loads(fragment.prompt_context.split(
+        "HUMAN_FEEDBACK_DO_NOT_REWRITE_AS_AI_FACT\n", 1
+    )[1])
+
+    assert 0 < len(fragment.human_feedback_ids) <= 100
+    assert fragment.human_feedback_ids == expected_newest[:len(injected)]
+    assert tuple(item["feedback_id"] for item in injected) == tuple(
+        str(feedback_id) for feedback_id in fragment.human_feedback_ids
+    )
+    assert len(fragment.prompt_context.encode("utf-8")) <= 65536
 
 
 @pytest.mark.parametrize("mismatch", ("position", "candidate", "archived"))

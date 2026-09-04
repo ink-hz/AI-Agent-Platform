@@ -83,9 +83,12 @@ create table platform_hr.candidate_draft_processing_attempts (
   owner_internal_user_id uuid not null
     references platform_control.internal_users(internal_user_id),
   draft_id uuid not null,
+  position_id uuid not null,
+  attachment_id uuid not null,
+  draft_client_request_id uuid not null,
   worker_id text not null
     check (worker_id ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
-  execution_job_id uuid not null
+  execution_job_id uuid
     references platform_control.execution_jobs(job_id),
   conversation_id uuid,
   turn_id uuid,
@@ -94,21 +97,42 @@ create table platform_hr.candidate_draft_processing_attempts (
   claimed_row_version bigint not null check (claimed_row_version>0),
   claimed_at timestamptz not null default now(),
   lease_expires_at timestamptz not null,
+  execution_attached_at timestamptz,
   finished_at timestamptz,
   terminal_request_id uuid,
   canonical_payload jsonb not null default '{}'::jsonb
     check (jsonb_typeof(canonical_payload)='object'),
   payload_sha256 bytea not null default sha256(convert_to('{}','UTF8'))
     check (octet_length(payload_sha256)=32),
+  execution_payload jsonb check (
+    execution_payload is null or jsonb_typeof(execution_payload)='object'
+  ),
+  execution_payload_sha256 bytea check (
+    execution_payload_sha256 is null
+    or octet_length(execution_payload_sha256)=32
+  ),
   foreign key (draft_id,owner_internal_user_id)
     references platform_hr.candidate_drafts(draft_id,owner_internal_user_id),
+  foreign key (position_id,owner_internal_user_id)
+    references platform_hr.positions(position_id,owner_internal_user_id),
+  foreign key (attachment_id,owner_internal_user_id)
+    references platform_attachments.attachments(
+      attachment_id,owner_internal_user_id
+    ),
   foreign key (conversation_id,owner_internal_user_id)
     references platform_control.conversations(
       conversation_id,owner_internal_user_id
     ),
   foreign key (conversation_id,turn_id)
     references platform_control.conversation_turns(conversation_id,turn_id),
-  check ((conversation_id is null)=(turn_id is null)),
+  check (
+    (execution_job_id is null and conversation_id is null and turn_id is null
+      and execution_attached_at is null and execution_payload is null
+      and execution_payload_sha256 is null)
+    or (execution_job_id is not null and conversation_id is not null
+      and turn_id is not null and execution_attached_at is not null
+      and execution_payload is not null and execution_payload_sha256 is not null)
+  ),
   check (
     (state='processing' and finished_at is null and terminal_request_id is null)
     or (state in ('completed','failed') and finished_at is not null
@@ -506,14 +530,9 @@ alter table platform_hr.candidate_analysis_versions add check (
   and platform_hr.candidate_json_safe_v70(evidence,false)
 );
 
-create function platform_hr.claim_candidate_draft_v70(
+create function platform_hr.claim_next_candidate_draft_v70(
   selected_attempt_id uuid,
-  selected_owner_internal_user_id uuid,
-  selected_draft_id uuid,
   selected_worker_id text,
-  selected_execution_job_id uuid,
-  selected_conversation_id uuid,
-  selected_turn_id uuid,
   selected_lease_seconds integer
 ) returns platform_hr.candidate_draft_processing_attempts
 language plpgsql security definer
@@ -528,11 +547,7 @@ begin
   end if;
   if selected_lease_seconds not between 30 and 900 then raise check_violation; end if;
   payload := jsonb_build_object(
-    'owner_internal_user_id',selected_owner_internal_user_id,
-    'draft_id',selected_draft_id,
     'worker_id',btrim(selected_worker_id),
-    'execution_job_id',selected_execution_job_id,
-    'conversation_id',selected_conversation_id,'turn_id',selected_turn_id,
     'lease_seconds',selected_lease_seconds
   );
   perform pg_advisory_xact_lock(hashtextextended(
@@ -562,9 +577,7 @@ begin
   join platform_attachments.attachments attachment
     on attachment.attachment_id=draft.attachment_id
     and attachment.owner_internal_user_id=draft.owner_internal_user_id
-  where draft.draft_id=selected_draft_id
-    and draft.owner_internal_user_id=selected_owner_internal_user_id
-    and draft.state='pending'
+  where draft.state='pending'
     and platform_hr.candidate_attachment_usable_v70(
       draft.owner_internal_user_id,draft.attachment_id
     )
@@ -573,24 +586,8 @@ begin
       where active_attempt.draft_id=draft.draft_id
         and active_attempt.state='processing'
     )
+  order by draft.created_at,draft.draft_id
   for update of draft skip locked limit 1;
-  if not found then raise no_data_found; end if;
-  perform 1 from platform_control.execution_jobs execution
-  join platform_control.mission_runs run on run.run_id=execution.run_id
-  join platform_control.missions mission on mission.mission_id=run.mission_id
-  join platform_control.conversation_turns turn
-    on turn.mission_id=mission.mission_id
-    and turn.turn_id=selected_turn_id
-    and turn.conversation_id=selected_conversation_id
-  join platform_control.conversations conversation
-    on conversation.conversation_id=turn.conversation_id
-    and conversation.owner_internal_user_id=mission.owner_internal_user_id
-  where execution.job_id=selected_execution_job_id
-    and execution.agent_id='hr-candidate-bot'
-    and execution.status not in ('completed','failed','cancelled','interrupted')
-    and run.agent_id='hr-candidate-bot'
-    and mission.owner_internal_user_id=selected_owner_internal_user_id
-    and turn.client_request_id=selected_draft.client_request_id;
   if not found then raise no_data_found; end if;
   perform 1 from platform_attachments.attachments attachment
   where attachment.attachment_id=selected_draft.attachment_id
@@ -602,18 +599,113 @@ begin
     row_version=row_version+1,updated_at=now()
   where draft_id=selected_draft.draft_id returning * into selected_draft;
   insert into platform_hr.candidate_draft_processing_attempts(
-    attempt_id,owner_internal_user_id,draft_id,worker_id,execution_job_id,
-    conversation_id,turn_id,state,starting_row_version,claimed_row_version,
+    attempt_id,owner_internal_user_id,draft_id,position_id,attachment_id,
+    draft_client_request_id,worker_id,state,starting_row_version,claimed_row_version,
     lease_expires_at,canonical_payload,payload_sha256
   ) values (
     selected_attempt_id,selected_draft.owner_internal_user_id,
-    selected_draft.draft_id,selected_worker_id,selected_execution_job_id,
-    selected_conversation_id,selected_turn_id,'processing',
+    selected_draft.draft_id,selected_draft.position_id,selected_draft.attachment_id,
+    selected_draft.client_request_id,selected_worker_id,'processing',
     selected_draft.row_version-1,selected_draft.row_version,
     now()+make_interval(secs=>selected_lease_seconds),payload,
     sha256(convert_to(payload::text,'UTF8'))
   ) returning * into selected_attempt;
   return selected_attempt;
+end
+$function$;
+
+create function platform_hr.attach_candidate_draft_execution_v70(
+  selected_attempt_id uuid,
+  selected_worker_id text,
+  selected_execution_job_id uuid,
+  selected_conversation_id uuid,
+  selected_turn_id uuid
+) returns platform_hr.candidate_draft_processing_attempts
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected_attempt platform_hr.candidate_draft_processing_attempts%rowtype;
+declare payload jsonb;
+begin
+  if session_user not in ('platform_brain_worker','platform_brain_worker_preview') then
+    raise insufficient_privilege;
+  end if;
+  payload := jsonb_build_object(
+    'worker_id',btrim(selected_worker_id),
+    'execution_job_id',selected_execution_job_id,
+    'conversation_id',selected_conversation_id,'turn_id',selected_turn_id
+  );
+  perform pg_advisory_xact_lock(hashtextextended(
+    'candidate-execution:' || selected_attempt_id::text,0
+  ));
+  select * into selected_attempt
+  from platform_hr.candidate_draft_processing_attempts
+  where attempt_id=selected_attempt_id and worker_id=selected_worker_id
+  for update;
+  if not found then raise no_data_found; end if;
+  if selected_attempt.execution_job_id is not null then
+    if selected_attempt.execution_payload<>payload then
+      raise unique_violation using message='candidate execution identity mismatch';
+    end if;
+    return selected_attempt;
+  end if;
+  if selected_attempt.state<>'processing'
+     or selected_attempt.lease_expires_at<=now() then
+    raise serialization_failure;
+  end if;
+  perform 1 from platform_control.execution_jobs execution
+  join platform_control.mission_runs run on run.run_id=execution.run_id
+  join platform_control.missions mission on mission.mission_id=run.mission_id
+  join platform_control.conversation_turns turn
+    on turn.mission_id=mission.mission_id
+    and turn.turn_id=selected_turn_id
+    and turn.conversation_id=selected_conversation_id
+  join platform_control.conversations conversation
+    on conversation.conversation_id=turn.conversation_id
+    and conversation.owner_internal_user_id=mission.owner_internal_user_id
+  where execution.job_id=selected_execution_job_id
+    and execution.agent_id='hr-bot'
+    and execution.status in ('queued','leased','dispatched','running','completed')
+    and run.agent_id='hr-bot' and run.phase='direct'
+    and mission.mode='direct_agent' and mission.direct_agent_id='hr-bot'
+    and mission.owner_internal_user_id=selected_attempt.owner_internal_user_id
+    and mission.client_request_id=selected_attempt.draft_client_request_id
+    and conversation.mode='direct_agent'
+    and conversation.direct_agent_id='hr-bot'
+    and conversation.started_by_client_request_id=
+      selected_attempt.draft_client_request_id
+    and turn.client_request_id=selected_attempt.draft_client_request_id
+    and not exists (
+      select 1 from platform_hr.position_conversations position_conversation
+      where position_conversation.conversation_id=conversation.conversation_id
+    );
+  if not found then raise no_data_found; end if;
+  update platform_hr.candidate_draft_processing_attempts set
+    execution_job_id=selected_execution_job_id,
+    conversation_id=selected_conversation_id,turn_id=selected_turn_id,
+    execution_attached_at=now(),execution_payload=payload,
+    execution_payload_sha256=sha256(convert_to(payload::text,'UTF8'))
+  where attempt_id=selected_attempt_id returning * into selected_attempt;
+  return selected_attempt;
+end
+$function$;
+
+create function platform_hr.recover_candidate_draft_attempt_v70(
+  selected_attempt_id uuid,
+  selected_worker_id text
+) returns platform_hr.candidate_draft_processing_attempts
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.candidate_draft_processing_attempts%rowtype;
+begin
+  if session_user not in ('platform_brain_worker','platform_brain_worker_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.candidate_draft_processing_attempts
+  where attempt_id=selected_attempt_id and worker_id=selected_worker_id;
+  if not found then raise no_data_found; end if;
+  return selected;
 end
 $function$;
 
@@ -1004,6 +1096,7 @@ begin
     raise serialization_failure;
   end if;
   if selected_attempt.lease_expires_at<=now()
+     or selected_attempt.execution_job_id is null
      or selected_attempt.claimed_row_version<>selected_expected_row_version then
     raise serialization_failure;
   end if;
@@ -1049,6 +1142,7 @@ begin
     raise serialization_failure;
   end if;
   if selected_attempt.lease_expires_at<=now()
+     or selected_attempt.execution_job_id is null
      or selected_attempt.claimed_row_version<>selected_expected_row_version then
     raise serialization_failure;
   end if;
@@ -1592,8 +1686,14 @@ $function$;
 
 revoke all on all tables in schema platform_hr from public;
 revoke all on all functions in schema platform_hr from public;
-revoke all on function platform_hr.claim_candidate_draft_v70(
-  uuid,uuid,uuid,text,uuid,uuid,uuid,integer
+revoke all on function platform_hr.claim_next_candidate_draft_v70(
+  uuid,text,integer
+) from public;
+revoke all on function platform_hr.attach_candidate_draft_execution_v70(
+  uuid,text,uuid,uuid,uuid
+) from public;
+revoke all on function platform_hr.recover_candidate_draft_attempt_v70(
+  uuid,text
 ) from public;
 revoke all on function platform_hr.read_candidate_draft_attempt_v70(
   uuid,uuid
@@ -1654,8 +1754,16 @@ begin
   execute format('grant usage on schema platform_hr to %I,%I',selected_app,selected_brain);
   execute format('grant select on all tables in schema platform_hr to %I',selected_app);
   execute format(
-    'grant execute on function platform_hr.claim_candidate_draft_v70('
-    'uuid,uuid,uuid,text,uuid,uuid,uuid,integer) to %I',selected_brain
+    'grant execute on function platform_hr.claim_next_candidate_draft_v70('
+    'uuid,text,integer) to %I',selected_brain
+  );
+  execute format(
+    'grant execute on function platform_hr.attach_candidate_draft_execution_v70('
+    'uuid,text,uuid,uuid,uuid) to %I',selected_brain
+  );
+  execute format(
+    'grant execute on function platform_hr.recover_candidate_draft_attempt_v70('
+    'uuid,text) to %I',selected_brain
   );
   execute format(
     'grant execute on function platform_hr.read_candidate_draft_attempt_v70('

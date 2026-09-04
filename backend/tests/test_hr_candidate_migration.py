@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.agent_brain.models import CALLABLE_AGENT_IDS
+from app.execution_relay.metabot_client import _APPROVED_AGENT_IDS
+
 MIGRATION = (
     Path(__file__).parents[1]
     / "control_migrations"
@@ -156,10 +159,12 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
     sql = _sql()
 
     assert "create table platform_hr.candidate_draft_processing_attempts" in sql
-    assert "execution_job_id uuid not null" in sql
+    assert "execution_job_id uuid references" in sql
     assert "conversation_id uuid" in sql and "turn_id uuid" in sql
     for function in (
-        "claim_candidate_draft_v70",
+        "claim_next_candidate_draft_v70",
+        "attach_candidate_draft_execution_v70",
+        "recover_candidate_draft_attempt_v70",
         "read_candidate_draft_attempt_v70",
         "complete_claimed_candidate_draft_v70",
         "fail_claimed_candidate_draft_v70",
@@ -168,10 +173,26 @@ def test_resume_processing_has_a_durable_brain_worker_claim_boundary() -> None:
         assert f"grant execute on function platform_hr.{function}" in sql
     assert "for update of draft skip locked" in sql
     assert "lease_expires_at" in sql
-    assert "draft.draft_id=selected_draft_id" in sql
-    assert "draft.owner_internal_user_id=selected_owner_internal_user_id" in sql
-    assert "mission.owner_internal_user_id=selected_owner_internal_user_id" in sql
-    assert "turn.client_request_id=selected_draft.client_request_id" in sql
+    assert "position_id uuid not null" in sql
+    assert "attachment_id uuid not null" in sql
+    assert "draft_client_request_id uuid not null" in sql
+    assert "execution.agent_id='hr-bot'" in sql
+    assert "run.agent_id='hr-bot'" in sql
+    assert "mission.direct_agent_id='hr-bot'" in sql
+    assert "conversation.direct_agent_id='hr-bot'" in sql
+    assert "hr-candidate-bot" not in sql
+    assert "turn.client_request_id=selected_attempt.draft_client_request_id" in sql
+    assert "not exists ( select 1 from platform_hr.position_conversations" in sql
+    assert "grant select on all tables in schema platform_hr" not in sql.replace(
+        "grant select on all tables in schema platform_hr to %i',selected_app", ""
+    )
+
+
+def test_resume_processing_uses_an_agent_supported_by_brain_and_relay() -> None:
+    assert "hr-bot" in CALLABLE_AGENT_IDS
+    assert "hr-bot" in _APPROVED_AGENT_IDS
+    assert "hr-candidate-bot" not in CALLABLE_AGENT_IDS
+    assert "hr-candidate-bot" not in _APPROVED_AGENT_IDS
 
 
 def test_candidate_replaces_position_task_validation_seam_with_exact_scope() -> None:
