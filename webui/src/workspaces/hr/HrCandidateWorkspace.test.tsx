@@ -275,6 +275,7 @@ it("normalizes and filters protected legacy keys while bounding and escaping saf
     extracted_facts: {
       stable_name: "候选人1", summary: "正常摘要",
       ["constructor"]: "正常构造字段", ["__proto__"]: "正常原型字段",
+      ["object\uFEFFref"]: "正常 FEFF 字段",
       safe_profile: { ordinary_field: "正常嵌套字段", html_note: htmlText, nested: {
         object_ref: nestedProtectedValues[0], deeper: { "ＧＥＮＤＥＲ": nestedProtectedValues[1] },
       } },
@@ -291,6 +292,7 @@ it("normalizes and filters protected legacy keys while bounding and escaping saf
   expect(container.textContent).toContain("正常嵌套字段");
   expect(container.textContent).toContain("正常构造字段");
   expect(container.textContent).toContain("正常原型字段");
+  expect(container.textContent).toContain("正常 FEFF 字段");
   expect(container.textContent).toContain(htmlText);
   expect(container.querySelector("script")).toBeNull();
   expect(container.querySelector("img")).toBeNull();
@@ -303,10 +305,10 @@ it("normalizes and filters protected legacy keys while bounding and escaping saf
   expect(container.textContent).not.toContain("深层秘密");
   expect(container.textContent).toContain("内容层级过深，未展开");
   const truncatedKey = [...container.querySelectorAll(".hr-candidate-legacy-fields dt")].find((item) => item.textContent?.startsWith("😀😀😀"));
-  expect(Array.from(truncatedKey?.textContent ?? "")).toHaveLength(501);
+  expect(Array.from(truncatedKey?.textContent ?? "")).toHaveLength(500);
   expect(truncatedKey?.textContent?.endsWith("…")).toBe(true);
   const truncatedValue = truncatedKey?.parentElement?.querySelector("dd span")?.textContent ?? "";
-  expect(Array.from(truncatedValue)).toHaveLength(501);
+  expect(Array.from(truncatedValue)).toHaveLength(500);
   expect(truncatedValue.endsWith("…")).toBe(true);
 });
 

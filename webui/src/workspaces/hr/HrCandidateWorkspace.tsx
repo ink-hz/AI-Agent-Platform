@@ -67,7 +67,7 @@ function CandidateFacts({ facts }: { facts: Record<string, unknown> }) {
 const LEGACY_MAX_DEPTH = 4;
 const LEGACY_MAX_ITEMS = 50;
 const LEGACY_MAX_TEXT = 500;
-const LEGACY_PROTECTED_KEY_SEPARATORS = /[\s\u001c-\u001f\u0085_.:/-]+/gu;
+const LEGACY_PROTECTED_KEY_SEPARATORS = /[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000_.:/-]+/gu;
 // Mirrors backend/app/hr/candidate_models.py `_normalized_fact_key` and
 // `_FORBIDDEN_FACT_KEYS`; legacy rendering remains defense-in-depth for old rows.
 const LEGACY_PROTECTED_KEYS = new Set([
@@ -103,12 +103,12 @@ function legacyLabel(value: string): string {
 }
 function boundedText(value: string): string {
   const characters = Array.from(value);
-  return characters.length <= LEGACY_MAX_TEXT ? value : `${characters.slice(0, LEGACY_MAX_TEXT).join("")}…`;
+  return characters.length <= LEGACY_MAX_TEXT ? value : `${characters.slice(0, LEGACY_MAX_TEXT - 1).join("")}…`;
 }
 function normalizedLegacyKey(value: string): string {
   // After NFKC, ß/ẞ -> ss is the only Python casefold expansion that can
   // produce the ASCII-only protected keys; toLowerCase handles the rest.
-  const casefolded = value.normalize("NFKC").trim().toLowerCase().replace(/ß/gu, "ss");
+  const casefolded = value.normalize("NFKC").toLowerCase().replace(/ß/gu, "ss");
   return casefolded.replace(LEGACY_PROTECTED_KEY_SEPARATORS, "");
 }
 function protectedLegacyField(value: string): boolean {
