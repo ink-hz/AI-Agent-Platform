@@ -773,12 +773,8 @@ def build_conversation_router(
             raise HTTPException(422, "conversation request invalid", headers=_NO_STORE)
         if direct_agent_id is not None:
             await require_direct_agent(context.internal_user_id, direct_agent_id)
-        if body.position_id is not None and not callable(
-            getattr(hr_position_scope, "bind_conversation", None)
-        ):
-            raise HTTPException(503, "HR position scope unavailable", headers=_NO_STORE)
-        if body.position_draft_id is not None and not callable(
-            getattr(hr_position_scope, "attach_draft_conversation", None)
+        if (body.position_id is not None or body.position_draft_id is not None) and not callable(
+            getattr(hr_position_scope, "bind_new_conversation_locked", None)
         ):
             raise HTTPException(503, "HR position draft scope unavailable", headers=_NO_STORE)
         try:
@@ -789,47 +785,22 @@ def build_conversation_router(
                 body.submission(),
                 mode=mode,
                 direct_agent_id=direct_agent_id,
+                hr_position_scope=hr_position_scope,
+                position_id=body.position_id,
+                position_draft_id=body.position_draft_id,
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
-        if body.position_id is not None:
-            try:
-                await asyncio.to_thread(
-                    hr_position_scope.bind_conversation,
-                    context.internal_user_id,
-                    body.position_id,
-                    result.conversation.conversation_id,
-                    request_id,
-                )
-            except Exception as error:  # HR repository failures stay opaque here.
-                from app.hr.repository import HrConflict, HrNotFound, HrUnavailable
+        except Exception as error:  # Position callback errors remain opaque.
+            from app.hr.repository import HrConflict, HrNotFound, HrUnavailable
 
-                if isinstance(error, HrNotFound):
-                    raise HTTPException(404, "HR position not found", headers=_NO_STORE) from None
-                if isinstance(error, HrConflict):
-                    raise HTTPException(409, "HR position binding conflict", headers=_NO_STORE) from None
-                if isinstance(error, HrUnavailable):
-                    raise HTTPException(503, "HR position unavailable", headers=_NO_STORE) from None
-                raise
-        if body.position_draft_id is not None:
-            try:
-                await asyncio.to_thread(
-                    hr_position_scope.attach_draft_conversation,
-                    context.internal_user_id,
-                    body.position_draft_id,
-                    result.conversation.conversation_id,
-                    request_id,
-                )
-            except Exception as error:  # HR repository failures stay opaque here.
-                from app.hr.repository import HrConflict, HrNotFound, HrUnavailable
-
-                if isinstance(error, HrNotFound):
-                    raise HTTPException(404, "HR position draft not found", headers=_NO_STORE) from None
-                if isinstance(error, HrConflict):
-                    raise HTTPException(409, "HR position draft conflict", headers=_NO_STORE) from None
-                if isinstance(error, HrUnavailable):
-                    raise HTTPException(503, "HR position unavailable", headers=_NO_STORE) from None
-                raise
+            if isinstance(error, HrNotFound):
+                raise HTTPException(404, "HR position not found", headers=_NO_STORE) from None
+            if isinstance(error, HrConflict):
+                raise HTTPException(409, "HR position binding conflict", headers=_NO_STORE) from None
+            if isinstance(error, HrUnavailable):
+                raise HTTPException(503, "HR position unavailable", headers=_NO_STORE) from None
+            raise
         response.status_code = 201 if result.created else 200
         response.headers.update(_NO_STORE)
         return _create_payload(result)

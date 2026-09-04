@@ -957,12 +957,24 @@ class ConversationRepository:
         *,
         mode: Literal["brain", "direct_agent"] = "brain",
         direct_agent_id: str | None = None,
+        hr_position_scope=None,
+        position_id: UUID | None = None,
+        position_draft_id: UUID | None = None,
     ) -> ConversationCreateResult:
         _require_uuid(internal_user_id)
         _require_uuid(client_request_id)
         submission = _require_submission(submission)
         text = submission.text
         mode, direct_agent_id = _require_mode(mode, direct_agent_id)
+        scoped = position_id is not None or position_draft_id is not None
+        if scoped and (
+            direct_agent_id != "hr-bot"
+            or (position_id is None) == (position_draft_id is None)
+            or not callable(
+                getattr(hr_position_scope, "bind_new_conversation_locked", None)
+            )
+        ):
+            raise ValueError("HR position scope invalid")
         conversation_id = uuid4()
         try:
             with self._connection() as connection, connection.cursor() as cursor:
@@ -1008,6 +1020,15 @@ class ConversationRepository:
                     )
                     mission_id = mission.mission_id
                     created = True
+                if scoped:
+                    hr_position_scope.bind_new_conversation_locked(
+                        cursor,
+                        internal_user_id,
+                        conversation.conversation_id,
+                        client_request_id,
+                        position_id=position_id,
+                        draft_id=position_draft_id,
+                    )
             if mission is None:
                 mission = self._missions.mission_for_owner(
                     internal_user_id, mission_id

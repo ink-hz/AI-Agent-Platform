@@ -112,7 +112,7 @@ def test_hr_conversation_can_resume_an_existing_position_draft(
 
 
 @pytest.mark.postgres
-def test_transient_binding_failure_retries_same_conversation_without_duplication(
+def test_transient_binding_failure_rolls_back_before_a_clean_retry(
     hr_conversation_database, repository
 ) -> None:
     environment, owner_id, _ = hr_conversation_database
@@ -125,11 +125,11 @@ def test_transient_binding_failure_retries_same_conversation_without_duplication
     class FlakyScope:
         calls = 0
 
-        def bind_conversation(self, *args, **kwargs):
+        def bind_new_conversation_locked(self, *args, **kwargs):
             self.calls += 1
             if self.calls == 1:
                 raise HrUnavailable("temporary")
-            return delegate.bind_conversation(*args, **kwargs)
+            return delegate.bind_new_conversation_locked(*args, **kwargs)
 
     scope = FlakyScope()
     app, auth, _ = _app(owner_id, repository, hr_position_scope=scope)
@@ -138,8 +138,17 @@ def test_transient_binding_failure_retries_same_conversation_without_duplication
     payload = {"text": "岗位分析", "position_id": str(position.position_id)}
 
     assert _post(client, auth, "hr-bot", request_id, payload).status_code == 503
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_control.conversations "
+            "where owner_internal_user_id=%s", (owner_id,),
+        ).fetchone() == (0,)
+        assert admin.execute(
+            "select count(*) from platform_control.missions "
+            "where owner_internal_user_id=%s", (owner_id,),
+        ).fetchone() == (0,)
     recovered = _post(client, auth, "hr-bot", request_id, payload)
 
-    assert recovered.status_code == 200
+    assert recovered.status_code == 201
     conversation_id = UUID(recovered.json()["conversation"]["conversation_id"])
     assert delegate.for_conversation(owner_id, conversation_id) == position.position_id

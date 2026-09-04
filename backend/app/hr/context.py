@@ -35,6 +35,31 @@ class HrPositionScope:
             binding_kind="created_in_position",
         ))
 
+    def bind_new_conversation_locked(
+        self,
+        cursor,
+        owner_id: UUID,
+        conversation_id: UUID,
+        request_id: UUID,
+        *,
+        position_id: UUID | None = None,
+        draft_id: UUID | None = None,
+    ) -> None:
+        if (position_id is None) == (draft_id is None):
+            raise ValueError("exactly one HR position scope required")
+        if position_id is not None:
+            cursor.execute(
+                "select (platform_hr.bind_conversation_v65("
+                "%s,%s,%s,%s,'created_in_position')).*",
+                (owner_id, position_id, conversation_id, request_id),
+            ).fetchone()
+            return
+        cursor.execute(
+            "select (platform_hr.attach_conversation_to_draft_v65("
+            "%s,%s,%s,%s)).*",
+            (owner_id, draft_id, conversation_id, request_id),
+        ).fetchone()
+
     def attach_draft_conversation(
         self,
         owner_id: UUID,
