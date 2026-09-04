@@ -71,6 +71,11 @@ class VersionBody(BaseModel):
     expected_row_version: int = Field(ge=1)
 
 
+class DocumentTicketBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    purpose: Literal["preview", "download"]
+
+
 class ConfirmBody(VersionBody):
     context_version_id: UUID
     stable_name: str = Field(min_length=1, max_length=500)
@@ -166,6 +171,17 @@ def _document(record: CandidateDocument) -> dict[str, object]:
     }
 
 
+def _document_ticket(ticket) -> dict[str, object]:
+    return {
+        "content_path": ticket.content_path,
+        "expires_at": (
+            ticket.expires_at.isoformat()
+            if hasattr(ticket.expires_at, "isoformat")
+            else ticket.expires_at
+        ),
+    }
+
+
 def _position_candidate(record: PositionCandidate) -> dict[str, object]:
     return {
         "position_candidate_id": str(record.position_candidate_id),
@@ -220,6 +236,7 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
         "create_drafts", "list_drafts", "draft", "retry_draft",
         "dismiss_draft", "confirm_draft", "list_position_candidates",
         "candidate", "documents", "candidate_document", "position_candidate",
+        "candidate_document_ticket",
         "list_analyses", "add_analysis",
         "list_feedback", "append_feedback", "compare",
     )
@@ -395,6 +412,23 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
         return _document(
             await call(service.candidate_document, await owner(request), document_id)
         )
+
+    @router.post("/api/hr/candidate-documents/{document_id}/ticket")
+    async def candidate_document_ticket(
+        body: DocumentTicketBody,
+        request: Request,
+        document_id: Annotated[UUID, Path()],
+        idempotency_key: Annotated[
+            str | None, Header(alias="Idempotency-Key")
+        ] = None,
+    ):
+        _request_id(idempotency_key)
+        return _document_ticket(await call(
+            service.candidate_document_ticket,
+            await owner(request, writable=True),
+            document_id,
+            body.purpose,
+        ))
 
     @router.get("/api/hr/position-candidates/{position_candidate_id}")
     async def position_candidate_detail(

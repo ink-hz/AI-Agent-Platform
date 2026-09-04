@@ -1096,7 +1096,10 @@ def create_app(
         if hr_candidate_service is None or hr_task_context_provider is None:
             candidate_repository = CandidateRepository(control_database_url)
         if hr_candidate_service is None:
-            hr_candidate_service = CandidateService(candidate_repository)
+            hr_candidate_service = CandidateService(
+                candidate_repository,
+                document_tickets=conversation_attachment_download_service,
+            )
         if (
             "direct_agent" in v1_mission_modes
             and conversation_command_service is not None

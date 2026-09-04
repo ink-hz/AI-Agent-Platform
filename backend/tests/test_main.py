@@ -701,6 +701,7 @@ def test_create_app_mounts_injected_hr_intelligence_candidate_and_task_routes(
                 "candidate",
                 "documents",
                 "candidate_document",
+                "candidate_document_ticket",
                 "position_candidate",
                 "list_analyses",
                 "add_analysis",
@@ -748,6 +749,7 @@ def test_create_app_mounts_injected_hr_intelligence_candidate_and_task_routes(
     assert {
         "/api/hr/positions/{position_id}/context",
         "/api/hr/positions/{position_id}/candidate-drafts:batch",
+        "/api/hr/candidate-documents/{document_id}/ticket",
         "/api/hr/positions/{position_id}/tasks",
         "/api/hr/positions/{position_id}/tasks/{task_id}",
         "/api/hr/positions/{position_id}/resources",

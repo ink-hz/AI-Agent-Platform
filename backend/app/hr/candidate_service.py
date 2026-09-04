@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID, uuid5
+
+from app.attachments.download_service import DownloadNotFound, DownloadUnavailable
 
 from .candidate_models import (
     AppendHumanFeedback,
@@ -15,6 +18,7 @@ from .candidate_models import (
     PositionCandidate,
     RetryCandidateDraft,
 )
+from .candidate_repository import CandidateNotFound, CandidateUnavailable
 
 
 class CandidateServiceError(RuntimeError):
@@ -34,7 +38,7 @@ def _derived(owner_id: UUID, request_id: UUID, label: str) -> UUID:
 
 
 class CandidateService:
-    def __init__(self, repository) -> None:
+    def __init__(self, repository, *, document_tickets=None) -> None:
         required = (
             "register_batch",
             "create_draft",
@@ -52,7 +56,12 @@ class CandidateService:
         )
         if any(not callable(getattr(repository, name, None)) for name in required):
             raise ValueError("candidate repository required")
+        if document_tickets is not None and not callable(
+            getattr(document_tickets, "issue_ticket", None)
+        ):
+            raise ValueError("candidate document ticket service required")
         self._repository = repository
+        self._document_tickets = document_tickets
 
     def create_drafts(
         self, command: CreateCandidateDraftBatch
@@ -93,6 +102,36 @@ class CandidateService:
 
     def candidate_document(self, owner_id: UUID, document_id: UUID):
         return self._repository.document_for_owner(owner_id, document_id)
+
+    def candidate_document_ticket(
+        self,
+        owner_id: UUID,
+        document_id: UUID,
+        purpose: Literal["preview", "download"],
+    ):
+        if not isinstance(owner_id, UUID) or not isinstance(document_id, UUID):
+            raise ValueError("candidate document ticket identity invalid")
+        if purpose not in {"preview", "download"}:
+            raise ValueError("candidate document ticket purpose invalid")
+        if self._document_tickets is None:
+            raise CandidateUnavailable("candidate document ticket unavailable")
+        document = self._repository.document_for_owner(owner_id, document_id)
+        if (
+            document.owner_id != owner_id
+            or document.document_id != document_id
+            or document.status != "active"
+        ):
+            raise CandidateNotFound("candidate document not found")
+        try:
+            return self._document_tickets.issue_ticket(
+                owner_id, document.attachment_id, purpose
+            )
+        except DownloadNotFound:
+            raise CandidateNotFound("candidate document not found") from None
+        except DownloadUnavailable:
+            raise CandidateUnavailable(
+                "candidate document ticket unavailable"
+            ) from None
 
     def position_candidate(
         self, owner_id: UUID, position_candidate_id: UUID

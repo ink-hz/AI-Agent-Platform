@@ -31,6 +31,29 @@ describe("R1.2 HR API", () => {
     expect(init?.signal).toBe(controller.signal);
   });
 
+  it("issues candidate-document tickets through the exact private path", async () => {
+    const contentPath = `/api/v1/attachments/content/${"b".repeat(32)}`;
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content_path: contentPath,
+      expires_at: "2026-09-04T00:05:00Z",
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await expect(createHrR12Api("csrf").downloadCandidateDocument(
+      DRAFT_ID, REQUEST_ID, "preview", controller.signal,
+    )).resolves.toEqual({ contentPath, expiresAt: "2026-09-04T00:05:00Z" });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      `/api/hr/candidate-documents/${DRAFT_ID}/ticket`,
+    );
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(init?.headers).get("Idempotency-Key")).toBe(REQUEST_ID);
+    expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("csrf");
+    expect(init?.signal).toBe(controller.signal);
+    expect(JSON.parse(String(init?.body))).toEqual({ purpose: "preview" });
+  });
+
   it("keeps actionable HTTP statuses for UI recovery", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "baseline changed" }), { status: 409 })));
 

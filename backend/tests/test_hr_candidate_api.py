@@ -110,6 +110,13 @@ class FakeService:
         self.calls.append(("document", owner_id, document_id))
         return self._result(self.document)
 
+    def candidate_document_ticket(self, owner_id, document_id, purpose):
+        self.calls.append(("document_ticket", owner_id, document_id, purpose))
+        return self._result(SimpleNamespace(
+            content_path=f"/api/v1/attachments/content/{'a' * 32}",
+            expires_at=NOW,
+        ))
+
     def position_candidate(self, owner_id, position_candidate_id):
         self.calls.append(("position_candidate", owner_id, position_candidate_id))
         return self._result(self.relation)
@@ -268,6 +275,61 @@ def test_candidate_reads_are_private_explicit_and_do_not_leak_storage_fields() -
     assert "storage" not in serialized
     assert "object_ref" not in serialized
     assert "immutable_locator" not in serialized
+
+
+def test_candidate_document_ticket_is_private_owner_scoped_and_hard_stale_guarded() -> None:
+    client, service, owner_id = _client()
+
+    response = client.post(
+        f"/api/hr/candidate-documents/{service.document.document_id}/ticket",
+        json={"purpose": "preview"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "content_path": f"/api/v1/attachments/content/{'a' * 32}",
+        "expires_at": NOW.isoformat(),
+    }
+    assert response.headers["cache-control"] == "private, no-store"
+    assert service.calls == [(
+        "document_ticket", owner_id, service.document.document_id, "preview"
+    )]
+    assert "storage" not in response.text
+    assert "object_ref" not in response.text
+
+    stale, stale_service, _ = _client(stale=True)
+    blocked = stale.post(
+        f"/api/hr/candidate-documents/{stale_service.document.document_id}/ticket",
+        json={"purpose": "download"},
+        headers=_headers(),
+    )
+    assert blocked.status_code == 503
+    assert stale_service.calls == []
+
+
+def test_candidate_document_ticket_conceals_missing_and_maps_outages() -> None:
+    for error, status in (
+        (CandidateNotFound(), 404),
+        (CandidateUnavailable(), 503),
+    ):
+        client, service, _ = _client()
+        service.error = error
+        response = client.post(
+            f"/api/hr/candidate-documents/{service.document.document_id}/ticket",
+            json={"purpose": "download"},
+            headers=_headers(),
+        )
+        assert response.status_code == status
+
+    client, service, _ = _client()
+    invalid = client.post(
+        f"/api/hr/candidate-documents/{service.document.document_id}/ticket",
+        json={"purpose": "inline", "storage": "s3://secret"},
+        headers=_headers(),
+    )
+    assert invalid.status_code == 422
+    assert service.calls == []
 
 
 def test_feedback_shape_rejects_non_correction_text_as_422() -> None:

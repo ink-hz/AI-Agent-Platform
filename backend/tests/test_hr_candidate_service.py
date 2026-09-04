@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from app.attachments.download_service import DownloadNotFound, DownloadUnavailable
 from app.hr.candidate_models import (
     AppendHumanFeedback,
     Candidate,
@@ -20,7 +22,11 @@ from app.hr.candidate_models import (
     PositionCandidate,
     RetryCandidateDraft,
 )
-from app.hr.candidate_repository import CandidateConflict
+from app.hr.candidate_repository import (
+    CandidateConflict,
+    CandidateNotFound,
+    CandidateUnavailable,
+)
 from app.hr.candidate_service import (
     CandidateIdentityConflict,
     CandidateScopeViolation,
@@ -57,6 +63,7 @@ class MemoryRepository:
         self.feedback = {}
         self.batches = {}
         self.analysis_replays = {}
+        self.documents_by_id = {}
 
     def register_batch(self, command):
         key = (command.owner_id, command.client_request_id)
@@ -176,7 +183,10 @@ class MemoryRepository:
         return self.analysis_replays.get((command.owner_id, command.client_request_id))
 
     def document_for_owner(self, owner_id, document_id):
-        raise AssertionError("not used")
+        document = self.documents_by_id[document_id]
+        if document.owner_id != owner_id:
+            raise CandidateNotFound()
+        return document
 
     def append_feedback(self, command, *, feedback_id):
         self.feedback_calls.append((command, feedback_id))
@@ -197,6 +207,70 @@ class MemoryRepository:
             ({"claim": "experience"},), ("规模",), (), ("说明规模",),
             "hr-r12", "model-v1", NOW,
         )
+
+
+class FakeDocumentTickets:
+    def __init__(self, *, error=None):
+        self.error = error
+        self.calls = []
+
+    def issue_ticket(self, owner_id, attachment_id, purpose):
+        self.calls.append((owner_id, attachment_id, purpose))
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(
+            content_path=f"/api/v1/attachments/content/{'a' * 32}",
+            expires_at=NOW,
+        )
+
+
+def test_candidate_document_ticket_uses_the_exact_active_owned_attachment() -> None:
+    owner_id = uuid4()
+    document = CandidateDocument(
+        uuid4(), owner_id, uuid4(), uuid4(), uuid4(), "resume", 3,
+        "a" * 64, "active", NOW,
+    )
+    repository = MemoryRepository()
+    repository.documents_by_id[document.document_id] = document
+    tickets = FakeDocumentTickets()
+    service = CandidateService(repository, document_tickets=tickets)
+
+    issued = service.candidate_document_ticket(
+        owner_id, document.document_id, "preview"
+    )
+
+    assert issued.content_path.startswith("/api/v1/attachments/content/")
+    assert tickets.calls == [(owner_id, document.attachment_id, "preview")]
+
+
+@pytest.mark.parametrize(
+    ("status", "ticket_error", "expected"),
+    [
+        ("erased", None, CandidateNotFound),
+        ("active", DownloadNotFound(), CandidateNotFound),
+        ("active", DownloadUnavailable(), CandidateUnavailable),
+    ],
+)
+def test_candidate_document_ticket_conceals_unavailable_documents_and_surfaces_outages(
+    status, ticket_error, expected
+) -> None:
+    owner_id = uuid4()
+    document = CandidateDocument(
+        uuid4(), owner_id, uuid4(), uuid4(), uuid4(), "resume", 1,
+        "a" * 64, status, NOW,
+    )
+    repository = MemoryRepository()
+    repository.documents_by_id[document.document_id] = document
+    tickets = FakeDocumentTickets(error=ticket_error)
+    service = CandidateService(repository, document_tickets=tickets)
+
+    with pytest.raises(expected):
+        service.candidate_document_ticket(
+            owner_id, document.document_id, "download"
+        )
+
+    if status == "erased":
+        assert tickets.calls == []
 
 
 def test_batch_creation_derives_stable_per_attachment_identities() -> None:

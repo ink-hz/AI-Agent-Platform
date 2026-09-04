@@ -33,10 +33,49 @@ function api() {
     positionCandidates: vi.fn().mockResolvedValue([relation(0), relation(1)]),
     candidate: vi.fn().mockImplementation((id: string) => Promise.resolve(candidate(candidateIds.indexOf(id)))),
     candidateDocuments: vi.fn().mockResolvedValue([candidateDocument]), candidateAnalyses: vi.fn().mockResolvedValue([analysis]),
+    downloadCandidateDocument: vi.fn().mockResolvedValue({ contentPath: `/api/v1/attachments/content/${"a".repeat(32)}`, expiresAt: now }),
     candidateFeedback: vi.fn().mockResolvedValue([]), appendCandidateFeedback: vi.fn().mockResolvedValue({ feedbackId: contextId, positionCandidateId: relationIds[0], analysisVersionId: analysisId, feedbackKind: "correction", conclusionKey: "overall", correction: "量产经验已电话核实", reason: "HR 人工核实", createdAt: now }),
     compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison", conflicts: ["项目规模口径不一致"] }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match" }), activeTasks: vi.fn().mockResolvedValue([]), taskStatus: vi.fn().mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null, positionCandidateId: relationIds[0], candidateId: candidateIds[0] }),
   };
 }
+
+it("lists each resume version and safely preopens preview and retryable download tickets", async () => {
+  const client = api();
+  const navigations: string[] = [];
+  const closed: boolean[] = [];
+  vi.spyOn(window, "open").mockImplementation(() => ({
+    opener: window,
+    location: { replace: (path: string) => navigations.push(path) },
+    close: () => closed.push(true),
+  }) as unknown as Window);
+  client.downloadCandidateDocument.mockImplementation(
+    (_documentId: string, _requestId: string, purpose: "preview" | "download") => {
+      if (purpose === "download" && client.downloadCandidateDocument.mock.calls.filter((call) => call[2] === "download").length === 1) {
+        return Promise.reject(new Error("ticket temporarily unavailable"));
+      }
+      return Promise.resolve({ contentPath: `/api/v1/attachments/content/${purpose === "preview" ? "a" : "b"}`.padEnd(64, purpose === "preview" ? "a" : "b"), expiresAt: now });
+    },
+  );
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+
+  expect(container.textContent).toContain("简历 v1");
+  const preview = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "预览简历 v1")!;
+  const download = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载简历 v1")!;
+  await act(async () => { preview.click(); await Promise.resolve(); });
+  expect(client.downloadCandidateDocument).toHaveBeenLastCalledWith(
+    candidateDocument.documentId, expect.any(String), "preview", expect.any(AbortSignal),
+  );
+  expect(navigations[navigations.length - 1]).toMatch(/^\/api\/v1\/attachments\/content\//);
+
+  await act(async () => { download.click(); await Promise.resolve(); });
+  const firstDownloadRequestId = client.downloadCandidateDocument.mock.calls[client.downloadCandidateDocument.mock.calls.length - 1]?.[1];
+  expect(closed).toHaveLength(1);
+  expect(container.textContent).toContain("简历下载未完成");
+  await act(async () => { download.click(); await Promise.resolve(); });
+  expect(client.downloadCandidateDocument.mock.calls[client.downloadCandidateDocument.mock.calls.length - 1]?.[1]).toBe(firstDownloadRequestId);
+  expect(navigations[navigations.length - 1]).toMatch(/^\/api\/v1\/attachments\/content\//);
+});
 
 it("keeps successful resume drafts when a sibling fails and retries only that item", async () => {
   const client = api();
@@ -290,4 +329,10 @@ it("disables upload and all candidate mutations in hard-stale read-only mode", a
   expect(mutationButtons.every((button) => button.disabled)).toBe(true);
   await act(async () => mutationButtons[0]?.click());
   expect(client.retryDraft).not.toHaveBeenCalled();
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  const documentButtons = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) => /^(预览|下载)简历 v1$/.test(button.textContent ?? ""));
+  expect(documentButtons).toHaveLength(2);
+  expect(documentButtons.every((button) => button.disabled)).toBe(true);
+  await act(async () => documentButtons[0]?.click());
+  expect(client.downloadCandidateDocument).not.toHaveBeenCalled();
 });
