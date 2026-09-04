@@ -27,6 +27,7 @@ from app.attachments.download_service import (
     DownloadAsset,
     DownloadNotFound,
     DownloadRangeError,
+    DownloadUnavailable,
     S3ImmutableAttachmentStore,
 )
 from app.control_plane.authorization import AuthorizationService
@@ -727,6 +728,26 @@ def test_archive_cleans_temporary_volume_when_client_disconnects(tmp_path) -> No
     opened.stream.close()
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_access_repository_preserves_psycopg_outage_as_unavailable() -> None:
+    def unavailable_database(*_args, **_kwargs):
+        raise psycopg.OperationalError("database unavailable")
+
+    access = ConversationAttachmentAccessRepository(
+        "postgresql://platform_control_app@localhost/agent_platform_control",
+        content_codec=ContentCodec(
+            IdentityKeyring(
+                active_version=7,
+                purpose="platform-content-encryption",
+                _keys={7: b"7" * 32},
+            )
+        ),
+        connect=unavailable_database,
+    )
+
+    with pytest.raises(DownloadUnavailable):
+        access.downloadable(OWNER_ID, ATTACHMENT_ID, "download")
 
 
 @pytest.mark.postgres

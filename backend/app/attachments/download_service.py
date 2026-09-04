@@ -307,6 +307,10 @@ class ConversationAttachmentAccessRepository:
             return self._asset_from_row(base)
         except DownloadError:
             raise
+        except DownloadUnavailable:
+            raise
+        except psycopg.Error:
+            raise DownloadUnavailable() from None
         except Exception:  # noqa: BLE001 - database boundary is intentionally opaque
             raise DownloadNotFound() from None
 
