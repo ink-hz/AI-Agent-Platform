@@ -201,6 +201,8 @@ git commit -m "feat(hr): expose panorama intelligence API"
 
 Require the submitted prompt to include only explicitly approved companies/URLs, an as-of timestamp, bounded retry instructions, and the exact output contract. Require ordered projection of jobs and analysis; a source-level `SEARCH_UNAVAILABLE` produces `partially_completed` when another source succeeds.
 
+At the actual fetch boundary, parse every approved URL before fetch. Resolve DNS and reject every non-public IP address before connecting; reject credentials, localhost, IP literals, disallowed or invalid ports, and non-HTTPS destinations. Revalidate DNS and destination before every redirect, with a bounded redirect count and approved ports. Pair these application checks with network egress controls. SQL validation cannot prevent DNS rebinding, so connection-time and redirect-time validation remain mandatory.
+
 ```python
 report = projector.project(completed_answer)
 assert report.direction_clusters["结构"] == 4
