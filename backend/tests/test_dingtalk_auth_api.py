@@ -80,6 +80,21 @@ class _MutableFaeAccess:
         )
 
 
+class _MutableVocAccess:
+    def __init__(self) -> None:
+        self.allowed_user_ids = set()
+
+    def allows(self, context):
+        return context.role in {
+            Role.MANAGEMENT_VIEWER,
+            Role.PLATFORM_ADMIN,
+            Role.PLATFORM_OWNER,
+        } or context.internal_user_id in self.allowed_user_ids
+
+    def list_grants(self):
+        return []
+
+
 class _FaeOverview:
     async def overview(self, _now):
         return {"agent_id": "ai-fae-agent"}
@@ -330,6 +345,7 @@ def _app(
     partner_service=None,
     partner_provider=None,
     fae_access=None,
+    voc_access=None,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -365,6 +381,9 @@ def _app(
         partner_provider=partner_provider,
     )
     app.state.fae_access = fae_access if fae_access is not None else _NoFaeAccess()
+    app.state.voc_access = (
+        voc_access if voc_access is not None else _MutableVocAccess()
+    )
     return app
 
 
@@ -1316,13 +1335,20 @@ def test_fae_navigation_fails_closed_without_leaking_account_data(
 
 
 @pytest.mark.parametrize(
-    ("role", "has_fae_grant", "fae_status", "voc_status"),
     (
-        (Role.PLATFORM_OWNER, False, 200, 200),
-        (Role.MEMBER, True, 200, 403),
-        (Role.MANAGEMENT_VIEWER, False, 403, 200),
-        (Role.PLATFORM_ADMIN, False, 403, 200),
-        (Role.MEMBER, False, 403, 403),
+        "role",
+        "has_fae_grant",
+        "has_voc_grant",
+        "fae_status",
+        "voc_status",
+    ),
+    (
+        (Role.PLATFORM_OWNER, False, False, 200, 200),
+        (Role.MEMBER, True, False, 200, 403),
+        (Role.MANAGEMENT_VIEWER, False, False, 403, 200),
+        (Role.PLATFORM_ADMIN, False, False, 403, 200),
+        (Role.MEMBER, False, False, 403, 403),
+        (Role.MEMBER, False, True, 403, 200),
     ),
 )
 def test_fae_and_voc_management_scopes_are_independent(
@@ -1330,15 +1356,25 @@ def test_fae_and_voc_management_scopes_are_independent(
     monkeypatch,
     role,
     has_fae_grant,
+    has_voc_grant,
     fae_status,
     voc_status,
 ) -> None:
     auth = FakeAuth()
     access = _MutableFaeAccess()
+    voc_access = _MutableVocAccess()
     auth.context = AuthContext(uuid4(), role, uuid4(), False)
     if has_fae_grant:
         access.allowed_user_ids.add(auth.context.internal_user_id)
-    app = _app(tmp_path, monkeypatch, auth, fae_access=access)
+    if has_voc_grant:
+        voc_access.allowed_user_ids.add(auth.context.internal_user_id)
+    app = _app(
+        tmp_path,
+        monkeypatch,
+        auth,
+        fae_access=access,
+        voc_access=voc_access,
+    )
     app.state.fae_workbench_service = _FaeOverview()
     voc_upstream = _VocUpstream()
     app.state.voc_extension_client = voc_upstream
@@ -1354,7 +1390,7 @@ def test_fae_and_voc_management_scopes_are_independent(
 
     assert fae_response.status_code == fae_status
     assert voc_response.status_code == voc_status
-    assert ("voc.read_all" in capabilities_for(auth.context)) is (
+    assert ("voc.read_all" in capabilities_for(auth.context, voc_access)) is (
         voc_status == 200
     )
     assert len(voc_upstream.calls) == (1 if voc_status == 200 else 0)
@@ -1362,6 +1398,28 @@ def test_fae_and_voc_management_scopes_are_independent(
         assert fae_response.json() == {
             "detail": "fae workbench access required"
         }
+
+
+def test_voc_grant_list_is_owner_only_in_full_application(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    auth.context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+    app = _app(tmp_path, monkeypatch, auth)
+    client = TestClient(app)
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    assert client.get(
+        "/api/v1/manage/voc-workbench/grants", cookies=cookies
+    ).status_code == 200
+    auth.context = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), False)
+    response = client.get(
+        "/api/v1/manage/voc-workbench/grants", cookies=cookies
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "platform owner required"}
 
 
 def test_revoked_fae_grant_denies_the_next_request_without_breaking_direct_use(

@@ -28,6 +28,15 @@ class Grants:
         return False
 
 
+class VocAccess:
+    def allows(self, context):
+        return context.role in {
+            Role.MANAGEMENT_VIEWER,
+            Role.PLATFORM_ADMIN,
+            Role.PLATFORM_OWNER,
+        }
+
+
 class Auth:
     route_prefix = "/"
     cookie_name = "session"
@@ -211,6 +220,7 @@ async def test_management_read_is_middleware_protected_and_uses_minimal_token() 
     app = FastAPI()
     app.state.voc_extension_client = voc_client
     app.state.voc_submitter_directory = Directory()
+    app.state.voc_access = VocAccess()
     app.include_router(build_voc_extension_router())
     app.add_middleware(
         IdentitySecurityMiddleware,

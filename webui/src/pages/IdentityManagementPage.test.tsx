@@ -82,6 +82,11 @@ function withPartnerReads(fetchMock: ReturnType<typeof vi.fn>): ReturnType<typeo
           status: 200, headers: { "Content-Type": "application/json" },
         }));
       }
+      if (path.endsWith("/api/v1/manage/voc-workbench/grants")) {
+        return Promise.resolve(new Response(JSON.stringify({ grants: [] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
     }
     return fetchMock(input, init);
   });
@@ -128,12 +133,13 @@ describe("IdentityManagementPage", () => {
     vi.unstubAllGlobals();
   });
 
-  it("places the FAE workspace grant panel only on the owner identity page", async () => {
+  it("places FAE and VOC grant panels only on the owner identity page", async () => {
     vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     await act(async () => { await Promise.resolve(); });
     expect(container.textContent).toContain("FAE 工作台访问");
+    expect(container.textContent).toContain("VOC 工作台访问");
 
     await act(async () => root.unmount());
     root = createRoot(container);
@@ -142,6 +148,7 @@ describe("IdentityManagementPage", () => {
     ));
     await act(async () => { await Promise.resolve(); });
     expect(container.textContent).not.toContain("FAE 工作台访问");
+    expect(container.textContent).not.toContain("VOC 工作台访问");
   });
 
   it("is owner-only and requires a reason before changing viewer access", async () => {

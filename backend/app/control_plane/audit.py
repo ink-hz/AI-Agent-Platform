@@ -393,6 +393,45 @@ _register_events(
         "result",
     }),
 )
+_register_events(
+    ("voc_workbench_grant",),
+    reason="voc_workbench_access_approved",
+    target="directory_member",
+    requested=frozenset({
+        "operation_id",
+        "expected_generation_id",
+        "expected_member_key",
+        "result",
+    }),
+    completed=frozenset({
+        "operation_id",
+        "linked_audit_event_id",
+        "grant_id",
+        "internal_user_id",
+        "permission",
+        "row_version",
+        "result",
+    }),
+)
+_register_events(
+    ("voc_workbench_revoke",),
+    reason="voc_workbench_access_revoked",
+    target="internal_user",
+    requested=frozenset({
+        "operation_id",
+        "expected_row_version",
+        "result",
+    }),
+    completed=frozenset({
+        "operation_id",
+        "linked_audit_event_id",
+        "grant_id",
+        "internal_user_id",
+        "permission",
+        "row_version",
+        "result",
+    }),
+)
 
 AuditScalar = str | int | bool
 AuditValue = AuditScalar | Sequence[str]
