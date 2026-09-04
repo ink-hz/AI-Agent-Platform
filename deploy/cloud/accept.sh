@@ -1439,6 +1439,30 @@ if len(set(identities)) != 3:
     raise SystemExit(1)
 PY
 
+  status_code="$("${curl_owner[@]}" -o "$temporary/fae-owner-navigation.json" -w '%{http_code}' \
+    "$base/api/v1/workspaces/fae/navigation")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  "$python" - "$temporary/fae-owner-navigation.json" <<'PY' || fail
+import json
+import sys
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+if value != {"management_workspace_url": "/fae/manage/"}:
+    raise SystemExit(1)
+PY
+
+  status_code="$("${curl_member[@]}" -o "$temporary/fae-member-navigation.json" -w '%{http_code}' \
+    "$base/api/v1/workspaces/fae/navigation")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  "$python" - "$temporary/fae-member-navigation.json" <<'PY' || fail
+import json
+import sys
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+if value != {"management_workspace_url": None}:
+    raise SystemExit(1)
+PY
+
   status_code="$("${curl_member[@]}" -o "$temporary/fae-direct.html" -w '%{http_code}' "$base/fae/")" || fail
   [[ "$status_code" == "200" ]] || fail
   status_code="$("${curl_member[@]}" -o "$temporary/fae-direct-deep-link.html" -w '%{http_code}' \
