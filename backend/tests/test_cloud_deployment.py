@@ -274,8 +274,15 @@ def test_backups_cover_control_database_and_attachment_objects_on_data_disk() ->
 def test_cloud_registry_and_contract_have_no_source_coordinates():
     registry = yaml.safe_load((CLOUD / "registry.yaml").read_text(encoding="utf-8"))
     contract = (CLOUD / "metabot.runtime-contract.json").read_text(encoding="utf-8")
+    payload = json.loads(contract)
 
     assert registry == {"version": 1, "agents": []}
+    assert payload["bots"] == [{
+        "name": "hr-bot",
+        "engine": "claude",
+        "model": "claude-opus-5",
+        "instance": {"pm2Name": "metabot-hr", "apiPort": 9101},
+    }]
     assert "http://" not in contract
     assert "https://" not in contract
     assert "47.106.112.69" not in contract

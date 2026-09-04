@@ -1,1 +1,14 @@
-{"bots":[]}
+{
+  "schemaVersion": 1,
+  "bots": [
+    {
+      "name": "hr-bot",
+      "engine": "claude",
+      "model": "claude-opus-5",
+      "instance": {
+        "pm2Name": "metabot-hr",
+        "apiPort": 9101
+      }
+    }
+  ]
+}
