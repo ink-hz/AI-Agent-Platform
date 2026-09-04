@@ -26,6 +26,18 @@ fail() {
   exit 1
 }
 
+wait_for_loopback_port_release() {
+  local _attempt listeners
+  for _attempt in $(/usr/bin/seq 1 30); do
+    listeners="$(/usr/bin/ss -H -lnt 'sport = :8080')" || return 1
+    if [[ -z "$listeners" ]]; then
+      return 0
+    fi
+    /bin/sleep 1
+  done
+  return 1
+}
+
 [[ $# -eq 3 ]] || fail
 release_sha="$1"
 expected_digest="$2"
@@ -512,14 +524,18 @@ rollback() {
           done
         fi
       fi
+      loopback_port_released=1
+      wait_for_loopback_port_release || loopback_port_released=0
       if [[ -n "$previous_release" && -f "$previous_environment" ]]; then
         /bin/cp -p "$previous_environment" "$environment_path"
         /bin/ln -sfn "$previous_release" "$root_path/current"
-        if [[ "${#previous_control_consumers[@]}" -gt 0 ]]; then
+        if [[ "$loopback_port_released" -eq 1 && "${#previous_control_consumers[@]}" -gt 0 ]]; then
           /usr/bin/docker compose --env-file "$environment_path" \
             -f "$previous_release/deploy/cloud/compose.yaml" \
             up -d --force-recreate "${previous_control_consumers[@]}" \
             >/dev/null 2>&1 || true
+        elif [[ "$loopback_port_released" -eq 0 ]]; then
+          exit_status=1
         fi
       else
         /usr/bin/docker rm -f orbbec-agent-platform-platform-loopback-1 >/dev/null 2>&1 || true
@@ -637,6 +653,7 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
     "${previous_compose[@]}" stop "${previous_control_consumers[@]}" >/dev/null
     api_stopped=1
   fi
+  wait_for_loopback_port_release || fail
   "${previous_compose[@]}" rm -f platform-postgres >/dev/null
 fi
 ensure_bind_volume orbbec-agent-platform-postgres-data "$postgres_data"

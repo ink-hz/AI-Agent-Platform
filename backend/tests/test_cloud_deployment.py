@@ -393,6 +393,33 @@ def test_remote_stage_requires_consecutive_loopback_health_checks():
     ) not in script
 
 
+def test_remote_stage_waits_for_loopback_port_release_before_cutover_and_rollback():
+    script = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    assert "wait_for_loopback_port_release()" in script
+    assert "for _attempt in $(/usr/bin/seq 1 30)" in script
+    assert "/usr/bin/ss -H -lnt 'sport = :8080'" in script
+
+    previous_stop = script.index(
+        '"${previous_compose[@]}" stop "${previous_control_consumers[@]}"'
+    )
+    cutover_wait = script.index("wait_for_loopback_port_release || fail", previous_stop)
+    loopback_start = script.index(
+        '"${compose[@]}" up -d --force-recreate "${active_loopback_services[@]}"'
+    )
+    assert previous_stop < cutover_wait < loopback_start
+
+    rollback_remove = script.index('/usr/bin/docker rm -f "$container_id"')
+    rollback_wait = script.index(
+        "wait_for_loopback_port_release || loopback_port_released=0", rollback_remove
+    )
+    previous_restart = script.index(
+        'up -d --force-recreate "${previous_control_consumers[@]}"',
+        rollback_remove,
+    )
+    assert rollback_remove < rollback_wait < previous_restart
+
+
 def test_remote_stage_retries_transient_fae_http_invariance_checks():
     script = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
 
