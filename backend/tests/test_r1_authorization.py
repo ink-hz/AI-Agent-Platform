@@ -132,6 +132,30 @@ def test_fae_routes_require_authentication_before_scope_dependency(method, route
     )
 
 
+def test_fae_navigation_requires_authentication_before_access_projection():
+    decision = AuthorizationService(Grants()).decide(
+        None, "GET", "/api/v1/workspaces/fae/navigation", ()
+    )
+
+    assert (decision.status_code, decision.reason) == (
+        401,
+        "authentication_required",
+    )
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_fae_navigation_delegates_access_projection_to_route(role):
+    decision = AuthorizationService(Grants(), cloud_mode=True).decide(
+        AuthContext(uuid4(), role, uuid4(), False),
+        "GET",
+        "/api/v1/workspaces/fae/navigation",
+        (),
+    )
+
+    assert decision.allowed is True
+    assert decision.reason == "self_service"
+
+
 @pytest.mark.parametrize("role", list(Role))
 @pytest.mark.parametrize("method,route", FAE_ROUTES)
 def test_fae_routes_delegate_independent_scope_to_router_dependency(
