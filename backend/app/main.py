@@ -62,6 +62,7 @@ from .cloud_replica.repository import (
     ReplicaObservabilityRepository,
 )
 from .cluster import routes as cluster_routes
+from .cluster.contract import ContractLoadError, load_targets
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
 from .config import Config, is_cloud_mode, load_config
 from .control_plane import routes_manage, routes_partner
@@ -174,6 +175,11 @@ from .hr.routes import build_hr_position_router
 from .hr.service import HrPositionService
 from .hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
 from .hr.task_repository import PostgresHrPositionTaskRepository
+from .hr.task_result_projection import (
+    HrTaskResultProjectionRepository,
+    HrTaskResultReconciler,
+    hr_task_result_projection_loop,
+)
 from .hr.task_routes import build_hr_position_task_router
 from .hr.task_service import HrPositionTaskService
 from .local_secrets import read_secret_file
@@ -209,6 +215,19 @@ from .voc_extension.internal_routes import build_voc_internal_router
 from .voc_extension.routes import build_voc_extension_router
 
 logger = logging.getLogger(__name__)
+
+
+def _hr_bot_model_version(contract_path: str) -> str:
+    try:
+        matches = [target for target in load_targets(contract_path) if target.id == "hr-bot"]
+    except ContractLoadError as error:
+        raise RuntimeError("HR task result model provenance unavailable") from error
+    if len(matches) != 1:
+        raise RuntimeError("HR task result model provenance unavailable")
+    model = matches[0].declared_model
+    if not isinstance(model, str) or not model.strip():
+        raise RuntimeError("HR task result model provenance unavailable")
+    return model.strip()
 
 
 class _UnavailableFaeWorkbenchRepository:
@@ -756,6 +775,7 @@ def create_app(
     hr_position_task_service=None,
     hr_candidate_parser_submission_coordinator=None,
     hr_candidate_parser_input_provider=None,
+    hr_task_result_reconciler=None,
     agent_use_authorization=None,
     hr_position_scope=None,
     access_history_repository=None,
@@ -1170,6 +1190,23 @@ def create_app(
                 hr_position_scope,
                 PostgresHrPositionTaskRepository(control_database_url),
             )
+        if (
+            hr_task_result_reconciler is None
+            and "direct_agent" in v1_mission_modes
+            and content_codec is not None
+            and hr_position_intelligence_service is not None
+            and hr_candidate_service is not None
+        ):
+            hr_task_result_reconciler = HrTaskResultReconciler(
+                HrTaskResultProjectionRepository(control_database_url),
+                hr_position_intelligence_service,
+                hr_candidate_service,
+                content_codec,
+                worker_id="platform-hr-task-result-projection",
+                model_version=_hr_bot_model_version(
+                    cluster_contract_path or config.metabot_contract_path
+                ),
+            )
     if v1_mission_modes:
         if (
             mission_repository is None
@@ -1288,6 +1325,10 @@ def create_app(
             tasks.append(asyncio.create_task(candidate_parser_submission_loop(
                 hr_candidate_parser_submission_coordinator
             )))
+        if hr_task_result_reconciler is not None:
+            tasks.append(asyncio.create_task(
+                hr_task_result_projection_loop(hr_task_result_reconciler)
+            ))
         try:
             yield
         finally:
@@ -1351,6 +1392,7 @@ def create_app(
     app.state.hr_candidate_parser_input_provider = (
         hr_candidate_parser_input_provider
     )
+    app.state.hr_task_result_reconciler = hr_task_result_reconciler
     app.state.fae_access = None
     app.state.fae_session_read_audit = None
     authorization_service = None

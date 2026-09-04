@@ -14,6 +14,7 @@ from app.fae_workbench.repository import (
 )
 from app.hr.resource_service import HrPositionResourceService
 from app.main import (
+    _hr_bot_model_version,
     agent_brain_loop,
     build_office_recipient_directory,
     build_operations,
@@ -793,6 +794,75 @@ async def test_create_app_runs_injected_candidate_parser_submission_lane(
         await asyncio.wait_for(started.wait(), timeout=1)
         assert app.state.hr_candidate_parser_submission_coordinator is coordinator
         assert app.state.hr_candidate_parser_input_provider is provider
+
+    assert cancelled.is_set()
+
+
+def test_hr_bot_model_version_comes_from_exact_runtime_contract(tmp_path) -> None:
+    contract = tmp_path / "metabot.runtime-contract.json"
+    contract.write_text(json.dumps({"bots": [
+        {
+            "name": "hr-bot",
+            "model": "claude-opus-5",
+            "instance": {"pm2Name": "metabot-hr", "apiPort": 9101},
+        },
+        {
+            "name": "other-bot",
+            "model": "other-model",
+            "instance": {"pm2Name": "metabot-other", "apiPort": 9102},
+        },
+    ]}), encoding="utf-8")
+
+    assert _hr_bot_model_version(str(contract)) == "claude-opus-5"
+
+
+@pytest.mark.parametrize("bots", [
+    [],
+    [{
+        "name": "hr-bot",
+        "instance": {"pm2Name": "metabot-hr", "apiPort": 9101},
+    }],
+])
+def test_hr_bot_model_version_fails_closed_without_exact_model(
+    tmp_path, bots,
+) -> None:
+    contract = tmp_path / "metabot.runtime-contract.json"
+    contract.write_text(json.dumps({"bots": bots}), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="model provenance unavailable"):
+        _hr_bot_model_version(str(contract))
+
+
+@pytest.mark.asyncio
+async def test_create_app_runs_injected_hr_task_result_projection_lane(
+    tmp_path, monkeypatch,
+) -> None:
+    from app import main as app_main
+
+    registry, contract = _fae_app_paths(tmp_path)
+    reconciler = object()
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def projection_loop(selected):
+        assert selected is reconciler
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(app_main, "hr_task_result_projection_loop", projection_loop)
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        hr_task_result_reconciler=reconciler,
+    )
+
+    async with app.router.lifespan_context(app):
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert app.state.hr_task_result_reconciler is reconciler
 
     assert cancelled.is_set()
 
