@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { HrR12Api } from "../../hrR12Api";
 import type { HrContextVersion } from "../../hrR12Types";
+import { trapDialogFocus } from "./modalFocus";
+import { completeMutationRequest, retainMutationRequest } from "./hrMutationRequest";
 
 const MODULE_LABELS: Record<string, string> = {
   mission: "岗位使命", jd: "JD", jr: "JR", competencies: "能力要求",
@@ -25,8 +27,10 @@ export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly 
   const [historyOpen, setHistoryOpen] = useState(false);
   const mutation = useRef<AbortController | null>(null);
   const historyClose = useRef<HTMLButtonElement>(null);
+  const historyOpenButton = useRef<HTMLButtonElement>(null);
+  const historyWasOpen = useRef(false);
 
-  useEffect(() => { if (historyOpen) historyClose.current?.focus(); }, [historyOpen]);
+  useEffect(() => { if (historyOpen) historyClose.current?.focus(); else if (historyWasOpen.current) historyOpenButton.current?.focus(); historyWasOpen.current = historyOpen; }, [historyOpen]);
 
   async function load(signal?: AbortSignal): Promise<ContextState> {
     const value = await api.context(positionId, signal);
@@ -47,8 +51,9 @@ export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly 
     setNotice(null);
     try {
       const baseline = retry ? data?.current?.contextVersionId ?? null : draft.baseContextVersionId;
-      const confirmed = await api.confirmContext(positionId, draft.contextVersionId, baseline, modules, draft.rowVersion, crypto.randomUUID(), controller.signal);
-      if (!controller.signal.aborted) { setData((value) => value ? { ...value, current: confirmed } : value); onConfirmed?.(confirmed); setConflict(null); setNotice("已确认岗位上下文"); await load(controller.signal); }
+      const operation = retainMutationRequest(`position-context:${positionId}:${draft.contextVersionId}`, { baseline, modules, rowVersion: draft.rowVersion });
+      const confirmed = await api.confirmContext(positionId, draft.contextVersionId, baseline, modules, draft.rowVersion, operation.requestId, controller.signal);
+      if (!controller.signal.aborted) { completeMutationRequest(operation.key); setData((value) => value ? { ...value, current: confirmed } : value); onConfirmed?.(confirmed); setConflict(null); setNotice("已确认岗位上下文"); await load(controller.signal); }
     } catch (error) {
       if (controller.signal.aborted) return;
       if ((error as { status?: number }).status !== 409) { setNotice("确认未完成，请重试。"); return; }
@@ -82,8 +87,8 @@ export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly 
         </article>;
       })}
     </section>}
-    {data && <button aria-expanded={historyOpen} type="button" onClick={() => setHistoryOpen(true)}>历史版本（{data.history.length}）</button>}
-    {historyOpen && data && <><button aria-label="关闭历史版本遮罩" className="hr-drawer-backdrop" type="button" onClick={() => setHistoryOpen(false)} /><aside aria-label="岗位上下文历史版本" aria-modal="true" className="hr-mobile-drawer" role="dialog" onKeyDown={(event) => { if (event.key === "Escape") setHistoryOpen(false); }}><header><h3>历史版本（{data.history.length}）</h3><button aria-label="关闭历史版本" ref={historyClose} type="button" onClick={() => setHistoryOpen(false)}>关闭</button></header><ol>{data.history.map((version) => <li key={version.contextVersionId}><strong>v{version.displayVersion}</strong><span>{version.status === "confirmed" ? "已确认" : version.status === "superseded" ? "历史版本" : "草稿"}</span><p>{version.summary}</p></li>)}</ol></aside></>}
+    {data && <button aria-expanded={historyOpen} ref={historyOpenButton} type="button" onClick={() => setHistoryOpen(true)}>历史版本（{data.history.length}）</button>}
+    {historyOpen && data && <><button aria-label="关闭历史版本遮罩" className="hr-drawer-backdrop" type="button" onClick={() => setHistoryOpen(false)} /><aside aria-label="岗位上下文历史版本" aria-modal="true" className="hr-mobile-drawer" role="dialog" onKeyDown={(event) => trapDialogFocus(event, () => setHistoryOpen(false))}><header><h3>历史版本（{data.history.length}）</h3><button aria-label="关闭历史版本" ref={historyClose} type="button" onClick={() => setHistoryOpen(false)}>关闭</button></header><ol>{data.history.map((version) => <li key={version.contextVersionId}><strong>v{version.displayVersion}</strong><span>{version.status === "confirmed" ? "已确认" : version.status === "superseded" ? "历史版本" : "草稿"}</span><p>{version.summary}</p></li>)}</ol></aside></>}
     {notice && <p role="status">{notice}</p>}
   </section>;
 }

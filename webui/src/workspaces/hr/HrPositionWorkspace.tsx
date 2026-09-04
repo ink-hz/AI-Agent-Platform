@@ -15,6 +15,8 @@ import { DirectAgentWorkspace, type AgentHistoryClient } from "../direct/DirectA
 import { HrPositionContextPanel } from "./HrPositionContextPanel";
 import { HrCandidateWorkspace } from "./HrCandidateWorkspace";
 import { HrPositionResourcesPanel } from "./HrPositionResourcesPanel";
+import { trapDialogFocus } from "./modalFocus";
+import { completeMutationRequest, retainMutationRequest } from "./hrMutationRequest";
 
 
 type PositionWorkspaceApi = Pick<HrApi, "position" | "promoteMaterial" | "removeMaterial">;
@@ -111,16 +113,18 @@ export function HrPositionWorkspace({
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [materialNotice, setMaterialNotice] = useState<string | null>(null);
+  const [resourceRefreshGeneration, setResourceRefreshGeneration] = useState(0);
   const [activeSection, setActiveSection] = useState<HrPositionSection>(section);
   const [materialDrawerOpen, setMaterialDrawerOpen] = useState(false);
   const taskController = useRef<AbortController | null>(null);
-  const retainedQuickTask = useRef<{ signature: string; requestId: string } | null>(null);
   const materialDrawerClose = useRef<HTMLButtonElement>(null);
+  const materialDrawerButton = useRef<HTMLButtonElement>(null);
+  const materialDrawerWasOpen = useRef(false);
   const tabRefs = useRef<Partial<Record<HrPositionSection, HTMLButtonElement | null>>>({});
 
   useEffect(() => setActiveSection(section), [section]);
-  useEffect(() => { setTurnMaterialIds([]); setMaterialDrawerOpen(false); retainedQuickTask.current = null; }, [conversationId]);
-  useEffect(() => { if (materialDrawerOpen) materialDrawerClose.current?.focus(); }, [materialDrawerOpen]);
+  useEffect(() => { setTurnMaterialIds([]); setMaterialDrawerOpen(false); }, [conversationId]);
+  useEffect(() => { if (materialDrawerOpen) materialDrawerClose.current?.focus(); else if (materialDrawerWasOpen.current) materialDrawerButton.current?.focus(); materialDrawerWasOpen.current = materialDrawerOpen; }, [materialDrawerOpen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -186,8 +190,10 @@ export function HrPositionWorkspace({
     if (account.hard_stale_read_only) return;
     setMaterialNotice(null);
     try {
-      if (active) await client.promoteMaterial(positionId, attachment.attachmentId, crypto.randomUUID());
-      else await client.removeMaterial(positionId, attachment.attachmentId, crypto.randomUUID());
+      const operation = retainMutationRequest(`position-material:${positionId}:${active ? "promote" : "remove"}`, { attachmentId: attachment.attachmentId });
+      if (active) await client.promoteMaterial(positionId, attachment.attachmentId, operation.requestId);
+      else await client.removeMaterial(positionId, attachment.attachmentId, operation.requestId);
+      completeMutationRequest(operation.key);
       setPromotedMaterialIds((current) => active
         ? current.includes(attachment.attachmentId) ? current : [...current, attachment.attachmentId]
         : current.filter((id) => id !== attachment.attachmentId));
@@ -195,6 +201,7 @@ export function HrPositionWorkspace({
       const ready = refreshed.materials.filter((item) => item.state === "ready" && item.downloadAvailable);
       setAvailableMaterials(ready);
       setTurnMaterialIds((ids) => ids.filter((id) => ready.some((item) => item.attachmentId === id)));
+      setResourceRefreshGeneration((value) => value + 1);
     } catch {
       setMaterialNotice("岗位材料操作未完成，请重试。");
     }
@@ -227,14 +234,13 @@ export function HrPositionWorkspace({
       materialIds: turnMaterialIds,
       conversationId: selectedConversationId,
     };
-    const signature = JSON.stringify([taskKind, input]);
-    const requestId = retainedQuickTask.current?.signature === signature
-      ? retainedQuickTask.current.requestId : crypto.randomUUID();
-    retainedQuickTask.current = { signature, requestId };
+    const operation = retainMutationRequest(`position-task:${positionId}:${taskKind}`, input);
     try {
-      const started = await r12.startTask(positionId, taskKind, requestId, input, controller.signal);
+      const started = await r12.startTask(positionId, taskKind, operation.requestId, input, controller.signal);
       if (!controller.signal.aborted) {
-        retainedQuickTask.current = null; setTurnMaterialIds([]); setTaskState("ready");
+        completeMutationRequest(operation.key);
+        if (started.status !== "failed") setTurnMaterialIds([]);
+        setTaskState("ready");
         setActiveTasks((items) => [started, ...items.filter((item) => item.taskId !== started.taskId)]);
       }
     } catch { if (!controller.signal.aborted) setMaterialNotice("岗位任务未启动，请重试。"); }
@@ -250,10 +256,10 @@ export function HrPositionWorkspace({
   }
   const navigation = <nav className="hr-position-sections" aria-label="岗位工作台分区"><div role="tablist">{sections.map(([value, label]) => <button aria-controls={`hr-position-panel-${value}`} id={`hr-position-tab-${value}`} key={value} ref={(element) => { tabRefs.current[value] = element; }} tabIndex={activeSection === value ? 0 : -1} type="button" role="tab" aria-selected={activeSection === value} onKeyDown={(event) => tabKey(event, value)} onClick={() => activateSection(value)}>{label}</button>)}</div></nav>;
   const materialChoices = <>{availableMaterials.length === 0 ? <p>当前没有可用岗位材料。</p> : availableMaterials.map((material) => <label key={material.attachmentId}><input disabled={account.hard_stale_read_only} name="quick-task-material" type="checkbox" checked={turnMaterialIds.includes(material.attachmentId)} onChange={() => setTurnMaterialIds((ids) => ids.includes(material.attachmentId) ? ids.filter((id) => id !== material.attachmentId) : [...ids, material.attachmentId])} />{material.filename}</label>)}<small>默认不选；只会把本轮明确勾选的材料交给 Agent。</small></>;
-  const quickTasks = <section className="hr-position-taskbar" aria-label="岗位快捷任务"><div className="hr-position-quick-tasks"><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("jd")}>生成JD</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("jr")}>生成JR</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("talent_profile")}>生成人才画像</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("sourcing_strategy")}>生成搜寻策略</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("position_interview_plan")}>生成面试方案</button></div><button aria-expanded={materialDrawerOpen} type="button" onClick={() => setMaterialDrawerOpen(true)}>本轮材料（已选 {turnMaterialIds.length}）</button>{materialDrawerOpen && <><button aria-label="关闭本轮材料遮罩" className="hr-drawer-backdrop" type="button" onClick={() => setMaterialDrawerOpen(false)} /><aside aria-label="本轮任务材料" aria-modal="true" className="hr-mobile-drawer hr-turn-materials" role="dialog" onKeyDown={(event) => { if (event.key === "Escape") setMaterialDrawerOpen(false); }}><header><h2>本轮任务材料</h2><button aria-label="关闭本轮材料" ref={materialDrawerClose} type="button" onClick={() => setMaterialDrawerOpen(false)}>关闭</button></header>{materialChoices}</aside></>}</section>;
+  const quickTasks = <section className="hr-position-taskbar" aria-label="岗位快捷任务"><div className="hr-position-quick-tasks"><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("jd")}>生成JD</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("jr")}>生成JR</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("talent_profile")}>生成人才画像</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("sourcing_strategy")}>生成搜寻策略</button><button disabled={account.hard_stale_read_only} type="button" onClick={() => void quickTask("position_interview_plan")}>生成面试方案</button></div><button aria-expanded={materialDrawerOpen} ref={materialDrawerButton} type="button" onClick={() => setMaterialDrawerOpen(true)}>本轮材料（已选 {turnMaterialIds.length}）</button>{materialDrawerOpen && <><button aria-label="关闭本轮材料遮罩" className="hr-drawer-backdrop" type="button" onClick={() => setMaterialDrawerOpen(false)} /><aside aria-label="本轮任务材料" aria-modal="true" className="hr-mobile-drawer hr-turn-materials" role="dialog" onKeyDown={(event) => trapDialogFocus(event, () => setMaterialDrawerOpen(false))}><header><h2>本轮任务材料</h2><button aria-label="关闭本轮材料" ref={materialDrawerClose} type="button" onClick={() => setMaterialDrawerOpen(false)}>关闭</button></header>{materialChoices}</aside></>}</section>;
   const sectionView = activeSection === "context" ? <HrPositionContextPanel api={r12} onConfirmed={setCurrentContext} positionId={positionId} readOnly={account.hard_stale_read_only} />
     : activeSection === "candidates" ? <HrCandidateWorkspace api={r12} csrfToken={account.csrf_token} currentContextVersionId={currentContext?.contextVersionId ?? null} positionId={positionId} readOnly={account.hard_stale_read_only} />
-      : <HrPositionResourcesPanel api={r12} positionId={positionId} />;
+      : <HrPositionResourcesPanel api={r12} positionId={positionId} readOnly={account.hard_stale_read_only} refreshGeneration={resourceRefreshGeneration} />;
 
   const taskLabel: Record<string, string> = { jd: "JD", jr: "JR", talent_profile: "人才画像", sourcing_strategy: "搜寻策略", position_interview_plan: "面试方案", candidate_match: "候选人匹配", candidate_interview_plan: "候选人面试题", candidate_comparison: "候选人比较" };
   const taskStatusLabel: Record<string, string> = { accepted: "已受理", running: "执行中", completed: "已完成", failed: "执行失败" };

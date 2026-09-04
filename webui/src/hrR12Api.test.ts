@@ -149,6 +149,19 @@ describe("R1.2 HR API", () => {
     });
   });
 
+  it("reads an authoritative terminal candidate task with its exact binding", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      task_id: REQUEST_ID, status: "failed", task_kind: "candidate_match", error: "model failed",
+      position_candidate_id: POSITION_CANDIDATE_ID, candidate_id: CANDIDATE_ID,
+    }), { status: 200 })));
+
+    await expect(createHrR12Api("csrf").taskStatus(POSITION_ID, REQUEST_ID)).resolves.toMatchObject({
+      taskId: REQUEST_ID, status: "failed", error: "model failed",
+      positionCandidateId: POSITION_CANDIDATE_ID, candidateId: CANDIDATE_ID,
+    });
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain(`/positions/${POSITION_ID}/tasks/${REQUEST_ID}`);
+  });
+
   it("rejects malformed task envelopes before making a request", () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     const unsafe = createHrR12Api("csrf").startTask as unknown as (...args: unknown[]) => unknown;

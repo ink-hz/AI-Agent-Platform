@@ -34,7 +34,7 @@ function api() {
     candidate: vi.fn().mockImplementation((id: string) => Promise.resolve(candidate(candidateIds.indexOf(id)))),
     candidateDocuments: vi.fn().mockResolvedValue([candidateDocument]), candidateAnalyses: vi.fn().mockResolvedValue([analysis]),
     candidateFeedback: vi.fn().mockResolvedValue([]), appendCandidateFeedback: vi.fn().mockResolvedValue({ feedbackId: contextId, positionCandidateId: relationIds[0], analysisVersionId: analysisId, feedbackKind: "correction", conclusionKey: "overall", correction: "量产经验已电话核实", reason: "HR 人工核实", createdAt: now }),
-    compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison", conflicts: ["项目规模口径不一致"] }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match" }), activeTasks: vi.fn().mockResolvedValue([]),
+    compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison", conflicts: ["项目规模口径不一致"] }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match" }), activeTasks: vi.fn().mockResolvedValue([]), taskStatus: vi.fn().mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null, positionCandidateId: relationIds[0], candidateId: candidateIds[0] }),
   };
 }
 
@@ -75,7 +75,8 @@ it("loads candidate detail and versions, launches match/interview, records feedb
   await act(async () => first.click());
   expect(container.textContent).toContain("分析版本 v2");
   expect(container.textContent).toContain("未验证：量产规模");
-  expect(container.textContent).toContain("证据：Python");
+  expect(container.textContent).toContain("证据：");
+  expect(container.textContent).toContain('"claim": "Python"');
   expect(container.textContent).toContain("hr-r12 · model");
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成专属面试题")?.click());
@@ -129,6 +130,18 @@ it("stops automatic draft polling after the bounded retry budget and leaves manu
   expect(client.candidateDrafts).toHaveBeenCalledTimes(7);
 });
 
+it("starts a fresh polling budget after retrying a failed draft", async () => {
+  vi.useFakeTimers(); const client = api();
+  client.candidateDrafts.mockReset().mockImplementation(() => Promise.resolve([draft(0, "processing"), draft(2, "failed")]));
+  client.positionCandidates.mockResolvedValue([]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  for (const delay of [1_000, 2_000, 4_000, 8_000, 8_000, 8_000]) await act(async () => vi.advanceTimersByTimeAsync(delay));
+  const exhaustedCalls = client.candidateDrafts.mock.calls.length;
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "重试解析")?.click());
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(client.candidateDrafts.mock.calls.length).toBeGreaterThan(exhaustedCalls);
+});
+
 it("reuses the candidate task idempotency key after an uncertain start failure", async () => {
   const client = api();
   client.startTask.mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ taskId: "task", status: "running", taskKind: "candidate_match", error: null });
@@ -138,6 +151,18 @@ it("reuses the candidate task idempotency key after an uncertain start failure",
   await act(async () => launch.click());
   await act(async () => launch.click());
   expect(client.startTask.mock.calls[0]?.[2]).toBe(client.startTask.mock.calls[1]?.[2]);
+});
+
+it("retains separate idempotency keys for interleaved uncertain task starts", async () => {
+  const client = api();
+  client.startTask.mockRejectedValueOnce({ status: 503 }).mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ taskId: "task", status: "running", taskKind: "candidate_match", error: null });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  const match = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")!;
+  const interview = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成专属面试题")!;
+  await act(async () => match.click()); await act(async () => interview.click()); await act(async () => match.click());
+  expect(client.startTask.mock.calls[0]?.[2]).toBe(client.startTask.mock.calls[2]?.[2]);
+  expect(client.startTask.mock.calls[0]?.[2]).not.toBe(client.startTask.mock.calls[1]?.[2]);
 });
 
 it("previews and edits extracted facts and requires an explicit identity decision", async () => {
@@ -189,6 +214,38 @@ it("refreshes analysis after a durable candidate task reaches completion", async
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
   await act(async () => vi.advanceTimersByTimeAsync(1_000));
   expect(container.textContent).toContain("分析版本 v3");
+});
+
+it("uses authoritative terminal failure and keeps it isolated from another selected candidate", async () => {
+  vi.useFakeTimers(); const client = api();
+  client.taskStatus.mockResolvedValue({ taskId: "task", status: "failed", taskKind: "candidate_match", error: "模型失败", positionCandidateId: relationIds[0], candidateId: candidateIds[0] });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人2")?.click());
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(client.taskStatus).toHaveBeenCalledWith(positionId, "task", expect.any(AbortSignal));
+  expect(client.candidateAnalyses).toHaveBeenCalledTimes(2);
+  expect(container.textContent).not.toContain("模型失败");
+  expect(container.textContent).not.toContain("已完成，分析版本已刷新");
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  expect(container.textContent).toContain("模型失败");
+});
+
+it("shows complete structured result, evidence and exact provenance identifiers", async () => {
+  const client = api();
+  client.candidateAnalyses.mockResolvedValue([{ ...analysis,
+    result: { summary: "技能匹配", dimensions: { architecture: "strong" } },
+    evidence: [{ claim: "Python", source: { document_id: candidateDocument.documentId, locator: "page:2" } }],
+    feedbackIds: [newestAnalysisId],
+  }]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  expect(container.textContent).toContain('"architecture": "strong"');
+  expect(container.textContent).toContain("page:2");
+  expect(container.textContent).toContain(candidateDocument.documentId);
+  expect(container.textContent).toContain(contextId);
+  expect(container.textContent).toContain(newestAnalysisId);
 });
 
 it("disables upload and all candidate mutations in hard-stale read-only mode", async () => {

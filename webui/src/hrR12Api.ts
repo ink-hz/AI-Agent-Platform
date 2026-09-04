@@ -85,14 +85,18 @@ function feedback(value: unknown): HrHumanFeedback {
   const raw = object(value); if (!["accepted", "rejected", "correction"].includes(String(raw.feedback_kind))) throw new Error("HR R1.2 feedback response invalid");
   return { feedbackId: identifier(raw.feedback_id), positionCandidateId: identifier(raw.position_candidate_id), analysisVersionId: identifier(raw.analysis_version_id), feedbackKind: raw.feedback_kind as HrHumanFeedback["feedbackKind"], conclusionKey: string(raw.conclusion_key), correction: raw.correction === null ? null : string(raw.correction), reason: string(raw.reason), createdAt: string(raw.created_at) };
 }
-function task(value: unknown): HrTaskRecord {
+function task(value: unknown, requireCandidateBinding = false): HrTaskRecord {
   const raw = object(value);
   if (!["accepted", "running", "completed", "failed"].includes(String(raw.status)) || !TASK_KINDS.has(String(raw.task_kind))) throw new Error("HR R1.2 task response invalid");
+  const positionCandidateId = raw.position_candidate_id == null ? null : identifier(raw.position_candidate_id);
+  const candidateId = raw.candidate_id == null ? null : identifier(raw.candidate_id);
+  if (requireCandidateBinding && (!positionCandidateId || !candidateId)) throw new Error("HR R1.2 task binding invalid");
   return {
     taskId: string(raw.task_id),
     status: raw.status as HrTaskRecord["status"],
     taskKind: raw.task_kind as HrTaskKind,
     error: raw.error === undefined || raw.error === null ? null : string(raw.error),
+    positionCandidateId, candidateId,
   };
 }
 
@@ -155,7 +159,8 @@ export function createHrR12Api(csrfToken: string) {
     appendCandidateFeedback(positionCandidateId: string, input: HumanFeedbackInput, requestId: string, signal?: AbortSignal): Promise<HrHumanFeedback> { return write(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/feedback`, requestId, { analysis_version_id: identifier(input.analysisVersionId), feedback_kind: input.feedbackKind, conclusion_key: input.conclusionKey, correction: input.correction, reason: input.reason }, signal).then(feedback); },
     compareCandidates(positionId: string, positionCandidateIds: string[], contextVersionId: string, requestId: string, signal?: AbortSignal): Promise<HrCandidateAnalysisVersion> { return write(positionPath(positionId, "/candidate-comparisons"), requestId, { position_candidate_ids: positionCandidateIds.map(identifier), context_version_id: identifier(contextVersionId), agent_version: "hr-r12", model_version: "platform" }, signal).then(analysis); },
     startTask<K extends HrStartableTaskKind>(positionId: string, taskKind: K, requestId: string, input: StartTaskInput<K>, signal?: AbortSignal): Promise<HrTaskRecord> { startableTaskKind(taskKind); return write(positionPath(positionId, "/tasks"), requestId, taskBody(taskKind, input), signal).then(task); },
-    activeTasks(positionId: string, signal?: AbortSignal): Promise<HrTaskRecord[]> { return request(positionPath(positionId, "/tasks?status=active"), { signal }).then((value) => items(value).map(task)); },
+    activeTasks(positionId: string, signal?: AbortSignal): Promise<HrTaskRecord[]> { return request(positionPath(positionId, "/tasks?status=active"), { signal }).then((value) => items(value).map((item) => task(item))); },
+    taskStatus(positionId: string, taskId: string, signal?: AbortSignal): Promise<HrTaskRecord> { return request(positionPath(positionId, `/tasks/${encodeURIComponent(identifier(taskId))}`), { signal }).then((value) => task(value, true)); },
   };
 }
 export type HrR12Api = ReturnType<typeof createHrR12Api>;

@@ -66,8 +66,20 @@ it("reports a confirmed context immediately and blocks every write while read-on
 it("opens history in an accessible focusable drawer", async () => {
   const api = { context: vi.fn().mockResolvedValue({ current: base, history: [base], drafts: [] }), confirmContext: vi.fn(), compareContext: vi.fn() };
   await act(async () => root.render(<HrPositionContextPanel api={api as never} positionId={positionId} />));
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("历史版本"))?.click());
+  const opener = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("历史版本"))!;
+  await act(async () => opener.click());
   const drawer = container.querySelector('[role="dialog"][aria-modal="true"]');
   expect(drawer?.getAttribute("aria-label")).toBe("岗位上下文历史版本");
   expect(document.activeElement?.getAttribute("aria-label")).toBe("关闭历史版本");
+  await act(async () => drawer?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(document.activeElement).toBe(opener);
+});
+
+it("reuses context confirmation id after an uncertain response", async () => {
+  const api = { context: vi.fn().mockResolvedValue({ current: base, history: [base], drafts: [draft] }), confirmContext: vi.fn().mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce(current), compareContext: vi.fn() };
+  await act(async () => root.render(<HrPositionContextPanel api={api as never} positionId={positionId} />));
+  await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click());
+  const confirm = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "确认选中模块")!;
+  await act(async () => confirm.click()); await act(async () => confirm.click());
+  expect(api.confirmContext.mock.calls[0]?.[5]).toBe(api.confirmContext.mock.calls[1]?.[5]);
 });

@@ -62,3 +62,32 @@ it("closes synchronously pre-opened batch windows when a ticket fails", async ()
   expect(first.location.replace).toHaveBeenCalled();
   expect(second.close).toHaveBeenCalled();
 });
+
+it("reloads visible resources when the parent refresh generation changes", async () => {
+  const client = api();
+  await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} refreshGeneration={0} />));
+  client.resources.mockResolvedValue({ materials: [], artifacts: [] });
+  await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} refreshGeneration={1} />));
+  expect(client.resources).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("当前岗位还没有已绑定材料");
+});
+
+it("does not issue preview or download tickets while read only", async () => {
+  const client = api(); vi.spyOn(window, "open");
+  client.resources.mockResolvedValue({ materials: [], artifacts: [{ ...(await api().resources()).artifacts[0], previewAvailable: true }] });
+  await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} readOnly />));
+  expect([...container.querySelectorAll<HTMLButtonElement>(".hr-resource-actions button")].every((button) => button.disabled)).toBe(true);
+  expect([...container.querySelectorAll<HTMLInputElement>('.hr-resource-actions input[type="checkbox"]')].every((input) => input.disabled)).toBe(true);
+  expect(client.downloadResource).not.toHaveBeenCalled();
+  expect(window.open).not.toHaveBeenCalled();
+});
+
+it("reuses the ticket request id after an uncertain response", async () => {
+  const popup = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+  vi.spyOn(window, "open").mockImplementation(() => ({ ...popup, location: { replace: vi.fn() }, close: vi.fn() }) as never);
+  const client = api(); client.downloadResource.mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ contentPath: ticketPath, expiresAt: "2026-09-04T00:05:00Z" });
+  await act(async () => root.render(<HrPositionResourcesPanel api={client as never} positionId={positionId} />));
+  const download = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载面试方案.docx")!;
+  await act(async () => download.click()); await act(async () => download.click());
+  expect(client.downloadResource.mock.calls[0]?.[2]).toBe(client.downloadResource.mock.calls[1]?.[2]);
+});

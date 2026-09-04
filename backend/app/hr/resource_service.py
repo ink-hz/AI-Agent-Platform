@@ -6,6 +6,8 @@ from collections.abc import Callable
 from typing import Literal, Protocol
 from uuid import UUID
 
+from app.attachments.download_service import DownloadNotFound
+
 from .resource_models import (
     PositionArtifactItem,
     PositionMaterialItem,
@@ -54,7 +56,7 @@ class PsycopgPositionResourceRepository:
     def _item(self, owner_id: UUID, row, *, artifact_id: UUID | None = None, artifact_version: int | None = None):
         try:
             attachment = self._attachments.attachment(owner_id, row["attachment_id"])
-        except Exception:  # one unreadable historical name must not hide the other resources
+        except DownloadNotFound:  # one erased/unreadable historical row must not hide siblings
             attachment = None
         media_type = (
             getattr(attachment, "detected_mime", None)
@@ -120,6 +122,7 @@ class PsycopgPositionResourceRepository:
             "as download_available,"
             "exists(select 1 from platform_attachments.derivatives derivative where "
             "derivative.attachment_id=attachment.attachment_id and derivative.state='ready' and "
+            "derivative.retained_until>now() and "
             "derivative.kind in ('thumbnail','preview')) as preview_available "
             "from platform_hr.position_materials material "
             "join platform_attachments.attachments attachment using (attachment_id) "
@@ -163,6 +166,7 @@ class PsycopgPositionResourceRepository:
             "as download_available,"
             "exists(select 1 from platform_attachments.derivatives derivative where "
             "derivative.attachment_id=version.attachment_id and derivative.state='ready' and "
+            "derivative.retained_until>now() and "
             "derivative.kind in ('thumbnail','preview')) as preview_available "
             "from platform_hr.position_artifacts linked "
             "join platform_attachments.artifacts artifact using (artifact_id) "

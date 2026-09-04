@@ -78,7 +78,7 @@ async function openMaterialDrawer(container: HTMLElement) {
 function dependencies() {
   const r12Api = {
     resources: vi.fn().mockResolvedValue({ materials: [{ attachmentId: "55555555-5555-4555-8555-555555555555", filename: "岗位说明.pdf", mediaType: "application/pdf", state: "ready", sizeBytes: 10, createdAt: "2026-09-04T00:00:00Z", sourceConversationId: null, sourceTurnId: null, previewAvailable: true, downloadAvailable: true }], artifacts: [] }),
-    context: vi.fn().mockResolvedValue({ current: null, drafts: [], history: [] }), activeTasks: vi.fn().mockResolvedValue([]), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "jd", error: null }),
+    context: vi.fn().mockResolvedValue({ current: null, drafts: [], history: [] }), activeTasks: vi.fn().mockResolvedValue([]), taskStatus: vi.fn(), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "jd", error: null }),
     confirmContext: vi.fn(), compareContext: vi.fn(), candidateDrafts: vi.fn().mockResolvedValue([]), positionCandidates: vi.fn().mockResolvedValue([]), candidate: vi.fn(), candidateDocuments: vi.fn(), candidateAnalyses: vi.fn(), candidateFeedback: vi.fn(), retryDraft: vi.fn(), confirmDraft: vi.fn(), createCandidateDraftBatch: vi.fn(), createCandidateAnalysis: vi.fn(), appendCandidateFeedback: vi.fn(), compareCandidates: vi.fn(), downloadResource: vi.fn(),
   };
   return {
@@ -214,6 +214,18 @@ describe("HrPositionWorkspace", () => {
     expect(material.checked).toBe(false);
   });
 
+  it("retains selected materials when a resolved task start reports failed", async () => {
+    const deps = dependencies();
+    deps.r12Api.startTask.mockResolvedValue({ taskId: "task", status: "failed", taskKind: "jd", error: "dispatch failed" });
+    await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
+    await openMaterialDrawer(container);
+    const material = container.querySelector<HTMLInputElement>('input[name="quick-task-material"]')!;
+    await act(async () => material.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成JD")?.click());
+    expect(material.checked).toBe(true);
+    expect(container.textContent).toContain("执行失败");
+  });
+
   it("resets per-turn materials when the current conversation changes", async () => {
     const deps = dependencies();
     await act(async () => root.render(<HrPositionWorkspace account={account} conversationId={ACTIVE_ID} positionId={POSITION_ID} {...deps} />));
@@ -261,9 +273,15 @@ describe("HrPositionWorkspace", () => {
   it("uses an accessible material drawer and roving keyboard tabs", async () => {
     const deps = dependencies();
     await act(async () => root.render(<HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />));
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("本轮材料"))?.click());
-    expect(container.querySelector('[role="dialog"][aria-label="本轮任务材料"]')).not.toBeNull();
+    const opener = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("本轮材料"))!;
+    await act(async () => opener.click());
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="本轮任务材料"]')!;
+    expect(dialog).not.toBeNull();
     expect(document.activeElement?.getAttribute("aria-label")).toBe("关闭本轮材料");
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true })));
+    expect(document.activeElement?.getAttribute("name")).toBe("quick-task-material");
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.activeElement).toBe(opener);
     const active = container.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')!;
     expect(active.tabIndex).toBe(0);
     await act(async () => active.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
@@ -278,5 +296,13 @@ describe("HrPositionWorkspace", () => {
     expect(container.querySelector<HTMLInputElement>('section[aria-label="批量简历导入"] input[type="file"]')?.disabled).toBe(true);
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成JD")?.click());
     expect(deps.r12Api.startTask).not.toHaveBeenCalled();
+  });
+
+  it("blocks resource ticket writes in hard-stale mode", async () => {
+    const deps = dependencies();
+    await act(async () => root.render(<HrPositionWorkspace account={{ ...account, hard_stale_read_only: true }} positionId={POSITION_ID} section="artifacts" {...deps} />));
+    expect([...container.querySelectorAll<HTMLButtonElement>(".hr-resource-actions button")].every((button) => button.disabled)).toBe(true);
+    expect([...container.querySelectorAll<HTMLInputElement>('.hr-resource-actions input[type="checkbox"]')].every((input) => input.disabled)).toBe(true);
+    expect(deps.r12Api.downloadResource).not.toHaveBeenCalled();
   });
 });

@@ -148,6 +148,16 @@ Response:
 }
 ```
 
+### Reconcile one candidate task to a truthful terminal state
+
+`GET /api/hr/positions/{position_id}/tasks/{task_id}`
+
+The response uses the task shape above and, for candidate tasks, additionally returns
+the exact `candidate_id` and `position_candidate_id`. The browser rejects a mismatched
+binding, renders `failed` with its error rather than inferring success from absence in
+the active list, and refreshes analysis versions only for the candidate that launched
+the completed task.
+
 The server remains responsible for exact owner/position authorization, idempotent
 replay, original envelope recovery after browser/worker restart, and deriving status
 from durable execution records.
@@ -179,13 +189,27 @@ Fresh GREEN evidence after the second review:
 - Ruff import check on changed backend modules/tests: passed after formatting.
 - `git diff --check`: passed.
 
+Fresh GREEN evidence after final independent-review remediation:
+
+- Full frontend suite: `106` files / `903` tests passed.
+- Backend resource/API suite: `12 passed in 0.21s`.
+- `npm run build`: TypeScript and Vite production build passed; only the existing
+  chunk-size advisory was emitted.
+- `python -m compileall -q backend/app/hr`: passed.
+- Added RED→GREEN coverage for section deep-link mounting, authoritative candidate
+  task terminal status and binding, interleaved/persistent mutation IDs, failed-task
+  material retention, hard-stale resource tickets, resource-panel refresh, complete
+  analysis provenance, derivative expiry, typed row degradation, polling reset, and
+  drawer focus trapping/restoration.
+
 ## Remaining integration risks and boundaries
 
-- The durable `GET/POST /tasks` adapter is intentionally owned by the parent integration
-  branch. Until it is mounted against the existing durable engine, browser/worker
-  restart recovery cannot be proven end-to-end from this isolated workbench branch.
-- App/router mounting and historical-import CLI composition are intentionally excluded
-  here and must be covered by parent RED acceptance tests.
+- The durable `GET/POST /tasks` adapter, including the new single-task terminal lookup,
+  remains owned by the parent integration branch. Until it is mounted against the
+  existing durable engine, browser/worker restart recovery cannot be proven end-to-end
+  from this isolated workbench branch.
+- App/router mounting is now implemented and covered by a member deep-link refresh test;
+  historical-import CLI composition remains parent integration scope.
 - The resource repository query is unit-verified against the real schema contract but
   was not exercised against a live PostgreSQL instance in this isolated worktree.
 - The broad frontend suite retains the pre-existing jsdom `Window.scrollTo` warning in

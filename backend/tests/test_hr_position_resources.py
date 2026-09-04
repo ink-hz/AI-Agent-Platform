@@ -2,13 +2,15 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.attachments.conversation_models import AttachmentRecord
+from app.attachments.download_service import DownloadNotFound
+from app.attachments.repository import AttachmentRepositoryError
 from app.hr.resource_models import PositionArtifactItem, PositionMaterialItem
 from app.hr.resource_service import (
     HrPositionResourceService,
     PsycopgPositionResourceRepository,
     ResourceNotFound,
+    ResourceUnavailable,
 )
 
 OWNER = UUID("00000000-0000-4000-8000-000000000001")
@@ -178,7 +180,7 @@ def test_resource_projection_uses_download_boundaries_and_degrades_one_unreadabl
     class PartiallyUnreadable(Attachments):
         def attachment(self, owner_id, attachment_id):
             if attachment_id == EXPIRED:
-                raise RuntimeError("encrypted metadata unavailable")
+                raise DownloadNotFound()
             return super().attachment(owner_id, attachment_id)
 
     connection = Connection(rows)
@@ -198,3 +200,26 @@ def test_resource_projection_uses_download_boundaries_and_degrades_one_unreadabl
     assert "immutable_locator is not null" in query
     assert "erasure_jobs" in query
     assert "derivatives" in query
+
+
+def test_preview_derivative_must_be_unexpired():
+    connection = Connection()
+    repository = PsycopgPositionResourceRepository(lambda: connection, Attachments())
+
+    repository.materials_for_position(OWNER, POSITION)
+
+    query, _ = connection.queries[0]
+    derivative = query[query.index("exists(select 1 from platform_attachments.derivatives"):]
+    assert "derivative.retained_until>now()" in derivative.split("from platform_hr.position_materials", 1)[0]
+
+
+def test_systemic_attachment_repository_failure_is_not_degraded_to_one_bad_row():
+    class BrokenAttachments(Attachments):
+        def attachment(self, owner_id, attachment_id):
+            raise AttachmentRepositoryError("database unavailable")
+
+    repository = PsycopgPositionResourceRepository(lambda: Connection(), BrokenAttachments())
+
+    with pytest.raises(ResourceUnavailable) as raised:
+        repository.materials_for_position(OWNER, POSITION)
+    assert isinstance(raised.value.__cause__, AttachmentRepositoryError)
