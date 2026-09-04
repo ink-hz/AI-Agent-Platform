@@ -1980,7 +1980,9 @@ body {
 .hr-workspace-platform-link:hover { background: rgba(255,255,255,.78); color: #18569e; }
 .hr-workspace-stale { width: min(1240px,calc(100% - 36px)); box-sizing: border-box; margin: -4px auto 10px; padding: 9px 13px; border: 1px solid #e7d09d; border-radius: 10px; background: rgba(255,249,231,.94); color: #805300; font-size: 12px; }
 .hr-workspace-body { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
-.hr-workspace-body > .hr-position-index { height: 100%; box-sizing: border-box; overflow-y: auto; }
+.hr-workspace-chat-panel,.hr-workspace-position-panel { height: 100%; min-height: 0; }
+.hr-workspace-chat-panel { overflow: hidden; }
+.hr-workspace-position-panel { overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
 
 .agent-use-workspace[data-agent-id="hr-bot"] {
   --brand: #185fa9;

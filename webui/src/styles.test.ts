@@ -100,6 +100,9 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".hr-workspace-shell")).toContain("background: #eef1f4");
     expect(rule(".hr-workspace-topbar")).toContain("backdrop-filter: blur(20px) saturate(135%)");
     expect(rule(".hr-workspace-body")).toContain("min-height: 0");
+    expect(rule(".hr-workspace-chat-panel,.hr-workspace-position-panel")).toContain("height: 100%");
+    expect(rule(".hr-workspace-chat-panel,.hr-workspace-position-panel")).toContain("min-height: 0");
+    expect(styles).toContain(".hr-workspace-position-panel { overflow-x: hidden; overflow-y: auto;");
     expect(rule('.agent-use-workspace[data-agent-id="hr-bot"]')).toContain("grid-template-columns: 268px minmax(0, 1fr)");
     expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .brain-workspace-main')).toContain("background: #f7f8fa");
     expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-workspace-grid')).toContain("grid-template-columns: minmax(0, 1fr) 296px");
