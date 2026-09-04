@@ -636,7 +636,7 @@ def _confirm_candidates_and_project_matches(
                 pytest.raises(psycopg.errors.UniqueViolation),
             ):
                 connection.execute(
-                    "select platform_hr.create_position_task_record_v79("
+                    "select platform_hr.create_position_task_record_v78("
                     "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,%s::uuid[],"
                     "%s::uuid[],%s,%s,%s,%s,%s)",
                     (

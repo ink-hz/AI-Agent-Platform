@@ -6,7 +6,7 @@ alter table platform_hr.position_task_requests
   add column candidate_snapshot_sha256 text;
 
 alter table platform_hr.position_task_requests
-  add constraint position_task_candidate_snapshot_shape_v79 check (
+  add constraint position_task_candidate_snapshot_shape_v78 check (
     cardinality(document_ids)<=100
     and cardinality(document_attachment_ids)<=100
     and cardinality(human_feedback_ids)<=100
@@ -31,7 +31,7 @@ alter table platform_hr.position_task_requests
     )
   );
 
-create function platform_hr.candidate_task_snapshot_sha256_v79(
+create function platform_hr.candidate_task_snapshot_sha256_v78(
   selected_candidate_id uuid,
   selected_position_candidate_id uuid,
   selected_context_version_id uuid,
@@ -52,7 +52,7 @@ as $function$
     encode(convert_to(selected_prompt_context,'UTF8'),'hex'),'UTF8')),'hex')
 $function$;
 
-create function platform_hr.create_position_task_record_v79(
+create function platform_hr.create_position_task_record_v78(
   selected_task_record_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -150,7 +150,7 @@ begin
     or request.document_attachment_ids<>selected_document_attachment_ids
     or request.human_feedback_ids<>selected_human_feedback_ids
     or request.candidate_snapshot_sha256<>
-      platform_hr.candidate_task_snapshot_sha256_v79(
+      platform_hr.candidate_task_snapshot_sha256_v78(
         request.candidate_id,request.position_candidate_id,
         request.expected_context_version_id,request.document_ids,
         request.document_attachment_ids,request.human_feedback_ids,
@@ -203,7 +203,7 @@ begin
 end
 $function$;
 
-create function platform_hr.guard_position_task_request_snapshot_v79()
+create function platform_hr.guard_position_task_request_snapshot_v78()
 returns trigger language plpgsql set search_path=pg_catalog,platform_hr
 as $function$
 begin
@@ -224,11 +224,11 @@ begin
 end
 $function$;
 
-create trigger position_task_request_snapshot_immutable_v79
+create trigger position_task_request_snapshot_immutable_v78
 before update or delete on platform_hr.position_task_requests
-for each row execute function platform_hr.guard_position_task_request_snapshot_v79();
+for each row execute function platform_hr.guard_position_task_request_snapshot_v78();
 
-create function platform_hr.create_position_task_request_v79(
+create function platform_hr.create_position_task_request_v78(
   selected_task_request_id uuid,
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -250,7 +250,7 @@ declare selected platform_hr.position_task_requests%rowtype;
 declare selected_snapshot_sha256 text;
 declare matched_documents integer;
 declare active_documents integer;
-declare matched_feedback integer;
+declare current_feedback_ids uuid[];
 begin
   if session_user not in ('platform_control_app','platform_control_app_preview') then
     raise insufficient_privilege;
@@ -278,7 +278,7 @@ begin
       raise no_data_found using message='candidate task snapshot unavailable';
     end if;
     selected_candidate_prompt_context:=btrim(selected_candidate_prompt_context);
-    selected_snapshot_sha256:=platform_hr.candidate_task_snapshot_sha256_v79(
+    selected_snapshot_sha256:=platform_hr.candidate_task_snapshot_sha256_v78(
       selected_candidate_id,selected_position_candidate_id,
       selected_expected_context_version_id,selected_document_ids,
       selected_document_attachment_ids,selected_human_feedback_ids,
@@ -360,21 +360,50 @@ begin
       or active_documents<>cardinality(selected_document_ids) then
       raise no_data_found using message='candidate task documents unavailable';
     end if;
-    perform feedback.feedback_id from unnest(selected_human_feedback_ids) requested(feedback_id)
-    join platform_hr.human_feedback feedback
-      on feedback.feedback_id=requested.feedback_id
-      and feedback.owner_internal_user_id=selected_owner_internal_user_id
-      and feedback.position_candidate_id=selected_position_candidate_id
-    join platform_hr.candidate_analysis_versions analysis
-      on analysis.analysis_version_id=feedback.analysis_version_id
-      and analysis.owner_internal_user_id=feedback.owner_internal_user_id
+    perform analysis.analysis_version_id
+    from platform_hr.candidate_analysis_versions analysis
+    where analysis.owner_internal_user_id=selected_owner_internal_user_id
       and analysis.position_candidate_id=selected_position_candidate_id
       and analysis.position_id=selected_position_id
       and analysis.candidate_id=selected_candidate_id
       and analysis.context_version_id=selected_expected_context_version_id
-    for update of feedback,analysis;
-    get diagnostics matched_feedback=row_count;
-    if matched_feedback<>cardinality(selected_human_feedback_ids) then
+    for update;
+    perform feedback.feedback_id
+    from platform_hr.human_feedback feedback
+    join platform_hr.candidate_analysis_versions analysis
+      on analysis.analysis_version_id=feedback.analysis_version_id
+      and analysis.owner_internal_user_id=feedback.owner_internal_user_id
+    where feedback.owner_internal_user_id=selected_owner_internal_user_id
+      and feedback.position_candidate_id=selected_position_candidate_id
+      and analysis.position_candidate_id=selected_position_candidate_id
+      and analysis.position_id=selected_position_id
+      and analysis.candidate_id=selected_candidate_id
+      and analysis.context_version_id=selected_expected_context_version_id
+    for update of feedback;
+    select coalesce(array_agg(
+      feedback.feedback_id order by feedback.created_at desc,feedback.feedback_id desc
+    ),'{}'::uuid[]) into current_feedback_ids
+    from platform_hr.human_feedback feedback
+    join platform_hr.candidate_analysis_versions analysis
+      on analysis.analysis_version_id=feedback.analysis_version_id
+      and analysis.owner_internal_user_id=feedback.owner_internal_user_id
+    where feedback.owner_internal_user_id=selected_owner_internal_user_id
+      and feedback.position_candidate_id=selected_position_candidate_id
+      and analysis.position_candidate_id=selected_position_candidate_id
+      and analysis.position_id=selected_position_id
+      and analysis.candidate_id=selected_candidate_id
+      and analysis.context_version_id=selected_expected_context_version_id;
+    if (
+      cardinality(current_feedback_ids)>0
+      and (
+        cardinality(selected_human_feedback_ids)=0
+        or selected_human_feedback_ids<>
+          current_feedback_ids[1:cardinality(selected_human_feedback_ids)]
+      )
+    ) or (
+      cardinality(current_feedback_ids)=0
+      and cardinality(selected_human_feedback_ids)<>0
+    ) then
       raise no_data_found using message='candidate task feedback unavailable';
     end if;
   end if;
@@ -412,10 +441,10 @@ revoke all on function platform_hr.create_position_task_record_v71(
 ) from platform_control_app,platform_control_app_preview,
   platform_brain_worker,platform_brain_worker_preview,
   platform_control_maintenance,platform_control_maintenance_preview;
-revoke all on function platform_hr.create_position_task_request_v79(
+revoke all on function platform_hr.create_position_task_request_v78(
   uuid,uuid,uuid,uuid,text,text,uuid,uuid[],uuid,uuid,uuid[],uuid[],uuid[],text
 ) from public;
-revoke all on function platform_hr.create_position_task_record_v79(
+revoke all on function platform_hr.create_position_task_record_v78(
   uuid,uuid,uuid,uuid,text,uuid,uuid,uuid[],uuid,uuid,uuid[],uuid[],
   uuid,uuid,text,text,text
 ) from public;
@@ -434,11 +463,11 @@ begin
       message='HR candidate task scope migration owner/environment mismatch';
   end if;
   execute format(
-    'grant execute on function platform_hr.create_position_task_request_v79('
+    'grant execute on function platform_hr.create_position_task_request_v78('
     'uuid,uuid,uuid,uuid,text,text,uuid,uuid[],uuid,uuid,uuid[],uuid[],uuid[],text) to %I',
     selected_app);
   execute format(
-    'grant execute on function platform_hr.create_position_task_record_v79('
+    'grant execute on function platform_hr.create_position_task_record_v78('
     'uuid,uuid,uuid,uuid,text,uuid,uuid,uuid[],uuid,uuid,uuid[],uuid[],'
     'uuid,uuid,text,text,text) to %I',selected_app);
 end

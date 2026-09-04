@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Base implementation on the completed HR recruiting-loop plan and migrations through 077.
+- Base implementation on the completed HR recruiting-loop plan and migrations through 078.
 - Panorama Analysis is an independent first-level HR function, not a Position subpage.
 - Only companies explicitly added by the user are followed; mentioning a company in chat does not create a watch.
 - P0 tracks publicly accessible recruitment pages only; do not log in to enterprise recruiting accounts and do not build an unbounded web crawler.
@@ -25,13 +25,13 @@
 ### Task 1: Create the Panorama data and migration contract
 
 **Files:**
-- Create: `backend/control_migrations/078_hr_panorama_intelligence.sql`
+- Create: `backend/control_migrations/079_hr_panorama_intelligence.sql`
 - Create: `backend/tests/test_hr_panorama_migration.py`
 - Create: `backend/tests/test_hr_panorama_database.py`
 
 **Interfaces:**
 - Produces: `talent_sources`, `panorama_runs`, `public_job_snapshots`, `talent_insight_versions`, and `position_insight_retrievals`.
-- Produces app-only idempotent create/list/transition functions suffixed `_v78`.
+- Produces app-only idempotent create/list/transition functions suffixed `_v79`.
 
 - [ ] **Step 1: Write failing static and database tests**
 
@@ -50,9 +50,9 @@ Assert exact-owner foreign keys, bounded JSON, URL scheme limited to HTTPS, appe
 - [ ] **Step 2: Run tests RED**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/test_hr_panorama_migration.py tests/test_hr_panorama_database.py -q`  
-Expected: FAIL because migration 078 is absent.
+Expected: FAIL because migration 079 is absent.
 
-- [ ] **Step 3: Implement migration 078**
+- [ ] **Step 3: Implement migration 079**
 
 Use content hash plus public job key for snapshot deduplication. A collection run may be partially completed. Status transitions are `queued → running → completed|partially_completed|failed`; a failed source stores a bounded reason code but does not delete prior snapshots.
 
@@ -64,7 +64,7 @@ Expected: PASS in preview and production migration roles.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/control_migrations/078_hr_panorama_intelligence.sql backend/tests/test_hr_panorama_migration.py backend/tests/test_hr_panorama_database.py
+git add backend/control_migrations/079_hr_panorama_intelligence.sql backend/tests/test_hr_panorama_migration.py backend/tests/test_hr_panorama_database.py
 git commit -m "feat(hr): add panorama intelligence schema"
 ```
 

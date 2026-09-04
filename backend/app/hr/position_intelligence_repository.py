@@ -149,7 +149,7 @@ class PositionIntelligenceRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_hr.create_position_task_request_v79("
+                    "select (platform_hr.create_position_task_request_v78("
                     "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,"
                     "%s::uuid[],%s::uuid[],%s::uuid[],%s)).*",
                     (

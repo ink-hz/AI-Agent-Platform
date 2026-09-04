@@ -239,7 +239,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 75
+    assert max(versions) == 78
 
 
 def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:

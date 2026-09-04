@@ -449,8 +449,8 @@ class HrTaskContextProvider:
             ),
             candidate_id=scope.candidate_id,
             position_candidate_id=scope.position_candidate_id,
-            document_attachment_ids=tuple(sorted(document_ids, key=str)),
-            human_feedback_ids=tuple(sorted(feedback_ids, key=str)),
+            document_attachment_ids=document_ids,
+            human_feedback_ids=feedback_ids,
             prompt_context=prompt_context,
             canonical_sha256="0" * 64,
         )
@@ -743,7 +743,7 @@ class PostgresHrTaskContextSource:
                 if request_row is None:
                     raise HrTaskContextError("HR task selection unavailable")
                 return connection.execute(
-                    "select (platform_hr.create_position_task_record_v79("
+                    "select (platform_hr.create_position_task_record_v78("
                     "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,%s::uuid[],"
                     "%s::uuid[],%s,%s,%s,%s,%s)).*",
                     (
