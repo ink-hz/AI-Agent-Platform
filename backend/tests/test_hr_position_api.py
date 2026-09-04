@@ -238,6 +238,14 @@ def test_position_mutations_require_writable_identity_and_idempotency_uuid() -> 
     assert oversized.status_code == 422
     assert oversized.json() == {"detail": "HR position request invalid"}
 
+    oversized_evidence = current.post(
+        "/api/hr/position-drafts",
+        json={**payload, "evidence": {"excerpt": "中" * 22_000}},
+        headers={"Idempotency-Key": str(uuid4())},
+    )
+    assert oversized_evidence.status_code == 422
+    assert oversized_evidence.json() == {"detail": "HR position request invalid"}
+
 
 def test_draft_commands_forward_versions_and_conversation_binding() -> None:
     client, service, _ = _client()

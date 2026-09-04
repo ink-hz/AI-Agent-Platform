@@ -84,6 +84,7 @@ describe("HrPositionWorkspace", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   beforeEach(() => {
+    window.history.replaceState({}, "", "/");
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   });
@@ -123,6 +124,18 @@ describe("HrPositionWorkspace", () => {
       "梳理面试方案", "csrf", "hr-bot", { positionId: POSITION_ID },
     );
     expect(deps.onOpenConversation).toHaveBeenCalledWith(`/hr/positions/${POSITION_ID}/conversations/${ACTIVE_ID}`);
+  });
+
+  it("keeps the all-positions link inside the preview deployment prefix", async () => {
+    window.history.replaceState({}, "", "/_preview/dingtalk-r1/hr/positions/example");
+    const deps = dependencies();
+
+    await act(async () => root.render(
+      <HrPositionWorkspace account={account} positionId={POSITION_ID} {...deps} />,
+    ));
+
+    expect(container.querySelector<HTMLAnchorElement>(".hr-position-context a")?.getAttribute("href"))
+      .toBe("/_preview/dingtalk-r1/hr/");
   });
 
   it("refuses a deep-linked conversation outside the position and keeps hard-stale workspaces read-only", async () => {

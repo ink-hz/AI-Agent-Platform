@@ -25,12 +25,40 @@
 - Position、PositionDraft、会话绑定和岗位材料均存储在 Platform Control PostgreSQL。
 - 所有读写按 `owner_internal_user_id` 隔离；越权对象统一表现为不可见。
 - 官网导入和历史发现均使用稳定请求 ID，重复执行不创建重复岗位、草稿或绑定。
+- 每一条导入投影/绑定/草稿及其来源证据在同一数据库事务提交，证据失败时业务写入回滚。
 - 历史发现只建立岗位对象和关系，不重放 Turn，也不伪造历史 Agent 回答。
 - 多岗位会话按岗位分别形成草稿；未经用户确认不自动绑定。
 - Position Detail 返回精确的 `conversation_ids`、`material_attachment_ids` 和
   `artifact_ids`；网页端不以数量或宽泛会话列表推断作用域。
 - 只有用户上传附件可被明确设为岗位材料；Agent 生成附件保留为可下载结果。
 - 官网同步失败不得清空最后有效岗位快照。
+
+## 一次性导入命令
+
+先执行只读预检；确认计数符合预期后，使用同一个 `run-id` 执行写入。命令只输出计数与
+版本，不输出岗位正文、会话正文或密钥：
+
+```bash
+cd backend
+./.venv/bin/python -m app.hr.import_cli \
+  --owner-id <internal-user-uuid> \
+  --run-id <stable-run-uuid> \
+  --database-url-file <database-url-secret-file> \
+  --content-keyring-file <content-keyring-file> \
+  --registry-file <published-jobs.json> \
+  --dry-run
+
+./.venv/bin/python -m app.hr.import_cli \
+  --owner-id <internal-user-uuid> \
+  --run-id <same-stable-run-uuid> \
+  --database-url-file <database-url-secret-file> \
+  --content-keyring-file <content-keyring-file> \
+  --registry-file <published-jobs.json> \
+  --apply
+```
+
+生产运行前仍需单独确认 owner、已发布岗位快照、密钥文件与 `run-id`；本次代码验收不执行
+生产导入。
 
 ## 自动化验收
 
