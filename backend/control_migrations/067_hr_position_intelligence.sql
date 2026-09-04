@@ -110,10 +110,6 @@ create unique index one_current_confirmed_context_v67
   on platform_hr.position_context_versions(position_id)
   where state='confirmed';
 
-create unique index context_display_version_v67
-  on platform_hr.position_context_versions(position_id,version_number)
-  where state in ('confirmed','superseded');
-
 alter table platform_hr.positions
   add column current_official_version_id uuid,
   add column current_context_version_id uuid,
@@ -355,9 +351,10 @@ begin
     if not found then raise no_data_found; end if;
   end if;
   if exists (
-    select 1 from unnest(selected_source_material_attachment_ids) attachment_id
+    select 1 from unnest(selected_source_material_attachment_ids)
+      as selected_attachment(attachment_id)
     left join platform_hr.position_materials material
-      on material.attachment_id=unnest.attachment_id
+      on material.attachment_id=selected_attachment.attachment_id
       and material.position_id=selected_position_id
       and material.owner_internal_user_id=selected_owner_internal_user_id
       and material.active
@@ -471,7 +468,8 @@ begin
     confirmed_module_names
   ) values (
     new_context_id,selected_owner_internal_user_id,selected_position_id,
-    selected_client_request_id,draft.version_number,'confirmed',
+    selected_client_request_id,
+    coalesce(current_context.version_number,0)+1,'confirmed',
     coalesce(current_context.modules,'{}'::jsonb)||confirmed_modules,
     draft.summary,draft.official_position_version_id,
     selected_expected_current_context_version_id,draft.source_conversation_id,
