@@ -515,6 +515,11 @@ export function ConversationPage({
       /> : undefined}
       attachmentPending={uploadPending}
       disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || readOnly}
+      disabledMessage={readOnly
+        ? "当前账号为只读状态。"
+        : active && detail.conversation.mode === "direct_agent"
+          ? `${assistantLabel} 正在处理上一条消息…`
+          : waitingUser ? "请先回答上方问题。" : undefined}
       label={active && detail.conversation.mode === "brain" ? "补充当前任务" : "继续对话"}
       onChange={(value) => {
         setText(value); setSendFailure(false);
