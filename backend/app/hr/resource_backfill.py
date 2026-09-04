@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import Protocol
 from uuid import UUID, uuid5
 
 _BACKFILL_NAMESPACE = UUID("d0562681-7d4a-4cf0-9e11-f2aab1e227cb")
@@ -98,6 +99,18 @@ class AppliedResourceBindings:
     artifact_count: int
     ambiguous_attachment_count: int
     ambiguous_artifact_count: int
+
+
+class HistoricalResourceRepository(Protocol):
+    def conversation_resources(
+        self, owner_id: UUID, conversation_ids: tuple[UUID, ...]
+    ) -> tuple[HistoricalConversationResources, ...]: ...
+
+    def position_bindings_for_conversations(
+        self, owner_id: UUID, conversation_ids: tuple[UUID, ...]
+    ) -> tuple[HistoricalPositionBinding, ...]: ...
+
+    def apply_resource_binding(self, binding: ResourceBinding) -> bool: ...
 
 
 def _binding(owner_id: UUID, position_id: UUID, resource_id: UUID, resource_kind: str) -> ResourceBinding:
