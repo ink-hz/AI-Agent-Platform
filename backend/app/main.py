@@ -1163,7 +1163,7 @@ def create_app(
                 ),
                 conversation_attachment_download_service,
             )
-        if hr_task_context_provider is None:
+        if hr_task_context_provider is None and "direct_agent" in v1_mission_modes:
             def context_is_confirmed(owner_id, position_id, context_version_id):
                 current = position_intelligence_repository.current(
                     owner_id, position_id
