@@ -22,6 +22,7 @@ The candidate subsystem and its durable two-phase parser queue are implemented. 
 - `e6337bd78966169b6a227dd21c51eba729e88cf0` — `fix(hr): bind parser claims to exact owner scope`
 - `db4c76ea7ab0b6b8003671831b423ebf2770cb5e` — `fix(hr): make candidate parsing durably recoverable`
 - `3debdd6c36b66105a2561e5b86c1cbb432fa7924` — `fix(hr): close candidate processing review gaps`
+- `e8c64240b69844ae1685215cba79ecca3b981646` — `fix(hr): make candidate queue restart discoverable`
 
 ## TDD evidence
 
@@ -132,7 +133,7 @@ Review GREEN evidence covers the real `state='confirmed'` position contract; per
 
 The first business-readiness RED cycle added a durable parser-attempt model and failed at import because it was absent. A later pre-integration review proved that its combined claim/bind API could not discover work globally after restart and required a job before the caller knew the draft. The replacement RED cycle failed because `ClaimNextCandidateDraft`, `AttachCandidateDraftExecution`, and `CandidateParserQueue` were absent. GREEN provides a database-only two-phase contract: global atomic `claim_next` with `FOR UPDATE ... SKIP LOCKED`, an initially unbound attempt containing owner/draft/position/attachment/request identity, exact-worker recovery, and a separately idempotent execution attach.
 
-The attach function accepts only the repository-supported `hr-bot`, validates the completed job/turn plus run/mission/conversation owner and deterministic request chain, and rejects position-bound conversations. A processing attempt is the authoritative special-purpose parser input mapping: its retained, ready attachment may be granted to the matching turn without changing the attachment's original conversation ownership. The attach rejects any explicit `turn_input` belonging to another attachment, while an unbound parser turn is valid. Real PostgreSQL coverage includes crash recovery, second-owner and same-owner/wrong-request job substitution, wrong-agent and unfinished-execution rejection, wrong explicit input rejection, lease expiry/requeue, terminal owner/draft/worker isolation, and full-payload terminal replay conflicts. Brain workers receive only function execution grants, never table-wide SELECT; app-role direct start/complete/fail grants and Python bypass methods were removed.
+The attach function accepts only the repository-supported `hr-bot`, validates a terminal job/turn plus run/mission/conversation owner and deterministic request chain, and rejects position-bound conversations. A processing attempt is the authoritative special-purpose parser input mapping: its retained, ready attachment may be granted to the matching turn without changing the attachment's original conversation ownership. The attach rejects any explicit `turn_input` belonging to another attachment, while an unbound parser turn is valid. Real PostgreSQL coverage includes crash recovery, second-owner and same-owner/wrong-request job substitution, wrong-agent and unfinished-execution rejection, wrong explicit input rejection, lease expiry/requeue, successful and failed execution terminals, terminal owner/draft/worker isolation, and full-payload terminal replay conflicts. Brain workers receive only function execution grants, never table-wide SELECT; app-role direct start/complete/fail grants and Python bypass methods were removed.
 
 The position cross-contract RED cycle showed that 101 feedback rows or large corrections could exceed the downstream fragment limits. GREEN keeps all feedback persisted/readable while deterministically selecting newest-first feedback, at most 100 rows, under a 65,536-byte UTF-8 prompt budget. Only injected feedback IDs are returned for later analysis provenance.
 
@@ -147,6 +148,9 @@ analysis snapshot/API/provider/repository: 5 failed
 resume coordinator bypass removal: 5 failed
 repository newest-100 boundary: 1 failed
 revised attempt-authoritative attachment contract: 2 failed
+restart discovery interfaces: 3 failed (queue, repository, and SQL absent)
+real PostgreSQL discovery: UUID aggregate undefined, then GREEN after explicit cast
+terminal failure semantics: failed execution could not be attached, then GREEN
 ```
 
 GREEN behavior now includes:
@@ -157,12 +161,15 @@ GREEN behavior now includes:
 - task context and comparison feedback selection use the relation's exact context; repository queries enforce newest-first `LIMIT 100`, and prompt budgeting returns IDs matching the injected prompt;
 - only claimed queue functions are exposed to the brain role; direct app processing mutations and coordinator/service/repository bypasses are absent;
 - processing-attempt expiry has a partial recovery index.
+- `recover_next(worker_id)` finds the oldest unexpired attempt with `FOR UPDATE SKIP LOCKED`, so restart recovery needs no in-memory attempt ID;
+- `discover_execution(attempt_id, worker_id)` returns exactly one owner/request-scoped, unbound `hr-bot` execution identity, reports zero as not-yet-scheduled, and rejects ambiguity;
+- discovery/attach accept only terminal job/turn states; completion requires successful `completed` status, while failure accepts failed/cancelled/interrupted execution or a completed execution whose output cannot be parsed.
 
 Final focused regression:
 
 ```text
 python -m pytest -q backend/tests/test_hr_candidate_*.py backend/tests/test_hr_resume_batch.py backend/tests/test_conversation_attachment_binding.py
-97 passed, 10 warnings
+98 passed, 10 warnings
 ```
 
 Final static gate before the hardening commit:
@@ -199,5 +206,5 @@ tests/test_hr_candidate_database.py
 2. Candidate 070's context owner foreign keys and position task validation seam were exercised with the actual position 069 migration in disposable production and preview databases.
 3. The 10 warnings are pre-existing Starlette `TestClient` cookie deprecation warnings in `test_conversation_attachment_binding.py`.
 4. No production migration or data apply was run.
-5. Blocking parent-integration dependency: wire MissionOrchestrator/MetaBot dispatch and result decoding to `CandidateParserQueue.claim_next`, `attach_execution`, `recover_attempt`, `complete`, and `fail`. Until that wiring is merged and acceptance-tested, an uploaded draft has a durable queue/worker contract but no automatically scheduled parser in this branch alone.
+5. Blocking parent-integration dependency: wire MissionOrchestrator/MetaBot dispatch and result decoding to `CandidateParserQueue.claim_next`, `recover_next`, `discover_execution`, `attach_execution`, `recover_attempt`, `complete`, and `fail`. Until that wiring is merged and acceptance-tested, an uploaded draft has a durable queue/worker contract but no automatically scheduled parser in this branch alone.
 6. The parent integration must teach `ConversationContextBuilder`/`MissionOrchestrator` to resolve the single processing attempt by the same owner and `turn.client_request_id`, then grant that attempt's sole `attachment_id` as parser input. It must not reassign the attachment's conversation or copy its bytes.
