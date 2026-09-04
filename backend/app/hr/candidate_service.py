@@ -75,6 +75,29 @@ class CandidateService:
             owner_id, position_id, batch_request_id=batch_request_id
         )
 
+    def list_position_candidates(
+        self, owner_id: UUID, position_id: UUID
+    ) -> tuple[PositionCandidate, ...]:
+        return self._repository.list_position_candidates(owner_id, position_id)
+
+    def candidate(self, owner_id: UUID, candidate_id: UUID):
+        return self._repository.candidate_for_owner(owner_id, candidate_id)
+
+    def documents(self, owner_id: UUID, candidate_id: UUID):
+        return self._repository.documents_for_candidate(owner_id, candidate_id)
+
+    def list_analyses(
+        self, owner_id: UUID, position_candidate_id: UUID
+    ) -> tuple[CandidateAnalysisVersion, ...]:
+        return self._repository.list_analyses(owner_id, position_candidate_id)
+
+    def list_feedback(
+        self, owner_id: UUID, position_candidate_id: UUID
+    ) -> tuple[HumanFeedback, ...]:
+        return self._repository.feedback_for_position_candidate(
+            owner_id, position_candidate_id
+        )
+
     def start_draft(
         self, owner_id: UUID, draft_id: UUID, request_id: UUID,
         expected_row_version: int,
