@@ -190,7 +190,7 @@ git commit -m "feat(voc): expose member workbench grants"
 - Modify: `backend/app/voc_extension/routes.py`
 - Modify: `backend/tests/test_dingtalk_auth_api.py`
 - Modify: `backend/tests/test_voc_extension_routes.py`
-- Modify: `backend/tests/test_voc_internal_routes.py`
+- Modify: `backend/tests/test_voc_internal_identity.py`
 
 **Interfaces:**
 - Consumes: `VocWorkbenchAccessService.allows(context)`.
@@ -207,7 +207,7 @@ requests and prove the next request is denied.
 - [ ] **Step 2: Run RED tests**
 
 ```bash
-backend/.venv/bin/pytest -q backend/tests/test_dingtalk_auth_api.py backend/tests/test_voc_extension_routes.py backend/tests/test_voc_internal_routes.py -k 'voc and (grant or management)'
+backend/.venv/bin/pytest -q backend/tests/test_dingtalk_auth_api.py backend/tests/test_voc_extension_routes.py backend/tests/test_voc_internal_identity.py -k 'voc and (grant or management)'
 ```
 
 Expected: granted members remain denied because authorization checks roles only.
@@ -234,8 +234,8 @@ role-only `_manager` check in public VOC extension routes with the same
 - [ ] **Step 4: Run GREEN plus VOC regression tests and commit**
 
 ```bash
-backend/.venv/bin/pytest -q backend/tests/test_dingtalk_auth_api.py backend/tests/test_voc_extension_routes.py backend/tests/test_voc_internal_routes.py
-git add backend/app/voc_extension backend/tests/test_dingtalk_auth_api.py backend/tests/test_voc_extension_routes.py backend/tests/test_voc_internal_routes.py
+backend/.venv/bin/pytest -q backend/tests/test_dingtalk_auth_api.py backend/tests/test_voc_extension_routes.py backend/tests/test_voc_internal_identity.py
+git add backend/app/voc_extension backend/tests/test_dingtalk_auth_api.py backend/tests/test_voc_extension_routes.py backend/tests/test_voc_internal_identity.py
 git commit -m "feat(voc): authorize granted workbench members"
 ```
 
@@ -302,7 +302,7 @@ git commit -m "feat(voc): add owner grant controls"
 - [ ] **Step 1: Run full local gates**
 
 ```bash
-backend/.venv/bin/pytest -q backend/tests/test_control_plane_migration.py backend/tests/test_governance_audit_api.py backend/tests/test_dingtalk_auth_api.py backend/tests/test_voc_extension_routes.py backend/tests/test_voc_internal_routes.py backend/tests/test_main.py
+backend/.venv/bin/pytest -q backend/tests/test_control_plane_migration.py backend/tests/test_governance_audit_api.py backend/tests/test_dingtalk_auth_api.py backend/tests/test_voc_extension_routes.py backend/tests/test_voc_internal_identity.py backend/tests/test_main.py
 npm --prefix webui test -- --run
 npm --prefix webui run build
 git diff --check
