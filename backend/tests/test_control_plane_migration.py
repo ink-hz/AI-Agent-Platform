@@ -86,6 +86,9 @@ VOC_INACTIVE_STAFF_MAPPING_BINDING_MIGRATION = (
 FAE_WORKBENCH_ACCESS_MIGRATION = (
     MIGRATIONS / "063_fae_workbench_access.sql"
 )
+VOC_WORKBENCH_ACCESS_MIGRATION = (
+    MIGRATIONS / "075_voc_workbench_access.sql"
+)
 CONVERSATION_ATTACHMENTS_MIGRATION = (
     MIGRATIONS / "064_conversation_attachments.sql"
 )
@@ -194,6 +197,7 @@ TABLES = {
     "partner_agent_grants",
     "partner_login_attempts",
     "fae_workbench_grants",
+    "voc_workbench_grants",
     "access_page_catalog",
     "user_access_events",
 }
@@ -235,7 +239,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 74
+    assert max(versions) == 75
 
 
 def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
@@ -537,6 +541,33 @@ def test_fae_workbench_access_migration_is_function_only_for_app_role() -> None:
     assert "grant update on platform_control.fae_workbench_grants" not in sql
     assert "grant insert on platform_control.fae_workbench_grants" not in sql
     assert "grant delete on platform_control.fae_workbench_grants" not in sql
+
+
+def test_voc_workbench_access_migration_is_function_only_for_app_role() -> None:
+    sql = migration_sql("075_voc_workbench_access.sql")
+    assert "create table platform_control.voc_workbench_grants" in sql
+    assert "create unique index one_active_voc_workbench_grant" in sql
+    assert "create function platform_control.grant_voc_workbench_access_v75" in sql
+    assert "create function platform_control.replay_voc_workbench_grant_v75" in sql
+    assert "create function platform_control.revoke_voc_workbench_access_v75" in sql
+    assert "create function platform_control.has_voc_workbench_access_v75" in sql
+    assert "create function platform_control.read_voc_workbench_grants_v75" in sql
+    assert "create function platform_control.resolve_active_voc_workbench_member_v75" in sql
+    assert "create function platform_control.validate_voc_workbench_audit_v75" in sql
+    assert "platform_control.validate_fae_workbench_audit_v63" in sql
+    assert "platform_control.validate_fae_session_read_audit_v60" in sql
+    assert "validate_voc_session_read_audit_v60" not in sql
+    for action in ("grant", "revoke"):
+        for result in ("requested", "completed", "failed"):
+            assert f"voc_workbench_{action}_{result}" in sql
+    assert (
+        "create or replace function platform_control.validate_audit_event_v2"
+        not in sql
+    )
+    assert "grant execute on function" in sql
+    assert "grant update on platform_control.voc_workbench_grants" not in sql
+    assert "grant insert on platform_control.voc_workbench_grants" not in sql
+    assert "grant delete on platform_control.voc_workbench_grants" not in sql
 
 
 def test_fae_workbench_member_resolver_exposes_only_exact_function() -> None:
@@ -2866,3 +2897,192 @@ def test_fae_workbench_table_has_no_runtime_direct_mutation_rights(
             app_url,
             "delete from platform_control.fae_workbench_grants",
         )
+
+
+def _append_voc_workbench_request(
+    audit_url: str,
+    *,
+    event_id: uuid.UUID,
+    operation_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    target_id: uuid.UUID,
+    action: str,
+    metadata: dict[str, object],
+) -> None:
+    reason = (
+        "voc_workbench_access_approved"
+        if action == "grant"
+        else "voc_workbench_access_revoked"
+    )
+    target_type = "directory_member" if action == "grant" else "internal_user"
+    with psycopg.connect(audit_url) as connection:
+        connection.execute(
+            "select platform_control.append_audit_event("
+            "%s,%s,%s,%s,%s,%s,'requested',%s,%s::jsonb)",
+            (
+                event_id,
+                actor_id,
+                f"voc_workbench_{action}_requested",
+                target_type,
+                str(target_id),
+                operation_id,
+                reason,
+                json.dumps(
+                    {
+                        "operation_id": str(operation_id),
+                        "result": "requested",
+                        **metadata,
+                    }
+                ),
+            ),
+        )
+
+
+@pytest.mark.postgres
+def test_voc_grant_is_independent_from_fae_and_keeps_member_role(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    seeded = _seed_fae_workbench_directory(environment["admin"])
+    fae_grant = _grant_seeded_fae_member(environment, seeded)
+    member_id = fae_grant["new_user_id"]
+    operation_id = uuid.uuid4()
+    requested_audit_id = uuid.uuid4()
+    _append_voc_workbench_request(
+        environment["urls"]["platform_audit_append"],
+        event_id=requested_audit_id,
+        operation_id=operation_id,
+        actor_id=seeded["owner_id"],
+        target_id=seeded["unique_member_key"],
+        action="grant",
+        metadata={
+            "expected_generation_id": str(seeded["generation_id"]),
+            "expected_member_key": str(seeded["unique_member_key"]),
+        },
+    )
+    grant_parameters = (
+        operation_id,
+        seeded["owner_id"],
+        seeded["unique_name"],
+        seeded["generation_id"],
+        seeded["unique_member_key"],
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        requested_audit_id,
+    )
+    app_url = environment["urls"]["platform_control_app"]
+    with psycopg.connect(app_url) as connection:
+        granted = connection.execute(
+            "select platform_control.grant_voc_workbench_access_v75("
+            + ",".join(("%s",) * 9)
+            + ")",
+            grant_parameters,
+        ).fetchone()[0]
+        replayed = connection.execute(
+            "select platform_control.grant_voc_workbench_access_v75("
+            + ",".join(("%s",) * 9)
+            + ")",
+            grant_parameters,
+        ).fetchone()[0]
+        assert replayed == granted
+        assert granted["internal_user_id"] == str(member_id)
+        assert connection.execute(
+            "select platform_control.has_fae_workbench_access_v63(%s),"
+            "platform_control.has_voc_workbench_access_v75(%s)",
+            (member_id, member_id),
+        ).fetchone() == (True, True)
+
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select role::text from platform_control.internal_users "
+            "where internal_user_id=%s",
+            (member_id,),
+        ).fetchone() == ("member",)
+        connection.execute(
+            "update platform_control.internal_users set status='inactive' "
+            "where internal_user_id=%s",
+            (member_id,),
+        )
+    with psycopg.connect(app_url) as connection:
+        assert connection.execute(
+            "select platform_control.has_voc_workbench_access_v75(%s)",
+            (member_id,),
+        ).fetchone() == (False,)
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.internal_users set status='active',"
+            "locally_invalidated_at=null where internal_user_id=%s",
+            (member_id,),
+        )
+
+    revoke_operation_id = uuid.uuid4()
+    revoke_audit_id = uuid.uuid4()
+    _append_voc_workbench_request(
+        environment["urls"]["platform_audit_append"],
+        event_id=revoke_audit_id,
+        operation_id=revoke_operation_id,
+        actor_id=seeded["owner_id"],
+        target_id=member_id,
+        action="revoke",
+        metadata={"expected_row_version": granted["row_version"]},
+    )
+    with psycopg.connect(app_url) as connection:
+        revoked = connection.execute(
+            "select platform_control.revoke_voc_workbench_access_v75("
+            "%s,%s,%s,%s,%s)",
+            (
+                revoke_operation_id,
+                seeded["owner_id"],
+                member_id,
+                granted["row_version"],
+                revoke_audit_id,
+            ),
+        ).fetchone()[0]
+        assert revoked["row_version"] == granted["row_version"] + 1
+        assert connection.execute(
+            "select platform_control.has_fae_workbench_access_v63(%s),"
+            "platform_control.has_voc_workbench_access_v75(%s)",
+            (member_id, member_id),
+        ).fetchone() == (True, False)
+
+
+@pytest.mark.postgres
+def test_voc_workbench_table_has_no_runtime_direct_mutation_rights(
+    control_database,
+) -> None:
+    for environment in control_database["environments"].values():
+        app_role = environment["roles"][1]
+        with psycopg.connect(environment["admin"]) as connection:
+            for runtime_role in environment["roles"]:
+                assert connection.execute(
+                    "select has_table_privilege(%s,"
+                    "'platform_control.voc_workbench_grants','insert'),"
+                    "has_table_privilege(%s,"
+                    "'platform_control.voc_workbench_grants','update'),"
+                    "has_table_privilege(%s,"
+                    "'platform_control.voc_workbench_grants','delete'),"
+                    "has_table_privilege(%s,"
+                    "'platform_control.voc_workbench_grants','select')",
+                    (runtime_role,) * 4,
+                ).fetchone() == (False, False, False, False)
+                expected = runtime_role == app_role
+                assert connection.execute(
+                    "select has_function_privilege(%s,"
+                    "'platform_control.grant_voc_workbench_access_v75("
+                    "uuid,uuid,text,uuid,uuid,uuid,uuid,uuid,uuid)','execute'),"
+                    "has_function_privilege(%s,"
+                    "'platform_control.replay_voc_workbench_grant_v75("
+                    "uuid,uuid,text)','execute'),"
+                    "has_function_privilege(%s,"
+                    "'platform_control.revoke_voc_workbench_access_v75("
+                    "uuid,uuid,uuid,bigint,uuid)','execute'),"
+                    "has_function_privilege(%s,"
+                    "'platform_control.has_voc_workbench_access_v75(uuid)',"
+                    "'execute'),has_function_privilege(%s,"
+                    "'platform_control.read_voc_workbench_grants_v75()',"
+                    "'execute'),has_function_privilege(%s,"
+                    "'platform_control.resolve_active_voc_workbench_member_v75(text)',"
+                    "'execute')",
+                    (runtime_role,) * 6,
+                ).fetchone() == (expected,) * 6
