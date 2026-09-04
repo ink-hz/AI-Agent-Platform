@@ -1,2 +1,1 @@
 """HR recruiting-intelligence domain."""
-

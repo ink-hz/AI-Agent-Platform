@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+import json
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -9,7 +10,7 @@ from fastapi import APIRouter, Header, HTTPException, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.control_plane.models import AuthContext
@@ -63,6 +64,24 @@ class ProposeDraftBody(BaseModel):
         if not selected or "\0" in selected:
             raise ValueError("HR position text invalid")
         return selected
+
+    @model_validator(mode="after")
+    def limit_json_payloads(self):
+        for label, value, maximum in (
+            ("proposal", self.proposal, 131_072),
+            ("evidence", self.evidence, 65_536),
+        ):
+            try:
+                size = len(json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8"))
+            except (TypeError, ValueError):
+                raise ValueError(f"HR position {label} invalid") from None
+            if size > maximum:
+                raise ValueError(f"HR position {label} too large")
+        return self
 
 
 class VersionBody(BaseModel):
@@ -241,6 +260,9 @@ def build_hr_position_router(service, agent_use_authorization) -> APIRouter:
             "conversation_ids": [str(value) for value in detail.conversation_ids],
             "material_attachment_ids": [str(value) for value in detail.material_attachment_ids],
             "artifact_ids": [str(value) for value in detail.artifact_ids],
+            "artifact_attachment_ids": [
+                str(value) for value in detail.artifact_attachment_ids
+            ],
         }
 
     @router.get("/api/hr/position-drafts")

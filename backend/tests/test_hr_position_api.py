@@ -63,7 +63,8 @@ class FakeService:
     def position(self, owner_id, position_id):
         self.calls.append(("position", owner_id, position_id))
         return self._result(PositionDetail(
-            self.position_record, 2, 1, 3, (uuid4(),), (uuid4(),), (uuid4(),)
+            self.position_record, 2, 1, 3, (uuid4(),), (uuid4(),), (uuid4(),),
+            (uuid4(),),
         ))
 
     def list_drafts(self, owner_id, *, state=None, limit=100):
@@ -190,6 +191,7 @@ def test_position_reads_are_private_owner_scoped_and_explicitly_serialized() -> 
     assert response.json()["items"][0]["official_job_id"] == "J11014"
     assert detail.json()["conversation_count"] == 2
     assert len(detail.json()["conversation_ids"]) == 1
+    assert len(detail.json()["artifact_attachment_ids"]) == 1
     assert drafts.json()["items"][0]["evidence"] == {"message_seq": 1}
     assert service.calls[0][1] == owner_id
 
@@ -227,6 +229,14 @@ def test_position_mutations_require_writable_identity_and_idempotency_uuid() -> 
     )
     assert invalid.status_code == 422
     assert invalid.json() == {"detail": "HR position request invalid"}
+
+    oversized = current.post(
+        "/api/hr/position-drafts",
+        json={**payload, "proposal": {"request": "x" * 131_073}},
+        headers={"Idempotency-Key": str(uuid4())},
+    )
+    assert oversized.status_code == 422
+    assert oversized.json() == {"detail": "HR position request invalid"}
 
 
 def test_draft_commands_forward_versions_and_conversation_binding() -> None:
