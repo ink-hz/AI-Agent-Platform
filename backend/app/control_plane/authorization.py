@@ -113,6 +113,9 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
 _PLATFORM_OWNER_ONLY_ROUTES = frozenset({
     ("GET", "/api/v1/manage/access-events"),
     ("GET", "/api/v1/manage/access-subjects"),
+    ("GET", "/api/v1/manage/voc-workbench/grants"),
+    ("POST", "/api/v1/manage/voc-workbench/grants"),
+    ("DELETE", "/api/v1/manage/voc-workbench/grants/{internal_user_id}"),
 })
 
 _VOC_MUTATION_ROUTES = frozenset({
@@ -342,6 +345,10 @@ class AuthorizationService:
             # Freshness/cloud mutation guards run there only after that grant is
             # proven, so an ungranted identity is never misreported as stale.
             return AuthorizationDecision(True, 200, "fae_workbench_route", None)
+        if key in _VOC_MANAGEMENT_ROUTES:
+            # The VOC-specific role or member grant is resolved by the route
+            # dependency on every request after central authentication.
+            return AuthorizationDecision(True, 200, "voc_management_route", None)
         if key not in _OWNER_ROUTES:
             return self._deny(403, "route_not_authorized")
         if key in _PARTNER_OWNER_ROUTES and auth.role is not Role.PLATFORM_OWNER:

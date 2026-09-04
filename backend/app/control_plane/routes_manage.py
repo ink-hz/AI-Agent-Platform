@@ -21,6 +21,7 @@ from .audit import (
     project_governance_metadata,
 )
 from .fae_access import FaeWorkbenchAccessService, fae_access_service
+from .voc_access import VocWorkbenchAccessService, voc_access_service
 from .models import AuthContext, Role
 from .dsn import validate_control_dsn
 
@@ -42,6 +43,20 @@ class FaeWorkbenchGrantBody(BaseModel):
 
 
 class FaeWorkbenchRevokeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str
+    request_id: UUID
+    expected_row_version: int = Field(ge=0)
+
+
+class VocWorkbenchGrantBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=1, max_length=256)
+    reason: str
+    request_id: UUID
+
+
+class VocWorkbenchRevokeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: str
     request_id: UUID
@@ -85,6 +100,7 @@ def management_service(request: Request) -> ManagementService:
 Auth = Annotated[AuthContext, Depends(authenticated_context)]
 Service = Annotated["ManagementService", Depends(management_service)]
 FaeAccess = Annotated[FaeWorkbenchAccessService, Depends(fae_access_service)]
+VocAccess = Annotated[VocWorkbenchAccessService, Depends(voc_access_service)]
 
 
 def _manager(context: AuthContext) -> None:
@@ -815,6 +831,59 @@ def revoke_fae_workbench_access(
     payload: Annotated[FaeWorkbenchRevokeBody, Body()],
     context: Auth,
     access: FaeAccess,
+    csrf_verified: Annotated[bool, Depends(csrf_protection)],
+    directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
+) -> dict[str, Any]:
+    _owner(context)
+    _mutation_guards(context, csrf_verified, directory_is_fresh)
+    result = access.revoke(
+        context,
+        internal_user_id,
+        payload.reason,
+        payload.request_id,
+        payload.expected_row_version,
+    )
+    return {"status": "ok", "row_version": result["row_version"]}
+
+
+@router.get("/voc-workbench/grants")
+def list_voc_workbench_grants(
+    context: Auth,
+    access: VocAccess,
+) -> dict[str, Any]:
+    _owner(context)
+    return {"grants": access.list_grants()}
+
+
+@router.post("/voc-workbench/grants")
+def grant_voc_workbench_access(
+    payload: VocWorkbenchGrantBody,
+    context: Auth,
+    access: VocAccess,
+    csrf_verified: Annotated[bool, Depends(csrf_protection)],
+    directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
+) -> dict[str, Any]:
+    _owner(context)
+    _mutation_guards(context, csrf_verified, directory_is_fresh)
+    result = access.grant(
+        context,
+        payload.display_name,
+        payload.reason,
+        payload.request_id,
+    )
+    return {
+        "status": "ok",
+        "internal_user_id": result["internal_user_id"],
+        "row_version": result["row_version"],
+    }
+
+
+@router.delete("/voc-workbench/grants/{internal_user_id}")
+def revoke_voc_workbench_access(
+    internal_user_id: UUID,
+    payload: Annotated[VocWorkbenchRevokeBody, Body()],
+    context: Auth,
+    access: VocAccess,
     csrf_verified: Annotated[bool, Depends(csrf_protection)],
     directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
 ) -> dict[str, Any]:

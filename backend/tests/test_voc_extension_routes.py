@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.control_plane.models import AuthContext, Role
+from app.control_plane.voc_access import VocWorkbenchAccessUnavailable
 from app.voc_extension.client import (
     VocProtocolError,
     VocUpstreamResponse,
@@ -51,16 +52,33 @@ class Upstream:
         return self.response
 
 
+class VocAccess:
+    def __init__(self, granted: bool = False) -> None:
+        self.granted = granted
+        self.error = False
+
+    def allows(self, context: AuthContext) -> bool:
+        if self.error:
+            raise VocWorkbenchAccessUnavailable("private database detail")
+        return context.role in {
+            Role.MANAGEMENT_VIEWER,
+            Role.PLATFORM_ADMIN,
+            Role.PLATFORM_OWNER,
+        } or self.granted
+
+
 def workspace_app(
     upstream: Upstream | None,
     *,
     stale: bool = False,
     role: Role = Role.MEMBER,
     directory: Directory | None = None,
+    voc_granted: bool = False,
 ) -> FastAPI:
     app = FastAPI()
     app.state.voc_extension_client = upstream
     app.state.voc_submitter_directory = directory or Directory()
+    app.state.voc_access = VocAccess(voc_granted)
 
     @app.middleware("http")
     async def identity(request, call_next):
@@ -199,6 +217,56 @@ async def test_member_cannot_call_management_routes_or_reach_upstream() -> None:
         response = await client.get("/api/v1/extensions/voc/admin/vocs")
 
     assert response.status_code == 403
+    assert upstream.calls == []
+
+
+@pytest.mark.asyncio
+async def test_voc_granted_member_reaches_every_management_route_until_revoked() -> None:
+    upstream = Upstream()
+    upstream.response = VocUpstreamResponse(
+        200, json.dumps({"items": [], "next_cursor": None}).encode()
+    )
+    app = workspace_app(upstream, voc_granted=True)
+    access = app.state.voc_access
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        listed = await client.get("/api/v1/extensions/voc/admin/vocs")
+        upstream.response = VocUpstreamResponse(
+            200,
+            json.dumps(admin_summary() | {"entries": []}).encode(),
+        )
+        detail = await client.get(
+            "/api/v1/extensions/voc/admin/vocs/VOC-20260826-001"
+        )
+        submitters = await client.get(
+            "/api/v1/extensions/voc/admin/submitters"
+        )
+        access.granted = False
+        revoked = await client.get("/api/v1/extensions/voc/admin/vocs")
+
+    assert (listed.status_code, detail.status_code, submitters.status_code) == (
+        200,
+        200,
+        200,
+    )
+    assert revoked.status_code == 403
+    assert len(upstream.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_voc_grant_lookup_failure_fails_closed_without_private_detail() -> None:
+    upstream = Upstream()
+    app = workspace_app(upstream)
+    app.state.voc_access.error = True
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/v1/extensions/voc/admin/vocs")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "voc_access_unavailable"}
+    assert "private database detail" not in response.text
     assert upstream.calls == []
 
 

@@ -445,15 +445,37 @@ def test_voc_self_reads_remain_available_when_directory_is_hard_stale(route):
         "/api/v1/extensions/voc/admin/submitters",
     ],
 )
-def test_voc_management_reads_allow_exact_management_roles_only(route):
+def test_voc_management_reads_delegate_authenticated_scope_to_route(route):
     service = AuthorizationService(Grants())
 
     assert service.decide(None, "GET", route, ()).status_code == 401
-    assert service.decide(MEMBER, "GET", route, ()).status_code == 403
-    for context in (VIEWER, ADMIN, OWNER):
+    for context in (MEMBER, VIEWER, ADMIN, OWNER):
         decision = service.decide(context, "GET", route, ())
         assert decision.allowed is True
-        assert decision.reason in {"voc_management", context.role.value}
+        assert decision.reason == "voc_management_route"
+
+
+@pytest.mark.parametrize(
+    ("method", "route"),
+    (
+        ("GET", "/api/v1/manage/voc-workbench/grants"),
+        ("POST", "/api/v1/manage/voc-workbench/grants"),
+        (
+            "DELETE",
+            "/api/v1/manage/voc-workbench/grants/{internal_user_id}",
+        ),
+    ),
+)
+def test_voc_grant_administration_is_owner_only_in_central_policy(method, route):
+    service = AuthorizationService(Grants())
+
+    assert service.decide(OWNER, method, route, ()).allowed is True
+    for context in (MEMBER, VIEWER, ADMIN):
+        decision = service.decide(context, method, route, ())
+        assert (decision.status_code, decision.reason) == (
+            403,
+            "platform_owner_required",
+        )
 
 
 def test_platform_admin_uses_owner_routes_after_fail_closed_gates():

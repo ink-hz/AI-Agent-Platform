@@ -18,7 +18,8 @@ from pydantic import (
     field_validator,
 )
 
-from app.control_plane.models import AuthContext, Role
+from app.control_plane.models import AuthContext
+from app.control_plane.voc_access import VocWorkbenchAccessUnavailable
 
 from .client import VocProtocolError, VocUpstreamUnavailable
 from .directory import VocDirectoryUnavailable
@@ -26,9 +27,6 @@ from .directory import VocDirectoryUnavailable
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 _ALLOWED_STATUSES = frozenset({200, 201, 401, 403, 404, 409, 422, 503})
 _VOC_NO_PATTERN = r"^VOC-[0-9]{8}-[0-9]{3,}$"
-_MANAGEMENT_ROLES = frozenset(
-    {Role.MANAGEMENT_VIEWER, Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}
-)
 _MANAGEMENT_CAPABILITIES = frozenset({"voc.read_all"})
 
 
@@ -133,7 +131,16 @@ def _actor(request: Request) -> AuthContext:
 
 def _manager(request: Request) -> AuthContext:
     context = _actor(request)
-    if context.role not in _MANAGEMENT_ROLES:
+    access = getattr(request.app.state, "voc_access", None)
+    if access is None or not callable(getattr(access, "allows", None)):
+        raise HTTPException(503, "voc_access_unavailable", headers=_NO_STORE)
+    try:
+        allowed = access.allows(context)
+    except VocWorkbenchAccessUnavailable:
+        raise HTTPException(
+            503, "voc_access_unavailable", headers=_NO_STORE
+        ) from None
+    if not allowed:
         raise HTTPException(403, "forbidden", headers=_NO_STORE)
     return context
 

@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import HTTPException, Request
 
 from app.control_plane.identity import StaffIdentity
-from app.control_plane.models import AuthContext, DirectoryFreshness, Role
+from app.control_plane.models import AuthContext, DirectoryFreshness
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,15 +66,11 @@ class PlatformVocBotSubjectResolver:
         return VocBotSubject(resolved.internal_user_id, resolved.active)
 
 
-def capabilities_for(context: AuthContext) -> tuple[str, ...]:
+def capabilities_for(context: AuthContext, access) -> tuple[str, ...]:
     values = {"voc.read_self"}
     if not context.hard_stale_read_only:
         values.add("voc.submit")
-    if context.role in {
-        Role.MANAGEMENT_VIEWER,
-        Role.PLATFORM_ADMIN,
-        Role.PLATFORM_OWNER,
-    }:
+    if access.allows(context):
         values.add("voc.read_all")
     return tuple(sorted(values))
 

@@ -77,6 +77,18 @@ class NoManagementGrants:
         return False
 
 
+class VocAccess:
+    def __init__(self, granted_user_ids=()) -> None:
+        self.granted_user_ids = set(granted_user_ids)
+
+    def allows(self, context: AuthContext) -> bool:
+        return context.role in {
+            Role.MANAGEMENT_VIEWER,
+            Role.PLATFORM_ADMIN,
+            Role.PLATFORM_OWNER,
+        } or context.internal_user_id in self.granted_user_ids
+
+
 @pytest.mark.asyncio
 async def test_platform_bot_subject_resolver_projects_inactive_identity() -> None:
     calls = []
@@ -147,6 +159,7 @@ def manager_cookie() -> str:
 @pytest.fixture
 def client(voc_bearer: str):
     app = FastAPI()
+    app.state.voc_access = VocAccess()
     app.include_router(
         build_voc_internal_router(
             auth=Auth(),
@@ -197,6 +210,7 @@ def test_identity_middleware_hides_private_route_before_session_authentication(
     voc_bearer,
 ):
     app = FastAPI()
+    app.state.voc_access = VocAccess()
     authorizer = VocServiceAuthorizer(voc_bearer.encode("utf-8"))
     app.include_router(
         build_voc_internal_router(
@@ -240,6 +254,42 @@ def test_identity_middleware_hides_private_route_before_session_authentication(
                 "__Host-platform_csrf=session-csrf",
             },
         ).status_code == 404
+
+
+def test_voc_granted_member_receives_read_all_without_role_elevation(voc_bearer):
+    app = FastAPI()
+    app.state.voc_access = VocAccess({USER_ID})
+    authorizer = VocServiceAuthorizer(voc_bearer.encode("utf-8"))
+    app.include_router(
+        build_voc_internal_router(
+            auth=Auth(), directory=Directory(), bearer=authorizer
+        )
+    )
+    app.add_middleware(
+        IdentitySecurityMiddleware,
+        auth=Auth(),
+        public_assets=frozenset(),
+        authorization=AuthorizationService(NoManagementGrants()),
+        routes=tuple(app.router.routes),
+        voc_service_authorizer=authorizer,
+    )
+
+    with TestClient(app, client=("172.29.0.3", 50000)) as protected:
+        response = protected.get(
+            "/api/v1/internal/voc/browser-subject",
+            headers={
+                "Authorization": f"Bearer {voc_bearer}",
+                "Cookie": "__Host-platform_session=member-session; "
+                "__Host-platform_csrf=session-csrf",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["capabilities"] == [
+        "voc.read_all",
+        "voc.read_self",
+        "voc.submit",
+    ]
 
 
 def test_bot_subject_is_strict_and_uses_directory_identity(client, voc_bearer):

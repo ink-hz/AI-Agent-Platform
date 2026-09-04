@@ -138,9 +138,19 @@ def test_fae_session_detail_audit_accepts_only_content_free_metadata() -> None:
             "internal_user",
             "fae_workbench_access_revoked",
         ),
+        (
+            "voc_workbench_grant",
+            "directory_member",
+            "voc_workbench_access_approved",
+        ),
+        (
+            "voc_workbench_revoke",
+            "internal_user",
+            "voc_workbench_access_revoked",
+        ),
     ),
 )
-def test_fae_workbench_outcome_audit_links_requested_event(
+def test_workbench_outcome_audit_links_requested_event(
     stem: str,
     target_type: str,
     reason: str,
@@ -158,7 +168,7 @@ def test_fae_workbench_outcome_audit_links_requested_event(
         "operation_id": str(request_id),
         "result": "requested",
     }
-    if stem == "fae_workbench_grant":
+    if stem.endswith("workbench_grant"):
         requested_metadata.update(
             {
                 "expected_generation_id": str(uuid4()),
