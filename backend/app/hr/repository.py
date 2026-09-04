@@ -13,19 +13,23 @@ from psycopg.rows import dict_row
 
 from .models import (
     BindPositionConversation,
+    ConfirmedPositionPackage,
     ConfirmPositionDraft,
     CorrectPositionConversationBinding,
     CreateManualPosition,
+    CreatePositionDraftVersion,
     DismissPositionDraft,
     MergePositionDraft,
     PositionConversationBinding,
     PositionDetail,
     PositionDraftRecord,
+    PositionDraftVersion,
     PositionMaterialRecord,
     PositionRecord,
     ProjectOfficialPosition,
     ProposePositionDraft,
 )
+from .position_intelligence_models import PositionContextVersion, thaw_json
 
 
 class HrRepositoryError(RuntimeError):
@@ -89,6 +93,54 @@ def _draft(row: dict[str, Any]) -> PositionDraftRecord:
         row_version=row["row_version"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+    )
+
+
+def _draft_version(row: dict[str, Any]) -> PositionDraftVersion:
+    return PositionDraftVersion(
+        draft_version_id=row["draft_version_id"],
+        owner_id=row["owner_internal_user_id"],
+        draft_id=row["draft_id"],
+        client_request_id=row["client_request_id"],
+        version_number=row["version_number"],
+        title=row["title"],
+        modules=row["modules"],
+        source_conversation_id=row["source_conversation_id"],
+        source_turn_id=row["source_turn_id"],
+        source_assistant_message_id=row["source_assistant_message_id"],
+        agent_id=row["agent_id"],
+        model_version=row["model_version"],
+        row_version=row["row_version"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _context_version(row: dict[str, Any]) -> PositionContextVersion:
+    materials = row["source_material_attachment_ids"]
+    if not isinstance(materials, list):
+        materials = list(materials)
+    return PositionContextVersion(
+        context_version_id=row["context_version_id"],
+        owner_id=row["owner_internal_user_id"],
+        position_id=row["position_id"],
+        version_number=row["version_number"],
+        state=row["state"],
+        modules=row["modules"],
+        summary=row["summary"],
+        official_version_id=row["official_position_version_id"],
+        base_context_version_id=row["base_context_version_id"],
+        source_conversation_id=row["source_conversation_id"],
+        source_turn_id=row["source_turn_id"],
+        source_artifact_version_id=row["source_artifact_version_id"],
+        source_material_attachment_ids=tuple(materials),
+        agent_id=row["agent_id"],
+        model_version=row["model_version"],
+        created_by=row["created_by"],
+        confirmed_by=row["confirmed_by"],
+        created_at=row["created_at"],
+        confirmed_at=row["confirmed_at"],
+        row_version=row["row_version"],
     )
 
 
@@ -360,6 +412,133 @@ class HrPositionRepository:
             raise HrNotFound("position draft not found") from None
         except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
             raise HrConflict("position draft conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def create_draft_version(
+        self, command: CreatePositionDraftVersion
+    ) -> PositionDraftVersion:
+        if not isinstance(command, CreatePositionDraftVersion):
+            raise ValueError("position draft version command required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.create_position_draft_version_v76("
+                    "%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s)).*",
+                    (
+                        command.draft_version_id,
+                        command.owner_id,
+                        command.draft_id,
+                        command.client_request_id,
+                        command.title,
+                        json.dumps(
+                            thaw_json(command.modules), ensure_ascii=False,
+                            sort_keys=True, separators=(",", ":"),
+                        ),
+                        command.source_conversation_id,
+                        command.source_turn_id,
+                        command.source_assistant_message_id,
+                        command.agent_id,
+                        command.model_version,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position draft version unavailable")
+            return _draft_version(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position draft source not found") from None
+        except (
+            psycopg.errors.CheckViolation,
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+        ):
+            raise HrConflict("position draft version conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def latest_draft_version(
+        self, owner_id: UUID, draft_id: UUID
+    ) -> PositionDraftVersion:
+        if not isinstance(owner_id, UUID) or not isinstance(draft_id, UUID):
+            raise ValueError("position draft version identifiers required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_hr.position_draft_versions "
+                    "where owner_internal_user_id=%s and draft_id=%s "
+                    "order by version_number desc limit 1",
+                    (owner_id, draft_id),
+                ).fetchone()
+            if row is None:
+                raise HrNotFound("position draft version not found")
+            return _draft_version(row)
+        except HrRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def confirm_package(
+        self,
+        owner_id: UUID,
+        draft_id: UUID,
+        draft_version_id: UUID,
+        request_id: UUID,
+        *,
+        expected_row_version: int,
+    ) -> ConfirmedPositionPackage:
+        if any(
+            not isinstance(value, UUID)
+            for value in (owner_id, draft_id, draft_version_id, request_id)
+        ):
+            raise ValueError("position package identifiers required")
+        _row_version = expected_row_version
+        if (
+            isinstance(_row_version, bool)
+            or not isinstance(_row_version, int)
+            or _row_version < 1
+        ):
+            raise ValueError("row version invalid")
+        try:
+            with self._connection() as connection:
+                result = connection.execute(
+                    "select * from platform_hr.confirm_position_package_v76("
+                    "%s,%s,%s,%s,%s)",
+                    (
+                        owner_id, draft_id, draft_version_id, request_id,
+                        expected_row_version,
+                    ),
+                ).fetchone()
+                if result is None:
+                    raise HrUnavailable("position package confirmation unavailable")
+                position_row = connection.execute(
+                    "select * from platform_hr.positions where "
+                    "owner_internal_user_id=%s and position_id=%s",
+                    (owner_id, result["position_id"]),
+                ).fetchone()
+                context_row = connection.execute(
+                    "select * from platform_hr.position_context_versions where "
+                    "owner_internal_user_id=%s and context_version_id=%s",
+                    (owner_id, result["context_version_id"]),
+                ).fetchone()
+            if position_row is None or context_row is None:
+                raise HrUnavailable("confirmed position package unavailable")
+            return ConfirmedPositionPackage(
+                position=_record(position_row),
+                context=_context_version(context_row),
+                conversation_id=result["conversation_id"],
+            )
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position package not found") from None
+        except (
+            psycopg.errors.CheckViolation,
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+        ):
+            raise HrConflict("position package confirmation conflict") from None
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrUnavailable("position repository unavailable") from None
 

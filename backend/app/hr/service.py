@@ -6,13 +6,16 @@ from uuid import UUID, uuid4
 
 from .models import (
     BindPositionConversation,
+    ConfirmedPositionPackage,
     ConfirmPositionDraft,
     CorrectPositionConversationBinding,
     CreateManualPosition,
+    CreatePositionDraftVersion,
     DismissPositionDraft,
     MergePositionDraft,
     PositionConversationBinding,
     PositionDraftRecord,
+    PositionDraftVersion,
     PositionMaterialRecord,
     PositionRecord,
     PromotePositionMaterial,
@@ -39,6 +42,19 @@ class PositionCommandRepository(Protocol):
     ) -> PositionDraftRecord: ...
 
     def confirm_draft(self, command: ConfirmPositionDraft) -> PositionRecord: ...
+
+    def create_draft_version(
+        self, command: CreatePositionDraftVersion
+    ) -> PositionDraftVersion: ...
+
+    def latest_draft_version(
+        self, owner_id: UUID, draft_id: UUID
+    ) -> PositionDraftVersion: ...
+
+    def confirm_package(
+        self, owner_id: UUID, draft_id: UUID, draft_version_id: UUID,
+        request_id: UUID, *, expected_row_version: int,
+    ) -> ConfirmedPositionPackage: ...
 
     def merge_draft(self, command: MergePositionDraft) -> PositionDraftRecord: ...
 
@@ -162,6 +178,55 @@ class HrPositionService:
                 client_request_id=request_id,
                 expected_row_version=expected_row_version,
             )
+        )
+
+    def create_draft_version(
+        self,
+        *,
+        owner_id: UUID,
+        draft_id: UUID,
+        request_id: UUID,
+        title: str,
+        modules: dict[str, object],
+        source_conversation_id: UUID,
+        source_turn_id: UUID,
+        source_assistant_message_id: UUID,
+        agent_id: str,
+        model_version: str,
+    ) -> PositionDraftVersion:
+        return self._repository.create_draft_version(
+            CreatePositionDraftVersion(
+                owner_id=owner_id,
+                draft_version_id=self._uuid_factory(),
+                draft_id=draft_id,
+                client_request_id=request_id,
+                title=title,
+                modules=modules,
+                source_conversation_id=source_conversation_id,
+                source_turn_id=source_turn_id,
+                source_assistant_message_id=source_assistant_message_id,
+                agent_id=agent_id,
+                model_version=model_version,
+            )
+        )
+
+    def latest_draft_version(
+        self, owner_id: UUID, draft_id: UUID
+    ) -> PositionDraftVersion:
+        return self._repository.latest_draft_version(owner_id, draft_id)
+
+    def confirm_package(
+        self,
+        owner_id: UUID,
+        draft_id: UUID,
+        draft_version_id: UUID,
+        request_id: UUID,
+        *,
+        expected_row_version: int,
+    ) -> ConfirmedPositionPackage:
+        return self._repository.confirm_package(
+            owner_id, draft_id, draft_version_id, request_id,
+            expected_row_version=expected_row_version,
         )
 
     def merge_draft(

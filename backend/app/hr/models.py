@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from typing import Literal
 from uuid import UUID
+
+from .position_intelligence_models import PositionContextVersion
 
 PositionSource = Literal["official_site", "manual"]
 OfficialStatus = Literal["active", "stale", "suspected_inactive", "inactive"]
@@ -89,6 +93,45 @@ def _row_version(value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError("row version invalid")
     return value
+
+
+def _freeze_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {key: _freeze_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _position_package_modules(
+    value: Mapping[str, object],
+) -> Mapping[str, object]:
+    if not isinstance(value, Mapping) or set(value) != {"mission", "jd", "jr"}:
+        raise ValueError("position package modules invalid")
+    normalized: dict[str, object] = {}
+    for name in ("mission", "jd", "jr"):
+        module = value[name]
+        if not isinstance(module, Mapping) or set(module) != {"text"}:
+            raise ValueError("position package modules invalid")
+        text = module["text"]
+        if not isinstance(text, str):
+            raise ValueError("position package modules invalid")
+        text = text.strip()
+        if not text or "\0" in text or len(text) > 131072:
+            raise ValueError("position package modules invalid")
+        normalized[name] = {"text": text}
+    try:
+        encoded = json.dumps(
+            normalized, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        )
+    except (TypeError, ValueError):
+        raise ValueError("position package modules invalid") from None
+    if len(encoded.encode("utf-8")) > 524288:
+        raise ValueError("position package modules invalid")
+    return _freeze_json(normalized)  # type: ignore[return-value]
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +245,107 @@ class PositionDraftRecord:
         _row_version(self.row_version)
         _aware(self.created_at)
         _aware(self.updated_at)
+
+
+@dataclass(frozen=True, slots=True)
+class PositionDraftVersion:
+    draft_version_id: UUID
+    owner_id: UUID
+    draft_id: UUID
+    client_request_id: UUID
+    version_number: int
+    title: str
+    modules: Mapping[str, object]
+    source_conversation_id: UUID
+    source_turn_id: UUID
+    source_assistant_message_id: UUID
+    agent_id: str
+    model_version: str
+    row_version: int
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.draft_version_id, self.owner_id, self.draft_id,
+            self.client_request_id, self.source_conversation_id,
+            self.source_turn_id, self.source_assistant_message_id,
+        ):
+            _uuid(value, "position draft version identifiers invalid")
+        _row_version(self.version_number)
+        _row_version(self.row_version)
+        object.__setattr__(self, "title", _text(
+            self.title, maximum=500, message="position title invalid"
+        ))
+        object.__setattr__(
+            self, "modules", _position_package_modules(self.modules)
+        )
+        object.__setattr__(self, "agent_id", _text(
+            self.agent_id, maximum=128, message="position package agent invalid"
+        ))
+        object.__setattr__(self, "model_version", _text(
+            self.model_version, maximum=160,
+            message="position package model version invalid",
+        ))
+        _aware(self.created_at)
+        _aware(self.updated_at)
+
+
+@dataclass(frozen=True, slots=True)
+class CreatePositionDraftVersion:
+    owner_id: UUID
+    draft_version_id: UUID
+    draft_id: UUID
+    client_request_id: UUID
+    title: str
+    modules: Mapping[str, object]
+    source_conversation_id: UUID
+    source_turn_id: UUID
+    source_assistant_message_id: UUID
+    agent_id: str
+    model_version: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.owner_id, self.draft_version_id, self.draft_id,
+            self.client_request_id, self.source_conversation_id,
+            self.source_turn_id, self.source_assistant_message_id,
+        ):
+            _uuid(value, "position draft version identifiers invalid")
+        object.__setattr__(self, "title", _text(
+            self.title, maximum=500, message="position title invalid"
+        ))
+        object.__setattr__(
+            self, "modules", _position_package_modules(self.modules)
+        )
+        object.__setattr__(self, "agent_id", _text(
+            self.agent_id, maximum=128, message="position package agent invalid"
+        ))
+        object.__setattr__(self, "model_version", _text(
+            self.model_version, maximum=160,
+            message="position package model version invalid",
+        ))
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmedPositionPackage:
+    position: PositionRecord
+    context: PositionContextVersion
+    conversation_id: UUID
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.position, PositionRecord):
+            raise ValueError("confirmed position package invalid")
+        if not isinstance(self.context, PositionContextVersion):
+            raise ValueError("confirmed position package invalid")
+        _uuid(self.conversation_id, "confirmed position package invalid")
+        if (
+            self.position.owner_id != self.context.owner_id
+            or self.position.position_id != self.context.position_id
+            or self.context.state != "confirmed"
+            or self.context.source_conversation_id != self.conversation_id
+        ):
+            raise ValueError("confirmed position package invalid")
 
 
 PositionSummary = PositionRecord
