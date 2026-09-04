@@ -69,7 +69,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const lastChatConversationId = useRef<string | undefined>(undefined);
   const freeChatDraftSnapshots = useRef(new Map<string, DirectAgentDraftSnapshot>());
   const [confirmedPosition, setConfirmedPosition] = useState<{
-    confirmed: HrConfirmedPositionPackage; positionPackage: HrPositionPackage;
+    ownerId: string; confirmed: HrConfirmedPositionPackage; positionPackage: HrPositionPackage;
   } | null>(null);
   const positionApi = useMemo(() => createHrApi(props.account.csrf_token), [props.account.csrf_token]);
   const positionDetailsApi = useMemo(() => createHrR12Api(props.account.csrf_token), [props.account.csrf_token]);
@@ -105,12 +105,16 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
     ? `/hr/positions/${encodeURIComponent(props.positionId)}/conversations/${encodeURIComponent(conversationId)}`
     : hrConversationPath(conversationId);
   const handleConfirmed = useCallback((confirmed: HrConfirmedPositionPackage, positionPackage: HrPositionPackage) => {
-    setConfirmedPosition({ confirmed, positionPackage });
-  }, []);
+    setConfirmedPosition({ ownerId: draftOwnerId, confirmed, positionPackage });
+  }, [draftOwnerId]);
   const activeConfirmedPosition = confirmedPosition
+    && confirmedPosition.ownerId === draftOwnerId
     && confirmedPosition.confirmed.positionId === props.positionId
     && confirmedPosition.confirmed.conversationId === props.conversationId
+    && confirmedPosition.positionPackage.conversationId === props.conversationId
     ? confirmedPosition : null;
+  const trustedConfirmedRoute = Boolean(positionConversationRoute && activeConfirmedPosition);
+  const positionThreadVisible = positionRouteReady || trustedConfirmedRoute;
   const historyClient = useMemo(
     () => scopedHistory(positionRouteValidated ? validatedRoute?.conversations ?? [] : []),
     [positionRouteValidated, validatedRoute],
@@ -177,7 +181,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={positionsActive ? "positions" : "chat"}>
     {keepChatHost && <div
       className={`hr-workspace-chat-panel${positionConversationRoute ? " is-position-conversation" : ""}`}
-      hidden={positionsActive && !positionRouteReady}
+      hidden={positionsActive && !positionThreadVisible}
     >
       {positionRouteReady && continuedPositionDetail && <HrPositionHeader
         detail={continuedPositionDetail}
@@ -185,18 +189,30 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
         onOpenDetails={() => setPositionDetailsOpen(true)}
         readOnly={props.account.hard_stale_read_only}
       />}
+      {trustedConfirmedRoute && !positionRouteReady && <header className="hr-confirmed-position-bar">
+        <PlatformLink href="/hr/positions">← 岗位库</PlatformLink>
+        <div><span>{continuedPositionDetailState === "error" ? "岗位资料加载失败" : "已确认岗位"}</span>
+          <h1>{activeConfirmedPosition?.positionPackage.title ?? "岗位对话"}</h1></div>
+        <div className="hr-confirmed-position-actions">
+          <strong>已加入岗位库</strong>
+          <button onClick={() => setPositionDetailsOpen(true)} type="button">岗位资料</button>
+          {continuedPositionDetailState === "error" && <button
+            onClick={() => setContinuedPositionDetailAttempt((value) => value + 1)} type="button"
+          >重新读取岗位资料</button>}
+        </div>
+      </header>}
       <WorkspaceErrorBoundary title="HR 智能工作台">
         <DirectAgentWorkspace
           account={props.account}
           agentId="hr-bot"
           autoFocusComposer
           conversationId={chatConversationId}
-          conversationPath={positionRouteValidated ? positionConversationPath : hrConversationPath}
+          conversationPath={positionRouteReady ? positionConversationPath : hrConversationPath}
           historyClient={positionRouteValidated ? historyClient : undefined}
           initialDraftSnapshot={freeChatDraftSnapshots.current.get(draftOwnerId)}
           key={`hr-chat:${draftOwnerId}:${chatConversationId ?? "new"}`}
-          layout={positionRouteValidated ? "focused" : "standard"}
-          newConversationScope={positionRouteValidated && props.positionId ? { positionId: props.positionId } : undefined}
+          layout={positionRouteReady ? "focused" : "standard"}
+          newConversationScope={positionRouteReady && props.positionId ? { positionId: props.positionId } : undefined}
           newConversationHeader={<section className="hr-conversation-welcome">
             <span>AI 招聘协作</span>
             <h1>今天想推进哪项招聘工作？</h1>
@@ -206,7 +222,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           showTaskStarters={false}
           showWorkspaceBackLink={false}
           threadSupplement={chatConversationId ? <HrConversationOutcomePanel
-            confirmed={positionRouteValidated}
+            confirmed={positionRouteValidated || trustedConfirmedRoute}
             conversationId={chatConversationId}
             csrfToken={props.account.csrf_token}
             onConfirmed={handleConfirmed}
@@ -214,13 +230,13 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           /> : undefined}
           workspaceLabel="HR 智能工作台"
           workspaceMark="HR"
-          workspaceRootPath={positionRouteValidated && props.positionId
+          workspaceRootPath={positionRouteReady && props.positionId
             ? `/hr/positions/${encodeURIComponent(props.positionId)}` : "/hr/"}
         />
       </WorkspaceErrorBoundary>
     </div>}
 
-    {positionConversationRoute && !positionRouteReady && <div className="hr-workspace-position-panel">
+    {positionConversationRoute && !positionThreadVisible && <div className="hr-workspace-position-panel">
       {positionRouteFailure === "invalid" ? <main className="hr-position-state" role="alert">
         <h1>无法打开这段岗位对话</h1>
         <p>该对话不属于这个岗位，已阻止显示和发送。</p>
