@@ -11,9 +11,7 @@ function rule(selector: string): string {
   return styles.slice(start, end + 1);
 }
 
-function block(header: string): string {
-  const start = styles.indexOf(header);
-  if (start < 0) throw new Error(`missing CSS block: ${header}`);
+function blockAt(start: number, label: string): string {
   const openingBrace = styles.indexOf("{", start);
   let depth = 0;
   for (let index = openingBrace; index < styles.length; index += 1) {
@@ -21,20 +19,31 @@ function block(header: string): string {
     if (styles[index] === "}") depth -= 1;
     if (depth === 0) return styles.slice(start, index + 1);
   }
-  throw new Error(`unclosed CSS block: ${header}`);
+  throw new Error(`unclosed CSS block: ${label}`);
+}
+
+function block(header: string): string {
+  const start = styles.indexOf(header);
+  if (start < 0) throw new Error(`missing CSS block: ${header}`);
+  return blockAt(start, header);
 }
 
 function lastBlock(header: string): string {
   const start = styles.lastIndexOf(header);
   if (start < 0) throw new Error(`missing CSS block: ${header}`);
-  const openingBrace = styles.indexOf("{", start);
-  let depth = 0;
-  for (let index = openingBrace; index < styles.length; index += 1) {
-    if (styles[index] === "{") depth += 1;
-    if (styles[index] === "}") depth -= 1;
-    if (depth === 0) return styles.slice(start, index + 1);
+  return blockAt(start, header);
+}
+
+function blockContaining(header: string, needle: string): string {
+  let offset = 0;
+  while (offset < styles.length) {
+    const start = styles.indexOf(header, offset);
+    if (start < 0) break;
+    const candidate = blockAt(start, header);
+    if (candidate.includes(needle)) return candidate;
+    offset = start + header.length;
   }
-  throw new Error(`unclosed CSS block: ${header}`);
+  throw new Error(`missing CSS block containing: ${needle}`);
 }
 
 
@@ -97,7 +106,10 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".hr-position-context")).toContain("position: sticky");
     expect(rule(".hr-position-context-metrics")).toContain("grid-template-columns: repeat(3,minmax(0,1fr))");
     expect(rule(".session-material-position-action")).toContain("min-height: 34px");
-    const mobile = lastBlock("@media screen and (max-width: 720px)");
+    const mobile = blockContaining(
+      "@media screen and (max-width: 720px)",
+      ".hr-position-context-metrics",
+    );
     expect(mobile).toContain(".hr-position-context-metrics { grid-template-columns: 1fr;");
   });
 
