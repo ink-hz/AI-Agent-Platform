@@ -112,6 +112,9 @@ export function DirectAgentWorkspace({
   const uploaderRef = useRef<AttachmentUploaderHandle | null>(null);
   const card = catalog?.find((item) => item.agent_id === agentId) ?? null;
   const inputTooLarge = conversationInputTooLarge(text.trim());
+  const submitDisabled = (!text.trim() && attachments.length === 0)
+    || uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state))
+    || inputTooLarge || pending || account.hard_stale_read_only;
   const workspacePath = workspaceRootPath ?? rootPath(agentId);
 
   useEffect(() => {
@@ -309,7 +312,14 @@ export function DirectAgentWorkspace({
             }}>
             <textarea aria-label={`交给 ${card.display_name}`} autoFocus={autoFocusComposer} id="direct-agent-request" rows={8} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
               placeholder="描述招聘任务、粘贴岗位说明或候选人资料……"
-              onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }} />
+              onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.shiftKey
+                  || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
+                  || submitDisabled) return;
+                event.preventDefault();
+                void send();
+              }} />
             {card.attachment_limits && <section className="agent-direct-attachments" aria-label="新对话附件">
               <AttachmentUploader ref={uploaderRef} acceptedInputTypes={card.accepted_input_types} conversationId={null}
                 csrfToken={account.csrf_token} disabled={account.hard_stale_read_only}
@@ -319,7 +329,7 @@ export function DirectAgentWorkspace({
                 onActiveChange={() => undefined} />)}
               {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
             </section>}
-            <div className="agent-direct-composer-actions"><span>文字、图片和文件会随本轮一起发送。</span><button className="agent-direct-submit" disabled={(!text.trim() && attachments.length === 0) || uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state)) || inputTooLarge || pending || account.hard_stale_read_only} type="submit">{pending ? "正在创建…" : "发送"}</button></div>
+            <div className="agent-direct-composer-actions"><span>Enter 发送；Shift+Enter 换行。文字、图片和文件会随本轮一起发送。</span><button className="agent-direct-submit" disabled={submitDisabled} type="submit">{pending ? "正在创建…" : "发送"}</button></div>
           </form>
           {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
           {failure && <div className="brain-submit-error" role="alert"><span>对话暂未创建成功，可安全重试。</span><button onClick={() => void send()} type="button">重新提交</button></div>}

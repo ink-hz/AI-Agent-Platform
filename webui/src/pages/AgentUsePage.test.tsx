@@ -171,6 +171,30 @@ describe("professional Agent use pages", () => {
     expect(historyClient.list).toHaveBeenCalledWith(expect.any(AbortSignal), undefined, 20, "hr-bot");
   });
 
+  it("sends a new conversation with Enter but keeps Shift+Enter and IME Enter for editing", async () => {
+    const send = vi.fn().mockResolvedValue(result);
+    const createSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
+    await act(async () => root.render(<DirectAgentWorkspace
+      account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
+      createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={vi.fn()}
+      conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
+    />));
+    const textarea = container.querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "介绍一下你自己");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter", shiftKey: true })));
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter", isComposing: true })));
+    expect(createSubmission).not.toHaveBeenCalled();
+
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter" })));
+
+    expect(createSubmission).toHaveBeenCalledWith("介绍一下你自己", "csrf", "hr-bot");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("recovers when navigation changes from an unavailable Agent to an authorized one", async () => {
     const loadCatalog = vi.fn().mockResolvedValue([card]);
     const props = { account, loadCatalog, historyClient, createSubmission: vi.fn(), onOpenConversation: vi.fn() };
