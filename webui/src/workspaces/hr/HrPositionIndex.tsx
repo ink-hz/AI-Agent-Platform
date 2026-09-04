@@ -171,9 +171,9 @@ export function HrPositionIndex({
 
   return <main className="hr-position-index">
     <header className="hr-position-hero">
-      <div><span className="hr-position-eyebrow">HR RECRUITING INTELLIGENCE</span>
-        <h1>岗位智能工作台</h1>
-        <p>把官网岗位、历史招聘对话和新需求放在同一个岗位上下文里。</p>
+      <div><span className="hr-position-eyebrow">招聘工作</span>
+        <h1>岗位</h1>
+        <p>管理官网同步岗位、内部招聘需求和等待确认的历史识别结果。</p>
       </div>
       <button className="hr-position-primary" disabled={account.hard_stale_read_only} type="button" onClick={() => setNewOpen(true)}>用对话新建岗位</button>
     </header>
@@ -186,7 +186,7 @@ export function HrPositionIndex({
 
     <div className="hr-position-toolbar">
       <label><span>搜索岗位</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="岗位名称、J 编号、部门或地点" /></label>
-      <PlatformLink href="/hr/chat">自由对话</PlatformLink>
+      <PlatformLink href="/hr/">返回对话</PlatformLink>
     </div>
     {account.hard_stale_read_only && <p className="hr-position-notice" role="status">账号目录信息已过期，岗位数据暂时只读。</p>}
     {notice && <p className="hr-position-notice" role="status">{notice}</p>}

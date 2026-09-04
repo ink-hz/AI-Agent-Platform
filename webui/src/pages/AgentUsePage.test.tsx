@@ -223,4 +223,19 @@ describe("professional Agent use pages", () => {
       .toBe(card.example_tasks[0]);
     expect(createSubmission).not.toHaveBeenCalled();
   });
+
+  it("lets an independent product replace the embedded Agent return and welcome", async () => {
+    await act(async () => root.render(<DirectAgentWorkspace
+      account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
+      historyClient={historyClient} onOpenConversation={vi.fn()}
+      conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
+      showWorkspaceBackLink={false}
+      newConversationHeader={<section className="hr-conversation-welcome"><h1>今天想推进哪项招聘工作？</h1><p>直接告诉我。</p></section>}
+    />));
+
+    expect(container.textContent).toContain("今天想推进哪项招聘工作？");
+    expect(container.textContent).not.toContain("返回专业 Agent");
+    expect(container.querySelector(".agent-use-profile")).toBeNull();
+    expect(container.querySelector("textarea")).not.toBeNull();
+  });
 });

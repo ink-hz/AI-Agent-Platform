@@ -61,8 +61,10 @@ function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
 export function AppShell({ route, children, account }: { route: Route; children: ReactNode; account?: Account | null }) {
   const current = routeSection(route);
   const brainWorkspace = route.name === "brain" || route.name === "conversation"
-    || route.name === "hr" || route.name === "hr-chat" || route.name === "hr-position" || route.name === "hr-position-section" || route.name === "hr-position-conversation" || route.name === "hr-conversation"
     || route.name === "marketing" || route.name === "marketing-conversation";
+  const hrWorkspace = route.name === "hr" || route.name === "hr-chat" || route.name === "hr-positions"
+    || route.name === "hr-position" || route.name === "hr-position-section"
+    || route.name === "hr-position-conversation" || route.name === "hr-conversation";
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
   const faeWorkspace = route.name.startsWith("fae-manage-");
   const faeGovernanceWorkspace = route.name === "fae-manage-issues" || route.name === "fae-manage-issue";
@@ -105,7 +107,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
       ? "数据已过期"
       : "等待首次同步";
   return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
-    <div className={`app${brainWorkspace ? " is-brain-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
+    <div className={`app${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">
           <a className="brand" href={platformPath("/")} onClick={(event) => follow(event, "/")}>
@@ -132,7 +134,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
           >{account.display_name}</a>}
         </div>
       </header>
-      {account?.hard_stale_read_only && !faeWorkspace && <aside className="hard-stale-banner" role="status">
+      {account?.hard_stale_read_only && !faeWorkspace && !hrWorkspace && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
       {current === "admin" && cloudReplica && !faeGovernanceWorkspace && <aside
@@ -154,8 +156,8 @@ export function AppShell({ route, children, account }: { route: Route; children:
           href={platformPath(item.path)} key={item.path} onClick={(event) => follow(event, item.path)}
         >{item.label}</a>)}</div>
       </nav>}
-      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>{children}</main>
-      {!brainWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
+      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>{children}</main>
+      {!brainWorkspace && !hrWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
     </div>
   </DeploymentProvider>;
 }
