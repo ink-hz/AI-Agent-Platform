@@ -158,6 +158,8 @@ def _request_sections(
             "prompt_context": hr_context.prompt_context,
             "canonical_sha256": hr_context.canonical_sha256,
         }
+    if user_request.hr_workflow_contract is not None:
+        sections["hr_workflow_contract"] = user_request.hr_workflow_contract
     return sections
 
 

@@ -15,6 +15,7 @@ from app.agent_brain.conversation_repository import (
 )
 from app.execution_relay.content_crypto import ContentCryptoError
 from app.hr.position_intelligence_models import HrPositionContextEnvelope
+from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
 from app.hr.task_context import HrTaskContextError, canonical_hash
 
 MAX_CONTEXT_BYTES = 96 * 1024
@@ -49,6 +50,7 @@ class ConversationContext:
     estimated_utf8_bytes: int
     active_attachment_ids: tuple[UUID, ...] = ()
     hr_position_context: HrPositionContextEnvelope | None = None
+    hr_workflow_contract: str | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +100,7 @@ def _context_size(
     summary: str | None,
     messages: tuple[ContextMessage, ...],
     hr_position_context: HrPositionContextEnvelope | None = None,
+    hr_workflow_contract: str | None = None,
 ) -> int:
     total = 0
     if summary is not None:
@@ -106,6 +109,8 @@ def _context_size(
         total += len(message.content.encode("utf-8")) + len(message.role) + 16
     if hr_position_context is not None:
         total += len(hr_position_context.prompt_context.encode("utf-8")) + 512
+    if hr_workflow_contract is not None:
+        total += len(hr_workflow_contract.encode("utf-8")) + 32
     return total
 
 
@@ -206,6 +211,7 @@ class ConversationContextBuilder:
             row["mode"] == "direct_agent"
             and row["direct_agent_id"] == "hr-bot"
         )
+        hr_workflow_contract = HR_WORKFLOW_CONTRACT_V1 if is_hr_agent else None
         is_hr_position = is_hr_agent and row["verified_hr_position"] is True
         if is_hr_position:
             if self._hr_task_context_provider is None:
@@ -255,10 +261,14 @@ class ConversationContextBuilder:
                 summary=conversation.summary,
                 messages=messages,
                 estimated_utf8_bytes=_context_size(
-                    conversation.summary, messages, hr_position_context
+                    conversation.summary,
+                    messages,
+                    hr_position_context,
+                    hr_workflow_contract,
                 ),
                 active_attachment_ids=tuple(dict.fromkeys(active_attachment_ids)),
                 hr_position_context=hr_position_context,
+                hr_workflow_contract=hr_workflow_contract,
             ),
             row["user_seq"],
             sequenced,

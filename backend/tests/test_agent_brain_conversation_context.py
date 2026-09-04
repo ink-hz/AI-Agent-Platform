@@ -19,6 +19,7 @@ from app.agent_brain.conversation_projection import ConversationProjection
 from app.hr.models import BindPositionConversation, CreateManualPosition
 from app.hr.position_intelligence_models import HrPositionContextEnvelope
 from app.hr.repository import HrPositionRepository
+from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
 from app.hr.task_context import canonical_hash
 
 
@@ -157,6 +158,7 @@ def test_unbound_hr_turn_does_not_call_position_provider(
     ).build(started.conversation.conversation_id, started.turn.turn_id)
 
     assert context.hr_position_context is None
+    assert context.hr_workflow_contract == HR_WORKFLOW_CONTRACT_V1
 
 
 @pytest.mark.postgres
@@ -209,6 +211,28 @@ def test_non_hr_turn_never_receives_candidate_parser_input(
     ).build(started.conversation.conversation_id, started.turn.turn_id)
 
     assert context.active_attachment_ids == ()
+    assert context.hr_workflow_contract is None
+
+
+@pytest.mark.postgres
+def test_other_direct_agent_never_receives_hr_workflow_contract(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    started = repository.start(
+        owner_id,
+        uuid4(),
+        "普通专业问题",
+        mode="direct_agent",
+        direct_agent_id="fae-bot",
+    )
+
+    context = ConversationContextBuilder(repository).build(
+        started.conversation.conversation_id, started.turn.turn_id
+    )
+
+    assert context.hr_workflow_contract is None
 
 
 @pytest.mark.postgres

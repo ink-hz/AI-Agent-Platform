@@ -39,6 +39,7 @@ from app.hr.position_intelligence_models import (
 )
 from app.hr.position_intelligence_repository import PositionIntelligenceRepository
 from app.hr.repository import HrPositionRepository
+from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
 from app.hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
 from test_control_plane_migration import control_database
 
@@ -61,6 +62,29 @@ def _wrong_codec_same_version() -> ContentCodec:
             _keys={4: b"x" * 32},
         )
     )
+
+
+def test_planning_prompt_includes_hr_contract_only_when_context_carries_one() -> None:
+    card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
+    hr_context = ConversationContext(
+        summary=None,
+        messages=(ContextMessage(role="user", content="生成 JD"),),
+        estimated_utf8_bytes=64,
+        hr_workflow_contract=HR_WORKFLOW_CONTRACT_V1,
+    )
+    ordinary_context = ConversationContext(
+        summary=None,
+        messages=(ContextMessage(role="user", content="生成 JD"),),
+        estimated_utf8_bytes=64,
+    )
+
+    hr_document = json.loads(build_planning_prompt(hr_context, (card,)).split("\n", 1)[1])
+    ordinary_document = json.loads(
+        build_planning_prompt(ordinary_context, (card,)).split("\n", 1)[1]
+    )
+
+    assert hr_document["hr_workflow_contract"] == HR_WORKFLOW_CONTRACT_V1
+    assert "hr_workflow_contract" not in ordinary_document
 
 
 class ScriptedRelay:
