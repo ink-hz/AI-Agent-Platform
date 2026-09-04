@@ -17,6 +17,7 @@
 - Use explicit non-empty model version and SQL-verified `hr-bot` agent identity.
 - Use deterministic request IDs and leased ledger replay for multi-instance/crash safety.
 - A permanently bad result must not block later results.
+- The seven quick-task read states are terminal only after ledger completion/failure.
 
 ---
 
@@ -61,3 +62,18 @@
 - [ ] Make only scoped corrections needed for GREEN.
 - [ ] Run focused and HR regression tests, compileall, Ruff imports, and diff-check.
 - [ ] Review the complete diff, write the report, and commit the clean branch.
+
+### Task 4: Gate task terminal status on projection
+
+**Files:**
+- Modify: `backend/app/hr/task_repository.py`
+- Modify: `backend/tests/test_hr_position_task_adapter.py`
+
+**Interfaces:**
+- Consumes: `platform_hr.hr_task_result_projections.state`.
+- Produces: quick-task status `running` before projection, `completed` after ledger
+  completion, and `failed/result_projection_failed` after ledger failure.
+
+- [ ] Add a failing repository query-contract test for all three ledger states.
+- [ ] Update the task projection CTE without changing freeform behavior.
+- [ ] Run adapter and real database status tests GREEN.

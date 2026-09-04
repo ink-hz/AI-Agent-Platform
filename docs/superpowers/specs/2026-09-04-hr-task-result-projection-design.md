@@ -31,6 +31,12 @@ same deterministic request ID. Invalid/decryption/mapping failures become termin
 ledger failures so one bad item cannot block later rows. Transient repository errors
 release the lease for retry.
 
+For the seven explicit quick-task kinds, the existing task read model treats
+terminal execution as `running` until this ledger reaches `completed`. A completed
+ledger row exposes `completed`; a failed row exposes `failed` with the stable public
+error `result_projection_failed`. This keeps the UI polling until the projected
+draft or analysis is actually readable.
+
 ## Projection mapping
 
 Position tasks map as follows:

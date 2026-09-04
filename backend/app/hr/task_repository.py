@@ -31,9 +31,22 @@ _TASK_PROJECTION_CTE = """
                when scoped.turn_status in ('failed','cancelled','interrupted')
                  or mission.status in ('failed','cancelled','interrupted')
                  or execution.failed then 'failed'
+               when request.task_kind in (
+                   'jd','jr','talent_profile','sourcing_strategy',
+                   'position_interview_plan','candidate_match',
+                   'candidate_interview_plan'
+                 ) and projection.state='failed' then 'failed'
                when scoped.turn_status='completed'
                  or mission.status in ('completed','partially_completed')
-                 then 'completed'
+                 then case
+                   when request.task_kind not in (
+                     'jd','jr','talent_profile','sourcing_strategy',
+                     'position_interview_plan','candidate_match',
+                     'candidate_interview_plan'
+                   ) then 'completed'
+                   when projection.state='completed' then 'completed'
+                   else 'running'
+                 end
                when scoped.turn_status in (
                    'running','waiting_agents','waiting_user','completing'
                  ) or mission.status in ('delegated','synthesizing')
@@ -47,6 +60,12 @@ _TASK_PROJECTION_CTE = """
                  or execution.interrupted then 'interrupted'
                when scoped.turn_status='failed' or mission.status='failed'
                  or execution.failed then 'execution_failed'
+               when request.task_kind in (
+                   'jd','jr','talent_profile','sourcing_strategy',
+                   'position_interview_plan','candidate_match',
+                   'candidate_interview_plan'
+                 ) and projection.state='failed'
+                 then 'result_projection_failed'
                else null
              end as error
       from platform_hr.position_task_requests request
@@ -60,6 +79,14 @@ _TASK_PROJECTION_CTE = """
       left join platform_control.missions mission
         on mission.mission_id=scoped.mission_id
        and mission.owner_internal_user_id=request.owner_internal_user_id
+      left join platform_hr.position_task_records record
+        on record.owner_internal_user_id=request.owner_internal_user_id
+       and record.position_id=request.position_id
+       and record.client_request_id=request.client_request_id
+       and record.task_kind=request.task_kind
+      left join lateral platform_hr.read_hr_task_result_projection_state_v71(
+        record.task_record_id
+      ) projection on true
       left join lateral (
         select
           coalesce(bool_or(job.status in ('leased','dispatched','running')),false)

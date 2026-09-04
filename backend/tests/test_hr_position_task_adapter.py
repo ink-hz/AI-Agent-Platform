@@ -5,6 +5,14 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from test_agent_brain_conversation_repository import (
+    conversation_database,  # noqa: F401
+    repository,  # noqa: F401
+)
+from test_control_plane_migration import control_database  # noqa: F401
+
 from app.agent_brain.conversation_service import ConversationCommandService
 from app.hr.context import HrPositionScope
 from app.hr.models import CreateManualPosition
@@ -20,13 +28,6 @@ from app.hr.task_service import (
     HrPositionTaskNotFound,
     HrPositionTaskService,
 )
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from test_agent_brain_conversation_repository import (
-    conversation_database,  # noqa: F401
-    repository,  # noqa: F401
-)
-from test_control_plane_migration import control_database  # noqa: F401
 
 OWNER = UUID("00000000-0000-4000-8000-000000000001")
 POSITION = UUID("00000000-0000-4000-8000-000000000002")
@@ -520,6 +521,11 @@ def test_postgres_projection_joins_turn_mission_and_execution_status_with_exact_
     assert "platform_control.conversation_turns" in query
     assert "platform_control.missions" in query
     assert "platform_control.execution_jobs" in query
+    assert "platform_hr.read_hr_task_result_projection_state_v71" in query
+    assert "projection.state='completed'" in query
+    assert "projection.state='failed'" in query
+    assert "then 'result_projection_failed'" in query
+    assert "then 'running'" in query
     assert "direct_agent_id='hr-bot'" in query
     assert params == (OWNER, POSITION)
 
