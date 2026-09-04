@@ -48,6 +48,7 @@ def _finish_task(
     model_version="hr-runtime-before-upgrade",
     candidate_scope=None,
     artifact_specs=(),
+    grant_agent_id="hr-bot",
 ):
     codec = _codec()
     message_id = uuid4()
@@ -117,17 +118,23 @@ def _finish_task(
             "lease_worker_id) values (%s,%s,'hr-bot',%s,1,'running',%s)",
             (uuid4(), run_id, b"p" * 29, worker_id),
         )
-        connection.execute(
-            "insert into platform_attachments.task_grants("
-            "grant_id,token_sha256,task_id,agent_id,scope,expires_at,max_reads,"
-            "max_bytes,max_files,max_file_bytes) values ("
-            "%s,%s,%s,'hr-bot','write_output',now()+interval '1 hour',0,1048576,5,1048576)",
-            (uuid4(), uuid4().bytes + uuid4().bytes, mission_task_id),
-        )
+        if grant_agent_id is not None:
+            connection.execute(
+                "insert into platform_attachments.task_grants("
+                "grant_id,token_sha256,task_id,agent_id,scope,expires_at,max_reads,"
+                "max_bytes,max_files,max_file_bytes) values ("
+                "%s,%s,%s,%s,'write_output',now()+interval '1 hour',0,"
+                "1048576,5,1048576)",
+                (
+                    uuid4(), uuid4().bytes + uuid4().bytes, mission_task_id,
+                    grant_agent_id,
+                ),
+            )
         artifact_versions = []
         for index, spec in enumerate(artifact_specs, start=1):
             artifact_id, attachment_id, artifact_version_id = uuid4(), uuid4(), uuid4()
-            artifact_owner = spec.get("owner_id", owner_id)
+            artifact_owner = spec.get("artifact_owner_id", owner_id)
+            attachment_owner = spec.get("attachment_owner_id", owner_id)
             artifact_conversation = spec.get("conversation_id", task.conversation_id)
             artifact_task = spec.get("task_id", mission_task_id)
             attachment_state = spec.get("state", "ready")
@@ -141,13 +148,17 @@ def _finish_task(
                 "%s,%s,%s,'agent_output',%s,1,%s,1,%s,%s,%s,128,%s,%s,"
                 "case when %s='ready' then now() end)",
                 (
-                    attachment_id, artifact_owner, artifact_conversation,
+                    attachment_id, attachment_owner, artifact_conversation,
                     b"n" * 29, b"o" * 29, mime, mime,
                     f"version:interview-{artifact_version_id}", b"a" * 32,
                     attachment_state, attachment_state,
                 ),
             )
-            if spec.get("bypass_context"):
+            if spec.get("bypass_artifact_integrity"):
+                connection.execute(
+                    "alter table platform_attachments.artifacts disable trigger all"
+                )
+            elif spec.get("bypass_context"):
                 connection.execute(
                     "alter table platform_attachments.artifacts disable trigger "
                     "enforce_artifact_task_context_v64"
@@ -161,7 +172,11 @@ def _finish_task(
                     artifact_conversation, artifact_task,
                 ),
             )
-            if spec.get("bypass_context"):
+            if spec.get("bypass_artifact_integrity"):
+                connection.execute(
+                    "alter table platform_attachments.artifacts enable trigger all"
+                )
+            elif spec.get("bypass_context"):
                 connection.execute(
                     "alter table platform_attachments.artifacts enable trigger "
                     "enforce_artifact_task_context_v64"
@@ -183,7 +198,7 @@ def _finish_task(
                     "values (%s,%s,%s,'agent_output',%s,1,%s,1,%s,%s,%s,128,%s,%s,"
                     "case when %s='ready' then now() end)",
                     (
-                        prior_attachment_id, artifact_owner, artifact_conversation,
+                        prior_attachment_id, attachment_owner, artifact_conversation,
                         b"n" * 29, b"o" * 29, mime, mime,
                         f"version:prior-{prior_artifact_version_id}", b"p" * 32,
                         prior_state, prior_state,
@@ -195,7 +210,7 @@ def _finish_task(
                     "conversation_id,task_id,agent_id) values ("
                     "%s,%s,%s,'task_output',%s,%s,'hr-bot')",
                     (
-                        uuid4(), prior_attachment_id, artifact_owner,
+                        uuid4(), prior_attachment_id, attachment_owner,
                         artifact_conversation, artifact_task,
                     ),
                 )
@@ -215,15 +230,24 @@ def _finish_task(
                         prior_state, prior_result_status,
                     ),
                 )
-            if not spec.get("bypass_context"):
+            if spec.get("bypass_context"):
                 connection.execute(
-                    "insert into platform_attachments.bindings("
-                    "binding_id,attachment_id,owner_internal_user_id,kind,conversation_id,"
-                    "task_id,agent_id) values (%s,%s,%s,'task_output',%s,%s,'hr-bot')",
-                    (
-                        uuid4(), attachment_id, artifact_owner,
-                        artifact_conversation, artifact_task,
-                    ),
+                    "alter table platform_attachments.bindings disable trigger "
+                    "enforce_binding_task_context_v64"
+                )
+            connection.execute(
+                "insert into platform_attachments.bindings("
+                "binding_id,attachment_id,owner_internal_user_id,kind,conversation_id,"
+                "task_id,agent_id) values (%s,%s,%s,'task_output',%s,%s,'hr-bot')",
+                (
+                    uuid4(), attachment_id, attachment_owner,
+                    artifact_conversation, artifact_task,
+                ),
+            )
+            if spec.get("bypass_context"):
+                connection.execute(
+                    "alter table platform_attachments.bindings enable trigger "
+                    "enforce_binding_task_context_v64"
                 )
             version_state = "ready" if attachment_state == "ready" else "scanning"
             result_status = "succeeded" if attachment_state == "ready" else "pending"
@@ -242,6 +266,30 @@ def _finish_task(
                     version_state, result_status,
                 ),
             )
+            if spec.get("expired"):
+                connection.execute(
+                    "update platform_attachments.attachments "
+                    "set retained_until=now()-interval '1 second' "
+                    "where attachment_id=%s",
+                    (attachment_id,),
+                )
+                connection.execute(
+                    "update platform_attachments.artifact_versions "
+                    "set retained_until=now()-interval '1 second' "
+                    "where artifact_version_id=%s",
+                    (artifact_version_id,),
+                )
+            if spec.get("erasure"):
+                connection.execute(
+                    "insert into platform_attachments.erasure_jobs("
+                    "erasure_job_id,attachment_id,requested_by_internal_user_id,"
+                    "reason_ciphertext,reason_key_version,reason_sha256) values ("
+                    "%s,%s,%s,%s,1,%s)",
+                    (
+                        uuid4(), attachment_id, attachment_owner,
+                        b"r" * 29, b"e" * 32,
+                    ),
+                )
             artifact_versions.append(artifact_version_id)
         connection.execute(
             "insert into platform_control.conversation_messages("
@@ -608,30 +656,39 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
         started.append(retried)
 
         with psycopg.connect(environment["admin"]) as connection:
-            other_conversation = uuid4()
+            wrong_conversation = uuid4()
             connection.execute(
                 "insert into platform_control.conversations("
                 "conversation_id,owner_internal_user_id,started_by_client_request_id,"
                 "mode,direct_agent_id,title) values ("
-                "%s,%s,%s,'direct_agent','hr-bot','cross owner')",
-                (other_conversation, other_owner_id, uuid4()),
+                "%s,%s,%s,'direct_agent','hr-bot','wrong conversation')",
+                (wrong_conversation, owner_id, uuid4()),
             )
 
-        invalid_specs = (
-            (),
-            ({"state": "scanning"},),
-            ({"state": "scanning", "prior_states": ("ready",)},),
-            ({"mime": "text/plain"},),
-            ({}, {}),
-            ({"task_id": uuid4(), "bypass_context": True},),
-            ({
-                "owner_id": other_owner_id,
-                "conversation_id": other_conversation,
+        invalid_cases = (
+            ((), "hr-bot"),
+            (({"state": "scanning"},), "hr-bot"),
+            (({"state": "scanning", "prior_states": ("ready",)},), "hr-bot"),
+            (({"mime": "text/plain"},), "hr-bot"),
+            (({}, {}), "hr-bot"),
+            (({"task_id": uuid4(), "bypass_context": True},), "hr-bot"),
+            (({},), None),
+            (({},), "wrong-agent"),
+            (({"expired": True},), "hr-bot"),
+            (({"erasure": True},), "hr-bot"),
+            (({
+                "artifact_owner_id": other_owner_id,
+                "bypass_artifact_integrity": True,
+            },), "hr-bot"),
+            (({
+                "conversation_id": wrong_conversation,
                 "bypass_context": True,
-            },),
+            },), "hr-bot"),
         )
+        invalid_task_ids = []
         invalid_versions = []
-        for specs in invalid_specs:
+        scanning_task = None
+        for case_index, (specs, grant_agent_id) in enumerate(invalid_cases):
             task = tasks.start(
                 owner_id=owner_id, position_id=position.position_id,
                 request_id=uuid4(), task_kind="candidate_interview_plan",
@@ -639,7 +696,7 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
                 conversation_id=None, candidate_id=scope["candidate"],
                 position_candidate_id=scope["relation"],
             )
-            _, versions = _finish_task(
+            mission_task_id, versions = _finish_task(
                 environment, task, owner_id, position.position_id,
                 "candidate_interview_plan",
                 {"text": "# 面试题\n\n" + encode_hr_envelope(
@@ -647,9 +704,67 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
                 )},
                 candidate_scope=scope,
                 artifact_specs=specs,
+                grant_agent_id=grant_agent_id,
             )
             started.append(task)
+            invalid_task_ids.append(mission_task_id)
             invalid_versions.append(versions)
+            if case_index == 1:
+                scanning_task = task
+
+        with psycopg.connect(environment["admin"]) as connection:
+            assert connection.execute(
+                "select agent_id,scope from platform_attachments.task_grants "
+                "where task_id=%s order by agent_id,scope",
+                (invalid_task_ids[6],),
+            ).fetchall() == []
+            assert connection.execute(
+                "select agent_id,scope from platform_attachments.task_grants "
+                "where task_id=%s order by agent_id,scope",
+                (invalid_task_ids[7],),
+            ).fetchall() == [("wrong-agent", "write_output")]
+            assert connection.execute(
+                "select attachment.retained_until<=now(),version.retained_until<=now() "
+                "from platform_attachments.artifact_versions version "
+                "join platform_attachments.attachments attachment "
+                "on attachment.attachment_id=version.attachment_id "
+                "where version.artifact_version_id=%s",
+                (invalid_versions[8][0],),
+            ).fetchone() == (True, True)
+            assert connection.execute(
+                "select count(*) from platform_attachments.erasure_jobs "
+                "where attachment_id=(select attachment_id "
+                "from platform_attachments.artifact_versions "
+                "where artifact_version_id=%s)",
+                (invalid_versions[9][0],),
+            ).fetchone() == (1,)
+            assert connection.execute(
+                "select artifact.owner_internal_user_id,artifact.conversation_id,"
+                "attachment.owner_internal_user_id,attachment.conversation_id "
+                "from platform_attachments.artifact_versions version "
+                "join platform_attachments.artifacts artifact "
+                "on artifact.artifact_id=version.artifact_id "
+                "join platform_attachments.attachments attachment "
+                "on attachment.attachment_id=version.attachment_id "
+                "where version.artifact_version_id=%s",
+                (invalid_versions[10][0],),
+            ).fetchone() == (
+                other_owner_id, started[13].conversation_id,
+                owner_id, started[13].conversation_id,
+            )
+            assert connection.execute(
+                "select artifact.owner_internal_user_id,artifact.conversation_id,"
+                "attachment.owner_internal_user_id,attachment.conversation_id "
+                "from platform_attachments.artifact_versions version "
+                "join platform_attachments.artifacts artifact "
+                "on artifact.artifact_id=version.artifact_id "
+                "join platform_attachments.attachments attachment "
+                "on attachment.attachment_id=version.attachment_id "
+                "where version.artifact_version_id=%s",
+                (invalid_versions[11][0],),
+            ).fetchone() == (
+                owner_id, wrong_conversation, owner_id, wrong_conversation,
+            )
 
         reconciler = HrTaskResultReconciler(
             HrTaskResultProjectionRepository(
@@ -669,7 +784,7 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
                 "select projection_request_id "
                 "from platform_hr.hr_task_result_projections "
                 "where task_request_id=%s",
-                (started[4].task_id,),
+                (scanning_task.task_id,),
             ).fetchone()[0]
         with (
             psycopg.connect(
@@ -770,7 +885,7 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
         assert [
             tasks.get(owner_id, position.position_id, task.task_id).error
             for task in started[3:]
-        ] == ["result_projection_failed"] * len(invalid_specs)
+        ] == ["result_projection_failed"] * len(invalid_cases)
     finally:
         with psycopg.connect(environment["admin"]) as connection:
             for table in (
