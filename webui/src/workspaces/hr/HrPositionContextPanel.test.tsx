@@ -83,3 +83,19 @@ it("reuses context confirmation id after an uncertain response", async () => {
   await act(async () => confirm.click()); await act(async () => confirm.click());
   expect(api.confirmContext.mock.calls[0]?.[5]).toBe(api.confirmContext.mock.calls[1]?.[5]);
 });
+
+it("keeps the last confirmed understanding visible when a refresh fails", async () => {
+  const api = {
+    context: vi.fn().mockResolvedValueOnce({ current: base, history: [base], drafts: [] }),
+    confirmContext: vi.fn(), compareContext: vi.fn(),
+  };
+  await act(async () => root.render(<HrPositionContextPanel api={api as never} positionId={positionId} refreshGeneration={0} />));
+  expect(container.textContent).toContain("旧画像");
+
+  api.context.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => root.render(<HrPositionContextPanel api={api as never} positionId={positionId} refreshGeneration={1} />));
+
+  expect(container.textContent).toContain("旧画像");
+  expect(container.textContent).toContain("岗位理解暂时无法读取");
+  expect([...container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "重试")).toBe(true);
+});

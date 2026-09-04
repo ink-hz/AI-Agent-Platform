@@ -336,3 +336,23 @@ it("disables upload and all candidate mutations in hard-stale read-only mode", a
   await act(async () => documentButtons[0]?.click());
   expect(client.downloadCandidateDocument).not.toHaveBeenCalled();
 });
+
+it("distinguishes an empty candidate set from a local read failure", async () => {
+  const client = api();
+  client.candidateDrafts.mockResolvedValue([]);
+  client.positionCandidates.mockResolvedValue([]);
+  await act(async () => root.render(<HrCandidateWorkspace
+    api={client as never} csrfToken="csrf" currentContextVersionId={null} positionId={positionId}
+  />));
+  expect(container.textContent).toContain("暂无候选人");
+  expect(container.textContent).not.toContain("候选人数据暂时不可用");
+
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  const failed = api(); failed.candidateDrafts.mockRejectedValue(new Error("offline"));
+  await act(async () => root.render(<HrCandidateWorkspace
+    api={failed as never} csrfToken="csrf" currentContextVersionId={null} positionId={positionId}
+  />));
+  expect(container.textContent).toContain("候选人数据暂时无法读取");
+  expect([...container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "重试")).toBe(true);
+});
