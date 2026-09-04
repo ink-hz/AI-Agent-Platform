@@ -277,7 +277,9 @@ class ExecutionRelayRepository:
                 )
                 return RelayLease(
                     job_id=row["job_id"],
-                    payload=RelayJobPayload.model_validate(value),
+                    payload=RelayJobPayload.model_validate_json(
+                        json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                    ),
                     lease_expires_at=updated["lease_expires_at"],
                     cancel_requested=row["cancel_requested"],
                 )
@@ -332,7 +334,9 @@ class ExecutionRelayRepository:
                         row["encryption_key_version"],
                     ),
                 )
-                payload = RelayJobPayload.model_validate(value)
+                payload = RelayJobPayload.model_validate_json(
+                    json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                )
                 if (
                     payload.run_id != run_id
                     or payload.agent_id != row["agent_id"]
