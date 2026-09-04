@@ -49,7 +49,7 @@ Remove the mandatory header/chunked rejection. Accumulate `received`, reject onc
 
 - [ ] **Step 4: Run route and service tests**
 
-Run: `python -m pytest backend/tests/test_conversation_attachment_api.py backend/tests/test_conversation_attachment_service.py -q`
+Run: `python -m pytest backend/tests/test_conversation_attachment_api.py backend/tests/test_attachment_upload_service.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -204,7 +204,7 @@ git commit -m "feat(hr): make position workspace chat first"
 
 - [ ] **Step 1: Run backend regression suite**
 
-Run: `python -m pytest backend/tests/test_conversation_attachment_api.py backend/tests/test_conversation_attachment_service.py backend/tests/test_cloud_deployment.py -q`
+Run: `python -m pytest backend/tests/test_conversation_attachment_api.py backend/tests/test_attachment_upload_service.py backend/tests/test_cloud_deployment.py -q`
 Expected: PASS.
 
 - [ ] **Step 2: Review the complete diff**
@@ -227,4 +227,3 @@ Do not modify shared Nginx, FAE, VOC, Marketing, AI ADMIN, or unrelated containe
 - [ ] **Step 6: Production acceptance**
 
 Verify the HR page HTTP response, upload a small `.md` file through the authenticated UI when a browser session is available, confirm attachment ready/download, and confirm answer actions plus drawer behavior. Record staging cleanup, release sizes, image retention, and before/after disk state.
-
