@@ -185,32 +185,6 @@ services:
       platform-minio:
         condition: service_started
 
-  platform-clamav:
-    image: ${PLATFORM_CLAMAV_IMAGE:-clamav/clamav:1.4.3}
-    restart: unless-stopped
-    user: "100:101"
-    read_only: true
-    entrypoint: ["clamd"]
-    command:
-      - "--foreground=true"
-      - "--log=/tmp/clamd.log"
-      - "--datadir=/var/lib/clamav"
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m,uid=100,gid=101,mode=0770
-    networks:
-      platform-internal:
-        ipv4_address: 172.30.0.9
-    healthcheck:
-      test: ["CMD-SHELL", "clamdscan --ping=1 --wait /etc/hosts >/dev/null"]
-      interval: 30s
-      timeout: 8s
-      retries: 6
-      start_period: 120s
-
   platform-attachments:
     image: ${PLATFORM_IMAGE}
     restart: unless-stopped
@@ -232,8 +206,7 @@ services:
       PLATFORM_ATTACHMENT_S3_BUCKET: orbbec-agent-attachments
       PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE: /run/secrets/attachment-s3-access-key
       PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE: /run/secrets/attachment-s3-secret-key
-      PLATFORM_ATTACHMENT_CLAMAV_HOST: platform-clamav
-      PLATFORM_ATTACHMENT_CLAMAV_PORT: "3310"
+      PLATFORM_ATTACHMENT_SCAN_MODE: trusted-internal
     volumes:
       - platform-attachment-worker-secrets:/run/secrets:ro
     networks:
@@ -244,8 +217,6 @@ services:
         condition: service_healthy
       platform-attachment-storage-init:
         condition: service_completed_successfully
-      platform-clamav:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-m", "app.attachments.worker_runtime", "healthcheck"]
       interval: 30s

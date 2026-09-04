@@ -45,7 +45,6 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         "platform-api",
         "platform-attachment-storage-init",
         "platform-attachments",
-        "platform-clamav",
         "platform-loopback",
         "platform-minio",
         "platform-postgres",
@@ -183,28 +182,7 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     storage_init = services["platform-attachment-storage-init"]
     assert storage_init["read_only"] is True
     assert storage_init["environment"]["MC_CONFIG_DIR"] == "/tmp/.mc"
-    assert "ports" not in services["platform-clamav"]
-    assert services["platform-clamav"]["networks"] == {
-        "platform-internal": {"ipv4_address": "172.30.0.9"}
-    }
-    assert services["platform-clamav"]["user"] == "100:101"
-    assert services["platform-clamav"]["read_only"] is True
-    assert services["platform-clamav"]["entrypoint"] == ["clamd"]
-    assert services["platform-clamav"]["command"] == [
-        "--foreground=true",
-        "--log=/tmp/clamd.log",
-        "--datadir=/var/lib/clamav",
-    ]
-    assert services["platform-clamav"]["tmpfs"] == [
-        "/tmp:rw,noexec,nosuid,size=16m,uid=100,gid=101,mode=0770"
-    ]
-    assert "volumes" not in services["platform-clamav"]
-    assert services["platform-clamav"]["cap_drop"] == ["ALL"]
-    assert "cap_add" not in services["platform-clamav"]
-    assert services["platform-clamav"]["healthcheck"]["test"] == [
-        "CMD-SHELL",
-        "clamdscan --ping=1 --wait /etc/hosts >/dev/null",
-    ]
+    assert "platform-clamav" not in services
     worker = services["platform-attachments"]
     assert worker["command"] == [
         "python", "-m", "app.attachments.worker_runtime", "all"
@@ -214,8 +192,12 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert worker["healthcheck"]["test"] == [
         "CMD", "python", "-m", "app.attachments.worker_runtime", "healthcheck"
     ]
+    assert worker["environment"]["PLATFORM_ATTACHMENT_SCAN_MODE"] == "trusted-internal"
+    assert "PLATFORM_ATTACHMENT_CLAMAV_HOST" not in worker["environment"]
+    assert "PLATFORM_ATTACHMENT_CLAMAV_PORT" not in worker["environment"]
+    assert "platform-clamav" not in worker["depends_on"]
     serialized = (CLOUD / "compose.yaml").read_text(encoding="utf-8").lower()
-    for forbidden in ("langfuse", "nginx", "ai-fae", "fae-backend"):
+    for forbidden in ("langfuse", "nginx", "ai-fae", "fae-backend", "clamav"):
         assert forbidden not in serialized
     assert value["networks"]["platform-internal"]["internal"] is True
     assert value["networks"]["voc-extension"] == {
@@ -402,6 +384,28 @@ def test_remote_stage_requires_consecutive_loopback_health_checks():
         "/usr/bin/curl --silent --show-error --fail --max-time 2 "
         "http://127.0.0.1:8080/api/health >/dev/null || fail"
     ) not in script
+
+
+def test_remote_stage_retries_transient_fae_http_invariance_checks():
+    script = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    assert "fae_curl_options=(" in script
+    for option in (
+        "--connect-timeout 3",
+        "--max-time 8",
+        "--retry 5",
+        "--retry-all-errors",
+        "--retry-delay 1",
+        "--retry-max-time 45",
+    ):
+        assert option in script
+    assert script.count('"${fae_curl_options[@]}"') == 4
+
+
+def test_cloud_acceptance_does_not_require_clamav_for_internal_rollout():
+    script = (CLOUD / "acceptance.sh").read_text(encoding="utf-8")
+
+    assert "platform-clamav" not in script
 
 
 def test_remote_stage_enforces_data_disk_and_bounded_release_retention():

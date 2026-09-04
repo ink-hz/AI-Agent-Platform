@@ -42,6 +42,62 @@ class MalwareScanner(Protocol):
     def scan_stream(self, chunks: DeadlineChunkSource, *, size: int) -> ScanResult: ...
 
 
+class TrustedInternalScanner:
+    """Integrity-only scanner for explicitly authorized internal deployments."""
+
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+        max_file_bytes: int = MAX_FILE_BYTES,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
+            raise ValueError("attachment scanner timeout invalid")
+        if (
+            isinstance(max_file_bytes, bool)
+            or not isinstance(max_file_bytes, int)
+            or max_file_bytes <= 0
+            or max_file_bytes > MAX_FILE_BYTES
+        ):
+            raise ValueError("attachment scanner size invalid")
+        self._timeout_seconds = float(timeout_seconds)
+        self._max_file_bytes = max_file_bytes
+        self._monotonic = monotonic
+
+    def __repr__(self) -> str:
+        return "TrustedInternalScanner()"
+
+    def database_version(self) -> int:
+        return 0
+
+    def scan_stream(self, chunks: DeadlineChunkSource, *, size: int) -> ScanResult:
+        if (
+            isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 0
+            or size > self._max_file_bytes
+            or not callable(getattr(chunks, "iter_chunks_until", None))
+        ):
+            raise ScannerUnavailable()
+        deadline = self._monotonic() + self._timeout_seconds
+        streamed = 0
+        try:
+            for chunk in chunks.iter_chunks_until(deadline, self._monotonic):
+                if self._monotonic() >= deadline or not isinstance(chunk, bytes):
+                    raise ScannerUnavailable()
+                streamed += len(chunk)
+                if streamed > size or streamed > self._max_file_bytes:
+                    raise ScannerUnavailable()
+        except ScannerUnavailable:
+            raise
+        except Exception:
+            raise ScannerUnavailable() from None
+        if streamed != size:
+            raise ScannerUnavailable()
+        return ScanResult(ScanDisposition.CLEAN, 0)
+
+
 class ClamAVScanner:
     def __init__(
         self,
