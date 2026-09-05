@@ -308,6 +308,8 @@ def test_coordinator_submits_only_approved_scope_with_as_of_contract_and_stable_
     assert NOW.isoformat() in prompt
     assert "最多重试 1 次" in prompt
     assert "panorama_report" in prompt
+    assert "社招" in prompt and "校招" in prompt and "实习" in prompt
+    assert "不得写成“没有岗位”" in prompt
     assert all(call[0] == runtime.run.owner_id for call in commands.calls)
     assert all(call[1] == runtime.run.conversation_id for call in commands.calls)
 

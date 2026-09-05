@@ -64,6 +64,8 @@ describe("HrPanoramaReport", () => {
     expect(container.textContent).toContain("关键能力");
     expect(container.textContent).toContain("重点团队与投入信号");
     expect(container.textContent).toContain("精密结构人才投入可能增加");
+    const evidenceTab = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "来源证据");
+    await act(async () => evidenceTab?.click());
     expect(container.querySelector('[data-evidence-kind="facts"] h2')?.textContent).toBe("公开事实");
     expect(container.querySelector('[data-evidence-kind="inferences"] h2')?.textContent).toBe("AI 推断");
     expect(container.querySelector('[data-evidence-kind="unknowns"] h2')?.textContent).toBe("仍待确认");
@@ -73,6 +75,56 @@ describe("HrPanoramaReport", () => {
     expect(inference?.querySelector('time[datetime="2026-09-05T08:00:00Z"]')).not.toBeNull();
     expect(container.querySelector('time[datetime="2026-09-05T08:00:00Z"]')).not.toBeNull();
     expect(container.querySelector("details")?.open).toBe(false);
+  });
+
+  it("separates social and campus recruiting without forcing unmarked jobs into either track", async () => {
+    const tracked: Report = {
+      ...report,
+      snapshots: [
+        { ...report.snapshots[0], sourceUrl: "https://example.com/experienced/job-1" },
+        { ...report.snapshots[1], title: "2027届校园招聘｜光学工程师", sourceUrl: "https://sunny.example/campus/job-2" },
+        { ...report.snapshots[0], snapshotId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", publicJobKey: "job-3", title: "算法工程师", sourceUrl: "https://example.com/jobs/3" },
+      ],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={tracked} />));
+
+    expect(container.textContent).toContain("总览");
+    expect(container.textContent).toContain("社招");
+    expect(container.textContent).toContain("校招");
+    expect(container.textContent).toContain("产品与业务方向");
+    expect(container.textContent).toContain("岗位明细");
+    expect(container.textContent).toContain("来源证据");
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "校招")?.click());
+    const campus = container.querySelector('[data-report-view="campus"]');
+    expect(campus?.textContent).toContain("2027届校园招聘｜光学工程师");
+    expect(campus?.textContent).not.toContain("结构工程师");
+    expect(campus?.textContent).toContain("未识别到校招标记，待确认");
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "社招")?.click());
+    const social = container.querySelector('[data-report-view="social"]');
+    expect(social?.textContent).toContain("结构工程师");
+    expect(social?.textContent).not.toContain("2027届校园招聘｜光学工程师");
+    expect(social?.textContent).toContain("1 个岗位尚未识别招聘类型");
+  });
+
+  it("filters job details by company, recruiting type, location, status, and technical direction", async () => {
+    await act(async () => root.render(<HrPanoramaReport report={report} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "岗位明细")?.click());
+
+    for (const label of ["公司", "招聘类型", "地点", "岗位状态", "技术方向"]) {
+      expect(container.querySelector(`select[aria-label="${label}"]`)).not.toBeNull();
+    }
+    const company = container.querySelector<HTMLSelectElement>('select[aria-label="公司"]');
+    await act(async () => {
+      if (!company) return;
+      company.value = report.sources[0].sourceId;
+      company.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const jobs = container.querySelector('[data-report-view="jobs"]');
+    expect(jobs?.textContent).toContain("结构工程师");
+    expect(jobs?.textContent).not.toContain("光学工程师");
+    expect(jobs?.textContent).toContain("1 / 2 条");
   });
 
   it("labels a report without a prior same-scope version as the first baseline", async () => {

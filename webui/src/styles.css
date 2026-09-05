@@ -2069,6 +2069,38 @@ body {
 .hr-panorama-report-stats > div:last-child { border-right: 0; }
 .hr-panorama-report-stats dt { color: #405b76; font-size: 12.5px; font-weight: 700; }
 .hr-panorama-report-stats dd { margin: 4px 0 0; color: #173f6d; font-size: 30px; font-weight: 820; line-height: 1.1; }
+.hr-panorama-report [hidden] { display: none; }
+.hr-panorama-report-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 5px; border: 1px solid #d4e0eb; border-radius: 12px; background: #f5f8fb; scrollbar-width: thin; }
+.hr-panorama-report-tabs button { flex: 0 0 auto; min-height: 38px; padding: 8px 13px; border: 0; border-radius: 8px; background: transparent; color: #405b76; font: inherit; font-size: 13px; font-weight: 760; cursor: pointer; }
+.hr-panorama-report-tabs button[aria-selected="true"] { background: #fff; color: #174f9b; box-shadow: 0 2px 8px rgba(32,50,70,.1); }
+.hr-panorama-track-view,.hr-panorama-strategy,.hr-panorama-job-view { padding: clamp(22px,3vw,34px); border: 1px solid #d4e0eb; border-radius: 18px; background: #fff; }
+.hr-panorama-track-view > header,.hr-panorama-job-view > header,.hr-panorama-strategy > header { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding-bottom: 16px; border-bottom: 1px solid #e5ebf1; }
+.hr-panorama-track-view header p,.hr-panorama-job-view header p,.hr-panorama-strategy > header > p { margin: 0; color: #185fa9; font-size: 12px; font-weight: 850; letter-spacing: .1em; }
+.hr-panorama-track-view h2,.hr-panorama-job-view h2,.hr-panorama-strategy h2 { margin: 4px 0 0; color: #17345c; font-size: 26px; }
+.hr-panorama-track-view > header > strong,.hr-panorama-job-view > header > strong { color: #174f9b; font-size: 13px; }
+.hr-panorama-track-coverage { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 16px 0; }
+.hr-panorama-track-coverage article { display: flex; justify-content: space-between; gap: 16px; padding: 11px 12px; border-radius: 9px; background: #f5f8fb; font-size: 13px; }
+.hr-panorama-track-coverage span { color: #405b76; text-align: right; }
+.hr-panorama-track-warning { margin: 12px 0; padding: 10px 12px; border-radius: 9px; background: #fff8e9; color: #76571b; font-size: 13px; }
+.hr-panorama-job-cards { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 16px; }
+.hr-panorama-job-cards article { padding: 15px; border: 1px solid #dce5ee; border-radius: 11px; background: #fbfcfe; }
+.hr-panorama-job-cards article > span { color: #185fa9; font-size: 12px; font-weight: 780; }
+.hr-panorama-job-cards h3 { margin: 5px 0 4px; font-size: 16px; }
+.hr-panorama-job-cards article p { margin: 0; color: #405b76; font-size: 13px; }
+.hr-panorama-job-cards footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 11px; font-size: 12.5px; }
+.hr-panorama-job-cards a { color: #185fa9; font-weight: 750; }
+.hr-panorama-job-cards time { color: #405b76; }
+.hr-panorama-job-filters { display: grid; grid-template-columns: repeat(5,minmax(120px,1fr)); gap: 8px; margin-top: 16px; }
+.hr-panorama-job-filters label { display: grid; gap: 5px; color: #405b76; font-size: 12px; font-weight: 720; }
+.hr-panorama-job-filters select { width: 100%; min-height: 38px; padding: 7px 9px; border: 1px solid #c8d6e4; border-radius: 8px; background: #fff; color: #1f3851; font: inherit; font-size: 12.5px; }
+.hr-panorama-strategy > header > span { max-width: 430px; color: #405b76; font-size: 13px; text-align: right; }
+.hr-panorama-strategy-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 16px; }
+.hr-panorama-strategy-grid > section { padding: 16px; border-radius: 12px; background: #f5f8fb; }
+.hr-panorama-strategy-grid h3 { margin: 0 0 12px; }
+.hr-panorama-strategy-grid dl,.hr-panorama-strategy-grid ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.hr-panorama-strategy-grid dl > div { display: flex; justify-content: space-between; gap: 12px; }
+.hr-panorama-strategy-grid dd { margin: 0; font-weight: 780; }
+.hr-panorama-strategy aside { display: flex; gap: 12px; margin-top: 12px; padding: 12px; border-radius: 10px; background: #fff8e9; color: #664c1b; font-size: 13px; }
 .hr-panorama-signal-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .hr-panorama-signal-grid > section { min-width: 0; padding: 21px; border: 1px solid #d4e0eb; border-radius: 15px; background: #fff; }
 .hr-panorama-signal-grid > section:last-child:nth-child(odd) { grid-column: 1 / -1; }
@@ -2131,7 +2163,7 @@ body {
   .hr-panorama-report-meta { align-items: flex-start; flex-direction: column; }
   .hr-panorama-report-meta > div { width: 100%; align-items: flex-start; flex-direction: column; }
   .hr-panorama-report-lead { padding: 25px 20px; }
-  .hr-panorama-report-stats,.hr-panorama-signal-grid,.hr-panorama-sources > div,.hr-panorama-diagnostics dl { grid-template-columns: 1fr; }
+  .hr-panorama-report-stats,.hr-panorama-signal-grid,.hr-panorama-sources > div,.hr-panorama-diagnostics dl,.hr-panorama-track-coverage,.hr-panorama-job-cards,.hr-panorama-strategy-grid,.hr-panorama-job-filters { grid-template-columns: 1fr; }
   .hr-panorama-signal-grid > section:last-child:nth-child(odd) { grid-column: auto; }
   .hr-panorama-report-stats > div { border-right: 0; border-bottom: 1px solid #e2e9f0; }
   .hr-panorama-report-stats > div:last-child { border-bottom: 0; }
