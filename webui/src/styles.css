@@ -2116,11 +2116,20 @@ body {
 .hr-panorama-signal-grid li { display: grid; gap: 3px; padding: 9px 10px; border-radius: 9px; background: #f5f8fb; }
 .hr-panorama-signal-grid li strong { font-size: 13.5px; }
 .hr-panorama-signal-grid li span,.hr-panorama-signal-grid > section > p { color: #405b76; font-size: 13px; }
-.hr-panorama-evidence,.hr-panorama-sources { padding: clamp(22px,3vw,34px); border: 1px solid #d4e0eb; border-radius: 18px; background: #fff; }
-.hr-panorama-evidence > header,.hr-panorama-sources > header { display: grid; grid-template-columns: minmax(0,1fr) minmax(240px,.65fr); column-gap: 24px; padding-bottom: 16px; border-bottom: 1px solid #e5ebf1; }
-.hr-panorama-evidence > header > p,.hr-panorama-sources > header > p { grid-column: 1 / -1; }
-.hr-panorama-evidence h2,.hr-panorama-sources h2 { margin: 4px 0 0; color: #17345c; font-size: 26px; }
-.hr-panorama-evidence > header > span,.hr-panorama-sources > header > span { align-self: end; color: #405b76; font-size: 13px; }
+.hr-panorama-evidence,.hr-panorama-sources,.hr-panorama-source-matrix { padding: clamp(22px,3vw,34px); border: 1px solid #d4e0eb; border-radius: 18px; background: #fff; }
+.hr-panorama-evidence > header,.hr-panorama-sources > header,.hr-panorama-source-matrix > header { display: grid; grid-template-columns: minmax(0,1fr) minmax(240px,.65fr); column-gap: 24px; padding-bottom: 16px; border-bottom: 1px solid #e5ebf1; }
+.hr-panorama-evidence > header > p,.hr-panorama-sources > header > p,.hr-panorama-source-matrix > header > p { grid-column: 1 / -1; margin: 0; color: #185fa9; font-size: 12px; font-weight: 850; letter-spacing: .11em; }
+.hr-panorama-evidence h2,.hr-panorama-sources h2,.hr-panorama-source-matrix h2 { margin: 4px 0 0; color: #17345c; font-size: 26px; }
+.hr-panorama-evidence > header > span,.hr-panorama-sources > header > span,.hr-panorama-source-matrix > header > span { align-self: end; color: #405b76; font-size: 13px; }
+.hr-panorama-source-matrix > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 16px; }
+.hr-panorama-source-matrix article { min-width: 0; padding: 15px; border: 1px solid #dce5ee; border-radius: 11px; background: #fbfcfe; }
+.hr-panorama-source-matrix article > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.hr-panorama-source-matrix article h3 { margin: 0 0 4px; color: #17345c; }
+.hr-panorama-source-matrix article header span,.hr-panorama-source-matrix article time { color: #536b84; font-size: 12px; }
+.hr-panorama-source-matrix ul { display: grid; gap: 7px; margin: 13px 0 0; padding: 0; list-style: none; }
+.hr-panorama-source-matrix li { display: grid; grid-template-columns: 80px minmax(0,1fr); gap: 8px; align-items: center; }
+.hr-panorama-source-matrix li span { color: #405b76; font-size: 11.5px; font-weight: 760; }
+.hr-panorama-source-matrix li a { overflow: hidden; color: #185fa9; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .hr-panorama-evidence ol,.hr-panorama-evidence ul { display: grid; gap: 9px; margin: 16px 0 0; padding: 0; list-style: none; }
 .hr-panorama-evidence li { padding: 15px 16px; border-left: 4px solid #1b78be; border-radius: 6px 10px 10px 6px; background: #f3f8fd; }
 .hr-panorama-evidence.is-inference li { border-left-color: #7962c5; background: #f7f5fc; }
@@ -2163,12 +2172,12 @@ body {
   .hr-panorama-report-meta { align-items: flex-start; flex-direction: column; }
   .hr-panorama-report-meta > div { width: 100%; align-items: flex-start; flex-direction: column; }
   .hr-panorama-report-lead { padding: 25px 20px; }
-  .hr-panorama-report-stats,.hr-panorama-signal-grid,.hr-panorama-sources > div,.hr-panorama-diagnostics dl,.hr-panorama-track-coverage,.hr-panorama-job-cards,.hr-panorama-strategy-grid,.hr-panorama-job-filters { grid-template-columns: 1fr; }
+  .hr-panorama-report-stats,.hr-panorama-signal-grid,.hr-panorama-sources > div,.hr-panorama-source-matrix > div,.hr-panorama-diagnostics dl,.hr-panorama-track-coverage,.hr-panorama-job-cards,.hr-panorama-strategy-grid,.hr-panorama-job-filters { grid-template-columns: 1fr; }
   .hr-panorama-signal-grid > section:last-child:nth-child(odd) { grid-column: auto; }
   .hr-panorama-report-stats > div { border-right: 0; border-bottom: 1px solid #e2e9f0; }
   .hr-panorama-report-stats > div:last-child { border-bottom: 0; }
-  .hr-panorama-evidence > header,.hr-panorama-sources > header { grid-template-columns: 1fr; }
-  .hr-panorama-evidence > header > span,.hr-panorama-sources > header > span { margin-top: 5px; }
+  .hr-panorama-evidence > header,.hr-panorama-sources > header,.hr-panorama-source-matrix > header { grid-template-columns: 1fr; }
+  .hr-panorama-evidence > header > span,.hr-panorama-sources > header > span,.hr-panorama-source-matrix > header > span { margin-top: 5px; }
   .hr-panorama-partial { flex-direction: column; }
 }
 

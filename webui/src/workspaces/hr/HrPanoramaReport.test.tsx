@@ -77,6 +77,19 @@ describe("HrPanoramaReport", () => {
     expect(container.querySelector("details")?.open).toBe(false);
   });
 
+  it("shows an auditable intelligence source matrix for every company", async () => {
+    await act(async () => root.render(<HrPanoramaReport report={report} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "来源证据")?.click());
+
+    const matrix = container.querySelector('[data-evidence-kind="source-matrix"]');
+    expect(matrix?.textContent).toContain("情报来源矩阵");
+    expect(matrix?.textContent).toContain("联合光电");
+    expect(matrix?.textContent).toContain("舜宇光学");
+    expect(matrix?.textContent).toContain("已观测 1 条岗位");
+    expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://example.com/jobs"]')).not.toBeNull();
+    expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://sunny.example/jobs"]')).not.toBeNull();
+  });
+
   it("separates social and campus recruiting without forcing unmarked jobs into either track", async () => {
     const tracked: Report = {
       ...report,

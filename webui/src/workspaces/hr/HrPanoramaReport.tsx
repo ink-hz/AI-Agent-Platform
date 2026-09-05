@@ -100,6 +100,16 @@ function technicalDirection(item: HrPanoramaSnapshot): string {
   return "其他";
 }
 
+function sourceChannel(url: string): string {
+  const value = url.toLocaleLowerCase("zh-CN");
+  if (/(campus|xyzp|xiaozhao|校招)/i.test(value)) return "校招入口";
+  if (/(intern|073183|实习)/i.test(value)) return "实习入口";
+  if (/(experienced|social|shzp)/i.test(value)) return "社招入口";
+  if (/(jobs\.feishu|zhiye\.com|hr\.|jobs\.)/i.test(value)) return "招聘系统";
+  if (/(zhaopin|nowcoder|career\.|job\.)/i.test(value)) return "公开招聘补充";
+  return "公司官网";
+}
+
 function JobCards({ items, sourceById }: { items: HrPanoramaSnapshot[]; sourceById: Map<string, PanoramaReport["sources"][number]> }) {
   if (!items.length) return <p className="hr-panorama-empty-copy">本版没有可展示的匹配岗位记录。</p>;
   return <div className="hr-panorama-job-cards">{items.map((item) => <article key={item.snapshotId}>
@@ -288,6 +298,19 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
       </div>
       <JobCards items={filteredJobs} sourceById={sourceById} />
     </section>}
+
+    <section className="hr-panorama-source-matrix" data-evidence-kind="source-matrix" hidden={view !== "evidence"}>
+      <header><p>SOURCE MATRIX</p><h2>情报来源矩阵</h2><span>逐家公司展示批准渠道、本版观测结果和失败边界。</span></header>
+      <div>{report.sources.map((source) => {
+        const snapshots = report.snapshots.filter((item) => item.sourceId === source.sourceId);
+        const observed = snapshots.map((item) => item.observedAt).sort();
+        const latest = observed[observed.length - 1];
+        const failed = currentFailureIds(comparison).includes(source.sourceId);
+        return <article key={source.sourceId}><header><div><h3>{source.canonicalName}</h3><span>{failed ? "本轮采集失败，报告保留上一版" : snapshots.length ? `已观测 ${snapshots.length} 条岗位` : "本版尚未形成岗位记录，待确认"}</span></div>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</header>
+          <ul>{source.approvedUrls.map((url) => <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a></li>)}</ul>
+        </article>;
+      })}</div>
+    </section>
 
     <section className="hr-panorama-evidence" data-evidence-kind="facts" hidden={view !== "evidence"}>
       <header><p>FACTS</p><h2>公开事实</h2><span>以下内容可回到原始公开页面核验。</span></header>
