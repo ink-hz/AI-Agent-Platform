@@ -166,6 +166,35 @@ def test_runtime_context_and_claim_use_only_dedicated_point_functions() -> None:
     assert all("from platform_hr.panorama_runs" not in sql for sql, _ in calls)
 
 
+def test_source_keyset_page_uses_only_dedicated_bounded_function() -> None:
+    calls = []
+
+    class Cursor:
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def execute(self, sql, parameters):
+            calls.append((sql, parameters))
+            return Cursor()
+
+    repository = PanoramaRepository(
+        "postgresql://unused", connect=lambda *args, **kwargs: Connection()
+    )
+    owner_id = uuid4()
+
+    assert repository.list_sources_page(owner_id, limit=100) == ()
+    assert "list_talent_sources_page_v79" in calls[0][0]
+    assert calls[0][1] == (owner_id, False, None, None, 100)
+    assert "from platform_hr.talent_sources" not in calls[0][0]
+
+
 @pytest.mark.postgres
 def test_repository_creates_runs_snapshots_reports_and_ranks_deterministically(
     control_database,
@@ -265,6 +294,11 @@ def test_repository_creates_runs_snapshots_reports_and_ranks_deterministically(
     )
     assert repository.create_retrieval(retrieval) == first_retrieval
     assert repository.list_retrievals(owner_id, position_id) == (first_retrieval,)
+    assert (
+        repository.retrieval_for_turn(owner_id, position_id, turn_id) == first_retrieval
+    )
+    assert repository.retrieval_for_turn(owner_id, other_position_id, turn_id) is None
+    assert repository.retrieval_for_turn(other_id, position_id, turn_id) is None
     with pytest.raises(PanoramaConflict):
         repository.create_retrieval(
             replace(
@@ -432,6 +466,45 @@ def test_each_ranking_tie_breaker_is_applied_only_after_preceding_signals() -> N
         )[0]
         == low_id
     )
+
+
+def test_relevance_filters_to_latest_version_per_source_scope_before_limit() -> None:
+    owner_id, position_id, source_id = uuid4(), uuid4(), uuid4()
+    repository = PanoramaRepository("postgresql://unused")
+    repository._position_terms = lambda owner, position: ("结构工程师",)  # type: ignore[method-assign]
+    older = tuple(
+        replace(
+            _ranking_insight(
+                UUID(int=index + 100),
+                "unused",
+                {"结构": 1},
+                "结构工程师",
+                NOW - timedelta(days=index + 1),
+            ),
+            selected_source_ids=(source_id,),
+        )
+        for index in range(5)
+    )
+    latest = replace(
+        _ranking_insight(
+            UUID(int=999),
+            "unused",
+            {"软件": 1},
+            "其他",
+            NOW,
+        ),
+        selected_source_ids=(source_id,),
+    )
+    repository._ranking_candidates = lambda owner: (*older, latest)  # type: ignore[method-assign]
+    repository._sources_for_ranking = lambda owner, ids: {  # type: ignore[method-assign]
+        source_id: _source_record(source_id, "联合光电")
+    }
+
+    ranked = repository.relevant_insights(
+        owner_id, "参考联合光电的结构招聘", position_id, limit=5
+    )
+
+    assert ranked == (latest,)
 
 
 def _ranking_insight(insight_id, company_name, clusters, summary, created_at):

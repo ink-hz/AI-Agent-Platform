@@ -5,6 +5,7 @@ import json
 import re
 import unicodedata
 from collections.abc import Callable, Mapping
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -343,6 +344,45 @@ class PanoramaRepository:
             return tuple(_source(row) for row in rows)
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "sources")
+
+    def list_sources_page(
+        self,
+        owner_id: UUID,
+        *,
+        include_inactive: bool = False,
+        before_created_at: datetime | None = None,
+        before_source_id: UUID | None = None,
+        limit: int = 100,
+    ) -> tuple[TalentSource, ...]:
+        _identifier(owner_id)
+        if type(include_inactive) is not bool:
+            raise ValueError("include inactive flag invalid")
+        if (before_created_at is None) != (before_source_id is None):
+            raise ValueError("talent source page cursor invalid")
+        if before_created_at is not None and (
+            not isinstance(before_created_at, datetime)
+            or before_created_at.tzinfo is None
+        ):
+            raise ValueError("talent source page cursor invalid")
+        if before_source_id is not None:
+            _identifier(before_source_id)
+        _limit(limit)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from platform_hr.list_talent_sources_page_v79("
+                    "%s,%s,%s,%s,%s)",
+                    (
+                        owner_id,
+                        include_inactive,
+                        before_created_at,
+                        before_source_id,
+                        limit,
+                    ),
+                ).fetchall()
+            return tuple(_source(row) for row in rows)
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "source page")
 
     def create_run(self, command: CreatePanoramaRun) -> PanoramaRun:
         if not isinstance(command, CreatePanoramaRun):
@@ -685,6 +725,99 @@ class PanoramaRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "retrieval")
 
+    def retrieval_for_turn(
+        self, owner_id: UUID, position_id: UUID, turn_id: UUID
+    ) -> PositionInsightRetrieval | None:
+        _identifier(owner_id)
+        _identifier(position_id)
+        _identifier(turn_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from "
+                    "platform_hr.read_position_insight_retrieval_for_turn_v79("
+                    "%s,%s,%s)",
+                    (owner_id, position_id, turn_id),
+                ).fetchone()
+            return _retrieval(row) if row is not None else None
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "turn retrieval")
+
+    def record_retrieval_for_turn(
+        self,
+        *,
+        retrieval_id: UUID,
+        owner_id: UUID,
+        client_request_id: UUID,
+        position_id: UUID,
+        turn_id: UUID,
+        insight_version_ids: tuple[UUID, ...],
+        query_sha256: str,
+        retrieved_excerpts: tuple[Mapping[str, object], ...],
+    ) -> PositionInsightRetrieval:
+        for value in (
+            retrieval_id,
+            owner_id,
+            client_request_id,
+            position_id,
+            turn_id,
+        ):
+            _identifier(value)
+        try:
+            with self._connection() as connection:
+                scope = connection.execute(
+                    "select turn_record.conversation_id from "
+                    "platform_control.conversation_turns turn_record join "
+                    "platform_control.conversations conversation on "
+                    "conversation.conversation_id=turn_record.conversation_id join "
+                    "platform_hr.position_conversations binding on "
+                    "binding.conversation_id=conversation.conversation_id and "
+                    "binding.owner_internal_user_id="
+                    "conversation.owner_internal_user_id where "
+                    "turn_record.turn_id=%s and "
+                    "conversation.owner_internal_user_id=%s and "
+                    "binding.position_id=%s",
+                    (turn_id, owner_id, position_id),
+                ).fetchone()
+                if scope is None:
+                    raise PanoramaNotFound("panorama turn not found")
+                command = CreatePositionInsightRetrieval(
+                    retrieval_id,
+                    owner_id,
+                    client_request_id,
+                    position_id,
+                    scope["conversation_id"],
+                    turn_id,
+                    insight_version_ids,
+                    query_sha256,
+                    retrieved_excerpts,
+                )
+                row = connection.execute(
+                    "select (platform_hr.create_position_insight_retrieval_v79("
+                    "%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s::jsonb)).*",
+                    (
+                        command.retrieval_id,
+                        command.owner_id,
+                        command.client_request_id,
+                        command.position_id,
+                        command.conversation_id,
+                        command.turn_id,
+                        list(command.insight_version_ids),
+                        command.query_sha256,
+                        json.dumps(
+                            thaw_json(command.retrieved_excerpts),
+                            ensure_ascii=False,
+                        ),
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PanoramaUnavailable("position insight retrieval unavailable")
+            return _retrieval(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "turn retrieval record")
+
     def list_retrievals(
         self, owner_id: UUID, position_id: UUID, *, limit: int = 100
     ) -> tuple[PositionInsightRetrieval, ...]:
@@ -760,7 +893,24 @@ class PanoramaRepository:
         if not isinstance(query, str) or not query.strip() or len(query) > 32768:
             raise ValueError("panorama query invalid")
         position_terms = self._position_terms(owner_id, position_id)
-        candidates = self._ranking_candidates(owner_id)
+        ranked_candidates = self._ranking_candidates(owner_id)
+        latest_by_source_scope: dict[tuple[str, ...], TalentInsightVersion] = {}
+        for insight in ranked_candidates:
+            source_scope = tuple(
+                sorted(str(source_id) for source_id in insight.selected_source_ids)
+            )
+            previous = latest_by_source_scope.get(source_scope)
+            if previous is None or (
+                insight.created_at,
+                insight.version_number,
+                str(insight.insight_version_id),
+            ) > (
+                previous.created_at,
+                previous.version_number,
+                str(previous.insight_version_id),
+            ):
+                latest_by_source_scope[source_scope] = insight
+        candidates = tuple(latest_by_source_scope.values())
         source_ids = tuple(
             dict.fromkeys(
                 source_id

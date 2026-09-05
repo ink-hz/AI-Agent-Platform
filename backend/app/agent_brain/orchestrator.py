@@ -160,6 +160,10 @@ def _request_sections(
         }
     if user_request.hr_workflow_contract is not None:
         sections["hr_workflow_contract"] = user_request.hr_workflow_contract
+    if user_request.hr_panorama_context is not None:
+        sections["hr_panorama_context"] = (
+            user_request.hr_panorama_context.as_prompt_document()
+        )
     return sections
 
 

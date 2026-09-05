@@ -167,6 +167,7 @@ from .hr.candidate_repository import CandidateRepository
 from .hr.candidate_routes import build_candidate_router
 from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
+from .hr.panorama_context import PanoramaContextProvider
 from .hr.panorama_repository import PanoramaRepository
 from .hr.panorama_routes import build_panorama_router
 from .hr.panorama_runtime import (
@@ -828,6 +829,7 @@ def create_app(
     hr_candidate_service=None,
     hr_panorama_service=None,
     hr_panorama_projector=None,
+    hr_panorama_context_provider=None,
     hr_resource_service=None,
     hr_task_context_provider=None,
     hr_position_task_service=None,
@@ -1166,9 +1168,11 @@ def create_app(
     candidate_task_validator = None
     hr_model_version = None
     hr_model_version_checked = False
+    panorama_repository = None
     if identity_enabled and control_database_url is not None:
-        if hr_panorama_service is None:
+        if hr_panorama_service is None or hr_panorama_context_provider is None:
             panorama_repository = PanoramaRepository(control_database_url)
+        if hr_panorama_service is None:
             hr_panorama_coordinator = None
             if (
                 "direct_agent" in v1_mission_modes
@@ -1197,6 +1201,10 @@ def create_app(
             hr_panorama_service = PanoramaService(
                 panorama_repository,
                 coordinator=hr_panorama_coordinator,
+            )
+        if hr_panorama_context_provider is None:
+            hr_panorama_context_provider = PanoramaContextProvider(
+                panorama_repository
             )
         if (
             hr_position_intelligence_service is None
@@ -1350,6 +1358,7 @@ def create_app(
             conversation_context_builder=ConversationContextBuilder(
                 conversation_repository,
                 hr_task_context_provider=hr_task_context_provider,
+                panorama_context_provider=hr_panorama_context_provider,
                 candidate_parser_input_provider=(
                     hr_candidate_parser_input_provider
                 ),
@@ -1521,6 +1530,7 @@ def create_app(
     app.state.hr_candidate_service = hr_candidate_service
     app.state.hr_panorama_service = hr_panorama_service
     app.state.hr_panorama_projector = hr_panorama_projector
+    app.state.hr_panorama_context_provider = hr_panorama_context_provider
     app.state.hr_resource_service = hr_resource_service
     app.state.hr_task_context_provider = hr_task_context_provider
     app.state.hr_position_task_service = hr_position_task_service

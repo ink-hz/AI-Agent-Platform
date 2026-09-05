@@ -187,6 +187,7 @@ def test_migration_exposes_only_app_panorama_entrypoints() -> None:
     functions = {
         "create_talent_source_v79",
         "list_talent_sources_v79",
+        "list_talent_sources_page_v79",
         "create_panorama_run_v79",
         "list_panorama_runs_v79",
         "transition_panorama_run_v79",
@@ -196,6 +197,7 @@ def test_migration_exposes_only_app_panorama_entrypoints() -> None:
         "list_talent_insight_versions_v79",
         "create_position_insight_retrieval_v79",
         "list_position_insight_retrievals_v79",
+        "read_position_insight_retrieval_for_turn_v79",
         "read_talent_sources_v79",
         "read_panorama_run_v79",
         "read_public_job_snapshots_v79",

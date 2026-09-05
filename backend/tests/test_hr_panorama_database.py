@@ -37,6 +37,7 @@ CREATE_SOURCE = (
     "%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)).*"
 )
 LIST_SOURCES = "select * from platform_hr.list_talent_sources_v79(%s,%s,%s)"
+PAGE_SOURCES = "select * from platform_hr.list_talent_sources_page_v79(%s,%s,%s,%s,%s)"
 CREATE_RUN = "select (platform_hr.create_panorama_run_v79(%s,%s,%s,%s::uuid[],%s)).*"
 LIST_RUNS = "select * from platform_hr.list_panorama_runs_v79(%s,%s)"
 TRANSITION_RUN = (
@@ -59,6 +60,9 @@ CREATE_RETRIEVAL = (
 )
 LIST_RETRIEVALS = (
     "select * from platform_hr.list_position_insight_retrievals_v79(%s,%s,%s)"
+)
+READ_TURN_RETRIEVAL = (
+    "select * from platform_hr.read_position_insight_retrieval_for_turn_v79(%s,%s,%s)"
 )
 READ_SOURCES = "select * from platform_hr.read_talent_sources_v79(%s,%s::uuid[])"
 READ_RUN = "select (platform_hr.read_panorama_run_v79(%s,%s)).*"
@@ -341,6 +345,7 @@ def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
     signatures = (
         "platform_hr.create_talent_source_v79(uuid,uuid,uuid,text,text,jsonb,jsonb,boolean)",
         "platform_hr.list_talent_sources_v79(uuid,boolean,integer)",
+        "platform_hr.list_talent_sources_page_v79(uuid,boolean,timestamptz,uuid,integer)",
         "platform_hr.create_panorama_run_v79(uuid,uuid,uuid,uuid[],uuid)",
         "platform_hr.list_panorama_runs_v79(uuid,integer)",
         "platform_hr.transition_panorama_run_v79(uuid,uuid,uuid,bigint,text,text,jsonb)",
@@ -350,6 +355,7 @@ def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
         "platform_hr.list_talent_insight_versions_v79(uuid,integer)",
         "platform_hr.create_position_insight_retrieval_v79(uuid,uuid,uuid,uuid,uuid,uuid,uuid[],text,jsonb)",
         "platform_hr.list_position_insight_retrievals_v79(uuid,uuid,integer)",
+        "platform_hr.read_position_insight_retrieval_for_turn_v79(uuid,uuid,uuid)",
         "platform_hr.read_talent_sources_v79(uuid,uuid[])",
         "platform_hr.read_panorama_run_v79(uuid,uuid)",
         "platform_hr.read_public_job_snapshots_v79(uuid,uuid[])",
@@ -1884,6 +1890,27 @@ def test_insight_is_append_only_and_retrieval_is_position_owner_scoped(
             ).fetchone()[0]
             == retrieval_id
         )
+        assert (
+            app.execute(
+                READ_TURN_RETRIEVAL,
+                (scope["owner"], scope["position"], scope["turn"]),
+            ).fetchone()
+            == retrieval
+        )
+        assert (
+            app.execute(
+                READ_TURN_RETRIEVAL,
+                (scope["owner"], other["position"], scope["turn"]),
+            ).fetchone()
+            is None
+        )
+        assert (
+            app.execute(
+                READ_TURN_RETRIEVAL,
+                (other["owner"], scope["position"], scope["turn"]),
+            ).fetchone()
+            is None
+        )
         app.commit()
         changed_insight = list(insight_values)
         changed_insight[10] = "同 request 的不同摘要"
@@ -1998,6 +2025,41 @@ def test_insight_is_append_only_and_retrieval_is_position_owner_scoped(
                 "where insight_version_id=%s",
                 (insight_id,),
             )
+
+
+@pytest.mark.postgres
+def test_talent_source_keyset_page_reaches_the_101st_followed_company(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Source Paging Owner")
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        for index in range(101):
+            app.execute(
+                CREATE_SOURCE,
+                _source_values(
+                    scope,
+                    request_id=uuid4(),
+                    source_id=UUID(int=index + 1),
+                    company_key=f"paged-company-{index:03d}",
+                    canonical_name=(
+                        "第101家目标公司" if index == 100 else f"分页公司{index}"
+                    ),
+                ),
+            )
+        first = app.execute(
+            PAGE_SOURCES, (scope["owner"], False, None, None, 100)
+        ).fetchall()
+        second = app.execute(
+            PAGE_SOURCES,
+            (scope["owner"], False, first[-1][9], first[-1][0], 100),
+        ).fetchall()
+
+    assert len(first) == 100
+    assert len(second) == 1
+    assert {row[0] for row in first}.isdisjoint({row[0] for row in second})
+    assert second[0][5] == "第101家目标公司"
 
 
 @pytest.mark.postgres

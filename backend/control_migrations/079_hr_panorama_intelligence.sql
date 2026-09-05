@@ -736,7 +736,8 @@ create table platform_hr.position_insight_retrievals (
   foreign key (conversation_id,turn_id)
     references platform_control.conversation_turns(conversation_id,turn_id),
   unique (retrieval_id,owner_internal_user_id),
-  unique (owner_internal_user_id,client_request_id)
+  unique (owner_internal_user_id,client_request_id),
+  unique (owner_internal_user_id,position_id,turn_id)
 );
 
 create table platform_hr.position_insight_retrieval_versions (
@@ -947,6 +948,44 @@ begin
     select source.* from platform_hr.talent_sources source
     where source.owner_internal_user_id=selected_owner_internal_user_id
       and (selected_include_inactive or source.active)
+    order by source.created_at desc,source.source_id
+    limit selected_limit;
+end
+$function$;
+
+create function platform_hr.list_talent_sources_page_v79(
+  selected_owner_internal_user_id uuid,
+  selected_include_inactive boolean,
+  selected_before_created_at timestamptz,
+  selected_before_source_id uuid,
+  selected_limit integer
+) returns setof platform_hr.talent_sources
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if selected_limit is null or selected_limit not between 1 and 100
+    or (selected_before_created_at is null) <>
+       (selected_before_source_id is null) then
+    raise check_violation using message='talent source page invalid';
+  end if;
+  return query
+    select source.* from platform_hr.talent_sources source
+    where source.owner_internal_user_id=selected_owner_internal_user_id
+      and (selected_include_inactive or source.active)
+      and (
+        selected_before_created_at is null
+        or source.created_at<selected_before_created_at
+        or (
+          source.created_at=selected_before_created_at
+          and source.source_id>selected_before_source_id
+        )
+      )
     order by source.created_at desc,source.source_id
     limit selected_limit;
 end
@@ -1591,6 +1630,28 @@ begin
 end
 $function$;
 
+create function platform_hr.read_position_insight_retrieval_for_turn_v79(
+  selected_owner_internal_user_id uuid,
+  selected_position_id uuid,
+  selected_turn_id uuid
+) returns setof platform_hr.position_insight_retrievals
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  return query
+    select retrieval.* from platform_hr.position_insight_retrievals retrieval
+    where retrieval.owner_internal_user_id=selected_owner_internal_user_id
+      and retrieval.position_id=selected_position_id
+      and retrieval.turn_id=selected_turn_id;
+end
+$function$;
+
 create function platform_hr.read_talent_sources_v79(
   selected_owner_internal_user_id uuid,
   selected_source_ids uuid[]
@@ -1873,6 +1934,9 @@ revoke all on function platform_hr.create_talent_source_v79(
 revoke all on function platform_hr.list_talent_sources_v79(
   uuid,boolean,integer
 ) from public;
+revoke all on function platform_hr.list_talent_sources_page_v79(
+  uuid,boolean,timestamptz,uuid,integer
+) from public;
 revoke all on function platform_hr.create_panorama_run_v79(
   uuid,uuid,uuid,uuid[],uuid
 ) from public;
@@ -1900,6 +1964,9 @@ revoke all on function platform_hr.create_position_insight_retrieval_v79(
 ) from public;
 revoke all on function platform_hr.list_position_insight_retrievals_v79(
   uuid,uuid,integer
+) from public;
+revoke all on function platform_hr.read_position_insight_retrieval_for_turn_v79(
+  uuid,uuid,uuid
 ) from public;
 revoke all on function platform_hr.read_talent_sources_v79(
   uuid,uuid[]
@@ -1945,6 +2012,10 @@ begin
     'uuid,boolean,integer) to %I',selected_app
   );
   execute format(
+    'grant execute on function platform_hr.list_talent_sources_page_v79('
+    'uuid,boolean,timestamptz,uuid,integer) to %I',selected_app
+  );
+  execute format(
     'grant execute on function platform_hr.create_panorama_run_v79('
     'uuid,uuid,uuid,uuid[],uuid) to %I',selected_app
   );
@@ -1981,6 +2052,10 @@ begin
   execute format(
     'grant execute on function platform_hr.list_position_insight_retrievals_v79('
     'uuid,uuid,integer) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.read_position_insight_retrieval_for_turn_v79('
+    'uuid,uuid,uuid) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.read_talent_sources_v79('

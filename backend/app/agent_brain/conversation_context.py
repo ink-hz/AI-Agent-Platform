@@ -14,6 +14,11 @@ from app.agent_brain.conversation_repository import (
     ConversationRepositoryNotFound,
 )
 from app.execution_relay.content_crypto import ContentCryptoError
+from app.hr.panorama_context import (
+    PanoramaContextError,
+    PanoramaContextFragment,
+)
+from app.hr.panorama_repository import PanoramaRepositoryError
 from app.hr.position_intelligence_models import HrPositionContextEnvelope
 from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
 from app.hr.task_context import HrTaskContextError, canonical_hash
@@ -50,6 +55,7 @@ class ConversationContext:
     estimated_utf8_bytes: int
     active_attachment_ids: tuple[UUID, ...] = ()
     hr_position_context: HrPositionContextEnvelope | None = None
+    hr_panorama_context: PanoramaContextFragment | None = None
     hr_workflow_contract: str | None = None
 
 
@@ -100,6 +106,7 @@ def _context_size(
     summary: str | None,
     messages: tuple[ContextMessage, ...],
     hr_position_context: HrPositionContextEnvelope | None = None,
+    hr_panorama_context: PanoramaContextFragment | None = None,
     hr_workflow_contract: str | None = None,
 ) -> int:
     total = 0
@@ -109,6 +116,15 @@ def _context_size(
         total += len(message.content.encode("utf-8")) + len(message.role) + 16
     if hr_position_context is not None:
         total += len(hr_position_context.prompt_context.encode("utf-8")) + 512
+    if hr_panorama_context is not None:
+        total += len(
+            json.dumps(
+                hr_panorama_context.as_prompt_document(),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ) + 32
     if hr_workflow_contract is not None:
         total += len(hr_workflow_contract.encode("utf-8")) + 32
     return total
@@ -120,6 +136,7 @@ class ConversationContextBuilder:
         repository: ConversationRepository,
         *,
         hr_task_context_provider: object | None = None,
+        panorama_context_provider: object | None = None,
         candidate_parser_input_provider: object | None = None,
     ) -> None:
         if not isinstance(repository, ConversationRepository):
@@ -132,8 +149,13 @@ class ConversationContextBuilder:
             getattr(candidate_parser_input_provider, "for_turn", None)
         ):
             raise ValueError("candidate parser input provider invalid")
+        if panorama_context_provider is not None and not callable(
+            getattr(panorama_context_provider, "for_turn", None)
+        ):
+            raise ValueError("Panorama context provider invalid")
         self.repository = repository
         self._hr_task_context_provider = hr_task_context_provider
+        self._panorama_context_provider = panorama_context_provider
         self._candidate_parser_input_provider = candidate_parser_input_provider
 
     def _load(
@@ -207,6 +229,7 @@ class ConversationContextBuilder:
         )
         messages = tuple(message for _seq, message in sequenced)
         hr_position_context = None
+        hr_panorama_context = None
         is_hr_agent = (
             row["mode"] == "direct_agent"
             and row["direct_agent_id"] == "hr-bot"
@@ -230,6 +253,20 @@ class ConversationContextBuilder:
                     raise ValueError
             except (HrTaskContextError, ValueError):
                 raise ConversationContextError() from None
+            if self._panorama_context_provider is not None:
+                try:
+                    hr_panorama_context = self._panorama_context_provider.for_turn(
+                        row["owner_internal_user_id"],
+                        hr_position_context.position_id,
+                        messages[-1].content,
+                        turn_id,
+                    )
+                    if hr_panorama_context is not None and not isinstance(
+                        hr_panorama_context, PanoramaContextFragment
+                    ):
+                        raise ValueError
+                except (PanoramaContextError, PanoramaRepositoryError, ValueError):
+                    raise ConversationContextError() from None
         candidate_parser_attachment_id = None
         if (
             is_hr_agent
@@ -264,10 +301,12 @@ class ConversationContextBuilder:
                     conversation.summary,
                     messages,
                     hr_position_context,
+                    hr_panorama_context,
                     hr_workflow_contract,
                 ),
                 active_attachment_ids=tuple(dict.fromkeys(active_attachment_ids)),
                 hr_position_context=hr_position_context,
+                hr_panorama_context=hr_panorama_context,
                 hr_workflow_contract=hr_workflow_contract,
             ),
             row["user_seq"],
