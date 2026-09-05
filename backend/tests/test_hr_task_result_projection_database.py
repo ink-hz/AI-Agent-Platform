@@ -590,6 +590,15 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
     candidates = CandidateService(
         CandidateRepository(environment["urls"]["platform_control_app"])
     )
+    reconciler = HrTaskResultReconciler(
+        HrTaskResultProjectionRepository(
+            environment["urls"]["platform_control_app"]
+        ),
+        intelligence,
+        candidates,
+        _codec(),
+        worker_id="candidate-projection-test",
+    )
     match_payload = {
         "summary": "总体匹配",
         "dimensions": {"engineering": "strong"},
@@ -649,6 +658,7 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
             candidate_scope=scope,
         )
         started.append(match)
+        assert reconciler.reconcile_one() is True
 
         valid = tasks.start(
             owner_id=owner_id, position_id=position.position_id,
@@ -797,16 +807,7 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
                 owner_id, wrong_conversation, owner_id, wrong_conversation,
             )
 
-        reconciler = HrTaskResultReconciler(
-            HrTaskResultProjectionRepository(
-                environment["urls"]["platform_control_app"]
-            ),
-            intelligence,
-            candidates,
-            _codec(),
-            worker_id="candidate-projection-test",
-        )
-        for _ in started:
+        for _ in started[1:]:
             assert reconciler.reconcile_one() is True
         assert reconciler.reconcile_one() is False
 
