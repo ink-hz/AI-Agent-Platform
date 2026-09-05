@@ -339,7 +339,8 @@ it("completes the public recruiting loop without Panorama and opens fresh interv
   await click(container, "开始解析 3 份简历");
   expect(batchBodies).toEqual([{ attachment_ids: ids.attachments }]);
   expect(container.textContent).toContain("候选人甲"); expect(container.textContent).toContain("候选人乙");
-  expect(container.textContent).toContain("解析失败"); expect(container.textContent).toContain("parser_response_invalid");
+  expect(container.textContent).toContain("解析失败"); expect(container.textContent).toContain("未能识别这份简历的内容");
+  expect(container.textContent).not.toContain("parser_response_invalid");
   await click(container, "重试解析"); expect(container.textContent).toContain("候选人丙");
 
   for (const name of ["候选人甲", "候选人乙"]) { await click(container, `审阅${name}`); await click(container, "确认候选人"); }

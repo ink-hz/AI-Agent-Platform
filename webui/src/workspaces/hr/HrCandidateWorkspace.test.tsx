@@ -67,6 +67,8 @@ it("lists each resume version and safely preopens preview and retryable download
     },
   );
   await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  expect(container.textContent).toContain("这份简历暂未解析完成，请重试。");
+  expect(container.textContent).not.toContain("parse_failed");
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
 
   expect(container.textContent).toContain("简历 v1");

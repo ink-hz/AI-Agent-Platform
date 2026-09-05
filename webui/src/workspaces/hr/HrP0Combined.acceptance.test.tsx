@@ -956,7 +956,8 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   await waitFor(() => expect(button(container, "开始解析 3 份简历").disabled).toBe(false));
   await click(container, "开始解析 3 份简历");
   expect(container.textContent).toContain("解析失败");
-  expect(container.textContent).toContain("parser_response_invalid");
+  expect(container.textContent).toContain("未能识别这份简历的内容");
+  expect(container.textContent).not.toContain("parser_response_invalid");
   await click(container, "重试解析");
   for (const name of ["候选人甲", "候选人乙"]) {
     await click(container, `审阅${name}`);
