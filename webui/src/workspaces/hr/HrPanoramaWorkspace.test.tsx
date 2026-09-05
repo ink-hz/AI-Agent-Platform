@@ -49,6 +49,44 @@ describe("HrPanoramaWorkspace", () => {
     expect(api.startRun).toHaveBeenCalledWith({ sourceIds: [source.sourceId, source2.sourceId], conversationId: insight.sourceConversationId }, expect.stringMatching(/^[0-9a-f-]{36}$/i), expect.any(AbortSignal));
   });
 
+  it("shows the complete ten-company catalog and keeps session-derived companies as unconfirmed leads", async () => {
+    const api = fakeApi();
+    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} />));
+    await act(async () => undefined);
+
+    for (const name of ["联合光电", "速腾聚创", "禾赛科技", "拓竹", "创想三维", "智能派", "知象光电", "先临三维", "思看科技", "智元机器人"]) {
+      expect(container.textContent).toContain(name);
+    }
+    expect(container.textContent).toContain("补齐 9 家重点公司");
+    expect(container.textContent).toContain("历史会话线索");
+    expect(container.textContent).toContain("影石");
+    expect(container.textContent).toContain("华为");
+    expect(container.textContent).toContain("确认后再加入，不自动采集");
+  });
+
+  it("adds every missing catalog company once and selects the successful additions", async () => {
+    let index = 10;
+    const addCompany = vi.fn().mockImplementation(async (input) => ({
+      ...source,
+      sourceId: `aaaaaaaa-aaaa-4aaa-8aaa-${String(index++).padStart(12, "0")}`,
+      canonicalName: input.canonicalName,
+      aliases: input.aliases,
+      approvedUrls: input.approvedUrls,
+    }));
+    const api = fakeApi({ listCompanies: vi.fn().mockResolvedValue([source]), addCompany });
+    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} />));
+    await act(async () => undefined);
+
+    const fill = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "补齐 9 家重点公司");
+    expect(fill).toBeDefined();
+    await act(async () => fill?.click());
+
+    expect(addCompany).toHaveBeenCalledTimes(9);
+    expect(new Set(addCompany.mock.calls.map(([input]) => input.canonicalName)).size).toBe(9);
+    expect(container.textContent).toContain("10 家重点公司已加入");
+    expect(container.textContent).toContain("分析范围：10 家");
+  });
+
   it("loads a report deep link directly even when it is older than the history window", async () => {
     const oldId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const oldReport = { ...report, insight: { ...insight, insightVersionId: oldId, summary: "较早的有效报告" } };
