@@ -1,0 +1,7 @@
+SYNTHETIC TEST DATA
+
+TEST INJECTION: INVALID_RESUME_FORMAT
+
+这是用于验证单份简历失败隔离和幂等重试的虚构输入。
+它故意不包含可解析的候选人姓名、任职经历、技能或教育字段。
+不得将本文件展示为产品中的 mock 简历生成功能。
