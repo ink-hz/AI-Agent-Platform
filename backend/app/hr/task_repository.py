@@ -7,7 +7,7 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
-from .task_service import HrPositionTask, HrPositionTaskUnavailable
+from .task_service import HrPositionTask, HrPositionTaskUnavailable, HrTaskReference
 
 _TASK_PROJECTION_CTE = """
     with scoped_turns as (
@@ -26,6 +26,16 @@ _TASK_PROJECTION_CTE = """
       select request.task_request_id as task_id,request.task_kind,
              request.candidate_id,request.position_candidate_id,
              scoped.conversation_id,scoped.turn_id,request.created_at,
+             record.task_record_id,
+             record.official_position_version_id,record.context_version_id,
+             coalesce(record.material_attachment_ids,'{}'::uuid[])
+               as material_attachment_ids,
+             official.source_version as official_source_version,
+             official.source_snapshot_at as official_freshness,
+             context.version_number as context_version_number,
+             retrieval.retrieval_id as panorama_retrieval_id,
+             retrieval.insight_version_ids as panorama_insight_version_ids,
+             retrieval.retrieved_excerpts as panorama_retrieved_excerpts,
              coalesce(scoped.updated_at,request.created_at) as updated_at,
              case
                when scoped.turn_status in ('failed','cancelled','interrupted')
@@ -84,6 +94,18 @@ _TASK_PROJECTION_CTE = """
        and record.position_id=request.position_id
        and record.client_request_id=request.client_request_id
        and record.task_kind=request.task_kind
+      left join platform_hr.official_position_versions official
+        on official.owner_internal_user_id=request.owner_internal_user_id
+       and official.position_id=request.position_id
+       and official.official_position_version_id=
+         record.official_position_version_id
+      left join platform_hr.position_context_versions context
+        on context.owner_internal_user_id=request.owner_internal_user_id
+       and context.position_id=request.position_id
+       and context.context_version_id=record.context_version_id
+      left join lateral platform_hr.read_position_insight_retrieval_for_turn_v79(
+        request.owner_internal_user_id,request.position_id,scoped.turn_id
+      ) retrieval on true
       left join lateral platform_hr.read_hr_task_result_projection_state_v71(
         record.task_record_id
       ) projection on true
@@ -104,6 +126,68 @@ _TASK_PROJECTION_CTE = """
 """
 
 
+def _freshness_date(value: object) -> str | None:
+    if hasattr(value, "date"):
+        return value.date().isoformat()
+    if isinstance(value, str) and len(value) >= 10:
+        return value[:10]
+    return None
+
+
+def _references(row: dict[str, Any]) -> tuple[HrTaskReference, ...]:
+    references: list[HrTaskReference] = []
+    if not isinstance(row.get("task_record_id"), UUID):
+        return ()
+    official_id = row.get("official_position_version_id")
+    source_version = row.get("official_source_version")
+    if isinstance(official_id, UUID):
+        version = str(source_version) if source_version else None
+        references.append(HrTaskReference(
+            "official_position", official_id,
+            f"官网岗位 · {version}" if version else "官网岗位版本",
+            version, "岗位任务的官网基线",
+            _freshness_date(row.get("official_freshness")),
+        ))
+    context_id = row.get("context_version_id")
+    context_number = row.get("context_version_number")
+    if isinstance(context_id, UUID):
+        version = f"v{context_number}" if isinstance(context_number, int) else None
+        references.append(HrTaskReference(
+            "confirmed_context", context_id,
+            f"岗位理解 {version}" if version else "已确认岗位理解",
+            version, "任务启动时的已确认岗位理解", None,
+        ))
+    material_ids = row.get("material_attachment_ids") or ()
+    for material_id in material_ids:
+        if isinstance(material_id, UUID):
+            references.append(HrTaskReference(
+                "position_material", material_id,
+                f"岗位材料 · {str(material_id)[:8]}", None,
+                "本轮明确选择的岗位材料", None,
+            ))
+    candidate_id = row.get("candidate_id")
+    if isinstance(candidate_id, UUID):
+        references.append(HrTaskReference(
+            "candidate_snapshot", candidate_id,
+            f"候选人分析上下文 · {str(candidate_id)[:8]}", None,
+            "任务启动时固定的候选人资料与分析上下文", None,
+        ))
+    retrieval_id = row.get("panorama_retrieval_id")
+    if isinstance(retrieval_id, UUID):
+        excerpts = row.get("panorama_retrieved_excerpts") or ()
+        freshness = None
+        if excerpts and isinstance(excerpts[0], dict):
+            source_freshness = excerpts[0].get("freshness")
+            if isinstance(source_freshness, dict):
+                freshness = _freshness_date(source_freshness.get("as_of"))
+        references.append(HrTaskReference(
+            "panorama_insight", retrieval_id,
+            f"全景招聘情报 · 截至 {freshness}" if freshness else "全景招聘情报",
+            None, "与本岗位方向相关的招聘情报", freshness,
+        ))
+    return tuple(references)
+
+
 def _task(row: dict[str, Any]) -> HrPositionTask:
     return HrPositionTask(
         task_id=row["task_id"],
@@ -114,6 +198,7 @@ def _task(row: dict[str, Any]) -> HrPositionTask:
         turn_id=row["turn_id"],
         candidate_id=row["candidate_id"],
         position_candidate_id=row["position_candidate_id"],
+        references=_references(row),
     )
 
 
@@ -162,7 +247,12 @@ class PostgresHrPositionTaskRepository:
             raise TypeError("HR position task identifiers invalid")
         query = _TASK_PROJECTION_CTE + """
             select task_id,task_kind,status,error,conversation_id,turn_id,
-                   candidate_id,position_candidate_id
+                   candidate_id,position_candidate_id,
+                   task_record_id,official_position_version_id,context_version_id,
+                   material_attachment_ids,official_source_version,
+                   official_freshness,context_version_number,
+                   panorama_retrieval_id,panorama_insight_version_ids,
+                   panorama_retrieved_excerpts
             from projected
             where status in ('accepted','running')
                or updated_at > now()-interval '24 hours'
@@ -189,7 +279,12 @@ class PostgresHrPositionTaskRepository:
             raise TypeError("HR position task identifiers invalid")
         query = _TASK_PROJECTION_CTE + """
             select task_id,task_kind,status,error,conversation_id,turn_id,
-                   candidate_id,position_candidate_id
+                   candidate_id,position_candidate_id,
+                   task_record_id,official_position_version_id,context_version_id,
+                   material_attachment_ids,official_source_version,
+                   official_freshness,context_version_number,
+                   panorama_retrieval_id,panorama_insight_version_ids,
+                   panorama_retrieved_excerpts
             from projected
             where task_id=%s
         """

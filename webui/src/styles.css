@@ -2275,7 +2275,7 @@ body {
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-task-starter:hover,
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-task-starter:focus-visible { border-color: #79a8d8; color: #18569e; box-shadow: 0 8px 22px rgba(47,91,151,.1); }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer { max-width: 940px; margin-right: auto; margin-left: auto; border-color: #aebfce; border-radius: 18px; background: #fff; box-shadow: 0 12px 34px rgba(32,50,70,.12); }
-.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea { min-height: clamp(220px,28vh,340px); background: #f8fafc; color: #172b42; font-size: 16px; }
+.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea { min-height: clamp(320px,38vh,420px); background: #f8fafc; color: #172b42; font-size: 16px; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea:focus { background: #fff; box-shadow: inset 0 0 0 2px rgba(40,120,215,.26); }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments { margin-top: 12px; padding-top: 12px; border-top: 1px solid #dbe3ea; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer-actions > span { color: #52677c; font-size: 13px; }
@@ -2335,10 +2335,16 @@ body {
 .hr-position-chat-surface > .agent-use-workspace { height: 100%; }
 .hr-position-chat-surface > .agent-use-workspace.is-focused { grid-template-columns: 248px minmax(0,1fr); }
 .hr-position-chat-surface .agent-use-workspace.is-focused .conversation-page { max-width: 1080px; }
+.hr-position-chat-surface .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea { min-height: clamp(180px,24vh,240px); }
 .hr-position-task-status { width: min(1040px,calc(100% - 48px)); box-sizing: border-box; margin: 12px auto 0; padding: 9px 12px; border: 1px solid #b9d3c8; border-radius: 10px; background: #edf7f2; color: #235f4c; font-size: 12px; font-weight: 720; }
 .hr-position-task-status p,.hr-position-task-status ul { margin: 0; }
 .hr-position-task-status ul { display: flex; flex-wrap: wrap; gap: 5px 18px; padding-left: 18px; }
 .hr-position-task-status button { margin-left: 8px; padding: 3px 7px; border: 1px solid #8fbbaa; border-radius: 6px; background: #fff; color: inherit; font: inherit; cursor: pointer; }
+.hr-task-references { margin-top: 5px; color: #365a4d; font-size: 12px; font-weight: 520; }
+.hr-task-references summary { width: fit-content; cursor: pointer; color: #2c6955; font-weight: 720; }
+.hr-task-references ul { display: grid !important; gap: 6px !important; margin-top: 7px !important; padding-left: 18px !important; }
+.hr-task-references li { display: grid; gap: 1px; }
+.hr-task-references li span { color: #61776f; font-weight: 480; }
 .conversation-composer-tools { flex: 0 0 auto; }
 .hr-position-task-menu { position: relative; }
 .hr-position-task-menu > button { min-height: 36px; padding: 7px 12px; border: 1px solid #94b7da; border-radius: 9px; background: #edf5fd; color: #185fa9; font: inherit; font-size: 12px; font-weight: 780; cursor: pointer; }

@@ -85,6 +85,33 @@ class HrPositionTaskUnavailable(HrPositionTaskError):
 
 
 @dataclass(frozen=True, slots=True)
+class HrTaskReference:
+    source_type: str
+    source_id: UUID
+    display_label: str
+    version: str | None
+    selected_reason: str
+    freshness: str | None
+
+    def __post_init__(self) -> None:
+        if self.source_type not in {
+            "official_position", "confirmed_context", "position_material",
+            "candidate_snapshot", "panorama_insight",
+        } or not isinstance(self.source_id, UUID):
+            raise ValueError("HR task reference invalid")
+        for value, maximum in (
+            (self.display_label, 500), (self.selected_reason, 500),
+        ):
+            if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+                raise ValueError("HR task reference invalid")
+        for value in (self.version, self.freshness):
+            if value is not None and (
+                not isinstance(value, str) or not value.strip() or len(value) > 256
+            ):
+                raise ValueError("HR task reference invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class HrPositionTask:
     task_id: UUID
     task_kind: str
@@ -94,6 +121,7 @@ class HrPositionTask:
     turn_id: UUID | None
     candidate_id: UUID | None
     position_candidate_id: UUID | None
+    references: tuple[HrTaskReference, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -118,6 +146,14 @@ class HrPositionTask:
         if (self.conversation_id is None) != (self.turn_id is None):
             raise ValueError("HR position task projection invalid")
         if (self.candidate_id is None) != (self.position_candidate_id is None):
+            raise ValueError("HR position task projection invalid")
+        if (
+            not isinstance(self.references, tuple)
+            or len(self.references) > 110
+            or any(not isinstance(value, HrTaskReference) for value in self.references)
+            or len({(value.source_type, value.source_id) for value in self.references})
+            != len(self.references)
+        ):
             raise ValueError("HR position task projection invalid")
 
 

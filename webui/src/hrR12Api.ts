@@ -4,6 +4,7 @@ import type {
   HrCandidateDraft, HrConfirmedCandidate, HrContextComparison, HrContextVersion,
   HrDownloadTicket, HrHumanFeedback, HrPositionCandidate, HrPositionResources,
   HrCandidateTaskKind, HrPositionTaskKind, HrStartableTaskKind, HrTaskKind, HrTaskRecord,
+  HrTaskReference,
   HrCandidateInterviewPlanResult, HrCandidateInterviewQuestion, HrCandidateMatchResult,
   HrOfficialPositionDownload, HrOfficialPositionVersion,
 } from "./hrR12Types";
@@ -156,12 +157,26 @@ function task(value: unknown, requireCandidateBinding = false): HrTaskRecord {
   const turnId = raw.turn_id == null ? null : identifier(raw.turn_id);
   if ((conversationId === null) !== (turnId === null)) throw new Error("HR R1.2 task binding invalid");
   if (requireCandidateBinding && (!positionCandidateId || !candidateId)) throw new Error("HR R1.2 task binding invalid");
+  const references = raw.references === undefined ? [] : raw.references;
+  if (!Array.isArray(references)) throw new Error("HR R1.2 task references invalid");
+  const parsedReferences = references.map((value) => {
+    const reference = object(value);
+    if (!["official_position", "confirmed_context", "position_material", "candidate_snapshot", "panorama_insight"].includes(String(reference.source_type))) throw new Error("HR R1.2 task references invalid");
+    return {
+      sourceType: reference.source_type as HrTaskReference["sourceType"],
+      sourceId: identifier(reference.source_id),
+      displayLabel: string(reference.display_label),
+      version: reference.version == null ? null : string(reference.version),
+      selectedReason: string(reference.selected_reason),
+      freshness: reference.freshness == null ? null : string(reference.freshness),
+    };
+  });
   return {
     taskId: string(raw.task_id),
     status: raw.status as HrTaskRecord["status"],
     taskKind: raw.task_kind as HrTaskKind,
     error: raw.error === undefined || raw.error === null ? null : string(raw.error),
-    conversationId, turnId, positionCandidateId, candidateId,
+    conversationId, turnId, positionCandidateId, candidateId, references: parsedReferences,
   };
 }
 

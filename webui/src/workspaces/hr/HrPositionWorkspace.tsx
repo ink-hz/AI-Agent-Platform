@@ -7,6 +7,7 @@ import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmis
 import { createHrApi, type HrApi } from "../../hrApi";
 import { createHrR12Api, type HrR12Api } from "../../hrR12Api";
 import type { HrContextVersion, HrPositionMaterialItem, HrPositionSection, HrPositionTaskKind, HrTaskRecord } from "../../hrR12Types";
+import { HrTaskReferences } from "./HrTaskReferences";
 import type { HrPositionDetail } from "../../hrTypes";
 import type { ConversationPageClient } from "../../pages/ConversationPage";
 import { navigate } from "../../router";
@@ -267,11 +268,11 @@ export function HrPositionWorkspace({
   }
   const taskLabel: Record<string, string> = { jd: "JD", jr: "JR", talent_profile: "人才画像", sourcing_strategy: "搜寻策略", position_interview_plan: "面试方案", candidate_match: "候选人匹配", candidate_interview_plan: "候选人面试题", candidate_comparison: "候选人比较" };
   const taskStatusLabel: Record<string, string> = { accepted: "已受理", running: "执行中", completed: "已完成", failed: "执行失败" };
-  const visibleTasks = activeTasks.filter((task) => task.status === "accepted" || task.status === "running" || task.status === "failed");
+  const visibleTasks = activeTasks.filter((task) => task.status === "accepted" || task.status === "running" || task.status === "completed" || task.status === "failed");
   const taskStatus = taskState === "unavailable"
     ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><p>任务状态暂时不可用。<button type="button" onClick={() => setTaskRefresh((value) => value + 1)}>刷新任务状态</button></p></section>
     : taskState === "ready" && visibleTasks.length > 0
-      ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><ul>{visibleTasks.map((task) => <li key={task.taskId}>{taskLabel[task.taskKind] ?? task.taskKind}：{taskStatusLabel[task.status] ?? task.status}{task.error ? ` · ${task.error}` : ""}</li>)}</ul></section>
+      ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><ul>{visibleTasks.map((task) => <li key={task.taskId}><span>{taskLabel[task.taskKind] ?? task.taskKind}：{taskStatusLabel[task.status] ?? task.status}{task.error ? ` · ${task.error}` : ""}</span><HrTaskReferences references={task.references ?? []} /></li>)}</ul></section>
       : null;
 
   return <main className="hr-position-workspace is-chat-first" data-position-id={positionId}>

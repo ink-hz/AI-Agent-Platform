@@ -111,4 +111,13 @@ export interface HrTaskRecord {
   turnId?: string | null;
   positionCandidateId?: string | null;
   candidateId?: string | null;
+  references?: HrTaskReference[];
+}
+export interface HrTaskReference {
+  sourceType: "official_position" | "confirmed_context" | "position_material" | "candidate_snapshot" | "panorama_insight";
+  sourceId: string;
+  displayLabel: string;
+  version: string | null;
+  selectedReason: string;
+  freshness: string | null;
 }
