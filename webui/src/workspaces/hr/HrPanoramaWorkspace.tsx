@@ -8,6 +8,7 @@ import { HrPanoramaReport as Report, type HrPanoramaComparison } from "./HrPanor
 
 const DATE_TIME = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 const TERMINAL = new Set<HrPanoramaRun["state"]>(["completed", "partially_completed", "failed"]);
+const REPORT_HISTORY_LIMIT = 100;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Notice = "partial" | "failed" | "refresh-failed" | null;
@@ -105,7 +106,9 @@ export function HrPanoramaWorkspace({
       const previous = items.filter((item) => item.versionNumber < detail.insight.versionNumber
         && sameScope(item.selectedSourceIds, detail.insight.selectedSourceIds))
         .sort((left, right) => right.versionNumber - left.versionNumber)[0];
-      if (!previous) return { state: "none", currentSourceFailures: currentRun.sourceFailures };
+      if (!previous) return items.length >= REPORT_HISTORY_LIMIT
+        ? { state: "unavailable" }
+        : { state: "none", currentSourceFailures: currentRun.sourceFailures };
       const previousReport = await api.report(previous.insightVersionId, signal);
       const previousRun = await api.runStatus(previousReport.insight.runId, signal);
       if (!coherent(previousRun, previousReport)) return { state: "unavailable" };

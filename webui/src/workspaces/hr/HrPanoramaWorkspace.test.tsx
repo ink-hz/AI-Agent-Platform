@@ -126,6 +126,26 @@ describe("HrPanoramaWorkspace", () => {
     expect(container.textContent).toContain("首次分析，暂无变化基线");
   });
 
+  it("does not claim a first analysis when the full history window contains only other scopes", async () => {
+    const current = { ...insight, versionNumber: 200 };
+    const otherScopeHistory = Array.from({ length: 100 }, (_, index) => ({
+      ...insight,
+      insightVersionId: `aaaaaaaa-aaaa-4aaa-8aaa-${index.toString(16).padStart(12, "0")}`,
+      versionNumber: 199 - index,
+      selectedSourceIds: [source.sourceId],
+    }));
+    const api = fakeApi({
+      listReports: vi.fn().mockResolvedValue(otherScopeHistory),
+      report: vi.fn().mockResolvedValue({ ...report, insight: current }),
+    });
+    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} insightVersionId={current.insightVersionId} />));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain(current.summary);
+    expect(container.textContent).toContain("变化基线暂时不可用");
+    expect(container.textContent).not.toContain("首次分析");
+  });
+
   it("keeps the last valid report on partial failure and retries only the failed company", async () => {
     const partial = { ...runBase, state: "partially_completed" as const, finishedAt: "2026-09-05T10:02:00Z", sourceFailures: { [source.sourceId]: "search_unavailable" } };
     const api = fakeApi({ startRun: vi.fn().mockResolvedValue(partial) });
