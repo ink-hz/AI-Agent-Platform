@@ -16,6 +16,9 @@ ssh_bin=/usr/bin/ssh
 python_bin=/usr/bin/python3
 web_research_current=/Users/agentops/AgentRuntime/web-research/current
 expected_egress_source_sha256=5604d7ac150a5bcd9e722edd777c5946f9e82fdb1bc4df5e6a3aceed0b8d5fe6
+expected_egress_release_sha256=c0a7aaf71f5ae8555371b0a93eae8499dd4e68e7224f0cb51cce4351df8f39fd
+web_research_service=system/com.orbbec.web-research
+web_research_plist=/Library/LaunchDaemons/com.orbbec.web-research.plist
 provider_gateway=10.10.20.133
 provider_port=8088
 target_denial_probe=1.1.1.1
@@ -73,13 +76,39 @@ for deployed_file in "$web_research_manifest" "$web_research_source"; do
 done
 manifest_digest="$(/usr/bin/shasum -a 256 "$web_research_manifest" | /usr/bin/awk '{print $1}')" || fail
 [[ "$web_research_release" == "/Users/agentops/AgentRuntime/web-research/releases/$manifest_digest" ]] || fail
+[[ "$manifest_digest" == "$expected_egress_release_sha256" ]] || fail
 (cd "$web_research_release" && /usr/bin/shasum -a 256 -c .manifest.sha256 >/dev/null) || fail
-egress_digest="$(/usr/bin/shasum -a 256 "$web_research_source" | /usr/bin/awk '{print $1}')" || fail
-[[ "$egress_digest" == "$expected_egress_source_sha256" ]] || fail
+source_digest="$(/usr/bin/shasum -a 256 "$web_research_source" | /usr/bin/awk '{print $1}')" || fail
+[[ "$source_digest" == "$expected_egress_source_sha256" ]] || fail
+[[ -f "$web_research_plist" && ! -L "$web_research_plist" ]] || fail
+[[ "$(/usr/bin/stat -f '%Lp %Su' "$web_research_plist")" == "644 root" ]] || fail
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :UserName' "$web_research_plist")" == "$required_user" ]] || fail
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :GroupName' "$web_research_plist")" == staff ]] || fail
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$web_research_plist")" == /opt/homebrew/bin/node ]] || fail
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:1' "$web_research_plist")" == "$web_research_current/sidecar.mjs" ]] || fail
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :WorkingDirectory' "$web_research_plist")" == /Users/agentops/AgentRuntime/web-research ]] || fail
+/bin/launchctl print "$web_research_service" >/dev/null || fail
+health_response="$(/usr/bin/env -i HOME=/Users/agentops USER=agentops LOGNAME=agentops PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin METABOT_ONLY_BOTS=hr-bot /Users/agentops/AgentRuntime/web-research/bin/web-search health)" || fail
+"$python_bin" - "$expected_egress_release_sha256" "$health_response" <<'PY' || fail
+import json
+import sys
+
+expected, raw = sys.argv[1:]
+value = json.loads(raw)
+if (
+    not isinstance(value, dict) or value.get("ok") is not True
+    or value.get("operation") != "health" or value.get("provider") != "codex"
+    or value.get("release_sha") != expected
+    or value.get("auth_configured") is not True
+    or value.get("socket_mode") != "0600"
+):
+    raise SystemExit(1)
+PY
 /usr/bin/sandbox-exec -p "$sandbox_profile" /usr/bin/nc -G 3 -z "$provider_gateway" "$provider_port" >/dev/null 2>&1 || fail
 if /usr/bin/sandbox-exec -p "$sandbox_profile" /usr/bin/nc -G 1 -z "$target_denial_probe" "$target_denial_port" >/dev/null 2>&1; then fail; fi
 egress_gate=SANDBOX_PROVIDER_EGRESS_OK
 [[ "$egress_gate" == SANDBOX_PROVIDER_EGRESS_OK ]] || fail
+egress_digest="$expected_egress_release_sha256"
 
 ssh_options=(
   -i "$cloud_admin_key"
