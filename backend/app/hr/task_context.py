@@ -157,6 +157,8 @@ class CandidateEnvelopeProvider(Protocol):
         position_id: UUID,
         candidate_id: UUID | None,
         position_candidate_id: UUID | None,
+        *,
+        task_kind: str = "candidate_match",
     ) -> CandidateEnvelopeFragment: ...
 
 
@@ -505,6 +507,7 @@ class HrTaskContextProvider:
                         scope.position_id,
                         scope.candidate_id,
                         scope.position_candidate_id,
+                        task_kind=scope.task_kind,
                     )
                 except (RuntimeError, ValueError):
                     raise HrTaskContextError("candidate context unavailable") from None

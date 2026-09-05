@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from app.hr.candidate_context import CandidateEnvelopeProvider
 from app.hr.candidate_models import (
-    Candidate,
+    Candidate, CandidateAnalysisVersion,
     CandidateDocument,
     HumanFeedback,
     PositionCandidate,
@@ -44,6 +44,7 @@ class ContextRepository:
         )
         self.documents = [self.resume]
         self.document_access = {self.resume.document_id: "ready"}
+        self.match_analysis = None
 
     def position_candidate_for_owner(self, owner_id, position_candidate_id):
         assert owner_id == self.owner_id
@@ -73,6 +74,14 @@ class ContextRepository:
         assert position_candidate_id == self.relation.position_candidate_id
         assert context_version_id == self.relation.context_version_id
         return (self.feedback,)
+
+    def latest_analysis(self, owner_id, position_candidate_id, context_version_id, *, kind):
+        assert (owner_id, position_candidate_id, context_version_id, kind) == (
+            self.owner_id, self.relation.position_candidate_id, self.context_id, "match"
+        )
+        if self.match_analysis is None:
+            raise CandidateScopeViolation("missing")
+        return self.match_analysis
 
 
 def _provider(repository, *, confirmed=True):
@@ -120,6 +129,37 @@ def test_fragment_separates_confirmed_candidate_facts_from_human_feedback() -> N
     assert "量产 100 万台" in fragment.prompt_context
     assert str(repository.resume.document_id) in fragment.prompt_context
     assert "storage" not in fragment.prompt_context.lower()
+
+
+def test_interview_plan_requires_and_pins_latest_match_analysis() -> None:
+    repository = ContextRepository()
+    provider, _ = _provider(repository)
+
+    with pytest.raises(CandidateScopeViolation, match="matching analysis unavailable"):
+        provider.for_task(
+            repository.owner_id, repository.position_id,
+            repository.candidate.candidate_id,
+            repository.relation.position_candidate_id,
+            task_kind="candidate_interview_plan",
+        )
+
+    repository.match_analysis = CandidateAnalysisVersion(
+        uuid4(), repository.owner_id, repository.relation.position_candidate_id,
+        repository.position_id, repository.candidate.candidate_id,
+        repository.context_id, 2, "match", (repository.resume.document_id,),
+        (), {"summary": "总体匹配", "dimensions": {}}, (), (), (), (),
+        "hr-bot", "model-v1", NOW,
+    )
+    fragment = provider.for_task(
+        repository.owner_id, repository.position_id,
+        repository.candidate.candidate_id,
+        repository.relation.position_candidate_id,
+        task_kind="candidate_interview_plan",
+    )
+
+    assert fragment.match_analysis_version_id == repository.match_analysis.analysis_version_id
+    assert "LATEST_MATCH_ANALYSIS_FOR_INTERVIEW" in fragment.prompt_context
+    assert str(repository.match_analysis.analysis_version_id) in fragment.prompt_context
 
 
 def test_fragment_selects_latest_feedback_within_count_and_prompt_budget() -> None:

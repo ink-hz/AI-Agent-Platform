@@ -135,7 +135,7 @@ class CandidateProvider:
     def __init__(self):
         self.calls = []
 
-    def for_task(self, owner_id, position_id, candidate_id, position_candidate_id):
+    def for_task(self, owner_id, position_id, candidate_id, position_candidate_id, *, task_kind="candidate_match"):
         self.calls.append((owner_id, position_id, candidate_id, position_candidate_id))
         document_id = uuid4()
         return ExternalCandidateFragment(
@@ -150,7 +150,7 @@ class CandidateProvider:
 
 
 class FailingCandidateProvider:
-    def for_task(self, *_args):
+    def for_task(self, *_args, **_kwargs):
         raise RuntimeError("candidate repository detail")
 
 
@@ -287,7 +287,7 @@ def test_candidate_tasks_require_exact_confirmed_context_and_documents() -> None
         )
 
     candidate.context_version_id = context.context_version_id
-    candidate.for_task = lambda *args: ExternalCandidateFragment(  # type: ignore[method-assign]
+    candidate.for_task = lambda *args, **_kwargs: ExternalCandidateFragment(  # type: ignore[method-assign]
         args[2], args[3], context.context_version_id, (), (), (), "candidate"
     )
     with pytest.raises(HrTaskContextError, match="candidate documents unavailable"):
@@ -316,7 +316,7 @@ def test_candidate_fragment_rejects_structurally_invalid_fields() -> None:
     )
 
     class InvalidProvider:
-        def for_task(self, *_args):
+        def for_task(self, *_args, **_kwargs):
             return ExternalCandidateFragment(
                 candidate_id,
                 position_candidate_id,

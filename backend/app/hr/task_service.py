@@ -297,6 +297,7 @@ class HrPositionTaskService:
                         position_id,
                         candidate_id,
                         position_candidate_id,
+                        task_kind=task_kind,
                     )
                 if (
                     not isinstance(candidate_snapshot, CandidateEnvelopeFragment)

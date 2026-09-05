@@ -545,12 +545,16 @@ class CandidateEnvelopeFragment:
     document_attachment_ids: tuple[UUID, ...]
     human_feedback_ids: tuple[UUID, ...]
     prompt_context: str
+    match_analysis_version_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for value in (
             self.candidate_id, self.position_candidate_id, self.context_version_id
         ):
             _uuid(value)
+        _optional_uuid(
+            self.match_analysis_version_id, "match analysis identifier invalid"
+        )
         _uuid_tuple(
             self.document_ids, minimum=1, maximum=100,
             message="document scope invalid",
