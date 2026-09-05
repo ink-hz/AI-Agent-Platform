@@ -931,6 +931,36 @@ class PanoramaRepository:
             raise ValueError("panorama query invalid")
         position_terms = self._position_terms(owner_id, position_id)
         ranked_candidates = self._ranking_candidates(owner_id)
+        source_ids = tuple(
+            dict.fromkeys(
+                source_id
+                for insight in ranked_candidates
+                for source_id in insight.selected_source_ids
+            )
+        )
+        sources = self._sources_for_ranking(owner_id, source_ids) if source_ids else {}
+        normalized_query = _normalize(query)
+        mentioned_source_ids = tuple(
+            source_id
+            for source_id, source in sources.items()
+            if any(
+                (name_key := _normalize(name)) and name_key in normalized_query
+                for name in (source.canonical_name, *source.aliases)
+            )
+        )
+        if mentioned_source_ids:
+            evidenced_sources = self._evidenced_sources_for_ranking(
+                owner_id, ranked_candidates
+            )
+            ranked_candidates = tuple(
+                insight
+                for insight in ranked_candidates
+                if all(
+                    source_id in insight.selected_source_ids
+                    and source_id in evidenced_sources[insight.insight_version_id]
+                    for source_id in mentioned_source_ids
+                )
+            )
         latest_by_source_scope: dict[tuple[str, ...], TalentInsightVersion] = {}
         for insight in ranked_candidates:
             source_scope = tuple(
@@ -948,36 +978,6 @@ class PanoramaRepository:
             ):
                 latest_by_source_scope[source_scope] = insight
         candidates = tuple(latest_by_source_scope.values())
-        source_ids = tuple(
-            dict.fromkeys(
-                source_id
-                for insight in candidates
-                for source_id in insight.selected_source_ids
-            )
-        )
-        sources = self._sources_for_ranking(owner_id, source_ids) if source_ids else {}
-        normalized_query = _normalize(query)
-        mentioned_source_ids = tuple(
-            source_id
-            for source_id, source in sources.items()
-            if any(
-                (name_key := _normalize(name)) and name_key in normalized_query
-                for name in (source.canonical_name, *source.aliases)
-            )
-        )
-        if mentioned_source_ids:
-            evidenced_sources = self._evidenced_sources_for_ranking(
-                owner_id, candidates
-            )
-            candidates = tuple(
-                insight
-                for insight in candidates
-                if all(
-                    source_id in insight.selected_source_ids
-                    and source_id in evidenced_sources[insight.insight_version_id]
-                    for source_id in mentioned_source_ids
-                )
-            )
 
         def rank(insight: TalentInsightVersion):
             source_names = tuple(

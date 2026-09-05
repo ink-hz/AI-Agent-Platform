@@ -551,6 +551,42 @@ def test_named_company_relevance_requires_snapshot_evidence_for_that_source() ->
     ) == ()
 
 
+def test_named_company_relevance_preserves_last_valid_insight_with_same_scope() -> None:
+    owner_id, position_id = uuid4(), uuid4()
+    named_id, other_id = uuid4(), uuid4()
+    repository = PanoramaRepository("postgresql://unused")
+    repository._position_terms = lambda owner, position: ("结构工程师",)  # type: ignore[method-assign]
+    last_valid = replace(
+        _ranking_insight(
+            UUID(int=1010), "unused", {"结构": 1}, "点名公司上次有效结果", NOW
+        ),
+        selected_source_ids=(named_id, other_id),
+    )
+    newer_partial = replace(
+        _ranking_insight(
+            UUID(int=1011),
+            "unused",
+            {"结构": 2},
+            "本次只有另一家公司成功",
+            NOW + timedelta(minutes=1),
+        ),
+        selected_source_ids=(named_id, other_id),
+    )
+    repository._ranking_candidates = lambda owner: (last_valid, newer_partial)  # type: ignore[method-assign]
+    repository._sources_for_ranking = lambda owner, ids: {  # type: ignore[method-assign]
+        named_id: _source_record(named_id, "舜宇光学"),
+        other_id: _source_record(other_id, "联合光电"),
+    }
+    repository._evidenced_sources_for_ranking = lambda owner, insights: {  # type: ignore[method-assign]
+        last_valid.insight_version_id: frozenset({named_id, other_id}),
+        newer_partial.insight_version_id: frozenset({other_id}),
+    }
+
+    assert repository.relevant_insights(
+        owner_id, "参考舜宇光学最新全景分析", position_id
+    ) == (last_valid,)
+
+
 def _ranking_insight(insight_id, company_name, clusters, summary, created_at):
     source_id = uuid4()
     insight = CreateTalentInsightVersion(
