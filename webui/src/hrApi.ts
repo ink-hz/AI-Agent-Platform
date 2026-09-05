@@ -1,6 +1,7 @@
 import { platformPath } from "./auth";
 import type {
-  HrPosition, HrPositionDetail, HrPositionDraft, InternalPositionStatus,
+  HrConfirmedPositionPackage, HrPosition, HrPositionDetail, HrPositionDraft,
+  HrPositionPackage, HrPositionPackageModules, InternalPositionStatus,
   PositionConversationBinding, PositionMaterial, PositionPage, PositionSource,
   ProposePositionDraftInput,
 } from "./hrTypes";
@@ -24,6 +25,13 @@ const DRAFT_KEYS = new Set([
   "draft_id", "source_kind", "source_key", "source_conversation_id", "title", "proposal",
   "evidence", "discovery_rule_version", "state", "resolved_position_id", "row_version",
   "created_at", "updated_at",
+]);
+const POSITION_PACKAGE_KEYS = new Set([
+  "draft_id", "draft_version_id", "conversation_id", "version_number", "title",
+  "modules", "row_version", "created_at", "updated_at",
+]);
+const CONFIRMED_POSITION_PACKAGE_KEYS = new Set([
+  "position_id", "context_version_id", "conversation_id",
 ]);
 
 
@@ -177,9 +185,59 @@ function parseBinding(value: unknown): PositionConversationBinding {
     previousPositionId: raw.previous_position_id, createdAt: raw.created_at };
 }
 
+function packageIdentifier(value: unknown): string {
+  if (!id(value)) throw new Error("HR position package identifier invalid");
+  return value;
+}
+
+function packageModules(value: unknown): HrPositionPackageModules {
+  const raw = object(value, "HR position package response invalid");
+  const keys = new Set(["mission", "jd", "jr"]);
+  if (!exact(raw, keys)) throw new Error("HR position package response invalid");
+  const module = (name: "mission" | "jd" | "jr") => {
+    const selected = object(raw[name], "HR position package response invalid");
+    if (!exact(selected, new Set(["text"])) || !text(selected.text)) {
+      throw new Error("HR position package response invalid");
+    }
+    return { text: selected.text };
+  };
+  return { mission: module("mission"), jd: module("jd"), jr: module("jr") };
+}
+
+function parsePositionPackage(value: unknown): HrPositionPackage {
+  const raw = object(value, "HR position package response invalid");
+  if (!exact(raw, POSITION_PACKAGE_KEYS) || !id(raw.draft_id)
+    || !id(raw.draft_version_id) || !id(raw.conversation_id)
+    || !positive(raw.version_number) || !text(raw.title)
+    || !positive(raw.row_version) || !instant(raw.created_at)
+    || !instant(raw.updated_at)) {
+    throw new Error("HR position package response invalid");
+  }
+  return {
+    draftId: raw.draft_id, draftVersionId: raw.draft_version_id,
+    conversationId: raw.conversation_id, versionNumber: raw.version_number,
+    title: raw.title, modules: packageModules(raw.modules),
+    rowVersion: raw.row_version, createdAt: raw.created_at, updatedAt: raw.updated_at,
+  };
+}
+
+function parseConfirmedPositionPackage(value: unknown): HrConfirmedPositionPackage {
+  const raw = object(value, "HR confirmed position package response invalid");
+  if (!exact(raw, CONFIRMED_POSITION_PACKAGE_KEYS) || !id(raw.position_id)
+    || !id(raw.context_version_id) || !id(raw.conversation_id)) {
+    throw new Error("HR confirmed position package response invalid");
+  }
+  return {
+    positionId: raw.position_id, contextVersionId: raw.context_version_id,
+    conversationId: raw.conversation_id,
+  };
+}
+
 export function createHrApi(csrfToken: string) {
-  const write = (path: string, requestId: string, body: unknown, method = "POST") =>
-    request(path, mutation(csrfToken, requestId, method, body));
+  const write = (
+    path: string, requestId: string, body: unknown, method = "POST",
+    signal?: AbortSignal,
+  ) => request(path, { ...mutation(csrfToken, requestId, method, body), signal });
   return {
     async listPositions(filters: { query?: string; source?: PositionSource; internalStatus?: InternalPositionStatus; cursor?: string; limit?: number }, signal?: AbortSignal) {
       const params = new URLSearchParams();
@@ -192,6 +250,13 @@ export function createHrApi(csrfToken: string) {
     },
     async position(positionId: string, signal?: AbortSignal) {
       return parseDetail(await request(`/api/hr/positions/${encodeURIComponent(positionId)}`, { signal }));
+    },
+    async positionPackage(conversationId: string, signal?: AbortSignal): Promise<HrPositionPackage> {
+      const selected = packageIdentifier(conversationId);
+      return parsePositionPackage(await request(
+        `/api/hr/conversations/${encodeURIComponent(selected)}/position-package`,
+        { signal },
+      ));
     },
     async listDrafts(state?: HrPositionDraft["state"], signal?: AbortSignal) {
       const raw = object(
@@ -213,6 +278,27 @@ export function createHrApi(csrfToken: string) {
     },
     async confirmDraft(draftId: string, version: number, requestId: string) {
       return parseHrPosition(await write(`/api/hr/position-drafts/${encodeURIComponent(draftId)}/confirm`, requestId, { expected_row_version: version }));
+    },
+    async confirmPositionPackage(
+      draftId: string,
+      draftVersionId: string,
+      expectedRowVersion: number,
+      requestId: string,
+      signal?: AbortSignal,
+    ): Promise<HrConfirmedPositionPackage> {
+      const selectedDraft = packageIdentifier(draftId);
+      const selectedVersion = packageIdentifier(draftVersionId);
+      if (!positive(expectedRowVersion)) {
+        throw new Error("HR position package row version invalid");
+      }
+      return parseConfirmedPositionPackage(await write(
+        `/api/hr/position-drafts/${encodeURIComponent(selectedDraft)}`
+        + `/versions/${encodeURIComponent(selectedVersion)}/confirm`,
+        requestId,
+        { expected_row_version: expectedRowVersion },
+        "POST",
+        signal,
+      ));
     },
     async mergeDraft(draftId: string, targetPositionId: string, version: number, requestId: string) {
       return parseDraft(await write(`/api/hr/position-drafts/${encodeURIComponent(draftId)}/merge`, requestId, { target_position_id: targetPositionId, expected_row_version: version }));

@@ -10,13 +10,21 @@ from app.hr.models import (
     ConfirmPositionDraft,
     CorrectPositionConversationBinding,
     CreateManualPosition,
+    CreatePositionDraftVersion,
     DismissPositionDraft,
     MergePositionDraft,
     PositionDraftRecord,
+    PositionDraftVersion,
     PositionRecord,
     PromotePositionMaterial,
     ProposePositionDraft,
 )
+
+PACKAGE_MODULES = {
+    "mission": {"text": "负责新产品结构落地"},
+    "jd": {"text": "负责精密结构设计与量产。"},
+    "jr": {"text": "具备五年以上结构设计经验。"},
+}
 
 
 def test_manual_position_command_normalizes_public_job_fields() -> None:
@@ -141,3 +149,34 @@ def test_material_promotion_requires_distinct_uuid_identifiers() -> None:
     shared = uuid4()
     with pytest.raises(ValueError, match="material identifiers invalid"):
         PromotePositionMaterial(shared, shared, shared, uuid4())
+
+
+def test_position_draft_version_normalizes_package_without_losing_provenance() -> None:
+    now = datetime.now(UTC)
+    record = PositionDraftVersion(
+        uuid4(), uuid4(), uuid4(), uuid4(), 1, " 最终高级结构工程师 ",
+        PACKAGE_MODULES, uuid4(), uuid4(), uuid4(), " hr-bot ", " gpt-5 ",
+        1, now, now,
+    )
+
+    assert record.title == "最终高级结构工程师"
+    assert set(record.modules) == {"mission", "jd", "jr"}
+    assert record.agent_id == "hr-bot"
+    with pytest.raises(TypeError):
+        record.modules["jd"] = {"text": "tampered"}
+
+
+@pytest.mark.parametrize(
+    "modules",
+    [
+        {"mission": {"text": "M"}, "jd": {"text": "JD"}},
+        {**PACKAGE_MODULES, "unknowns": {"text": "U"}},
+        {**PACKAGE_MODULES, "jr": {"text": "  "}},
+    ],
+)
+def test_position_draft_version_requires_exact_complete_modules(modules) -> None:
+    with pytest.raises(ValueError, match="position package modules invalid"):
+        CreatePositionDraftVersion(
+            uuid4(), uuid4(), uuid4(), uuid4(), "Title", modules,
+            uuid4(), uuid4(), uuid4(), "hr-bot", "gpt-5",
+        )

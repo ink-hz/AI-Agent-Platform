@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+
 from app.attachments.conversation_models import AttachmentRecord
 from app.attachments.download_service import (
     ConversationAttachmentAccessRepository,
@@ -25,6 +26,7 @@ MATERIAL = UUID("00000000-0000-4000-8000-000000000004")
 ARTIFACT = UUID("00000000-0000-4000-8000-000000000005")
 TURN = UUID("00000000-0000-4000-8000-000000000006")
 EXPIRED = UUID("00000000-0000-4000-8000-000000000007")
+ARTIFACT_VERSION = UUID("00000000-0000-4000-8000-000000000008")
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 
 
@@ -45,7 +47,8 @@ class Resources:
         if (owner_id, position_id) != (OWNER, POSITION):
             raise ResourceNotFound("position resource not found")
         return (PositionArtifactItem(
-            artifact_id=ARTIFACT, attachment_id=uuid4(), artifact_version=2,
+            artifact_id=ARTIFACT, artifact_version_id=ARTIFACT_VERSION,
+            attachment_id=uuid4(), artifact_version=2,
             filename="面试方案.docx", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             state="ready", size_bytes=20, created_at=NOW, source_conversation_id=uuid4(),
             source_turn_id=TURN, preview_available=False, download_available=True,
@@ -78,6 +81,7 @@ def test_position_resources_return_exact_metadata_not_only_ids(service):
     assert resources.materials[0].filename == "岗位说明.pdf"
     assert resources.artifacts[0].source_turn_id == TURN
     assert resources.artifacts[0].artifact_version == 2
+    assert resources.artifacts[0].artifact_version_id == ARTIFACT_VERSION
     assert not hasattr(resources.artifacts[0], "immutable_locator")
 
 
@@ -156,6 +160,7 @@ def test_artifact_projection_reads_all_versions_and_uses_version_creation_time()
 
     query, params = connection.queries[0]
     assert "artifact_versions version" in query
+    assert "version.artifact_version_id" in query
     assert "current_artifact_versions" not in query
     assert "version.created_at" in query
     assert "version.result_status" in query

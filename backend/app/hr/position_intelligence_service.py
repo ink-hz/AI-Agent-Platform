@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Protocol
 from uuid import UUID, uuid5
 
+from .candidate_models import CandidateEnvelopeFragment
 from .position_intelligence_models import (
     ConfirmContextModules,
     CreateContextDraft,
@@ -79,6 +80,7 @@ class PositionIntelligenceService:
         material_attachment_ids: tuple[UUID, ...] = (),
         candidate_id: UUID | None = None,
         position_candidate_id: UUID | None = None,
+        candidate_snapshot: CandidateEnvelopeFragment | None = None,
     ) -> object:
         return self._repository.create_task_request(CreatePositionTaskRequest(
             task_request_id=self._resource_id(owner_id, request_id, "task-request"),
@@ -91,6 +93,22 @@ class PositionIntelligenceService:
             material_attachment_ids=material_attachment_ids,
             candidate_id=candidate_id,
             position_candidate_id=position_candidate_id,
+            document_ids=(
+                candidate_snapshot.document_ids
+                if candidate_snapshot is not None else ()
+            ),
+            document_attachment_ids=(
+                candidate_snapshot.document_attachment_ids
+                if candidate_snapshot is not None else ()
+            ),
+            human_feedback_ids=(
+                candidate_snapshot.human_feedback_ids
+                if candidate_snapshot is not None else ()
+            ),
+            candidate_prompt_context=(
+                candidate_snapshot.prompt_context
+                if candidate_snapshot is not None else None
+            ),
         ))
 
     def task_request(

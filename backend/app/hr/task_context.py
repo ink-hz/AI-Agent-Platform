@@ -16,6 +16,7 @@ from .position_intelligence_models import (
     HrPositionContextEnvelope,
     OfficialPositionVersion,
     PositionContextVersion,
+    candidate_task_snapshot_sha256,
     thaw_json,
 )
 from .position_intelligence_repository import _context, _official
@@ -71,6 +72,11 @@ class HrTaskScope:
     position_candidate_id: UUID | None
     position_title: str | None = None
     client_request_id: UUID | None = None
+    candidate_document_ids: tuple[UUID, ...] = ()
+    candidate_document_attachment_ids: tuple[UUID, ...] = ()
+    candidate_human_feedback_ids: tuple[UUID, ...] = ()
+    candidate_prompt_context: str | None = None
+    candidate_snapshot_sha256: str | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -102,6 +108,17 @@ class HrTaskScope:
             self.client_request_id, UUID
         ):
             raise ValueError("HR task request identifier invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class _PersistedCandidateFragment:
+    candidate_id: UUID
+    position_candidate_id: UUID
+    context_version_id: UUID
+    document_ids: tuple[UUID, ...]
+    document_attachment_ids: tuple[UUID, ...]
+    human_feedback_ids: tuple[UUID, ...]
+    prompt_context: str
 
 
 class HrTaskContextSource(Protocol):
@@ -365,17 +382,48 @@ class HrTaskContextProvider:
         document_ids: tuple[UUID, ...] = ()
         feedback_ids: tuple[UUID, ...] = ()
         if scope.candidate_id is not None:
-            if self._candidate_provider is None:
-                raise HrTaskContextError("candidate context unavailable")
-            try:
-                candidate_fragment = self._candidate_provider.for_task(
-                    owner_id,
-                    scope.position_id,
-                    scope.candidate_id,
-                    scope.position_candidate_id,
-                )
-            except (RuntimeError, ValueError):
-                raise HrTaskContextError("candidate context unavailable") from None
+            if scope.candidate_snapshot_sha256 is not None:
+                try:
+                    computed_snapshot = candidate_task_snapshot_sha256(
+                        candidate_id=scope.candidate_id,
+                        position_candidate_id=scope.position_candidate_id,
+                        context_version_id=scope.context.context_version_id,
+                        document_ids=scope.candidate_document_ids,
+                        document_attachment_ids=(
+                            scope.candidate_document_attachment_ids
+                        ),
+                        human_feedback_ids=scope.candidate_human_feedback_ids,
+                        prompt_context=scope.candidate_prompt_context,
+                    )
+                    candidate_fragment = _PersistedCandidateFragment(
+                        scope.candidate_id,
+                        scope.position_candidate_id,
+                        scope.context.context_version_id,
+                        scope.candidate_document_ids,
+                        scope.candidate_document_attachment_ids,
+                        scope.candidate_human_feedback_ids,
+                        scope.candidate_prompt_context,
+                    )
+                except (TypeError, ValueError):
+                    raise HrTaskContextError(
+                        "candidate task snapshot invalid"
+                    ) from None
+                if computed_snapshot != scope.candidate_snapshot_sha256:
+                    raise HrTaskContextError("candidate task snapshot invalid")
+            elif scope.client_request_id is not None:
+                raise HrTaskContextError("candidate task snapshot unavailable")
+            else:
+                if self._candidate_provider is None:
+                    raise HrTaskContextError("candidate context unavailable")
+                try:
+                    candidate_fragment = self._candidate_provider.for_task(
+                        owner_id,
+                        scope.position_id,
+                        scope.candidate_id,
+                        scope.position_candidate_id,
+                    )
+                except (RuntimeError, ValueError):
+                    raise HrTaskContextError("candidate context unavailable") from None
             candidate_fragment = _validated_candidate_fragment(
                 candidate_fragment, scope
             )
@@ -401,8 +449,8 @@ class HrTaskContextProvider:
             ),
             candidate_id=scope.candidate_id,
             position_candidate_id=scope.position_candidate_id,
-            document_attachment_ids=tuple(sorted(document_ids, key=str)),
-            human_feedback_ids=tuple(sorted(feedback_ids, key=str)),
+            document_attachment_ids=document_ids,
+            human_feedback_ids=feedback_ids,
             prompt_context=prompt_context,
             canonical_sha256="0" * 64,
         )
@@ -650,6 +698,26 @@ class PostgresHrTaskContextSource:
                 position_candidate_id=position_candidate_id,
                 position_title=scope["title"],
                 client_request_id=scope["client_request_id"],
+                candidate_document_ids=(
+                    tuple(request_row["document_ids"])
+                    if request_row is not None else ()
+                ),
+                candidate_document_attachment_ids=(
+                    tuple(request_row["document_attachment_ids"])
+                    if request_row is not None else ()
+                ),
+                candidate_human_feedback_ids=(
+                    tuple(request_row["human_feedback_ids"])
+                    if request_row is not None else ()
+                ),
+                candidate_prompt_context=(
+                    request_row["candidate_prompt_context"]
+                    if request_row is not None else None
+                ),
+                candidate_snapshot_sha256=(
+                    request_row["candidate_snapshot_sha256"]
+                    if request_row is not None else None
+                ),
             )
         except HrTaskContextError:
             raise
@@ -675,7 +743,7 @@ class PostgresHrTaskContextSource:
                 if request_row is None:
                     raise HrTaskContextError("HR task selection unavailable")
                 return connection.execute(
-                    "select (platform_hr.create_position_task_record_v71("
+                    "select (platform_hr.create_position_task_record_v78("
                     "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,%s::uuid[],"
                     "%s::uuid[],%s,%s,%s,%s,%s)).*",
                     (

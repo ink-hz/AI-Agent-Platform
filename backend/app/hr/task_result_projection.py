@@ -30,6 +30,7 @@ from .position_intelligence_repository import (
     PositionContextNotFound,
     PositionIntelligenceUnavailable,
 )
+from .structured_output import extract_hr_envelope
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ class HrTaskResultProjectionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select * from platform_hr.claim_hr_task_result_projection_v71("
+                    "select * from platform_hr.claim_hr_task_result_projection_v77("
                     "%s,%s)",
                     (worker_id, lease_seconds),
                 ).fetchone()
@@ -329,6 +330,70 @@ class HrTaskResultReconciler:
             )
             resource_id = getattr(result, "context_version_id", None)
         else:
+            envelope = extract_hr_envelope(text, claim.task_kind)
+            if envelope is None or not envelope.visible_markdown.strip():
+                raise ValueError("candidate result envelope invalid")
+            payload = dict(envelope.payload)
+            if claim.task_kind == "candidate_match":
+                evidence = payload["evidence"]
+                unknowns = payload["unknowns"]
+                verification_questions = payload["verification_questions"]
+                if (
+                    not isinstance(payload["summary"], str)
+                    or not payload["summary"].strip()
+                    or type(payload["dimensions"]) is not dict
+                    or not isinstance(evidence, list)
+                    or any(type(item) is not dict for item in evidence)
+                    or any(
+                        not isinstance(payload[key], list)
+                        or any(
+                            not isinstance(item, str) or not item.strip()
+                            for item in payload[key]
+                        )
+                        for key in (
+                            "gaps", "risks", "unknowns",
+                            "verification_questions",
+                        )
+                    )
+                ):
+                    raise ValueError("candidate match envelope invalid")
+                source_artifact_version_id = None
+            else:
+                if claim.output_artifact_version_id is None:
+                    raise ValueError("candidate interview PDF required")
+                questions = payload["questions"]
+                if (
+                    not isinstance(payload["title"], str)
+                    or not payload["title"].strip()
+                    or not isinstance(questions, list)
+                    or not questions
+                    or any(
+                        not isinstance(question["verification_goal"], str)
+                        or not question["verification_goal"].strip()
+                        or not isinstance(question["candidate_reason"], str)
+                        or not question["candidate_reason"].strip()
+                        or not isinstance(question["question"], str)
+                        or not question["question"].strip()
+                        or any(
+                            not isinstance(question[key], list)
+                            or any(
+                                not isinstance(item, str) or not item.strip()
+                                for item in question[key]
+                            )
+                            for key in (
+                                "follow_ups", "strong_evidence", "risk_signals"
+                            )
+                        )
+                        for question in questions
+                    )
+                ):
+                    raise ValueError("candidate interview envelope invalid")
+                evidence = []
+                unknowns = []
+                verification_questions = [
+                    question["question"] for question in questions
+                ]
+                source_artifact_version_id = claim.output_artifact_version_id
             result = self._candidates.add_analysis(
                 CreateCandidateAnalysis(
                     owner_id=claim.owner_id,
@@ -337,14 +402,15 @@ class HrTaskResultReconciler:
                     document_ids=claim.document_ids,
                     analysis_kind=_CANDIDATE_ANALYSES[claim.task_kind],
                     client_request_id=claim.projection_request_id,
-                    result={"text": text},
-                    evidence=(),
-                    unknowns=(),
+                    result=payload,
+                    evidence=tuple(evidence),
+                    unknowns=tuple(unknowns),
                     conflicts=(),
-                    verification_questions=(),
+                    verification_questions=tuple(verification_questions),
                     agent_version=claim.agent_id,
                     model_version=claim.execution_model_version,
                     feedback_ids=claim.feedback_ids,
+                    source_artifact_version_id=source_artifact_version_id,
                 )
             )
             resource_id = getattr(result, "analysis_version_id", None)

@@ -53,7 +53,11 @@ class PsycopgPositionResourceRepository:
         self._connection = connection_factory
         self._attachments = attachments
 
-    def _item(self, owner_id: UUID, row, *, artifact_id: UUID | None = None, artifact_version: int | None = None):
+    def _item(
+        self, owner_id: UUID, row, *, artifact_id: UUID | None = None,
+        artifact_version_id: UUID | None = None,
+        artifact_version: int | None = None,
+    ):
         try:
             attachment = self._attachments.attachment(owner_id, row["attachment_id"])
         except DownloadNotFound:  # one erased/unreadable historical row must not hide siblings
@@ -82,7 +86,8 @@ class PsycopgPositionResourceRepository:
                 preview_available and download_available, download_available,
             )
         return PositionArtifactItem(
-            artifact_id, row["attachment_id"], artifact_version, filename, media_type, state,
+            artifact_id, artifact_version_id, row["attachment_id"], artifact_version,
+            filename, media_type, state,
             size_bytes, created_at, row.get("source_conversation_id"), row.get("source_turn_id"),
             preview_available and download_available, download_available,
         )
@@ -142,7 +147,8 @@ class PsycopgPositionResourceRepository:
         if not isinstance(owner_id, UUID) or not isinstance(position_id, UUID):
             raise ValueError("position resource identifiers required")
         query = (
-            "select linked.artifact_id, version.attachment_id, artifact.conversation_id as source_conversation_id, "
+            "select linked.artifact_id, version.artifact_version_id, version.attachment_id, "
+            "artifact.conversation_id as source_conversation_id, "
             "(select message.turn_id from platform_attachments.bindings binding "
             "join platform_control.conversation_messages message "
             "on message.conversation_id=binding.conversation_id and message.message_id=binding.message_id "
@@ -179,7 +185,9 @@ class PsycopgPositionResourceRepository:
             with self._connection() as connection:
                 rows = connection.execute(query, (owner_id, position_id)).fetchall()
             return tuple(self._item(
-                owner_id, row, artifact_id=row["artifact_id"], artifact_version=row["artifact_version"],
+                owner_id, row, artifact_id=row["artifact_id"],
+                artifact_version_id=row["artifact_version_id"],
+                artifact_version=row["artifact_version"],
             ) for row in rows)
         except ResourceNotFound:
             raise

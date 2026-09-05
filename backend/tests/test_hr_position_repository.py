@@ -13,6 +13,7 @@ from app.hr.models import (
     ConfirmPositionDraft,
     CorrectPositionConversationBinding,
     CreateManualPosition,
+    CreatePositionDraftVersion,
     DismissPositionDraft,
     MergePositionDraft,
     ProjectOfficialPosition,
@@ -49,6 +50,30 @@ def _hr_conversation(admin: psycopg.Connection, owner_id):
     )
     admin.commit()
     return conversation_id
+
+
+def _completed_hr_turn(admin: psycopg.Connection, owner_id):
+    conversation_id = _hr_conversation(admin, owner_id)
+    turn_id, user_message_id, assistant_message_id = uuid4(), uuid4(), uuid4()
+    admin.execute(
+        "insert into platform_control.conversation_messages("
+        "message_id,conversation_id,seq,role,content_ciphertext,"
+        "encryption_key_version,turn_id,delivery_status,completed_at) values "
+        "(%s,%s,1,'user',%s,1,%s,'completed',now()),"
+        "(%s,%s,2,'assistant',%s,1,%s,'completed',now())",
+        (
+            user_message_id, conversation_id, b"u" * 29, turn_id,
+            assistant_message_id, conversation_id, b"a" * 29, turn_id,
+        ),
+    )
+    admin.execute(
+        "insert into platform_control.conversation_turns("
+        "turn_id,conversation_id,user_message_id,assistant_message_id,"
+        "client_request_id,status) values (%s,%s,%s,%s,%s,'completed')",
+        (turn_id, conversation_id, user_message_id, assistant_message_id, uuid4()),
+    )
+    admin.commit()
+    return conversation_id, turn_id, assistant_message_id
 
 
 @pytest.mark.postgres
@@ -371,3 +396,132 @@ def test_repository_corrects_binding_only_from_expected_position_and_audits(
     assert event == (
         previous.position_id, corrected.position_id, "历史岗位识别有误"
     )
+
+
+@pytest.mark.postgres
+def test_repository_persists_latest_package_and_confirms_selected_version(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Versioned Position Package Owner")
+        conversation_id, turn_id, assistant_message_id = _completed_hr_turn(
+            admin, owner_id
+        )
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    draft = repository.propose_draft(ProposePositionDraft(
+        owner_id, uuid4(), uuid4(), "new_conversation",
+        f"conversation:{conversation_id}", conversation_id,
+        "用户最初请求", {}, {}, "interactive-v1",
+    ))
+    modules = {
+        "mission": {"text": "负责关键产品交付"},
+        "jd": {"text": "负责精密结构设计。"},
+        "jr": {"text": "具备量产经验。"},
+    }
+    command = CreatePositionDraftVersion(
+        owner_id, uuid4(), draft.draft_id, uuid4(), "最终结构工程师",
+        modules, conversation_id, turn_id, assistant_message_id,
+        "hr-bot", "gpt-5",
+    )
+
+    version = repository.create_draft_version(command)
+    assert repository.create_draft_version(command) == version
+    assert repository.latest_draft_version(owner_id, draft.draft_id) == version
+
+    package = repository.confirm_package(
+        owner_id, draft.draft_id, version.draft_version_id, uuid4(),
+        expected_row_version=draft.row_version,
+    )
+
+    assert package.position.title == "最终结构工程师"
+    assert package.context.modules == version.modules
+    assert package.context.state == "confirmed"
+    assert package.conversation_id == conversation_id
+    with pytest.raises(HrNotFound):
+        repository.latest_draft_version(uuid4(), draft.draft_id)
+
+
+@pytest.mark.postgres
+def test_repository_finds_conversation_package_beyond_draft_page_and_on_projector_draft(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Conversation Package Owner")
+        conversation_id, older_turn_id, older_assistant_message_id = _completed_hr_turn(
+            admin, owner_id
+        )
+        newer_turn_id, newer_user_message_id, newer_assistant_message_id = (
+            uuid4(), uuid4(), uuid4()
+        )
+        admin.execute(
+            "insert into platform_control.conversation_messages("
+            "message_id,conversation_id,seq,role,content_ciphertext,"
+            "encryption_key_version,turn_id,delivery_status,completed_at) values "
+            "(%s,%s,3,'user',%s,1,%s,'completed',now()),"
+            "(%s,%s,4,'assistant',%s,1,%s,'completed',now())",
+            (
+                newer_user_message_id, conversation_id, b"u" * 29,
+                newer_turn_id, newer_assistant_message_id, conversation_id,
+                b"a" * 29, newer_turn_id,
+            ),
+        )
+        admin.execute(
+            "insert into platform_control.conversation_turns("
+            "turn_id,conversation_id,user_message_id,assistant_message_id,"
+            "client_request_id,status) values (%s,%s,%s,%s,%s,'completed')",
+            (
+                newer_turn_id, conversation_id, newer_user_message_id,
+                newer_assistant_message_id, uuid4(),
+            ),
+        )
+        admin.commit()
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    oldest = repository.propose_draft(ProposePositionDraft(
+        owner_id, uuid4(), uuid4(), "new_conversation", "package:oldest",
+        conversation_id, "最早岗位草稿", {}, {}, "interactive-v1",
+    ))
+    modules = {
+        "mission": {"text": "负责关键产品交付"},
+        "jd": {"text": "负责喷嘴与挤出系统结构设计。"},
+        "jr": {"text": "具备精密机械量产经验。"},
+    }
+    newer_version = repository.create_draft_version(CreatePositionDraftVersion(
+        owner_id, uuid4(), oldest.draft_id, uuid4(), "新版高级结构工程师",
+        modules, conversation_id, newer_turn_id, newer_assistant_message_id,
+        "hr-bot", "gpt-5",
+    ))
+    older_version = repository.create_draft_version(CreatePositionDraftVersion(
+        owner_id, uuid4(), oldest.draft_id, uuid4(), "旧版结构工程师",
+        modules, conversation_id, older_turn_id, older_assistant_message_id,
+        "hr-bot", "gpt-5",
+    ))
+    repository.propose_draft(ProposePositionDraft(
+        owner_id, uuid4(), uuid4(), "new_conversation", "package:newer",
+        conversation_id, "较新但未投影的草稿", {}, {}, "interactive-v1",
+    ))
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.cursor().executemany(
+            "insert into platform_hr.position_drafts ("
+            "draft_id,owner_internal_user_id,client_request_id,source_kind,"
+            "source_key,title,proposal,evidence,discovery_rule_version) values "
+            "(%s,%s,%s,'new_conversation',%s,'干扰草稿','{}'::jsonb,"
+            "'{}'::jsonb,'interactive-v1')",
+            [
+                (uuid4(), owner_id, uuid4(), f"distractor:{index}")
+                for index in range(101)
+            ],
+        )
+        admin.commit()
+
+    assert oldest not in repository.list_drafts(owner_id, limit=100)
+    assert newer_version.created_at < older_version.created_at
+    assert repository.latest_draft_version(
+        owner_id, oldest.draft_id
+    ) == older_version
+    assert repository.position_package_for_conversation(
+        owner_id, conversation_id
+    ) == (oldest, newer_version)
+    with pytest.raises(HrNotFound):
+        repository.position_package_for_conversation(uuid4(), conversation_id)

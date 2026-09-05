@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Mapping
@@ -37,6 +38,37 @@ TASK_KINDS = frozenset(
 )
 _JOB_ID = re.compile(r"(?:J[0-9]{4,12}|JOBAD:[0-9]{1,20})\Z")
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
+
+
+def candidate_task_snapshot_sha256(
+    *,
+    candidate_id: UUID,
+    position_candidate_id: UUID,
+    context_version_id: UUID,
+    document_ids: tuple[UUID, ...],
+    document_attachment_ids: tuple[UUID, ...],
+    human_feedback_ids: tuple[UUID, ...],
+    prompt_context: str,
+) -> str:
+    for value in (candidate_id, position_candidate_id, context_version_id):
+        _uuid(value, "candidate task snapshot invalid")
+    for values in (document_ids, document_attachment_ids, human_feedback_ids):
+        _uuids(values, "candidate task snapshot invalid")
+    if not document_ids or len(document_ids) != len(document_attachment_ids):
+        raise ValueError("candidate task snapshot invalid")
+    prompt = _text(prompt_context, 65_536, "candidate task snapshot invalid")
+    encoded_prompt = prompt.encode("utf-8").hex()
+    canonical = "|".join((
+        "v1",
+        str(candidate_id),
+        str(position_candidate_id),
+        str(context_version_id),
+        ",".join(map(str, document_ids)),
+        ",".join(map(str, document_attachment_ids)),
+        ",".join(map(str, human_feedback_ids)),
+        encoded_prompt,
+    ))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _uuid(value: UUID, message: str = "position intelligence identifiers invalid") -> UUID:
@@ -413,6 +445,11 @@ class CreatePositionTaskRequest:
     material_attachment_ids: tuple[UUID, ...] = ()
     candidate_id: UUID | None = None
     position_candidate_id: UUID | None = None
+    document_ids: tuple[UUID, ...] = ()
+    document_attachment_ids: tuple[UUID, ...] = ()
+    human_feedback_ids: tuple[UUID, ...] = ()
+    candidate_prompt_context: str | None = None
+    candidate_snapshot_sha256: str | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -445,6 +482,51 @@ class CreatePositionTaskRequest:
         object.__setattr__(self, "material_attachment_ids", tuple(
             sorted(self.material_attachment_ids, key=str)
         ))
+        candidate_task = self.task_kind in {
+            "candidate_match", "candidate_interview_plan"
+        }
+        if candidate_task:
+            if (
+                not self.document_ids
+                or len(self.document_ids) != len(self.document_attachment_ids)
+                or self.candidate_prompt_context is None
+            ):
+                raise ValueError("candidate task snapshot required")
+            for values in (
+                self.document_ids,
+                self.document_attachment_ids,
+                self.human_feedback_ids,
+            ):
+                _uuids(values, "candidate task snapshot invalid")
+            computed = candidate_task_snapshot_sha256(
+                candidate_id=self.candidate_id,
+                position_candidate_id=self.position_candidate_id,
+                context_version_id=self.expected_context_version_id,
+                document_ids=self.document_ids,
+                document_attachment_ids=self.document_attachment_ids,
+                human_feedback_ids=self.human_feedback_ids,
+                prompt_context=self.candidate_prompt_context,
+            )
+            if self.candidate_snapshot_sha256 not in (None, computed):
+                raise ValueError("candidate task snapshot hash invalid")
+            object.__setattr__(
+                self,
+                "candidate_prompt_context",
+                _text(
+                    self.candidate_prompt_context,
+                    65_536,
+                    "candidate task snapshot invalid",
+                ),
+            )
+            object.__setattr__(self, "candidate_snapshot_sha256", computed)
+        elif any((
+            self.document_ids,
+            self.document_attachment_ids,
+            self.human_feedback_ids,
+            self.candidate_prompt_context is not None,
+            self.candidate_snapshot_sha256 is not None,
+        )):
+            raise ValueError("non-candidate task snapshot invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -461,15 +543,64 @@ class PositionTaskRequest:
     position_candidate_id: UUID | None
     status: str
     created_at: datetime
+    document_ids: tuple[UUID, ...] = ()
+    document_attachment_ids: tuple[UUID, ...] = ()
+    human_feedback_ids: tuple[UUID, ...] = ()
+    candidate_prompt_context: str | None = None
+    candidate_snapshot_sha256: str | None = None
 
     def __post_init__(self) -> None:
-        CreatePositionTaskRequest(
+        for value in (
             self.task_request_id, self.owner_id, self.position_id,
-            self.client_request_id, self.canonical_payload_sha256,
-            self.task_kind, self.expected_context_version_id,
-            self.material_attachment_ids, self.candidate_id,
+            self.client_request_id,
+        ):
+            _uuid(value)
+        if _SHA256.fullmatch(self.canonical_payload_sha256) is None:
+            raise ValueError("position task request hash invalid")
+        if self.task_kind not in TASK_KINDS:
+            raise ValueError("HR task kind invalid")
+        _uuids(self.material_attachment_ids, "task input identifiers invalid")
+        object.__setattr__(self, "material_attachment_ids", tuple(
+            sorted(self.material_attachment_ids, key=str)
+        ))
+        for value in (
+            self.expected_context_version_id,
+            self.candidate_id,
             self.position_candidate_id,
-        )
+        ):
+            _optional_uuid(value)
+        if (self.candidate_id is None) != (self.position_candidate_id is None):
+            raise ValueError("candidate identifiers invalid")
+        candidate_task = self.task_kind in {
+            "candidate_match", "candidate_interview_plan"
+        }
+        if candidate_task and (
+            self.candidate_id is None or self.expected_context_version_id is None
+        ):
+            raise ValueError("candidate task selection invalid")
+        if self.task_kind == "candidate_comparison" and self.candidate_id is not None:
+            raise ValueError("candidate comparison selection invalid")
+        if self.task_kind not in {
+            "candidate_match", "candidate_interview_plan", "candidate_comparison",
+        } and self.candidate_id is not None:
+            raise ValueError("candidate task selection invalid")
+        if self.candidate_snapshot_sha256 is not None:
+            CreatePositionTaskRequest(
+                self.task_request_id, self.owner_id, self.position_id,
+                self.client_request_id, self.canonical_payload_sha256,
+                self.task_kind, self.expected_context_version_id,
+                self.material_attachment_ids, self.candidate_id,
+                self.position_candidate_id, self.document_ids,
+                self.document_attachment_ids, self.human_feedback_ids,
+                self.candidate_prompt_context, self.candidate_snapshot_sha256,
+            )
+        elif any((
+            self.document_ids,
+            self.document_attachment_ids,
+            self.human_feedback_ids,
+            self.candidate_prompt_context is not None,
+        )):
+            raise ValueError("legacy candidate task snapshot invalid")
         if self.status not in {"active", "consumed", "cancelled"}:
             raise ValueError("position task request status invalid")
         _aware(self.created_at)

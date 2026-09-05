@@ -273,7 +273,7 @@ else
 fi
 "$visudo_bin" -cf "$sudoers_root" >/dev/null
 status_output="$($sudo_bin -n -H -u "$agentops_user" "$dispatcher_target" status)" || fail
-[[ "$status_output" == "AGENTOPS_CONTROL_OK commands=6" ]] || fail
+[[ "$status_output" == "AGENTOPS_CONTROL_OK commands=7" ]] || fail
 if [[ "$staged_key" == 1 ]]; then
   /bin/rm -f -- "$pending_private" "$pending_public" "$pending_config" "$pending_known_hosts"
 fi

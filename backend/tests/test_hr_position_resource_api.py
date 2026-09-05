@@ -12,6 +12,7 @@ OWNER = UUID("00000000-0000-4000-8000-000000000001")
 POSITION = UUID("00000000-0000-4000-8000-000000000002")
 OTHER = UUID("00000000-0000-4000-8000-000000000003")
 MATERIAL = UUID("00000000-0000-4000-8000-000000000004")
+ARTIFACT_VERSION = UUID("00000000-0000-4000-8000-000000000005")
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 
 
@@ -34,7 +35,8 @@ class Resources:
     def artifacts_for_position(self, owner_id, position_id):
         self._allowed(owner_id, position_id)
         return (PositionArtifactItem(
-            artifact_id=uuid4(), attachment_id=uuid4(), artifact_version=1,
+            artifact_id=uuid4(), artifact_version_id=ARTIFACT_VERSION,
+            attachment_id=uuid4(), artifact_version=1,
             filename="产出.docx", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             state="ready", size_bytes=8, created_at=NOW, source_conversation_id=uuid4(),
             source_turn_id=uuid4(), preview_available=False, download_available=True,
@@ -66,6 +68,10 @@ def test_resources_return_exact_public_metadata_without_storage_locator():
     assert material["attachment_id"] == str(MATERIAL)
     assert material["filename"] == "职位材料.pdf"
     assert "immutable_locator" not in material
+    artifact = response.json()["artifacts"][0]
+    assert artifact["artifact_version_id"] == str(ARTIFACT_VERSION)
+    assert artifact["attachment_id"] != artifact["artifact_version_id"]
+    assert "immutable_locator" not in artifact
     assert response.headers["cache-control"] == "private, no-store"
 
 

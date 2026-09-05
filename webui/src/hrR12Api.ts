@@ -4,6 +4,7 @@ import type {
   HrCandidateDraft, HrConfirmedCandidate, HrContextComparison, HrContextVersion,
   HrDownloadTicket, HrHumanFeedback, HrPositionCandidate, HrPositionResources,
   HrCandidateTaskKind, HrPositionTaskKind, HrStartableTaskKind, HrTaskKind, HrTaskRecord,
+  HrCandidateInterviewPlanResult, HrCandidateInterviewQuestion, HrCandidateMatchResult,
 } from "./hrR12Types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,6 +29,34 @@ function object(value: unknown): Record<string, unknown> { if (!record(value)) t
 function stringList(value: unknown): string[] { if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error("HR R1.2 response invalid"); return [...value]; }
 function idList(value: unknown): string[] { return stringList(value).map(identifier); }
 function items(value: unknown): unknown[] { if (!record(value) || !Array.isArray(value.items)) throw new Error("HR R1.2 list response invalid"); return value.items; }
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort(); const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+function nonempty(value: unknown): string {
+  if (typeof value !== "string" || !value.trim() || value.includes("\0")) throw new Error("HR R1.2 analysis response invalid");
+  return value;
+}
+function analysisStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error("HR R1.2 analysis response invalid");
+  return value.map(nonempty);
+}
+function matchResult(value: unknown): HrCandidateMatchResult {
+  const raw = object(value);
+  if (!exactKeys(raw, ["summary", "dimensions", "evidence", "gaps", "risks", "unknowns", "verification_questions"]) || !record(raw.dimensions) || !Array.isArray(raw.evidence) || !raw.evidence.every(record)) throw new Error("HR R1.2 analysis response invalid");
+  const dimensions = { ...raw.dimensions };
+  return { summary: nonempty(raw.summary), dimensions, evidence: raw.evidence.map((entry) => ({ ...entry })), gaps: analysisStrings(raw.gaps), risks: analysisStrings(raw.risks), unknowns: analysisStrings(raw.unknowns), verification_questions: analysisStrings(raw.verification_questions) };
+}
+function interviewResult(value: unknown): HrCandidateInterviewPlanResult {
+  const raw = object(value);
+  if (!exactKeys(raw, ["title", "questions"]) || !Array.isArray(raw.questions) || raw.questions.length === 0) throw new Error("HR R1.2 analysis response invalid");
+  const questions: HrCandidateInterviewQuestion[] = raw.questions.map((value) => {
+    const question = object(value);
+    if (!exactKeys(question, ["verification_goal", "candidate_reason", "question", "follow_ups", "strong_evidence", "risk_signals"])) throw new Error("HR R1.2 analysis response invalid");
+    return { verification_goal: nonempty(question.verification_goal), candidate_reason: nonempty(question.candidate_reason), question: nonempty(question.question), follow_ups: analysisStrings(question.follow_ups), strong_evidence: analysisStrings(question.strong_evidence), risk_signals: analysisStrings(question.risk_signals) };
+  });
+  return { title: nonempty(raw.title), questions };
+}
 
 async function request(path: string, init: RequestInit = {}): Promise<unknown> {
   const response = await fetch(platformPath(path), { credentials: "same-origin", headers: { Accept: "application/json", ...init.headers }, ...init });
@@ -45,7 +74,7 @@ function resources(value: unknown): HrPositionResources {
     const raw = object(rawValue);
     if (typeof raw.filename !== "string" || typeof raw.media_type !== "string" || typeof raw.state !== "string" || !Number.isSafeInteger(raw.size_bytes) || typeof raw.created_at !== "string" || typeof raw.preview_available !== "boolean" || typeof raw.download_available !== "boolean") throw new Error("HR R1.2 resource response invalid");
     const base = { attachmentId: identifier(raw.attachment_id), filename: raw.filename, mediaType: raw.media_type, state: raw.state, sizeBytes: Number(raw.size_bytes), createdAt: raw.created_at, sourceConversationId: raw.source_conversation_id === null ? null : identifier(raw.source_conversation_id), sourceTurnId: raw.source_turn_id === null ? null : identifier(raw.source_turn_id), previewAvailable: raw.preview_available, downloadAvailable: raw.download_available };
-    return artifact ? { ...base, artifactId: identifier(raw.artifact_id), artifactVersion: positive(raw.artifact_version) } : base;
+    return artifact ? { ...base, artifactId: identifier(raw.artifact_id), artifactVersionId: identifier(raw.artifact_version_id), artifactVersion: positive(raw.artifact_version) } : base;
   };
   return { materials: value.materials.map((raw) => item(raw)), artifacts: value.artifacts.map((raw) => item(raw, true)) } as HrPositionResources;
 }
@@ -79,7 +108,13 @@ function positionCandidate(value: unknown): HrPositionCandidate {
 function confirmedCandidate(value: unknown): HrConfirmedCandidate { const raw = object(value); return { candidate: candidate(raw.candidate), document: document(raw.document), positionCandidate: positionCandidate(raw.position_candidate) }; }
 function analysis(value: unknown): HrCandidateAnalysisVersion {
   const raw = object(value); if (!ANALYSIS_KINDS.has(String(raw.analysis_kind)) || !Array.isArray(raw.evidence) || !raw.evidence.every(record)) throw new Error("HR R1.2 analysis response invalid");
-  return { analysisVersionId: identifier(raw.analysis_version_id), positionCandidateId: identifier(raw.position_candidate_id), positionId: identifier(raw.position_id), candidateId: identifier(raw.candidate_id), contextVersionId: identifier(raw.context_version_id), versionNumber: positive(raw.version_number), analysisKind: raw.analysis_kind as HrCandidateAnalysisKind, documentIds: idList(raw.document_ids), feedbackIds: idList(raw.feedback_ids), result: object(raw.result), evidence: raw.evidence.map((entry) => ({ ...entry })), unknowns: stringList(raw.unknowns), conflicts: stringList(raw.conflicts), verificationQuestions: stringList(raw.verification_questions), agentVersion: string(raw.agent_version), modelVersion: string(raw.model_version), createdAt: string(raw.created_at) };
+  const analysisKind = raw.analysis_kind as HrCandidateAnalysisKind;
+  const sourceArtifactVersionId = raw.source_artifact_version_id === null || raw.source_artifact_version_id === undefined
+    ? null : identifier(raw.source_artifact_version_id);
+  const common = { analysisVersionId: identifier(raw.analysis_version_id), positionCandidateId: identifier(raw.position_candidate_id), positionId: identifier(raw.position_id), candidateId: identifier(raw.candidate_id), contextVersionId: identifier(raw.context_version_id), versionNumber: positive(raw.version_number), documentIds: idList(raw.document_ids), feedbackIds: idList(raw.feedback_ids), evidence: raw.evidence.map((entry) => ({ ...entry })), unknowns: stringList(raw.unknowns), conflicts: stringList(raw.conflicts), verificationQuestions: stringList(raw.verification_questions), agentVersion: string(raw.agent_version), modelVersion: string(raw.model_version), createdAt: string(raw.created_at), sourceArtifactVersionId };
+  if (analysisKind === "match") return { ...common, analysisKind, result: matchResult(raw.result) };
+  if (analysisKind === "candidate_interview_plan") return { ...common, analysisKind, result: interviewResult(raw.result) };
+  return { ...common, analysisKind, result: { ...object(raw.result) } };
 }
 function feedback(value: unknown): HrHumanFeedback {
   const raw = object(value); if (!["accepted", "rejected", "correction"].includes(String(raw.feedback_kind))) throw new Error("HR R1.2 feedback response invalid");

@@ -1070,6 +1070,125 @@ class ConversationRepository:
         ):
             raise ConversationRepositoryError() from None
 
+    @staticmethod
+    def _direct_shell_replay_locked(
+        conversation_row: dict[str, Any],
+        *,
+        internal_user_id: UUID,
+        client_request_id: UUID,
+        direct_agent_id: str,
+        title: str,
+    ) -> None:
+        if (
+            conversation_row["owner_internal_user_id"] != internal_user_id
+            or conversation_row["started_by_client_request_id"] != client_request_id
+            or conversation_row["mode"] != "direct_agent"
+            or conversation_row["direct_agent_id"] != direct_agent_id
+            or conversation_row["status"] != "active"
+            or conversation_row["title"] != title
+        ):
+            raise ConversationRepositoryConflict()
+
+    def ensure_direct_conversation_shell(
+        self,
+        internal_user_id: UUID,
+        client_request_id: UUID,
+        *,
+        direct_agent_id: str,
+        title: str,
+    ) -> ConversationRecord:
+        """Create or strictly replay an empty direct-Agent Conversation."""
+
+        _require_uuid(internal_user_id)
+        _require_uuid(client_request_id)
+        _mode, selected_agent_id = _require_mode("direct_agent", direct_agent_id)
+        selected_title = _require_title(title)
+        conversation_id = uuid4()
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                existing = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where owner_internal_user_id=%s "
+                    "and started_by_client_request_id=%s for update",
+                    (internal_user_id, client_request_id),
+                ).fetchone()
+                if existing is None:
+                    existing = cursor.execute(
+                        "insert into platform_control.conversations "
+                        "(conversation_id,owner_internal_user_id,"
+                        "started_by_client_request_id,mode,direct_agent_id,title,status) "
+                        "values (%s,%s,%s,'direct_agent',%s,%s,'active') returning *",
+                        (
+                            conversation_id,
+                            internal_user_id,
+                            client_request_id,
+                            selected_agent_id,
+                            selected_title,
+                        ),
+                    ).fetchone()
+                self._direct_shell_replay_locked(
+                    existing,
+                    internal_user_id=internal_user_id,
+                    client_request_id=client_request_id,
+                    direct_agent_id=selected_agent_id,
+                    title=selected_title,
+                )
+                return self._conversation_from_row(existing)
+        except psycopg.errors.UniqueViolation:
+            return self._replay_direct_conversation_shell_after_race(
+                internal_user_id,
+                client_request_id,
+                direct_agent_id=selected_agent_id,
+                title=selected_title,
+            )
+        except ConversationRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            TypeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise ConversationRepositoryError() from None
+
+    def _replay_direct_conversation_shell_after_race(
+        self,
+        internal_user_id: UUID,
+        client_request_id: UUID,
+        *,
+        direct_agent_id: str,
+        title: str,
+    ) -> ConversationRecord:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where owner_internal_user_id=%s "
+                    "and started_by_client_request_id=%s for update",
+                    (internal_user_id, client_request_id),
+                ).fetchone()
+                if row is None:
+                    raise ConversationRepositoryError()
+                self._direct_shell_replay_locked(
+                    row,
+                    internal_user_id=internal_user_id,
+                    client_request_id=client_request_id,
+                    direct_agent_id=direct_agent_id,
+                    title=title,
+                )
+                return self._conversation_from_row(row)
+        except ConversationRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            TypeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise ConversationRepositoryError() from None
+
     def _replay_start_after_race(
         self,
         internal_user_id: UUID,
@@ -1186,7 +1305,7 @@ class ConversationRepository:
                         (conversation_id,),
                     ).fetchone()
                     if active is not None:
-                        raise ConversationRepositoryConflict()
+                        raise ConversationTurnInProgress()
                     next_seq = cursor.execute(
                         "select coalesce(max(seq),0)+1 as next_seq from "
                         "platform_control.conversation_messages "

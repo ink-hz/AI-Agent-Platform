@@ -130,8 +130,13 @@ _HR_POSITION_ROUTES = frozenset({
     ("GET", "/api/hr/positions"),
     ("GET", "/api/hr/positions/{position_id}"),
     ("GET", "/api/hr/position-drafts"),
+    ("GET", "/api/hr/conversations/{conversation_id}/position-package"),
     ("POST", "/api/hr/position-drafts"),
     ("POST", "/api/hr/position-drafts/{draft_id}/confirm"),
+    (
+        "POST",
+        "/api/hr/position-drafts/{draft_id}/versions/{draft_version_id}/confirm",
+    ),
     ("POST", "/api/hr/position-drafts/{draft_id}/merge"),
     ("POST", "/api/hr/position-drafts/{draft_id}/dismiss"),
     (
@@ -170,6 +175,12 @@ _HR_POSITION_ROUTES = frozenset({
     ("POST", "/api/hr/positions/{position_id}/tasks"),
     ("GET", "/api/hr/positions/{position_id}/tasks"),
     ("GET", "/api/hr/positions/{position_id}/tasks/{task_id}"),
+    ("GET", "/api/hr/panorama/sources"),
+    ("POST", "/api/hr/panorama/sources"),
+    ("POST", "/api/hr/panorama/runs"),
+    ("GET", "/api/hr/panorama/runs/{run_id}"),
+    ("GET", "/api/hr/panorama/reports"),
+    ("GET", "/api/hr/panorama/reports/{insight_version_id}"),
 })
 
 _HR_POSITION_MUTATION_ROUTES = frozenset(

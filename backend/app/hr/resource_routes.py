@@ -8,8 +8,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, ConfigDict
 
-from .resource_models import PositionArtifactItem, PositionMaterialItem, PositionResourceTicket
-from .resource_service import HrPositionResourceService, ResourceNotFound, ResourceUnavailable
+from .resource_models import (
+    PositionArtifactItem,
+    PositionMaterialItem,
+    PositionResourceTicket,
+)
+from .resource_service import (
+    HrPositionResourceService,
+    ResourceNotFound,
+    ResourceUnavailable,
+)
 from .routes import HrPositionRoute
 
 
@@ -31,7 +39,9 @@ def _material(value: PositionMaterialItem) -> dict[str, object]:
 
 def _artifact(value: PositionArtifactItem) -> dict[str, object]:
     return {
-        "artifact_id": str(value.artifact_id), "attachment_id": str(value.attachment_id),
+        "artifact_id": str(value.artifact_id),
+        "artifact_version_id": str(value.artifact_version_id),
+        "attachment_id": str(value.attachment_id),
         "artifact_version": value.artifact_version, **_material(PositionMaterialItem(
             value.attachment_id, value.filename, value.media_type, value.state, value.size_bytes,
             value.created_at, value.source_conversation_id, value.source_turn_id,

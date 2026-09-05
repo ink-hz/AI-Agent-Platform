@@ -15,6 +15,7 @@ from app.hr.candidate_repository import (
     CandidateNotFound,
     CandidateRepository,
     CandidateUnavailable,
+    _analysis,
 )
 
 NOW = datetime.now(UTC)
@@ -219,3 +220,34 @@ def test_repository_bounds_feedback_listing_to_the_newest_hundred() -> None:
     sql, parameters = connection.calls[0]
     assert "order by created_at desc,feedback_id desc limit 100" in sql
     assert parameters == (owner_id, relation_id)
+
+
+def test_repository_serializes_artifact_version_identity_without_locator() -> None:
+    artifact_version_id = uuid4()
+    row = {
+        "analysis_version_id": uuid4(),
+        "owner_internal_user_id": uuid4(),
+        "position_candidate_id": uuid4(),
+        "position_id": uuid4(),
+        "candidate_id": uuid4(),
+        "context_version_id": uuid4(),
+        "source_artifact_version_id": artifact_version_id,
+        "version_number": 1,
+        "analysis_kind": "candidate_interview_plan",
+        "document_ids": [uuid4()],
+        "feedback_ids": [],
+        "result": {"title": "面试题", "questions": []},
+        "evidence": [],
+        "unknowns": [],
+        "conflicts": [],
+        "verification_questions": [],
+        "agent_version": "hr-bot",
+        "model_version": "model-v1",
+        "created_at": NOW,
+        "immutable_locator": "version:must-not-leak",
+    }
+
+    projected = _analysis(row)
+
+    assert projected.source_artifact_version_id == artifact_version_id
+    assert not hasattr(projected, "immutable_locator")

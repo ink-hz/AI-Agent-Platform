@@ -57,6 +57,7 @@ class PositionMaterialItem:
 @dataclass(frozen=True, slots=True)
 class PositionArtifactItem:
     artifact_id: UUID
+    artifact_version_id: UUID
     attachment_id: UUID
     artifact_version: int
     filename: str
@@ -71,6 +72,7 @@ class PositionArtifactItem:
 
     def __post_init__(self) -> None:
         _identifier(self.artifact_id)
+        _identifier(self.artifact_version_id)
         _identifier(self.attachment_id)
         if isinstance(self.artifact_version, bool) or not isinstance(self.artifact_version, int) or self.artifact_version < 1:
             raise ValueError("position artifact version invalid")

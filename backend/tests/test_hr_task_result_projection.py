@@ -5,14 +5,19 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
+from test_agent_brain_conversation_repository import _codec
+
 from app.agent_brain.conversation_repository import message_subject
 from app.hr.candidate_repository import CandidateUnavailable
+from app.hr.structured_output import encode_hr_envelope
 from app.hr.task_result_projection import (
     ClaimedHrTaskResult,
     HrTaskResultReconciler,
     hr_task_result_projection_loop,
 )
-from test_agent_brain_conversation_repository import _codec
+from app.hr.task_service import _PROMPTS
+
+PDF_VERSION = UUID(int=9)
 
 
 def _claim(
@@ -20,6 +25,7 @@ def _claim(
     *,
     text: str = "完整真实结果",
     model_version: str = "hr-runtime-execution-v1",
+    output_artifact_version_id: UUID | None = PDF_VERSION,
 ) -> ClaimedHrTaskResult:
     codec = _codec()
     conversation_id = UUID(int=10)
@@ -44,7 +50,7 @@ def _claim(
         feedback_ids=(UUID(int=23),) if candidate else (),
         conversation_id=conversation_id,
         turn_id=UUID(int=11),
-        output_artifact_version_id=UUID(int=9),
+        output_artifact_version_id=output_artifact_version_id,
         assistant_message_id=message_id,
         agent_id="hr-bot",
         execution_model_version=model_version,
@@ -153,17 +159,20 @@ def test_position_results_create_exact_context_module(task_kind, module) -> None
     assert ledger.completed == [(claim, "hr-result-projector.test", UUID(int=30))]
 
 
-@pytest.mark.parametrize(
-    ("task_kind", "analysis_kind"),
-    [
-        ("candidate_match", "match"),
-        ("candidate_interview_plan", "candidate_interview_plan"),
-    ],
-)
-def test_candidate_results_create_analysis_without_fabricated_fields(
-    task_kind, analysis_kind
-) -> None:
-    claim = _claim(task_kind)
+def test_candidate_match_projects_exact_structured_evidence() -> None:
+    payload = {
+        "summary": "总体匹配",
+        "dimensions": {"technical": "strong"},
+        "evidence": [{"resume_fact": "负责挤出系统"}],
+        "gaps": ["未见海外交付"],
+        "risks": ["团队规模不明确"],
+        "unknowns": ["量产良率经验待验证"],
+        "verification_questions": ["请说明量产良率。"],
+    }
+    text = "# 匹配分析\n\n总体匹配。\n\n" + encode_hr_envelope(
+        "candidate_match", payload
+    )
+    claim = _claim("candidate_match", text=text, output_artifact_version_id=None)
     ledger = _Ledger((claim,))
     candidates = _Candidates()
 
@@ -175,15 +184,111 @@ def test_candidate_results_create_analysis_without_fabricated_fields(
     assert command.context_version_id == claim.context_version_id
     assert command.document_ids == claim.document_ids
     assert command.feedback_ids == claim.feedback_ids
-    assert command.analysis_kind == analysis_kind
+    assert command.analysis_kind == "match"
     assert command.client_request_id == claim.projection_request_id
-    assert command.result == {"text": "完整真实结果"}
+    assert command.result == payload
+    assert command.evidence == ({"resume_fact": "负责挤出系统"},)
+    assert command.unknowns == ("量产良率经验待验证",)
+    assert command.conflicts == ()
+    assert command.verification_questions == ("请说明量产良率。",)
+    assert command.source_artifact_version_id is None
+    assert command.agent_version == "hr-bot"
+    assert command.model_version == "hr-runtime-execution-v1"
+
+
+def test_candidate_interview_plan_projects_exact_questions_and_pdf() -> None:
+    payload = {
+        "title": "结构工程师面试题",
+        "questions": [
+            {
+                "verification_goal": "验证量产经验",
+                "candidate_reason": "简历提及量产",
+                "question": "请说明量产挑战。",
+                "follow_ups": ["良率如何？"],
+                "strong_evidence": ["给出量化指标"],
+                "risk_signals": ["无法说明本人贡献"],
+            }
+        ],
+    }
+    text = "# 专属面试题\n\n请按顺序提问。\n\n" + encode_hr_envelope(
+        "candidate_interview_plan", payload
+    )
+    claim = _claim("candidate_interview_plan", text=text)
+    ledger = _Ledger((claim,))
+    candidates = _Candidates()
+
+    assert _reconciler(ledger, candidates=candidates).reconcile_one() is True
+
+    command = candidates.calls[0]
+    assert command.analysis_kind == "candidate_interview_plan"
+    assert command.result == payload
     assert command.evidence == ()
     assert command.unknowns == ()
     assert command.conflicts == ()
-    assert command.verification_questions == ()
-    assert command.agent_version == "hr-bot"
-    assert command.model_version == "hr-runtime-execution-v1"
+    assert command.verification_questions == ("请说明量产挑战。",)
+    assert command.source_artifact_version_id == claim.output_artifact_version_id
+
+
+@pytest.mark.parametrize(
+    ("task_kind", "text", "artifact_id"),
+    [
+        ("candidate_match", "只有可读文本", None),
+        (
+            "candidate_interview_plan",
+            "只有可读文本",
+            UUID(int=9),
+        ),
+        (
+            "candidate_interview_plan",
+            "# 面试题\n\n"
+            + encode_hr_envelope(
+                "candidate_interview_plan",
+                {"title": "面试题", "questions": []},
+            ),
+            None,
+        ),
+    ],
+)
+def test_candidate_results_require_exact_envelope_and_interview_pdf(
+    task_kind, text, artifact_id
+) -> None:
+    claim = _claim(
+        task_kind, text=text, output_artifact_version_id=artifact_id
+    )
+    ledger = _Ledger((claim,))
+    candidates = _Candidates()
+
+    assert _reconciler(ledger, candidates=candidates).reconcile_one() is True
+
+    assert candidates.calls == []
+    assert ledger.failed == [
+        (claim, "hr-result-projector.test", "result_invalid")
+    ]
+
+
+def test_candidate_task_prompts_require_markdown_envelope_and_named_pdf() -> None:
+    match_prompt = _PROMPTS["candidate_match"]
+    interview_prompt = _PROMPTS["candidate_interview_plan"]
+
+    assert "可读 Markdown" in match_prompt
+    assert "candidate_match" in match_prompt
+    assert "platform-hr-v1" in match_prompt
+    assert "unpadded-base64url-canonical-json" in match_prompt
+    for key in (
+        "summary", "dimensions", "evidence", "gaps", "risks", "unknowns",
+        "verification_questions",
+    ):
+        assert key in match_prompt
+    assert "可读 Markdown" in interview_prompt
+    assert "candidate_interview_plan" in interview_prompt
+    assert "platform-hr-v1" in interview_prompt
+    for key in (
+        "verification_goal", "candidate_reason", "question", "follow_ups",
+        "strong_evidence", "risk_signals",
+    ):
+        assert key in interview_prompt
+    assert "write_output" in interview_prompt
+    assert "<岗位>-<候选人>-面试题-v<版本>.pdf" in interview_prompt
 
 
 def test_backlog_projection_uses_execution_snapshot_not_projector_runtime() -> None:
@@ -219,7 +324,22 @@ def test_bad_result_is_failed_and_next_result_is_not_blocked() -> None:
 
 
 def test_transient_service_failure_releases_claim_for_retry() -> None:
-    claim = _claim("candidate_match")
+    claim = _claim(
+        "candidate_match",
+        text="# 匹配\n\n结果。\n\n" + encode_hr_envelope(
+            "candidate_match",
+            {
+                "summary": "结果",
+                "dimensions": {},
+                "evidence": [],
+                "gaps": [],
+                "risks": [],
+                "unknowns": [],
+                "verification_questions": [],
+            },
+        ),
+        output_artifact_version_id=None,
+    )
     ledger = _Ledger((claim,))
 
     assert (

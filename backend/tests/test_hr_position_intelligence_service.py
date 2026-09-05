@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from app.hr.candidate_models import CandidateEnvelopeFragment
 from app.hr.position_intelligence_models import PositionContextVersion
 from app.hr.position_intelligence_service import PositionIntelligenceService
 
@@ -46,7 +47,6 @@ class RecordingRepository:
 
     def official_version(self, *args):
         self.calls.append(("official_detail", args))
-        return None
 
     def create_task_request(self, command):
         self.calls.append(("task_request", command))
@@ -54,7 +54,6 @@ class RecordingRepository:
 
     def task_request(self, *args):
         self.calls.append(("task_request_read", args))
-        return None
 
 
 def test_service_builds_draft_and_human_confirmation_commands() -> None:
@@ -114,6 +113,29 @@ def test_service_builds_durable_task_request_before_conversation() -> None:
     assert result.task_request_id == generated_id
     assert result.client_request_id == request_id
     assert repository.calls[-1] == ("task_request", result)
+
+
+def test_service_persists_complete_candidate_snapshot() -> None:
+    owner_id, position_id, context_id = uuid4(), uuid4(), uuid4()
+    repository = RecordingRepository(_context(owner_id, position_id, context_id))
+    service = PositionIntelligenceService(repository)
+    fragment = CandidateEnvelopeFragment(
+        uuid4(), uuid4(), context_id, (uuid4(),), (uuid4(),), (uuid4(),),
+        "candidate evidence",
+    )
+
+    result = service.create_task_request(
+        owner_id=owner_id, position_id=position_id, request_id=uuid4(),
+        canonical_payload_sha256="a" * 64, task_kind="candidate_match",
+        expected_context_version_id=context_id, candidate_id=fragment.candidate_id,
+        position_candidate_id=fragment.position_candidate_id,
+        candidate_snapshot=fragment,
+    )
+
+    assert result.document_ids == fragment.document_ids
+    assert result.document_attachment_ids == fragment.document_attachment_ids
+    assert result.human_feedback_ids == fragment.human_feedback_ids
+    assert result.candidate_prompt_context == fragment.prompt_context
 
 
 def test_default_service_ids_are_deterministic_per_operation_and_request() -> None:

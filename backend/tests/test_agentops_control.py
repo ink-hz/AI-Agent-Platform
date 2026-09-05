@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import shutil
 import subprocess
-
+from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 CONTROL = ROOT / "deploy/local-execution-worker/agentops-control.sh"
@@ -19,6 +18,7 @@ ALLOWED = {
     "worker-restore",
     "metabot-release-sha",
     "agent-team-release-sha",
+    "accept-hr-p0",
     "status",
 }
 
@@ -34,6 +34,7 @@ def _materialize_control(tmp_path: Path) -> tuple[Path, Path]:
     runtime = home / "AgentRuntime"
     relay = runtime / "platform/deploy/local-execution-worker/accept.sh"
     supervisor = runtime / "platform/deploy/local-execution-worker/worker-pm2.sh"
+    hr_accept = runtime / "platform/deploy/cloud/accept-hr-p0.sh"
     fake_git = tmp_path / "git"
     fake_logger = tmp_path / "logger"
     relay_config = runtime / "private/acceptance-config.json"
@@ -47,6 +48,7 @@ def _materialize_control(tmp_path: Path) -> tuple[Path, Path]:
         '"$1" "${LEAK_ME-unset}" "$HOME" "$USER" "$LOGNAME" "$PWD"',
     )
     _write_executable(supervisor, 'printf "worker:%s:%s\\n" "$1" "${2-}"')
+    _write_executable(hr_accept, 'printf "hr:%s\\n" "$1"')
     _write_executable(fake_git, 'printf "git:%s:%s:%s:%s\\n" "$1" "$2" "$3" "$4"')
     _write_executable(fake_logger, 'printf "logger:%s\\n" "$*" >/dev/null')
 
@@ -119,8 +121,16 @@ def test_dispatcher_runs_only_fixed_commands_with_sanitized_environment(
     assert _run(dispatcher, "agent-team-release-sha").stdout.strip() == (
         f"git:-C:{tmp_path / 'agent-team'}:rev-parse:HEAD"
     )
+    assert (
+        _run(
+            dispatcher,
+            "accept-hr-p0",
+            f"{home}/AgentRuntime/private/acceptance-config.json",
+        ).stdout.strip()
+        == f"hr:{home}/AgentRuntime/private/acceptance-config.json"
+    )
     assert _run(dispatcher, "status").stdout.strip() == (
-        "AGENTOPS_CONTROL_OK commands=6"
+        "AGENTOPS_CONTROL_OK commands=7"
     )
 
 
@@ -397,7 +407,7 @@ def test_agentops_control_runbook_freezes_install_rotate_revoke_and_rollback() -
     source = RUNBOOK.read_text(encoding="utf-8")
     for required in (
         "AGENTOPS_CONTROL_INSTALL_OK",
-        "AGENTOPS_CONTROL_OK commands=6",
+        "AGENTOPS_CONTROL_OK commands=7",
         "neo ALL=(agentops) NOPASSWD: ALL",
         "AGENTOPS_ACCEPTANCE_KEY_STAGED_OK",
         "AGENTOPS_ACCEPTANCE_KEY_REVOKED_OK",

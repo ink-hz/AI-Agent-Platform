@@ -12,6 +12,7 @@ const POSITION_CANDIDATE_ID = "00000000-0000-4000-8000-000000000006";
 const CANDIDATE_ID = "00000000-0000-4000-8000-000000000007";
 const CONVERSATION_ID = "00000000-0000-4000-8000-000000000008";
 const TURN_ID = "00000000-0000-4000-8000-000000000009";
+const ARTIFACT_VERSION_ID = "00000000-0000-4000-8000-00000000000a";
 
 
 describe("R1.2 HR API", () => {
@@ -72,6 +73,110 @@ describe("R1.2 HR API", () => {
     await expect(createHrR12Api("csrf").resources(POSITION_ID)).resolves.toMatchObject({
       materials: [{ attachmentId: ATTACHMENT_ID, filename: "岗位说明.pdf" }],
     });
+  });
+
+  it("parses strict candidate match and interview-plan result unions with artifact provenance", async () => {
+    const base = {
+      analysis_version_id: REQUEST_ID, position_candidate_id: POSITION_CANDIDATE_ID,
+      position_id: POSITION_ID, candidate_id: CANDIDATE_ID, context_version_id: CONTEXT_ID,
+      version_number: 1, document_ids: [ATTACHMENT_ID], feedback_ids: [],
+      evidence: [], unknowns: [], conflicts: [], verification_questions: [],
+      agent_version: "hr-bot", model_version: "model-v1", created_at: "2026-09-04T00:00:00Z",
+    };
+    const matchResult = {
+      summary: "总体匹配", dimensions: { technical: "strong" },
+      evidence: [{ resume_fact: "负责挤出系统" }], gaps: ["海外交付待补充"],
+      risks: ["团队规模不明确"], unknowns: ["量产良率经验待验证"],
+      verification_questions: ["请说明量产良率。"],
+    };
+    const interviewResult = { title: "结构工程师面试题", questions: [{
+      verification_goal: "验证量产经验", candidate_reason: "简历提及量产",
+      question: "请说明量产挑战。", follow_ups: ["良率如何？"],
+      strong_evidence: ["给出量化指标"], risk_signals: ["无法说明本人贡献"],
+    }] };
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ ...base, analysis_kind: "match", result: matchResult, source_artifact_version_id: null }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ ...base, analysis_kind: "candidate_interview_plan", result: interviewResult, source_artifact_version_id: ARTIFACT_VERSION_ID }] }), { status: 200 })));
+
+    const api = createHrR12Api("csrf");
+    await expect(api.candidateAnalyses(POSITION_CANDIDATE_ID)).resolves.toMatchObject([{
+      analysisKind: "match", result: matchResult, sourceArtifactVersionId: null,
+    }]);
+    await expect(api.candidateAnalyses(POSITION_CANDIDATE_ID)).resolves.toMatchObject([{
+      analysisKind: "candidate_interview_plan", result: interviewResult,
+      sourceArtifactVersionId: ARTIFACT_VERSION_ID,
+    }]);
+  });
+
+  it("rejects candidate result keys and nested question shapes outside the strict union", async () => {
+    const base = {
+      analysis_version_id: REQUEST_ID, position_candidate_id: POSITION_CANDIDATE_ID,
+      position_id: POSITION_ID, candidate_id: CANDIDATE_ID, context_version_id: CONTEXT_ID,
+      version_number: 1, document_ids: [ATTACHMENT_ID], feedback_ids: [], evidence: [],
+      unknowns: [], conflicts: [], verification_questions: [], agent_version: "hr-bot",
+      model_version: "model-v1", created_at: "2026-09-04T00:00:00Z",
+      analysis_kind: "match", source_artifact_version_id: null,
+    };
+    const malformed = [
+      { ...base, result: { summary: "匹配", dimensions: {}, evidence: [], gaps: [], risks: [], unknowns: [], verification_questions: [], locator: "secret" } },
+      { ...base, analysis_kind: "candidate_interview_plan", source_artifact_version_id: ARTIFACT_VERSION_ID, result: { title: "面试题", questions: [{ verification_goal: "目标", candidate_reason: "原因", question: "问题", follow_ups: [], strong_evidence: [], risk_signals: [], extra: true }] } },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [malformed.shift()] }), { status: 200 }))));
+    const api = createHrR12Api("csrf");
+    await expect(api.candidateAnalyses(POSITION_CANDIDATE_ID)).rejects.toThrow("analysis response invalid");
+    await expect(api.candidateAnalyses(POSITION_CANDIDATE_ID)).rejects.toThrow("analysis response invalid");
+  });
+
+  it("keeps existing comparison results readable through the shared analysis parser", async () => {
+    const comparisonResult = {
+      candidates: [{ position_candidate_id: POSITION_CANDIDATE_ID, candidate_id: CANDIDATE_ID, summary: "匹配", evidence_coverage: 2, unknown_count: 1 }],
+      ranking: null, comparison_basis: "same_position_context",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      analysis_version_id: REQUEST_ID, position_candidate_id: POSITION_CANDIDATE_ID,
+      position_id: POSITION_ID, candidate_id: CANDIDATE_ID, context_version_id: CONTEXT_ID,
+      version_number: 1, analysis_kind: "comparison", document_ids: [ATTACHMENT_ID],
+      feedback_ids: [], result: comparisonResult, evidence: [], unknowns: [], conflicts: [],
+      verification_questions: [], agent_version: "hr-r12", model_version: "platform",
+      created_at: "2026-09-04T00:00:00Z",
+    }), { status: 200 })));
+
+    await expect(createHrR12Api("csrf").compareCandidates(
+      POSITION_ID, [POSITION_CANDIDATE_ID], CONTEXT_ID, REQUEST_ID,
+    )).resolves.toMatchObject({
+      analysisKind: "comparison", result: comparisonResult, sourceArtifactVersionId: null,
+    });
+  });
+
+  it("normalizes an omitted interview artifact version to the missing-PDF state", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [{
+      analysis_version_id: REQUEST_ID, position_candidate_id: POSITION_CANDIDATE_ID,
+      position_id: POSITION_ID, candidate_id: CANDIDATE_ID, context_version_id: CONTEXT_ID,
+      version_number: 1, analysis_kind: "candidate_interview_plan", document_ids: [ATTACHMENT_ID],
+      feedback_ids: [], result: { title: "面试题", questions: [{
+        verification_goal: "目标", candidate_reason: "原因", question: "问题",
+        follow_ups: [], strong_evidence: [], risk_signals: [],
+      }] }, evidence: [], unknowns: [], conflicts: [], verification_questions: [],
+      agent_version: "hr-bot", model_version: "model-v1", created_at: "2026-09-04T00:00:00Z",
+    }] }), { status: 200 })));
+
+    await expect(createHrR12Api("csrf").candidateAnalyses(POSITION_CANDIDATE_ID)).resolves.toMatchObject([{
+      analysisKind: "candidate_interview_plan", sourceArtifactVersionId: null,
+    }]);
+  });
+
+  it("preserves exact artifact-version identity separately from its downloadable attachment", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ materials: [], artifacts: [{
+      artifact_id: REQUEST_ID, artifact_version_id: ARTIFACT_VERSION_ID,
+      attachment_id: ATTACHMENT_ID, artifact_version: 3, filename: "面试题.pdf",
+      media_type: "application/pdf", state: "ready", size_bytes: 1024,
+      created_at: "2026-09-04T00:00:00Z", source_conversation_id: null,
+      source_turn_id: null, preview_available: true, download_available: true,
+    }] }), { status: 200 })));
+
+    await expect(createHrR12Api("csrf").resources(POSITION_ID)).resolves.toMatchObject({ artifacts: [{
+      artifactVersionId: ARTIFACT_VERSION_ID, attachmentId: ATTACHMENT_ID,
+    }] });
   });
 
   it("normalizes the frozen position context contract and confirms against both baselines", async () => {

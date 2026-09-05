@@ -14,12 +14,15 @@ const relationIds = ["00000000-0000-4000-8000-00000000000b", "00000000-0000-4000
 const analysisId = "00000000-0000-4000-8000-00000000000d";
 const newestAnalysisId = "00000000-0000-4000-8000-00000000000e";
 const otherContextId = "00000000-0000-4000-8000-00000000000f";
+const artifactVersionId = "00000000-0000-4000-8000-000000000010";
+const artifactAttachmentId = "00000000-0000-4000-8000-000000000011";
+const conversationId = "00000000-0000-4000-8000-000000000012";
 const now = "2026-09-04T00:00:00Z";
 const draft = (index: number, state: "ready" | "failed" | "processing" = "ready") => ({ draftId: draftIds[index], positionId, attachmentId: attachmentIds[index], batchRequestId: contextId, state, extractedFacts: state === "ready" ? { stable_name: `候选人${index + 1}`, skills: ["Python"] } : {}, identityCandidateIds: [], errorCode: state === "failed" ? "parse_failed" : null, rowVersion: 2, createdAt: now, updatedAt: now });
 const relation = (index: number) => ({ positionCandidateId: relationIds[index], positionId, candidateId: candidateIds[index], contextVersionId: contextId, sourceDraftId: draftIds[index], status: "active", rowVersion: 1, createdAt: now, updatedAt: now });
 const candidate = (index: number) => ({ candidateId: candidateIds[index], stableName: `候选人${index + 1}`, facts: { skills: ["Python"] }, createdAt: now, updatedAt: now });
 const candidateDocument = { documentId: attachmentIds[0], candidateId: candidateIds[0], attachmentId: attachmentIds[0], sourceDraftId: draftIds[0], documentKind: "resume", versionNumber: 1, contentSha256: "a".repeat(64), status: "active", createdAt: now };
-const analysis = { analysisVersionId: analysisId, positionCandidateId: relationIds[0], positionId, candidateId: candidateIds[0], contextVersionId: contextId, versionNumber: 2, analysisKind: "match", documentIds: [candidateDocument.documentId], feedbackIds: [], result: { summary: "技能匹配" }, evidence: [{ claim: "Python" }], unknowns: ["量产规模"], conflicts: [], verificationQuestions: ["请说明量产规模"], agentVersion: "hr-r12", modelVersion: "model", createdAt: now };
+const analysis = { analysisVersionId: analysisId, positionCandidateId: relationIds[0], positionId, candidateId: candidateIds[0], contextVersionId: contextId, versionNumber: 2, analysisKind: "match", documentIds: [candidateDocument.documentId], feedbackIds: [], result: { summary: "技能匹配", dimensions: { technical: "匹配" }, evidence: [{ resume_fact: "Python" }], gaps: [], risks: [], unknowns: ["量产规模"], verification_questions: ["请说明量产规模"] }, evidence: [{ resume_fact: "Python" }], unknowns: ["量产规模"], conflicts: [], verificationQuestions: ["请说明量产规模"], agentVersion: "hr-r12", modelVersion: "model", createdAt: now, sourceArtifactVersionId: null };
 let container: HTMLDivElement; let root: ReturnType<typeof createRoot>;
 beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true; });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -34,8 +37,15 @@ function api() {
     candidate: vi.fn().mockImplementation((id: string) => Promise.resolve(candidate(candidateIds.indexOf(id)))),
     candidateDocuments: vi.fn().mockResolvedValue([candidateDocument]), candidateAnalyses: vi.fn().mockResolvedValue([analysis]),
     downloadCandidateDocument: vi.fn().mockResolvedValue({ contentPath: `/api/v1/attachments/content/${"a".repeat(32)}`, expiresAt: now }),
+    resources: vi.fn().mockResolvedValue({ materials: [], artifacts: [] }),
+    downloadResource: vi.fn().mockResolvedValue({ contentPath: `/api/v1/attachments/content/${"b".repeat(32)}`, expiresAt: now }),
     candidateFeedback: vi.fn().mockResolvedValue([]), appendCandidateFeedback: vi.fn().mockResolvedValue({ feedbackId: contextId, positionCandidateId: relationIds[0], analysisVersionId: analysisId, feedbackKind: "correction", conclusionKey: "overall", correction: "量产经验已电话核实", reason: "HR 人工核实", createdAt: now }),
-    compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison", conflicts: ["项目规模口径不一致"] }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match" }), activeTasks: vi.fn().mockResolvedValue([]), taskStatus: vi.fn().mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null, positionCandidateId: relationIds[0], candidateId: candidateIds[0] }),
+    compareCandidates: vi.fn().mockResolvedValue({ ...analysis, analysisKind: "comparison", result: {
+      candidates: [
+        { position_candidate_id: relationIds[0], candidate_id: candidateIds[0], summary: "量产经验匹配", evidence_coverage: 2, unknown_count: 1 },
+        { position_candidate_id: relationIds[1], candidate_id: candidateIds[1], summary: "交付经验匹配", evidence_coverage: 1, unknown_count: 2 },
+      ], ranking: null, comparison_basis: "same_position_context",
+    }, conflicts: ["项目规模口径不一致"] }), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "candidate_match", conversationId, turnId: draftIds[0], positionCandidateId: relationIds[0], candidateId: candidateIds[0] }), activeTasks: vi.fn().mockResolvedValue([]), taskStatus: vi.fn().mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null, conversationId, turnId: draftIds[0], positionCandidateId: relationIds[0], candidateId: candidateIds[0] }),
   };
 }
 
@@ -57,6 +67,8 @@ it("lists each resume version and safely preopens preview and retryable download
     },
   );
   await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  expect(container.textContent).toContain("这份简历暂未解析完成，请重试。");
+  expect(container.textContent).not.toContain("parse_failed");
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
 
   expect(container.textContent).toContain("简历 v1");
@@ -75,6 +87,61 @@ it("lists each resume version and safely preopens preview and retryable download
   await act(async () => { download.click(); await Promise.resolve(); });
   expect(client.downloadCandidateDocument.mock.calls[client.downloadCandidateDocument.mock.calls.length - 1]?.[1]).toBe(firstDownloadRequestId);
   expect(navigations[navigations.length - 1]).toMatch(/^\/api\/v1\/attachments\/content\//);
+});
+
+it("resolves each interview PDF download through a fresh Position resource and ticket request", async () => {
+  const client = api();
+  client.candidateAnalyses.mockResolvedValue([{ ...analysis,
+    analysisKind: "candidate_interview_plan",
+    result: { title: "专属面试题", questions: [{ verification_goal: "验证量产经验", candidate_reason: "简历提及量产", question: "请说明量产挑战。", follow_ups: [], strong_evidence: [], risk_signals: [] }] },
+    evidence: [], unknowns: [], verificationQuestions: ["请说明量产挑战。"],
+    sourceArtifactVersionId: artifactVersionId,
+  }]);
+  client.resources.mockResolvedValue({ materials: [], artifacts: [{
+    artifactId: analysisId, artifactVersionId, attachmentId: artifactAttachmentId,
+    artifactVersion: 1, filename: "面试题.pdf", mediaType: "application/pdf", state: "ready",
+    sizeBytes: 1024, createdAt: now, sourceConversationId: null, sourceTurnId: null,
+    previewAvailable: true, downloadAvailable: true,
+  }] });
+  const paths: string[] = [];
+  vi.spyOn(window, "open").mockImplementation(() => ({ opener: window, location: { replace: (path: string) => paths.push(path) }, close: vi.fn() }) as unknown as Window);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  const download = container.querySelector<HTMLButtonElement>('[aria-label="下载面试题 PDF"]')!;
+  await act(async () => { download.click(); await Promise.resolve(); });
+  await act(async () => { download.click(); await Promise.resolve(); });
+
+  expect(client.resources).toHaveBeenCalledTimes(2);
+  expect(client.downloadResource).toHaveBeenCalledTimes(2);
+  expect(client.downloadResource).toHaveBeenNthCalledWith(1, positionId, artifactAttachmentId, expect.any(String), "download", expect.any(AbortSignal));
+  expect(client.downloadResource.mock.calls[0]?.[2]).not.toBe(client.downloadResource.mock.calls[1]?.[2]);
+  expect(paths).toEqual([`/api/v1/attachments/content/${"b".repeat(32)}`, `/api/v1/attachments/content/${"b".repeat(32)}`]);
+});
+
+it("does not retain a failed interview PDF ticket request for the next retry", async () => {
+  const client = api();
+  client.candidateAnalyses.mockResolvedValue([{ ...analysis,
+    analysisKind: "candidate_interview_plan",
+    result: { title: "专属面试题", questions: [{ verification_goal: "验证量产经验", candidate_reason: "简历提及量产", question: "请说明量产挑战。", follow_ups: [], strong_evidence: [], risk_signals: [] }] },
+    sourceArtifactVersionId: artifactVersionId,
+  }]);
+  client.resources.mockResolvedValue({ materials: [], artifacts: [{
+    artifactId: analysisId, artifactVersionId, attachmentId: artifactAttachmentId,
+    artifactVersion: 1, filename: "面试题.pdf", mediaType: "application/pdf", state: "ready",
+    sizeBytes: 1024, createdAt: now, sourceConversationId: null, sourceTurnId: null,
+    previewAvailable: true, downloadAvailable: true,
+  }] });
+  client.downloadResource.mockRejectedValueOnce(new Error("expired")).mockResolvedValueOnce({ contentPath: `/api/v1/attachments/content/${"b".repeat(32)}`, expiresAt: now });
+  vi.spyOn(window, "open").mockImplementation(() => ({ opener: window, location: { replace: vi.fn() }, close: vi.fn() }) as unknown as Window);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  const download = container.querySelector<HTMLButtonElement>('[aria-label="下载面试题 PDF"]')!;
+
+  await act(async () => download.click());
+  await act(async () => download.click());
+
+  expect(client.resources).toHaveBeenCalledTimes(2);
+  expect(client.downloadResource.mock.calls[0]?.[2]).not.toBe(client.downloadResource.mock.calls[1]?.[2]);
 });
 
 it("keeps successful resume drafts when a sibling fails and retries only that item", async () => {
@@ -109,13 +176,14 @@ it("uploads ready resume files and creates one recoverable batch", async () => {
 
 it("loads candidate detail and versions, launches match/interview, records feedback, and compares through the frozen API", async () => {
   const client = api();
-  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} taskConversationId={conversationId} />));
   const first = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")!;
   await act(async () => first.click());
   expect(container.textContent).toContain("分析版本 v2");
-  expect(container.textContent).toContain("未验证：量产规模");
-  expect(container.textContent).toContain("证据：");
-  expect(container.textContent).toContain('"claim": "Python"');
+  expect(container.textContent).toContain("待验证信息");
+  expect(container.textContent).toContain("量产规模");
+  expect(container.textContent).toContain("匹配证据");
+  expect(container.textContent).toContain("简历事实：Python");
   expect(container.textContent).toContain("hr-r12 · model");
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成专属面试题")?.click());
@@ -124,11 +192,13 @@ it("loads candidate detail and versions, launches match/interview, records feedb
     contextVersionId: contextId,
     candidate: { candidateId: candidateIds[0], positionCandidateId: relationIds[0] },
     materialIds: [],
+    conversationId,
   }, expect.any(AbortSignal));
   expect(client.startTask).toHaveBeenNthCalledWith(2, positionId, "candidate_interview_plan", expect.any(String), {
     contextVersionId: contextId,
     candidate: { candidateId: candidateIds[0], positionCandidateId: relationIds[0] },
     materialIds: [],
+    conversationId,
   }, expect.any(AbortSignal));
   const textarea = container.querySelector<HTMLTextAreaElement>("textarea")!;
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "量产经验已电话核实"); textarea.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -139,6 +209,159 @@ it("loads candidate detail and versions, launches match/interview, records feedb
   expect(client.compareCandidates).toHaveBeenCalledWith(positionId, relationIds, contextId, expect.any(String), expect.any(AbortSignal));
   expect(container.textContent).toContain("候选人比较结果");
   expect(container.textContent).toContain("项目规模口径不一致");
+});
+
+it("rejects a candidate task response bound to another conversation", async () => {
+  const client = api();
+  client.startTask.mockResolvedValue({
+    taskId: "task", status: "completed", taskKind: "candidate_match", error: null,
+    conversationId: otherContextId, turnId: draftIds[0],
+    positionCandidateId: relationIds[0], candidateId: candidateIds[0],
+  });
+  await act(async () => root.render(<HrCandidateWorkspace
+    api={client as never} csrfToken="csrf" currentContextVersionId={contextId}
+    positionId={positionId} taskConversationId={conversationId}
+  />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "查看候选人1")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "生成匹配分析")?.click());
+
+  expect(client.candidateAnalyses).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("任务绑定异常");
+});
+
+it("starts a new task conversation when no preserved chat is supplied", async () => {
+  const client = api();
+  await act(async () => root.render(<HrCandidateWorkspace
+    api={client as never} csrfToken="csrf" currentContextVersionId={contextId}
+    positionId={positionId}
+  />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "查看候选人1")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "生成匹配分析")?.click());
+
+  expect(client.startTask).toHaveBeenCalledWith(
+    positionId,
+    "candidate_match",
+    expect.any(String),
+    {
+      contextVersionId: contextId,
+      candidate: {
+        candidateId: candidateIds[0],
+        positionCandidateId: relationIds[0],
+      },
+      materialIds: [],
+    },
+    expect.any(AbortSignal),
+  );
+});
+
+it("renders the frozen comparison contract with candidate summaries and coverage instead of dropping nested data", async () => {
+  const client = api();
+  client.compareCandidates.mockResolvedValue({ ...analysis, analysisKind: "comparison", result: {
+    candidates: [
+      { position_candidate_id: relationIds[0], candidate_id: candidateIds[0], summary: "量产经验更完整", evidence_coverage: 3, unknown_count: 1 },
+      { position_candidate_id: relationIds[1], candidate_id: candidateIds[1], summary: "海外交付更突出", evidence_coverage: 2, unknown_count: 2 },
+    ],
+    ranking: null,
+    comparison_basis: "same_position_context",
+  } });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]')) await act(async () => checkbox.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "比较已选候选人")?.click());
+
+  for (const text of ["同一岗位上下文", "候选人1", "量产经验更完整", "证据覆盖", "3 条", "待验证项", "1 项", "候选人2", "海外交付更突出", "未提供单一排序"]) {
+    expect(container.textContent).toContain(text);
+  }
+  expect(container.querySelector(".hr-candidate-comparison pre")).toBeNull();
+  expect(container.textContent).not.toContain('"candidates":');
+});
+
+it("renders the frozen resume-extract envelope and bounds unknown nested fallback content", async () => {
+  const client = api();
+  client.candidateAnalyses.mockResolvedValue([{ ...analysis, analysisKind: "resume_extract", result: {
+    extracted_facts: {
+      stable_name: "候选人1", summary: "结构与量产复合背景", skills: ["Python", "机械设计"],
+      experiences: [{ company: "星海制造", role: "结构工程师", achievements: ["良率提升至 98%"] }],
+      projects: [{ name: "喷嘴量产", details: { responsibility: "主导验证" } }],
+      unknowns: Array.from({ length: 60 }, (_, index) => `补充事实 ${index + 1}`),
+      sources: [{ document_id: candidateDocument.documentId, custom_signal: ["可迁移的量产方法"] }],
+    },
+    identity_candidate_ids: [],
+  } }]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+
+  for (const text of ["简历提取", "候选人身份", "候选人1", "结构与量产复合背景", "技能", "Python", "经历", "星海制造", "良率提升至 98%", "喷嘴量产", "主导验证", "可迁移的量产方法", "其余 10 项未展开"]) {
+    expect(container.textContent).toContain(text);
+  }
+  expect(container.textContent).not.toContain("补充事实 60");
+  expect(container.querySelector(".hr-candidate-detail pre")).toBeNull();
+  expect(container.textContent).not.toContain('"experiences":');
+});
+
+it("normalizes and filters protected legacy keys while bounding and escaping safe fallback text", async () => {
+  const client = api();
+  const longKey = `${"😀".repeat(550)}尾部键名`;
+  const longValue = `${"🧪".repeat(550)}尾部内容`;
+  const htmlText = '<script>alert("legacy")</script><img src=x onerror=alert(1)>';
+  const protectedKeys = [
+    "age", "birthdate", "dateofbirth", "disability", "ethnicity", "gender", "health",
+    "maritalstatus", "nationality", "onboarding", "offerstatus", "pipelinestage",
+    "politicalaffiliation", "pregnancy", "race", "religion", "sexualorientation",
+    "storagekey", "storagepath", "objectkey", "objectref", "objectrefciphertext",
+    "immutablelocator", "ats", "atsid", "interviewschedule", "automaticrejection",
+    "beisen", "bosszhipin", "liepin", "年龄", "出生日期", "生日", "残疾", "残障",
+    "民族", "性别", "健康", "健康状况", "婚姻", "婚姻状况", "婚育", "国籍", "入职",
+    "录用状态", "流程阶段", "政治面貌", "怀孕", "孕期", "种族", "宗教", "性取向",
+    "存储键", "存储路径", "对象键", "对象引用", "不可变定位符", "面试安排", "自动淘汰",
+    "object_ref", "storage-path", "immutable-locator", "Object_Ref/Ciphertext",
+    "OBJECT.REF", "ＳＴＯＲＡＧＥ＿ＰＡＴＨ", "Immutable/Locator", "A_T:S", "PIPELINE-STAGE",
+    "Boß-ZhiPin", `storage\u0085path`,
+  ];
+  const protectedPayload = Object.fromEntries(protectedKeys.map((key, index) => [key, `SECRET_PROTECTED_${index}`]));
+  const nestedProtectedValues = ["SECRET_NESTED_REF", "SECRET_NESTED_GENDER"];
+  client.candidateAnalyses.mockResolvedValue([{ ...analysis, analysisKind: "resume_extract", result: {
+    extracted_facts: {
+      stable_name: "候选人1", summary: "正常摘要",
+      ["constructor"]: "正常构造字段", ["__proto__"]: "正常原型字段",
+      ["object\uFEFFref"]: "正常 FEFF 字段",
+      safe_profile: { ordinary_field: "正常嵌套字段", html_note: htmlText, nested: {
+        object_ref: nestedProtectedValues[0], deeper: { "ＧＥＮＤＥＲ": nestedProtectedValues[1] },
+      } },
+      [longKey]: longValue,
+      deep: { level_1: { level_2: { level_3: { level_4: { level_5: "深层秘密" } } } } },
+      ...protectedPayload,
+    },
+    identity_candidate_ids: [],
+  } }]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+
+  for (const value of [...Object.values(protectedPayload), ...nestedProtectedValues]) expect(container.textContent).not.toContain(value);
+  expect(container.textContent).toContain("正常嵌套字段");
+  expect(container.textContent).toContain("正常构造字段");
+  expect(container.textContent).toContain("正常原型字段");
+  expect(container.textContent).toContain("正常 FEFF 字段");
+  expect(container.textContent).toContain(htmlText);
+  expect(container.querySelector("script")).toBeNull();
+  expect(container.querySelector("img")).toBeNull();
+  const renderedLabels = [...container.querySelectorAll(".hr-candidate-legacy-fields dt")].map((item) => item.textContent);
+  for (const protectedLabel of ["object ref", "storage-path", "immutable-locator", "Object Ref/Ciphertext"]) {
+    expect(renderedLabels).not.toContain(protectedLabel);
+  }
+  expect(container.textContent).not.toContain("尾部键名");
+  expect(container.textContent).not.toContain("尾部内容");
+  expect(container.textContent).not.toContain("深层秘密");
+  expect(container.textContent).toContain("内容层级过深，未展开");
+  const truncatedKey = [...container.querySelectorAll(".hr-candidate-legacy-fields dt")].find((item) => item.textContent?.startsWith("😀😀😀"));
+  expect(Array.from(truncatedKey?.textContent ?? "")).toHaveLength(500);
+  expect(truncatedKey?.textContent?.endsWith("…")).toBe(true);
+  const truncatedValue = truncatedKey?.parentElement?.querySelector("dd span")?.textContent ?? "";
+  expect(Array.from(truncatedValue)).toHaveLength(500);
+  expect(truncatedValue.endsWith("…")).toBe(true);
 });
 
 it("polls processing drafts with bounded delay and stops at a terminal state", async () => {
@@ -308,17 +531,47 @@ it("uses authoritative terminal failure and keeps it isolated from another selec
 it("shows complete structured result, evidence and exact provenance identifiers", async () => {
   const client = api();
   client.candidateAnalyses.mockResolvedValue([{ ...analysis,
-    result: { summary: "技能匹配", dimensions: { architecture: "strong" } },
-    evidence: [{ claim: "Python", source: { document_id: candidateDocument.documentId, locator: "page:2" } }],
+    result: { summary: "技能匹配", dimensions: { architecture: "strong" }, evidence: [{ claim: "Python", source: { document_id: candidateDocument.documentId, locator: "page:2" } }], gaps: [], risks: [], unknowns: [], verification_questions: [] },
+    evidence: [{ claim: "Python", source: { document_id: candidateDocument.documentId, locator: "page:2" } }], sourceArtifactVersionId: null,
     feedbackIds: [newestAnalysisId],
   }]);
   await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  expect(container.textContent).toContain('"architecture": "strong"');
+  expect(container.textContent).toContain("architecture");
+  expect(container.textContent).toContain("strong");
   expect(container.textContent).toContain("page:2");
   expect(container.textContent).toContain(candidateDocument.documentId);
   expect(container.textContent).toContain(contextId);
   expect(container.textContent).toContain(newestAnalysisId);
+});
+
+it("renders candidate facts as labeled text instead of a raw JSON dump", async () => {
+  const client = api();
+  client.candidate.mockResolvedValue({ ...candidate(0), facts: { skills: ["Python"], experience: { years: 5 } } });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+
+  expect(container.querySelector(".hr-candidate-detail > pre")).toBeNull();
+  expect(container.textContent).toContain("技能");
+  expect(container.textContent).toContain("Python");
+  expect(container.textContent).toContain("经历");
+  expect(container.textContent).not.toContain('"skills":');
+});
+
+it("explains why analysis retry is unavailable instead of exposing a silent no-op", async () => {
+  const client = api();
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={null} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  expect([...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "重新生成")).toBeUndefined();
+  expect(container.textContent).toContain("确认岗位上下文后才能重新生成此分析");
+
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  const mismatched = api();
+  await act(async () => root.render(<HrCandidateWorkspace api={mismatched as never} csrfToken="csrf" currentContextVersionId={otherContextId} positionId={positionId} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
+  expect(container.textContent).toContain("候选人的岗位上下文已变化，刷新后再重新生成");
+  expect(mismatched.startTask).not.toHaveBeenCalled();
 });
 
 it("disables upload and all candidate mutations in hard-stale read-only mode", async () => {

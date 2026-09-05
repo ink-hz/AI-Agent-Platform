@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import inspect
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,7 +11,7 @@ from pydantic import ValidationError
 
 from app.agent_brain.conversation_routes import ConversationTextBody
 from app.agent_catalog import AgentCatalogRepository
-
+from app.main import create_app
 
 ROOT = Path(__file__).parents[2]
 
@@ -21,6 +23,38 @@ def test_hr_catalog_accepts_five_files_and_delivers_generated_files() -> None:
     assert card.output_types == ("text", "image", "pdf", "office")
     assert card.attachment_limits is not None
     assert card.attachment_limits.max_files_per_message == 5
+
+
+def test_p0_recruiting_loop_has_one_public_http_acceptance_seam() -> None:
+    tree = ast.parse(inspect.getsource(create_app))
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    builder_calls = [node.func.id for node in calls if isinstance(node.func, ast.Name)]
+
+    expected = {
+        "build_hr_position_router",
+        "build_candidate_router",
+        "build_hr_position_task_router",
+        "build_hr_resource_router",
+    }
+    assert {name for name in expected if builder_calls.count(name) == 1} == expected
+    assert {
+        "hr_position_service",
+        "hr_candidate_service",
+        "hr_position_task_service",
+        "hr_resource_service",
+        "hr_candidate_parser_submission_coordinator",
+        "hr_candidate_parser_input_provider",
+        "hr_task_result_reconciler",
+        "hr_position_package_projector",
+    }.issubset(inspect.signature(create_app).parameters)
+    task_service_call = next(
+        node
+        for node in calls
+        if isinstance(node.func, ast.Name) and node.func.id == "HrPositionTaskService"
+    )
+    assert {keyword.arg for keyword in task_service_call.keywords} == {
+        "candidate_validator"
+    }
 
 
 def test_one_turn_can_select_two_old_materials_but_rejects_six_new_files() -> None:

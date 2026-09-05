@@ -1,0 +1,30 @@
+{
+  "fixture_label": "SYNTHETIC TEST DATA",
+  "results": [
+    {
+      "name": "initial_position_package",
+      "kind": "position_package",
+      "markdown": "# SYNTHETIC TEST DATA · 初版岗位方案\n\n已生成初版岗位需求、JD 与 JR。\n\n<!-- platform-hr-v1:eyJraW5kIjoicG9zaXRpb25fcGFja2FnZSIsInBheWxvYWQiOnsibW9kdWxlcyI6eyJqZCI6eyJ0ZXh0Ijoi6LSf6LSj5Za35Zi05LiO5oyk5Ye657O757uf57uT5p6E6K6-6K6h44CB5qC35py66aqM6K-B5ZKM6YeP5Lqn5a-85YWl44CCIn0sImpyIjp7InRleHQiOiLlhbflpIfkupTlubTku6XkuIrnsr7lr4bmnLrmorDorr7orqHnu4_pqozvvIzog73lpJ_kuLvlr7znu5PmnoTpqozor4HjgIIifSwibWlzc2lvbiI6eyJ0ZXh0Ijoi5Lqk5LuY56iz5a6a5Y-v6Z2g55qE57K-5a-G5oyk5Ye657uT5p6E44CCIn19LCJ0aXRsZSI6IumrmOe6p-e7k-aehOW3peeoi-W4iCJ9LCJzY2hlbWFfdmVyc2lvbiI6MX0 -->"
+    },
+    {
+      "name": "revised_position_package",
+      "kind": "position_package",
+      "markdown": "# SYNTHETIC TEST DATA · 修订岗位方案\n\n已参考全景分析修订 JD 与 JR。\n\n<!-- platform-hr-v1:eyJraW5kIjoicG9zaXRpb25fcGFja2FnZSIsInBheWxvYWQiOnsibW9kdWxlcyI6eyJqZCI6eyJ0ZXh0Ijoi6LSf6LSj5Za35Zi05LiO5oyk5Ye657O757uf57uT5p6E6K6-6K6h44CB5bel6Im656qX5Y-j6aqM6K-B44CB5Y-v6Z2g5oCn6aqM6K-B5ZKM6YeP5Lqn6Imv546H5pS56L-b44CCIn0sImpyIjp7InRleHQiOiLlhbflpIfkupTlubTku6XkuIrnsr7lr4bmnLrmorDorr7orqHnu4_pqozvvIzmjozmj6HmjKTlh7rlt6XoibrjgIHlpLHmlYjliIbmnpDkuI7ph4_kuqfoia_njofmlLnov5vjgIIifSwibWlzc2lvbiI6eyJ0ZXh0Ijoi57uT5ZCI5YWs5byA5oub6IGY5oOF5oql77yM5Lqk5LuY56iz5a6a5Y-v6Z2g5LiU5Y-v6YeP5Lqn55qE57K-5a-G5oyk5Ye657uT5p6E44CCIn19LCJ0aXRsZSI6IumrmOe6p-e7k-aehOW3peeoi-W4iCJ9LCJzY2hlbWFfdmVyc2lvbiI6MX0 -->"
+    },
+    {
+      "name": "strong_candidate_match",
+      "kind": "candidate_match",
+      "markdown": "# SYNTHETIC TEST DATA · 匿名候选人甲匹配分析\n\n核心能力强匹配，未知项需在面试核验。\n\n<!-- platform-hr-v1:eyJraW5kIjoiY2FuZGlkYXRlX21hdGNoIiwicGF5bG9hZCI6eyJkaW1lbnNpb25zIjp7IuaMpOWHuuW3peiJuiI6IuW8uiIsIueyvuWvhue7k-aehCI6IuW8uiIsIumHj-S6p-S6pOS7mCI6IuW8uiJ9LCJldmlkZW5jZSI6W3siZG9jdW1lbnQiOiJyZXN1bWUtc3Ryb25nLm1kIiwicmVzdW1lX2ZhY3QiOiLkuLvlr7znsr7lr4bllrflmLTnu5PmnoTorr7orqHlkozmibnph4_lr7zlhaXjgIIifV0sImdhcHMiOlsi6Leo5Yy65Z-f5L6b5bqU6ZO-57uP6aqM5pyq6K-05piO44CCIl0sInJpc2tzIjpbIuWboumYn-euoeeQhuiMg-WbtOmcgOimgemdouivleaguOmqjOOAgiJdLCJzdW1tYXJ5Ijoi5Yy_5ZCN5YCZ6YCJ5Lq655Sy5LiO5bKX5L2N5qC45b-D6IO95Yqb5by65Yy56YWN44CCIiwidW5rbm93bnMiOlsi5p6B56uv546v5aKD5Y-v6Z2g5oCn5pWw5o2u5pyq5o-Q5L6b44CCIl0sInZlcmlmaWNhdGlvbl9xdWVzdGlvbnMiOlsi6K-36K-05piO5LiA5qyh5oyk5Ye657O757uf6YeP5Lqn6Imv546H5o-Q5Y2H55qE5Z-657q_44CB5o6q5pa95ZKM57uT5p6c44CCIl19LCJzY2hlbWFfdmVyc2lvbiI6MX0 -->"
+    },
+    {
+      "name": "adjacent_candidate_match",
+      "kind": "candidate_match",
+      "markdown": "# SYNTHETIC TEST DATA · 匿名候选人乙匹配分析\n\n具备相邻能力，挤出工艺经验待验证。\n\n<!-- platform-hr-v1:eyJraW5kIjoiY2FuZGlkYXRlX21hdGNoIiwicGF5bG9hZCI6eyJkaW1lbnNpb25zIjp7IuaMpOWHuuW3peiJuiI6IuW-hemqjOivgSIsIueyvuWvhue7k-aehCI6IuW8uiIsIumHj-S6p-S6pOS7mCI6IuS4rSJ9LCJldmlkZW5jZSI6W3siZG9jdW1lbnQiOiJyZXN1bWUtYWRqYWNlbnQubWQiLCJyZXN1bWVfZmFjdCI6Iui0n-i0o-eyvuWvhuS8oOWKqOe7hOS7tue7k-aehOiuvuiuoeS4juivleS6p-OAgiJ9XSwiZ2FwcyI6WyLnroDljobmnKrkvZPnjrDllrflmLTmiJbmjKTlh7rns7vnu5_nu4_pqozjgIIiXSwicmlza3MiOlsi6IO95Yqb6L-B56e75ZGo5pyf5Y-v6IO95b2x5ZON5Yiw5bKX5ZCO5Lqn5Ye644CCIl0sInN1bW1hcnkiOiLljL_lkI3lgJnpgInkurrkuZnlhbflpIfnm7jpgrvnsr7lr4bnu5PmnoTog73lipvvvIzmjKTlh7rlt6Xoibrnu4_pqozlvoXpqozor4HjgIIiLCJ1bmtub3ducyI6WyLpq5jmuKnmnZDmlpnpgInlnovnu4_pqozmnKror7TmmI7jgIIiXSwidmVyaWZpY2F0aW9uX3F1ZXN0aW9ucyI6WyLor7fnlKjkuIDkuKrmoYjkvovor7TmmI7kvaDlpoLkvZXmiornm7jpgrvnu5PmnoTnu4_pqozov4Hnp7vliLDmlrDlt6XoibrjgIIiXX0sInNjaGVtYV92ZXJzaW9uIjoxfQ -->"
+    },
+    {
+      "name": "strong_candidate_interview_plan",
+      "kind": "candidate_interview_plan",
+      "markdown": "# SYNTHETIC TEST DATA · 匿名候选人甲面试题\n\n围绕简历证据生成候选人专属问题。\n\n<!-- platform-hr-v1:eyJraW5kIjoiY2FuZGlkYXRlX2ludGVydmlld19wbGFuIiwicGF5bG9hZCI6eyJxdWVzdGlvbnMiOlt7ImNhbmRpZGF0ZV9yZWFzb24iOiLlkIjmiJDnroDljoblo7Dnp7DkuLvlr7znsr7lr4bllrflmLTnu5PmnoTph4_kuqflr7zlhaXjgIIiLCJmb2xsb3dfdXBzIjpbIuWFs-mUruW3peiJuueql-WPo-WmguS9leehruWumu-8nyIsIuWHuueOsOi_h-WTquS6m-WkseaViOaooeW8j--8nyJdLCJxdWVzdGlvbiI6Iuivt-WkjeebmOS4gOasoeWWt-WYtOaIluaMpOWHuuezu-e7n-S7juiuvuiuoeWIsOmHj-S6p-eahOWujOaVtOi_h-eoi-OAgiIsInJpc2tfc2lnbmFscyI6WyLlj6rog73mj4_ov7Dlm6LpmJ_nu5PorrrvvIzml6Dms5Xor7TmmI7kuKrkurrliKTmlq3lkozpqozor4Hor4Hmja7jgIIiXSwic3Ryb25nX2V2aWRlbmNlIjpbIue7meWHuuS4quS6uuiBjOi0o-OAgeWfuue6v-aVsOaNruOAgemqjOivgeaWueazleWSjOmHj-WMlue7k-aenOOAgiJdLCJ2ZXJpZmljYXRpb25fZ29hbCI6IumqjOivgeWWt-WYtOS4juaMpOWHuuezu-e7n-mHj-S6p-iDveWKm-OAgiJ9XSwidGl0bGUiOiLpq5jnuqfnu5PmnoTlt6XnqIvluIgt5Yy_5ZCN5YCZ6YCJ5Lq655SyLemdouivlemimCJ9LCJzY2hlbWFfdmVyc2lvbiI6MX0 -->"
+    }
+  ]
+}

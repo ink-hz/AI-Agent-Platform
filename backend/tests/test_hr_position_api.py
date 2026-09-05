@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -11,7 +12,14 @@ from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.control_plane.authorization import AuthorizationService
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.models import AuthContext, Role
-from app.hr.models import PositionDetail, PositionDraftRecord, PositionRecord
+from app.hr.models import (
+    ConfirmedPositionPackage,
+    PositionDetail,
+    PositionDraftRecord,
+    PositionDraftVersion,
+    PositionRecord,
+)
+from app.hr.position_intelligence_models import PositionContextVersion
 from app.hr.repository import HrConflict, HrNotFound, HrUnavailable, PositionPage
 from app.hr.routes import build_hr_position_router
 
@@ -47,7 +55,37 @@ class FakeAuthorization:
 class FakeService:
     def __init__(self, owner_id) -> None:
         self.position_record = _position(owner_id)
+        now = datetime.now(UTC)
+        self.conversation_id = uuid4()
         self.draft_record = _draft(owner_id)
+        self.draft_record = PositionDraftRecord(
+            self.draft_record.draft_id, owner_id, "new_conversation",
+            f"conversation:{self.conversation_id}", self.conversation_id,
+            self.draft_record.title, self.draft_record.proposal,
+            self.draft_record.evidence, self.draft_record.discovery_rule_version,
+            "proposed", None, 2, now, now,
+        )
+        self.draft_version = PositionDraftVersion(
+            uuid4(), owner_id, self.draft_record.draft_id, uuid4(), 3,
+            "高级结构工程师",
+            {
+                "mission": {"text": "负责高可靠挤出系统交付。"},
+                "jd": {"text": "负责喷嘴与挤出系统结构设计。"},
+                "jr": {"text": "具备精密机械量产经验。"},
+            },
+            self.conversation_id, uuid4(), uuid4(), "hr-bot", "gpt-5", 1,
+            now, now,
+        )
+        context = PositionContextVersion(
+            uuid4(), owner_id, self.position_record.position_id, 1,
+            "confirmed", self.draft_version.modules,
+            self.draft_version.title, None, None, self.conversation_id,
+            self.draft_version.source_turn_id, None, (), "hr-bot", "gpt-5",
+            owner_id, owner_id, now, now, 1,
+        )
+        self.confirmed_package = ConfirmedPositionPackage(
+            self.position_record, context, self.conversation_id
+        )
         self.calls = []
         self.error = None
 
@@ -78,6 +116,20 @@ class FakeService:
     def confirm_draft(self, *args, **values):
         self.calls.append(("confirm", args, values))
         return self._result(self.position_record)
+
+    def latest_draft_version(self, owner_id, draft_id):
+        self.calls.append(("latest_package", owner_id, draft_id))
+        return self._result(self.draft_version)
+
+    def position_package_for_conversation(self, owner_id, conversation_id):
+        self.calls.append(("conversation_package", owner_id, conversation_id))
+        if conversation_id != self.conversation_id:
+            raise HrNotFound("position package not found")
+        return self._result((self.draft_record, self.draft_version))
+
+    def confirm_package(self, *args, **values):
+        self.calls.append(("confirm_package", args, values))
+        return self._result(self.confirmed_package)
 
     def merge_draft(self, *args, **values):
         self.calls.append(("merge", args, values))
@@ -267,6 +319,167 @@ def test_draft_commands_forward_versions_and_conversation_binding() -> None:
     assert service.calls[-1][0] == "bind"
 
 
+def test_conversation_position_package_is_owner_scoped_and_strictly_serialized() -> None:
+    client, service, owner_id = _client()
+
+    response = client.get(
+        f"/api/hr/conversations/{service.conversation_id}/position-package"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "draft_id": str(service.draft_record.draft_id),
+        "draft_version_id": str(service.draft_version.draft_version_id),
+        "conversation_id": str(service.conversation_id),
+        "version_number": 3,
+        "title": "高级结构工程师",
+        "modules": {
+            "mission": {"text": "负责高可靠挤出系统交付。"},
+            "jd": {"text": "负责喷嘴与挤出系统结构设计。"},
+            "jr": {"text": "具备精密机械量产经验。"},
+        },
+        "row_version": 2,
+        "created_at": service.draft_version.created_at.isoformat(),
+        "updated_at": service.draft_version.updated_at.isoformat(),
+    }
+    assert service.calls == [
+        ("conversation_package", owner_id, service.conversation_id),
+    ]
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_position_package_confirmation_is_atomic_and_strictly_serialized() -> None:
+    client, service, owner_id = _client()
+    request_id = uuid4()
+
+    confirmed = client.post(
+        f"/api/hr/position-drafts/{service.draft_record.draft_id}"
+        f"/versions/{service.draft_version.draft_version_id}/confirm",
+        headers={
+            "Idempotency-Key": str(request_id),
+            "X-CSRF-Token": "csrf",
+        },
+        json={"expected_row_version": 2},
+    )
+
+    assert confirmed.status_code == 200
+    assert confirmed.json() == {
+        "position_id": str(service.position_record.position_id),
+        "context_version_id": str(
+            service.confirmed_package.context.context_version_id
+        ),
+        "conversation_id": str(service.conversation_id),
+    }
+    assert service.calls == [(
+        "confirm_package",
+        (
+            owner_id,
+            service.draft_record.draft_id,
+            service.draft_version.draft_version_id,
+            request_id,
+        ),
+        {"expected_row_version": 2},
+    )]
+
+
+def test_position_package_routes_conceal_absence_conflict_and_unavailability() -> None:
+    client, service, _ = _client()
+    package_path = (
+        f"/api/hr/conversations/{service.conversation_id}/position-package"
+    )
+    confirm_path = (
+        f"/api/hr/position-drafts/{service.draft_record.draft_id}"
+        f"/versions/{service.draft_version.draft_version_id}/confirm"
+    )
+
+    service.error = HrNotFound("encrypted-content=secret")
+    missing = client.get(package_path)
+    service.error = HrConflict("raw database conflict")
+    conflict = client.post(
+        confirm_path,
+        headers={"Idempotency-Key": str(uuid4())},
+        json={"expected_row_version": 2},
+    )
+    service.error = HrUnavailable("artifact_locator=s3://secret")
+    unavailable = client.get(package_path)
+
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "HR position not found"}
+    assert conflict.status_code == 409
+    assert conflict.json() == {"detail": "HR position conflict"}
+    assert unavailable.status_code == 503
+    assert unavailable.json() == {"detail": "HR position unavailable"}
+
+
+def test_conversation_without_a_position_package_returns_404() -> None:
+    client, service, _ = _client()
+
+    missing = client.get(f"/api/hr/conversations/{uuid4()}/position-package")
+
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "HR position not found"}
+
+
+def test_position_package_routes_deny_unentitled_and_read_only_identities() -> None:
+    denied, denied_service, _ = _client(authorization="denied")
+    stale, stale_service, _ = _client(stale=True)
+
+    cross_owner = denied.get(
+        f"/api/hr/conversations/{denied_service.conversation_id}/position-package"
+    )
+    read_only = stale.post(
+        f"/api/hr/position-drafts/{stale_service.draft_record.draft_id}"
+        f"/versions/{stale_service.draft_version.draft_version_id}/confirm",
+        headers={"Idempotency-Key": str(uuid4())},
+        json={"expected_row_version": 2},
+    )
+
+    assert cross_owner.status_code == 403
+    assert read_only.status_code == 503
+    assert denied_service.calls == stale_service.calls == []
+
+
+def test_position_package_routes_reject_cross_owner_service_results() -> None:
+    client, service, owner_id = _client()
+    foreign_owner = uuid4()
+    service.draft_record = replace(
+        service.draft_record, owner_id=foreign_owner
+    )
+    service.draft_version = replace(
+        service.draft_version, owner_id=foreign_owner
+    )
+    foreign_position = replace(
+        service.confirmed_package.position, owner_id=foreign_owner
+    )
+    foreign_context = replace(
+        service.confirmed_package.context,
+        owner_id=foreign_owner,
+        created_by=foreign_owner,
+        confirmed_by=foreign_owner,
+    )
+    service.confirmed_package = ConfirmedPositionPackage(
+        foreign_position, foreign_context, service.conversation_id
+    )
+
+    package = client.get(
+        f"/api/hr/conversations/{service.conversation_id}/position-package"
+    )
+    assert service.calls == [
+        ("conversation_package", owner_id, service.conversation_id)
+    ]
+    confirmed = client.post(
+        f"/api/hr/position-drafts/{service.draft_record.draft_id}"
+        f"/versions/{service.draft_version.draft_version_id}/confirm",
+        headers={"Idempotency-Key": str(uuid4())},
+        json={"expected_row_version": 2},
+    )
+
+    assert package.status_code == confirmed.status_code == 403
+    assert package.json() == confirmed.json() == {
+        "detail": "HR position access denied"
+    }
+
+
 def test_position_material_promotion_and_removal_are_explicit_mutations() -> None:
     client, service, _ = _client()
     position_id, attachment_id = service.position_record.position_id, uuid4()
@@ -319,6 +532,9 @@ def test_every_hr_route_passes_the_real_identity_security_middleware() -> None:
         client.get("/api/hr/positions"),
         client.get(f"/api/hr/positions/{position_id}"),
         client.get("/api/hr/position-drafts"),
+        client.get(
+            f"/api/hr/conversations/{service.conversation_id}/position-package"
+        ),
         client.post("/api/hr/position-drafts", json=proposal, headers=headers),
         client.post(
             f"/api/hr/position-drafts/{draft_id}/confirm",
@@ -334,6 +550,11 @@ def test_every_hr_route_passes_the_real_identity_security_middleware() -> None:
             json=version, headers=headers,
         ),
         client.post(
+            f"/api/hr/position-drafts/{draft_id}"
+            f"/versions/{service.draft_version.draft_version_id}/confirm",
+            json={"expected_row_version": 2}, headers=headers,
+        ),
+        client.post(
             f"/api/hr/positions/{position_id}/conversations/{conversation_id}",
             json={}, headers=headers,
         ),
@@ -347,7 +568,7 @@ def test_every_hr_route_passes_the_real_identity_security_middleware() -> None:
         ),
     )
 
-    assert [response.status_code for response in requests] == [200] * 10
+    assert [response.status_code for response in requests] == [200] * 12
 
 
 def test_real_security_middleware_blocks_stale_hr_mutation_before_router() -> None:

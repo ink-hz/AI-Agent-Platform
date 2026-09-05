@@ -40,6 +40,8 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "hr-positions" })).toBe("岗位 · HR 智能工作台");
     expect(routeDocumentTitle({ name: "hr-position-section", positionId: "11111111-1111-4111-8111-111111111111", section: "artifacts" })).toBe("岗位 · HR 智能工作台");
     expect(routeDocumentTitle({ name: "hr-conversation", conversationId: "one" })).toBe("HR 智能工作台 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "hr-panorama" })).toBe("全景分析 · HR 智能工作台");
+    expect(routeDocumentTitle({ name: "hr-panorama-report", insightVersionId: "55555555-5555-4555-8555-555555555555" })).toBe("全景分析 · HR 智能工作台");
     expect(routeDocumentTitle({ name: "marketing", agentSlug: "inbound" })).toBe("Marketing Inbound · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "marketing-conversation", agentSlug: "gtm", conversationId: "one" })).toBe("Marketing GTM · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "fae-manage-overview" })).toBe("FAE 工作台 · Orbbec Agent Platform");

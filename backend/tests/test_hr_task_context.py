@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from test_agent_brain_conversation_repository import (
+    conversation_database,  # noqa: F401
+    repository,  # noqa: F401
+)
+from test_control_plane_migration import control_database  # noqa: F401
+from test_hr_task_result_projection_database import _seed_candidate_scope
+
+from app.hr.candidate_context import CandidateEnvelopeProvider
+from app.hr.candidate_repository import CandidateRepository
 from app.hr.models import (
     BindPositionConversation,
     CreateManualPosition,
@@ -18,6 +26,7 @@ from app.hr.position_intelligence_models import (
     OfficialPositionVersion,
     PositionContextVersion,
     ProjectOfficialVersion,
+    candidate_task_snapshot_sha256,
 )
 from app.hr.position_intelligence_repository import PositionIntelligenceRepository
 from app.hr.repository import HrPositionRepository
@@ -29,11 +38,6 @@ from app.hr.task_context import (
     PostgresHrTaskContextSource,
     canonical_hash,
 )
-from test_agent_brain_conversation_repository import (
-    conversation_database,
-    repository,
-)
-from test_control_plane_migration import control_database
 
 
 def _records():
@@ -191,6 +195,61 @@ def test_envelope_pins_position_context_materials_and_candidate_fragment() -> No
     assert prompt["official_facts"]["headcount"] == 1
     assert prompt["official_facts"]["status_reason"] == "published"
     assert len(source.recorded) == 1
+
+
+def test_persisted_candidate_snapshot_is_used_without_mutable_provider_read() -> None:
+    owner_id, position_id, official, context, material = _records()
+    conversation_id, turn_id = uuid4(), uuid4()
+    candidate_id, relation_id = uuid4(), uuid4()
+    document_id, attachment_id, feedback_id = uuid4(), uuid4(), uuid4()
+    prompt_context = "accepted candidate evidence"
+    source = Source(HrTaskScope(
+        owner_id, position_id, conversation_id, turn_id, "candidate_match",
+        official, context, (material,), candidate_id, relation_id,
+        client_request_id=uuid4(), candidate_document_ids=(document_id,),
+        candidate_document_attachment_ids=(attachment_id,),
+        candidate_human_feedback_ids=(feedback_id,),
+        candidate_prompt_context=prompt_context,
+        candidate_snapshot_sha256=candidate_task_snapshot_sha256(
+            candidate_id=candidate_id, position_candidate_id=relation_id,
+            context_version_id=context.context_version_id,
+            document_ids=(document_id,), document_attachment_ids=(attachment_id,),
+            human_feedback_ids=(feedback_id,), prompt_context=prompt_context,
+        ),
+    ))
+
+    envelope = HrTaskContextProvider(
+        source, candidate_provider=FailingCandidateProvider()
+    ).build_for_turn(owner_id, conversation_id, turn_id)
+
+    assert envelope.document_attachment_ids == (attachment_id,)
+    assert envelope.human_feedback_ids == (feedback_id,)
+    assert prompt_context in envelope.prompt_context
+
+
+def test_persisted_candidate_snapshot_fails_closed_when_legacy_or_tampered() -> None:
+    owner_id, position_id, official, context, material = _records()
+    conversation_id, turn_id = uuid4(), uuid4()
+    base = HrTaskScope(
+        owner_id, position_id, conversation_id, turn_id, "candidate_match",
+        official, context, (material,), uuid4(), uuid4(),
+        client_request_id=uuid4(),
+    )
+    with pytest.raises(HrTaskContextError, match="snapshot unavailable"):
+        HrTaskContextProvider(Source(base)).build_for_turn(
+            owner_id, conversation_id, turn_id
+        )
+    tampered = replace(
+        base,
+        candidate_document_ids=(uuid4(),),
+        candidate_document_attachment_ids=(uuid4(),),
+        candidate_prompt_context="persisted",
+        candidate_snapshot_sha256="f" * 64,
+    )
+    with pytest.raises(HrTaskContextError, match="snapshot invalid"):
+        HrTaskContextProvider(Source(tampered)).build_for_turn(
+            owner_id, conversation_id, turn_id
+        )
 
 
 def test_candidate_tasks_require_exact_confirmed_context_and_documents() -> None:
@@ -420,8 +479,8 @@ def test_recovery_returns_the_recorded_envelope_without_rereading_newer_context(
 
 @pytest.mark.postgres
 def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
-    conversation_database,
-    repository,
+    conversation_database,  # noqa: F811
+    repository,  # noqa: F811
     request,
 ) -> None:
     environment, owner_id, _ = conversation_database
@@ -518,8 +577,8 @@ def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
 
 @pytest.mark.postgres
 def test_explicit_task_uses_owned_position_material_from_another_conversation(
-    conversation_database,
-    repository,
+    conversation_database,  # noqa: F811
+    repository,  # noqa: F811
     request,
 ) -> None:
     environment, owner_id, _ = conversation_database
@@ -631,9 +690,205 @@ def test_explicit_task_uses_owned_position_material_from_another_conversation(
 
 
 @pytest.mark.postgres
+def test_candidate_snapshot_business_order_survives_request_context_and_record(
+    conversation_database,  # noqa: F811
+    repository,  # noqa: F811
+    request,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    app_url = environment["urls"]["platform_control_app"]
+    positions = HrPositionRepository(app_url)
+    position = positions.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "候选顺序岗位")
+    )
+    scope = _seed_candidate_scope(environment, owner_id, position.position_id)
+    second_attachment = UUID("00000000-0000-0000-0000-000000000001")
+    second_document = UUID("00000000-0000-0000-0000-000000000002")
+    older_feedback = UUID("00000000-0000-0000-0000-000000000003")
+    newer_feedback = UUID("ffffffff-ffff-4fff-8fff-fffffffffff3")
+    analysis_id = uuid4()
+
+    def cleanup() -> None:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local session_replication_role=replica")
+            connection.execute(
+                "delete from platform_hr.position_task_records "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_task_requests "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_binding_events "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_conversations "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.human_feedback "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.candidate_analysis_versions "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_candidates "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.candidate_documents "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.candidates "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.candidate_drafts "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.candidate_draft_batches "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_attachments.attachments "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "update platform_hr.positions set current_context_version_id=null "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.position_context_versions "
+                "where owner_internal_user_id=%s", (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.positions where owner_internal_user_id=%s",
+                (owner_id,),
+            )
+
+    request.addfinalizer(cleanup)
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_attachments.attachments("
+            "attachment_id,owner_internal_user_id,source_kind,"
+            "original_name_ciphertext,original_name_key_version,"
+            "object_ref_ciphertext,object_ref_key_version,immutable_locator,"
+            "sha256,state,ready_at) values (%s,%s,'user_input',%s,1,%s,1,"
+            "'etag:second',%s,'ready',now())",
+            (second_attachment, owner_id, b"n" * 29, b"o" * 29, b"s" * 32),
+        )
+        connection.execute(
+            "insert into platform_hr.candidate_documents("
+            "document_id,owner_internal_user_id,candidate_id,attachment_id,"
+            "source_draft_id,document_kind,version_number,content_sha256) values ("
+            "%s,%s,%s,%s,%s,'resume',2,%s)",
+            (second_document, owner_id, scope["candidate"], second_attachment,
+             scope["draft"], "b" * 64),
+        )
+        connection.execute(
+            "insert into platform_hr.candidate_analysis_versions("
+            "analysis_version_id,owner_internal_user_id,position_candidate_id,"
+            "position_id,candidate_id,context_version_id,client_request_id,"
+            "version_number,analysis_kind,result,agent_version,model_version) "
+            "values (%s,%s,%s,%s,%s,%s,%s,1,'match','{}','agent','model')",
+            (analysis_id, owner_id, scope["relation"], position.position_id,
+             scope["candidate"], scope["context"], uuid4()),
+        )
+        for feedback_id, created_at, conclusion in (
+            (older_feedback, "2026-01-01T00:00:00Z", "older"),
+            (newer_feedback, "2026-01-02T00:00:00Z", "newer"),
+        ):
+            connection.execute(
+                "insert into platform_hr.human_feedback("
+                "feedback_id,owner_internal_user_id,position_candidate_id,"
+                "analysis_version_id,client_request_id,feedback_kind,"
+                "conclusion_key,reason,canonical_payload,payload_sha256,created_at) "
+                "values (%s,%s,%s,%s,%s,'accepted',%s,'ordered','{}',"
+                "sha256(convert_to('{}','UTF8')),%s)",
+                (feedback_id, owner_id, scope["relation"], analysis_id, uuid4(),
+                 conclusion, created_at),
+            )
+    candidate_provider = CandidateEnvelopeProvider(
+        CandidateRepository(app_url),
+        lambda selected_owner, selected_position, selected_context: (
+            selected_owner == owner_id and selected_position == position.position_id
+            and selected_context == scope["context"]
+        ),
+    )
+    fragment = candidate_provider.for_task(
+        owner_id, position.position_id, scope["candidate"], scope["relation"]
+    )
+    assert fragment.document_attachment_ids == (
+        scope["attachment"], second_attachment,
+    )
+    assert fragment.document_attachment_ids != tuple(sorted(
+        fragment.document_attachment_ids, key=str,
+    ))
+    assert fragment.human_feedback_ids == (newer_feedback, older_feedback)
+    assert fragment.human_feedback_ids != tuple(sorted(
+        fragment.human_feedback_ids, key=str,
+    ))
+    client_request_id = uuid4()
+    created = PositionIntelligenceRepository(app_url).create_task_request(
+        CreatePositionTaskRequest(
+            uuid4(), owner_id, position.position_id, client_request_id,
+            "a" * 64, "candidate_match", scope["context"], (),
+            scope["candidate"], scope["relation"], fragment.document_ids,
+            fragment.document_attachment_ids, fragment.human_feedback_ids,
+            fragment.prompt_context,
+        )
+    )
+    started = repository.start(
+        owner_id, client_request_id, "保持候选证据业务顺序",
+        mode="direct_agent", direct_agent_id="hr-bot",
+    )
+    positions.bind_conversation(BindPositionConversation(
+        owner_id, position.position_id, started.conversation.conversation_id,
+        uuid4(), "created_in_position",
+    ))
+    envelope = HrTaskContextProvider(PostgresHrTaskContextSource(
+        app_url, execution_model_version="hr-runtime-order-v1",
+    )).build_for_turn(
+        owner_id, started.conversation.conversation_id, started.turn.turn_id,
+    )
+    assert envelope.document_attachment_ids == fragment.document_attachment_ids
+    assert envelope.human_feedback_ids == fragment.human_feedback_ids
+    expected_snapshot_hash = candidate_task_snapshot_sha256(
+        candidate_id=scope["candidate"],
+        position_candidate_id=scope["relation"],
+        context_version_id=scope["context"], document_ids=fragment.document_ids,
+        document_attachment_ids=fragment.document_attachment_ids,
+        human_feedback_ids=fragment.human_feedback_ids,
+        prompt_context=fragment.prompt_context,
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        recorded = connection.execute(
+            "select record.document_attachment_ids,record.human_feedback_ids,"
+            "request.candidate_snapshot_sha256 from platform_hr.position_task_records "
+            "record join platform_hr.position_task_requests request on "
+            "request.owner_internal_user_id=record.owner_internal_user_id and "
+            "request.client_request_id=record.client_request_id where "
+            "record.owner_internal_user_id=%s and record.turn_id=%s",
+            (owner_id, started.turn.turn_id),
+        ).fetchone()
+    assert recorded == (
+        list(fragment.document_attachment_ids),
+        list(fragment.human_feedback_ids),
+        expected_snapshot_hash,
+    )
+    assert created.candidate_snapshot_sha256 == expected_snapshot_hash
+
+
+@pytest.mark.postgres
 def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_inputs(
-    conversation_database,
-    repository,
+    conversation_database,  # noqa: F811
+    repository,  # noqa: F811
     request,
 ) -> None:
     environment, owner_id, _ = conversation_database
@@ -718,9 +973,9 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
         )
     )
     statement = (
-        "select (platform_hr.create_position_task_record_v69("
+        "select (platform_hr.create_position_task_record_v78("
         "%s,%s,%s,%s,%s,%s,%s,%s::uuid[],%s,%s,%s::uuid[],%s::uuid[],"
-        "%s,%s,%s,%s)).*"
+        "%s,%s,%s,%s,%s)).*"
     )
     values = (
         uuid4(),
@@ -739,13 +994,18 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
         started.turn.turn_id,
         "target prompt",
         "1" * 64,
+        "hr-runtime-v1",
     )
-    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
-        with pytest.raises(psycopg.errors.SerializationFailure):
-            connection.execute(statement, values)
-    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
-        with pytest.raises(psycopg.errors.UniqueViolation):
-            connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as connection,
+        pytest.raises(psycopg.errors.SerializationFailure),
+    ):
+        connection.execute(statement, values)
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as connection,
+        pytest.raises(psycopg.errors.UniqueViolation),
+    ):
+        connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
 
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
@@ -753,9 +1013,11 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
             "where owner_internal_user_id=%s and client_request_id=%s",
             (owner_id, client_request_id),
         )
-    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
-        with pytest.raises(psycopg.errors.NoDataFound):
-            connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as connection,
+        pytest.raises(psycopg.errors.NoDataFound),
+    ):
+        connection.execute(statement, (*values[:4], "jd", None, *values[6:]))
     intelligence.create_task_request(
         CreatePositionTaskRequest(
             uuid4(),
@@ -816,6 +1078,8 @@ def test_task_record_sql_rejects_cross_position_official_and_nonexact_turn_input
 
     request.addfinalizer(cleanup)
     exact_values = (*values[:5], None, *values[6:])
-    with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
-        with pytest.raises(psycopg.errors.NoDataFound):
-            connection.execute(statement, exact_values)
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as connection,
+        pytest.raises(psycopg.errors.NoDataFound),
+    ):
+        connection.execute(statement, exact_values)

@@ -97,10 +97,6 @@ from .control_plane.fae_access import (
     FaeWorkbenchAccessRepository,
     FaeWorkbenchAccessService,
 )
-from .control_plane.voc_access import (
-    VocWorkbenchAccessRepository,
-    VocWorkbenchAccessService,
-)
 from .control_plane.identity import IdentityResolver
 from .control_plane.in_client_apps import load_trusted_in_client_apps
 from .control_plane.middleware import (
@@ -125,6 +121,10 @@ from .control_plane.rate_limit import ControlRateLimiter
 from .control_plane.routes_access_history import build_access_history_router
 from .control_plane.routes_auth import build_auth_router
 from .control_plane.routes_manage import ManagementRepository, ManagementService
+from .control_plane.voc_access import (
+    VocWorkbenchAccessRepository,
+    VocWorkbenchAccessService,
+)
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
 from .execution_relay.content_crypto import ContentCodec
@@ -167,9 +167,24 @@ from .hr.candidate_repository import CandidateRepository
 from .hr.candidate_routes import build_candidate_router
 from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
+from .hr.panorama_context import PanoramaContextProvider
+from .hr.panorama_repository import PanoramaRepository
+from .hr.panorama_routes import build_panorama_router
+from .hr.panorama_runtime import (
+    PanoramaConversationResultReader,
+    PanoramaResultProjector,
+    PanoramaRunCoordinator,
+    panorama_projection_loop,
+)
+from .hr.panorama_service import PanoramaService
 from .hr.position_intelligence_repository import PositionIntelligenceRepository
 from .hr.position_intelligence_routes import build_position_intelligence_router
 from .hr.position_intelligence_service import PositionIntelligenceService
+from .hr.position_package_projection import (
+    PositionPackageProjectionRepository,
+    PositionPackageProjector,
+    position_package_projection_loop,
+)
 from .hr.repository import HrPositionRepository
 from .hr.resource_routes import build_hr_resource_router
 from .hr.resource_service import (
@@ -240,10 +255,36 @@ def _optional_hr_bot_model_version(contract_path: str) -> str | None:
         return _hr_bot_model_version(contract_path)
     except RuntimeError:
         logger.warning(
-            "HR task context disabled because exact runtime model provenance "
-            "is unavailable"
+            "HR runtime features disabled because exact model provenance is unavailable"
         )
         return None
+
+
+def _build_position_package_projector(
+    *,
+    identity_enabled: bool,
+    direct_agent_enabled: bool,
+    database_url: str | None,
+    positions: object | None,
+    content_codec: object | None,
+    model_version: str | None,
+) -> PositionPackageProjector | None:
+    if (
+        not identity_enabled
+        or not direct_agent_enabled
+        or database_url is None
+        or positions is None
+        or content_codec is None
+        or model_version is None
+    ):
+        return None
+    return PositionPackageProjector(
+        PositionPackageProjectionRepository(database_url),
+        positions,
+        content_codec,
+        worker_id=f"platform-position-package-{uuid4().hex}",
+        model_version=model_version,
+    )
 
 
 class _UnavailableFaeWorkbenchRepository:
@@ -786,12 +827,16 @@ def create_app(
     hr_position_service=None,
     hr_position_intelligence_service=None,
     hr_candidate_service=None,
+    hr_panorama_service=None,
+    hr_panorama_projector=None,
+    hr_panorama_context_provider=None,
     hr_resource_service=None,
     hr_task_context_provider=None,
     hr_position_task_service=None,
     hr_candidate_parser_submission_coordinator=None,
     hr_candidate_parser_input_provider=None,
     hr_task_result_reconciler=None,
+    hr_position_package_projector=None,
     agent_use_authorization=None,
     hr_position_scope=None,
     access_history_repository=None,
@@ -1120,8 +1165,53 @@ def create_app(
         hr_position_scope = HrPositionScope(hr_position_repository)
     position_intelligence_repository = None
     candidate_repository = None
+    candidate_task_validator = None
+    hr_model_version = None
+    hr_model_version_checked = False
+    panorama_repository = None
     if identity_enabled and control_database_url is not None:
-        if hr_position_intelligence_service is None or hr_task_context_provider is None:
+        if hr_panorama_service is None or hr_panorama_context_provider is None:
+            panorama_repository = PanoramaRepository(control_database_url)
+        if hr_panorama_service is None:
+            hr_panorama_coordinator = None
+            if (
+                "direct_agent" in v1_mission_modes
+                and conversation_command_service is not None
+                and conversation_repository is not None
+            ):
+                hr_model_version = _optional_hr_bot_model_version(
+                    cluster_contract_path or config.metabot_contract_path
+                )
+                hr_model_version_checked = True
+                if hr_model_version is not None:
+                    hr_panorama_coordinator = PanoramaRunCoordinator(
+                        panorama_repository,
+                        conversation_command_service,
+                    )
+                    if hr_panorama_projector is None:
+                        hr_panorama_projector = PanoramaResultProjector(
+                            panorama_repository,
+                            PanoramaConversationResultReader(
+                                control_database_url,
+                                conversation_repository,
+                            ),
+                            hr_panorama_coordinator,
+                            model_version=hr_model_version,
+                        )
+            hr_panorama_service = PanoramaService(
+                panorama_repository,
+                coordinator=hr_panorama_coordinator,
+                conversations=conversation_command_service,
+            )
+        if hr_panorama_context_provider is None:
+            hr_panorama_context_provider = PanoramaContextProvider(
+                panorama_repository
+            )
+        if (
+            hr_position_intelligence_service is None
+            or hr_task_context_provider is None
+            or hr_position_task_service is None
+        ):
             position_intelligence_repository = PositionIntelligenceRepository(
                 control_database_url
             )
@@ -1129,7 +1219,11 @@ def create_app(
             hr_position_intelligence_service = PositionIntelligenceService(
                 position_intelligence_repository
             )
-        if hr_candidate_service is None or hr_task_context_provider is None:
+        if (
+            hr_candidate_service is None
+            or hr_task_context_provider is None
+            or hr_position_task_service is None
+        ):
             candidate_repository = CandidateRepository(control_database_url)
         if hr_candidate_service is None:
             hr_candidate_service = CandidateService(
@@ -1178,7 +1272,7 @@ def create_app(
                 ),
                 conversation_attachment_download_service,
             )
-        if hr_task_context_provider is None and "direct_agent" in v1_mission_modes:
+        if hr_task_context_provider is None or hr_position_task_service is None:
             def context_is_confirmed(owner_id, position_id, context_version_id):
                 current = position_intelligence_repository.current(
                     owner_id, position_id
@@ -1189,19 +1283,22 @@ def create_app(
                     and current.context_version_id == context_version_id
                 )
 
-            hr_model_version = _optional_hr_bot_model_version(
-                cluster_contract_path or config.metabot_contract_path
+            candidate_task_validator = CandidateEnvelopeProvider(
+                candidate_repository, context_is_confirmed
             )
-            if hr_model_version is not None:
-                hr_task_context_provider = HrTaskContextProvider(
-                    PostgresHrTaskContextSource(
-                        control_database_url,
-                        execution_model_version=hr_model_version,
-                    ),
-                    candidate_provider=CandidateEnvelopeProvider(
-                        candidate_repository, context_is_confirmed
-                    ),
+            if hr_task_context_provider is None and "direct_agent" in v1_mission_modes:
+                hr_model_version = _optional_hr_bot_model_version(
+                    cluster_contract_path or config.metabot_contract_path
                 )
+                hr_model_version_checked = True
+                if hr_model_version is not None:
+                    hr_task_context_provider = HrTaskContextProvider(
+                        PostgresHrTaskContextSource(
+                            control_database_url,
+                            execution_model_version=hr_model_version,
+                        ),
+                        candidate_provider=candidate_task_validator,
+                    )
         if (
             hr_position_task_service is None
             and conversation_command_service is not None
@@ -1213,6 +1310,7 @@ def create_app(
                 conversation_command_service,
                 hr_position_scope,
                 PostgresHrPositionTaskRepository(control_database_url),
+                candidate_validator=candidate_task_validator,
             )
         if (
             hr_task_result_reconciler is None
@@ -1227,6 +1325,24 @@ def create_app(
                 hr_candidate_service,
                 content_codec,
                 worker_id=f"platform-hr-projection-{uuid4().hex}",
+            )
+        if hr_position_package_projector is None:
+            direct_hr_runtime = (
+                "direct_agent" in v1_mission_modes
+                and content_codec is not None
+                and hr_position_service is not None
+            )
+            if direct_hr_runtime and not hr_model_version_checked:
+                hr_model_version = _optional_hr_bot_model_version(
+                    cluster_contract_path or config.metabot_contract_path
+                )
+            hr_position_package_projector = _build_position_package_projector(
+                identity_enabled=identity_enabled,
+                direct_agent_enabled="direct_agent" in v1_mission_modes,
+                database_url=control_database_url,
+                positions=hr_position_service,
+                content_codec=content_codec,
+                model_version=hr_model_version,
             )
     if v1_mission_modes:
         if (
@@ -1243,6 +1359,7 @@ def create_app(
             conversation_context_builder=ConversationContextBuilder(
                 conversation_repository,
                 hr_task_context_provider=hr_task_context_provider,
+                panorama_context_provider=hr_panorama_context_provider,
                 candidate_parser_input_provider=(
                     hr_candidate_parser_input_provider
                 ),
@@ -1350,6 +1467,14 @@ def create_app(
             tasks.append(asyncio.create_task(
                 hr_task_result_projection_loop(hr_task_result_reconciler)
             ))
+        if hr_position_package_projector is not None:
+            tasks.append(asyncio.create_task(
+                position_package_projection_loop(hr_position_package_projector)
+            ))
+        if hr_panorama_projector is not None:
+            tasks.append(
+                asyncio.create_task(panorama_projection_loop(hr_panorama_projector))
+            )
         try:
             yield
         finally:
@@ -1404,6 +1529,9 @@ def create_app(
     app.state.hr_position_service = hr_position_service
     app.state.hr_position_intelligence_service = hr_position_intelligence_service
     app.state.hr_candidate_service = hr_candidate_service
+    app.state.hr_panorama_service = hr_panorama_service
+    app.state.hr_panorama_projector = hr_panorama_projector
+    app.state.hr_panorama_context_provider = hr_panorama_context_provider
     app.state.hr_resource_service = hr_resource_service
     app.state.hr_task_context_provider = hr_task_context_provider
     app.state.hr_position_task_service = hr_position_task_service
@@ -1414,6 +1542,7 @@ def create_app(
         hr_candidate_parser_input_provider
     )
     app.state.hr_task_result_reconciler = hr_task_result_reconciler
+    app.state.hr_position_package_projector = hr_position_package_projector
     app.state.fae_access = None
     app.state.voc_access = None
     app.state.fae_session_read_audit = None
@@ -1549,6 +1678,10 @@ def create_app(
     if hr_candidate_service is not None and agent_use_authorization is not None:
         app.include_router(
             build_candidate_router(hr_candidate_service, require_hr_access)
+        )
+    if hr_panorama_service is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_panorama_router(hr_panorama_service, require_hr_access)
         )
     if hr_resource_service is not None and agent_use_authorization is not None:
         app.include_router(

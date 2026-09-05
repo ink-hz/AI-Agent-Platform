@@ -64,7 +64,8 @@ export function AppShell({ route, children, account }: { route: Route; children:
     || route.name === "marketing" || route.name === "marketing-conversation";
   const hrWorkspace = route.name === "hr" || route.name === "hr-chat" || route.name === "hr-positions"
     || route.name === "hr-position" || route.name === "hr-position-section"
-    || route.name === "hr-position-conversation" || route.name === "hr-conversation";
+    || route.name === "hr-position-conversation" || route.name === "hr-conversation"
+    || route.name === "hr-panorama" || route.name === "hr-panorama-report";
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
   const faeWorkspace = route.name.startsWith("fae-manage-");
   const faeGovernanceWorkspace = route.name === "fae-manage-issues" || route.name === "fae-manage-issue";

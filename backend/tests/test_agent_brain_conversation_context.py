@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from uuid import uuid4
 
 import psycopg
@@ -17,8 +18,11 @@ from app.agent_brain.conversation_context import (
 )
 from app.agent_brain.conversation_projection import ConversationProjection
 from app.hr.models import BindPositionConversation, CreateManualPosition
+from app.hr.panorama_context import PanoramaContextError, PanoramaContextFragment
+from app.hr.panorama_repository import PanoramaConflict, PanoramaUnavailable
 from app.hr.position_intelligence_models import HrPositionContextEnvelope
 from app.hr.repository import HrPositionRepository
+from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
 from app.hr.task_context import canonical_hash
 
 
@@ -127,13 +131,39 @@ def test_verified_hr_position_turn_receives_exactly_one_pinned_envelope(
             return envelope
 
     provider = Provider()
+    panorama_fragment = PanoramaContextFragment(
+        insight_version_ids=(uuid4(),),
+        query_sha256="b" * 64,
+        as_of=datetime.now().astimezone(),
+        facts=(),
+        inferences=(),
+        unknowns=(),
+        source_urls=(),
+        stale_age_days=None,
+    )
+
+    class PanoramaProvider:
+        def __init__(self):
+            self.calls = []
+
+        def for_turn(self, selected_owner, position_id, query, turn_id):
+            self.calls.append((selected_owner, position_id, query, turn_id))
+            return panorama_fragment
+
+    panorama_provider = PanoramaProvider()
     context = ConversationContextBuilder(
-        repository, hr_task_context_provider=provider
+        repository,
+        hr_task_context_provider=provider,
+        panorama_context_provider=panorama_provider,
     ).build(started.conversation.conversation_id, started.turn.turn_id)
 
     assert context.hr_position_context is envelope
+    assert context.hr_panorama_context is panorama_fragment
     assert provider.calls == [(
         owner_id, started.conversation.conversation_id, started.turn.turn_id
+    )]
+    assert panorama_provider.calls == [(
+        owner_id, position.position_id, "生成 JD", started.turn.turn_id
     )]
 
 
@@ -152,11 +182,105 @@ def test_unbound_hr_turn_does_not_call_position_provider(
         def build_for_turn(self, *_args):
             raise AssertionError("unbound conversation must not use HR provider")
 
+    class PanoramaProvider:
+        def for_turn(self, *_args):
+            raise AssertionError("unbound conversation must not use Panorama provider")
+
     context = ConversationContextBuilder(
-        repository, hr_task_context_provider=Provider()
+        repository,
+        hr_task_context_provider=Provider(),
+        panorama_context_provider=PanoramaProvider(),
     ).build(started.conversation.conversation_id, started.turn.turn_id)
 
     assert context.hr_position_context is None
+    assert context.hr_panorama_context is None
+    assert context.hr_workflow_contract == HR_WORKFLOW_CONTRACT_V1
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "failure",
+    (
+        PanoramaUnavailable("database unavailable"),
+        PanoramaConflict("turn query conflict"),
+        PanoramaContextError("recorded context invalid"),
+    ),
+    ids=("outage", "query-conflict", "corrupt-replay"),
+)
+def test_panorama_provider_failure_omits_fragment_but_keeps_core_hr_context(
+    conversation_database,
+    repository,
+    request,
+    failure,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position = positions.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "结构工程师")
+    )
+
+    def cleanup():
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_hr.position_conversations "
+                "where owner_internal_user_id=%s",
+                (owner_id,),
+            )
+            connection.execute(
+                "delete from platform_hr.positions where owner_internal_user_id=%s",
+                (owner_id,),
+            )
+
+    request.addfinalizer(cleanup)
+    started = repository.start(
+        owner_id,
+        uuid4(),
+        "参考全景分析",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+    positions.bind_conversation(BindPositionConversation(
+        owner_id,
+        position.position_id,
+        started.conversation.conversation_id,
+        uuid4(),
+        "created_in_position",
+    ))
+    envelope = HrPositionContextEnvelope(
+        position.position_id,
+        None,
+        None,
+        "freeform",
+        (),
+        None,
+        None,
+        (),
+        (),
+        "Pinned position",
+        "a" * 64,
+    )
+    envelope = replace(envelope, canonical_sha256=canonical_hash(envelope))
+
+    class PositionProvider:
+        def build_for_turn(self, *_args):
+            return envelope
+
+    class PanoramaProvider:
+        def for_turn(self, *_args):
+            raise failure
+
+    builder = ConversationContextBuilder(
+        repository,
+        hr_task_context_provider=PositionProvider(),
+        panorama_context_provider=PanoramaProvider(),
+    )
+
+    context = builder.build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.hr_position_context is envelope
+    assert context.hr_panorama_context is None
+    assert context.hr_workflow_contract == HR_WORKFLOW_CONTRACT_V1
+    assert context.messages[-1].content == "参考全景分析"
 
 
 @pytest.mark.postgres
@@ -209,6 +333,28 @@ def test_non_hr_turn_never_receives_candidate_parser_input(
     ).build(started.conversation.conversation_id, started.turn.turn_id)
 
     assert context.active_attachment_ids == ()
+    assert context.hr_workflow_contract is None
+
+
+@pytest.mark.postgres
+def test_other_direct_agent_never_receives_hr_workflow_contract(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    started = repository.start(
+        owner_id,
+        uuid4(),
+        "普通专业问题",
+        mode="direct_agent",
+        direct_agent_id="fae-bot",
+    )
+
+    context = ConversationContextBuilder(repository).build(
+        started.conversation.conversation_id, started.turn.turn_id
+    )
+
+    assert context.hr_workflow_contract is None
 
 
 @pytest.mark.postgres

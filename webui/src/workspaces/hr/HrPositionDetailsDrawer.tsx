@@ -28,7 +28,8 @@ function statusLabel(detail: HrPositionDetail): string {
 
 export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, csrfToken, currentContextVersionId = null,
   detail, initialTab = "position", open, readOnly, onActiveTabChange, onClose, onConfirmed,
-  contextRefreshGeneration = 0, resourceRefreshGeneration = 0 }: {
+  contextRefreshGeneration = 0, degraded = false, onRetryDetail, resourceRefreshGeneration = 0,
+  taskConversationId }: {
   activeTab?: HrPositionDetailsTab;
   api: HrR12Api;
   csrfToken: string;
@@ -41,7 +42,10 @@ export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, c
   onClose(): void;
   onConfirmed(context: HrContextVersion): void;
   contextRefreshGeneration?: number;
+  degraded?: boolean;
+  onRetryDetail?(): void;
   resourceRefreshGeneration?: number;
+  taskConversationId?: string;
 }) {
   const [uncontrolledActiveTab, setUncontrolledActiveTab] = useState<HrPositionDetailsTab>(initialTab);
   const activeTab = controlledActiveTab ?? uncontrolledActiveTab;
@@ -101,6 +105,10 @@ export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, c
         onClick={() => activate(tab)} onKeyDown={(event) => tabKey(event, tab)}
       >{label}</button>)}</div></nav>
       {visited.has("position") && <section aria-labelledby="hr-position-details-tab-position" hidden={activeTab !== "position"} id="hr-position-details-position" role="tabpanel">
+        {degraded && <div className="hr-position-details-degraded" role="alert">
+          <p>岗位资料暂时无法完整读取，当前显示对话方案中的降级内容。</p>
+          {onRetryDetail && <button onClick={onRetryDetail} type="button">重新读取岗位资料</button>}
+        </div>}
         <article className="hr-position-facts"><h3>岗位概要</h3><dl>
           <div><dt>岗位</dt><dd>{detail.title}</dd></div>
           <div><dt>部门</dt><dd>{detail.department || "待完善"}</dd></div>
@@ -113,7 +121,7 @@ export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, c
       </section>}
       {visited.has("candidates") && <section aria-labelledby="hr-position-details-tab-candidates" hidden={activeTab !== "candidates"} id="hr-position-details-candidates" role="tabpanel"><HrCandidateWorkspace
         api={api} csrfToken={csrfToken} currentContextVersionId={currentContextVersionId}
-        positionId={detail.positionId} readOnly={readOnly}
+        positionId={detail.positionId} readOnly={readOnly} taskConversationId={taskConversationId}
       /></section>}
       {visited.has("resources") && <section aria-labelledby="hr-position-details-tab-resources" hidden={activeTab !== "resources"} id="hr-position-details-resources" role="tabpanel"><HrPositionResourcesPanel
         api={api} positionId={detail.positionId} readOnly={readOnly}

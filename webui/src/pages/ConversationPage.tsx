@@ -116,6 +116,7 @@ export function ConversationPage({
   account,
   client = DEFAULT_CLIENT,
   onConversationUpdated,
+  onConversationSettled,
   expectedAgentId,
   assistantLabel = "Agent 大脑",
   personaSubtitle,
@@ -132,6 +133,7 @@ export function ConversationPage({
   account: Account;
   client?: ConversationPageClient;
   onConversationUpdated?: (conversation: Conversation) => void;
+  onConversationSettled?: () => void;
   expectedAgentId?: string;
   assistantLabel?: string;
   personaSubtitle?: string | null;
@@ -217,6 +219,7 @@ export function ConversationPage({
       setDetail(snapshot); setMessages((current) => mergeMessages(current, loadedMessages));
       return snapshot;
     };
+    const activeTurnWasObserved = turnIsActive(detail);
     const run = async () => {
       while (!controller.signal.aborted) {
         setConnection(eventCursor.current === 0 ? "connecting" : "live");
@@ -241,7 +244,10 @@ export function ConversationPage({
           const snapshot = await refreshSnapshot();
           if (!snapshot) return;
           setConnection("live");
-          if (!turnIsActive(snapshot)) return;
+          if (!turnIsActive(snapshot)) {
+            if (activeTurnWasObserved) onConversationSettled?.();
+            return;
+          }
           setConnection("offline");
         } catch {
           if (controller.signal.aborted) return;
@@ -250,6 +256,7 @@ export function ConversationPage({
             if (!snapshot) return;
             if (!turnIsActive(snapshot)) {
               setConnection("live");
+              if (activeTurnWasObserved) onConversationSettled?.();
               return;
             }
           } catch {
@@ -264,7 +271,7 @@ export function ConversationPage({
     return () => controller.abort();
   // streamEpoch deliberately starts a fresh stream after a newly accepted Turn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account.csrf_token, account.hard_stale_read_only, client, conversationId, streamEpoch]);
+  }, [account.csrf_token, account.hard_stale_read_only, client, conversationId, onConversationSettled, streamEpoch]);
 
   const sendValue = async (value: string) => {
     const normalized = value.trim();
@@ -547,11 +554,15 @@ export function ConversationPage({
     {sendFailure && <div className="conversation-action-error" role="alert"><span>消息暂未发送成功，可以使用同一次请求安全重试。</span><button className="conversation-retry" disabled={pending} onClick={() => void send()} type="button">重新发送</button></div>}
     {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
   </div>;
-  return attachmentLimits && materialsPresentation === "sidebar" ? <div className="conversation-workspace-grid">{conversationContent}<SessionMaterialsDrawer
-    activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
-    onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
-    positionMaterialIds={positionMaterialIds} onPositionMaterialChange={onPositionMaterialChange}
-    positionArtifactAttachmentIds={positionArtifactAttachmentIds}
-    readOnly={readOnly}
-  /></div> : conversationContent;
+  const showMaterials = Boolean(attachmentLimits && materialsPresentation === "sidebar");
+  return <div className={showMaterials ? "conversation-workspace-grid" : "conversation-workspace-content"}>
+    {conversationContent}
+    {showMaterials && attachmentLimits && <SessionMaterialsDrawer
+      activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
+      onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
+      positionMaterialIds={positionMaterialIds} onPositionMaterialChange={onPositionMaterialChange}
+      positionArtifactAttachmentIds={positionArtifactAttachmentIds}
+      readOnly={readOnly}
+    />}
+  </div>;
 }

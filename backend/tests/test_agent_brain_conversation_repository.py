@@ -2,21 +2,25 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Barrier
 from typing import get_type_hints
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from test_control_plane_migration import control_database  # noqa: F401
+
 from app.agent_brain.conversation_repository import (
     ConversationRepository,
     ConversationRepositoryConflict,
     ConversationRepositoryError,
     ConversationRepositoryNotFound,
+    ConversationTurnInProgress,
 )
+from app.agent_brain.conversation_service import ConversationCommandService
 from app.agent_brain.repository import MissionRepository
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
-from test_control_plane_migration import control_database
 
 
 def _codec() -> ContentCodec:
@@ -120,6 +124,58 @@ def _complete_turn(environment, turn_id: UUID) -> None:
         )
 
 
+class _MissBarrierCursor:
+    def __init__(self, cursor, gate: Barrier) -> None:
+        self._cursor = cursor
+        self._gate = gate
+        self._synchronize_miss = False
+
+    def __enter__(self):
+        self._cursor.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self._cursor.__exit__(*args)
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+    def execute(self, query, parameters=None):
+        self._synchronize_miss = (
+            "select * from platform_control.conversations "
+            "where owner_internal_user_id=%s "
+            "and started_by_client_request_id=%s for update"
+        ) == query
+        self._cursor.execute(query, parameters)
+        return self
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        if self._synchronize_miss and row is None:
+            self._gate.wait()
+        self._synchronize_miss = False
+        return row
+
+
+class _MissBarrierConnection:
+    def __init__(self, connection, gate: Barrier) -> None:
+        self._connection = connection
+        self._gate = gate
+
+    def __enter__(self):
+        self._connection.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self._connection.__exit__(*args)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+    def cursor(self):
+        return _MissBarrierCursor(self._connection.cursor(), self._gate)
+
+
 @pytest.mark.postgres
 def test_start_is_atomic_and_ciphertext_only(
     conversation_database,
@@ -211,6 +267,155 @@ def test_concurrent_start_replays_one_atomic_result(
 
 
 @pytest.mark.postgres
+def test_direct_conversation_shell_is_empty_and_idempotent(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    request_id = uuid4()
+    service = ConversationCommandService(repository, v2_enabled=True)
+
+    first = service.ensure_direct_conversation_shell(
+        owner_id,
+        request_id,
+        direct_agent_id="hr-bot",
+        title="全景分析",
+    )
+    replay = service.ensure_direct_conversation_shell(
+        owner_id,
+        request_id,
+        direct_agent_id="hr-bot",
+        title="全景分析",
+    )
+
+    assert replay == first
+    assert first.owner_internal_user_id == owner_id
+    assert first.started_by_client_request_id == request_id
+    assert first.mode == "direct_agent"
+    assert first.direct_agent_id == "hr-bot"
+    assert first.status == "active"
+    assert first.title == "全景分析"
+    with psycopg.connect(environment["admin"]) as connection:
+        counts = connection.execute(
+            "select "
+            "(select count(*) from platform_control.conversations),"
+            "(select count(*) from platform_control.conversation_messages),"
+            "(select count(*) from platform_control.conversation_turns),"
+            "(select count(*) from platform_control.missions)"
+        ).fetchone()
+    assert counts == (1, 0, 0, 0)
+
+
+@pytest.mark.postgres
+def test_concurrent_direct_conversation_shell_replays_one_empty_record(
+    conversation_database,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    request_id = uuid4()
+    gate = Barrier(2)
+    codec = _codec()
+
+    def connect(*args, **kwargs):
+        return _MissBarrierConnection(psycopg.connect(*args, **kwargs), gate)
+
+    repository = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        mission_repository=MissionRepository(
+            environment["urls"]["platform_control_app"],
+            content_codec=codec,
+        ),
+        connect=connect,
+    )
+    replay_count = 0
+    replay_after_race = repository._replay_direct_conversation_shell_after_race
+
+    def recording_replay(*args, **kwargs):
+        nonlocal replay_count
+        replay_count += 1
+        return replay_after_race(*args, **kwargs)
+
+    repository._replay_direct_conversation_shell_after_race = recording_replay
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        records = list(
+            pool.map(
+                lambda _index: repository.ensure_direct_conversation_shell(
+                    owner_id,
+                    request_id,
+                    direct_agent_id="hr-bot",
+                    title="全景分析",
+                ),
+                range(2),
+            )
+        )
+
+    assert len({record.conversation_id for record in records}) == 1
+    assert replay_count == 1
+    with psycopg.connect(environment["admin"]) as connection:
+        counts = connection.execute(
+            "select "
+            "(select count(*) from platform_control.conversations),"
+            "(select count(*) from platform_control.conversation_messages),"
+            "(select count(*) from platform_control.conversation_turns)"
+        ).fetchone()
+    assert counts == (1, 0, 0)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("column", "replacement"),
+    (
+        ("title", "其他会话"),
+        ("status", "archived"),
+        ("direct_agent_id", "fae-bot"),
+        ("mode", "brain"),
+    ),
+)
+def test_direct_conversation_shell_replay_rejects_contract_mismatch(
+    conversation_database,
+    repository,
+    column,
+    replacement,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    request_id = uuid4()
+    record = repository.ensure_direct_conversation_shell(
+        owner_id,
+        request_id,
+        direct_agent_id="hr-bot",
+        title="全景分析",
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        if column == "status":
+            connection.execute(
+                "update platform_control.conversations "
+                "set status=%s,archived_at=now() where conversation_id=%s",
+                (replacement, record.conversation_id),
+            )
+        elif column == "mode":
+            connection.execute(
+                "update platform_control.conversations "
+                "set mode=%s,direct_agent_id=null where conversation_id=%s",
+                (replacement, record.conversation_id),
+            )
+        else:
+            connection.execute(
+                f"update platform_control.conversations set {column}=%s "
+                "where conversation_id=%s",
+                (replacement, record.conversation_id),
+            )
+
+    with pytest.raises(ConversationRepositoryConflict):
+        repository.ensure_direct_conversation_shell(
+            owner_id,
+            request_id,
+            direct_agent_id="hr-bot",
+            title="全景分析",
+        )
+
+
+@pytest.mark.postgres
 def test_conversations_are_owner_scoped_and_listed_by_recent_update(
     conversation_database,
     repository,
@@ -242,7 +447,7 @@ def test_append_turn_is_monotonic_and_blocks_overlap_or_archive(
     first = repository.start(owner_id, uuid4(), "第一轮")
     conversation_id = first.conversation.conversation_id
 
-    with pytest.raises(ConversationRepositoryConflict):
+    with pytest.raises(ConversationTurnInProgress):
         repository.append_turn(owner_id, conversation_id, uuid4(), "过早追问")
 
     _complete_turn(environment, first.turn.turn_id)
@@ -258,8 +463,9 @@ def test_append_turn_is_monotonic_and_blocks_overlap_or_archive(
     archived = repository.archive(owner_id, conversation_id)
     assert archived.status == "archived"
     assert archived.archived_at is not None
-    with pytest.raises(ConversationRepositoryConflict):
+    with pytest.raises(ConversationRepositoryConflict) as archived_error:
         repository.append_turn(owner_id, conversation_id, uuid4(), "不能继续")
+    assert not isinstance(archived_error.value, ConversationTurnInProgress)
 
 
 @pytest.mark.postgres

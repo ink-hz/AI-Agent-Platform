@@ -33,12 +33,14 @@ from app.execution_relay.content_crypto import ContentCodec
 from app.execution_relay.models import RelayEvent
 from app.execution_relay.repository import ExecutionRelayRepository
 from app.hr.models import BindPositionConversation, CreateManualPosition
+from app.hr.panorama_context import PanoramaContextFragment
 from app.hr.position_intelligence_models import (
     CreatePositionTaskRequest,
     HrPositionContextEnvelope,
 )
 from app.hr.position_intelligence_repository import PositionIntelligenceRepository
 from app.hr.repository import HrPositionRepository
+from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
 from app.hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
 from test_control_plane_migration import control_database
 
@@ -61,6 +63,96 @@ def _wrong_codec_same_version() -> ContentCodec:
             _keys={4: b"x" * 32},
         )
     )
+
+
+def test_planning_prompt_includes_hr_contract_only_when_context_carries_one() -> None:
+    card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
+    hr_context = ConversationContext(
+        summary=None,
+        messages=(ContextMessage(role="user", content="生成 JD"),),
+        estimated_utf8_bytes=64,
+        hr_workflow_contract=HR_WORKFLOW_CONTRACT_V1,
+    )
+    ordinary_context = ConversationContext(
+        summary=None,
+        messages=(ContextMessage(role="user", content="生成 JD"),),
+        estimated_utf8_bytes=64,
+    )
+
+    hr_document = json.loads(build_planning_prompt(hr_context, (card,)).split("\n", 1)[1])
+    ordinary_document = json.loads(
+        build_planning_prompt(ordinary_context, (card,)).split("\n", 1)[1]
+    )
+
+    assert hr_document["hr_workflow_contract"] == HR_WORKFLOW_CONTRACT_V1
+    assert "hr_workflow_contract" not in ordinary_document
+
+
+def test_planning_prompt_includes_panorama_only_when_context_carries_fragment() -> None:
+    card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
+    insight_id = uuid4()
+    fragment = PanoramaContextFragment(
+        insight_version_ids=(insight_id,),
+        query_sha256="a" * 64,
+        as_of=datetime(2026, 9, 5, 8, tzinfo=timezone.utc),
+        facts=(
+            {
+                "insight_version_id": str(insight_id),
+                "fact_id": "f1",
+                "text": "公开事实",
+                "source_url": "https://example.com/jobs/1",
+                "observed_at": "2026-09-05T08:00:00+00:00",
+                "truncated": False,
+            },
+        ),
+        inferences=(
+            {
+                "insight_version_id": str(insight_id),
+                "text": "AI 推断",
+                "basis_fact_ids": ("f1",),
+                "basis_sources": (
+                    {
+                        "source_url": "https://example.com/jobs/1",
+                        "observed_at": "2026-09-05T08:00:00+00:00",
+                    },
+                ),
+                "truncated": False,
+            },
+        ),
+        unknowns=(
+            {
+                "insight_version_id": str(insight_id),
+                "text": "未知项",
+                "source_urls": (),
+                "evidence_status": "unverified",
+                "as_of": "2026-09-05T08:00:00+00:00",
+                "truncated": False,
+            },
+        ),
+        source_urls=("https://example.com/jobs/1",),
+        stale_age_days=None,
+    )
+    panorama_context = ConversationContext(
+        summary=None,
+        messages=(ContextMessage(role="user", content="参考全景分析"),),
+        estimated_utf8_bytes=64,
+        hr_panorama_context=fragment,
+    )
+    ordinary_context = ConversationContext(
+        summary=None,
+        messages=(ContextMessage(role="user", content="普通问题"),),
+        estimated_utf8_bytes=64,
+    )
+
+    panorama_document = json.loads(
+        build_planning_prompt(panorama_context, (card,)).split("\n", 1)[1]
+    )
+    ordinary_document = json.loads(
+        build_planning_prompt(ordinary_context, (card,)).split("\n", 1)[1]
+    )
+
+    assert panorama_document["hr_panorama_context"] == fragment.as_prompt_document()
+    assert "hr_panorama_context" not in ordinary_document
 
 
 class ScriptedRelay:
