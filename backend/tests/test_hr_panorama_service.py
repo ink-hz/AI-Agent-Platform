@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from types import SimpleNamespace
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 
@@ -88,6 +89,28 @@ class RecordingCoordinator:
         return run_id
 
 
+class RecordingConversations:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+        self.override: dict[str, object] = {}
+
+    def ensure_direct_conversation_shell(
+        self, owner_id, request_id, *, direct_agent_id, title
+    ):
+        self.calls.append((owner_id, request_id, direct_agent_id, title))
+        values = dict(
+            conversation_id=uuid5(request_id, "conversation"),
+            owner_internal_user_id=owner_id,
+            started_by_client_request_id=request_id,
+            mode="direct_agent",
+            direct_agent_id=direct_agent_id,
+            status="active",
+            title=title,
+        )
+        values.update(self.override)
+        return SimpleNamespace(**values)
+
+
 def test_add_company_replays_with_a_stable_company_kind_and_identity() -> None:
     owner_id, request_id = uuid4(), uuid4()
     repository = RecordingRepository()
@@ -159,6 +182,165 @@ def test_start_run_replays_the_same_durable_run_and_resubmits_same_turn_identity
         (owner_id, values["source_ids"]),
         (owner_id, values["source_ids"]),
     ]
+
+
+def test_start_run_without_conversation_ensures_one_deterministic_empty_shell() -> None:
+    owner_id, request_id = uuid4(), uuid4()
+    source_ids = (uuid4(),)
+    repository = RecordingRepository()
+    coordinator = RecordingCoordinator()
+    conversations = RecordingConversations()
+    service = PanoramaService(
+        repository,
+        coordinator=coordinator,
+        conversations=conversations,
+    )
+
+    first = service.start_run(
+        owner_id=owner_id,
+        request_id=request_id,
+        source_ids=source_ids,
+    )
+    replay = service.start_run(
+        owner_id=owner_id,
+        request_id=request_id,
+        source_ids=source_ids,
+    )
+
+    expected_run_id = uuid5(owner_id, f"hr-panorama:run:{request_id}")
+    expected_shell_request_id = uuid5(
+        expected_run_id, "hr-panorama:conversation-shell:v1"
+    )
+    assert first.run_id == replay.run_id == expected_run_id
+    assert first.conversation_id == replay.conversation_id
+    assert conversations.calls == [
+        (owner_id, expected_shell_request_id, "hr-bot", "全景分析"),
+        (owner_id, expected_shell_request_id, "hr-bot", "全景分析"),
+    ]
+    assert coordinator.preflight_calls == [
+        (owner_id, source_ids),
+        (owner_id, source_ids),
+    ]
+    assert coordinator.run_ids == [expected_run_id, expected_run_id]
+
+
+def test_preflight_failure_without_conversation_causes_zero_shell_or_run_writes() -> (
+    None
+):
+    class FailingCoordinator(RecordingCoordinator):
+        def preflight(self, owner_id, source_ids):
+            raise ValueError("destination invalid")
+
+    repository = RecordingRepository()
+    conversations = RecordingConversations()
+    service = PanoramaService(
+        repository,
+        coordinator=FailingCoordinator(),
+        conversations=conversations,
+    )
+
+    with pytest.raises(ValueError, match="destination invalid"):
+        service.start_run(
+            owner_id=uuid4(),
+            request_id=uuid4(),
+            source_ids=(uuid4(),),
+        )
+
+    assert conversations.calls == []
+    assert repository.calls == []
+
+
+def test_create_run_failure_then_retry_reuses_same_shell() -> None:
+    from app.hr.panorama_repository import PanoramaUnavailable
+
+    class FailOnceRepository(RecordingRepository):
+        def create_run(self, command):
+            if not any(call[0] == "create_run" for call in self.calls):
+                self.calls.append(("create_run", command))
+                raise PanoramaUnavailable("injected")
+            return super().create_run(command)
+
+    owner_id, request_id = uuid4(), uuid4()
+    repository = FailOnceRepository()
+    conversations = RecordingConversations()
+    service = PanoramaService(
+        repository,
+        coordinator=RecordingCoordinator(),
+        conversations=conversations,
+    )
+    values = dict(
+        owner_id=owner_id,
+        request_id=request_id,
+        source_ids=(uuid4(),),
+    )
+
+    with pytest.raises(PanoramaUnavailable):
+        service.start_run(**values)
+    run = service.start_run(**values)
+
+    assert len(conversations.calls) == 2
+    assert conversations.calls[0] == conversations.calls[1]
+    assert run.conversation_id == uuid5(conversations.calls[0][1], "conversation")
+
+
+def test_run_and_shell_identity_ignore_a_changing_resource_uuid_factory() -> None:
+    generated = iter((uuid4(), uuid4()))
+    owner_id, request_id = uuid4(), uuid4()
+    repository = RecordingRepository()
+    conversations = RecordingConversations()
+    service = PanoramaService(
+        repository,
+        coordinator=RecordingCoordinator(),
+        conversations=conversations,
+        uuid_factory=lambda: next(generated),
+    )
+    values = dict(
+        owner_id=owner_id,
+        request_id=request_id,
+        source_ids=(uuid4(),),
+    )
+
+    first = service.start_run(**values)
+    replay = service.start_run(**values)
+
+    expected_run_id = uuid5(owner_id, f"hr-panorama:run:{request_id}")
+    assert first.run_id == replay.run_id == expected_run_id
+    assert conversations.calls[0] == conversations.calls[1]
+
+
+@pytest.mark.parametrize(
+    ("override", "error"),
+    (
+        ({"owner_internal_user_id": uuid4()}, "owner"),
+        ({"started_by_client_request_id": uuid4()}, "request"),
+        ({"status": "archived"}, "status"),
+        ({"mode": "brain"}, "mode"),
+        ({"direct_agent_id": "fae-bot"}, "agent"),
+        ({"title": "其他会话"}, "title"),
+    ),
+)
+def test_generated_shell_mismatch_fails_closed_before_run_create(
+    override, error
+) -> None:
+    from app.hr.panorama_repository import PanoramaConflict
+
+    repository = RecordingRepository()
+    conversations = RecordingConversations()
+    conversations.override = override
+    service = PanoramaService(
+        repository,
+        coordinator=RecordingCoordinator(),
+        conversations=conversations,
+    )
+
+    with pytest.raises(PanoramaConflict, match="conversation"):
+        service.start_run(
+            owner_id=uuid4(),
+            request_id=uuid4(),
+            source_ids=(uuid4(),),
+        )
+
+    assert not any(call[0] == "create_run" for call in repository.calls), error
 
 
 def test_start_run_without_runtime_fails_before_creating_a_run() -> None:

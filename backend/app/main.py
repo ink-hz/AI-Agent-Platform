@@ -1201,6 +1201,7 @@ def create_app(
             hr_panorama_service = PanoramaService(
                 panorama_repository,
                 coordinator=hr_panorama_coordinator,
+                conversations=conversation_command_service,
             )
         if hr_panorama_context_provider is None:
             hr_panorama_context_provider = PanoramaContextProvider(

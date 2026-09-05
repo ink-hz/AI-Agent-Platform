@@ -6,6 +6,7 @@ from uuid import UUID
 
 from app.agent_brain.conversation_models import (
     ConversationCreateResult,
+    ConversationRecord,
     ConversationTurnSubmission,
     normalize_turn_submission,
 )
@@ -46,6 +47,21 @@ class ConversationCommandService:
         self._max_steps = max_steps
         self._max_tasks = max_tasks
         self._max_duration_seconds = max_duration_seconds
+
+    def ensure_direct_conversation_shell(
+        self,
+        owner: UUID,
+        request_id: UUID,
+        *,
+        direct_agent_id: str,
+        title: str,
+    ) -> ConversationRecord:
+        return self._repository.ensure_direct_conversation_shell(
+            owner,
+            request_id,
+            direct_agent_id=direct_agent_id,
+            title=title,
+        )
 
     def start(
         self,

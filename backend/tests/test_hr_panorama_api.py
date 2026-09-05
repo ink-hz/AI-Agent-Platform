@@ -280,6 +280,32 @@ def test_panorama_runs_are_owner_scoped_and_serialize_progress_without_internals
     assert "owner_id" not in started.text
 
 
+def test_panorama_run_can_create_its_own_conversation_shell() -> None:
+    client, service, owner_id = _client()
+    request_id = uuid4()
+
+    started = client.post(
+        "/api/hr/panorama/runs",
+        headers=_headers(request_id),
+        json={"source_ids": [str(service.source.source_id)]},
+    )
+
+    assert started.status_code == 202
+    assert started.headers["cache-control"] == "private, no-store"
+    assert started.json()["conversation_id"] == str(service.run.conversation_id)
+    assert service.calls == [
+        (
+            "start_run",
+            {
+                "owner_id": owner_id,
+                "request_id": request_id,
+                "source_ids": (service.source.source_id,),
+                "conversation_id": None,
+            },
+        )
+    ]
+
+
 def test_panorama_reports_list_and_detail_are_explicit_and_owner_scoped() -> None:
     client, service, owner_id = _client()
 
@@ -550,6 +576,32 @@ def test_real_security_middleware_authorizes_panorama_in_the_existing_hr_univers
     assert service.calls[1][0] == "add_company"
 
 
+def test_real_security_middleware_protects_generated_conversation_run() -> None:
+    client, service = _security_client()
+    payload = {"source_ids": [str(service.source.source_id)]}
+    origin = "https://agent.example.test"
+
+    missing_csrf = client.post(
+        "/api/hr/panorama/runs",
+        json=payload,
+        headers={"Origin": origin, "Idempotency-Key": str(uuid4())},
+    )
+    accepted = client.post(
+        "/api/hr/panorama/runs",
+        json=payload,
+        headers={
+            "Origin": origin,
+            "X-CSRF-Token": "csrf-token",
+            "Idempotency-Key": str(uuid4()),
+        },
+    )
+
+    assert missing_csrf.status_code == 403
+    assert accepted.status_code == 202
+    assert accepted.headers["cache-control"] == "private, no-store"
+    assert service.calls[0][0] == "start_run"
+
+
 def test_real_security_middleware_blocks_stale_panorama_mutations() -> None:
     client, service = _security_client(stale=True)
 
@@ -567,9 +619,18 @@ def test_real_security_middleware_blocks_stale_panorama_mutations() -> None:
             "Idempotency-Key": str(uuid4()),
         },
     )
+    blocked_run = client.post(
+        "/api/hr/panorama/runs",
+        json={"source_ids": [str(service.source.source_id)]},
+        headers={
+            "Origin": "https://agent.example.test",
+            "X-CSRF-Token": "csrf-token",
+            "Idempotency-Key": str(uuid4()),
+        },
+    )
 
     assert readable.status_code == 200
-    assert blocked.status_code == 503
+    assert blocked.status_code == blocked_run.status_code == 503
     assert service.calls == [("list_companies", service.owner_id, False, 100)]
 
 

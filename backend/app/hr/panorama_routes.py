@@ -88,7 +88,7 @@ class StartRunBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=100)
-    conversation_id: UUID
+    conversation_id: UUID | None = None
 
 
 def _request_id(value: str | None) -> UUID:

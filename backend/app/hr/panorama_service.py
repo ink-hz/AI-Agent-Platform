@@ -7,6 +7,11 @@ from collections.abc import Callable
 from typing import Protocol
 from uuid import UUID, uuid5
 
+from app.agent_brain.conversation_repository import (
+    ConversationRepositoryConflict,
+    ConversationRepositoryError,
+)
+
 from .panorama_models import (
     CreatePanoramaRun,
     CreateTalentSource,
@@ -15,7 +20,9 @@ from .panorama_models import (
     TalentInsightVersion,
     TalentSource,
 )
-from .panorama_repository import PanoramaUnavailable
+from .panorama_repository import PanoramaConflict, PanoramaUnavailable
+
+_PANORAMA_CONVERSATION_TITLE = "全景分析"
 
 
 class PanoramaCommandRepository(Protocol):
@@ -46,6 +53,7 @@ class PanoramaService:
         repository: PanoramaCommandRepository,
         *,
         coordinator: object | None = None,
+        conversations: object | None = None,
         uuid_factory: Callable[[], UUID] | None = None,
     ) -> None:
         for method in (
@@ -66,8 +74,13 @@ class PanoramaService:
             for name in ("preflight", "submit")
         ):
             raise ValueError("panorama coordinator invalid")
+        if conversations is not None and not callable(
+            getattr(conversations, "ensure_direct_conversation_shell", None)
+        ):
+            raise ValueError("panorama conversations invalid")
         self._repository = repository
         self._coordinator = coordinator
+        self._conversations = conversations
         self._uuid_factory = uuid_factory
 
     def _resource_id(self, owner_id: UUID, request_id: UUID, operation: str) -> UUID:
@@ -114,18 +127,47 @@ class PanoramaService:
         owner_id: UUID,
         request_id: UUID,
         source_ids: tuple[UUID, ...],
-        conversation_id: UUID,
+        conversation_id: UUID | None = None,
     ) -> PanoramaRun:
         if self._coordinator is None:
             raise PanoramaUnavailable("panorama runtime unavailable")
         self._coordinator.preflight(owner_id, source_ids)
+        run_id = uuid5(owner_id, f"hr-panorama:run:{request_id}")
+        selected_conversation_id = conversation_id
+        if selected_conversation_id is None:
+            if self._conversations is None:
+                raise PanoramaUnavailable("panorama conversations unavailable")
+            shell_request_id = uuid5(run_id, "hr-panorama:conversation-shell:v1")
+            try:
+                shell = self._conversations.ensure_direct_conversation_shell(
+                    owner_id,
+                    shell_request_id,
+                    direct_agent_id="hr-bot",
+                    title=_PANORAMA_CONVERSATION_TITLE,
+                )
+            except ConversationRepositoryConflict:
+                raise PanoramaConflict("panorama conversation conflict") from None
+            except ConversationRepositoryError:
+                raise PanoramaUnavailable("panorama conversation unavailable") from None
+            if (
+                getattr(shell, "owner_internal_user_id", None) != owner_id
+                or getattr(shell, "started_by_client_request_id", None)
+                != shell_request_id
+                or getattr(shell, "mode", None) != "direct_agent"
+                or getattr(shell, "direct_agent_id", None) != "hr-bot"
+                or getattr(shell, "status", None) != "active"
+                or getattr(shell, "title", None) != _PANORAMA_CONVERSATION_TITLE
+                or not isinstance(getattr(shell, "conversation_id", None), UUID)
+            ):
+                raise PanoramaConflict("panorama conversation mismatch")
+            selected_conversation_id = shell.conversation_id
         run = self._repository.create_run(
             CreatePanoramaRun(
-                run_id=self._resource_id(owner_id, request_id, "run"),
+                run_id=run_id,
                 owner_id=owner_id,
                 client_request_id=request_id,
                 selected_source_ids=source_ids,
-                conversation_id=conversation_id,
+                conversation_id=selected_conversation_id,
             )
         )
         if self._coordinator is not None:
