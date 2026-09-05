@@ -12,7 +12,7 @@ const MODULE_LABELS: Record<string, string> = {
 type ContextState = { current: HrContextVersion | null; drafts: HrContextVersion[]; history: HrContextVersion[] };
 
 function moduleText(value: Record<string, unknown>): string {
-  const preferred = [value.summary, value.text, value.title].find((item) => typeof item === "string");
+  const preferred = [value.visible_markdown, value.summary, value.text, value.title].find((item) => typeof item === "string");
   return typeof preferred === "string" ? preferred : JSON.stringify(value, null, 2);
 }
 
@@ -79,6 +79,7 @@ export function HrPositionContextPanel({ api, positionId, onConfirmed, readOnly 
     {!data && !notice && <p aria-live="polite">正在读取岗位理解…</p>}
     {!data && notice && <p role="alert">{notice}。<button type="button" onClick={() => setLoadAttempt((value) => value + 1)}>重试</button></p>}
     {data?.current && <article className="hr-context-current"><h3>当前已确认 v{data.current.displayVersion}</h3><p>{data.current.summary}</p></article>}
+    {data && !data.current && <p className="hr-context-empty">尚未形成内部岗位理解。可通过岗位任务生成并确认。</p>}
     {data && <section aria-label="待确认草稿"><h3>{data.drafts.length} 个待确认草稿</h3>
       {data.drafts.length === 0 && <p>当前没有待确认上下文草稿。</p>}
       {data.drafts.map((draft) => {

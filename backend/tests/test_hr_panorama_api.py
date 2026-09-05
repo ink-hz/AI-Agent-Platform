@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
+from io import BytesIO
 from types import SimpleNamespace
 from uuid import UUID, uuid4
+from zipfile import ZipFile
 
 import pytest
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
+from pypdf import PdfReader
 
 from app.control_plane.authorization import AuthorizationService
 from app.control_plane.middleware import IdentitySecurityMiddleware
@@ -342,6 +347,229 @@ def test_panorama_reports_list_and_detail_are_explicit_and_owner_scoped() -> Non
     assert "owner_id" not in serialized
     assert "client_request_id" not in serialized
     assert "origin_request_id" not in serialized
+
+
+def test_panorama_report_exports_are_owner_scoped_versioned_pdf_and_excel() -> None:
+    client, service, owner_id = _client()
+    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
+
+    pdf = client.get(f"{base}?format=pdf")
+    excel = client.get(f"{base}?format=xlsx")
+
+    assert pdf.status_code == excel.status_code == 200
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF-")
+    assert len(PdfReader(BytesIO(pdf.content)).pages) >= 2
+    assert "panorama-v1" in pdf.headers["content-disposition"]
+    assert excel.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert excel.content.startswith(b"PK")
+    assert "panorama-v1" in excel.headers["content-disposition"]
+    with ZipFile(BytesIO(excel.content)) as archive:
+        workbook = archive.read("xl/workbook.xml").decode("utf-8")
+        worksheet_xml = "".join(
+            archive.read(name).decode("utf-8")
+            for name in archive.namelist()
+            if name.startswith("xl/worksheets/") and name.endswith(".xml")
+        )
+    assert "岗位明细" in workbook
+    assert "结构工程师" in worksheet_xml
+    assert service.calls == [
+        ("report", owner_id, service.insight.insight_version_id),
+        ("report", owner_id, service.insight.insight_version_id),
+    ]
+
+
+def test_panorama_excel_neutralizes_formula_cells_from_public_content() -> None:
+    client, service, _ = _client()
+    poisoned = PublicJobSnapshot(
+        service.snapshot.snapshot_id,
+        service.snapshot.owner_id,
+        service.snapshot.origin_request_id,
+        service.snapshot.run_id,
+        service.snapshot.source_id,
+        service.snapshot.public_job_key,
+        '=HYPERLINK("https://attacker.invalid","岗位")',
+        service.snapshot.location,
+        service.snapshot.duty_excerpt,
+        service.snapshot.requirement_excerpt,
+        service.snapshot.source_url,
+        service.snapshot.observed_at,
+        service.snapshot.content_sha256,
+        service.snapshot.status,
+        service.snapshot.created_at,
+    )
+    service.report_value = PanoramaReport(
+        service.insight, (service.source,), (poisoned,)
+    )
+
+    response = client.get(
+        f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export?format=xlsx"
+    )
+
+    assert response.status_code == 200
+    workbook = load_workbook(BytesIO(response.content), data_only=False)
+    assert all(
+        cell.data_type != "f"
+        for sheet in workbook.worksheets
+        for row in sheet.iter_rows()
+        for cell in row
+    )
+    assert workbook["岗位明细"]["B2"].value.startswith("'=HYPERLINK")
+
+
+def test_panorama_pdf_accepts_maximum_valid_job_excerpts() -> None:
+    client, service, _ = _client()
+    long_snapshot = PublicJobSnapshot(
+        service.snapshot.snapshot_id,
+        service.snapshot.owner_id,
+        service.snapshot.origin_request_id,
+        service.snapshot.run_id,
+        service.snapshot.source_id,
+        service.snapshot.public_job_key,
+        service.snapshot.title,
+        service.snapshot.location,
+        "职责" * 8_000,
+        "要求" * 8_000,
+        service.snapshot.source_url,
+        service.snapshot.observed_at,
+        service.snapshot.content_sha256,
+        service.snapshot.status,
+        service.snapshot.created_at,
+    )
+    service.report_value = PanoramaReport(
+        service.insight, (service.source,), (long_snapshot,)
+    )
+
+    response = client.get(
+        f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export?format=pdf"
+    )
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF-")
+
+
+def test_panorama_export_applies_job_filters_and_includes_analysis_dimensions() -> None:
+    client, service, _ = _client()
+    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
+
+    included = client.get(
+        f"{base}?format=xlsx&recruitment_track=unknown&technical_direction=structure"
+    )
+    excluded = client.get(
+        f"{base}?format=xlsx&recruitment_track=campus&technical_direction=algorithm"
+    )
+
+    assert included.status_code == excluded.status_code == 200
+    included_book = load_workbook(BytesIO(included.content), data_only=False)
+    excluded_book = load_workbook(BytesIO(excluded.content), data_only=False)
+    included_rows = list(included_book["岗位明细"].iter_rows(values_only=True))
+    excluded_rows = list(excluded_book["岗位明细"].iter_rows(values_only=True))
+    assert included_rows[0][:6] == (
+        "公司",
+        "岗位",
+        "招聘类型",
+        "技术方向",
+        "地点",
+        "状态",
+    )
+    assert included_rows[1][1:4] == ("结构工程师", "待分类", "结构")
+    assert excluded_rows == [included_rows[0]]
+    assert list(excluded_book["情报来源"].iter_rows(values_only=True)) == [
+        ("公司", "渠道地址", "岗位命中数", "最近观测", "证据状态")
+    ]
+    assert list(excluded_book["公开事实"].iter_rows(values_only=True)) == [
+        ("事实", "来源", "观测时间")
+    ]
+    assert excluded_book["总览"]["B3"].value is None
+
+
+def test_panorama_filtered_export_keeps_only_complete_inference_evidence() -> None:
+    client, service, _ = _client()
+    second_source = replace(
+        service.source,
+        source_id=uuid4(),
+        client_request_id=uuid4(),
+        company_key="second-company",
+        canonical_name="第二家公司",
+        approved_urls=("https://second.example.com/jobs",),
+    )
+    second_snapshot = replace(
+        service.snapshot,
+        snapshot_id=uuid4(),
+        origin_request_id=uuid4(),
+        source_id=second_source.source_id,
+        public_job_key="job-2",
+        title="AI_Engineer",
+        duty_excerpt="Build AI systems",
+        requirement_excerpt="experienced_hires welcome",
+        source_url="https://second.example.com/jobs/experienced_hires",
+        content_sha256="b" * 64,
+    )
+    second_fact = {
+        "fact_id": "f2",
+        "text": "第二家公司公开招聘 AI 工程师",
+        "snapshot_id": str(second_snapshot.snapshot_id),
+        "observation_id": str(second_snapshot.origin_request_id),
+        "source_url": second_snapshot.source_url,
+        "observed_at": NOW.isoformat(),
+    }
+    insight = replace(
+        service.insight,
+        selected_source_ids=(service.source.source_id, second_source.source_id),
+        snapshot_ids=(service.snapshot.snapshot_id, second_snapshot.snapshot_id),
+        facts=(*service.insight.facts, second_fact),
+        inferences=(
+            {
+                "text": "两家公司正在共同增加研发投入",
+                "basis_fact_ids": ("f1", "f2"),
+            },
+        ),
+        direction_clusters={"结构": 10, "算法": 99},
+    )
+    service.report_value = PanoramaReport(
+        insight,
+        (service.source, second_source),
+        (service.snapshot, second_snapshot),
+    )
+    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
+
+    response = client.get(
+        f"{base}?format=xlsx&source_id={service.source.source_id}"
+    )
+
+    assert response.status_code == 200
+    workbook = load_workbook(BytesIO(response.content), data_only=False)
+    assert list(workbook["AI推断"].iter_rows(values_only=True)) == [
+        ("推断", "依据事实ID")
+    ]
+    assert workbook["总览"]["B6"].value == '{"结构": 1}'
+    assert "第二家公司" not in str(workbook["总览"]["B3"].value)
+
+
+def test_panorama_export_keyword_boundaries_match_web_classification() -> None:
+    client, service, _ = _client()
+    service.report_value = PanoramaReport(
+        service.insight,
+        (service.source,),
+        (
+            replace(
+                service.snapshot,
+                title="AI_Engineer",
+                requirement_excerpt="experienced_hires welcome",
+                source_url="https://example.com/jobs/experienced_hires",
+            ),
+        ),
+    )
+    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
+
+    algorithm = client.get(f"{base}?format=xlsx&technical_direction=algorithm")
+    social = client.get(f"{base}?format=xlsx&recruitment_track=social")
+
+    assert algorithm.status_code == social.status_code == 200
+    assert load_workbook(BytesIO(algorithm.content))["岗位明细"]["B2"].value == "AI_Engineer"
+    assert load_workbook(BytesIO(social.content))["岗位明细"]["B2"].value == "AI_Engineer"
 
 
 def test_panorama_reads_and_failures_always_disable_storage() -> None:

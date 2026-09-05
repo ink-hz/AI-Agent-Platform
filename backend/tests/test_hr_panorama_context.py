@@ -185,6 +185,23 @@ def test_named_followed_company_retrieves_only_latest_version_and_records_turn()
     assert source.recorded.query_sha256 == fragment.query_sha256
 
 
+def test_position_task_kind_selects_panorama_only_for_external_market_tasks() -> None:
+    sourcing = PanoramaContextProvider(
+        MemorySource((_insight(uuid4()),)), now=lambda: NOW
+    ).for_turn(
+        OWNER, POSITION, "生成搜寻策略", TURN, task_kind="sourcing_strategy"
+    )
+    interview = PanoramaContextProvider(
+        MemorySource((_insight(uuid4()),)), now=lambda: NOW
+    ).for_turn(
+        OWNER, POSITION, "生成岗位面试方案", uuid4(),
+        task_kind="position_interview_plan",
+    )
+
+    assert sourcing is not None
+    assert interview is None
+
+
 def test_named_company_filters_unrelated_facts_from_a_multi_company_insight() -> None:
     alpha_id, beta_id = uuid4(), uuid4()
     sources = (

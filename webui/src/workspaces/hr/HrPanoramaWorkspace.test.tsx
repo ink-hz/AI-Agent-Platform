@@ -10,7 +10,7 @@ import type { HrPanoramaInsight, HrPanoramaReport, HrPanoramaRun, HrPanoramaSour
 import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
 
 const account: Account = { internal_user_id: "member", display_name: "磐德", role: "member", departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf" };
-const source: HrPanoramaSource = { sourceId: "11111111-1111-4111-8111-111111111111", sourceKind: "company", canonicalName: "联合光电", aliases: [], approvedUrls: ["https://example.com/jobs"], active: true, createdAt: "2026-09-04T08:00:00Z", updatedAt: "2026-09-05T08:00:00Z" };
+const source: HrPanoramaSource = { sourceId: "11111111-1111-4111-8111-111111111111", sourceKind: "company", canonicalName: "联合光电", aliases: ["中山联合光电", "Union Optech"], approvedUrls: ["https://www.union-optech.com"], active: true, createdAt: "2026-09-04T08:00:00Z", updatedAt: "2026-09-05T08:00:00Z" };
 const source2: HrPanoramaSource = { ...source, sourceId: "22222222-2222-4222-8222-222222222222", canonicalName: "舜宇光学", approvedUrls: ["https://sunny.example/jobs"] };
 const insight: HrPanoramaInsight = { insightVersionId: "55555555-5555-4555-8555-555555555555", runId: "33333333-3333-4333-8333-333333333333", versionNumber: 1, selectedSourceIds: [source.sourceId, source2.sourceId], snapshotIds: [], facts: [], inferences: [], unknowns: [{ text: "实际 HC 未公开" }], directionClusters: { 结构: 4 }, summary: "最近一次有效报告", sourceConversationId: "44444444-4444-4444-8444-444444444444", sourceTurnId: "99999999-9999-4999-8999-999999999999", agentId: "hr-bot", modelVersion: "gpt-5", createdAt: "2026-09-05T09:00:00Z" };
 const report: HrPanoramaReport = { insight, sources: [source, source2], snapshots: [] };
@@ -47,6 +47,54 @@ describe("HrPanoramaWorkspace", () => {
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "立即更新")?.click());
     expect(container.textContent).toContain("正在收集公开招聘岗位");
     expect(api.startRun).toHaveBeenCalledWith({ sourceIds: [source.sourceId, source2.sourceId], conversationId: insight.sourceConversationId }, expect.stringMatching(/^[0-9a-f-]{36}$/i), expect.any(AbortSignal));
+  });
+
+  it("shows the complete ten-company catalog and keeps session-derived companies as unconfirmed leads", async () => {
+    const api = fakeApi();
+    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} />));
+    await act(async () => undefined);
+
+    for (const name of ["联合光电", "速腾聚创", "禾赛科技", "拓竹", "创想三维", "智能派", "知象光电", "先临三维", "思看科技", "智元机器人"]) {
+      expect(container.textContent).toContain(name);
+    }
+    expect(container.textContent).toContain("补齐 9 家重点公司");
+    expect(container.textContent).toContain("历史会话线索");
+    expect(container.textContent).toContain("影石");
+    expect(container.textContent).toContain("华为");
+    expect(container.textContent).toContain("确认后再加入，不自动采集");
+  });
+
+  it("adds every missing catalog company once and selects the successful additions", async () => {
+    let index = 10;
+    const addCompany = vi.fn().mockImplementation(async (input) => ({
+      ...source,
+      sourceId: `aaaaaaaa-aaaa-4aaa-8aaa-${String(index++).padStart(12, "0")}`,
+      canonicalName: input.canonicalName,
+      aliases: input.aliases,
+      approvedUrls: input.approvedUrls,
+    }));
+    const api = fakeApi({ listCompanies: vi.fn().mockResolvedValue([source]), addCompany });
+    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} />));
+    await act(async () => undefined);
+
+    const fill = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "补齐 9 家重点公司");
+    expect(fill).toBeDefined();
+    await act(async () => fill?.click());
+
+    expect(addCompany).toHaveBeenCalledTimes(9);
+    expect(new Set(addCompany.mock.calls.map(([input]) => input.canonicalName)).size).toBe(9);
+    expect(container.textContent).toContain("10 家重点公司已加入");
+    expect(container.textContent).toContain("分析范围：10 家");
+  });
+
+  it("does not falsely certify an existing catalog company whose approved channels are incomplete", async () => {
+    const legacy = { ...source, canonicalName: "禾赛科技", aliases: ["禾赛"], approvedUrls: ["https://www.hesaitech.com/cn/careers"] };
+    const api = fakeApi({ listCompanies: vi.fn().mockResolvedValue([legacy]) });
+    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} />));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain("已关注 · 情报来源待升级");
+    expect(container.textContent).not.toContain("已关注 · 社招/校招");
   });
 
   it("loads a report deep link directly even when it is older than the history window", async () => {

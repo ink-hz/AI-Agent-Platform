@@ -33,6 +33,7 @@ from app.hr.task_repository import PostgresHrPositionTaskRepository
 from app.hr.task_routes import build_hr_position_task_router
 from app.hr.task_service import (
     HrPositionTask,
+    HrTaskReference,
     HrPositionTaskConflict,
     HrPositionTaskNotFound,
     HrPositionTaskService,
@@ -685,11 +686,43 @@ def test_task_detail_route_returns_authoritative_terminal_candidate_binding():
         "turn_id": str(service.task.turn_id),
         "candidate_id": str(CANDIDATE),
         "position_candidate_id": str(RELATION),
+        "references": [],
     }
     assert service.calls == [
         ("access", False),
         ("get", (OWNER, POSITION, service.task.task_id)),
     ]
+
+
+def test_task_detail_route_projects_only_safe_human_readable_references():
+    client, service = route_client()
+    reference_id = uuid4()
+    service.task = replace(
+        service.task,
+        references=(HrTaskReference(
+            source_type="official_position",
+            source_id=reference_id,
+            display_label="官网岗位 · sync-v2",
+            version="sync-v2",
+            selected_reason="岗位任务的官网基线",
+            freshness="2026-09-05",
+        ),),
+    )
+
+    response = client.get(
+        f"/api/hr/positions/{POSITION}/tasks/{service.task.task_id}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["references"] == [{
+        "source_type": "official_position",
+        "source_id": str(reference_id),
+        "display_label": "官网岗位 · sync-v2",
+        "version": "sync-v2",
+        "selected_reason": "岗位任务的官网基线",
+        "freshness": "2026-09-05",
+    }]
+    assert "prompt_context" not in json.dumps(response.json())
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,7 @@ import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmis
 import { createHrApi, type HrApi } from "../../hrApi";
 import { createHrR12Api, type HrR12Api } from "../../hrR12Api";
 import type { HrContextVersion, HrPositionMaterialItem, HrPositionSection, HrPositionTaskKind, HrTaskRecord } from "../../hrR12Types";
+import { HrTaskReferences } from "./HrTaskReferences";
 import type { HrPositionDetail } from "../../hrTypes";
 import type { ConversationPageClient } from "../../pages/ConversationPage";
 import { navigate } from "../../router";
@@ -113,7 +114,9 @@ export function HrPositionWorkspace({
   const [materialNotice, setMaterialNotice] = useState<string | null>(null);
   const [resourceRefreshGeneration, setResourceRefreshGeneration] = useState(0);
   const [contextRefreshGeneration, setContextRefreshGeneration] = useState(0);
-  const [detailsOpen, setDetailsOpen] = useState(() => detailsTabForSection(section) !== null);
+  const [openDrawer, setOpenDrawer] = useState<"materials" | "position" | null>(
+    () => detailsTabForSection(section) !== null ? "position" : null,
+  );
   const [detailsTab, setDetailsTab] = useState<HrPositionDetailsTab>(() => detailsTabForSection(section) ?? "position");
   const taskController = useRef<AbortController | null>(null);
   const artifactRefreshController = useRef<AbortController | null>(null);
@@ -143,11 +146,11 @@ export function HrPositionWorkspace({
   useEffect(() => {
     const routeTab = detailsTabForSection(section);
     if (routeTab === null) {
-      setDetailsOpen(false);
+      setOpenDrawer(null);
       return;
     }
     setDetailsTab(routeTab);
-    setDetailsOpen(true);
+    setOpenDrawer("position");
   }, [section]);
 
   useEffect(() => {
@@ -265,17 +268,18 @@ export function HrPositionWorkspace({
   }
   const taskLabel: Record<string, string> = { jd: "JD", jr: "JR", talent_profile: "人才画像", sourcing_strategy: "搜寻策略", position_interview_plan: "面试方案", candidate_match: "候选人匹配", candidate_interview_plan: "候选人面试题", candidate_comparison: "候选人比较" };
   const taskStatusLabel: Record<string, string> = { accepted: "已受理", running: "执行中", completed: "已完成", failed: "执行失败" };
-  const visibleTasks = activeTasks.filter((task) => task.status === "accepted" || task.status === "running" || task.status === "failed");
+  const visibleTasks = activeTasks.filter((task) => task.status === "accepted" || task.status === "running" || task.status === "completed" || task.status === "failed");
   const taskStatus = taskState === "unavailable"
     ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><p>任务状态暂时不可用。<button type="button" onClick={() => setTaskRefresh((value) => value + 1)}>刷新任务状态</button></p></section>
     : taskState === "ready" && visibleTasks.length > 0
-      ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><ul>{visibleTasks.map((task) => <li key={task.taskId}>{taskLabel[task.taskKind] ?? task.taskKind}：{taskStatusLabel[task.status] ?? task.status}{task.error ? ` · ${task.error}` : ""}</li>)}</ul></section>
+      ? <section aria-label="岗位任务状态" className="hr-position-task-status" aria-live="polite"><ul>{visibleTasks.map((task) => <li key={task.taskId}><span>{taskLabel[task.taskKind] ?? task.taskKind}：{taskStatusLabel[task.status] ?? task.status}{task.error ? ` · ${task.error}` : ""}</span><HrTaskReferences references={task.references ?? []} /></li>)}</ul></section>
       : null;
 
   return <main className="hr-position-workspace is-chat-first" data-position-id={positionId}>
     <HrPositionHeader detail={detail} readOnly={account.hard_stale_read_only}
       onNewConversation={() => onOpenConversation(`/hr/positions/${encodeURIComponent(positionId)}`)}
-      onOpenDetails={() => setDetailsOpen(true)} />
+      onOpenDetails={() => setOpenDrawer("position")}
+      onOpenMaterials={selectedConversationId ? () => setOpenDrawer("materials") : undefined} />
     {conversationId && !selectedConversationId && <p className="hr-position-scope-error" role="alert">该对话不属于当前岗位，已阻止跨岗位读取。</p>}
     {materialNotice && <p className="hr-position-scope-error" role="status">{materialNotice}</p>}
     <section aria-label="岗位对话" className="hr-position-chat-surface"><DirectAgentWorkspace
@@ -303,6 +307,9 @@ export function HrPositionWorkspace({
       </section>}
       newConversationScope={scope}
       onOpenConversation={onOpenConversation}
+      materialsOpen={openDrawer === "materials"}
+      onMaterialsOpenChange={(open) => setOpenDrawer(open ? "materials" : null)}
+      showMaterialsTrigger={false}
       onPositionMaterialChange={account.hard_stale_read_only ? undefined : changePositionMaterial}
       positionMaterialIds={promotedMaterialIds}
       positionArtifactAttachmentIds={detail.artifactAttachmentIds}
@@ -314,8 +321,8 @@ export function HrPositionWorkspace({
     /></section>
     <HrPositionDetailsDrawer activeTab={detailsTab} api={r12} csrfToken={account.csrf_token}
       currentContextVersionId={currentContext?.contextVersionId ?? null}
-      detail={detail} open={detailsOpen} readOnly={account.hard_stale_read_only}
-      onActiveTabChange={setDetailsTab} onClose={() => setDetailsOpen(false)} onConfirmed={setCurrentContext}
+      detail={detail} open={openDrawer === "position"} readOnly={account.hard_stale_read_only}
+      onActiveTabChange={setDetailsTab} onClose={() => setOpenDrawer(null)} onConfirmed={setCurrentContext}
       contextRefreshGeneration={contextRefreshGeneration}
       resourceRefreshGeneration={resourceRefreshGeneration} />
   </main>;

@@ -40,6 +40,9 @@ export interface DirectAgentWorkspaceProps {
   positionMaterialIds?: readonly string[];
   positionArtifactAttachmentIds?: readonly string[];
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
+  materialsOpen?: boolean;
+  onMaterialsOpenChange?: (open: boolean) => void;
+  showMaterialsTrigger?: boolean;
   showTaskStarters?: boolean;
   layout?: "standard" | "focused";
   composerTools?: ReactNode;
@@ -95,6 +98,9 @@ export function DirectAgentWorkspace({
   positionMaterialIds,
   positionArtifactAttachmentIds,
   onPositionMaterialChange,
+  materialsOpen,
+  onMaterialsOpenChange,
+  showMaterialsTrigger = true,
   showTaskStarters = true,
   layout = "standard",
   composerTools,
@@ -304,13 +310,16 @@ export function DirectAgentWorkspace({
           positionMaterialIds={positionMaterialIds}
           positionArtifactAttachmentIds={positionArtifactAttachmentIds}
           onPositionMaterialChange={onPositionMaterialChange}
+          materialsOpen={materialsOpen}
+          onMaterialsOpenChange={onMaterialsOpenChange}
+          showMaterialsTrigger={showMaterialsTrigger}
           onConversationSettled={onConversationSettled}
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
           composerTools={composerTools}
           messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
-          materialsPresentation={layout === "focused" ? "hidden" : "sidebar"}
+          materialsPresentation={agentId === "hr-bot" ? "drawer" : layout === "focused" ? "hidden" : "sidebar"}
         />
         : <div className="agent-use-page">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}
           {newConversationHeader ?? <section className="agent-use-profile is-compact"><span>{card.domain_group}</span><h1>{card.display_name}</h1>

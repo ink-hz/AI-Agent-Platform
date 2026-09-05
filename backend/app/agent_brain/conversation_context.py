@@ -259,6 +259,7 @@ class ConversationContextBuilder:
                         hr_position_context.position_id,
                         messages[-1].content,
                         turn_id,
+                        task_kind=hr_position_context.task_kind,
                     )
                     if hr_panorama_context is not None and not isinstance(
                         hr_panorama_context, PanoramaContextFragment

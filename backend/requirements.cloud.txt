@@ -9,6 +9,8 @@ boto3==1.42.97
 cryptography==50.0.0
 Pillow==11.3.0
 pypdf==6.16.2
+openpyxl==3.1.5
+reportlab==4.4.10
 defusedxml==0.7.1
 dingtalk-stream==0.24.3
 jcs==0.2.1

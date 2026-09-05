@@ -312,14 +312,21 @@ class HrTaskResultReconciler:
     def _project(self, claim: ClaimedHrTaskResult, text: str) -> UUID:
         if claim.task_kind in _POSITION_MODULES:
             module = _POSITION_MODULES[claim.task_kind]
+            envelope = extract_hr_envelope(text, claim.task_kind)
+            if envelope is None or not envelope.visible_markdown.strip():
+                raise ValueError("position result envelope invalid")
             result = self._positions.create_draft(
                 owner_id=claim.owner_id,
                 position_id=claim.position_id,
                 request_id=claim.projection_request_id,
                 base_context_version_id=claim.context_version_id,
                 official_version_id=claim.official_version_id,
-                modules={module: {"text": text}},
-                summary=text,
+                modules={module: {
+                    "kind": claim.task_kind,
+                    "payload": dict(envelope.payload),
+                    "visible_markdown": envelope.visible_markdown,
+                }},
+                summary=envelope.visible_markdown,
                 source_conversation_id=claim.conversation_id,
                 source_turn_id=claim.turn_id,
                 source_artifact_version_id=claim.output_artifact_version_id,

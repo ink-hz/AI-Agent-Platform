@@ -446,6 +446,8 @@ describe("HrWorkspacePage", () => {
     expect(container.querySelector<HTMLElement>(".hr-workspace-chat-panel")?.hidden).toBe(false);
     expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(workspace);
     expect(container.textContent).toContain("此前对话消息");
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "会话材料")?.click());
     expect(container.textContent).toContain("岗位访谈.pdf");
     expect(container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")).toBe(composer);
     expect(composer.value).toBe("确认后继续补充");
@@ -598,6 +600,8 @@ describe("HrWorkspacePage", () => {
       return new Promise(() => undefined);
     });
     await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "会话材料")?.click());
     expect(container.textContent).toContain("岗位访谈.pdf");
     expect(streamSignal?.aborted).toBe(false);
 

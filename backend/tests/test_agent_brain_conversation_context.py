@@ -146,8 +146,8 @@ def test_verified_hr_position_turn_receives_exactly_one_pinned_envelope(
         def __init__(self):
             self.calls = []
 
-        def for_turn(self, selected_owner, position_id, query, turn_id):
-            self.calls.append((selected_owner, position_id, query, turn_id))
+        def for_turn(self, selected_owner, position_id, query, turn_id, *, task_kind=None):
+            self.calls.append((selected_owner, position_id, query, turn_id, task_kind))
             return panorama_fragment
 
     panorama_provider = PanoramaProvider()
@@ -163,7 +163,7 @@ def test_verified_hr_position_turn_receives_exactly_one_pinned_envelope(
         owner_id, started.conversation.conversation_id, started.turn.turn_id
     )]
     assert panorama_provider.calls == [(
-        owner_id, position.position_id, "生成 JD", started.turn.turn_id
+        owner_id, position.position_id, "生成 JD", started.turn.turn_id, "jd"
     )]
 
 

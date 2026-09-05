@@ -22,6 +22,7 @@ from app.hr.candidate_service import CandidateService
 from app.hr.context import HrPositionScope
 from app.hr.models import CreateManualPosition
 from app.hr.position_intelligence_repository import PositionIntelligenceRepository
+from app.hr.position_intelligence_models import thaw_json
 from app.hr.position_intelligence_service import PositionIntelligenceService
 from app.hr.repository import HrPositionRepository
 from app.hr.structured_output import encode_hr_envelope
@@ -525,7 +526,12 @@ def test_projection_is_durable_idempotent_and_bad_result_does_not_block(
     )
     _finish_task(environment, bad, owner_id, position.position_id, "jr", {"text": " "})
     _finish_task(
-        environment, good, owner_id, position.position_id, "jd", {"text": "真实 JD"}
+        environment, good, owner_id, position.position_id, "jd", {"text": (
+            "真实 JD\n\n" + encode_hr_envelope("jd", {
+                "text": "真实 JD", "change_summary": [], "unknowns": [],
+                "evidence_refs": [],
+            })
+        )}
     )
     reconciler = HrTaskResultReconciler(
         HrTaskResultProjectionRepository(environment["urls"]["platform_control_app"]),
@@ -543,7 +549,11 @@ def test_projection_is_durable_idempotent_and_bad_result_does_not_block(
     assert tasks.get(owner_id, position.position_id, good.task_id).status == "completed"
     drafts = intelligence.drafts(owner_id, position.position_id)
     assert len(drafts) == 1
-    assert drafts[0].modules == {"jd": {"text": "真实 JD"}}
+    assert thaw_json(drafts[0].modules) == {"jd": {
+        "kind": "jd",
+        "payload": {"text": "真实 JD", "change_summary": [], "unknowns": [], "evidence_refs": []},
+        "visible_markdown": "真实 JD",
+    }}
     assert drafts[0].model_version == "hr-runtime-before-upgrade"
 
 
@@ -579,6 +589,15 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
     )
     candidates = CandidateService(
         CandidateRepository(environment["urls"]["platform_control_app"])
+    )
+    reconciler = HrTaskResultReconciler(
+        HrTaskResultProjectionRepository(
+            environment["urls"]["platform_control_app"]
+        ),
+        intelligence,
+        candidates,
+        _codec(),
+        worker_id="candidate-projection-test",
     )
     match_payload = {
         "summary": "总体匹配",
@@ -639,6 +658,7 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
             candidate_scope=scope,
         )
         started.append(match)
+        assert reconciler.reconcile_one() is True
 
         valid = tasks.start(
             owner_id=owner_id, position_id=position.position_id,
@@ -787,16 +807,7 @@ def test_candidate_projection_persists_envelopes_and_isolates_invalid_interview_
                 owner_id, wrong_conversation, owner_id, wrong_conversation,
             )
 
-        reconciler = HrTaskResultReconciler(
-            HrTaskResultProjectionRepository(
-                environment["urls"]["platform_control_app"]
-            ),
-            intelligence,
-            candidates,
-            _codec(),
-            worker_id="candidate-projection-test",
-        )
-        for _ in started:
+        for _ in started[1:]:
             assert reconciler.reconcile_one() is True
         assert reconciler.reconcile_one() is False
 

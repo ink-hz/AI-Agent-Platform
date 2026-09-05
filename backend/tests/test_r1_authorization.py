@@ -80,6 +80,7 @@ HR_POSITION_ROUTES = (
     ("DELETE", "/api/hr/positions/{position_id}/materials/{attachment_id}"),
     ("GET", "/api/hr/positions/{position_id}/official-versions"),
     ("GET", "/api/hr/positions/{position_id}/official-versions/{official_version_id}"),
+    ("GET", "/api/hr/positions/{position_id}/official-versions/{official_version_id}/export"),
     ("GET", "/api/hr/positions/{position_id}/context"),
     ("GET", "/api/hr/positions/{position_id}/context/versions"),
     ("POST", "/api/hr/positions/{position_id}/context/drafts"),

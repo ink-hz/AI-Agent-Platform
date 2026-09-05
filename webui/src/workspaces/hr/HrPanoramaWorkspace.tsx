@@ -5,6 +5,7 @@ import { PlatformLink } from "../../components/PlatformLink";
 import { createHrPanoramaApi, HrPanoramaApiError, type HrPanoramaApi } from "../../hrPanoramaApi";
 import type { HrPanoramaInsight, HrPanoramaReport, HrPanoramaRun, HrPanoramaSource, StartHrPanoramaRunInput } from "../../hrPanoramaTypes";
 import { HrPanoramaReport as Report, type HrPanoramaComparison } from "./HrPanoramaReport";
+import { HR_PANORAMA_COMPANY_CATALOG, HR_PANORAMA_SESSION_LEADS, catalogSource, catalogSourceNeedsUpdate } from "./hrPanoramaCatalog";
 
 const DATE_TIME = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 const TERMINAL = new Set<HrPanoramaRun["state"]>(["completed", "partially_completed", "failed"]);
@@ -83,9 +84,12 @@ export function HrPanoramaWorkspace({
   const [companyName, setCompanyName] = useState("");
   const [companyUrl, setCompanyUrl] = useState("");
   const [adding, setAdding] = useState(false);
+  const [catalogAdding, setCatalogAdding] = useState(false);
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
   const operationController = useRef<AbortController | null>(null);
   const startingRef = useRef(false);
   const addingRef = useRef(false);
+  const catalogAddingRef = useRef(false);
   const trackingRunRef = useRef<string | null>(trackingRunId);
   const pendingStartRef = useRef(pendingStart);
   const pollTimer = useRef<number | null>(null);
@@ -288,6 +292,27 @@ export function HrPanoramaWorkspace({
   };
 
   const updateInProgress = starting || Boolean(pendingStart) || Boolean(trackingRunId);
+  const missingCatalog = HR_PANORAMA_COMPANY_CATALOG.filter((company) => !catalogSource(company, sources));
+  const catalogSources = HR_PANORAMA_COMPANY_CATALOG.map((company) => {
+    const source = catalogSource(company, sources);
+    return { company, source, needsUpdate: Boolean(source && catalogSourceNeedsUpdate(company, source)) };
+  });
+  const extraSources = sources.filter((source) => !HR_PANORAMA_COMPANY_CATALOG.some((company) => catalogSource(company, [source])));
+  const addCatalog = async () => {
+    if (account.hard_stale_read_only || catalogAddingRef.current || missingCatalog.length === 0) return;
+    catalogAddingRef.current = true; setCatalogAdding(true); setCatalogNotice(null); setOperationFailure(null);
+    const results = await Promise.allSettled(missingCatalog.map((company) => api.addCompany({
+      canonicalName: company.canonicalName,
+      aliases: company.aliases,
+      approvedUrls: company.approvedUrls,
+    }, crypto.randomUUID())));
+    const created = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+    setSources((current) => [...current.filter((existing) => !created.some((item) => item.sourceId === existing.sourceId)), ...created]);
+    setSelectedSourceIds((current) => [...new Set([...current, ...created.filter((item) => item.active).map((item) => item.sourceId)])]);
+    const failed = results.length - created.length;
+    setCatalogNotice(failed === 0 ? "10 家重点公司已加入" : `已加入 ${created.length} 家，${failed} 家暂时失败，可再次补齐。`);
+    catalogAddingRef.current = false; setCatalogAdding(false);
+  };
   const startPaused = Boolean(pendingStart) && !starting;
   const failedSources = run?.state === "partially_completed"
     ? Object.keys(run.sourceFailures).map((id) => sources.find((source) => source.sourceId === id)).filter((source): source is HrPanoramaSource => Boolean(source)) : [];
@@ -310,8 +335,14 @@ export function HrPanoramaWorkspace({
 
     <div className="hr-panorama-layout">
       <aside className="hr-panorama-master">
-        <section><header><h2>关注公司</h2><span>{sources.filter((source) => source.active).length}</span></header>
-          {sourcesFailure ? <p role="alert">关注公司暂时无法读取，报告仍可继续查看。</p> : sources.length ? <ul>{sources.map((source) => <li key={source.sourceId}><label><input checked={selectedSourceIds.includes(source.sourceId)} disabled={!source.active || updateInProgress} onChange={(event) => setSelectedSourceIds((current) => event.target.checked ? [...current, source.sourceId] : current.filter((id) => id !== source.sourceId))} type="checkbox" /><span><strong>{source.canonicalName}</strong><small>{source.active ? "已关注" : "已停止关注"}</small></span></label></li>)}</ul> : <p>还没有关注公司。添加公开招聘页面后即可开始。</p>}
+        <section><header><h2>重点公司</h2><span>{catalogSources.filter((item) => item.source?.active).length} / 10</span></header>
+          {sourcesFailure && <p role="alert">关注公司暂时无法读取，重点公司目录仍可查看。</p>}
+          <ul>{catalogSources.map(({ company, source, needsUpdate }) => <li key={company.canonicalName}><label><input checked={Boolean(source && selectedSourceIds.includes(source.sourceId))} disabled={!source?.active || updateInProgress || catalogAdding} onChange={(event) => source && setSelectedSourceIds((current) => event.target.checked ? [...current, source.sourceId] : current.filter((id) => id !== source.sourceId))} type="checkbox" /><span><strong>{company.canonicalName}</strong><small>{source?.active ? needsUpdate ? "已关注 · 情报来源待升级" : "已关注 · 社招/校招" : "待加入 · 社招/校招入口已配置"}</small><small>{company.sourceNote}</small></span></label></li>)}</ul>
+          {missingCatalog.length > 0 && <button className="hr-panorama-fill-catalog" disabled={account.hard_stale_read_only || catalogAdding} onClick={() => void addCatalog()} type="button">{catalogAdding ? "正在补齐…" : `补齐 ${missingCatalog.length} 家重点公司`}</button>}
+          {catalogNotice && <p role="status">{catalogNotice}</p>}
+          {extraSources.length > 0 && <details className="hr-panorama-extra-sources"><summary>其他已关注公司（{extraSources.length}）</summary><ul>{extraSources.map((source) => <li key={source.sourceId}><label><input checked={selectedSourceIds.includes(source.sourceId)} disabled={!source.active || updateInProgress} onChange={(event) => setSelectedSourceIds((current) => event.target.checked ? [...current, source.sourceId] : current.filter((id) => id !== source.sourceId))} type="checkbox" /><span><strong>{source.canonicalName}</strong><small>{source.active ? "已关注" : "已停止关注"}</small></span></label></li>)}</ul></details>}
+        </section>
+        <section className="hr-panorama-session-leads"><header><h2>历史会话线索</h2><span>{HR_PANORAMA_SESSION_LEADS.length}</span></header><p>确认后再加入，不自动采集。</p><div>{HR_PANORAMA_SESSION_LEADS.map((name) => <span key={name}>{name}</span>)}</div>
         </section>
         <section><header><h2>分析历史</h2><span>{reports.length}</span></header>
           {reportsFailure ? <p role="alert">分析历史暂时无法读取，当前报告仍可继续查看。</p> : reports.length ? <nav aria-label="分析历史">{reports.map((item) => <PlatformLink aria-current={report?.insight.insightVersionId === item.insightVersionId ? "page" : undefined} href={`/hr/panorama/reports/${encodeURIComponent(item.insightVersionId)}`} key={item.insightVersionId}><strong>第 {item.versionNumber} 版</strong><span>{item.summary}</span><time dateTime={item.createdAt}>{DATE_TIME.format(new Date(item.createdAt))}</time></PlatformLink>)}</nav> : <p>完成第一次更新后，分析版本会保留在这里。</p>}

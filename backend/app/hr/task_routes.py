@@ -108,6 +108,14 @@ def _task(record: HrPositionTask) -> dict[str, object]:
         "position_candidate_id": (
             str(record.position_candidate_id) if record.position_candidate_id else None
         ),
+        "references": [{
+            "source_type": reference.source_type,
+            "source_id": str(reference.source_id),
+            "display_label": reference.display_label,
+            "version": reference.version,
+            "selected_reason": reference.selected_reason,
+            "freshness": reference.freshness,
+        } for reference in record.references],
     }
 
 

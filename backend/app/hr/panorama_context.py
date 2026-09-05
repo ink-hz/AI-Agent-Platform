@@ -33,6 +33,7 @@ _EXPLICIT_TRIGGERS = (
     "外部岗位",
     "参考关注公司",
 )
+_PANORAMA_DEFAULT_TASKS = frozenset({"talent_profile", "sourcing_strategy"})
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 
 _USAGE_BOUNDARY = {
@@ -458,7 +459,8 @@ class PanoramaContextProvider:
         self._stale_after = stale_after
 
     def for_turn(
-        self, owner_id: UUID, position_id: UUID, query: str, turn_id: UUID
+        self, owner_id: UUID, position_id: UUID, query: str, turn_id: UUID,
+        *, task_kind: str | None = None,
     ) -> PanoramaContextFragment | None:
         if any(
             not isinstance(value, UUID) for value in (owner_id, position_id, turn_id)
@@ -471,7 +473,7 @@ class PanoramaContextProvider:
                 return self._replay(
                     existing, query_sha256, owner_id, position_id, turn_id
                 )
-            source_scope = self._query_source_scope(owner_id, query)
+            source_scope = self._query_source_scope(owner_id, query, task_kind)
             if source_scope is None:
                 return None
             insights = _latest_per_scope(
@@ -507,9 +509,11 @@ class PanoramaContextProvider:
             raise PanoramaContextError("panorama context unavailable") from None
 
     def _query_source_scope(
-        self, owner_id: UUID, query: str
+        self, owner_id: UUID, query: str, task_kind: str | None = None
     ) -> tuple[TalentSource, ...] | None:
-        explicitly_requested = _has_explicit_trigger(query)
+        explicitly_requested = (
+            task_kind in _PANORAMA_DEFAULT_TASKS or _has_explicit_trigger(query)
+        )
         matched: list[TalentSource] = []
         before_created_at = None
         before_source_id = None

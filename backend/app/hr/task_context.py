@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid5
@@ -14,6 +14,7 @@ from psycopg.rows import dict_row
 from .position_intelligence_models import (
     TASK_KINDS,
     HrPositionContextEnvelope,
+    HrTaskContextReference,
     OfficialPositionVersion,
     PositionContextVersion,
     candidate_task_snapshot_sha256,
@@ -156,6 +157,8 @@ class CandidateEnvelopeProvider(Protocol):
         position_id: UUID,
         candidate_id: UUID | None,
         position_candidate_id: UUID | None,
+        *,
+        task_kind: str = "candidate_match",
     ) -> CandidateEnvelopeFragment: ...
 
 
@@ -204,7 +207,7 @@ def _validated_candidate_fragment(
 
 
 def _canonical_document(envelope: HrPositionContextEnvelope) -> dict[str, object]:
-    return {
+    document: dict[str, object] = {
         "candidate_id": str(envelope.candidate_id) if envelope.candidate_id else None,
         "context_version_id": (
             str(envelope.context_version_id) if envelope.context_version_id else None
@@ -228,6 +231,89 @@ def _canonical_document(envelope: HrPositionContextEnvelope) -> dict[str, object
         "prompt_context": envelope.prompt_context,
         "task_kind": envelope.task_kind,
     }
+    if envelope.context_references:
+        document["context_references"] = [
+            {
+                "source_type": item.source_type,
+                "source_id": str(item.source_id),
+                "version_id": str(item.version_id) if item.version_id else None,
+                "selected_reason": item.selected_reason,
+                "content_sha256": item.content_sha256,
+            }
+            for item in envelope.context_references
+        ]
+    return document
+
+
+def _fragment_hash(value: object) -> str:
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _references_from_prompt(
+    prompt_context: str,
+    *,
+    position_id: UUID,
+    official_version_id: UUID | None,
+    context_version_id: UUID | None,
+    material_attachment_ids: tuple[UUID, ...],
+    candidate_id: UUID | None,
+    position_candidate_id: UUID | None,
+) -> tuple[HrTaskContextReference, ...]:
+    try:
+        document = json.loads(prompt_context)
+        if not isinstance(document, dict):
+            raise ValueError
+        references: list[HrTaskContextReference] = []
+        official = document.get("official_facts")
+        if official_version_id is not None:
+            if (
+                not isinstance(official, dict)
+                or official.get("version_id") != str(official_version_id)
+                or not isinstance(official.get("content_hash"), str)
+            ):
+                raise ValueError
+            references.append(HrTaskContextReference(
+                "official_position", position_id, official_version_id,
+                "official_position_baseline", official["content_hash"],
+            ))
+        context = document.get("confirmed_context")
+        if context_version_id is not None:
+            if (
+                not isinstance(context, dict)
+                or context.get("version_id") != str(context_version_id)
+            ):
+                raise ValueError
+            references.append(HrTaskContextReference(
+                "confirmed_context", position_id, context_version_id,
+                "confirmed_position_context", _fragment_hash(context),
+            ))
+        materials = document.get("selected_materials")
+        if not isinstance(materials, list):
+            raise ValueError
+        material_hashes = {
+            UUID(str(item["attachment_id"])): item["sha256"]
+            for item in materials if isinstance(item, dict)
+        }
+        for attachment_id in material_attachment_ids:
+            references.append(HrTaskContextReference(
+                "position_material", attachment_id, None,
+                "selected_position_material", material_hashes[attachment_id],
+            ))
+        if candidate_id is not None:
+            candidate_context = document.get("candidate_context")
+            if not isinstance(candidate_context, str) or position_candidate_id is None:
+                raise ValueError
+            references.append(HrTaskContextReference(
+                "candidate_snapshot", candidate_id, position_candidate_id,
+                "candidate_snapshot",
+                hashlib.sha256(candidate_context.encode("utf-8")).hexdigest(),
+            ))
+        return tuple(references)
+    except (KeyError, TypeError, ValueError):
+        raise HrTaskContextError("HR task context references invalid") from None
 
 
 def canonical_hash(envelope: HrPositionContextEnvelope) -> str:
@@ -421,6 +507,7 @@ class HrTaskContextProvider:
                         scope.position_id,
                         scope.candidate_id,
                         scope.position_candidate_id,
+                        task_kind=scope.task_kind,
                     )
                 except (RuntimeError, ValueError):
                     raise HrTaskContextError("candidate context unavailable") from None
@@ -430,29 +517,38 @@ class HrTaskContextProvider:
             document_ids = candidate_fragment.document_attachment_ids
             feedback_ids = candidate_fragment.human_feedback_ids
         prompt_context = _prompt(scope, candidate_fragment)
+        official_version_id = (
+            scope.official.official_position_version_id
+            if scope.official is not None else None
+        )
+        context_version_id = (
+            scope.context.context_version_id if scope.context is not None else None
+        )
+        material_attachment_ids = tuple(
+            sorted((item.attachment_id for item in scope.materials), key=str)
+        )
+        context_references = _references_from_prompt(
+            prompt_context,
+            position_id=scope.position_id,
+            official_version_id=official_version_id,
+            context_version_id=context_version_id,
+            material_attachment_ids=material_attachment_ids,
+            candidate_id=scope.candidate_id,
+            position_candidate_id=scope.position_candidate_id,
+        )
         placeholder = HrPositionContextEnvelope(
             position_id=scope.position_id,
-            official_version_id=(
-                scope.official.official_position_version_id
-                if scope.official is not None
-                else None
-            ),
-            context_version_id=(
-                scope.context.context_version_id if scope.context is not None else None
-            ),
+            official_version_id=official_version_id,
+            context_version_id=context_version_id,
             task_kind=scope.task_kind,
-            material_attachment_ids=tuple(
-                sorted(
-                    (item.attachment_id for item in scope.materials),
-                    key=str,
-                )
-            ),
+            material_attachment_ids=material_attachment_ids,
             candidate_id=scope.candidate_id,
             position_candidate_id=scope.position_candidate_id,
             document_attachment_ids=document_ids,
             human_feedback_ids=feedback_ids,
             prompt_context=prompt_context,
             canonical_sha256="0" * 64,
+            context_references=context_references,
         )
         envelope = HrPositionContextEnvelope(
             **{
@@ -465,6 +561,7 @@ class HrTaskContextProvider:
                 "position_candidate_id": placeholder.position_candidate_id,
                 "document_attachment_ids": placeholder.document_attachment_ids,
                 "human_feedback_ids": placeholder.human_feedback_ids,
+                "context_references": placeholder.context_references,
                 "canonical_sha256": canonical_hash(placeholder),
             }
         )
@@ -523,7 +620,7 @@ class PostgresHrTaskContextSource:
                 return None
             if row["execution_model_version"] != self._execution_model_version:
                 raise HrTaskContextError("HR task model snapshot mismatch")
-            return HrPositionContextEnvelope(
+            legacy = HrPositionContextEnvelope(
                 position_id=row["position_id"],
                 official_version_id=row["official_position_version_id"],
                 context_version_id=row["context_version_id"],
@@ -536,6 +633,17 @@ class PostgresHrTaskContextSource:
                 prompt_context=row["prompt_context"],
                 canonical_sha256=row["canonical_sha256"],
             )
+            references = _references_from_prompt(
+                legacy.prompt_context,
+                position_id=legacy.position_id,
+                official_version_id=legacy.official_version_id,
+                context_version_id=legacy.context_version_id,
+                material_attachment_ids=legacy.material_attachment_ids,
+                candidate_id=legacy.candidate_id,
+                position_candidate_id=legacy.position_candidate_id,
+            )
+            enriched = replace(legacy, context_references=references)
+            return enriched if canonical_hash(enriched) == legacy.canonical_sha256 else legacy
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrTaskContextError("recorded HR task context unavailable") from None
 

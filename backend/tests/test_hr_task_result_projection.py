@@ -110,6 +110,18 @@ def _reconciler(ledger, positions=None, candidates=None):
     )
 
 
+def _position_result(task_kind: str) -> tuple[str, dict[str, object]]:
+    payloads: dict[str, dict[str, object]] = {
+        "jd": {"text": "完整真实结果", "change_summary": ["补充使命"], "unknowns": [], "evidence_refs": ["official-v1"]},
+        "jr": {"responsibilities": ["质量策划"], "must_have": ["DQE"], "preferred": [], "trainable": [], "evaluation_criteria": ["提供量产证据"], "unknowns": [], "evidence_refs": ["official-v1"]},
+        "talent_profile": {"dimensions": {"质量": "强"}, "priorities": ["量产"], "counter_examples": [], "unknowns": [], "evidence_refs": ["official-v1"]},
+        "sourcing_strategy": {"target_sources": ["目标公司"], "keywords": ["光机结构"], "exclusions": [], "unknowns": [], "evidence_refs": ["insight-v1"]},
+        "position_interview_plan": {"dimensions": {"质量": "核心"}, "questions": ["如何做质量策划？"], "follow_ups": ["给出量产案例"], "evaluation_anchors": ["有量化指标"], "unknowns": [], "evidence_refs": ["official-v1"]},
+    }
+    payload = payloads[task_kind]
+    return f"完整真实结果\n\n{encode_hr_envelope(task_kind, payload)}", payload
+
+
 def test_claim_requires_persisted_execution_model_version() -> None:
     with pytest.raises(ValueError):
         ClaimedHrTaskResult(
@@ -133,7 +145,8 @@ def test_claim_requires_persisted_execution_model_version() -> None:
     ],
 )
 def test_position_results_create_exact_context_module(task_kind, module) -> None:
-    claim = _claim(task_kind)
+    text, payload = _position_result(task_kind)
+    claim = _claim(task_kind, text=text)
     ledger = _Ledger((claim,))
     positions = _Positions()
 
@@ -146,7 +159,11 @@ def test_position_results_create_exact_context_module(task_kind, module) -> None
         "request_id": claim.projection_request_id,
         "base_context_version_id": claim.context_version_id,
         "official_version_id": claim.official_version_id,
-        "modules": {module: {"text": "完整真实结果"}},
+        "modules": {module: {
+            "kind": task_kind,
+            "payload": payload,
+            "visible_markdown": "完整真实结果",
+        }},
         "summary": "完整真实结果",
         "source_conversation_id": claim.conversation_id,
         "source_turn_id": claim.turn_id,
@@ -157,6 +174,16 @@ def test_position_results_create_exact_context_module(task_kind, module) -> None
         "created_by": claim.owner_id,
     }
     assert ledger.completed == [(claim, "hr-result-projector.test", UUID(int=30))]
+
+
+def test_position_result_without_its_exact_envelope_is_rejected() -> None:
+    claim = _claim("jd", text="只有可读答案，没有结构化结果")
+    ledger = _Ledger((claim,))
+    positions = _Positions()
+
+    assert _reconciler(ledger, positions=positions).reconcile_one() is True
+    assert positions.calls == []
+    assert ledger.failed == [(claim, "hr-result-projector.test", "result_invalid")]
 
 
 def test_candidate_match_projects_exact_structured_evidence() -> None:
@@ -292,7 +319,8 @@ def test_candidate_task_prompts_require_markdown_envelope_and_named_pdf() -> Non
 
 
 def test_backlog_projection_uses_execution_snapshot_not_projector_runtime() -> None:
-    claim = _claim("jd", model_version="hr-runtime-before-upgrade")
+    text, _payload = _position_result("jd")
+    claim = _claim("jd", text=text, model_version="hr-runtime-before-upgrade")
     positions = _Positions()
 
     assert _reconciler(_Ledger((claim,)), positions=positions).reconcile_one() is True
@@ -310,7 +338,8 @@ def test_bad_result_is_failed_and_next_result_is_not_blocked() -> None:
         },
         content_ciphertext=b"not-sealed",
     )
-    good = _claim("jr")
+    good_text, good_payload = _position_result("jr")
+    good = _claim("jr", text=good_text)
     ledger = _Ledger((bad, good))
     positions = _Positions()
     reconciler = _reconciler(ledger, positions=positions)
@@ -320,7 +349,10 @@ def test_bad_result_is_failed_and_next_result_is_not_blocked() -> None:
 
     assert ledger.failed == [(bad, "hr-result-projector.test", "result_invalid")]
     assert len(positions.calls) == 1
-    assert positions.calls[0]["modules"] == {"jr": {"text": "完整真实结果"}}
+    assert positions.calls[0]["modules"] == {"jr": {
+        "kind": "jr", "payload": good_payload,
+        "visible_markdown": "完整真实结果",
+    }}
 
 
 def test_transient_service_failure_releases_claim_for_retry() -> None:

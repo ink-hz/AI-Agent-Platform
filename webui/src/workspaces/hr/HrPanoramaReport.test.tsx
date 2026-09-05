@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HrPanoramaReport as Report } from "../../hrPanoramaTypes";
-import { HrPanoramaReport } from "./HrPanoramaReport";
+import { formatHrPanoramaReportMarkdown, HrPanoramaReport } from "./HrPanoramaReport";
 
 const report: Report = {
   insight: {
@@ -64,6 +64,8 @@ describe("HrPanoramaReport", () => {
     expect(container.textContent).toContain("关键能力");
     expect(container.textContent).toContain("重点团队与投入信号");
     expect(container.textContent).toContain("精密结构人才投入可能增加");
+    const evidenceTab = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "来源证据");
+    await act(async () => evidenceTab?.click());
     expect(container.querySelector('[data-evidence-kind="facts"] h2')?.textContent).toBe("公开事实");
     expect(container.querySelector('[data-evidence-kind="inferences"] h2')?.textContent).toBe("AI 推断");
     expect(container.querySelector('[data-evidence-kind="unknowns"] h2')?.textContent).toBe("仍待确认");
@@ -73,6 +75,169 @@ describe("HrPanoramaReport", () => {
     expect(inference?.querySelector('time[datetime="2026-09-05T08:00:00Z"]')).not.toBeNull();
     expect(container.querySelector('time[datetime="2026-09-05T08:00:00Z"]')).not.toBeNull();
     expect(container.querySelector("details")?.open).toBe(false);
+  });
+
+  it("shows an auditable intelligence source matrix for every company", async () => {
+    const multiChannel = {
+      ...report,
+      sources: [
+        { ...report.sources[0], approvedUrls: ["https://example.com/jobs", "https://example.com/campus"] },
+        report.sources[1],
+      ],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={multiChannel} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "来源证据")?.click());
+
+    const matrix = container.querySelector('[data-evidence-kind="source-matrix"]');
+    expect(matrix?.textContent).toContain("情报来源矩阵");
+    expect(matrix?.textContent).toContain("联合光电");
+    expect(matrix?.textContent).toContain("舜宇光学");
+    expect(matrix?.textContent).toContain("命中 1 条");
+    expect(matrix?.textContent).toContain("未形成岗位证据，待确认");
+    expect(matrix?.textContent).toContain("最近观测");
+    expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://example.com/jobs"]')).not.toBeNull();
+    expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://example.com/campus"]')).not.toBeNull();
+    expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://sunny.example/jobs"]')).not.toBeNull();
+  });
+
+  it("separates social and campus recruiting without forcing unmarked jobs into either track", async () => {
+    const tracked: Report = {
+      ...report,
+      snapshots: [
+        { ...report.snapshots[0], sourceUrl: "https://example.com/experienced/job-1" },
+        { ...report.snapshots[1], title: "2027届校园招聘｜光学工程师", sourceUrl: "https://sunny.example/campus/job-2" },
+        { ...report.snapshots[0], snapshotId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", publicJobKey: "job-3", title: "算法工程师", sourceUrl: "https://example.com/jobs/3" },
+      ],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={tracked} />));
+
+    expect(container.textContent).toContain("总览");
+    expect(container.textContent).toContain("社招");
+    expect(container.textContent).toContain("校招");
+    expect(container.textContent).toContain("产品与业务方向");
+    expect(container.textContent).toContain("岗位明细");
+    expect(container.textContent).toContain("来源证据");
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "校招")?.click());
+    const campus = container.querySelector('[data-report-view="campus"]');
+    expect(campus?.textContent).toContain("2027届校园招聘｜光学工程师");
+    expect(campus?.textContent).not.toContain("结构工程师");
+    expect(campus?.textContent).toContain("未识别到校招标记，待确认");
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "社招")?.click());
+    const social = container.querySelector('[data-report-view="social"]');
+    expect(social?.textContent).toContain("结构工程师");
+    expect(social?.textContent).not.toContain("2027届校园招聘｜光学工程师");
+    expect(social?.textContent).toContain("1 个岗位尚未识别招聘类型");
+  });
+
+  it("does not mistake international roles for internships", async () => {
+    const international = {
+      ...report,
+      snapshots: [{
+        ...report.snapshots[0],
+        title: "Senior International Marketing Manager",
+        dutyExcerpt: "Lead international growth",
+        requirementExcerpt: "Global market experience",
+        sourceUrl: "https://example.com/jobs/international-marketing",
+      }],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={international} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "校招")?.click());
+
+    const campus = container.querySelector('[data-report-view="campus"]');
+    expect(campus?.textContent).not.toContain("Senior International Marketing Manager");
+    expect(campus?.textContent).toContain("1 个岗位尚未识别招聘类型");
+  });
+
+  it("keeps frontend classification aligned with filtered exports", async () => {
+    const ambiguous = {
+      ...report,
+      snapshots: [{
+        ...report.snapshots[0],
+        title: "THAI language specialist",
+        dutyExcerpt: "Inexperienced applicants welcome",
+        requirementExcerpt: "International communication",
+        sourceUrl: "https://example.com/jobs/thai-language",
+      }],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={ambiguous} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "社招")?.click());
+
+    expect(container.querySelector('[data-report-view="social"]')?.textContent).not.toContain("THAI language specialist");
+    expect(container.querySelector('[data-report-view="social"]')?.textContent).toContain("1 个岗位尚未识别招聘类型");
+  });
+
+  it("recognizes underscore-delimited recruiting and AI keywords like the backend", async () => {
+    const delimited = {
+      ...report,
+      snapshots: [{
+        ...report.snapshots[0],
+        title: "AI_Engineer",
+        dutyExcerpt: "Build perception systems",
+        requirementExcerpt: "experienced_hires welcome",
+        sourceUrl: "https://example.com/jobs/experienced_hires",
+      }],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={delimited} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "社招")?.click());
+    expect(container.querySelector('[data-report-view="social"]')?.textContent).toContain("AI_Engineer");
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "岗位明细")?.click());
+    expect([...container.querySelectorAll<HTMLOptionElement>('select[aria-label="技术方向"] option')].map((option) => option.textContent)).toContain("算法");
+  });
+
+  it("scopes filtered Markdown to matching companies and evidence", () => {
+    const scopedReport = {
+      ...report,
+      insight: {
+        ...report.insight,
+        facts: [
+          ...report.insight.facts,
+          { factId: "f2", text: "舜宇光学公开招聘光学工程师", snapshotId: report.snapshots[1].snapshotId,
+            observationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sourceUrl: report.snapshots[1].sourceUrl, observedAt: report.snapshots[1].observedAt },
+        ],
+        inferences: [{ text: "两家公司共同增加研发投入", basisFactIds: ["f1", "f2"] }],
+      },
+    };
+    const markdown = formatHrPanoramaReportMarkdown(
+      scopedReport,
+      { state: "none", currentSourceFailures: { [report.sources[1].sourceId]: "search_unavailable" } },
+      [report.snapshots[0]],
+      true,
+    );
+
+    expect(markdown).toContain("筛选结果：1 条岗位，覆盖 1 家公司");
+    expect(markdown).toContain("联合光电");
+    expect(markdown).not.toContain("舜宇光学");
+    expect(markdown).not.toContain("https://sunny.example/jobs/2");
+    expect(markdown).not.toContain("两家公司共同增加研发投入");
+    expect(markdown).not.toContain("光学设计：2");
+    expect(markdown).not.toContain("本轮采集失败");
+    expect(markdown).toContain("光学：1");
+  });
+
+  it("filters job details by company, recruiting type, location, status, and technical direction", async () => {
+    await act(async () => root.render(<HrPanoramaReport report={report} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "岗位明细")?.click());
+
+    for (const label of ["公司", "招聘类型", "地点", "岗位状态", "技术方向"]) {
+      expect(container.querySelector(`select[aria-label="${label}"]`)).not.toBeNull();
+    }
+    const company = container.querySelector<HTMLSelectElement>('select[aria-label="公司"]');
+    await act(async () => {
+      if (!company) return;
+      company.value = report.sources[0].sourceId;
+      company.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const jobs = container.querySelector('[data-report-view="jobs"]');
+    expect(jobs?.textContent).toContain("结构工程师");
+    expect(jobs?.textContent).not.toContain("光学工程师");
+    expect(jobs?.textContent).toContain("1 / 2 条");
+    const pdf = container.querySelector<HTMLAnchorElement>('a[href*="format=pdf"]');
+    const excel = container.querySelector<HTMLAnchorElement>('a[href*="format=xlsx"]');
+    expect(pdf?.href).toContain(`source_id=${report.sources[0].sourceId}`);
+    expect(excel?.href).toContain(`source_id=${report.sources[0].sourceId}`);
   });
 
   it("labels a report without a prior same-scope version as the first baseline", async () => {
@@ -157,7 +322,9 @@ describe("HrPanoramaReport", () => {
     expect(copied).toContain("https://example.com/jobs/1");
     expect(copied).toContain("观测于 2026-09-05T08:00:00Z");
 
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载报告")?.click());
+    expect(container.querySelector<HTMLAnchorElement>('a[href*="/export?format=pdf"]')?.textContent).toBe("下载 PDF");
+    expect(container.querySelector<HTMLAnchorElement>('a[href*="/export?format=xlsx"]')?.textContent).toBe("下载 Excel");
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载 Markdown")?.click());
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     const downloadedText = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();

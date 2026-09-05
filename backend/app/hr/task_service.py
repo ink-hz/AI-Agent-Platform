@@ -42,11 +42,11 @@ CANDIDATE_TASK_KINDS = frozenset({"candidate_match", "candidate_interview_plan"}
 STARTABLE_TASK_KINDS = POSITION_TASK_KINDS | CANDIDATE_TASK_KINDS
 
 _PROMPTS = {
-    "jd": "基于当前已确认的岗位上下文生成岗位说明（JD）。",
-    "jr": "基于当前已确认的岗位上下文生成岗位要求（JR）。",
-    "talent_profile": "基于当前已确认的岗位上下文生成人才画像。",
-    "sourcing_strategy": "基于当前已确认的岗位上下文生成候选人搜寻策略。",
-    "position_interview_plan": "基于当前已确认的岗位上下文生成岗位面试方案。",
+    "jd": "基于当前岗位上下文生成岗位说明（JD）。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=jd、payload；payload 必须且只能包含 text、change_summary、unknowns、evidence_refs。",
+    "jr": "基于当前岗位上下文生成岗位要求（JR）。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=jr、payload；payload 必须且只能包含 responsibilities、must_have、preferred、trainable、evaluation_criteria、unknowns、evidence_refs，数组元素均为非空字符串。",
+    "talent_profile": "基于当前岗位上下文生成人才画像。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=talent_profile、payload；payload 必须且只能包含 dimensions、priorities、counter_examples、unknowns、evidence_refs。",
+    "sourcing_strategy": "基于当前岗位上下文及已提供的全景招聘情报生成候选人搜寻策略。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=sourcing_strategy、payload；payload 必须且只能包含 target_sources、keywords、exclusions、unknowns、evidence_refs。",
+    "position_interview_plan": "基于当前岗位上下文生成岗位面试方案。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=position_interview_plan、payload；payload 必须且只能包含 dimensions、questions、follow_ups、evaluation_anchors、unknowns、evidence_refs。",
     "candidate_match": (
         "基于当前岗位上下文和候选人材料生成匹配分析。先输出完整、可读 Markdown，"
         "再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> "
@@ -85,6 +85,33 @@ class HrPositionTaskUnavailable(HrPositionTaskError):
 
 
 @dataclass(frozen=True, slots=True)
+class HrTaskReference:
+    source_type: str
+    source_id: UUID
+    display_label: str
+    version: str | None
+    selected_reason: str
+    freshness: str | None
+
+    def __post_init__(self) -> None:
+        if self.source_type not in {
+            "official_position", "confirmed_context", "position_material",
+            "candidate_snapshot", "panorama_insight",
+        } or not isinstance(self.source_id, UUID):
+            raise ValueError("HR task reference invalid")
+        for value, maximum in (
+            (self.display_label, 500), (self.selected_reason, 500),
+        ):
+            if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+                raise ValueError("HR task reference invalid")
+        for value in (self.version, self.freshness):
+            if value is not None and (
+                not isinstance(value, str) or not value.strip() or len(value) > 256
+            ):
+                raise ValueError("HR task reference invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class HrPositionTask:
     task_id: UUID
     task_kind: str
@@ -94,6 +121,7 @@ class HrPositionTask:
     turn_id: UUID | None
     candidate_id: UUID | None
     position_candidate_id: UUID | None
+    references: tuple[HrTaskReference, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -118,6 +146,14 @@ class HrPositionTask:
         if (self.conversation_id is None) != (self.turn_id is None):
             raise ValueError("HR position task projection invalid")
         if (self.candidate_id is None) != (self.position_candidate_id is None):
+            raise ValueError("HR position task projection invalid")
+        if (
+            not isinstance(self.references, tuple)
+            or len(self.references) > 110
+            or any(not isinstance(value, HrTaskReference) for value in self.references)
+            or len({(value.source_type, value.source_id) for value in self.references})
+            != len(self.references)
+        ):
             raise ValueError("HR position task projection invalid")
 
 
@@ -297,6 +333,7 @@ class HrPositionTaskService:
                         position_id,
                         candidate_id,
                         position_candidate_id,
+                        task_kind=task_kind,
                     )
                 if (
                     not isinstance(candidate_snapshot, CandidateEnvelopeFragment)

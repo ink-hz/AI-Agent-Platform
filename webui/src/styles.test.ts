@@ -108,7 +108,7 @@ describe("Executive Operations visual contract", () => {
     expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-workspace-grid')).toContain("grid-template-columns: minmax(0, 1fr) 296px");
     expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-page')).toContain("max-width: 960px");
     expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer')).toContain("bottom: 0");
-    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea')).toContain("min-height: clamp(220px,28vh,340px)");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea')).toContain("min-height: clamp(320px,38vh,420px)");
     expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments')).toContain("border-top: 1px solid #dbe3ea");
     expect(rule(".hr-position-grid")).toContain("grid-template-columns: 1fr");
     expect(styles).toContain('@media (max-width: 1260px)');

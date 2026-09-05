@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-from .candidate_models import CandidateEnvelopeFragment
+from .candidate_models import CandidateAnalysisVersion, CandidateEnvelopeFragment
 from .candidate_service import CandidateScopeViolation
 
 _PROMPT_BUDGET_BYTES = 65_536
@@ -31,6 +31,8 @@ class CandidateEnvelopeProvider:
         position_id: UUID,
         candidate_id: UUID | None,
         position_candidate_id: UUID | None,
+        *,
+        task_kind: str = "candidate_match",
     ) -> CandidateEnvelopeFragment:
         if any(not isinstance(value, UUID) for value in (owner_id, position_id)):
             raise ValueError("candidate task identifiers invalid")
@@ -38,6 +40,8 @@ class CandidateEnvelopeProvider:
             position_candidate_id, UUID
         ):
             raise CandidateScopeViolation("candidate task scope is incomplete")
+        if task_kind not in {"candidate_match", "candidate_interview_plan"}:
+            raise CandidateScopeViolation("candidate task kind is invalid")
         relation = self._repository.position_candidate_for_owner(
             owner_id, position_candidate_id
         )
@@ -90,7 +94,31 @@ class CandidateEnvelopeProvider:
             for item in feedback
         ):
             raise CandidateScopeViolation("candidate feedback scope mismatch")
-        prompt_sections = (
+        match_analysis = None
+        if task_kind == "candidate_interview_plan":
+            reader = getattr(self._repository, "latest_analysis", None)
+            if not callable(reader):
+                raise CandidateScopeViolation("matching analysis unavailable")
+            try:
+                match_analysis = reader(
+                    owner_id, position_candidate_id, relation.context_version_id,
+                    kind="match",
+                )
+            except (RuntimeError, ValueError):
+                raise CandidateScopeViolation("matching analysis unavailable") from None
+            if (
+                not isinstance(match_analysis, CandidateAnalysisVersion)
+                or match_analysis.owner_id != owner_id
+                or match_analysis.position_id != position_id
+                or match_analysis.position_candidate_id != position_candidate_id
+                or match_analysis.candidate_id != candidate_id
+                or match_analysis.context_version_id != relation.context_version_id
+                or match_analysis.analysis_kind != "match"
+                or match_analysis.document_ids
+                != tuple(document.document_id for document in ordered_documents)
+            ):
+                raise CandidateScopeViolation("matching analysis unavailable")
+        prompt_sections = [
                 "CONFIRMED_CANDIDATE_FACTS",
                 json.dumps(
                     {
@@ -118,7 +146,19 @@ class CandidateEnvelopeProvider:
                     separators=(",", ":"),
                 ),
                 "HUMAN_FEEDBACK_DO_NOT_REWRITE_AS_AI_FACT",
-        )
+        ]
+        if match_analysis is not None:
+            prompt_sections.extend((
+                "LATEST_MATCH_ANALYSIS_FOR_INTERVIEW",
+                json.dumps({
+                    "analysis_version_id": str(match_analysis.analysis_version_id),
+                    "version_number": match_analysis.version_number,
+                    "result": match_analysis.result,
+                    "evidence": match_analysis.evidence,
+                    "unknowns": match_analysis.unknowns,
+                    "verification_questions": match_analysis.verification_questions,
+                }, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            ))
         feedback_payloads = tuple(
             {
                 "feedback_id": str(item.feedback_id),
@@ -161,6 +201,10 @@ class CandidateEnvelopeProvider:
                 ),
                 human_feedback_ids=selected_feedback_ids,
                 prompt_context=prompt,
+                match_analysis_version_id=(
+                    match_analysis.analysis_version_id
+                    if match_analysis is not None else None
+                ),
             )
         except ValueError:
             raise CandidateScopeViolation("candidate context is not usable") from None

@@ -117,6 +117,7 @@ function workspaceHarness() {
   });
   const r12Api: HrR12Api = {
     ...createHrR12Api(account.csrf_token),
+    officialVersions: vi.fn().mockResolvedValue([]), officialVersion: vi.fn(), downloadOfficialVersion: vi.fn(),
     startTask, activeTasks, taskStatus: vi.fn(), resources,
     downloadResource: vi.fn().mockResolvedValue({ contentPath: `/api/attachments/content/ticket-${artifactAttachmentId}`, expiresAt: now }),
     context: vi.fn().mockResolvedValue({ current: confirmedContext, drafts: [], history: [confirmedContext] }),
@@ -153,7 +154,7 @@ describe("HR R1.2 position journey", () => {
     });
 
     await click("岗位资料");
-    expect(container.querySelector('section[aria-label="当前岗位理解"]')).not.toBeNull();
+    expect(container.querySelector('section[aria-label="内部岗位理解"]')).not.toBeNull();
     await click("候选人");
     expect(container.querySelector('section[aria-label="批量简历导入"] input[type="file"]')).not.toBeNull();
     await click("材料与成果");
