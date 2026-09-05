@@ -1068,10 +1068,20 @@ class PlatformP0AcceptanceGateway:
                         "position_candidate_id": relation["position_candidate_id"],
                     },
                 )
-                task = self._wait_task(position_id, task, deadline=deadline)
-                conversation_id = str(task["conversation_id"])
-                turn_id = str(task["turn_id"])
+                conversation_id = str(task.get("conversation_id"))
+                turn_id = str(task.get("turn_id"))
+                try:
+                    UUID(conversation_id)
+                    UUID(turn_id)
+                except ValueError:
+                    raise AcceptanceFailure("API_CONTRACT") from None
                 self.created_ids["conversation_ids"].append(conversation_id)
+                completed_task = self._wait_task(position_id, task, deadline=deadline)
+                if (
+                    completed_task.get("conversation_id") != conversation_id
+                    or completed_task.get("turn_id") != turn_id
+                ):
+                    raise AcceptanceFailure("API_CONTRACT")
                 answer, urls, _, progress = self._wait_conversation(
                     conversation_id, turn_id, deadline=deadline
                 )
@@ -1124,12 +1134,23 @@ class PlatformP0AcceptanceGateway:
                     "position_candidate_id": primary["position_candidate_id"],
                 },
             )
-            interview_task = self._wait_task(
+            interview_conversation = str(interview_task.get("conversation_id"))
+            interview_turn = str(interview_task.get("turn_id"))
+            try:
+                UUID(interview_conversation)
+                UUID(interview_turn)
+            except ValueError:
+                raise AcceptanceFailure("API_CONTRACT") from None
+            self.created_ids["conversation_ids"].append(interview_conversation)
+            completed_interview_task = self._wait_task(
                 position_id, interview_task, deadline=deadline
             )
-            interview_conversation = str(interview_task["conversation_id"])
-            interview_turn = str(interview_task["turn_id"])
-            self.created_ids["conversation_ids"].append(interview_conversation)
+            if (
+                completed_interview_task.get("conversation_id")
+                != interview_conversation
+                or completed_interview_task.get("turn_id") != interview_turn
+            ):
+                raise AcceptanceFailure("API_CONTRACT")
             answer, urls, artifacts, progress = self._wait_conversation(
                 interview_conversation, interview_turn, deadline=deadline
             )

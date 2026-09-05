@@ -242,8 +242,9 @@ def test_default_gateway_is_concrete_fixed_platform_api_wiring(tmp_path: Path) -
     }
 
 
+@pytest.mark.parametrize("failed_task", [None, "match:0", "match:1", "interview"])
 def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_task: str | None
 ) -> None:
     def uid(label: str) -> str:
         return str(uuid5(RUN_ID, label))
@@ -545,6 +546,8 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                     for value in ("match:0", "match:1", "interview")
                     if task_id == uid(f"task:{value}")
                 )
+                if name == failed_task:
+                    return Response({"status": "failed"})
                 return Response(
                     {
                         "status": "completed",
@@ -653,27 +656,48 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
         cleanup_manifest_path=cleanup_root / "cleanup.json"
     )
 
-    run_id = run_controlled_acceptance(
-        config,
-        gateway,
-        fixture_root=FIXTURE_ROOT,
-        uuid_factory=lambda: RUN_ID,
-    )
+    if failed_task is None:
+        run_id = run_controlled_acceptance(
+            config,
+            gateway,
+            fixture_root=FIXTURE_ROOT,
+            uuid_factory=lambda: RUN_ID,
+        )
+        assert run_id == RUN_ID
+    else:
+        with pytest.raises(AcceptanceFailure, match="^TURN_FAILED$"):
+            run_controlled_acceptance(
+                config,
+                gateway,
+                fixture_root=FIXTURE_ROOT,
+                uuid_factory=lambda: RUN_ID,
+            )
 
-    assert run_id == RUN_ID
     assert client.source_count == 2
     assert client.upload_count == 3
     assert client.confirm_count == 2
-    assert client.task_count == 3
-    assert client.ticket_count == 2
+    expected_task_count = {None: 3, "match:0": 1, "match:1": 2, "interview": 3}
+    expected_conversation_count = {
+        None: 5,
+        "match:0": 3,
+        "match:1": 4,
+        "interview": 5,
+    }
+    assert client.task_count == expected_task_count[failed_task]
+    assert client.ticket_count == (2 if failed_task is None else 0)
     assert sum(path.endswith(":retry") for _, path in client.calls) == 1
     assert sum(path.endswith(":dismiss") for _, path in client.calls) == 1
-    assert sum(path.endswith("/archive") for _, path in client.calls) == 5
+    assert sum(path.endswith("/archive") for _, path in client.calls) == (
+        expected_conversation_count[failed_task]
+    )
     manifest = json.loads((cleanup_root / "cleanup.json").read_text("utf-8"))
     assert stat.S_IMODE((cleanup_root / "cleanup.json").stat().st_mode) == 0o600
     assert manifest["schema_version"] == 1
     assert manifest["owner_id"] == _config_dict()["owner_id"]
     assert manifest["created_ids"] == gateway.created_ids
+    assert len(manifest["created_ids"]["conversation_ids"]) == (
+        expected_conversation_count[failed_task]
+    )
 
 
 @pytest.mark.parametrize(
