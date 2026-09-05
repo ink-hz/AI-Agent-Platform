@@ -11,7 +11,11 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .panorama_export import build_panorama_pdf, build_panorama_xlsx
+from .panorama_export import (
+    build_panorama_pdf,
+    build_panorama_xlsx,
+    filter_panorama_snapshots,
+)
 from .panorama_models import (
     PanoramaReport,
     PanoramaRun,
@@ -303,15 +307,56 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
         request: Request,
         insight_version_id: Annotated[UUID, Path()],
         export_format: Annotated[Literal["pdf", "xlsx"], Query(alias="format")],
+        source_id: Annotated[UUID | None, Query()] = None,
+        recruitment_track: Annotated[
+            Literal["social", "campus", "unknown"] | None, Query()
+        ] = None,
+        location: Annotated[str | None, Query(min_length=1, max_length=1000)] = None,
+        status: Annotated[Literal["open", "closed", "unknown"] | None, Query()] = None,
+        technical_direction: Annotated[
+            Literal[
+                "algorithm",
+                "optics",
+                "hardware",
+                "structure",
+                "software",
+                "manufacturing",
+                "other",
+            ]
+            | None,
+            Query(),
+        ] = None,
     ):
         owner_id = await owner(request)
         record = await call(service.report, owner_id, insight_version_id)
         _owned(record.insight, owner_id)
+        snapshots = filter_panorama_snapshots(
+            record,
+            source_id=source_id,
+            recruitment_track_filter=recruitment_track,
+            location=location,
+            status=status,
+            technical_direction_filter=technical_direction,
+        )
+        filtered = any(
+            value is not None
+            for value in (
+                source_id,
+                recruitment_track,
+                location,
+                status,
+                technical_direction,
+            )
+        )
         if export_format == "pdf":
-            content = await asyncio.to_thread(build_panorama_pdf, record)
+            content = await asyncio.to_thread(
+                build_panorama_pdf, record, snapshots, filtered=filtered
+            )
             media_type = "application/pdf"
         else:
-            content = await asyncio.to_thread(build_panorama_xlsx, record)
+            content = await asyncio.to_thread(
+                build_panorama_xlsx, record, snapshots, filtered=filtered
+            )
             media_type = (
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )

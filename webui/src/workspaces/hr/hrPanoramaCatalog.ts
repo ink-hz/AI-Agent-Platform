@@ -30,3 +30,12 @@ export function catalogSource(company: HrPanoramaCatalogCompany, sources: HrPano
   const expected = new Set([company.canonicalName, ...company.aliases].map((value) => value.trim().toLocaleLowerCase("zh-CN")));
   return sources.find((source) => [...companyNames(source)].some((name) => expected.has(name)));
 }
+
+function normalizedUrl(value: string): string { return value.replace(/\/$/, ""); }
+
+export function catalogSourceNeedsUpdate(company: HrPanoramaCatalogCompany, source: HrPanoramaSource): boolean {
+  const currentUrls = new Set(source.approvedUrls.map(normalizedUrl));
+  const currentAliases = companyNames(source);
+  return company.approvedUrls.some((url) => !currentUrls.has(normalizedUrl(url)))
+    || company.aliases.some((alias) => !currentAliases.has(alias.trim().toLocaleLowerCase("zh-CN")));
+}
