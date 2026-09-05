@@ -68,7 +68,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const panoramaActive = Boolean(props.panorama || props.panoramaReportId);
   const positionDetailActive = Boolean(props.positionId);
   const positionConversationRoute = Boolean(props.positionId && props.conversationId);
-  const lastChatConversationId = useRef<string | undefined>(undefined);
+  const lastChatTarget = useRef<{ conversationId: string; positionId?: string } | undefined>(undefined);
   const freeChatDraftSnapshots = useRef(new Map<string, DirectAgentDraftSnapshot>());
   const [confirmedPosition, setConfirmedPosition] = useState<{
     ownerId: string; confirmed: HrConfirmedPositionPackage; positionPackage: HrPositionPackage;
@@ -91,17 +91,24 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
     freeChatDraftSnapshots.current.set(draftOwnerId, snapshot);
   }, [draftOwnerId]);
 
-  if (!positionsActive && !panoramaActive) lastChatConversationId.current = props.conversationId;
+  if (!positionsActive && !panoramaActive && props.conversationId) {
+    lastChatTarget.current = { conversationId: props.conversationId };
+  }
   const retainedPositionHost = Boolean(positionConversationRoute
-    && props.conversationId === lastChatConversationId.current);
+    && props.conversationId === lastChatTarget.current?.conversationId);
   const positionRouteValidated = Boolean(positionConversationRoute
     && validatedRoute?.positionId === props.positionId
     && validatedRoute?.conversationId === props.conversationId);
   const currentPositionRouteKey = positionConversationRoute
     ? `${props.positionId}:${props.conversationId}` : null;
   const positionRouteReady = positionRouteValidated && revealedRouteKey === currentPositionRouteKey;
-  const chatConversationId = props.conversationId ?? (positionsActive || panoramaActive ? lastChatConversationId.current : undefined);
-  const chatHref = chatConversationId ? hrConversationPath(chatConversationId) : "/hr/";
+  const chatTarget = props.conversationId
+    ? { conversationId: props.conversationId, positionId: props.positionId }
+    : positionsActive || panoramaActive ? lastChatTarget.current : undefined;
+  const chatConversationId = chatTarget?.conversationId;
+  const chatHref = chatTarget?.positionId
+    ? `/hr/positions/${encodeURIComponent(chatTarget.positionId)}/conversations/${encodeURIComponent(chatTarget.conversationId)}`
+    : chatConversationId ? hrConversationPath(chatConversationId) : "/hr/";
   const keepChatHost = !positionDetailActive || Boolean(positionConversationRoute && (retainedPositionHost || positionRouteValidated));
   const positionConversationPath = (conversationId: string) => props.positionId
     ? `/hr/positions/${encodeURIComponent(props.positionId)}/conversations/${encodeURIComponent(conversationId)}`
@@ -158,7 +165,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
         positionId, conversationId,
         conversations: conversations.filter((item) => allowed.has(item.conversation_id)),
       });
-      lastChatConversationId.current = conversationId;
+      lastChatTarget.current = { conversationId, positionId };
       setContinuedPositionDetailState("ready");
       void positionDetailsApi.context(positionId, controller.signal).then((context) => {
         if (!controller.signal.aborted) setContinuedPositionContext(context.current);

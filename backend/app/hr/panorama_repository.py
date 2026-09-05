@@ -879,9 +879,46 @@ class PanoramaRepository:
     def _sources_for_ranking(
         self, owner_id: UUID, source_ids: tuple[UUID, ...]
     ) -> dict[UUID, TalentSource]:
+        sources: dict[UUID, TalentSource] = {}
+        before_created_at = None
+        before_source_id = None
+        while True:
+            page = self.list_sources_page(
+                owner_id,
+                include_inactive=False,
+                before_created_at=before_created_at,
+                before_source_id=before_source_id,
+                limit=100,
+            )
+            sources.update((source.source_id, source) for source in page)
+            if len(page) < 100:
+                return sources
+            before_created_at = page[-1].created_at
+            before_source_id = page[-1].source_id
+
+    def _evidenced_sources_for_ranking(
+        self, owner_id: UUID, insights: tuple[TalentInsightVersion, ...]
+    ) -> dict[UUID, frozenset[UUID]]:
+        snapshots = {
+            snapshot.snapshot_id: snapshot.source_id
+            for snapshot in self._read_snapshots(
+                owner_id,
+                tuple(
+                    dict.fromkeys(
+                        snapshot_id
+                        for insight in insights
+                        for snapshot_id in insight.snapshot_ids
+                    )
+                ),
+            )
+        }
         return {
-            source.source_id: source
-            for source in self._read_sources(owner_id, source_ids)
+            insight.insight_version_id: frozenset(
+                source_id
+                for snapshot_id in insight.snapshot_ids
+                if (source_id := snapshots.get(snapshot_id)) is not None
+            )
+            for insight in insights
         }
 
     def relevant_insights(
@@ -920,6 +957,27 @@ class PanoramaRepository:
         )
         sources = self._sources_for_ranking(owner_id, source_ids) if source_ids else {}
         normalized_query = _normalize(query)
+        mentioned_source_ids = tuple(
+            source_id
+            for source_id, source in sources.items()
+            if any(
+                (name_key := _normalize(name)) and name_key in normalized_query
+                for name in (source.canonical_name, *source.aliases)
+            )
+        )
+        if mentioned_source_ids:
+            evidenced_sources = self._evidenced_sources_for_ranking(
+                owner_id, candidates
+            )
+            candidates = tuple(
+                insight
+                for insight in candidates
+                if all(
+                    source_id in insight.selected_source_ids
+                    and source_id in evidenced_sources[insight.insight_version_id]
+                    for source_id in mentioned_source_ids
+                )
+            )
 
         def rank(insight: TalentInsightVersion):
             source_names = tuple(

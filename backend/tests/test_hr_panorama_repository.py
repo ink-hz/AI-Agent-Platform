@@ -316,7 +316,7 @@ def test_repository_creates_runs_snapshots_reports_and_ranks_deterministically(
 
 
 @pytest.mark.postgres
-def test_ranking_order_is_company_then_direction_then_position_freshness_and_id(
+def test_named_company_filter_precedes_direction_and_position_ranking(
     control_database,
 ) -> None:
     environment = control_database["environments"]["production"]
@@ -342,12 +342,16 @@ def test_ranking_order_is_company_then_direction_then_position_freshness_and_id(
     }
     repository._ranking_candidates = lambda owner: (position, direction, company)  # type: ignore[attr-defined]
     repository._sources_for_ranking = lambda owner, ids: sources  # type: ignore[attr-defined]
+    repository._evidenced_sources_for_ranking = lambda owner, insights: {  # type: ignore[attr-defined]
+        insight.insight_version_id: frozenset(insight.selected_source_ids)
+        for insight in insights
+    }
 
     ranked = repository.relevant_insights(
         owner_id, "参考联合光电的结构方向", position_id, limit=3
     )
 
-    assert ranked == (company, direction, position)
+    assert ranked == (company,)
 
 
 def test_each_ranking_tie_breaker_is_applied_only_after_preceding_signals() -> None:
@@ -363,6 +367,10 @@ def test_each_ranking_tie_breaker_is_applied_only_after_preceding_signals() -> N
         repository._sources_for_ranking = lambda owner, ids: {  # type: ignore[method-assign]
             first_source.source_id: first_source,
             second_source.source_id: second_source,
+        }
+        repository._evidenced_sources_for_ranking = lambda owner, insights: {  # type: ignore[method-assign]
+            insight.insight_version_id: frozenset(insight.selected_source_ids)
+            for insight in insights
         }
         return repository.relevant_insights(owner_id, query, position_id, limit=2)
 
@@ -499,12 +507,48 @@ def test_relevance_filters_to_latest_version_per_source_scope_before_limit() -> 
     repository._sources_for_ranking = lambda owner, ids: {  # type: ignore[method-assign]
         source_id: _source_record(source_id, "联合光电")
     }
+    repository._evidenced_sources_for_ranking = lambda owner, insights: {  # type: ignore[method-assign]
+        insight.insight_version_id: frozenset(insight.selected_source_ids)
+        for insight in insights
+    }
 
     ranked = repository.relevant_insights(
         owner_id, "参考联合光电的结构招聘", position_id, limit=5
     )
 
     assert ranked == (latest,)
+
+
+def test_named_company_relevance_requires_snapshot_evidence_for_that_source() -> None:
+    owner_id, position_id = uuid4(), uuid4()
+    sunny_id, other_id, unseen_id = uuid4(), uuid4(), uuid4()
+    repository = PanoramaRepository("postgresql://unused")
+    repository._position_terms = lambda owner, position: ("结构工程师",)  # type: ignore[method-assign]
+    retry = replace(
+        _ranking_insight(UUID(int=1001), "unused", {"结构": 1}, "最新重试", NOW),
+        selected_source_ids=(sunny_id,),
+    )
+    partial = replace(
+        _ranking_insight(UUID(int=1002), "unused", {"结构": 2}, "部分完成", NOW),
+        selected_source_ids=(sunny_id, other_id),
+    )
+    repository._ranking_candidates = lambda owner: (retry, partial)  # type: ignore[method-assign]
+    repository._sources_for_ranking = lambda owner, ids: {  # type: ignore[method-assign]
+        sunny_id: _source_record(sunny_id, "舜宇光学"),
+        other_id: _source_record(other_id, "联合光电"),
+        unseen_id: _source_record(unseen_id, "奥比中光"),
+    }
+    repository._evidenced_sources_for_ranking = lambda owner, insights: {  # type: ignore[method-assign]
+        retry.insight_version_id: frozenset({sunny_id}),
+        partial.insight_version_id: frozenset({other_id}),
+    }
+
+    assert repository.relevant_insights(
+        owner_id, "参考舜宇光学最新全景分析", position_id
+    ) == (retry,)
+    assert repository.relevant_insights(
+        owner_id, "参考奥比中光最新全景分析", position_id
+    ) == ()
 
 
 def _ranking_insight(insight_id, company_name, clusters, summary, created_at):
