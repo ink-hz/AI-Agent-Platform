@@ -15,13 +15,19 @@ from psycopg.rows import dict_row
 from .panorama_models import (
     CreatePanoramaRun,
     CreatePositionInsightRetrieval,
+    CreateProductionBatch,
     CreatePublicJobSnapshot,
+    CreateSourceCollectionAttempt,
     CreateTalentInsightVersion,
     CreateTalentSource,
     PanoramaReport,
     PanoramaRun,
     PositionInsightRetrieval,
+    ProductionBatch,
     PublicJobSnapshot,
+    PublishedPanorama,
+    PublishPanoramaReport,
+    SourceCollectionAttempt,
     TalentInsightVersion,
     TalentSource,
     TransitionPanoramaRun,
@@ -112,6 +118,7 @@ def _snapshot(row: Mapping[str, Any]) -> PublicJobSnapshot:
         content_sha256=row["content_sha256"],
         status=row["status"],
         created_at=row["created_at"],
+        production_batch_id=row.get("production_batch_id"),
     )
 
 
@@ -134,6 +141,60 @@ def _insight(row: Mapping[str, Any]) -> TalentInsightVersion:
         agent_id=row["agent_id"],
         model_version=row["model_version"],
         created_at=row["created_at"],
+        production_batch_id=row.get("production_batch_id"),
+    )
+
+
+def _production_batch(row: Mapping[str, Any]) -> ProductionBatch:
+    return ProductionBatch(
+        batch_id=row["batch_id"],
+        owner_id=row["producer_owner_internal_user_id"],
+        client_request_id=row["client_request_id"],
+        selected_source_ids=tuple(row["selected_source_ids"]),
+        trigger_kind=row["trigger_kind"],
+        state=row["state"],
+        analyzer_version=row["analyzer_version"],
+        source_failures=row["source_failures"],
+        error_code=row["error_code"],
+        row_version=row["row_version"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _source_attempt(row: Mapping[str, Any]) -> SourceCollectionAttempt:
+    return SourceCollectionAttempt(
+        attempt_id=row["attempt_id"],
+        batch_id=row["batch_id"],
+        owner_id=row["producer_owner_internal_user_id"],
+        source_id=row["source_id"],
+        source_url=row["source_url"],
+        attempt_number=row["attempt_number"],
+        state=row["state"],
+        error_code=row["error_code"],
+        evidence_sha256=row["evidence_sha256"],
+        evidence_locator=row["evidence_locator"],
+        evidence_mime=row["evidence_mime"],
+        evidence_size_bytes=row["evidence_size_bytes"],
+        normalized_job_count=row["normalized_job_count"],
+        observed_at=row["observed_at"],
+        created_at=row["created_at"],
+    )
+
+
+def _publication(row: Mapping[str, Any]) -> PublishedPanorama:
+    return PublishedPanorama(
+        publication_id=row["publication_id"],
+        client_request_id=row["client_request_id"],
+        batch_id=row["batch_id"],
+        owner_id=row["producer_owner_internal_user_id"],
+        insight_version_id=row["insight_version_id"],
+        workspace_key=row["workspace_key"],
+        coverage_state=row["coverage_state"],
+        source_coverage=tuple(row["source_coverage"]),
+        published_at=row["published_at"],
     )
 
 
@@ -274,6 +335,113 @@ class PanoramaRepository:
             options="-c statement_timeout=10000",
             row_factory=dict_row,
         )
+
+    def create_production_batch(
+        self, command: CreateProductionBatch
+    ) -> ProductionBatch:
+        if not isinstance(command, CreateProductionBatch):
+            raise ValueError("panorama production batch command required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select result.* from "
+                    "platform_hr.create_panorama_production_batch_v80("
+                    "%s,%s,%s,%s::uuid[],%s,%s) result",
+                    (
+                        command.batch_id,
+                        command.owner_id,
+                        command.client_request_id,
+                        list(command.selected_source_ids),
+                        command.trigger_kind,
+                        command.analyzer_version,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PanoramaUnavailable("panorama production batch unavailable")
+            return _production_batch(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "production batch")
+
+    def record_source_attempt(
+        self, command: CreateSourceCollectionAttempt
+    ) -> SourceCollectionAttempt:
+        if not isinstance(command, CreateSourceCollectionAttempt):
+            raise ValueError("panorama source attempt command required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select result.* from "
+                    "platform_hr.record_panorama_source_attempt_v80("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) result",
+                    (
+                        command.attempt_id,
+                        command.batch_id,
+                        command.owner_id,
+                        command.source_id,
+                        command.source_url,
+                        command.attempt_number,
+                        command.state,
+                        command.error_code,
+                        command.evidence_sha256,
+                        command.evidence_locator,
+                        command.evidence_mime,
+                        command.evidence_size_bytes,
+                        command.normalized_job_count,
+                        command.observed_at,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PanoramaUnavailable("panorama source attempt unavailable")
+            return _source_attempt(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "source attempt")
+
+    def current_publication(self) -> PublishedPanorama | None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from "
+                    "platform_hr.read_current_panorama_publication_v80(%s)",
+                    ("hr",),
+                ).fetchone()
+            return None if row is None else _publication(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "current publication")
+
+    def publish_production_report(
+        self, command: PublishPanoramaReport
+    ) -> PublishedPanorama:
+        if not isinstance(command, PublishPanoramaReport):
+            raise ValueError("panorama publication command required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select result.* from platform_hr.publish_panorama_version_v80("
+                    "%s,%s,%s,%s,%s,%s::jsonb) result",
+                    (
+                        command.publication_id,
+                        command.client_request_id,
+                        command.batch_id,
+                        command.insight_version_id,
+                        command.coverage_state,
+                        json.dumps(
+                            thaw_json(command.source_coverage), ensure_ascii=False
+                        ),
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PanoramaUnavailable("panorama publication unavailable")
+            return _publication(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "publication")
 
     def publish_report(self, operation: Callable[[object], Any]) -> Any:
         if not callable(operation):

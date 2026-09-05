@@ -16,6 +16,10 @@ from uuid import UUID
 SourceKind = Literal["company"]
 RunState = Literal["queued", "running", "completed", "partially_completed", "failed"]
 JobStatus = Literal["open", "closed", "unknown"]
+ProductionBatchState = Literal["queued", "running", "analyzing", "published", "failed"]
+ProductionTrigger = Literal["schedule", "operator"]
+CollectionAttemptState = Literal["succeeded", "failed"]
+PublicationCoverageState = Literal["complete", "partial"]
 
 _COMPANY_KEY = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
 _ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
@@ -597,7 +601,7 @@ class PublicJobSnapshot:
     snapshot_id: UUID
     owner_id: UUID
     origin_request_id: UUID
-    run_id: UUID
+    run_id: UUID | None
     source_id: UUID
     public_job_key: str
     title: str
@@ -609,16 +613,22 @@ class PublicJobSnapshot:
     content_sha256: str
     status: JobStatus
     created_at: datetime
+    production_batch_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for value in (
             self.snapshot_id,
             self.owner_id,
             self.origin_request_id,
-            self.run_id,
             self.source_id,
         ):
             _uuid(value)
+        if (self.run_id is None) == (self.production_batch_id is None):
+            raise ValueError("snapshot origin invalid")
+        if self.run_id is not None:
+            _uuid(self.run_id)
+        if self.production_batch_id is not None:
+            _uuid(self.production_batch_id)
         for name, maximum in (
             ("public_job_key", 512),
             ("title", 1000),
@@ -646,7 +656,7 @@ class CreatePublicJobSnapshot:
     snapshot_id: UUID
     owner_id: UUID
     client_request_id: UUID
-    run_id: UUID
+    run_id: UUID | None
     source_id: UUID
     public_job_key: str
     title: str
@@ -657,6 +667,7 @@ class CreatePublicJobSnapshot:
     observed_at: datetime
     content_sha256: str
     status: JobStatus
+    production_batch_id: UUID | None = None
 
     def __post_init__(self) -> None:
         normalized = PublicJobSnapshot(
@@ -675,6 +686,7 @@ class CreatePublicJobSnapshot:
             self.content_sha256,
             self.status,
             self.observed_at,
+            self.production_batch_id,
         )
         for name in (
             "public_job_key",
@@ -692,7 +704,7 @@ class TalentInsightVersion:
     insight_version_id: UUID
     owner_id: UUID
     client_request_id: UUID
-    run_id: UUID
+    run_id: UUID | None
     version_number: int
     selected_source_ids: tuple[UUID, ...]
     snapshot_ids: tuple[UUID, ...]
@@ -701,22 +713,42 @@ class TalentInsightVersion:
     unknowns: tuple[Mapping[str, object], ...]
     direction_clusters: Mapping[str, object]
     summary: str
-    source_conversation_id: UUID
-    source_turn_id: UUID
+    source_conversation_id: UUID | None
+    source_turn_id: UUID | None
     agent_id: str
     model_version: str
     created_at: datetime
+    production_batch_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for value in (
             self.insight_version_id,
             self.owner_id,
             self.client_request_id,
+        ):
+            _uuid(value)
+        legacy_origin = (
+            self.run_id is not None
+            and self.production_batch_id is None
+            and self.source_conversation_id is not None
+            and self.source_turn_id is not None
+        )
+        production_origin = (
+            self.run_id is None
+            and self.production_batch_id is not None
+            and self.source_conversation_id is None
+            and self.source_turn_id is None
+        )
+        if not (legacy_origin or production_origin):
+            raise ValueError("insight origin invalid")
+        for value in (
             self.run_id,
+            self.production_batch_id,
             self.source_conversation_id,
             self.source_turn_id,
         ):
-            _uuid(value)
+            if value is not None:
+                _uuid(value)
         _positive(self.version_number, "insight version invalid")
         _uuid_tuple(
             self.selected_source_ids,
@@ -753,7 +785,7 @@ class CreateTalentInsightVersion:
     insight_version_id: UUID
     owner_id: UUID
     client_request_id: UUID
-    run_id: UUID
+    run_id: UUID | None
     selected_source_ids: tuple[UUID, ...]
     snapshot_ids: tuple[UUID, ...]
     facts: tuple[Mapping[str, object], ...]
@@ -761,10 +793,11 @@ class CreateTalentInsightVersion:
     unknowns: tuple[Mapping[str, object], ...]
     direction_clusters: Mapping[str, object]
     summary: str
-    source_conversation_id: UUID
-    source_turn_id: UUID
+    source_conversation_id: UUID | None
+    source_turn_id: UUID | None
     agent_id: str
     model_version: str
+    production_batch_id: UUID | None = None
 
     def __post_init__(self) -> None:
         normalized = self.as_version(
@@ -802,7 +835,370 @@ class CreateTalentInsightVersion:
             self.agent_id,
             self.model_version,
             created_at,
+            self.production_batch_id,
         )
+
+
+def _evidence_hash(value: str | None) -> str | None:
+    if value is not None and (
+        not isinstance(value, str) or _SHA256.fullmatch(value) is None
+    ):
+        raise ValueError("attempt evidence invalid")
+    return value
+
+
+def _evidence_locator(value: str | None) -> str | None:
+    if value is not None and (
+        not isinstance(value, str)
+        or re.fullmatch(r"sha256/[a-f0-9]{2}/[a-f0-9]{64}", value) is None
+    ):
+        raise ValueError("attempt evidence invalid")
+    return value
+
+
+def _coverage(
+    values: tuple[Mapping[str, object], ...],
+) -> tuple[Mapping[str, object], ...]:
+    records = _json_objects(
+        values,
+        minimum=1,
+        maximum=100,
+        maximum_bytes=131072,
+        message="publication coverage invalid",
+    )
+    seen: set[UUID] = set()
+    for record in records:
+        allowed = {
+            "source_id",
+            "state",
+            "observed_at",
+            "source_urls",
+            "job_count",
+            "error_code",
+        }
+        required = {
+            "source_id",
+            "state",
+            "observed_at",
+            "source_urls",
+            "job_count",
+        }
+        if not required <= set(record) or not set(record) <= allowed:
+            raise ValueError("publication coverage invalid")
+        try:
+            source_id = UUID(str(record["source_id"]))
+            observed_at = datetime.fromisoformat(
+                str(record["observed_at"]).replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError):
+            raise ValueError("publication coverage invalid") from None
+        if source_id in seen or observed_at.tzinfo is None:
+            raise ValueError("publication coverage invalid")
+        seen.add(source_id)
+        state = record["state"]
+        urls = record["source_urls"]
+        job_count = record["job_count"]
+        error_code = record.get("error_code")
+        if (
+            state not in {"succeeded", "failed"}
+            or not isinstance(urls, tuple)
+            or not 1 <= len(urls) <= 20
+            or any(canonical_panorama_url(value) != value for value in urls)
+            or isinstance(job_count, bool)
+            or not isinstance(job_count, int)
+            or not 0 <= job_count <= 10000
+            or (state == "succeeded" and error_code is not None)
+            or (
+                state == "failed"
+                and (
+                    not isinstance(error_code, str)
+                    or _ERROR_CODE.fullmatch(error_code) is None
+                    or job_count != 0
+                )
+            )
+        ):
+            raise ValueError("publication coverage invalid")
+    return records
+
+
+@dataclass(frozen=True, slots=True)
+class ProductionBatch:
+    batch_id: UUID
+    owner_id: UUID
+    client_request_id: UUID
+    selected_source_ids: tuple[UUID, ...]
+    trigger_kind: ProductionTrigger
+    state: ProductionBatchState
+    analyzer_version: str
+    source_failures: Mapping[str, str]
+    error_code: str | None
+    row_version: int
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        for value in (self.batch_id, self.owner_id, self.client_request_id):
+            _uuid(value)
+        _uuid_tuple(
+            self.selected_source_ids,
+            minimum=1,
+            maximum=100,
+            message="panorama source selection invalid",
+        )
+        if self.trigger_kind not in {"schedule", "operator"} or self.state not in {
+            "queued",
+            "running",
+            "analyzing",
+            "published",
+            "failed",
+        }:
+            raise ValueError("production batch invalid")
+        object.__setattr__(
+            self,
+            "analyzer_version",
+            _text(self.analyzer_version, 160, "analyzer version invalid"),
+        )
+        failures = _source_failures(self.source_failures, self.selected_source_ids)
+        object.__setattr__(self, "source_failures", failures)
+        error = _optional_text(self.error_code, 64, "batch error invalid")
+        if error is not None and _ERROR_CODE.fullmatch(error) is None:
+            raise ValueError("batch error invalid")
+        object.__setattr__(self, "error_code", error)
+        _positive(self.row_version, "batch row version invalid")
+        _optional_aware(self.started_at)
+        _optional_aware(self.finished_at)
+        _aware(self.created_at)
+        _aware(self.updated_at)
+        valid = (
+            self.state == "queued"
+            and self.started_at is None
+            and self.finished_at is None
+            and error is None
+            and not failures
+        ) or (
+            self.state in {"running", "analyzing"}
+            and self.started_at is not None
+            and self.finished_at is None
+            and error is None
+        ) or (
+            self.state == "published"
+            and self.started_at is not None
+            and self.finished_at is not None
+            and error is None
+        ) or (
+            self.state == "failed"
+            and self.started_at is not None
+            and self.finished_at is not None
+            and error is not None
+        )
+        if not valid:
+            raise ValueError("production batch lifecycle invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CreateProductionBatch:
+    batch_id: UUID
+    owner_id: UUID
+    client_request_id: UUID
+    selected_source_ids: tuple[UUID, ...]
+    trigger_kind: ProductionTrigger
+    analyzer_version: str
+
+    def __post_init__(self) -> None:
+        for value in (self.batch_id, self.owner_id, self.client_request_id):
+            _uuid(value)
+        _uuid_tuple(
+            self.selected_source_ids,
+            minimum=1,
+            maximum=100,
+            message="panorama source selection invalid",
+        )
+        if self.trigger_kind not in {"schedule", "operator"}:
+            raise ValueError("production trigger invalid")
+        object.__setattr__(
+            self,
+            "analyzer_version",
+            _text(self.analyzer_version, 160, "analyzer version invalid"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceCollectionAttempt:
+    attempt_id: UUID
+    batch_id: UUID
+    owner_id: UUID
+    source_id: UUID
+    source_url: str
+    attempt_number: int
+    state: CollectionAttemptState
+    error_code: str | None
+    evidence_sha256: str | None
+    evidence_locator: str | None
+    evidence_mime: str | None
+    evidence_size_bytes: int | None
+    normalized_job_count: int
+    observed_at: datetime
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        for value in (self.attempt_id, self.batch_id, self.owner_id, self.source_id):
+            _uuid(value)
+        object.__setattr__(
+            self, "source_url", canonical_panorama_url(self.source_url)
+        )
+        if (
+            isinstance(self.attempt_number, bool)
+            or not isinstance(self.attempt_number, int)
+            or not 1 <= self.attempt_number <= 3
+        ):
+            raise ValueError("attempt number invalid")
+        if self.state not in {"succeeded", "failed"}:
+            raise ValueError("attempt state invalid")
+        error = _optional_text(self.error_code, 64, "attempt error invalid")
+        if error is not None and _ERROR_CODE.fullmatch(error) is None:
+            raise ValueError("attempt error invalid")
+        evidence_hash = _evidence_hash(self.evidence_sha256)
+        evidence_locator = _evidence_locator(self.evidence_locator)
+        evidence_mime = _optional_text(
+            self.evidence_mime, 255, "attempt evidence invalid"
+        )
+        size = self.evidence_size_bytes
+        count = self.normalized_job_count
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or not 0 <= count <= 10000
+            or (
+                size is not None
+                and (
+                    isinstance(size, bool)
+                    or not isinstance(size, int)
+                    or not 0 <= size <= 10485760
+                )
+            )
+        ):
+            raise ValueError("attempt evidence invalid")
+        success = (
+            self.state == "succeeded"
+            and error is None
+            and None not in (evidence_hash, evidence_locator, evidence_mime, size)
+        )
+        failure = (
+            self.state == "failed"
+            and error is not None
+            and all(
+                value is None
+                for value in (evidence_hash, evidence_locator, evidence_mime, size)
+            )
+            and count == 0
+        )
+        if not (success or failure):
+            raise ValueError("attempt lifecycle invalid")
+        object.__setattr__(self, "error_code", error)
+        object.__setattr__(self, "evidence_sha256", evidence_hash)
+        object.__setattr__(self, "evidence_locator", evidence_locator)
+        object.__setattr__(self, "evidence_mime", evidence_mime)
+        _aware(self.observed_at)
+        _aware(self.created_at)
+
+
+@dataclass(frozen=True, slots=True)
+class CreateSourceCollectionAttempt:
+    attempt_id: UUID
+    batch_id: UUID
+    owner_id: UUID
+    source_id: UUID
+    source_url: str
+    attempt_number: int
+    state: CollectionAttemptState
+    error_code: str | None
+    evidence_sha256: str | None
+    evidence_locator: str | None
+    evidence_mime: str | None
+    evidence_size_bytes: int | None
+    normalized_job_count: int
+    observed_at: datetime
+
+    def __post_init__(self) -> None:
+        normalized = SourceCollectionAttempt(
+            self.attempt_id,
+            self.batch_id,
+            self.owner_id,
+            self.source_id,
+            self.source_url,
+            self.attempt_number,
+            self.state,
+            self.error_code,
+            self.evidence_sha256,
+            self.evidence_locator,
+            self.evidence_mime,
+            self.evidence_size_bytes,
+            self.normalized_job_count,
+            self.observed_at,
+            self.observed_at,
+        )
+        for name in (
+            "source_url",
+            "error_code",
+            "evidence_sha256",
+            "evidence_locator",
+            "evidence_mime",
+        ):
+            object.__setattr__(self, name, getattr(normalized, name))
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedPanorama:
+    publication_id: UUID
+    client_request_id: UUID
+    batch_id: UUID
+    owner_id: UUID
+    insight_version_id: UUID
+    workspace_key: str
+    coverage_state: PublicationCoverageState
+    source_coverage: tuple[Mapping[str, object], ...]
+    published_at: datetime
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.publication_id,
+            self.client_request_id,
+            self.batch_id,
+            self.owner_id,
+            self.insight_version_id,
+        ):
+            _uuid(value)
+        if self.workspace_key != "hr" or self.coverage_state not in {
+            "complete",
+            "partial",
+        }:
+            raise ValueError("publication coverage invalid")
+        object.__setattr__(self, "source_coverage", _coverage(self.source_coverage))
+        _aware(self.published_at)
+
+
+@dataclass(frozen=True, slots=True)
+class PublishPanoramaReport:
+    publication_id: UUID
+    client_request_id: UUID
+    batch_id: UUID
+    insight_version_id: UUID
+    coverage_state: PublicationCoverageState
+    source_coverage: tuple[Mapping[str, object], ...]
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.publication_id,
+            self.client_request_id,
+            self.batch_id,
+            self.insight_version_id,
+        ):
+            _uuid(value)
+        if self.coverage_state not in {"complete", "partial"}:
+            raise ValueError("publication coverage invalid")
+        object.__setattr__(self, "source_coverage", _coverage(self.source_coverage))
 
 
 @dataclass(frozen=True, slots=True)
@@ -934,13 +1330,19 @@ class PanoramaReport:
 __all__ = [
     "CreatePanoramaRun",
     "CreatePositionInsightRetrieval",
+    "CreateProductionBatch",
     "CreatePublicJobSnapshot",
+    "CreateSourceCollectionAttempt",
     "CreateTalentInsightVersion",
     "CreateTalentSource",
     "PanoramaReport",
     "PanoramaRun",
     "PositionInsightRetrieval",
+    "ProductionBatch",
     "PublicJobSnapshot",
+    "PublishPanoramaReport",
+    "PublishedPanorama",
+    "SourceCollectionAttempt",
     "TalentInsightVersion",
     "TalentSource",
     "TransitionPanoramaRun",
