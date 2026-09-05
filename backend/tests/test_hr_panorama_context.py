@@ -221,6 +221,7 @@ def test_named_company_filters_unrelated_facts_from_a_multi_company_insight() ->
             },
         ),
         inferences=(),
+        unknowns=({"text": "示例光学乙的岗位地点仍待核验"},),
     )
 
     fragment = PanoramaContextProvider(
@@ -230,6 +231,7 @@ def test_named_company_filters_unrelated_facts_from_a_multi_company_insight() ->
     assert fragment is not None
     assert [fact["fact_id"] for fact in fragment.facts] == ["alpha-fact"]
     assert fragment.source_urls == ("https://example.com/company-alpha/jobs/1",)
+    assert fragment.unknowns == ()
 
 
 @pytest.mark.parametrize(

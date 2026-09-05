@@ -4,7 +4,8 @@ import json
 import socket
 from base64 import b64encode
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -30,6 +31,8 @@ from app.agent_brain.conversation_projection import ConversationProjection
 from app.agent_brain.conversation_repository import message_subject
 from app.agent_brain.models import load_capability_cards
 from app.agent_brain.orchestrator import MissionOrchestrator
+from app.attachments.conversation_routes import build_conversation_attachment_router
+from app.attachments.grant_service import OutputWriteGrant, TaskAttachmentGrant
 from app.attachments.result_projection import ConversationResultProjection
 from app.execution_relay.content_crypto import SealedContent
 from app.execution_relay.models import RelayEvent
@@ -47,8 +50,14 @@ class _FreshTicketStorage:
     def __init__(self, pdf_bytes: bytes) -> None:
         self._pdf_bytes = pdf_bytes
         self._ticket_number = 0
+        self._attachments: set[UUID] = set()
+        self._tickets: dict[str, bytes] = {}
+
+    def register(self, attachment_id: UUID) -> None:
+        self._attachments.add(attachment_id)
 
     def attachment(self, owner_id: UUID, attachment_id: UUID):
+        assert attachment_id in self._attachments
         return SimpleNamespace(
             owner_internal_user_id=owner_id,
             attachment_id=attachment_id,
@@ -63,6 +72,7 @@ class _FreshTicketStorage:
     def issue_ticket(self, owner_id: UUID, attachment_id: UUID, purpose: str):
         assert isinstance(owner_id, UUID)
         assert isinstance(attachment_id, UUID)
+        assert attachment_id in self._attachments
         assert purpose == "download"
         self._ticket_number += 1
         token = (
@@ -70,10 +80,62 @@ class _FreshTicketStorage:
             if self._ticket_number == 1
             else f"{'a' * 30}{self._ticket_number:02d}"
         )
+        content_path = f"/api/v1/attachments/content/{token}"
+        self._tickets[token] = self._pdf_bytes
         return {
-            "content_path": f"/api/v1/attachments/content/{token}",
+            "content_path": content_path,
             "expires_at": f"2026-09-04T10:{self._ticket_number:02d}:00Z",
         }
+
+    def open_content(self, owner_id: UUID, ticket: str, range_header: str | None):
+        assert isinstance(owner_id, UUID)
+        assert range_header is None
+        return SimpleNamespace(
+            stream=iter((self._tickets[ticket],)),
+            status_code=200,
+            media_type="application/pdf",
+            headers={"Content-Length": str(len(self._tickets[ticket]))},
+        )
+
+
+class _AcceptanceAttachmentGrants:
+    def __init__(self, storage: _FreshTicketStorage) -> None:
+        self._storage = storage
+
+    def issue_attachment(self, task_id: UUID, attachment_id: UUID, agent_id: str):
+        assert isinstance(task_id, UUID)
+        assert agent_id == "hr-bot"
+        return TaskAttachmentGrant(
+            attachment_id=attachment_id,
+            display_name="匿名候选人简历.pdf",
+            detected_mime="application/pdf",
+            size_bytes=128,
+            sha256_hex="1" * 64,
+            download_url=(
+                f"/api/v1/execution-worker/attachments/{attachment_id}/content"
+            ),
+            bearer_token="r" * 43,
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        )
+
+    def issue_output(self, task_id: UUID, agent_id: str):
+        return OutputWriteGrant(
+            task_id=task_id,
+            agent_id=agent_id,
+            upload_url=f"/api/v1/execution-worker/tasks/{task_id}/artifacts",
+            bearer_token="w" * 43,
+            max_files=5,
+            max_total_bytes=50 * 1024 * 1024,
+        )
+
+    def classify_result_artifacts(self, task_id: UUID, agent_id: str, artifacts):
+        assert isinstance(task_id, UUID)
+        assert agent_id == "hr-bot"
+        assert all(
+            UUID(artifact["attachmentId"]) in self._storage._attachments
+            for artifact in artifacts
+        )
+        return "ready"
 
 
 def _result_payload(filename: str, name: str) -> tuple[str, dict[str, object]]:
@@ -85,12 +147,86 @@ def _result_payload(filename: str, name: str) -> tuple[str, dict[str, object]]:
     return result["markdown"], parsed.payload
 
 
+def _seed_ready_pdf_artifact(
+    environment,
+    owner_id: UUID,
+    conversation_id: UUID,
+    task_id: UUID,
+    pdf_bytes: bytes,
+    storage: _FreshTicketStorage,
+) -> tuple[UUID, UUID]:
+    attachment_id, artifact_id, version_id = uuid4(), uuid4(), uuid4()
+    digest = sha256(pdf_bytes).digest()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_attachments.task_grants("
+            "grant_id,token_sha256,task_id,agent_id,scope,expires_at,max_reads,"
+            "max_bytes,max_files,max_file_bytes) values ("
+            "%s,%s,%s,'hr-bot','write_output',now()+interval '1 hour',0,"
+            "52428800,5,52428800)",
+            (uuid4(), uuid4().bytes + uuid4().bytes, task_id),
+        )
+        connection.execute(
+            "insert into platform_attachments.attachments("
+            "attachment_id,owner_internal_user_id,conversation_id,source_kind,"
+            "original_name_ciphertext,original_name_key_version,"
+            "object_ref_ciphertext,object_ref_key_version,declared_mime,"
+            "detected_mime,immutable_locator,size_bytes,sha256,state,ready_at) "
+            "values (%s,%s,%s,'agent_output',%s,1,%s,1,'application/pdf',"
+            "'application/pdf',%s,%s,%s,'ready',now())",
+            (
+                attachment_id,
+                owner_id,
+                conversation_id,
+                b"n" * 29,
+                b"o" * 29,
+                f"version:{version_id}",
+                len(pdf_bytes),
+                digest,
+            ),
+        )
+        connection.execute(
+            "insert into platform_attachments.artifacts("
+            "artifact_id,artifact_key,owner_internal_user_id,conversation_id,"
+            "task_id,agent_id) values (%s,'candidate-interview',%s,%s,%s,'hr-bot')",
+            (artifact_id, owner_id, conversation_id, task_id),
+        )
+        connection.execute(
+            "insert into platform_attachments.bindings("
+            "binding_id,attachment_id,owner_internal_user_id,kind,conversation_id,"
+            "task_id,agent_id) values (%s,%s,%s,'task_output',%s,%s,'hr-bot')",
+            (uuid4(), attachment_id, owner_id, conversation_id, task_id),
+        )
+        connection.execute(
+            "insert into platform_attachments.artifact_versions("
+            "artifact_version_id,artifact_id,attachment_id,version_no,"
+            "producer_version_id,original_name_ciphertext,original_name_key_version,"
+            "object_ref_ciphertext,object_ref_key_version,detected_mime,"
+            "immutable_locator,size_bytes,sha256,state,result_status) values ("
+            "%s,%s,%s,1,'combined-p0-v1',%s,1,%s,1,'application/pdf',"
+            "%s,%s,%s,'ready','succeeded')",
+            (
+                version_id,
+                artifact_id,
+                attachment_id,
+                b"n" * 29,
+                b"o" * 29,
+                f"version:{version_id}",
+                len(pdf_bytes),
+                digest,
+            ),
+        )
+    storage.register(attachment_id)
+    return attachment_id, version_id
+
+
 def _combined_app(
     monkeypatch,
     tmp_path: Path,
     app_url: str,
     owner_id: UUID,
     resources: HrPositionResourceService,
+    storage: _FreshTicketStorage,
 ):
     database_secret = tmp_path / "control-database-url"
     database_secret.write_text(app_url, encoding="utf-8")
@@ -149,13 +285,20 @@ def _combined_app(
         return original_getaddrinfo(host, port, *args, **kwargs)
 
     monkeypatch.setattr(socket, "getaddrinfo", example_dns)
-    return create_app(
+    app = create_app(
         registry_path=str(Path(__file__).parents[2] / "registry.yaml"),
         cluster_contract_path=config.metabot_contract_path,
         start_poller=False,
         identity_auth=_IdentityAuth(owner_id),
         hr_resource_service=resources,
     )
+    app.state.conversation_attachment_download_service = storage
+    if not any(
+        getattr(route, "path", None) == "/api/v1/attachments/content/{ticket}"
+        for route in app.routes
+    ):
+        app.include_router(build_conversation_attachment_router())
+    return app
 
 
 def _assistant_answers(environment, codec, owner_id: UUID) -> dict[UUID, str]:
@@ -210,7 +353,7 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
             (owner_id,),
         )
 
-    app = _combined_app(monkeypatch, tmp_path, app_url, owner_id, resources)
+    app = _combined_app(monkeypatch, tmp_path, app_url, owner_id, resources, storage)
     positions = app.state.hr_position_service
     candidates = app.state.hr_candidate_service
     intelligence = app.state.hr_position_intelligence_service
@@ -249,6 +392,25 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
             result_projection=ConversationResultProjection(content_codec=codec),
         ),
         mission_modes=("direct_agent",),
+    )
+    task_orchestrator = MissionOrchestrator(
+        app.state.mission_repository,
+        relay,
+        capability_provider=lambda _owner: tuple(
+            card for card in load_capability_cards() if card.agent_id == "hr-bot"
+        ),
+        conversation_context_builder=ConversationContextBuilder(
+            app.state.conversation_repository,
+            hr_task_context_provider=task_contexts,
+            panorama_context_provider=app.state.hr_panorama_context_provider,
+            candidate_parser_input_provider=app.state.hr_candidate_parser_input_provider,
+        ),
+        conversation_projection=ConversationProjection(
+            app.state.conversation_repository,
+            result_projection=ConversationResultProjection(content_codec=codec),
+        ),
+        mission_modes=("direct_agent",),
+        attachment_grants=_AcceptanceAttachmentGrants(storage),
     )
 
     initial_markdown, initial_package = _result_payload(
@@ -302,6 +464,93 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
         cookies={"panorama-session": "valid", "panorama-csrf": "csrf"},
         headers=headers,
     )
+
+    def finish_task_via_relay(
+        selected_environment,
+        task,
+        selected_owner_id,
+        selected_position_id,
+        task_kind,
+        value,
+        *,
+        model_version="hr-runtime-before-upgrade",
+        candidate_scope=None,
+        artifact_specs=(),
+        grant_agent_id="hr-bot",
+        existing_task_context=False,
+    ):
+        assert selected_environment is environment
+        assert selected_owner_id == owner_id
+        assert selected_position_id == position_id
+        assert task_kind in {"candidate_match", "candidate_interview_plan"}
+        assert model_version == "hr-runtime-before-upgrade"
+        assert candidate_scope is not None
+        assert grant_agent_id == "hr-bot"
+        assert existing_task_context is True
+        assert task_orchestrator.advance_pending(limit=50) == 1
+        worker_id = f"combined-task-{task_kind}-{uuid4().hex[:8]}"
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "insert into platform_control.execution_workers("
+                "worker_id,allowed_agent_ids,status) values "
+                "(%s,array['hr-bot'],'active')",
+                (worker_id,),
+            )
+        lease = relay.lease(worker_id, ("hr-bot",), 300, ("direct_agent",))
+        assert lease is not None
+        assert lease.payload.output_write_grant is not None
+        mission_task_id = lease.payload.output_write_grant.task_id
+        artifact_versions: tuple[UUID, ...] = ()
+        artifacts: list[dict[str, object]] = []
+        if artifact_specs:
+            assert task_kind == "candidate_interview_plan"
+            assert len(artifact_specs) == 1
+            attachment_id, artifact_version_id = _seed_ready_pdf_artifact(
+                environment,
+                owner_id,
+                task.conversation_id,
+                mission_task_id,
+                pdf_bytes,
+                storage,
+            )
+            artifact_versions = (artifact_version_id,)
+            artifacts.append(
+                {
+                    "attachmentId": str(attachment_id),
+                    "artifactKey": "candidate-interview",
+                    "producerVersionId": "combined-p0-v1",
+                    "displayName": "高级结构工程师-匿名候选人甲-面试题.pdf",
+                    "status": "ready",
+                }
+            )
+        relay.mark_dispatched(worker_id, lease.payload.run_id)
+        relay.append_events(
+            worker_id,
+            (
+                RelayEvent(
+                    run_id=lease.payload.run_id,
+                    seq=1,
+                    event_type="agent.complete",
+                    created_at=datetime.now(UTC),
+                    payload={
+                        "result": {
+                            "contractVersion": "core_chat_collaboration_v4",
+                            "publicAnswerMarkdown": value["text"],
+                            "citations": [],
+                            "artifacts": artifacts,
+                            "completion": "completed",
+                            "recovery": None,
+                        }
+                    },
+                ),
+            ),
+        )
+        relay.finish(worker_id, lease.payload.run_id, "completed")
+        assert task_orchestrator.advance_pending(limit=50) >= 1
+        task_orchestrator.advance_pending(limit=50)
+        return mission_task_id, artifact_versions
+
+    monkeypatch.setattr(recruiting_flow, "_finish_task", finish_task_via_relay)
     try:
         package_response = client.get(
             f"/api/hr/conversations/{conversation_id}/position-package"
@@ -605,6 +854,10 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
         ).json()
         assert first_ticket["content_path"] != second_ticket["content_path"]
         assert first_ticket["expires_at"] != second_ticket["expires_at"]
+        downloaded_pdf = client.get(first_ticket["content_path"])
+        assert downloaded_pdf.status_code == 200, downloaded_pdf.text
+        assert downloaded_pdf.headers["content-type"] == "application/pdf"
+        assert downloaded_pdf.content.startswith(b"%PDF-")
     finally:
         client.close()
 

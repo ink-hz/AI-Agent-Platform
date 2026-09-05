@@ -683,7 +683,20 @@ class PanoramaContextProvider:
                 ):
                     inferences.append(candidate)
         unknowns: list[dict[str, object]] = []
-        for insight in insights:
+        # Unknowns currently carry no source identifier or fact basis.  A named-
+        # company retrieval may retain them only when the complete insight is
+        # scoped to that company; multi-company unknowns cannot be attributed.
+        scoped_source_ids = {source.source_id for source in source_scope}
+        unknown_insights = (
+            tuple(
+                insight
+                for insight in insights
+                if set(insight.selected_source_ids) <= scoped_source_ids
+            )
+            if source_scope
+            else insights
+        )
+        for insight in unknown_insights:
             for unknown in insight.unknowns:
                 text, truncated = _bounded_text(unknown.get("text"), 800)
                 candidate = {

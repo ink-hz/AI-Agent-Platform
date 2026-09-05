@@ -65,6 +65,17 @@ const fixture = vi.hoisted(() => ({
     "72000000-0000-4000-8000-000000000002",
     "72000000-0000-4000-8000-000000000003",
   ],
+  resumeUploads: [
+    "72100000-0000-4000-8000-000000000001",
+    "72100000-0000-4000-8000-000000000002",
+    "72100000-0000-4000-8000-000000000003",
+  ],
+  batch: "72200000-0000-4000-8000-000000000001",
+  taskIds: [
+    "74000000-0000-4000-8000-000000000001",
+    "74000000-0000-4000-8000-000000000002",
+    "74000000-0000-4000-8000-000000000003",
+  ],
   analyses: [
     "73000000-0000-4000-8000-000000000001",
     "73000000-0000-4000-8000-000000000002",
@@ -117,6 +128,7 @@ import {
 const now = "2026-09-05T08:00:00Z";
 const retainedUntil = "2027-09-05T08:00:00Z";
 const companies = ["示例光学甲", "示例智能制造乙", "示例硬件系统丙"];
+const resumeNames = ["候选人甲.pdf", "候选人乙.pdf", "候选人丙.pdf"];
 const card: AgentCapabilityCard = {
   agent_id: "hr-bot",
   display_name: "HR Agent",
@@ -299,6 +311,54 @@ function rawDocument(index: number) {
   };
 }
 
+function rawDraft(index: number, state: "ready" | "failed" | "confirmed") {
+  return {
+    draft_id: fixture.candidateDrafts[index],
+    position_id: fixture.position,
+    attachment_id: fixture.resumeAttachments[index],
+    batch_request_id: fixture.batch,
+    state,
+    extracted_facts: state === "failed" ? {} : {
+      stable_name: `候选人${["甲", "乙", "丙"][index]}`,
+      skills: [index === 0 ? "挤出系统" : index === 1 ? "精密机械" : "测试"],
+    },
+    identity_candidates: [],
+    error_code: state === "failed" ? "parser_response_invalid" : null,
+    row_version: state === "failed" ? 3 : state === "confirmed" ? 4 : 2,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+function rawResumeUpload(index: number, uploaded: boolean) {
+  const size = new Blob([resumeNames[index]]).size;
+  return {
+    upload_id: fixture.resumeUploads[index],
+    attachment_id: fixture.resumeAttachments[index],
+    conversation_id: null,
+    original_name: resumeNames[index],
+    declared_mime: "application/pdf",
+    declared_size: size,
+    state: "uploading",
+    uploaded_bytes: uploaded ? size : 0,
+    expires_at: retainedUntil,
+  };
+}
+
+function rawResumeAttachment(index: number) {
+  return {
+    attachment_id: fixture.resumeAttachments[index],
+    conversation_id: null,
+    original_name: resumeNames[index],
+    declared_mime: "application/pdf",
+    detected_mime: "application/pdf",
+    size_bytes: new Blob([resumeNames[index]]).size,
+    state: "ready",
+    created_at: now,
+    retained_until: retainedUntil,
+  };
+}
+
 function rawAnalyses(index: number) {
   const match = {
     analysis_version_id: fixture.analyses[index],
@@ -364,8 +424,10 @@ function body(init?: RequestInit): Record<string, unknown> {
   return JSON.parse(String(init?.body)) as Record<string, unknown>;
 }
 
-function setInput(input: HTMLTextAreaElement, value: string) {
-  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(input, value);
+function setInput(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype = input instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
@@ -434,6 +496,11 @@ let confirmed: boolean;
 let ticketRequests: string[];
 let opened: Array<{ replace: ReturnType<typeof vi.fn> }>;
 let requests: string[];
+let followedSources: number[];
+let reportReady: boolean;
+let drafts: Array<ReturnType<typeof rawDraft>>;
+let confirmedCandidates: number[];
+let readyAnalyses: Map<number, "none" | "match" | "interview">;
 
 beforeEach(() => {
   window.history.replaceState({}, "", `/hr/conversations/${fixture.conversation}`);
@@ -441,6 +508,11 @@ beforeEach(() => {
   ticketRequests = [];
   opened = [];
   requests = [];
+  followedSources = [];
+  reportReady = false;
+  drafts = [];
+  confirmedCandidates = [];
+  readyAnalyses = new Map([[0, "none"], [1, "none"]]);
   vi.mocked(fetchAgentCatalog).mockResolvedValue([card]);
   vi.mocked(reconnectDelay).mockResolvedValue(undefined);
   vi.mocked(listConversationAttachments).mockResolvedValue([]);
@@ -474,7 +546,18 @@ beforeEach(() => {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     requests.push(`${method} ${path}`);
     if (path === "/api/v1/attachments/uploads" && method === "POST") {
-      expect(body(init)).toEqual({
+      const request = body(init);
+      const resumeIndex = resumeNames.indexOf(String(request.original_name));
+      if (resumeIndex >= 0) {
+        expect(request).toEqual({
+          conversation_id: null,
+          original_name: resumeNames[resumeIndex],
+          declared_mime: "application/pdf",
+          declared_size: new Blob([resumeNames[resumeIndex]]).size,
+        });
+        return json(rawResumeUpload(resumeIndex, false));
+      }
+      expect(request).toEqual({
         conversation_id: fixture.conversation,
         original_name: "岗位补充.pdf",
         declared_mime: "application/pdf",
@@ -491,6 +574,14 @@ beforeEach(() => {
         uploaded_bytes: 0,
         expires_at: retainedUntil,
       });
+    }
+    const resumeContent = /^\/api\/v1\/attachments\/uploads\/([^/]+)\/content$/.exec(path);
+    if (resumeContent && method === "PUT" && fixture.resumeUploads.includes(resumeContent[1])) {
+      return json(rawResumeUpload(fixture.resumeUploads.indexOf(resumeContent[1]), true));
+    }
+    const resumeComplete = /^\/api\/v1\/attachments\/uploads\/([^/]+)\/complete$/.exec(path);
+    if (resumeComplete && method === "POST" && fixture.resumeUploads.includes(resumeComplete[1])) {
+      return json(rawResumeAttachment(fixture.resumeUploads.indexOf(resumeComplete[1])));
     }
     if (path === `/api/v1/attachments/uploads/${fixture.upload}/content` && method === "PUT") {
       return json({
@@ -570,11 +661,39 @@ beforeEach(() => {
     if (path === `/api/hr/positions/${fixture.position}/context/versions`) {
       return json({ items: [rawContext()] });
     }
-    if (path === "/api/hr/panorama/sources?limit=100") {
-      return json({ items: fixture.sources.map((_id, index) => source(index)) });
+    if (path === "/api/hr/panorama/sources?limit=100" && method === "GET") {
+      return json({ items: followedSources.map((index) => source(index)) });
     }
-    if (path === "/api/hr/panorama/reports?limit=100") {
-      return json({ items: [insight()] });
+    if (path === "/api/hr/panorama/sources" && method === "POST") {
+      const request = body(init);
+      const index = companies.indexOf(String(request.canonical_name));
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(request).toEqual({
+        canonical_name: companies[index],
+        aliases: [],
+        approved_urls: [`https://example.com/company-${index + 1}`],
+      });
+      followedSources = [...followedSources, index];
+      return json(source(index));
+    }
+    if (path === "/api/hr/panorama/reports?limit=100" && method === "GET") {
+      return json({ items: reportReady ? [insight()] : [] });
+    }
+    if (path === "/api/hr/panorama/runs" && method === "POST") {
+      expect(body(init)).toEqual({ source_ids: fixture.sources });
+      return json({
+        run_id: fixture.run,
+        selected_source_ids: fixture.sources,
+        conversation_id: fixture.conversation,
+        state: "queued",
+        error_code: null,
+        source_failures: {},
+        row_version: 1,
+        started_at: null,
+        finished_at: null,
+        created_at: now,
+        updated_at: now,
+      }, 202);
     }
     if (path === `/api/hr/panorama/reports/${fixture.insight}`) {
       const value = insight();
@@ -599,6 +718,7 @@ beforeEach(() => {
       });
     }
     if (path === `/api/hr/panorama/runs/${fixture.run}`) {
+      reportReady = true;
       return json({
         run_id: fixture.run,
         selected_source_ids: fixture.sources,
@@ -613,11 +733,43 @@ beforeEach(() => {
         updated_at: now,
       });
     }
-    if (path === `/api/hr/positions/${fixture.position}/candidate-drafts`) {
-      return json({ items: [] });
+    if (path === `/api/hr/positions/${fixture.position}/candidate-drafts` && method === "GET") {
+      return json({ items: drafts });
+    }
+    if (path === `/api/hr/positions/${fixture.position}/candidate-drafts:batch` && method === "POST") {
+      expect(body(init)).toEqual({ attachment_ids: fixture.resumeAttachments });
+      drafts = [rawDraft(0, "ready"), rawDraft(1, "ready"), rawDraft(2, "failed")];
+      return json({ batch_id: fixture.batch, items: drafts }, 202);
+    }
+    if (path === `/api/hr/candidate-drafts/${fixture.candidateDrafts[2]}:retry` && method === "POST") {
+      expect(body(init)).toEqual({ expected_row_version: 3 });
+      drafts = drafts.map((draft, index) => index === 2 ? rawDraft(2, "ready") : draft);
+      return json(drafts[2]);
+    }
+    const confirmCandidate = /^\/api\/hr\/candidate-drafts\/([^/]+):confirm$/.exec(path);
+    if (confirmCandidate && method === "POST") {
+      const index = fixture.candidateDrafts.indexOf(confirmCandidate[1]);
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(index).toBeLessThan(2);
+      expect(body(init)).toEqual({
+        expected_row_version: 2,
+        context_version_id: fixture.context,
+        stable_name: `候选人${index === 0 ? "甲" : "乙"}`,
+        confirmed_facts: rawDraft(index, "ready").extracted_facts,
+        merge_candidate_id: null,
+      });
+      confirmedCandidates = [...new Set([...confirmedCandidates, index])];
+      drafts = drafts.map((draft, draftIndex) => (
+        draftIndex === index ? rawDraft(index, "confirmed") : draft
+      ));
+      return json({
+        candidate: rawCandidate(index),
+        document: rawDocument(index),
+        position_candidate: rawRelation(index),
+      }, 201);
     }
     if (path === `/api/hr/positions/${fixture.position}/candidates`) {
-      return json({ items: [rawRelation(0), rawRelation(1)] });
+      return json({ items: confirmedCandidates.map(rawRelation) });
     }
     const candidate = /^\/api\/hr\/candidates\/([^/]+)$/.exec(path);
     if (candidate) {
@@ -635,17 +787,53 @@ beforeEach(() => {
     if (analyses) {
       const index = fixture.relations.indexOf(analyses[1]);
       expect(index).toBeGreaterThanOrEqual(0);
-      return json({ items: rawAnalyses(index) });
+      const state = readyAnalyses.get(index);
+      return json({
+        items: state === "none" ? [] : state === "match"
+          ? [rawAnalyses(index)[0]] : rawAnalyses(index),
+      });
     }
     const feedback = /^\/api\/hr\/position-candidates\/([^/]+)\/feedback$/.exec(path);
     if (feedback) return json({ items: [] });
     if (path === `/api/hr/positions/${fixture.position}/tasks?status=active`) {
       return json({ items: [] });
     }
+    if (path === `/api/hr/positions/${fixture.position}/tasks` && method === "POST") {
+      const request = body(init);
+      const index = fixture.candidates.indexOf(String(request.candidate_id));
+      const kind = String(request.task_kind);
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(request).toEqual({
+        task_kind: kind,
+        context_version_id: fixture.context,
+        candidate_id: fixture.candidates[index],
+        position_candidate_id: fixture.relations[index],
+        material_ids: [],
+        conversation_id: fixture.conversation,
+      });
+      if (kind === "candidate_interview_plan") {
+        expect(index).toBe(0);
+        readyAnalyses.set(0, "interview");
+      } else {
+        expect(kind).toBe("candidate_match");
+        readyAnalyses.set(index, "match");
+      }
+      const taskIndex = kind === "candidate_interview_plan" ? 2 : index;
+      return json({
+        task_id: fixture.taskIds[taskIndex],
+        status: "completed",
+        task_kind: kind,
+        error: null,
+        conversation_id: fixture.conversation,
+        turn_id: fixture.taskIds[taskIndex],
+        position_candidate_id: fixture.relations[index],
+        candidate_id: fixture.candidates[index],
+      }, 202);
+    }
     if (path === `/api/hr/positions/${fixture.position}/resources`) {
       return json({
         materials: [],
-        artifacts: [{
+        artifacts: readyAnalyses.get(0) === "interview" ? [{
           artifact_id: fixture.artifact,
           artifact_version_id: fixture.artifactVersion,
           attachment_id: fixture.pdfAttachment,
@@ -659,7 +847,7 @@ beforeEach(() => {
           source_turn_id: "90000000-0000-4000-8000-000000000003",
           preview_available: true,
           download_available: true,
-        }],
+        }] : [],
       });
     }
     if (path === `/api/hr/positions/${fixture.position}/resources/${fixture.pdfAttachment}/ticket` && method === "POST") {
@@ -718,6 +906,23 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   ).toBe(true));
 
   await follow(container, "全景分析");
+  await waitFor(() => expect(container.textContent).toContain("从公开招聘信息开始"));
+  for (let index = 0; index < companies.length; index += 1) {
+    await click(container, "添加关注公司");
+    const inputs = container.querySelectorAll<HTMLInputElement>(
+      '[aria-label="添加关注公司"] input',
+    );
+    await act(async () => {
+      setInput(inputs[0], companies[index]);
+      setInput(inputs[1], `https://example.com/company-${index + 1}`);
+    });
+    await click(container, "确认关注");
+  }
+  expect(followedSources).toEqual([0, 1, 2]);
+  vi.useFakeTimers();
+  await act(async () => button(container, "立即更新").click());
+  await act(async () => vi.advanceTimersByTimeAsync(1_500));
+  vi.useRealTimers();
   await waitFor(() => expect(container.textContent).toContain("全景招聘分析已完成"));
   expect(container.textContent).toContain("示例光学甲公开招聘研发岗位");
   expect(container.textContent).toContain("两家公司持续投入精密结构方向");
@@ -739,13 +944,41 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   await click(container, "岗位资料");
   await waitFor(() => expect(container.textContent).toContain("已参考全景招聘证据修订 JD/JR"));
   await click(container, "候选人");
+  const resumeInput = container.querySelector<HTMLInputElement>(
+    'section[aria-label="批量简历导入"] input[type="file"]',
+  );
+  expect(resumeInput).not.toBeNull();
+  Object.defineProperty(resumeInput, "files", {
+    configurable: true,
+    value: resumeNames.map((name) => new File([name], name, { type: "application/pdf" })),
+  });
+  await act(async () => resumeInput!.dispatchEvent(new Event("change", { bubbles: true })));
+  await waitFor(() => expect(button(container, "开始解析 3 份简历").disabled).toBe(false));
+  await click(container, "开始解析 3 份简历");
+  expect(container.textContent).toContain("解析失败");
+  expect(container.textContent).toContain("parser_response_invalid");
+  await click(container, "重试解析");
+  for (const name of ["候选人甲", "候选人乙"]) {
+    await click(container, `审阅${name}`);
+    await click(container, "确认候选人");
+  }
   await waitFor(() => expect(container.textContent).toContain("2 位已确认"));
   await click(container, "查看匿名候选人甲");
+  await click(container, "生成匹配分析");
   await waitFor(() => expect(container.textContent).toContain("匿名候选人甲匹配分析"));
   expect(container.textContent).toContain("负责挤出系统量产");
+  await click(container, "生成专属面试题");
   expect(container.textContent).toContain("请复盘一次喷嘴或挤出系统从设计到量产的完整过程");
   expect(container.querySelector('article[aria-label="候选人专属面试题 v2"]')).not.toBeNull();
   expectSafeUi(container);
+
+  await click(container, "关闭详情");
+  await click(container, "查看匿名候选人乙");
+  await click(container, "生成匹配分析");
+  await waitFor(() => expect(container.textContent).toContain("匿名候选人乙匹配分析"));
+  expect(container.textContent).toContain("负责精密机械设计");
+  await click(container, "关闭详情");
+  await click(container, "查看匿名候选人甲");
 
   const download = container.querySelector<HTMLButtonElement>('button[aria-label="下载面试题 PDF"]')!;
   await act(async () => download.click());
@@ -795,4 +1028,16 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   await follow(container, "全景分析");
   await waitFor(() => expect(container.textContent).toContain("全景招聘分析已完成"));
   expectSafeUi(container);
+  expect(requests.filter((request) => request === "POST /api/hr/panorama/sources"))
+    .toHaveLength(3);
+  expect(requests).toContain("POST /api/hr/panorama/runs");
+  expect(requests).toContain(
+    `POST /api/hr/positions/${fixture.position}/candidate-drafts:batch`,
+  );
+  expect(requests).toContain(
+    `POST /api/hr/candidate-drafts/${fixture.candidateDrafts[2]}:retry`,
+  );
+  expect(requests.filter((request) => (
+    request === `POST /api/hr/positions/${fixture.position}/tasks`
+  ))).toHaveLength(3);
 });
