@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -182,6 +183,53 @@ def test_named_followed_company_retrieves_only_latest_version_and_records_turn()
     assert source.recorded.turn_id == TURN
     assert source.recorded.insight_version_ids == (latest_id,)
     assert source.recorded.query_sha256 == fragment.query_sha256
+
+
+def test_named_company_filters_unrelated_facts_from_a_multi_company_insight() -> None:
+    alpha_id, beta_id = uuid4(), uuid4()
+    sources = (
+        replace(
+            _source(name="示例光学甲", aliases=()),
+            source_id=alpha_id,
+            approved_urls=("https://example.com/company-alpha",),
+        ),
+        replace(
+            _source(name="示例光学乙", aliases=()),
+            source_id=beta_id,
+            approved_urls=("https://example.com/company-beta",),
+        ),
+    )
+    insight = replace(
+        _insight(uuid4(), source_id=alpha_id),
+        selected_source_ids=(alpha_id, beta_id),
+        facts=(
+            {
+                "fact_id": "alpha-fact",
+                "text": "示例光学甲公开招聘高级结构工程师",
+                "snapshot_id": str(uuid4()),
+                "observation_id": str(uuid4()),
+                "source_url": "https://example.com/company-alpha/jobs/1",
+                "observed_at": NOW.isoformat(),
+            },
+            {
+                "fact_id": "beta-fact",
+                "text": "示例光学乙公开招聘算法工程师",
+                "snapshot_id": str(uuid4()),
+                "observation_id": str(uuid4()),
+                "source_url": "https://example.com/company-beta/jobs/1",
+                "observed_at": NOW.isoformat(),
+            },
+        ),
+        inferences=(),
+    )
+
+    fragment = PanoramaContextProvider(
+        MemorySource((insight,), sources=sources), now=lambda: NOW
+    ).for_turn(OWNER, POSITION, "只参考示例光学甲最新招聘证据", TURN)
+
+    assert fragment is not None
+    assert [fact["fact_id"] for fact in fragment.facts] == ["alpha-fact"]
+    assert fragment.source_urls == ("https://example.com/company-alpha/jobs/1",)
 
 
 @pytest.mark.parametrize(
@@ -482,7 +530,11 @@ def test_named_company_trigger_scans_beyond_first_source_page() -> None:
             f"company-{index:03d}",
             "目标公司" if index == 100 else f"公司{index}",
             ("Target 101",) if index == 100 else (),
-            (f"https://example.com/jobs/{index}",),
+            (
+                "https://example.com/jobs"
+                if index == 100
+                else f"https://example.com/jobs/{index}",
+            ),
             True,
             NOW - timedelta(seconds=index),
             NOW - timedelta(seconds=index),

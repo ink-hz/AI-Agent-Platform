@@ -1663,6 +1663,7 @@ body {
 .conversation-load-more { display: block; margin: 18px auto 0; }
 
 .conversation-workspace-grid { display: grid; grid-template-columns: minmax(0, 860px) minmax(270px, 330px); gap: 24px; align-items: start; width: min(1240px, 100%); margin: 0 auto; }
+.conversation-workspace-content { display: contents; }
 .conversation-workspace-grid .conversation-page { width: 100%; min-width: 0; }
 .session-materials-drawer { position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: #f8fafc; }
 .session-materials-drawer > header, .session-materials-group > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

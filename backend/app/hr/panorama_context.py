@@ -166,6 +166,26 @@ def _mentions_source(query: str, sources: tuple[TalentSource, ...]) -> bool:
     )
 
 
+def _fact_matches_sources(
+    fact: Mapping[str, object], sources: tuple[TalentSource, ...]
+) -> bool:
+    if not sources:
+        return True
+    source_url = canonical_panorama_url(fact.get("source_url"))
+    company = fact.get("company")
+    for source in sources:
+        if isinstance(company, str) and any(
+            _mentions_name(company, name)
+            for name in (source.canonical_name, *source.aliases)
+        ):
+            return True
+        for approved_url in source.approved_urls:
+            approved = canonical_panorama_url(approved_url).rstrip("/")
+            if source_url == approved or source_url.startswith(f"{approved}/"):
+                return True
+    return False
+
+
 def _observed_at(value: object) -> datetime:
     if not isinstance(value, str):
         raise PanoramaContextError("panorama fact timestamp invalid")
@@ -451,7 +471,8 @@ class PanoramaContextProvider:
                 return self._replay(
                     existing, query_sha256, owner_id, position_id, turn_id
                 )
-            if not self._query_triggers_retrieval(owner_id, query):
+            source_scope = self._query_source_scope(owner_id, query)
+            if source_scope is None:
                 return None
             insights = _latest_per_scope(
                 self._source.relevant_insights(
@@ -461,7 +482,7 @@ class PanoramaContextProvider:
             )
             if not insights:
                 return None
-            fragment = self._compose(insights, query_sha256)
+            fragment = self._compose(insights, query_sha256, source_scope)
             try:
                 recorded = self._source.record_retrieval_for_turn(
                     retrieval_id=uuid5(turn_id, "hr-panorama-context-v1"),
@@ -485,9 +506,11 @@ class PanoramaContextProvider:
         except (PanoramaRepositoryError, ValueError, TypeError, UnicodeError):
             raise PanoramaContextError("panorama context unavailable") from None
 
-    def _query_triggers_retrieval(self, owner_id: UUID, query: str) -> bool:
-        if _has_explicit_trigger(query):
-            return True
+    def _query_source_scope(
+        self, owner_id: UUID, query: str
+    ) -> tuple[TalentSource, ...] | None:
+        explicitly_requested = _has_explicit_trigger(query)
+        matched: list[TalentSource] = []
         before_created_at = None
         before_source_id = None
         while True:
@@ -505,10 +528,13 @@ class PanoramaContextProvider:
                 for source in sources
             ):
                 raise PanoramaContextError("panorama source scope invalid")
-            if _mentions_source(query, sources):
-                return True
+            matched.extend(
+                source for source in sources if _mentions_source(query, (source,))
+            )
             if len(sources) < 100:
-                return False
+                if matched:
+                    return tuple(matched)
+                return () if explicitly_requested else None
             cursor = (sources[-1].created_at, sources[-1].source_id)
             if cursor == (before_created_at, before_source_id):
                 raise PanoramaContextError("panorama source page invalid")
@@ -544,7 +570,10 @@ class PanoramaContextProvider:
         return fragment
 
     def _compose(
-        self, insights: tuple[TalentInsightVersion, ...], query_sha256: str
+        self,
+        insights: tuple[TalentInsightVersion, ...],
+        query_sha256: str,
+        source_scope: tuple[TalentSource, ...] = (),
     ) -> PanoramaContextFragment:
         insight_ids = tuple(insight.insight_version_id for insight in insights)
         available_observed = tuple(
@@ -562,6 +591,8 @@ class PanoramaContextProvider:
         source_urls: list[str] = []
         for insight in insights:
             for fact in insight.facts:
+                if not _fact_matches_sources(fact, source_scope):
+                    continue
                 text, truncated = _bounded_text(fact.get("text"), 2000)
                 source_url = canonical_panorama_url(fact.get("source_url"))
                 candidate = {

@@ -547,11 +547,15 @@ export function ConversationPage({
     {sendFailure && <div className="conversation-action-error" role="alert"><span>消息暂未发送成功，可以使用同一次请求安全重试。</span><button className="conversation-retry" disabled={pending} onClick={() => void send()} type="button">重新发送</button></div>}
     {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
   </div>;
-  return attachmentLimits && materialsPresentation === "sidebar" ? <div className="conversation-workspace-grid">{conversationContent}<SessionMaterialsDrawer
-    activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
-    onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
-    positionMaterialIds={positionMaterialIds} onPositionMaterialChange={onPositionMaterialChange}
-    positionArtifactAttachmentIds={positionArtifactAttachmentIds}
-    readOnly={readOnly}
-  /></div> : conversationContent;
+  const showMaterials = Boolean(attachmentLimits && materialsPresentation === "sidebar");
+  return <div className={showMaterials ? "conversation-workspace-grid" : "conversation-workspace-content"}>
+    {conversationContent}
+    {showMaterials && attachmentLimits && <SessionMaterialsDrawer
+      activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
+      onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
+      positionMaterialIds={positionMaterialIds} onPositionMaterialChange={onPositionMaterialChange}
+      positionArtifactAttachmentIds={positionArtifactAttachmentIds}
+      readOnly={readOnly}
+    />}
+  </div>;
 }
