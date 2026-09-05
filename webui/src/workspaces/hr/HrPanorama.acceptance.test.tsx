@@ -265,7 +265,7 @@ it("runs partial Panorama research, retries one source, and returns to the prese
   expect(container.querySelector('section[data-evidence-kind="inferences"] a[href="https://company-1.example.com/jobs/structure"]')).not.toBeNull();
   expectInternalCodesHidden(container);
 
-  await click(container, "下载报告");
+  await click(container, "下载 Markdown");
   expect(downloadedBlob).not.toBeNull();
   const downloaded = await downloadedBlob!.text();
   expect(downloaded).toContain("职责：负责精密结构研发与量产");

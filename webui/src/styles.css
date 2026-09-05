@@ -2433,10 +2433,10 @@ body {
 .hr-position-facts dd { overflow-wrap: anywhere; margin: 3px 0 0; font-size: 12px; font-weight: 720; }
 .hr-official-position { margin: 18px; padding: 16px; border: 1px solid #c9d9d1; border-radius: 13px; background: #f8faf9; }
 .hr-official-position > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
-.hr-official-position > header span { color: #347f69; font-size: 11px; font-weight: 820; letter-spacing: .1em; }
+.hr-official-position > header span { color: #347f69; font-size: 11.5px; font-weight: 820; letter-spacing: .1em; }
 .hr-official-position > header h3 { margin: 4px 0 0; font-size: 17px; }
 .hr-official-position-actions { display: flex; align-items: flex-end; gap: 8px; }
-.hr-official-position-actions label { display: grid; gap: 4px; color: #60736b; font-size: 11px; font-weight: 720; }
+.hr-official-position-actions label { display: grid; gap: 4px; color: #60736b; font-size: 11.5px; font-weight: 720; }
 .hr-official-position-actions select,.hr-official-position-actions button { min-height: 34px; border: 1px solid #adc7bb; border-radius: 8px; background: #fff; color: #244f41; font: inherit; font-size: 11.5px; }
 .hr-official-position-actions select { max-width: 220px; padding: 5px 8px; }
 .hr-official-position-actions button { padding: 6px 10px; font-weight: 760; cursor: pointer; }
@@ -2453,7 +2453,7 @@ body {
 .hr-official-position article > section + section { margin-top: 14px; }
 .hr-official-position h4 { margin: 0 0 7px; font-size: 13px; }
 .hr-official-position article > section p { margin: 0; color: #334b42; font-size: 12.5px; line-height: 1.75; white-space: pre-wrap; }
-.hr-official-position footer { margin-top: 15px; color: #778981; font-size: 11px; line-height: 1.55; }
+.hr-official-position footer { margin-top: 15px; color: #778981; font-size: 11.5px; line-height: 1.55; }
 .hr-context-empty { padding: 11px 12px; border-radius: 9px; background: #f3f6f5; color: #60736b; }
 .hr-r12-panel button { min-height: 36px; padding: 7px 11px; border: 1px solid #b9d3c8; border-radius: 8px; background: #fff; color: #23614d; font: inherit; font-size: 11.5px; font-weight: 760; cursor: pointer; }
 .hr-r12-panel button:hover:not(:disabled),.hr-r12-panel button:focus-visible { border-color: #6ea18e; background: #eef6f2; outline: none; }
