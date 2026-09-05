@@ -15,12 +15,11 @@ from test_control_plane_migration import control_database
 from app.agent_brain.conversation_context import (
     MAX_CONTEXT_BYTES,
     ConversationContextBuilder,
-    ConversationContextError,
 )
 from app.agent_brain.conversation_projection import ConversationProjection
 from app.hr.models import BindPositionConversation, CreateManualPosition
-from app.hr.panorama_context import PanoramaContextFragment
-from app.hr.panorama_repository import PanoramaNotFound
+from app.hr.panorama_context import PanoramaContextError, PanoramaContextFragment
+from app.hr.panorama_repository import PanoramaConflict, PanoramaUnavailable
 from app.hr.position_intelligence_models import HrPositionContextEnvelope
 from app.hr.repository import HrPositionRepository
 from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
@@ -199,10 +198,20 @@ def test_unbound_hr_turn_does_not_call_position_provider(
 
 
 @pytest.mark.postgres
-def test_panorama_provider_failure_fails_closed_as_conversation_context_error(
+@pytest.mark.parametrize(
+    "failure",
+    (
+        PanoramaUnavailable("database unavailable"),
+        PanoramaConflict("turn query conflict"),
+        PanoramaContextError("recorded context invalid"),
+    ),
+    ids=("outage", "query-conflict", "corrupt-replay"),
+)
+def test_panorama_provider_failure_omits_fragment_but_keeps_core_hr_context(
     conversation_database,
     repository,
     request,
+    failure,
 ) -> None:
     environment, owner_id, _ = conversation_database
     positions = HrPositionRepository(environment["urls"]["platform_control_app"])
@@ -258,7 +267,7 @@ def test_panorama_provider_failure_fails_closed_as_conversation_context_error(
 
     class PanoramaProvider:
         def for_turn(self, *_args):
-            raise PanoramaNotFound("hidden")
+            raise failure
 
     builder = ConversationContextBuilder(
         repository,
@@ -266,8 +275,12 @@ def test_panorama_provider_failure_fails_closed_as_conversation_context_error(
         panorama_context_provider=PanoramaProvider(),
     )
 
-    with pytest.raises(ConversationContextError):
-        builder.build(started.conversation.conversation_id, started.turn.turn_id)
+    context = builder.build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.hr_position_context is envelope
+    assert context.hr_panorama_context is None
+    assert context.hr_workflow_contract == HR_WORKFLOW_CONTRACT_V1
+    assert context.messages[-1].content == "参考全景分析"
 
 
 @pytest.mark.postgres

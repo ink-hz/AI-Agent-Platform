@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -14,14 +15,12 @@ from app.agent_brain.conversation_repository import (
     ConversationRepositoryNotFound,
 )
 from app.execution_relay.content_crypto import ContentCryptoError
-from app.hr.panorama_context import (
-    PanoramaContextError,
-    PanoramaContextFragment,
-)
-from app.hr.panorama_repository import PanoramaRepositoryError
+from app.hr.panorama_context import PanoramaContextFragment
 from app.hr.position_intelligence_models import HrPositionContextEnvelope
 from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
 from app.hr.task_context import HrTaskContextError, canonical_hash
+
+logger = logging.getLogger(__name__)
 
 MAX_CONTEXT_BYTES = 96 * 1024
 COMPACTION_TRIGGER_BYTES = 64 * 1024
@@ -265,8 +264,12 @@ class ConversationContextBuilder:
                         hr_panorama_context, PanoramaContextFragment
                     ):
                         raise ValueError
-                except (PanoramaContextError, PanoramaRepositoryError, ValueError):
-                    raise ConversationContextError() from None
+                except Exception:
+                    logger.warning(
+                        "Panorama context omitted for conversation turn",
+                        exc_info=True,
+                    )
+                    hr_panorama_context = None
         candidate_parser_attachment_id = None
         if (
             is_hr_agent

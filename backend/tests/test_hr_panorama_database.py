@@ -20,6 +20,10 @@ from app.agent_brain.conversation_service import ConversationCommandService
 from app.agent_brain.repository import MissionRepository
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
+from app.hr.panorama_context import (
+    PanoramaContextProvider,
+    _postgres_jsonb_text_size,
+)
 from app.hr.panorama_models import (
     CreatePanoramaRun,
     CreatePublicJobSnapshot,
@@ -2060,6 +2064,76 @@ def test_talent_source_keyset_page_reaches_the_101st_followed_company(
     assert len(second) == 1
     assert {row[0] for row in first}.isdisjoint({row[0] for row in second})
     assert second[0][5] == "第101家目标公司"
+
+
+@pytest.mark.postgres
+def test_context_budget_matches_postgres_jsonb_text_for_174_short_unknowns(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Context JSONB Budget Owner")
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        source = app.execute(
+            CREATE_SOURCE, _source_values(scope, request_id=uuid4())
+        ).fetchone()
+        run_id, _ = _create_running_run(app, scope, source[0])
+        observation_id = uuid4()
+        snapshot = app.execute(
+            CREATE_SNAPSHOT,
+            _snapshot_values(
+                scope,
+                source[0],
+                run_id,
+                request_id=observation_id,
+            ),
+        ).fetchone()
+        values = list(
+            _insight_values(
+                scope,
+                run_id,
+                source[0],
+                snapshot[0],
+                observation_id,
+            )
+        )
+        values[8] = json.dumps(
+            [{"text": f"短未知项-{index:03d}"} for index in range(174)],
+            ensure_ascii=False,
+        )
+        app.execute(CREATE_INSIGHT, values)
+        app.commit()
+
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    provider = PanoramaContextProvider(
+        repository,
+        now=lambda: datetime.fromisoformat("2026-09-05T08:00:00+00:00"),
+    )
+    fragment = provider.for_turn(
+        scope["owner"], scope["position"], "参考全景分析", scope["turn"]
+    )
+
+    assert fragment is not None
+    assert (
+        provider.for_turn(
+            scope["owner"], scope["position"], "参考全景分析", scope["turn"]
+        )
+        == fragment
+    )
+    with psycopg.connect(environment["admin"]) as admin:
+        persisted_size = admin.execute(
+            "select octet_length(retrieved_excerpts::text) from "
+            "platform_hr.position_insight_retrievals where "
+            "owner_internal_user_id=%s and position_id=%s and turn_id=%s",
+            (scope["owner"], scope["position"], scope["turn"]),
+        ).fetchone()[0]
+        estimated_size = _postgres_jsonb_text_size((fragment.as_prompt_document(),))
+        actual_size = admin.execute(
+            "select octet_length(%s::jsonb::text)",
+            (json.dumps((fragment.as_prompt_document(),), ensure_ascii=False),),
+        ).fetchone()[0]
+    assert estimated_size == actual_size == persisted_size
+    assert persisted_size <= 32768
 
 
 @pytest.mark.postgres

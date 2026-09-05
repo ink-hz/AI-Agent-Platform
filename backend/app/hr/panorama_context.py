@@ -26,7 +26,6 @@ from .panorama_repository import (
 MAX_PANORAMA_CONTEXT_BYTES = 32 * 1024
 MAX_PANORAMA_INSIGHTS = 5
 DEFAULT_STALE_AFTER = timedelta(days=30)
-_MAX_RECORDED_DOCUMENT_BYTES = 31 * 1024
 _EXPLICIT_TRIGGERS = (
     "竞品",
     "招聘情报",
@@ -89,6 +88,18 @@ def _encoded_size(value: object) -> int:
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    )
+
+
+def _postgres_jsonb_text_size(value: object) -> int:
+    return len(
+        json.dumps(
+            thaw_json(value),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(", ", ": "),
             allow_nan=False,
         ).encode("utf-8")
     )
@@ -698,8 +709,10 @@ class PanoramaContextProvider:
             )
         except ValueError:
             return False
+        document = fragment.as_prompt_document()
         return (
-            _encoded_size(fragment.as_prompt_document()) <= _MAX_RECORDED_DOCUMENT_BYTES
+            _encoded_size(document) <= MAX_PANORAMA_CONTEXT_BYTES
+            and _postgres_jsonb_text_size((document,)) <= MAX_PANORAMA_CONTEXT_BYTES
         )
 
 
