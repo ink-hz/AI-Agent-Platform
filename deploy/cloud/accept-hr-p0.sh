@@ -14,6 +14,8 @@ cloud_admin_host=root@47.106.112.69
 cloud_admin_key=/Users/agentops/AgentRuntime/private/cloud-admin-ed25519
 ssh_bin=/usr/bin/ssh
 python_bin=/usr/bin/python3
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+release_verifier="$script_dir/verify-web-research-release.py"
 web_research_current=/Users/agentops/AgentRuntime/web-research/current
 expected_egress_source_sha256=5604d7ac150a5bcd9e722edd777c5946f9e82fdb1bc4df5e6a3aceed0b8d5fe6
 expected_egress_release_sha256=c0a7aaf71f5ae8555371b0a93eae8499dd4e68e7224f0cb51cce4351df8f39fd
@@ -70,16 +72,14 @@ PY
 [[ "$web_research_release" =~ ^/Users/agentops/AgentRuntime/web-research/releases/[0-9a-f]{64}$ ]] || fail
 web_research_manifest="$web_research_release/.manifest.sha256"
 web_research_source="$web_research_release/codex-process.mjs"
-for deployed_file in "$web_research_manifest" "$web_research_source"; do
+for deployed_file in "$release_verifier" "$web_research_manifest" "$web_research_source"; do
   [[ -f "$deployed_file" && ! -L "$deployed_file" ]] || fail
-  [[ "$(/usr/bin/stat -f '%Lp %Su' "$deployed_file")" == "600 $required_user" ]] || fail
 done
-manifest_digest="$(/usr/bin/shasum -a 256 "$web_research_manifest" | /usr/bin/awk '{print $1}')" || fail
-[[ "$web_research_release" == "/Users/agentops/AgentRuntime/web-research/releases/$manifest_digest" ]] || fail
-[[ "$manifest_digest" == "$expected_egress_release_sha256" ]] || fail
-(cd "$web_research_release" && /usr/bin/shasum -a 256 -c .manifest.sha256 >/dev/null) || fail
-source_digest="$(/usr/bin/shasum -a 256 "$web_research_source" | /usr/bin/awk '{print $1}')" || fail
-[[ "$source_digest" == "$expected_egress_source_sha256" ]] || fail
+[[ "$(/usr/bin/stat -f '%Lp %Su' "$web_research_manifest")" == "600 $required_user" ]] || fail
+[[ "$(/usr/bin/stat -f '%Lp %Su' "$web_research_source")" == "600 $required_user" ]] || fail
+"$python_bin" "$release_verifier" "$web_research_release" \
+  /Users/agentops/AgentRuntime/web-research \
+  "$expected_egress_release_sha256" "$expected_egress_source_sha256" >/dev/null || fail
 [[ -f "$web_research_plist" && ! -L "$web_research_plist" ]] || fail
 [[ "$(/usr/bin/stat -f '%Lp %Su' "$web_research_plist")" == "644 root" ]] || fail
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :UserName' "$web_research_plist")" == "$required_user" ]] || fail

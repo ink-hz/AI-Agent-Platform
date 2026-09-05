@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud" / "accept-hr-p0.sh"
 CONTROL = ROOT / "deploy" / "local-execution-worker" / "agentops-control.sh"
+VERIFY_RELEASE = ROOT / "deploy" / "cloud" / "verify-web-research-release.py"
 
 
 def test_cloud_wrapper_is_fixed_bounded_and_status_only() -> None:
@@ -54,7 +57,7 @@ def test_cloud_wrapper_requires_secure_strict_config_and_egress_evidence() -> No
         "! -L",
         "65536",
         "deployment_egress_evidence_sha256",
-        "shasum -a 256",
+        "verify-web-research-release.py",
         "expected_egress_source_sha256=5604d7ac150a5bcd9e722edd777c5946f9e82fdb1bc4df5e6a3aceed0b8d5fe6",
         "expected_egress_release_sha256=c0a7aaf71f5ae8555371b0a93eae8499dd4e68e7224f0cb51cce4351df8f39fd",
         'web_research_source="$web_research_release/codex-process.mjs"',
@@ -78,6 +81,71 @@ def test_cloud_wrapper_requires_secure_strict_config_and_egress_evidence() -> No
     ):
         assert required in source
     assert "remote_egress_evidence" not in source
+
+
+def test_web_research_release_verifier_matches_deployed_flat_layout(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "web-research"
+    files = {
+        "release/codex-process.mjs": b"egress-enforced\n",
+        "release/sidecar.mjs": b"sidecar\n",
+        "release/schemas/search-output.schema.json": b"{}\n",
+        "bin/web-search": b"#!/bin/sh\n",
+        "bin/marketing-search": b"#!/bin/sh\n",
+    }
+    lines = [
+        f"{hashlib.sha256(content).hexdigest()}  {relative}\n"
+        for relative, content in files.items()
+    ]
+    manifest = "".join(lines).encode()
+    manifest_digest = hashlib.sha256(manifest).hexdigest()
+    source_digest = hashlib.sha256(files["release/codex-process.mjs"]).hexdigest()
+    release = runtime / "releases" / manifest_digest
+    (release / "schemas").mkdir(parents=True)
+    (runtime / "bin").mkdir(parents=True)
+    for relative, content in files.items():
+        destination = (
+            release / relative.removeprefix("release/")
+            if relative.startswith("release/")
+            else runtime / relative
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+    (release / ".manifest.sha256").write_bytes(manifest)
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(VERIFY_RELEASE),
+            str(release),
+            str(runtime),
+            manifest_digest,
+            source_digest,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "WEB_RESEARCH_RELEASE_OK"
+
+    (runtime / "bin" / "web-search").write_bytes(b"tampered\n")
+    rejected = subprocess.run(
+        [
+            "python3",
+            str(VERIFY_RELEASE),
+            str(release),
+            str(runtime),
+            manifest_digest,
+            source_digest,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert rejected.returncode != 0
+    assert rejected.stdout == ""
 
 
 def test_agentops_dispatches_only_fixed_hr_p0_command_and_config() -> None:
