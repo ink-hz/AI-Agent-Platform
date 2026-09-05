@@ -71,8 +71,7 @@ class AddCompanyBody(BaseModel):
     @classmethod
     def validate_aliases(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         if any(
-            not value.strip() or "\0" in value or len(value) > 500
-            for value in values
+            not value.strip() or "\0" in value or len(value) > 500 for value in values
         ):
             raise ValueError("company aliases invalid")
         return values
@@ -241,9 +240,7 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
     async def add_source(
         body: AddCompanyBody,
         request: Request,
-        idempotency_key: Annotated[
-            str | None, Header(alias="Idempotency-Key")
-        ] = None,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     ):
         owner_id = await owner(request, writable=True)
         record = await call(
@@ -260,9 +257,7 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
     async def start_run(
         body: StartRunBody,
         request: Request,
-        idempotency_key: Annotated[
-            str | None, Header(alias="Idempotency-Key")
-        ] = None,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     ):
         owner_id = await owner(request, writable=True)
         record = await call(

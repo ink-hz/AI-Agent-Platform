@@ -166,9 +166,7 @@ def _client(
 
     @app.middleware("http")
     async def identity(request: Request, call_next):
-        request.state.auth_context = AuthContext(
-            owner_id, Role.MEMBER, uuid4(), stale
-        )
+        request.state.auth_context = AuthContext(owner_id, Role.MEMBER, uuid4(), stale)
         return await call_next(request)
 
     async def require_hr_access(request: Request, *, writable: bool = False):
@@ -190,7 +188,9 @@ def _headers(request_id: UUID | None = None) -> dict[str, str]:
     }
 
 
-def test_panorama_sources_are_owner_scoped_idempotent_and_explicitly_serialized() -> None:
+def test_panorama_sources_are_owner_scoped_idempotent_and_explicitly_serialized() -> (
+    None
+):
     client, service, owner_id = _client()
     request_id = uuid4()
 
@@ -203,9 +203,7 @@ def test_panorama_sources_are_owner_scoped_idempotent_and_explicitly_serialized(
             "approved_urls": ["https://example.com/jobs"],
         },
     )
-    listed = client.get(
-        "/api/hr/panorama/sources?include_inactive=true&limit=20"
-    )
+    listed = client.get("/api/hr/panorama/sources?include_inactive=true&limit=20")
 
     assert created.status_code == listed.status_code == 200
     assert created.json() == {
@@ -237,7 +235,9 @@ def test_panorama_sources_are_owner_scoped_idempotent_and_explicitly_serialized(
     assert "company_key" not in created.text
 
 
-def test_panorama_runs_are_owner_scoped_and_serialize_progress_without_internals() -> None:
+def test_panorama_runs_are_owner_scoped_and_serialize_progress_without_internals() -> (
+    None
+):
     client, service, owner_id = _client()
     request_id = uuid4()
 
@@ -324,9 +324,7 @@ def test_panorama_reads_and_failures_always_disable_storage() -> None:
         client.get("/api/hr/panorama/sources"),
         client.get(f"/api/hr/panorama/runs/{service.run.run_id}"),
         client.get("/api/hr/panorama/reports"),
-        client.get(
-            f"/api/hr/panorama/reports/{service.insight.insight_version_id}"
-        ),
+        client.get(f"/api/hr/panorama/reports/{service.insight.insight_version_id}"),
         client.get("/api/hr/panorama/reports?limit=101"),
     )
 
@@ -413,9 +411,7 @@ def test_panorama_stale_mutations_and_unentitled_access_stop_before_service() ->
         "approved_urls": ["https://example.com/jobs"],
     }
 
-    blocked = stale.post(
-        "/api/hr/panorama/sources", json=payload, headers=_headers()
-    )
+    blocked = stale.post("/api/hr/panorama/sources", json=payload, headers=_headers())
     denied_read = denied.get("/api/hr/panorama/sources")
 
     assert blocked.status_code == 503
@@ -427,20 +423,21 @@ def test_panorama_another_owner_ids_are_concealed_as_not_found() -> None:
     owner_client, owner_service, _ = _client()
     other_client, other_service, _ = _client()
 
-    hidden_run = other_client.get(
-        f"/api/hr/panorama/runs/{owner_service.run.run_id}"
-    )
+    hidden_run = other_client.get(f"/api/hr/panorama/runs/{owner_service.run.run_id}")
     hidden_report = other_client.get(
         f"/api/hr/panorama/reports/{owner_service.insight.insight_version_id}"
     )
 
     assert hidden_run.status_code == hidden_report.status_code == 404
-    assert hidden_run.json() == hidden_report.json() == {
-        "detail": "HR panorama not found"
-    }
-    assert owner_client.get(
-        f"/api/hr/panorama/runs/{owner_service.run.run_id}"
-    ).status_code == 200
+    assert (
+        hidden_run.json() == hidden_report.json() == {"detail": "HR panorama not found"}
+    )
+    assert (
+        owner_client.get(
+            f"/api/hr/panorama/runs/{owner_service.run.run_id}"
+        ).status_code
+        == 200
+    )
     assert other_service.calls[0][1] == other_service.owner_id
 
 
@@ -517,7 +514,9 @@ def _security_client(*, stale: bool = False):
     return client, service
 
 
-def test_real_security_middleware_authorizes_panorama_in_the_existing_hr_universe() -> None:
+def test_real_security_middleware_authorizes_panorama_in_the_existing_hr_universe() -> (
+    None
+):
     client, service = _security_client()
     payload = {
         "canonical_name": "联合光电",
@@ -613,9 +612,7 @@ def test_create_app_uses_real_identity_middleware_and_hr_entitlement(
     monkeypatch,
 ) -> None:
     client, service = _create_app_security_client(monkeypatch)
-    denied, denied_service = _create_app_security_client(
-        monkeypatch, allowed=False
-    )
+    denied, denied_service = _create_app_security_client(monkeypatch, allowed=False)
     stale, stale_service = _create_app_security_client(monkeypatch, stale=True)
     mutation_headers = {
         "Origin": "https://agent.example.test",
@@ -624,9 +621,7 @@ def test_create_app_uses_real_identity_middleware_and_hr_entitlement(
     }
 
     readable = client.get("/api/hr/panorama/sources")
-    hidden = client.get(
-        f"/api/hr/panorama/runs/{denied_service.run.run_id}"
-    )
+    hidden = client.get(f"/api/hr/panorama/runs/{denied_service.run.run_id}")
     denied_read = denied.get("/api/hr/panorama/sources")
     stale_read = stale.get("/api/hr/panorama/sources")
     stale_write = stale.post(
