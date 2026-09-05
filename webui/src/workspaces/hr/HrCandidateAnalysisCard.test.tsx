@@ -72,6 +72,37 @@ describe("HrCandidateAnalysisCard", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it("downloads the complete match analysis as readable Markdown", async () => {
+    const createObjectURL = vi.fn().mockReturnValue("blob:match-analysis");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+    let downloaded = "";
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloaded = this.download;
+    });
+    await act(async () => root.render(<HrCandidateAnalysisCard analysis={analysis} />));
+
+    const download = container.querySelector<HTMLButtonElement>('[aria-label="下载岗位匹配分析"]');
+    expect(download).not.toBeNull();
+    await act(async () => download?.click());
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    const downloadedText = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(createObjectURL.mock.calls[0][0] as Blob);
+    });
+    expect(downloadedText).toContain("# 岗位匹配分析 · v2");
+    expect(downloadedText).toContain("## 匹配证据");
+    expect(downloadedText).toContain("负责挤出系统");
+    expect(downloadedText).toContain("## 来源版本");
+    expect(downloadedText).toContain(analysis.contextVersionId);
+    expect(downloaded).toBe("岗位匹配分析-v2.md");
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)));
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:match-analysis");
+  });
+
   it("shows interview questions and makes the PDF the only download action", async () => {
     const plan: HrCandidateAnalysisVersion = {
       ...analysis, analysisKind: "candidate_interview_plan",

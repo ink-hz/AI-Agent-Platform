@@ -44,6 +44,38 @@ function matchCopy(result: HrCandidateMatchResult): string {
   ].join("\n\n");
 }
 
+function matchMarkdown(analysis: HrCandidateAnalysisVersion, result: HrCandidateMatchResult): string {
+  return [
+    `# 岗位匹配分析 · v${analysis.versionNumber}`,
+    "", "## 匹配结论", "", result.summary,
+    "", "## 匹配维度", "",
+    ...Object.entries(result.dimensions).map(([key, value]) => `- ${fieldLabel(key)}：${valueText(value)}`),
+    ...(Object.keys(result.dimensions).length === 0 ? ["- 暂未提供"] : []),
+    "", "## 匹配证据", "", ...(result.evidence.length > 0 ? result.evidence.map((item) => `- ${valueText(item)}`) : ["- 暂未提供明确证据"]),
+    "", "## 能力差距", "", ...(result.gaps.length > 0 ? result.gaps.map((item) => `- ${item}`) : ["- 未发现明确差距"]),
+    "", "## 风险提示", "", ...(result.risks.length > 0 ? result.risks.map((item) => `- ${item}`) : ["- 未发现明确风险"]),
+    "", "## 待验证信息", "", ...(result.unknowns.length > 0 ? result.unknowns.map((item) => `- ${item}`) : ["- 暂无待验证信息"]),
+    "", "## 核实问题", "", ...(result.verification_questions.length > 0 ? result.verification_questions.map((item) => `- ${item}`) : ["- 暂无核实问题"]),
+    "", "## 来源版本", "",
+    `- 岗位版本：${analysis.contextVersionId}`,
+    `- 简历版本：${analysis.documentIds.join("、")}`,
+    ...(analysis.feedbackIds.length > 0 ? [`- 反馈版本：${analysis.feedbackIds.join("、")}`] : []),
+    `- 生成方：${analysis.agentVersion} · ${analysis.modelVersion}`,
+    `- 生成时间：${analysis.createdAt}`,
+  ].join("\n").trim().concat("\n");
+}
+
+function downloadMarkdown(filename: string, content: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.hidden = true;
+  document.body.append(anchor);
+  try { anchor.click(); }
+  finally { anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 0); }
+}
+
 function interviewCopy(result: HrCandidateInterviewPlanResult): string {
   return [result.title, ...result.questions.flatMap((item, index) => [
     `${index + 1}. ${item.question}`,
@@ -104,6 +136,9 @@ export function HrCandidateAnalysisCard({
       {!match && (analysis.sourceArtifactVersionId === null
         ? <p className="hr-candidate-pdf-missing" role="status">PDF 尚未生成，重试本任务</p>
         : <button aria-label="下载面试题 PDF" className="hr-candidate-pdf-download" disabled={readOnly || downloadState === "pending" || !onDownload} onClick={() => void download()} type="button"><Download size={16} />{downloadState === "pending" ? "正在准备 PDF…" : "下载面试题 PDF"}</button>)}
+      {match && <button aria-label="下载岗位匹配分析" className="hr-candidate-pdf-download" onClick={() => downloadMarkdown(
+        `岗位匹配分析-v${analysis.versionNumber}.md`, matchMarkdown(analysis, analysis.result as HrCandidateMatchResult),
+      )} type="button"><Download size={16} />下载匹配分析</button>}
       {downloadState === "error" && <p role="alert">PDF 下载未完成，请重试本任务</p>}
       {retryUnavailableReason && <p className="hr-candidate-retry-unavailable" role="status">{retryUnavailableReason}</p>}
       <MessageActions copyText={copyText} feedbackState={feedbackState} onCopy={onCopy} onFeedback={readOnly ? undefined : onFeedback} onRetry={readOnly ? undefined : onRetry} presentation="icon" />
