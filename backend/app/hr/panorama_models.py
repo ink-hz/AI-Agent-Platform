@@ -972,26 +972,31 @@ class ProductionBatch:
         _aware(self.created_at)
         _aware(self.updated_at)
         valid = (
-            self.state == "queued"
-            and self.started_at is None
-            and self.finished_at is None
-            and error is None
-            and not failures
-        ) or (
-            self.state in {"running", "analyzing"}
-            and self.started_at is not None
-            and self.finished_at is None
-            and error is None
-        ) or (
-            self.state == "published"
-            and self.started_at is not None
-            and self.finished_at is not None
-            and error is None
-        ) or (
-            self.state == "failed"
-            and self.started_at is not None
-            and self.finished_at is not None
-            and error is not None
+            (
+                self.state == "queued"
+                and self.started_at is None
+                and self.finished_at is None
+                and error is None
+                and not failures
+            )
+            or (
+                self.state in {"running", "analyzing"}
+                and self.started_at is not None
+                and self.finished_at is None
+                and error is None
+            )
+            or (
+                self.state == "published"
+                and self.started_at is not None
+                and self.finished_at is not None
+                and error is None
+            )
+            or (
+                self.state == "failed"
+                and self.started_at is not None
+                and self.finished_at is not None
+                and error is not None
+            )
         )
         if not valid:
             raise ValueError("production batch lifecycle invalid")
@@ -1045,9 +1050,7 @@ class SourceCollectionAttempt:
     def __post_init__(self) -> None:
         for value in (self.attempt_id, self.batch_id, self.owner_id, self.source_id):
             _uuid(value)
-        object.__setattr__(
-            self, "source_url", canonical_panorama_url(self.source_url)
-        )
+        object.__setattr__(self, "source_url", canonical_panorama_url(self.source_url))
         if (
             isinstance(self.attempt_number, bool)
             or not isinstance(self.attempt_number, int)
@@ -1088,9 +1091,25 @@ class SourceCollectionAttempt:
         failure = (
             self.state == "failed"
             and error is not None
-            and all(
-                value is None
-                for value in (evidence_hash, evidence_locator, evidence_mime, size)
+            and (
+                all(
+                    value is None
+                    for value in (
+                        evidence_hash,
+                        evidence_locator,
+                        evidence_mime,
+                        size,
+                    )
+                )
+                or all(
+                    value is not None
+                    for value in (
+                        evidence_hash,
+                        evidence_locator,
+                        evidence_mime,
+                        size,
+                    )
+                )
             )
             and count == 0
         )

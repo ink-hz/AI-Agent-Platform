@@ -62,7 +62,28 @@ def test_source_attempt_keeps_only_sanitized_evidence_metadata() -> None:
     assert not hasattr(attempt, "request_headers")
 
 
-def test_failed_attempt_rejects_evidence_metadata() -> None:
+def test_failed_parse_attempt_retains_received_raw_evidence() -> None:
+    command = CreateSourceCollectionAttempt(
+        attempt_id=uuid4(),
+        batch_id=uuid4(),
+        owner_id=uuid4(),
+        source_id=uuid4(),
+        source_url="https://example.com/jobs",
+        attempt_number=1,
+        state="failed",
+        error_code="unsupported_schema",
+        evidence_sha256="a" * 64,
+        evidence_locator="sha256/aa/" + "a" * 64,
+        evidence_mime="text/html",
+        evidence_size_bytes=1024,
+        normalized_job_count=0,
+        observed_at=NOW,
+    )
+
+    assert command.evidence_sha256 == "a" * 64
+
+
+def test_failed_attempt_rejects_partial_evidence_metadata() -> None:
     with pytest.raises(ValueError, match="attempt lifecycle"):
         CreateSourceCollectionAttempt(
             attempt_id=uuid4(),
@@ -74,9 +95,9 @@ def test_failed_attempt_rejects_evidence_metadata() -> None:
             state="failed",
             error_code="source_timeout",
             evidence_sha256="a" * 64,
-            evidence_locator="sha256/aa/" + "a" * 64,
-            evidence_mime="text/html",
-            evidence_size_bytes=1024,
+            evidence_locator=None,
+            evidence_mime=None,
+            evidence_size_bytes=None,
             normalized_job_count=0,
             observed_at=NOW,
         )
@@ -84,13 +105,15 @@ def test_failed_attempt_rejects_evidence_metadata() -> None:
 
 def test_publication_requires_grounded_coverage_records() -> None:
     source_id = uuid4()
-    coverage = ({
-        "source_id": str(source_id),
-        "state": "succeeded",
-        "observed_at": NOW.isoformat(),
-        "source_urls": ["https://example.com/jobs"],
-        "job_count": 5,
-    },)
+    coverage = (
+        {
+            "source_id": str(source_id),
+            "state": "succeeded",
+            "observed_at": NOW.isoformat(),
+            "source_urls": ["https://example.com/jobs"],
+            "job_count": 5,
+        },
+    )
     publication = PublishedPanorama(
         publication_id=uuid4(),
         client_request_id=uuid4(),

@@ -44,12 +44,30 @@ def test_v80_defines_background_batches_attempts_and_atomic_publication() -> Non
 def test_v80_decouples_snapshots_and_insights_from_conversations() -> None:
     sql = _sql()
 
-    assert "alter table platform_hr.public_job_snapshots add column production_batch_id uuid" in sql
-    assert "alter table platform_hr.public_job_snapshots alter column run_id drop not null" in sql
-    assert "alter table platform_hr.talent_insight_versions add column production_batch_id uuid" in sql
-    assert "alter table platform_hr.talent_insight_versions alter column run_id drop not null" in sql
-    assert "alter table platform_hr.talent_insight_versions alter column source_conversation_id drop not null" in sql
-    assert "alter table platform_hr.talent_insight_versions alter column source_turn_id drop not null" in sql
+    assert (
+        "alter table platform_hr.public_job_snapshots add column production_batch_id uuid"
+        in sql
+    )
+    assert (
+        "alter table platform_hr.public_job_snapshots alter column run_id drop not null"
+        in sql
+    )
+    assert (
+        "alter table platform_hr.talent_insight_versions add column production_batch_id uuid"
+        in sql
+    )
+    assert (
+        "alter table platform_hr.talent_insight_versions alter column run_id drop not null"
+        in sql
+    )
+    assert (
+        "alter table platform_hr.talent_insight_versions alter column source_conversation_id drop not null"
+        in sql
+    )
+    assert (
+        "alter table platform_hr.talent_insight_versions alter column source_turn_id drop not null"
+        in sql
+    )
     assert re.search(
         r"check \(\(run_id is not null\).*\(production_batch_id is not null\)\)",
         sql,
@@ -69,15 +87,14 @@ def test_v80_evidence_metadata_is_bounded_and_credentials_are_not_stored() -> No
         assert column in sql
     assert "evidence_sha256 ~ '^[a-f0-9]{64}$'" in sql
     assert "evidence_size_bytes between 0 and 10485760" in sql
+    assert "failed responses may retain raw evidence" in sql
     for forbidden in ("authorization", "cookie", "access_token", "api_key", "secret"):
         assert f"{forbidden} text" not in sql
 
 
 def test_v80_functions_are_restricted_to_application_roles() -> None:
     sql = _sql()
-    functions = set(
-        re.findall(r"create function platform_hr\.([a-z0-9_]+_v80)", sql)
-    )
+    functions = set(re.findall(r"create function platform_hr\.([a-z0-9_]+_v80)", sql))
 
     assert functions
     for function in functions:

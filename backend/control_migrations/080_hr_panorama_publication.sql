@@ -106,13 +106,19 @@ create table platform_hr.panorama_source_attempts (
     ),
   unique (attempt_id,producer_owner_internal_user_id),
   unique (batch_id,source_id,source_url,attempt_number),
+  -- Failed responses may retain raw evidence when HTTP retrieval succeeded but
+  -- parsing or normalization failed. Network failures have no evidence tuple.
   check (
     (state='succeeded' and error_code is null
       and evidence_sha256 is not null and evidence_locator is not null
       and evidence_mime is not null and evidence_size_bytes is not null)
     or (state='failed' and error_code is not null
-      and evidence_sha256 is null and evidence_locator is null
-      and evidence_mime is null and evidence_size_bytes is null
+      and (
+        (evidence_sha256 is null and evidence_locator is null
+          and evidence_mime is null and evidence_size_bytes is null)
+        or (evidence_sha256 is not null and evidence_locator is not null
+          and evidence_mime is not null and evidence_size_bytes is not null)
+      )
       and normalized_job_count=0)
   )
 );
