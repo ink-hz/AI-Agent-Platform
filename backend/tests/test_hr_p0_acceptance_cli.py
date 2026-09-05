@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from uuid import UUID, uuid5
 
 import pytest
-
 from app.hr.p0_acceptance_cli import (
     AcceptanceConfig,
     AcceptanceFailure,
@@ -625,6 +624,7 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                 self.context_draft_count += 1
                 assert kwargs["json"]["base_context_version_id"] == uid("context:1")
                 assert kwargs["json"]["source_turn_id"] == uid("turn:position-revision")
+                assert kwargs["json"]["model_version"] == "claude-opus-5"
                 assert kwargs["json"]["modules"]["jd"] != {"text": "JD version 1"}
                 self.revised_modules = kwargs["json"]["modules"]
                 return Response(
@@ -845,6 +845,7 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                 )
             return DbResult((0,) if "agent_action_deliveries" in statement else (1,))
 
+    import app.cluster.contract as cluster_contract
     import app.config as platform_config
     from app import local_secrets
 
@@ -858,8 +859,14 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
         platform_config,
         "load_config",
         lambda: SimpleNamespace(
-            control_plane=SimpleNamespace(control_database_url_file="/fixed/db-url")
+            control_plane=SimpleNamespace(control_database_url_file="/fixed/db-url"),
+            metabot_contract_path="/fixed/runtime-contract.json",
         ),
+    )
+    monkeypatch.setattr(
+        cluster_contract,
+        "load_targets",
+        lambda _path: [SimpleNamespace(id="hr-bot", declared_model="claude-opus-5")],
     )
     monkeypatch.setattr(local_secrets, "read_secret_file", lambda _path: "fixed-dsn")
     config_path = _write_config(tmp_path)

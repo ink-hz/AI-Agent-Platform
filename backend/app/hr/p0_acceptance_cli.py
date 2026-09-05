@@ -986,6 +986,25 @@ class PlatformP0AcceptanceGateway:
     ) -> dict[str, object]:
         import httpx
 
+        from app.cluster.contract import ContractLoadError, load_targets
+        from app.config import load_config as load_platform_config
+
+        try:
+            platform = load_platform_config()
+            model_matches = [
+                target
+                for target in load_targets(platform.metabot_contract_path)
+                if target.id == "hr-bot"
+            ]
+            if len(model_matches) != 1:
+                raise ValueError
+            model_version = model_matches[0].declared_model
+            if not isinstance(model_version, str) or not model_version.strip():
+                raise ValueError
+            model_version = model_version.strip()
+        except (AttributeError, ContractLoadError, OSError, TypeError, ValueError):
+            raise AcceptanceFailure("TURN_EVIDENCE") from None
+
         cookie_name, cookie_value = config.session_cookie.split("=", 1)
         timeout = httpx.Timeout(
             config.request_timeout_seconds,
@@ -1325,7 +1344,7 @@ class PlatformP0AcceptanceGateway:
                     "source_artifact_version_id": None,
                     "source_material_attachment_ids": [],
                     "agent_id": "hr-bot",
-                    "model_version": "controlled-live-p0",
+                    "model_version": model_version,
                 },
             )
             context_v2_draft = str(context_draft.get("context_version_id"))
