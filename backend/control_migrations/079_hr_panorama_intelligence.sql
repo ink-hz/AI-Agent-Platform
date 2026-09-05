@@ -1,3 +1,33 @@
+create function platform_hr.percent_decode_utf8_v79(selected_value text)
+returns text
+language plpgsql immutable strict
+set search_path=pg_catalog
+as $function$
+declare selected_bytes bytea := '\x'::bytea;
+declare selected_index integer := 1;
+declare selected_character text;
+declare selected_escape text;
+begin
+  while selected_index<=char_length(selected_value) loop
+    selected_character := substring(selected_value from selected_index for 1);
+    if selected_character='%' then
+      selected_escape := substring(selected_value from selected_index+1 for 2);
+      if selected_escape !~ '^[0-9A-F]{2}$' then return null; end if;
+      selected_bytes := selected_bytes || decode(selected_escape,'hex');
+      selected_index := selected_index+3;
+    else
+      selected_bytes := selected_bytes || convert_to(selected_character,'UTF8');
+      selected_index := selected_index+1;
+    end if;
+  end loop;
+  begin
+    return convert_from(selected_bytes,'UTF8');
+  exception when character_not_in_repertoire then
+    return null;
+  end;
+end
+$function$;
+
 create function platform_hr.public_https_url_is_valid_v79(selected_url text)
 returns boolean
 language plpgsql immutable
@@ -7,12 +37,18 @@ declare authority text;
 declare selected_host text;
 declare selected_port text;
 declare selected_path text;
+declare selected_query text;
+declare selected_character text;
+declare selected_folded text;
+declare selected_index integer;
 begin
   if selected_url is null or char_length(selected_url) not between 9 and 2048
     or selected_url !~ '^https://[^/?#]+([/?#][^[:space:]]*)?$'
+    or position('#' in selected_url)>0
     or position(chr(92) in selected_url)>0
     or selected_url ~ '%([^0-9A-F]|$)|%[0-9A-F]([^0-9A-F]|$)'
-    or selected_url ~* '%(2e|2f|5c)' then
+    or selected_url ~ '%(25|2E|2F|5C)'
+    or selected_url ~ '%([01][0-9A-F]|7F)' then
     return false;
   end if;
   authority := substring(selected_url from '^https://([^/?#]+)');
@@ -29,6 +65,7 @@ begin
     selected_host := authority;
   end if;
   if selected_host='localhost' or selected_host like '%.localhost'
+    or selected_host like '%.local'
     or selected_host ~ '^[0-9]+([.][0-9]+){0,3}$'
     or selected_host ~ '^0x[0-9a-f]+$'
     or selected_host ~
@@ -38,8 +75,36 @@ begin
       '([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))+$' then
     return false;
   end if;
-  selected_path := substring(selected_url from '^https://[^/?#]+([^?#]*)');
-  if selected_path ~ '(^|/)[.]{1,2}(/|$)' then return false; end if;
+  selected_path := platform_hr.percent_decode_utf8_v79(coalesce(
+    substring(selected_url from '^https://[^/?#]+([^?#]*)'),''
+  ));
+  selected_query := platform_hr.percent_decode_utf8_v79(coalesce(
+    substring(selected_url from '[?](.*)$'),''
+  ));
+  if selected_path is null or selected_query is null then return false; end if;
+  for selected_index in 1..char_length(selected_path || selected_query) loop
+    selected_character := substring(
+      selected_path || selected_query from selected_index for 1
+    );
+    selected_folded := normalize(selected_character,NFKC);
+    if selected_character<>selected_folded
+      and selected_folded in ('.','/',chr(92)) then
+      return false;
+    end if;
+  end loop;
+  selected_path := normalize(selected_path,NFKC);
+  selected_query := normalize(selected_query,NFKC);
+  if selected_path ~ '[[:cntrl:]]' or selected_query ~ '[[:cntrl:]]'
+    or position(chr(92) in selected_path)>0
+    or position(chr(92) in selected_query)>0
+    or selected_path ~ '(^|/)[.]{1,2}(/|$)' then
+    return false;
+  end if;
+  if exists (
+    select 1 from regexp_split_to_table(replace(selected_query,'+',' '),'[&;]') item
+    where lower(btrim(split_part(item,'=',1))) ~
+      '^(access[ _-]?token|api[ _-]?key|token|key|password|passwd|pass|secret|signature|sig|credential|auth)$'
+  ) then return false; end if;
   return true;
 end
 $function$;

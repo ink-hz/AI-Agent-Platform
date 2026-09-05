@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
+from .panorama_models import canonical_panorama_url
+
 _MAX_DECODED_BYTES = 512 * 1024
 _ENVELOPE = re.compile(r"<!-- platform-hr-v1:(.*?) -->", re.DOTALL)
 _BASE64URL = re.compile(r"[A-Za-z0-9_-]+\Z")
@@ -122,6 +124,15 @@ def _aware_timestamp(value: object) -> bool:
     return selected.tzinfo is not None
 
 
+def _canonical_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return canonical_panorama_url(value) == value
+    except ValueError:
+        return False
+
+
 def _valid_position_package(payload: object) -> bool:
     package = _json_object(payload)
     if package is None or set(package) != _POSITION_PACKAGE_KEYS:
@@ -190,7 +201,7 @@ def _valid_panorama_report(payload: object) -> bool:
     ):
         return False
     companies: set[str] = set()
-    has_completed_source = False
+    completed_companies: set[str] = set()
     for item in report["companies"]:
         company = _json_object(item)
         if (
@@ -200,6 +211,7 @@ def _valid_panorama_report(payload: object) -> bool:
             or not _bounded_text(company["canonical_name"], 500)
             or not _text_list(company["approved_urls"], maximum=20, allow_empty=False)
             or any(len(url) > 2048 for url in company["approved_urls"])
+            or any(not _canonical_url(url) for url in company["approved_urls"])
             or company["status"] not in {"completed", "failed"}
             or (company["status"] == "completed" and company["error_code"] is not None)
             or (
@@ -210,7 +222,8 @@ def _valid_panorama_report(payload: object) -> bool:
         ):
             return False
         companies.add(company["canonical_name"])
-        has_completed_source = has_completed_source or company["status"] == "completed"
+        if company["status"] == "completed":
+            completed_companies.add(company["canonical_name"])
     jobs: dict[tuple[str, str], tuple[str, str]] = {}
     for item in report["jobs"]:
         job = _json_object(item)
@@ -224,10 +237,11 @@ def _valid_panorama_report(payload: object) -> bool:
             or not _bounded_text(job["duty_excerpt"], 32768)
             or not _bounded_text(job["requirement_excerpt"], 32768)
             or not _bounded_text(job["source_url"], 2048)
+            or not _canonical_url(job["source_url"])
             or not _aware_timestamp(job["observed_at"])
             or not isinstance(job["content_sha256"], str)
             or _SHA256.fullmatch(job["content_sha256"]) is None
-            or job["company"] not in companies
+            or job["company"] not in completed_companies
             or (job["company"], job["public_job_key"]) in jobs
         ):
             return False
@@ -235,9 +249,10 @@ def _valid_panorama_report(payload: object) -> bool:
             job["source_url"],
             job["observed_at"],
         )
-    if has_completed_source and not jobs:
+    if completed_companies and not jobs:
         return False
     fact_ids: set[str] = set()
+    fact_companies: set[str] = set()
     for item in report["facts"]:
         fact = _json_object(item)
         if (
@@ -248,6 +263,7 @@ def _valid_panorama_report(payload: object) -> bool:
             or not _bounded_text(fact["company"], 500)
             or not _bounded_text(fact["public_job_key"], 512)
             or not _bounded_text(fact["source_url"], 2048)
+            or not _canonical_url(fact["source_url"])
             or not _aware_timestamp(fact["observed_at"])
             or (fact["company"], fact["public_job_key"]) not in jobs
             or jobs[(fact["company"], fact["public_job_key"])]
@@ -256,7 +272,11 @@ def _valid_panorama_report(payload: object) -> bool:
         ):
             return False
         fact_ids.add(fact["fact_id"])
-    if has_completed_source and not fact_ids:
+        fact_companies.add(fact["company"])
+    if completed_companies and not fact_ids:
+        return False
+    evidence_companies = {company for company, _job_key in jobs} | fact_companies
+    if not completed_companies.issubset(evidence_companies):
         return False
     for item in report["inferences"]:
         inference = _json_object(item)

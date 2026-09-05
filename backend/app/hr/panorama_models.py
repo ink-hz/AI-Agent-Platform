@@ -4,12 +4,13 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from uuid import UUID
 
 SourceKind = Literal["company"]
@@ -26,7 +27,10 @@ _DNS_NAME = re.compile(
 _IPV4_STYLE_HOST = re.compile(
     r"(?:0x[a-f0-9]+|[0-9]+)(?:\.(?:0x[a-f0-9]+|[0-9]+)){0,3}\Z"
 )
-_PERCENT_ESCAPE = re.compile(r"%[0-9A-F]{2}")
+_SECRET_QUERY_KEY = re.compile(
+    r"(?:access[ _-]?token|api[ _-]?key|token|key|password|passwd|pass|secret|signature|sig|credential|auth)",
+    re.IGNORECASE,
+)
 _RUN_STATES = {"queued", "running", "completed", "partially_completed", "failed"}
 _JOB_STATUSES = {"open", "closed", "unknown"}
 
@@ -131,34 +135,84 @@ def _strings(
     return normalized
 
 
-def _https_url(value: str) -> str:
-    value = _text(value, 2048, "source URL invalid")
-    if len(value) < 9 or any(character.isspace() for character in value):
+def _decoded_url_component(raw: str) -> str:
+    index = 0
+    while index < len(raw):
+        if raw[index] != "%":
+            index += 1
+            continue
+        escape = raw[index + 1 : index + 3]
+        if len(escape) != 2 or any(
+            character not in "0123456789ABCDEF" for character in escape
+        ):
+            raise ValueError("source URL invalid")
+        if escape in {"25", "2E", "2F", "5C"}:
+            raise ValueError("source URL invalid")
+        index += 3
+    try:
+        decoded = unquote(raw, encoding="utf-8", errors="strict")
+    except (UnicodeError, ValueError):
+        raise ValueError("source URL invalid") from None
+    normalized = unicodedata.normalize("NFKC", decoded)
+    if any(
+        ord(character) < 0x20
+        or ord(character) == 0x7F
+        or character == "\\"
+        or unicodedata.category(character) == "Cc"
+        for character in normalized
+    ):
         raise ValueError("source URL invalid")
-    if "\\" in value:
+    if any(
+        character != folded and folded in {".", "/", "\\"}
+        for character in decoded
+        for folded in (unicodedata.normalize("NFKC", character),)
+    ):
         raise ValueError("source URL invalid")
-    escapes = re.findall(r"%..?", value)
-    if any(_PERCENT_ESCAPE.fullmatch(escape) is None for escape in escapes):
+    return normalized
+
+
+def canonical_panorama_url(value: str) -> str:
+    """Validate one exact canonical URL shape shared by storage and runtime."""
+    if (
+        not isinstance(value, str)
+        or not 9 <= len(value) <= 2048
+        or value != value.strip()
+        or not value.startswith("https://")
+        or "#" in value
+        or "\\" in value
+        or any(
+            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+            for character in value
+        )
+    ):
         raise ValueError("source URL invalid")
-    if re.search(r"%(?:2E|2F|5C)", value, re.IGNORECASE):
+    remainder = value[len("https://") :]
+    boundary = min(
+        (position for marker in "/?" if (position := remainder.find(marker)) >= 0),
+        default=len(remainder),
+    )
+    authority = remainder[:boundary]
+    if authority.endswith(":443"):
+        host = authority[:-4]
+    else:
+        host = authority
+    if authority not in {host, f"{host}:443"} or not _DNS_NAME.fullmatch(host):
+        raise ValueError("source URL invalid")
+    if authority != authority.lower() or not authority.isascii():
         raise ValueError("source URL invalid")
     try:
         parsed = urlsplit(value)
-        port = parsed.port
     except ValueError:
         raise ValueError("source URL invalid") from None
     if (
         parsed.scheme != "https"
-        or not parsed.netloc
-        or parsed.netloc != parsed.netloc.lower()
+        or parsed.netloc != authority
         or parsed.username is not None
         or parsed.password is not None
-        or parsed.hostname is None
-        or port not in (None, 443)
-        or parsed.hostname.startswith("[")
+        or parsed.hostname != host
+        or parsed.fragment
     ):
         raise ValueError("source URL invalid")
-    host = parsed.hostname
     try:
         ipaddress.ip_address(host)
     except ValueError:
@@ -167,12 +221,21 @@ def _https_url(value: str) -> str:
         raise ValueError("source URL invalid")
     if (
         host == "localhost"
-        or host.endswith(".localhost")
+        or host.endswith((".localhost", ".local"))
         or _IPV4_STYLE_HOST.fullmatch(host) is not None
         or not _DNS_NAME.fullmatch(host)
     ):
         raise ValueError("source URL invalid")
-    if any(part in {".", ".."} for part in parsed.path.split("/")):
+    path = _decoded_url_component(parsed.path)
+    query = _decoded_url_component(parsed.query)
+    if any(part in {".", ".."} for part in path.split("/")):
+        raise ValueError("source URL invalid")
+    query_keys = query.replace("+", " ")
+    if any(
+        _SECRET_QUERY_KEY.fullmatch(item.partition("=")[0].strip())
+        for item in re.split(r"[&;]", query_keys)
+        if item
+    ):
         raise ValueError("source URL invalid")
     return value
 
@@ -180,7 +243,7 @@ def _https_url(value: str) -> str:
 def _urls(values: tuple[str, ...]) -> tuple[str, ...]:
     if not isinstance(values, tuple) or not 1 <= len(values) <= 20:
         raise ValueError("approved URLs invalid")
-    normalized = tuple(_https_url(value) for value in values)
+    normalized = tuple(canonical_panorama_url(value) for value in values)
     if len(set(normalized)) != len(normalized):
         raise ValueError("approved URLs invalid")
     _json_size(normalized, 65_536, "approved URLs invalid")
@@ -249,7 +312,7 @@ def _facts(
         try:
             UUID(str(fact["snapshot_id"]))
             UUID(str(fact["observation_id"]))
-            _https_url(fact["source_url"])  # type: ignore[arg-type]
+            canonical_panorama_url(fact["source_url"])  # type: ignore[arg-type]
             observed = datetime.fromisoformat(
                 str(fact["observed_at"]).replace("Z", "+00:00")
             )
@@ -566,7 +629,7 @@ class PublicJobSnapshot:
             object.__setattr__(
                 self, name, _text(getattr(self, name), maximum, f"{name} invalid")
             )
-        object.__setattr__(self, "source_url", _https_url(self.source_url))
+        object.__setattr__(self, "source_url", canonical_panorama_url(self.source_url))
         _aware(self.observed_at)
         _aware(self.created_at)
         if (
@@ -881,5 +944,6 @@ __all__ = [
     "TalentInsightVersion",
     "TalentSource",
     "TransitionPanoramaRun",
+    "canonical_panorama_url",
     "thaw_json",
 ]

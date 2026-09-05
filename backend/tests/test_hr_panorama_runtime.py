@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -117,6 +119,18 @@ def _answer(runtime, *, unavailable: tuple[str, ...] = ()) -> str:
     )
 
 
+def _unchecked_answer(payload: dict[str, object]) -> str:
+    document = json.dumps(
+        {"schema_version": 1, "kind": "panorama_report", "payload": payload},
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    token = base64.urlsafe_b64encode(document).decode("ascii").rstrip("=")
+    return f"分析。\n\n<!-- platform-hr-v1:{token} -->"
+
+
 def _public_resolver(hostname: str, port: int):
     assert port == 443
     return ("8.8.8.8", "2001:4860:4860::8888")
@@ -140,6 +154,7 @@ def test_panorama_envelope_requires_exact_report_jobs_and_fact_references() -> N
         "invalid_timestamp",
         "fact_job_mismatch",
         "completed_without_evidence",
+        "unsafe_url",
     ):
         invalid = _payload(runtime)
         if mutation == "top_level":
@@ -152,12 +167,30 @@ def test_panorama_envelope_requires_exact_report_jobs_and_fact_references() -> N
             invalid["jobs"][0]["observed_at"] = "2026"  # type: ignore[index]
         elif mutation == "fact_job_mismatch":
             invalid["facts"][0]["observed_at"] = "2026-09-05T09:00:00Z"  # type: ignore[index]
-        else:
+        elif mutation == "completed_without_evidence":
             invalid["jobs"] = []
             invalid["facts"] = []
             invalid["inferences"] = []
+        else:
+            invalid["jobs"][0]["source_url"] += "#fragment"  # type: ignore[index]
+            invalid["facts"][0]["source_url"] += "#fragment"  # type: ignore[index]
         with pytest.raises(ValueError, match="HR envelope invalid"):
             encode_hr_envelope("panorama_report", invalid)
+
+
+def test_panorama_envelope_rejects_completed_company_without_own_evidence() -> None:
+    runtime = _runtime()
+    payload = _payload(runtime)
+    missing_company = runtime.sources[1].canonical_name
+    payload["jobs"] = [
+        job for job in payload["jobs"] if job["company"] != missing_company
+    ]
+    payload["facts"] = [
+        fact for fact in payload["facts"] if fact["company"] != missing_company
+    ]
+
+    with pytest.raises(ValueError, match="HR envelope invalid"):
+        encode_hr_envelope("panorama_report", payload)
 
 
 class RecordingCommands:
@@ -168,7 +201,13 @@ class RecordingCommands:
     def append_turn(self, owner_id, conversation_id, request_id, prompt):
         self.calls.append((owner_id, conversation_id, request_id, prompt))
         return SimpleNamespace(
-            conversation=SimpleNamespace(conversation_id=conversation_id),
+            conversation=SimpleNamespace(
+                conversation_id=conversation_id,
+                owner_internal_user_id=owner_id,
+                mode="direct_agent",
+                direct_agent_id="hr-bot",
+                status="active",
+            ),
             turn=SimpleNamespace(turn_id=self.turn_id),
             created=len(self.calls) == 1,
         )
@@ -344,6 +383,114 @@ def test_prompt_size_rejection_is_not_mislabeled_as_destination_invalid() -> Non
     assert repository.transitions[-1].error_code == "prompt_invalid"
 
 
+def test_archived_conversation_after_run_creation_is_failed_durably() -> None:
+    from app.agent_brain.conversation_repository import ConversationRepositoryConflict
+    from app.hr.panorama_runtime import PanoramaRunCoordinator
+
+    runtime = _runtime()
+    repository = RecordingRuntimeRepository(runtime)
+
+    class ArchivedCommands:
+        def append_turn(self, *args):
+            raise ConversationRepositoryConflict("conversation archived")
+
+    coordinator = PanoramaRunCoordinator(
+        repository,
+        ArchivedCommands(),
+        resolver=_public_resolver,
+    )
+
+    with pytest.raises(ConversationRepositoryConflict, match="archived"):
+        coordinator.submit(runtime.run.run_id)
+
+    assert repository.transitions[-1].state == "failed"
+    assert repository.transitions[-1].error_code == "conversation_rejected"
+
+
+def test_missing_conversation_after_run_creation_is_failed_durably() -> None:
+    from app.agent_brain.conversation_repository import ConversationRepositoryNotFound
+    from app.hr.panorama_runtime import PanoramaRunCoordinator
+
+    runtime = _runtime()
+    repository = RecordingRuntimeRepository(runtime)
+
+    class MissingCommands:
+        def append_turn(self, *args):
+            raise ConversationRepositoryNotFound()
+
+    coordinator = PanoramaRunCoordinator(
+        repository,
+        MissingCommands(),
+        resolver=_public_resolver,
+    )
+
+    with pytest.raises(ConversationRepositoryNotFound):
+        coordinator.submit(runtime.run.run_id)
+
+    assert repository.transitions[-1].state == "failed"
+    assert repository.transitions[-1].error_code == "conversation_unavailable"
+
+
+def test_turn_in_progress_and_transport_failure_remain_retryable() -> None:
+    from app.agent_brain.conversation_repository import (
+        ConversationRepositoryError,
+        ConversationTurnInProgress,
+    )
+    from app.hr.panorama_runtime import PanoramaRunCoordinator
+
+    for failure in (ConversationTurnInProgress(), ConversationRepositoryError()):
+        runtime = _runtime()
+        repository = RecordingRuntimeRepository(runtime)
+
+        class TemporarilyUnavailableCommands:
+            def __init__(self, selected_failure: Exception) -> None:
+                self.failure = selected_failure
+
+            def append_turn(self, *args):
+                raise self.failure
+
+        coordinator = PanoramaRunCoordinator(
+            repository,
+            TemporarilyUnavailableCommands(failure),
+            resolver=_public_resolver,
+        )
+
+        with pytest.raises(type(failure)):
+            coordinator.submit(runtime.run.run_id)
+        assert repository.transitions == []
+
+
+def test_returned_conversation_scope_mismatch_is_failed_durably() -> None:
+    from app.hr.panorama_runtime import PanoramaRunCoordinator
+
+    runtime = _runtime()
+    repository = RecordingRuntimeRepository(runtime)
+
+    class MismatchedCommands:
+        def append_turn(self, *args):
+            return SimpleNamespace(
+                conversation=SimpleNamespace(
+                    conversation_id=uuid4(),
+                    owner_internal_user_id=uuid4(),
+                    mode="brain",
+                    direct_agent_id=None,
+                    status="archived",
+                )
+            )
+
+    coordinator = PanoramaRunCoordinator(
+        repository,
+        MismatchedCommands(),
+        resolver=_public_resolver,
+    )
+
+    with pytest.raises(ValueError, match="conversation mismatch"):
+        coordinator.submit(runtime.run.run_id)
+
+    assert repository.transitions[-1].state == "failed"
+    assert repository.transitions[-1].error_code == "conversation_mismatch"
+
+
 @pytest.mark.parametrize(
     "url",
     (
@@ -388,6 +535,68 @@ def test_dispatch_url_policy_rejects_mixed_dns_and_revalidates_every_call() -> N
         ("jobs.example.com", 443),
         ("jobs.example.com", 443),
     ]
+
+
+@pytest.mark.parametrize(
+    "address",
+    ("224.0.0.1", "ff0e::1", "::ffff:10.0.0.8"),
+)
+def test_dispatch_url_policy_rejects_multicast_and_mapped_private_addresses(
+    address: str,
+) -> None:
+    from app.hr.panorama_runtime import validate_panorama_destination
+
+    with pytest.raises(ValueError, match="destination invalid"):
+        validate_panorama_destination(
+            "https://jobs.example.com/careers",
+            resolver=lambda _host, _port: (address,),
+        )
+
+
+@pytest.mark.parametrize(
+    "address",
+    (
+        "64:ff9b::a00:8",
+        "64:ff9b:1::808:808",
+        "2002:0808:0808::1",
+        "2001:0000:4136:e378:8000:63bf:3fff:fdd2",
+    ),
+)
+def test_dispatch_url_policy_rejects_ipv6_translation_and_tunnel_prefixes(
+    address: str,
+) -> None:
+    from app.hr.panorama_runtime import validate_panorama_destination
+
+    with pytest.raises(ValueError, match="destination invalid"):
+        validate_panorama_destination(
+            "https://jobs.example.com/careers",
+            resolver=lambda _host, _port: (address,),
+        )
+
+
+def test_dispatch_url_policy_accepts_normal_public_ipv6_unicast() -> None:
+    from app.hr.panorama_runtime import validate_panorama_destination
+
+    selected = validate_panorama_destination(
+        "https://jobs.example.com/careers",
+        resolver=lambda _host, _port: ("2001:4860:4860::8888",),
+    )
+
+    assert selected == "https://jobs.example.com/careers"
+
+
+@pytest.mark.parametrize(
+    "fragment",
+    ("%74oken=hidden", "to%6ben=hidden", "passwd=x", "sig=x"),
+)
+def test_dispatch_url_policy_rejects_every_fragment(fragment: str) -> None:
+    from app.hr.panorama_runtime import validate_panorama_destination
+
+    with pytest.raises(ValueError, match="destination invalid"):
+        validate_panorama_destination(
+            f"https://jobs.example.com/careers#{fragment}",
+            resolver=_public_resolver,
+        )
 
 
 @pytest.mark.parametrize(
@@ -563,6 +772,44 @@ def test_successful_report_requires_every_evidence_url_as_an_exact_citation() ->
         )
 
 
+def test_completed_company_without_own_evidence_retries_without_publishing() -> None:
+    from app.hr.panorama_runtime import PanoramaResultProjector
+
+    runtime = _runtime(state="running")
+    payload = _payload(runtime)
+    missing_company = runtime.sources[1].canonical_name
+    payload["jobs"] = [
+        job for job in payload["jobs"] if job["company"] != missing_company
+    ]
+    payload["facts"] = [
+        fact for fact in payload["facts"] if fact["company"] != missing_company
+    ]
+    answer = _unchecked_answer(payload)
+    repository = RecordingRuntimeRepository(runtime)
+    retry = RetryCoordinator()
+    projector = PanoramaResultProjector(
+        repository,
+        ResultReader(
+            _execution(runtime, answer),
+            _execution(runtime, answer, attempt=2),
+        ),
+        retry,
+        resolver=_public_resolver,
+        model_version="claude-opus-5",
+    )
+
+    assert projector.reconcile_one() is True
+    assert retry.calls == [runtime.run.run_id]
+    assert repository.publish_calls == 0
+    assert repository.snapshots == repository.insights == []
+    assert repository.transitions == []
+
+    assert projector.reconcile_one() is True
+    assert repository.transitions[-1].state == "failed"
+    assert repository.transitions[-1].error_code == "model_output_invalid"
+    assert repository.publish_calls == 0
+
+
 def test_projector_rejects_evidence_observed_after_the_run_as_of() -> None:
     from app.hr.panorama_runtime import PanoramaResultProjector
 
@@ -716,6 +963,39 @@ def test_model_failure_or_empty_answer_retries_once_then_fails_cleanly(
     assert repository.snapshots == repository.insights == []
     assert repository.transitions[-1].state == "failed"
     assert repository.old_reports == ["last-valid-report"]
+
+
+def test_invalid_primary_then_archived_conversation_fails_instead_of_zombie() -> None:
+    from app.agent_brain.conversation_repository import ConversationRepositoryConflict
+    from app.hr.panorama_runtime import PanoramaResultProjector, PanoramaRunCoordinator
+
+    runtime = _runtime(state="running")
+    repository = RecordingRuntimeRepository(runtime)
+
+    class ArchivedCommands:
+        def append_turn(self, *args):
+            raise ConversationRepositoryConflict("conversation archived")
+
+    coordinator = PanoramaRunCoordinator(
+        repository,
+        ArchivedCommands(),
+        resolver=_public_resolver,
+    )
+    projector = PanoramaResultProjector(
+        repository,
+        ResultReader(_execution(runtime, "模型输出无有效 envelope")),
+        coordinator,
+        resolver=_public_resolver,
+        model_version="claude-opus-5",
+    )
+
+    with pytest.raises(ConversationRepositoryConflict, match="archived"):
+        projector.reconcile_one()
+
+    assert repository.transitions[-1].state == "failed"
+    assert repository.transitions[-1].error_code == "conversation_rejected"
+    assert repository.publish_calls == 0
+    assert repository.snapshots == repository.insights == []
 
 
 def test_replaying_projection_uses_the_same_snapshot_and_insight_ids() -> None:

@@ -12,7 +12,10 @@ import psycopg
 import pytest
 from test_control_plane_migration import control_database  # noqa: F401
 
-from app.agent_brain.conversation_repository import ConversationRepository
+from app.agent_brain.conversation_repository import (
+    ConversationRepository,
+    ConversationRepositoryConflict,
+)
 from app.agent_brain.conversation_service import ConversationCommandService
 from app.agent_brain.repository import MissionRepository
 from app.control_plane.crypto import IdentityKeyring
@@ -23,6 +26,7 @@ from app.hr.panorama_models import (
     CreateTalentInsightVersion,
     CreateTalentSource,
     TransitionPanoramaRun,
+    canonical_panorama_url,
 )
 from app.hr.panorama_repository import PanoramaConflict, PanoramaRepository
 from app.hr.panorama_runtime import PanoramaRunCoordinator
@@ -536,6 +540,68 @@ def test_coordinator_replay_creates_one_exact_conversation_turn(
 
 
 @pytest.mark.postgres
+def test_archived_conversation_after_run_creation_durably_fails_run(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Panorama Archived Race Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            f"archived-race-{uuid4().hex}",
+            "归档竞态公司",
+            (),
+            ("https://example.com/jobs",),
+            True,
+        )
+    )
+    run = repository.create_run(
+        CreatePanoramaRun(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            (source.source_id,),
+            scope["conversation"],
+        )
+    )
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_control.conversations set "
+            "status='archived',archived_at=now(),updated_at=now() "
+            "where conversation_id=%s",
+            (scope["conversation"],),
+        )
+        admin.commit()
+    codec = _content_codec()
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        mission_repository=MissionRepository(
+            environment["urls"]["platform_control_app"],
+            content_codec=codec,
+        ),
+    )
+    coordinator = PanoramaRunCoordinator(
+        repository,
+        ConversationCommandService(conversations, v2_enabled=False),
+        resolver=lambda _host, _port: ("8.8.8.8", "2001:4860:4860::8888"),
+    )
+
+    with pytest.raises(ConversationRepositoryConflict):
+        coordinator.submit(run.run_id)
+
+    failed = repository.run(scope["owner"], run.run_id)
+    assert failed.state == "failed"
+    assert failed.error_code == "conversation_rejected"
+    assert failed.started_at is not None
+    assert failed.finished_at is not None
+
+
+@pytest.mark.postgres
 def test_report_publication_rolls_back_every_write_when_terminal_transition_fails(
     control_database,
 ) -> None:
@@ -964,6 +1030,7 @@ def test_source_create_replays_rejects_mismatch_and_lists_only_one_owner(
             "https://user:password@example.com/jobs",
             "https:///jobs",
             "https://localhost/jobs",
+            "https://jobs.local/jobs",
             "https://127.0.0.1/jobs",
             "https://127.1/jobs",
             "https://0x7f000001/jobs",
@@ -974,14 +1041,35 @@ def test_source_create_replays_rejects_mismatch_and_lists_only_one_owner(
             "https://100.64.0.1/jobs",
             "https://169.254.169.254/latest/meta-data",
             "https://[::1]/jobs",
+            "https://[v1.test]/jobs",
             "https://Example.com/jobs",
+            "HTTPS://example.com/jobs",
+            "https://example.com:0443/jobs",
+            "https://example.com:/jobs",
             "https://example.com:8443/jobs",
             "https://example.com:65536/jobs",
             "https://example.com/jobs/../admin",
             "https://example.com/jobs/%2e%2e/admin",
+            "https://example.com/jobs%",
+            "https://example.com/jobs%2",
+            "https://example.com/jobs%GG",
+            "https://example.com/jobs/%FF",
             "https://example.com/jobs/%2E%2E/admin",
             "https://example.com/jobs/%2fadmin",
             "https://example.com/jobs/%5Cadmin",
+            "https://example.com/jobs/%25admin",
+            "https://example.com/jobs/%EF%BC%8Fadmin",
+            "https://example.com/jobs/%EF%BC%8E%EF%BC%8E/admin",
+            "https://example.com/jobs／admin",
+            "https://example.com/jobs#section",
+            "https://example.com/jobs?%74oken=x",
+            "https://example.com/jobs?to%6Ben=x",
+            "https://example.com/jobs?%2574oken=x",
+            "https://example.com/jobs?key=x",
+            "https://example.com/jobs?api+key=x",
+            "https://example.com/jobs?ｔｏｋｅｎ=x",
+            "https://example.com/jobs?passwd=x",
+            "https://example.com/jobs?sig=x",
             "https://example.com/jobs\\admin",
         ):
             invalid = list(_source_values(owner, request_id=uuid4()))
@@ -1000,7 +1088,7 @@ def test_approved_url_prefix_is_canonical_and_uses_literal_path_boundaries(
         scope = _seed_owner_scope(admin, "Literal URL Owner")
     with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
         source_values = list(_source_values(scope, request_id=uuid4()))
-        source_values[6] = '["https://example.com/jobs_100%25"]'
+        source_values[6] = '["https://example.com/jobs_100%20open"]'
         source = app.execute(CREATE_SOURCE, source_values).fetchone()
         run_id, _ = _create_running_run(app, scope, source[0])
         allowed = app.execute(
@@ -1010,15 +1098,15 @@ def test_approved_url_prefix_is_canonical_and_uses_literal_path_boundaries(
                 source[0],
                 run_id,
                 request_id=uuid4(),
-                source_url="https://example.com/jobs_100%25/001",
+                source_url="https://example.com/jobs_100%20open/001",
             ),
         ).fetchone()
         assert allowed[0]
         app.commit()
         for unapproved in (
-            "https://example.com/jobsX100ZZ25/001",
-            "https://example.com/jobs_100%25-evil/001",
-            "https://example.com/other/jobs_100%25/001",
+            "https://example.com/jobsX100%20open/001",
+            "https://example.com/jobs_100%20open-evil/001",
+            "https://example.com/other/jobs_100%20open/001",
         ):
             values = list(
                 _snapshot_values(
@@ -1032,6 +1120,98 @@ def test_approved_url_prefix_is_canonical_and_uses_literal_path_boundaries(
             with pytest.raises(psycopg.errors.CheckViolation):
                 app.execute(CREATE_SNAPSHOT, values)
             app.rollback()
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "url",
+    (
+        "https://example.com",
+        "https://example.com:443/jobs/open-role",
+        "https://jobs.example.com/careers/%E6%8B%9B%E8%81%98",
+        "https://jobs.example.com/careers?page=1&role=engineer",
+    ),
+)
+def test_python_accepted_canonical_urls_are_also_accepted_by_sql(
+    control_database,
+    url: str,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, f"Canonical URL Owner {uuid4().hex}")
+    assert canonical_panorama_url(url) == url
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        values = list(
+            _source_values(
+                scope,
+                request_id=uuid4(),
+                company_key=f"canonical-{uuid4().hex}",
+                canonical_name="Canonical URL Company",
+            )
+        )
+        values[6] = json.dumps([url])
+        assert app.execute(CREATE_SOURCE, values).fetchone()[0] == values[0]
+
+
+@pytest.mark.postgres
+def test_python_accepted_utf8_evidence_url_publishes_without_sql_drift(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Canonical Publication Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            f"canonical-publication-{uuid4().hex}",
+            "Canonical Publication Company",
+            (),
+            ("https://jobs.example.com/careers",),
+            True,
+        )
+    )
+    run = repository.create_run(
+        CreatePanoramaRun(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            (source.source_id,),
+            scope["conversation"],
+        )
+    )
+    running = repository.transition_run(
+        TransitionPanoramaRun(
+            scope["owner"], run.run_id, uuid4(), run.row_version, "running", None, {}
+        )
+    )
+    evidence_url = (
+        "https://jobs.example.com/careers/%E6%8B%9B%E8%81%98?page=1&role=engineer"
+    )
+    assert canonical_panorama_url(evidence_url) == evidence_url
+
+    snapshot = repository.create_snapshot(
+        CreatePublicJobSnapshot(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            running.run_id,
+            source.source_id,
+            "canonical-job",
+            "结构工程师",
+            "中山",
+            "负责结构设计",
+            "五年以上经验",
+            evidence_url,
+            datetime.fromisoformat("2026-09-05T08:00:00+00:00"),
+            "e" * 64,
+            "open",
+        )
+    )
+
+    assert snapshot.source_url == evidence_url
 
 
 @pytest.mark.postgres

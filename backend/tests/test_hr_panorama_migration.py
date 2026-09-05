@@ -108,7 +108,13 @@ def test_migration_enforces_owner_exact_references_and_bounded_values() -> None:
     assert "selected_url like" not in sql
     assert re.search(r"left\(\s*selected_url,char_length\(approved_url\)\+1\s*\)", sql)
     assert "selected_port<>'443'" in sql
-    assert "selected_url ~* '%(2e|2f|5c)'" in sql
+    assert "selected_host like '%.local'" in sql
+    assert "selected_url ~ '%(25|2e|2f|5c)'" in sql
+    assert "percent_decode_utf8_v79" in sql
+    assert "normalize(selected_path,nfkc)" in sql
+    assert "position('#' in selected_url)>0" in sql
+    assert "access[ _-]?token|api[ _-]?key|token|key|password" in sql
+    assert "|sig|credential|auth)$" in sql
     assert "content_sha256 ~ '^[a-f0-9]{64}$'" in sql
     assert "query_sha256 ~ '^[a-f0-9]{64}$'" in sql
     assert "error_code ~ '^[a-z][a-z0-9_]{0,63}$'" in sql

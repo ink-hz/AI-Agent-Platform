@@ -5,17 +5,22 @@ import asyncio
 import ipaddress
 import json
 import logging
-import re
 import socket
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import psycopg
 from psycopg.rows import dict_row
+
+from app.agent_brain.conversation_repository import (
+    ConversationRepositoryConflict,
+    ConversationRepositoryNotFound,
+    ConversationTurnInProgress,
+)
 
 from .panorama_models import (
     CreatePublicJobSnapshot,
@@ -23,21 +28,17 @@ from .panorama_models import (
     PanoramaRun,
     TalentSource,
     TransitionPanoramaRun,
+    canonical_panorama_url,
 )
 from .structured_output import extract_hr_envelope
 
 logger = logging.getLogger(__name__)
 
-_DNS_NAME = re.compile(
-    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\."
-    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\Z"
-)
-_IP_STYLE = re.compile(r"(?:0x[a-f0-9]+|[0-9]+)(?:\.(?:0x[a-f0-9]+|[0-9]+)){0,3}\Z")
-_SECRET = re.compile(
-    r"^(?:token|access_token|api[_-]?key|password|passwd|secret|signature|sig)$",
-    re.IGNORECASE,
-)
 _RUNTIME_NAMESPACE = uuid5(NAMESPACE_URL, "orbbec:hr:panorama-runtime:v1")
+_NON_NATIVE_IPV6_PREFIXES = tuple(
+    ipaddress.ip_network(value)
+    for value in ("64:ff9b::/96", "64:ff9b:1::/48", "2002::/16", "2001::/32")
+)
 
 
 class _PanoramaPromptInvalid(ValueError):
@@ -51,6 +52,7 @@ Each job has exactly `company`, `public_job_key`, `title`, `location`, `duty_exc
 Each fact has exactly `fact_id`, `text`, `company`, `public_job_key`, `source_url`, `observed_at` and references one returned job.
 Each inference has exactly `text`, `basis_fact_ids` and at least one existing fact id. Each unknown has exactly `text`.
 If any source is completed, the report must contain at least one evidenced job and fact; never invent a completed source when no public evidence was retrieved.
+Every completed company must have its own returned job or fact evidence; otherwise mark that company failed with `SEARCH_UNAVAILABLE` so a mixed result is partial.
 Preserve the supplied company order, job discovery order, fact order, and inference order."""
 
 
@@ -65,73 +67,49 @@ def _system_resolver(hostname: str, port: int) -> tuple[str, ...]:
     )
 
 
+def _is_public_unicast(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if isinstance(address, ipaddress.IPv6Address) and any(
+        address in prefix for prefix in _NON_NATIVE_IPV6_PREFIXES
+    ):
+        return False
+    candidates = [address]
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        candidates.append(address.ipv4_mapped)
+    return all(
+        candidate.is_global
+        and not candidate.is_multicast
+        and not candidate.is_unspecified
+        and not candidate.is_loopback
+        and not candidate.is_link_local
+        and not candidate.is_private
+        and not candidate.is_reserved
+        for candidate in candidates
+    )
+
+
 def validate_panorama_destination(
     raw: str,
     *,
     resolver: Callable[[str, int], tuple[str, ...] | list[str]] = _system_resolver,
 ) -> str:
     """Re-parse and resolve one Platform-approved destination before dispatch/use."""
-    if (
-        not isinstance(raw, str)
-        or not 9 <= len(raw) <= 2048
-        or raw != raw.strip()
-        or not raw.startswith("https://")
-        or any(ord(character) < 0x21 or ord(character) == 0x7F for character in raw)
-        or any(character.isspace() for character in raw)
-        or "\\" in raw
-    ):
-        raise ValueError("panorama destination invalid")
     try:
-        parsed = urlsplit(raw)
-        port = parsed.port
+        selected = canonical_panorama_url(raw)
+        hostname = urlsplit(selected).hostname
     except ValueError:
         raise ValueError("panorama destination invalid") from None
-    hostname = parsed.hostname
-    if (
-        parsed.scheme != "https"
-        or not parsed.netloc
-        or parsed.netloc != parsed.netloc.lower()
-        or parsed.username is not None
-        or parsed.password is not None
-        or hostname is None
-        or hostname != hostname.lower()
-        or port not in (None, 443)
-        or hostname.startswith("[")
-        or hostname == "localhost"
-        or hostname.endswith((".localhost", ".local"))
-        or _IP_STYLE.fullmatch(hostname) is not None
-        or _DNS_NAME.fullmatch(hostname) is None
-        or any(part in {".", ".."} for part in parsed.path.split("/"))
-        or re.search(r"%(?:2e|2f|5c)", parsed.path, re.IGNORECASE)
-        or any(
-            _SECRET.fullmatch(key)
-            for key, _value in parse_qsl(
-                parsed.query, keep_blank_values=True, max_num_fields=100
-            )
-        )
-        or re.search(
-            r"(?:token|api[_-]?key|password|secret|signature)=",
-            parsed.fragment,
-            re.IGNORECASE,
-        )
-    ):
+    if hostname is None:
         raise ValueError("panorama destination invalid")
-    try:
-        ipaddress.ip_address(hostname)
-    except ValueError:
-        pass
-    else:
-        raise ValueError("panorama destination invalid") from None
     try:
         addresses = tuple(resolver(hostname, 443))
         parsed_addresses = tuple(ipaddress.ip_address(value) for value in addresses)
     except Exception:  # noqa: BLE001 - injected DNS failures must fail closed
         raise ValueError("panorama destination invalid") from None
     if not parsed_addresses or any(
-        not address.is_global for address in parsed_addresses
+        not _is_public_unicast(address) for address in parsed_addresses
     ):
         raise ValueError("panorama destination invalid")
-    return raw
+    return selected
 
 
 def _approved(url: str, approved_urls: tuple[str, ...]) -> bool:
@@ -227,6 +205,19 @@ class PanoramaRunCoordinator:
         self._commands = commands
         self._resolver = resolver
 
+    def _fail(self, runtime: PanoramaRunRuntime, error_code: str) -> None:
+        self._repository.transition_run(
+            TransitionPanoramaRun(
+                runtime.run.owner_id,
+                runtime.run.run_id,
+                _runtime_id(runtime.run.run_id, f"transition-{error_code}"),
+                runtime.run.row_version,
+                "failed",
+                error_code,
+                {},
+            )
+        )
+
     def preflight(
         self, owner_id: UUID, source_ids: tuple[UUID, ...]
     ) -> tuple[TalentSource, ...]:
@@ -295,28 +286,36 @@ class PanoramaRunCoordinator:
                 if isinstance(error, _PanoramaPromptInvalid)
                 else "destination_invalid"
             )
-            self._repository.transition_run(
-                TransitionPanoramaRun(
-                    runtime.run.owner_id,
-                    run_id,
-                    _runtime_id(run_id, f"transition-{error_code}"),
-                    runtime.run.row_version,
-                    "failed",
-                    error_code,
-                    {},
-                )
-            )
+            self._fail(runtime, error_code)
             raise
-        result = self._commands.append_turn(
-            runtime.run.owner_id,
-            runtime.run.conversation_id,
-            _runtime_id(run_id, "conversation-retry" if retry else "conversation-turn"),
-            prompt,
-        )
+        try:
+            result = self._commands.append_turn(
+                runtime.run.owner_id,
+                runtime.run.conversation_id,
+                _runtime_id(
+                    run_id, "conversation-retry" if retry else "conversation-turn"
+                ),
+                prompt,
+            )
+        except ConversationTurnInProgress:
+            raise
+        except ConversationRepositoryNotFound:
+            self._fail(runtime, "conversation_unavailable")
+            raise
+        except ConversationRepositoryConflict:
+            self._fail(runtime, "conversation_rejected")
+            raise
+        conversation = getattr(result, "conversation", None)
         if (
-            getattr(getattr(result, "conversation", None), "conversation_id", None)
+            getattr(conversation, "conversation_id", None)
             != runtime.run.conversation_id
+            or getattr(conversation, "owner_internal_user_id", None)
+            != runtime.run.owner_id
+            or getattr(conversation, "mode", None) != "direct_agent"
+            or getattr(conversation, "direct_agent_id", None) != "hr-bot"
+            or getattr(conversation, "status", None) != "active"
         ):
+            self._fail(runtime, "conversation_mismatch")
             raise ValueError("panorama conversation mismatch")
         if runtime.run.state == "queued":
             self._repository.transition_run(

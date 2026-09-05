@@ -1186,7 +1186,7 @@ class ConversationRepository:
                         (conversation_id,),
                     ).fetchone()
                     if active is not None:
-                        raise ConversationRepositoryConflict()
+                        raise ConversationTurnInProgress()
                     next_seq = cursor.execute(
                         "select coalesce(max(seq),0)+1 as next_seq from "
                         "platform_control.conversation_messages "

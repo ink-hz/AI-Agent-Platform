@@ -130,6 +130,59 @@ def test_talent_source_rejects_legacy_ipv4_host_spellings(hostname) -> None:
         _source(approved_urls=(f"https://{hostname}/jobs",))
 
 
+@pytest.mark.parametrize(
+    "url",
+    (
+        "https://[v1.test]/jobs",
+        "https://[2606:4700:4700::1111]/jobs",
+        "https://example.com:0443/jobs",
+        "https://example.com:/jobs",
+        "HTTPS://example.com/jobs",
+        "https://Example.com/jobs",
+        "https://user@example.com/jobs",
+        "https://example.com/jobs%",
+        "https://example.com/jobs%2",
+        "https://example.com/jobs%GG",
+        "https://example.com/jobs/%FF",
+        "https://example.com/jobs%2fadmin",
+        "https://example.com/jobs%25admin",
+        "https://example.com/jobs/%2E%2E/admin",
+        "https://example.com/jobs/%2Fadmin",
+        "https://example.com/jobs/%5Cadmin",
+        "https://example.com/jobs/%EF%BC%8Fadmin",
+        "https://example.com/jobs/%EF%BC%8E%EF%BC%8E/admin",
+        "https://example.com/jobs／admin",
+        "https://example.com/jobs#section",
+        "https://example.com/jobs?%74oken=x",
+        "https://example.com/jobs?to%6Ben=x",
+        "https://example.com/jobs?%2574oken=x",
+        "https://example.com/jobs?key=x",
+        "https://example.com/jobs?api+key=x",
+        "https://example.com/jobs?ｔｏｋｅｎ=x",
+        "https://example.com/jobs?passwd=x",
+        "https://example.com/jobs?sig=x",
+    ),
+)
+def test_panorama_url_parser_rejects_noncanonical_or_credential_bearing_urls(
+    url: str,
+) -> None:
+    with pytest.raises(ValueError, match="source URL invalid"):
+        _source(approved_urls=(url,))
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "https://example.com",
+        "https://example.com:443/jobs/open-role",
+        "https://jobs.example.com/careers/%E6%8B%9B%E8%81%98",
+        "https://jobs.example.com/careers?page=1&role=engineer",
+    ),
+)
+def test_panorama_url_parser_accepts_canonical_public_url_shapes(url: str) -> None:
+    assert _source(approved_urls=(url,)).approved_urls == (url,)
+
+
 def test_run_snapshot_and_insight_commands_match_the_v79_bounds() -> None:
     owner_id, source_id, run_id = uuid4(), uuid4(), uuid4()
     run = CreatePanoramaRun(

@@ -12,6 +12,7 @@ from app.agent_brain.conversation_repository import (
     ConversationRepositoryConflict,
     ConversationRepositoryError,
     ConversationRepositoryNotFound,
+    ConversationTurnInProgress,
 )
 from app.agent_brain.repository import MissionRepository
 from app.control_plane.crypto import IdentityKeyring
@@ -242,7 +243,7 @@ def test_append_turn_is_monotonic_and_blocks_overlap_or_archive(
     first = repository.start(owner_id, uuid4(), "第一轮")
     conversation_id = first.conversation.conversation_id
 
-    with pytest.raises(ConversationRepositoryConflict):
+    with pytest.raises(ConversationTurnInProgress):
         repository.append_turn(owner_id, conversation_id, uuid4(), "过早追问")
 
     _complete_turn(environment, first.turn.turn_id)
@@ -258,8 +259,9 @@ def test_append_turn_is_monotonic_and_blocks_overlap_or_archive(
     archived = repository.archive(owner_id, conversation_id)
     assert archived.status == "archived"
     assert archived.archived_at is not None
-    with pytest.raises(ConversationRepositoryConflict):
+    with pytest.raises(ConversationRepositoryConflict) as archived_error:
         repository.append_turn(owner_id, conversation_id, uuid4(), "不能继续")
+    assert not isinstance(archived_error.value, ConversationTurnInProgress)
 
 
 @pytest.mark.postgres
