@@ -1,8 +1,7 @@
 import { platformPath } from "./auth";
 import type {
-  AddHrPanoramaCompanyInput, HrPanoramaFact, HrPanoramaInference, HrPanoramaInsight,
+  HrPanoramaFact, HrPanoramaInference, HrPanoramaInsight,
   HrPanoramaReport, HrPanoramaRun, HrPanoramaSnapshot, HrPanoramaSource,
-  StartHrPanoramaRunInput,
 } from "./hrPanoramaTypes";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -179,35 +178,14 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
   return response.json();
 }
 
-function mutation(csrfToken: string, requestId: string, body: unknown, signal?: AbortSignal): RequestInit {
-  inputId(requestId);
-  return { method: "POST", cache: "no-store", signal, headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken, "Idempotency-Key": requestId }, body: JSON.stringify(body) };
-}
-
-function sameIds(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value) => right.includes(value));
-}
-
-export function createHrPanoramaApi(csrfToken: string) {
+export function createHrPanoramaApi(_csrfToken: string) {
   return {
-    listCompanies(signal?: AbortSignal): Promise<HrPanoramaSource[]> { return request("/api/hr/panorama/sources?limit=100", { signal }).then((value) => itemList(value).map(parseHrPanoramaSource)); },
-    addCompany(input: AddHrPanoramaCompanyInput, requestId: string, signal?: AbortSignal): Promise<HrPanoramaSource> { return request("/api/hr/panorama/sources", mutation(csrfToken, requestId, { canonical_name: input.canonicalName, aliases: input.aliases, approved_urls: input.approvedUrls }, signal)).then(parseHrPanoramaSource); },
-    startRun(input: StartHrPanoramaRunInput, requestId: string, signal?: AbortSignal): Promise<HrPanoramaRun> {
-      const sourceIds = input.sourceIds.map(inputId);
-      const conversationId = input.conversationId ? inputId(input.conversationId) : undefined;
-      return request("/api/hr/panorama/runs", mutation(csrfToken, requestId, { source_ids: sourceIds, ...(conversationId ? { conversation_id: conversationId } : {}) }, signal)).then((value) => {
-        const parsed = parseHrPanoramaRun(value);
-        if (!sameIds(parsed.selectedSourceIds, sourceIds) || (conversationId && parsed.conversationId !== conversationId)) invalid();
-        return parsed;
-      });
-    },
-    runStatus(runId: string, signal?: AbortSignal): Promise<HrPanoramaRun> {
-      const selected = inputId(runId);
-      return request(`/api/hr/panorama/runs/${encodeURIComponent(selected)}`, { signal }).then((value) => {
-        const parsed = parseHrPanoramaRun(value);
-        if (parsed.runId !== selected) invalid();
-        return parsed;
-      });
+    async currentReport(signal?: AbortSignal): Promise<HrPanoramaReport | null> {
+      const reports = await request("/api/hr/panorama/reports?limit=1", { signal })
+        .then((value) => itemList(value).map(parseHrPanoramaInsight));
+      if (!reports[0]) return null;
+      return request(`/api/hr/panorama/reports/${encodeURIComponent(reports[0].insightVersionId)}`, { signal })
+        .then(parseHrPanoramaReport);
     },
     listReports(signal?: AbortSignal): Promise<HrPanoramaInsight[]> { return request("/api/hr/panorama/reports?limit=100", { signal }).then((value) => itemList(value).map(parseHrPanoramaInsight)); },
     report(insightVersionId: string, signal?: AbortSignal): Promise<HrPanoramaReport> {

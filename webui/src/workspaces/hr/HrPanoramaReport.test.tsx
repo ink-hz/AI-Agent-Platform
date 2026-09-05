@@ -111,11 +111,11 @@ describe("HrPanoramaReport", () => {
     };
     await act(async () => root.render(<HrPanoramaReport report={tracked} />));
 
-    expect(container.textContent).toContain("总览");
+    expect(container.textContent).toContain("AI 分析");
     expect(container.textContent).toContain("社招");
     expect(container.textContent).toContain("校招");
     expect(container.textContent).toContain("产品与业务方向");
-    expect(container.textContent).toContain("岗位明细");
+    expect(container.textContent).toContain("原始岗位数据");
     expect(container.textContent).toContain("来源证据");
 
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "校招")?.click());
@@ -183,7 +183,7 @@ describe("HrPanoramaReport", () => {
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "社招")?.click());
     expect(container.querySelector('[data-report-view="social"]')?.textContent).toContain("AI_Engineer");
 
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "岗位明细")?.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "原始岗位数据")?.click());
     expect([...container.querySelectorAll<HTMLOptionElement>('select[aria-label="技术方向"] option')].map((option) => option.textContent)).toContain("算法");
   });
 
@@ -219,7 +219,7 @@ describe("HrPanoramaReport", () => {
 
   it("filters job details by company, recruiting type, location, status, and technical direction", async () => {
     await act(async () => root.render(<HrPanoramaReport report={report} />));
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "岗位明细")?.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "原始岗位数据")?.click());
 
     for (const label of ["公司", "招聘类型", "地点", "岗位状态", "技术方向"]) {
       expect(container.querySelector(`select[aria-label="${label}"]`)).not.toBeNull();

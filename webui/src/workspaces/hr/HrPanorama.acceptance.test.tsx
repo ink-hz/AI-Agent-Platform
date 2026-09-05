@@ -141,7 +141,9 @@ let submittedBody: Record<string, unknown> | null;
 
 beforeEach(() => {
   window.history.replaceState({}, "", `/hr/positions/${fixture.position}/conversations/${fixture.conversation}`);
-  sources = []; reports = []; mainStatusReads = 0; retryStatusReads = 0;
+  sources = fixture.sources.map((_, index) => source(index));
+  reports = [insight(fixture.insight, fixture.run, fixture.sources, 1)];
+  mainStatusReads = 0; retryStatusReads = 0;
   downloadedBlob = null; submittedBody = null; currentTurn = null; streamResolvers = [];
   const conversation = { conversation_id: fixture.conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot",
     title: "高级结构工程师招聘", status: "active" as const, summary_through_seq: 0, created_at: now, updated_at: now, archived_at: null };
@@ -177,6 +179,7 @@ beforeEach(() => {
       created_at: now, confirmed_at: now }, drafts: [] });
     if (path === `/api/hr/conversations/${fixture.conversation}/position-package`) return json({ detail: "not found" }, 404);
     if (path === "/api/hr/panorama/sources?limit=100" && method === "GET") return json({ items: sources });
+    if (path === "/api/hr/panorama/reports?limit=1" && method === "GET") return json({ items: reports.slice(0, 1) });
     if (path === "/api/hr/panorama/reports?limit=100" && method === "GET") return json({ items: reports });
     if (path === "/api/hr/panorama/sources" && method === "POST") {
       const headers = new Headers(init?.headers); expect(headers.get("X-CSRF-Token")).toBe("csrf"); expect(headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/i);
@@ -231,7 +234,7 @@ afterEach(async () => {
   await settle(); container?.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks();
 });
 
-it("runs partial Panorama research, retries one source, and returns to the preserved Position conversation", async () => {
+it("reads published Panorama intelligence and returns to the preserved Position conversation", async () => {
   await act(async () => root.render(<App />));
   await waitFor(() => expect(container.textContent).toContain("岗位对话已保留"));
   const chatHost = container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]'); expect(chatHost).not.toBeNull();
@@ -245,23 +248,13 @@ it("runs partial Panorama research, retries one source, and returns to the prese
   const panoramaLink = [...container.querySelectorAll<HTMLAnchorElement>("a")].find((item) => item.textContent === "全景分析")!;
   await act(async () => panoramaLink.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })));
   await waitFor(() => expect(window.location.pathname).toBe("/hr/panorama"));
-  await waitFor(() => expect(container.textContent).toContain("从公开招聘信息开始"));
-  for (let index = 0; index < companies.length; index += 1) {
-    await click(container, "添加关注公司");
-    const inputs = container.querySelectorAll<HTMLInputElement>('[aria-label="添加关注公司"] input');
-    await act(async () => { setInput(inputs[0], companies[index]); setInput(inputs[1], `https://company-${index + 1}.example.com/jobs`); });
-    await click(container, "确认关注");
-  }
-  expect(container.textContent).toContain("分析范围：3 家");
-
-  vi.useFakeTimers();
-  await act(async () => button(container, "立即更新").click());
-  expect(container.textContent).toContain("正在收集公开招聘岗位");
-  await act(async () => vi.advanceTimersByTimeAsync(1_500));
-  vi.useRealTimers();
-  await waitFor(() => expect(container.textContent).toContain("部分公开来源暂时未能更新"));
+  await waitFor(() => expect(container.textContent).toContain("招聘全景分析"));
   expect(container.textContent).toContain("三家公司精密结构招聘分析");
   expect(container.textContent).toContain("AI 推断");
+  expect(container.textContent).toContain("原始岗位数据");
+  expect(container.textContent).toContain("数据截至");
+  expect(container.textContent).not.toContain("添加关注公司");
+  expect(container.textContent).not.toContain("正在收集公开招聘岗位");
   expect(container.querySelector('section[data-evidence-kind="inferences"] a[href="https://company-1.example.com/jobs/structure"]')).not.toBeNull();
   expectInternalCodesHidden(container);
 
@@ -272,12 +265,11 @@ it("runs partial Panorama research, retries one source, and returns to the prese
   expect(downloaded).toContain("要求：需要可靠性、量产和跨团队协作经验");
   expect(downloaded).toContain("https://company-1.example.com/jobs/structure");
 
-  vi.useFakeTimers();
-  await act(async () => button(container, "重试 舜宇光学").click());
-  await act(async () => vi.advanceTimersByTimeAsync(1_500));
-  vi.useRealTimers();
-  await waitFor(() => expect(container.textContent).toContain("舜宇光学招聘情报已更新"));
-  expectInternalCodesHidden(container);
+  const panoramaRequests = vi.mocked(fetch).mock.calls.filter(([input]) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, window.location.origin);
+    return url.pathname.startsWith("/api/hr/panorama/");
+  });
+  expect(panoramaRequests.every(([, init]) => (init?.method ?? "GET").toUpperCase() === "GET")).toBe(true);
 
   const chatLink = [...container.querySelectorAll<HTMLAnchorElement>("a")].find((item) => item.textContent === "对话")!;
   await act(async () => chatLink.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })));
@@ -297,9 +289,6 @@ it("runs partial Panorama research, retries one source, and returns to the prese
   expect(container.textContent).toContain(fixture.insight);
   expect(container.textContent).toContain("联合光电来源 https://company-1.example.com/jobs/structure");
   expect(container.textContent).toContain("奥比中光来源 https://company-2.example.com/jobs/structure");
-  expect(container.textContent).toContain("第 2 版");
-  expect(container.textContent).toContain(fixture.retryInsight);
-  expect(container.textContent).toContain("舜宇光学来源 https://company-3.example.com/jobs/structure");
   expect(container.textContent).toContain(now);
   expectInternalCodesHidden(container);
 });

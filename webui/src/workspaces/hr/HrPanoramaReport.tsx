@@ -75,11 +75,11 @@ type ReportView = "overview" | "social" | "campus" | "strategy" | "jobs" | "evid
 type RecruitmentTrack = "social" | "campus" | "unknown";
 
 const REPORT_VIEWS: Array<{ id: ReportView; label: string }> = [
-  { id: "overview", label: "总览" },
+  { id: "overview", label: "AI 分析" },
   { id: "social", label: "社招" },
   { id: "campus", label: "校招" },
   { id: "strategy", label: "产品与业务方向" },
-  { id: "jobs", label: "岗位明细" },
+  { id: "jobs", label: "原始岗位数据" },
   { id: "evidence", label: "来源证据" },
 ];
 
