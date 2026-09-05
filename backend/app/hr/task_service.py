@@ -42,11 +42,11 @@ CANDIDATE_TASK_KINDS = frozenset({"candidate_match", "candidate_interview_plan"}
 STARTABLE_TASK_KINDS = POSITION_TASK_KINDS | CANDIDATE_TASK_KINDS
 
 _PROMPTS = {
-    "jd": "基于当前已确认的岗位上下文生成岗位说明（JD）。",
-    "jr": "基于当前已确认的岗位上下文生成岗位要求（JR）。",
-    "talent_profile": "基于当前已确认的岗位上下文生成人才画像。",
-    "sourcing_strategy": "基于当前已确认的岗位上下文生成候选人搜寻策略。",
-    "position_interview_plan": "基于当前已确认的岗位上下文生成岗位面试方案。",
+    "jd": "基于当前岗位上下文生成岗位说明（JD）。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=jd、payload；payload 必须且只能包含 text、change_summary、unknowns、evidence_refs。",
+    "jr": "基于当前岗位上下文生成岗位要求（JR）。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=jr、payload；payload 必须且只能包含 responsibilities、must_have、preferred、trainable、evaluation_criteria、unknowns、evidence_refs，数组元素均为非空字符串。",
+    "talent_profile": "基于当前岗位上下文生成人才画像。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=talent_profile、payload；payload 必须且只能包含 dimensions、priorities、counter_examples、unknowns、evidence_refs。",
+    "sourcing_strategy": "基于当前岗位上下文及已提供的全景招聘情报生成候选人搜寻策略。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=sourcing_strategy、payload；payload 必须且只能包含 target_sources、keywords、exclusions、unknowns、evidence_refs。",
+    "position_interview_plan": "基于当前岗位上下文生成岗位面试方案。先输出完整、可读 Markdown，再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> 隐藏 envelope；canonical JSON 必须恰含 schema_version=1、kind=position_interview_plan、payload；payload 必须且只能包含 dimensions、questions、follow_ups、evaluation_anchors、unknowns、evidence_refs。",
     "candidate_match": (
         "基于当前岗位上下文和候选人材料生成匹配分析。先输出完整、可读 Markdown，"
         "再追加且只追加一个 <!-- platform-hr-v1:<unpadded-base64url-canonical-json> --> "

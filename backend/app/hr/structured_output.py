@@ -38,6 +38,13 @@ _INTERVIEW_QUESTION_KEYS = frozenset(
         "risk_signals",
     }
 )
+_POSITION_TASK_SCHEMAS = {
+    "jd": frozenset({"text", "change_summary", "unknowns", "evidence_refs"}),
+    "jr": frozenset({"responsibilities", "must_have", "preferred", "trainable", "evaluation_criteria", "unknowns", "evidence_refs"}),
+    "talent_profile": frozenset({"dimensions", "priorities", "counter_examples", "unknowns", "evidence_refs"}),
+    "sourcing_strategy": frozenset({"target_sources", "keywords", "exclusions", "unknowns", "evidence_refs"}),
+    "position_interview_plan": frozenset({"dimensions", "questions", "follow_ups", "evaluation_anchors", "unknowns", "evidence_refs"}),
+}
 _PANORAMA_REPORT_KEYS = frozenset(
     {
         "companies",
@@ -169,6 +176,35 @@ def _valid_candidate_interview_plan(payload: object) -> bool:
         and set(question) == _INTERVIEW_QUESTION_KEYS
         for item in plan["questions"]
     )
+
+
+def _valid_position_task(kind: str, payload: object) -> bool:
+    value = _json_object(payload)
+    schema = _POSITION_TASK_SCHEMAS.get(kind)
+    if value is None or schema is None or set(value) != schema:
+        return False
+    if kind == "jd":
+        return _bounded_text(value["text"], 131072) and all(
+            _text_list(value[key], maximum=1000)
+            for key in ("change_summary", "unknowns", "evidence_refs")
+        )
+    if kind == "jr":
+        fields = ("responsibilities", "must_have", "preferred", "trainable", "evaluation_criteria", "unknowns", "evidence_refs")
+        return all(_text_list(value[key], maximum=1000) for key in fields) and bool(value["responsibilities"]) and bool(value["must_have"]) and bool(value["evaluation_criteria"])
+    if kind == "talent_profile":
+        dimensions = _json_object(value["dimensions"])
+        return dimensions is not None and bool(dimensions) and all(_nonempty_text(key) for key in dimensions) and all(
+            _text_list(value[key], maximum=1000)
+            for key in ("priorities", "counter_examples", "unknowns", "evidence_refs")
+        ) and bool(value["priorities"])
+    if kind == "sourcing_strategy":
+        fields = ("target_sources", "keywords", "exclusions", "unknowns", "evidence_refs")
+        return all(_text_list(value[key], maximum=1000) for key in fields) and bool(value["target_sources"]) and bool(value["keywords"])
+    dimensions = _json_object(value["dimensions"])
+    return dimensions is not None and bool(dimensions) and all(
+        _text_list(value[key], maximum=1000)
+        for key in ("questions", "follow_ups", "evaluation_anchors", "unknowns", "evidence_refs")
+    ) and bool(value["questions"]) and bool(value["evaluation_anchors"])
 
 
 def _text_list(value: object, *, maximum: int, allow_empty: bool = True) -> bool:
@@ -306,6 +342,8 @@ def _valid_payload(kind: str, payload: object) -> bool:
         return _valid_candidate_match(payload)
     if kind == "candidate_interview_plan":
         return _valid_candidate_interview_plan(payload)
+    if kind in _POSITION_TASK_SCHEMAS:
+        return _valid_position_task(kind, payload)
     if kind == "panorama_report":
         return _valid_panorama_report(payload)
     return False

@@ -12,7 +12,7 @@ const MODULE_LABELS: Record<string, string> = {
 type ContextState = { current: HrContextVersion | null; drafts: HrContextVersion[]; history: HrContextVersion[] };
 
 function moduleText(value: Record<string, unknown>): string {
-  const preferred = [value.summary, value.text, value.title].find((item) => typeof item === "string");
+  const preferred = [value.visible_markdown, value.summary, value.text, value.title].find((item) => typeof item === "string");
   return typeof preferred === "string" ? preferred : JSON.stringify(value, null, 2);
 }
 

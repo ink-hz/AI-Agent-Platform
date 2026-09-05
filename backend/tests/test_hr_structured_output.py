@@ -212,3 +212,25 @@ def test_candidate_envelopes_require_their_exact_payload_shapes() -> None:
         )
         is None
     )
+
+
+def test_position_task_envelopes_use_exact_task_specific_shapes() -> None:
+    payload = {
+        "target_sources": ["目标公司"],
+        "keywords": ["光机结构"],
+        "exclusions": ["纯消费电子外观结构"],
+        "evidence_refs": ["insight-version-1"],
+        "unknowns": ["公开渠道覆盖率未知"],
+    }
+    parsed = extract_hr_envelope(
+        f"# 搜寻策略\n\n优先目标公司。\n\n{encode_hr_envelope('sourcing_strategy', payload)}",
+        "sourcing_strategy",
+    )
+
+    assert parsed is not None
+    assert parsed.payload == payload
+    assert parsed.visible_markdown == "# 搜寻策略\n\n优先目标公司。"
+    assert extract_hr_envelope(
+        _comment({"schema_version": 1, "kind": "sourcing_strategy", "payload": {**payload, "unexpected": []}}),
+        "sourcing_strategy",
+    ) is None
