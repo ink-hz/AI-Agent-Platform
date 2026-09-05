@@ -77,7 +77,7 @@ sudo -n -H -u agentops \
 ```text
 agentops
 /Users/agentops
-AGENTOPS_CONTROL_OK commands=6
+AGENTOPS_CONTROL_OK commands=7
 ```
 
 `sudo -n -l -U neo` 的结果中必须且只能出现一条

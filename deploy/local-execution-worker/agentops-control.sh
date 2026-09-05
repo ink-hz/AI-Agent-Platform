@@ -18,7 +18,7 @@ installed_path=/Library/PrivilegedHelperTools/orbbec-agentops-control
 git_bin=/usr/bin/git
 logger_bin=/usr/bin/logger
 
-[[ $# -eq 1 ]] || fail
+[[ $# -ge 1 && $# -le 2 ]] || fail
 [[ "$0" == "$installed_path" && -f "$0" && ! -L "$0" ]] || fail
 [[ "$(/usr/bin/stat -f '%Su %Lp' "$0")" == "$required_owner $required_mode" ]] || fail
 [[ "$(/usr/bin/id -un)" == "$required_user" ]] || fail
@@ -29,6 +29,8 @@ command="$1"
 relay_accept="$runtime_root/platform/deploy/local-execution-worker/accept.sh"
 relay_config="$runtime_root/private/acceptance-config.json"
 worker_supervisor="$runtime_root/platform/deploy/local-execution-worker/worker-pm2.sh"
+hr_p0_accept=$runtime_root/platform/deploy/cloud/accept-hr-p0.sh
+hr_p0_config=$runtime_root/private/acceptance-config.json
 
 audit() {
   phase="$1"
@@ -52,22 +54,32 @@ audit start none
 status=0
 case "$command" in
   relay-canary)
+    [[ $# -eq 1 ]] || fail
     run_fixed "$relay_accept" "$relay_config" || status=$?
     ;;
   worker-stop)
+    [[ $# -eq 1 ]] || fail
     run_fixed "$worker_supervisor" stop || status=$?
     ;;
   worker-restore)
+    [[ $# -eq 1 ]] || fail
     run_fixed "$worker_supervisor" restore online || status=$?
     ;;
   metabot-release-sha)
+    [[ $# -eq 1 ]] || fail
     run_fixed "$git_bin" -C "$runtime_root/metabot" rev-parse HEAD || status=$?
     ;;
   agent-team-release-sha)
+    [[ $# -eq 1 ]] || fail
     run_fixed "$git_bin" -C "$agent_team_root" rev-parse HEAD || status=$?
     ;;
+  accept-hr-p0)
+    [[ $# -eq 2 && "$2" == "$hr_p0_config" ]] || fail
+    run_fixed "$hr_p0_accept" "$hr_p0_config" || status=$?
+    ;;
   status)
-    /usr/bin/printf '%s\n' 'AGENTOPS_CONTROL_OK commands=6' || status=$?
+    [[ $# -eq 1 ]] || fail
+    /usr/bin/printf '%s\n' 'AGENTOPS_CONTROL_OK commands=7' || status=$?
     ;;
   *)
     status=1
