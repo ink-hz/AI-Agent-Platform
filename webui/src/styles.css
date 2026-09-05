@@ -2201,6 +2201,7 @@ body {
 }
 .agent-use-workspace[data-agent-id="hr-bot"] .conversation-header h1 { font-size: clamp(22px, 3vw, 29px); letter-spacing: -.025em; }
 .agent-use-workspace[data-agent-id="hr-bot"] .conversation-header p { margin: 5px 0 0; color: #607797; font-size: 12px; font-weight: 650; letter-spacing: 0; }
+.conversation-materials-trigger { margin-left: auto; min-height: 36px; padding: 7px 12px; border: 1px solid #a9bfd5; border-radius: 9px; background: #fff; color: #245d96; font: inherit; font-size: 12px; font-weight: 760; cursor: pointer; }
 .agent-use-workspace[data-agent-id="hr-bot"] .conversation-messages { gap: 18px; margin-top: 24px; padding-bottom: 8px; }
 .agent-use-workspace[data-agent-id="hr-bot"] .conversation-message {
   width: min(820px, 100%);
@@ -2236,7 +2237,7 @@ body {
   background: rgba(255,255,255,.96);
   box-shadow: 0 -12px 32px rgba(47,91,151,.11);
 }
-.agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer textarea { min-height: 78px; background: #f2f7fc; }
+.agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer textarea { min-height: clamp(160px,22vh,220px); background: #f2f7fc; }
 .agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer textarea:focus { background: #fff; box-shadow: inset 0 0 0 2px rgba(40,120,215,.26); }
 .agent-use-workspace[data-agent-id="hr-bot"] .conversation-send { min-width: 98px; background: linear-gradient(135deg,#31a9dd,#2878d7 58%,#6268da); }
 .agent-use-workspace[data-agent-id="hr-bot"] .session-materials-drawer {
@@ -2251,6 +2252,9 @@ body {
   background: #fafcfb;
 }
 .agent-use-workspace[data-agent-id="hr-bot"] .session-materials-drawer h2 { font-size: 17px; }
+.session-materials-overlay { position: absolute; z-index: 39; top: 0; right: 0; bottom: 0; width: min(520px,calc(100% - 32px)); box-sizing: border-box; overflow-y: auto; border-left: 1px solid #c8d9d1; background: #fafcfb; box-shadow: -18px 0 52px rgba(31,74,58,.2); }
+.session-materials-overlay-close { position: sticky; z-index: 2; top: 12px; float: right; min-height: 34px; margin: 12px 16px -46px 0; padding: 6px 10px; border: 1px solid #bfd0c8; border-radius: 8px; background: #fff; color: #315f50; font: inherit; font-size: 11.5px; font-weight: 740; cursor: pointer; }
+.session-materials-overlay .session-materials-drawer { position: static !important; width: auto !important; height: auto !important; max-height: none !important; margin: 0 !important; padding: 22px 18px !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; }
 .agent-use-workspace[data-agent-id="hr-bot"] .conversation-attachment-card { border-color: #d9e3de; border-radius: 9px; box-shadow: none; }
 .agent-use-workspace[data-agent-id="hr-bot"] .conversation-attachment-icon { background: #e5f1ec; color: #1f6a55; }
 .agent-use-workspace[data-agent-id="hr-bot"] .agent-use-page { width: min(1040px, 100%); padding: 0 clamp(22px,4vw,46px) 40px; }
@@ -2351,7 +2355,8 @@ body {
 .hr-position-task-materials label { display: flex; min-width: 0; align-items: center; gap: 7px; padding: 5px 0; font-size: 11.5px; }
 .hr-position-task-materials label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hr-position-task-materials p,.hr-position-task-materials small { margin: 5px 0 0; color: #657970; font-size: 11.5px; line-height: 1.45; }
-.hr-position-details-drawer { position: absolute; z-index: 40; top: 0; right: 0; bottom: 0; width: min(640px,calc(100% - 32px)); box-sizing: border-box; overflow-y: auto; border: 0; border-left: 1px solid #c8d9d1; background: #fff; box-shadow: -18px 0 52px rgba(31,74,58,.2); }
+.hr-position-details-drawer { position: absolute; z-index: 40; top: 64px; right: 0; bottom: 0; width: min(640px,calc(100% - 32px)); box-sizing: border-box; overflow-y: auto; border: 0; border-left: 1px solid #c8d9d1; background: #fff; box-shadow: -18px 0 52px rgba(31,74,58,.2); }
+.hr-position-workspace .session-materials-overlay { top: 64px; }
 .hr-position-details-drawer > header { position: sticky; z-index: 3; top: 0; display: flex; min-height: 70px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 18px; border-bottom: 1px solid #d8e2dd; background: rgba(255,255,255,.97); }
 .hr-position-details-drawer > header span { color: #347f69; font-size: 11.5px; font-weight: 820; letter-spacing: .12em; }
 .hr-position-details-drawer > header h2 { margin: 3px 0 0; font-size: 19px; }
@@ -2482,6 +2487,7 @@ body {
   .agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer-actions { align-items: stretch; flex-direction: column; gap: 8px; }
   .agent-use-workspace[data-agent-id="hr-bot"] .conversation-send { width: 100%; }
   .agent-use-workspace[data-agent-id="hr-bot"] .session-materials-drawer { width: calc(100% - 28px); }
+  .session-materials-overlay,.hr-position-workspace .session-materials-overlay { top: auto; left: 0; width: 100%; height: min(82%,720px); border-top: 1px solid #c8d9d1; border-left: 0; border-radius: 16px 16px 0 0; }
   .agent-use-workspace[data-agent-id="hr-bot"] .agent-use-page { padding: 0 14px 30px; }
   .hr-conversation-welcome { margin-top: 42px; text-align: left; }
   .hr-conversation-welcome p { margin-left: 0; }

@@ -465,6 +465,44 @@ describe("HrPositionWorkspace", () => {
     expect(container.querySelector("#direct-agent-request")).toBe(textarea);
   });
 
+  it("opens session materials in a mutually exclusive right drawer without remounting the conversation", async () => {
+    const deps = dependencies();
+    deps.loadCatalog.mockResolvedValue([{ ...card,
+      accepted_input_types: ["text", "image", "pdf", "office"], supports_attachments_in: true,
+      attachment_limits: {
+        max_file_bytes: 50 * 1024 * 1024, max_files_per_message: 5,
+        max_bytes_per_message: 50 * 1024 * 1024, max_files_per_conversation: 50,
+        max_bytes_per_conversation: 500 * 1024 * 1024,
+      },
+    }]);
+    await act(async () => root.render(<HrPositionWorkspace
+      account={account} conversationId={ACTIVE_ID} positionId={POSITION_ID} {...deps}
+    />));
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "不要丢失这段对话草稿");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await clickButton(container, "会话材料");
+    expect(container.querySelector('[role="dialog"][aria-label="会话材料"]')).not.toBeNull();
+    expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).toBeNull();
+    expect(container.querySelector("textarea[aria-label='继续对话']")).toBe(textarea);
+    expect(textarea.value).toBe("不要丢失这段对话草稿");
+
+    await clickButton(container, "岗位资料");
+    expect(container.querySelector('[role="dialog"][aria-label="会话材料"]')).toBeNull();
+    expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).not.toBeNull();
+    expect(container.querySelector("textarea[aria-label='继续对话']")).toBe(textarea);
+
+    await clickButton(container, "会话材料");
+    expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).toBeNull();
+    expect(container.querySelector('[role="dialog"][aria-label="会话材料"]')).not.toBeNull();
+    expect(container.querySelector("textarea[aria-label='继续对话']")).toBe(textarea);
+    expect(textarea.value).toBe("不要丢失这段对话草稿");
+  });
+
   it("blocks quick tasks and candidate/context writes in hard-stale mode", async () => {
     const deps = dependencies();
     await act(async () => root.render(<HrPositionWorkspace account={{ ...account, hard_stale_read_only: true }} positionId={POSITION_ID} section="candidates" {...deps} />));

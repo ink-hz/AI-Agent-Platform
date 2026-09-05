@@ -127,6 +127,9 @@ export function ConversationPage({
   composerTools,
   threadSupplement,
   materialsPresentation = "sidebar",
+  materialsOpen,
+  onMaterialsOpenChange,
+  showMaterialsTrigger = true,
   messageActionsPresentation = "legacy",
 }: {
   conversationId: string;
@@ -143,7 +146,10 @@ export function ConversationPage({
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
   composerTools?: ReactNode;
   threadSupplement?: ReactNode;
-  materialsPresentation?: "sidebar" | "hidden";
+  materialsPresentation?: "sidebar" | "drawer" | "hidden";
+  materialsOpen?: boolean;
+  onMaterialsOpenChange?: (open: boolean) => void;
+  showMaterialsTrigger?: boolean;
   messageActionsPresentation?: MessageActionsPresentation;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
@@ -164,6 +170,7 @@ export function ConversationPage({
   const [newAttachmentIds, setNewAttachmentIds] = useState<string[]>([]);
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [internalMaterialsOpen, setInternalMaterialsOpen] = useState(false);
   const retained = useRef<{
     text: string;
     submission: ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
@@ -172,6 +179,20 @@ export function ConversationPage({
   const eventCursor = useRef(0);
   const inFlight = useRef(false);
   const readOnly = account.hard_stale_read_only || detail?.conversation.status === "archived";
+  const materialsDrawerOpen = materialsOpen ?? internalMaterialsOpen;
+  const changeMaterialsOpen = useCallback((open: boolean) => {
+    if (materialsOpen === undefined) setInternalMaterialsOpen(open);
+    onMaterialsOpenChange?.(open);
+  }, [materialsOpen, onMaterialsOpenChange]);
+
+  useEffect(() => {
+    if (!materialsDrawerOpen || materialsPresentation !== "drawer") return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") changeMaterialsOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [changeMaterialsOpen, materialsDrawerOpen, materialsPresentation]);
   const loadTaskDetail = useCallback(
     (turnId: string, taskId: string, signal: AbortSignal) => client.fetchTaskDetail(
       conversationId, turnId, taskId, signal,
@@ -473,6 +494,12 @@ export function ConversationPage({
         <h1>{assistantLabel}</h1>
         {personaSubtitle && <p>{personaSubtitle}</p>}
       </div>
+      {attachmentLimits && materialsPresentation === "drawer" && showMaterialsTrigger && <button
+        aria-expanded={materialsDrawerOpen}
+        className="conversation-materials-trigger"
+        onClick={() => changeMaterialsOpen(true)}
+        type="button"
+      >会话材料</button>}
     </header>
     {connection === "offline" && <aside className="conversation-connection is-offline" role="status"><strong>连接暂时中断</strong><span>正在从上次进度继续连接，不会重复提交请求。</span></aside>}
     {connection === "connecting" && <aside className="conversation-connection" role="status">正在连接对话…</aside>}
@@ -555,6 +582,18 @@ export function ConversationPage({
     {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
   </div>;
   const showMaterials = Boolean(attachmentLimits && materialsPresentation === "sidebar");
+  const materialsDrawer = attachmentLimits && materialsPresentation === "drawer" && materialsDrawerOpen
+    ? <aside aria-label="会话材料" aria-modal="false" className="session-materials-overlay" role="dialog">
+      <button aria-label="关闭会话材料" className="session-materials-overlay-close" onClick={() => changeMaterialsOpen(false)} type="button">关闭</button>
+      <SessionMaterialsDrawer
+        activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}
+        onOpen={(item, purpose) => void openAttachment(item, purpose)} onToggle={toggleAttachment}
+        positionMaterialIds={positionMaterialIds} onPositionMaterialChange={onPositionMaterialChange}
+        positionArtifactAttachmentIds={positionArtifactAttachmentIds}
+        readOnly={readOnly}
+      />
+    </aside>
+    : null;
   return <div className={showMaterials ? "conversation-workspace-grid" : "conversation-workspace-content"}>
     {conversationContent}
     {showMaterials && attachmentLimits && <SessionMaterialsDrawer
@@ -564,5 +603,6 @@ export function ConversationPage({
       positionArtifactAttachmentIds={positionArtifactAttachmentIds}
       readOnly={readOnly}
     />}
+    {materialsDrawer}
   </div>;
 }

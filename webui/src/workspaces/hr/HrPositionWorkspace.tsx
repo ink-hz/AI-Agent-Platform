@@ -113,7 +113,9 @@ export function HrPositionWorkspace({
   const [materialNotice, setMaterialNotice] = useState<string | null>(null);
   const [resourceRefreshGeneration, setResourceRefreshGeneration] = useState(0);
   const [contextRefreshGeneration, setContextRefreshGeneration] = useState(0);
-  const [detailsOpen, setDetailsOpen] = useState(() => detailsTabForSection(section) !== null);
+  const [openDrawer, setOpenDrawer] = useState<"materials" | "position" | null>(
+    () => detailsTabForSection(section) !== null ? "position" : null,
+  );
   const [detailsTab, setDetailsTab] = useState<HrPositionDetailsTab>(() => detailsTabForSection(section) ?? "position");
   const taskController = useRef<AbortController | null>(null);
   const artifactRefreshController = useRef<AbortController | null>(null);
@@ -143,11 +145,11 @@ export function HrPositionWorkspace({
   useEffect(() => {
     const routeTab = detailsTabForSection(section);
     if (routeTab === null) {
-      setDetailsOpen(false);
+      setOpenDrawer(null);
       return;
     }
     setDetailsTab(routeTab);
-    setDetailsOpen(true);
+    setOpenDrawer("position");
   }, [section]);
 
   useEffect(() => {
@@ -275,7 +277,8 @@ export function HrPositionWorkspace({
   return <main className="hr-position-workspace is-chat-first" data-position-id={positionId}>
     <HrPositionHeader detail={detail} readOnly={account.hard_stale_read_only}
       onNewConversation={() => onOpenConversation(`/hr/positions/${encodeURIComponent(positionId)}`)}
-      onOpenDetails={() => setDetailsOpen(true)} />
+      onOpenDetails={() => setOpenDrawer("position")}
+      onOpenMaterials={selectedConversationId ? () => setOpenDrawer("materials") : undefined} />
     {conversationId && !selectedConversationId && <p className="hr-position-scope-error" role="alert">该对话不属于当前岗位，已阻止跨岗位读取。</p>}
     {materialNotice && <p className="hr-position-scope-error" role="status">{materialNotice}</p>}
     <section aria-label="岗位对话" className="hr-position-chat-surface"><DirectAgentWorkspace
@@ -303,6 +306,9 @@ export function HrPositionWorkspace({
       </section>}
       newConversationScope={scope}
       onOpenConversation={onOpenConversation}
+      materialsOpen={openDrawer === "materials"}
+      onMaterialsOpenChange={(open) => setOpenDrawer(open ? "materials" : null)}
+      showMaterialsTrigger={false}
       onPositionMaterialChange={account.hard_stale_read_only ? undefined : changePositionMaterial}
       positionMaterialIds={promotedMaterialIds}
       positionArtifactAttachmentIds={detail.artifactAttachmentIds}
@@ -314,8 +320,8 @@ export function HrPositionWorkspace({
     /></section>
     <HrPositionDetailsDrawer activeTab={detailsTab} api={r12} csrfToken={account.csrf_token}
       currentContextVersionId={currentContext?.contextVersionId ?? null}
-      detail={detail} open={detailsOpen} readOnly={account.hard_stale_read_only}
-      onActiveTabChange={setDetailsTab} onClose={() => setDetailsOpen(false)} onConfirmed={setCurrentContext}
+      detail={detail} open={openDrawer === "position"} readOnly={account.hard_stale_read_only}
+      onActiveTabChange={setDetailsTab} onClose={() => setOpenDrawer(null)} onConfirmed={setCurrentContext}
       contextRefreshGeneration={contextRefreshGeneration}
       resourceRefreshGeneration={resourceRefreshGeneration} />
   </main>;
