@@ -169,6 +169,12 @@ from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
 from .hr.panorama_repository import PanoramaRepository
 from .hr.panorama_routes import build_panorama_router
+from .hr.panorama_runtime import (
+    PanoramaConversationResultReader,
+    PanoramaResultProjector,
+    PanoramaRunCoordinator,
+    panorama_projection_loop,
+)
 from .hr.panorama_service import PanoramaService
 from .hr.position_intelligence_repository import PositionIntelligenceRepository
 from .hr.position_intelligence_routes import build_position_intelligence_router
@@ -821,6 +827,7 @@ def create_app(
     hr_position_intelligence_service=None,
     hr_candidate_service=None,
     hr_panorama_service=None,
+    hr_panorama_projector=None,
     hr_resource_service=None,
     hr_task_context_provider=None,
     hr_position_task_service=None,
@@ -1162,7 +1169,35 @@ def create_app(
     if identity_enabled and control_database_url is not None:
         if hr_panorama_service is None:
             panorama_repository = PanoramaRepository(control_database_url)
-            hr_panorama_service = PanoramaService(panorama_repository)
+            hr_panorama_coordinator = None
+            if (
+                "direct_agent" in v1_mission_modes
+                and conversation_command_service is not None
+                and conversation_repository is not None
+            ):
+                hr_model_version = _optional_hr_bot_model_version(
+                    cluster_contract_path or config.metabot_contract_path
+                )
+                hr_model_version_checked = True
+                if hr_model_version is not None:
+                    hr_panorama_coordinator = PanoramaRunCoordinator(
+                        panorama_repository,
+                        conversation_command_service,
+                    )
+                    if hr_panorama_projector is None:
+                        hr_panorama_projector = PanoramaResultProjector(
+                            panorama_repository,
+                            PanoramaConversationResultReader(
+                                control_database_url,
+                                conversation_repository,
+                            ),
+                            hr_panorama_coordinator,
+                            model_version=hr_model_version,
+                        )
+            hr_panorama_service = PanoramaService(
+                panorama_repository,
+                coordinator=hr_panorama_coordinator,
+            )
         if (
             hr_position_intelligence_service is None
             or hr_task_context_provider is None
@@ -1426,6 +1461,10 @@ def create_app(
             tasks.append(asyncio.create_task(
                 position_package_projection_loop(hr_position_package_projector)
             ))
+        if hr_panorama_projector is not None:
+            tasks.append(
+                asyncio.create_task(panorama_projection_loop(hr_panorama_projector))
+            )
         try:
             yield
         finally:
@@ -1481,6 +1520,7 @@ def create_app(
     app.state.hr_position_intelligence_service = hr_position_intelligence_service
     app.state.hr_candidate_service = hr_candidate_service
     app.state.hr_panorama_service = hr_panorama_service
+    app.state.hr_panorama_projector = hr_panorama_projector
     app.state.hr_resource_service = hr_resource_service
     app.state.hr_task_context_provider = hr_task_context_provider
     app.state.hr_position_task_service = hr_position_task_service

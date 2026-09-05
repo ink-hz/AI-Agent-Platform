@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from threading import Barrier
@@ -11,7 +12,21 @@ import psycopg
 import pytest
 from test_control_plane_migration import control_database  # noqa: F401
 
-from app.hr.panorama_repository import PanoramaRepository
+from app.agent_brain.conversation_repository import ConversationRepository
+from app.agent_brain.conversation_service import ConversationCommandService
+from app.agent_brain.repository import MissionRepository
+from app.control_plane.crypto import IdentityKeyring
+from app.execution_relay.content_crypto import ContentCodec
+from app.hr.panorama_models import (
+    CreatePanoramaRun,
+    CreatePublicJobSnapshot,
+    CreateTalentInsightVersion,
+    CreateTalentSource,
+    TransitionPanoramaRun,
+)
+from app.hr.panorama_repository import PanoramaConflict, PanoramaRepository
+from app.hr.panorama_runtime import PanoramaRunCoordinator
+from app.hr.panorama_service import PanoramaService
 
 CREATE_SOURCE = (
     "select (platform_hr.create_talent_source_v79("
@@ -50,6 +65,8 @@ READ_INSIGHT = "select (platform_hr.read_talent_insight_version_v79(%s,%s)).*"
 PAGE_INSIGHTS = (
     "select * from platform_hr.list_talent_insight_versions_page_v79(%s,%s,%s)"
 )
+READ_RUNTIME = "select * from platform_hr.read_panorama_run_runtime_v79(%s)"
+CLAIM_RUNTIME = "select * from platform_hr.claim_next_panorama_run_v79(%s)"
 
 
 def _seed_owner_scope(admin: psycopg.Connection, display_name: str) -> dict[str, UUID]:
@@ -229,6 +246,86 @@ def _create_running_run(app: psycopg.Connection, scope, source_id):
     return run_id, running
 
 
+def _content_codec() -> ContentCodec:
+    return ContentCodec(
+        IdentityKeyring(
+            active_version=1,
+            purpose="platform-content-encryption",
+            _keys={1: b"p" * 32},
+        )
+    )
+
+
+def _publication_operation(scope, run, source, *, expected_row_version):
+    snapshot_id, observation_id, insight_id, transition_id = (
+        uuid4(),
+        uuid4(),
+        uuid4(),
+        uuid4(),
+    )
+
+    def publish(writer):
+        snapshot = writer.create_snapshot(
+            CreatePublicJobSnapshot(
+                snapshot_id,
+                scope["owner"],
+                observation_id,
+                run.run_id,
+                source.source_id,
+                "atomic-job",
+                "结构工程师",
+                "中山",
+                "负责结构设计",
+                "五年以上经验",
+                "https://example.com/jobs/atomic-job",
+                datetime.fromisoformat("2026-09-05T08:00:00+00:00"),
+                "d" * 64,
+                "open",
+            )
+        )
+        writer.create_insight(
+            CreateTalentInsightVersion(
+                insight_id,
+                scope["owner"],
+                insight_id,
+                run.run_id,
+                (source.source_id,),
+                (snapshot.snapshot_id,),
+                (
+                    {
+                        "fact_id": "atomic-fact",
+                        "text": "公开招聘结构工程师",
+                        "snapshot_id": str(snapshot.snapshot_id),
+                        "observation_id": str(observation_id),
+                        "source_url": "https://example.com/jobs/atomic-job",
+                        "observed_at": "2026-09-05T08:00:00Z",
+                    },
+                ),
+                (),
+                ({"text": "招聘人数未知"},),
+                {"结构": 1},
+                "结构岗位公开招聘",
+                scope["conversation"],
+                scope["turn"],
+                "hr-bot",
+                "test-model",
+            )
+        )
+        writer.transition_run(
+            TransitionPanoramaRun(
+                scope["owner"],
+                run.run_id,
+                transition_id,
+                expected_row_version,
+                "completed",
+                None,
+                {},
+            )
+        )
+
+    return publish
+
+
 @pytest.mark.postgres
 @pytest.mark.parametrize("environment_name", ("production", "preview"))
 def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
@@ -254,6 +351,8 @@ def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
         "platform_hr.read_public_job_snapshots_v79(uuid,uuid[])",
         "platform_hr.read_talent_insight_version_v79(uuid,uuid)",
         "platform_hr.list_talent_insight_versions_page_v79(uuid,bigint,integer)",
+        "platform_hr.read_panorama_run_runtime_v79(uuid)",
+        "platform_hr.claim_next_panorama_run_v79(integer)",
     )
     with psycopg.connect(environment["admin"]) as admin:
         assert admin.execute(
@@ -311,6 +410,365 @@ def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
             pytest.raises(psycopg.errors.InsufficientPrivilege),
         ):
             connection.execute(LIST_SOURCES, (uuid4(), False, 10))
+
+
+@pytest.mark.postgres
+def test_runtime_claim_is_exclusive_rediscoverable_and_excludes_terminal_runs(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_hr.panorama_runs set state='failed',"
+            "started_at=coalesce(started_at,now()),finished_at=now(),"
+            "error_code='test_cleanup',updated_at=now() "
+            "where state in ('queued','running')"
+        )
+        scope = _seed_owner_scope(admin, "Panorama Runtime Claim Owner")
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        source = app.execute(
+            CREATE_SOURCE,
+            _source_values(scope, request_id=uuid4()),
+        ).fetchone()
+        run_id, running = _create_running_run(app, scope, source[0])
+        app.commit()
+
+    gate = Barrier(2)
+
+    def claim():
+        with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+            gate.wait()
+            return app.execute(CLAIM_RUNTIME, (1,)).fetchall()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = tuple(pool.map(lambda _index: claim(), range(2)))
+
+    assert sorted(bool(rows) for rows in results) == [False, True]
+    claimed = next(rows for rows in results if rows)
+    assert {row[0] for row in claimed} == {run_id}
+
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        assert app.execute(READ_RUNTIME, (run_id,)).fetchall()
+        assert app.execute(CLAIM_RUNTIME, (1,)).fetchall() == []
+        time.sleep(1.1)
+        rediscovered = app.execute(CLAIM_RUNTIME, (1,)).fetchall()
+        assert {row[0] for row in rediscovered} == {run_id}
+        app.execute(
+            TRANSITION_RUN,
+            (
+                scope["owner"],
+                run_id,
+                uuid4(),
+                running[8],
+                "failed",
+                "search_unavailable",
+                "{}",
+            ),
+        )
+        app.commit()
+        time.sleep(1.1)
+        assert app.execute(CLAIM_RUNTIME, (1,)).fetchall() == []
+
+
+@pytest.mark.postgres
+def test_coordinator_replay_creates_one_exact_conversation_turn(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Panorama Conversation Replay Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            "panorama-replay-company",
+            "全景回放公司",
+            (),
+            ("https://example.com/jobs",),
+            True,
+        )
+    )
+    run = repository.create_run(
+        CreatePanoramaRun(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            (source.source_id,),
+            scope["conversation"],
+        )
+    )
+    codec = _content_codec()
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        mission_repository=MissionRepository(
+            environment["urls"]["platform_control_app"],
+            content_codec=codec,
+        ),
+    )
+    coordinator = PanoramaRunCoordinator(
+        repository,
+        ConversationCommandService(conversations, v2_enabled=False),
+        resolver=lambda _host, _port: ("8.8.8.8", "2001:4860:4860::8888"),
+    )
+
+    coordinator.submit(run.run_id)
+    with psycopg.connect(environment["admin"]) as admin:
+        first = admin.execute(
+            "select turn_id,client_request_id from "
+            "platform_control.conversation_turns where conversation_id=%s "
+            "order by created_at desc,turn_id desc limit 1",
+            (scope["conversation"],),
+        ).fetchone()
+    coordinator.submit(run.run_id)
+
+    with psycopg.connect(environment["admin"]) as admin:
+        turns = admin.execute(
+            "select turn_id,client_request_id from "
+            "platform_control.conversation_turns where conversation_id=%s "
+            "order by created_at,turn_id",
+            (scope["conversation"],),
+        ).fetchall()
+    assert len(turns) == 2
+    assert turns[-1] == first
+
+
+@pytest.mark.postgres
+def test_report_publication_rolls_back_every_write_when_terminal_transition_fails(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Atomic Panorama Rollback Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            f"atomic-{uuid4().hex}",
+            "原子发布公司",
+            (),
+            ("https://example.com/jobs",),
+            True,
+        )
+    )
+    run = repository.create_run(
+        CreatePanoramaRun(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            (source.source_id,),
+            scope["conversation"],
+        )
+    )
+    running = repository.transition_run(
+        TransitionPanoramaRun(
+            scope["owner"], run.run_id, uuid4(), run.row_version, "running", None, {}
+        )
+    )
+
+    with pytest.raises(PanoramaConflict):
+        repository.publish_report(
+            _publication_operation(
+                scope,
+                running,
+                source,
+                expected_row_version=running.row_version + 99,
+            )
+        )
+
+    assert repository.list_snapshots(scope["owner"], source.source_id) == ()
+    assert repository.list_insights(scope["owner"]) == ()
+    assert repository.run(scope["owner"], run.run_id) == running
+
+
+@pytest.mark.postgres
+def test_runtime_unavailable_rejects_before_any_run_insert(control_database) -> None:
+    from app.hr.panorama_repository import PanoramaUnavailable
+
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Unavailable Panorama Runtime Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            f"unavailable-{uuid4().hex}",
+            "运行时不可用公司",
+            (),
+            ("https://example.com/jobs",),
+            True,
+        )
+    )
+
+    with pytest.raises(PanoramaUnavailable, match="runtime unavailable"):
+        PanoramaService(repository).start_run(
+            owner_id=scope["owner"],
+            request_id=uuid4(),
+            source_ids=(source.source_id,),
+            conversation_id=scope["conversation"],
+        )
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_hr.panorama_runs "
+            "where owner_internal_user_id=%s",
+            (scope["owner"],),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_dns_rejection_after_insert_persists_a_failed_run(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Rejected Panorama Destination Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            f"rejected-{uuid4().hex}",
+            "目标拒绝公司",
+            (),
+            ("https://example.com/jobs",),
+            True,
+        )
+    )
+    run = repository.create_run(
+        CreatePanoramaRun(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            (source.source_id,),
+            scope["conversation"],
+        )
+    )
+
+    class Commands:
+        def append_turn(self, *args):
+            pytest.fail("rejected destination must not dispatch")
+
+    coordinator = PanoramaRunCoordinator(
+        repository,
+        Commands(),
+        resolver=lambda _host, _port: ("10.0.0.7",),
+    )
+    with pytest.raises(ValueError, match="destination invalid"):
+        coordinator.submit(run.run_id)
+
+    failed = repository.run(scope["owner"], run.run_id)
+    assert failed.state == "failed"
+    assert failed.error_code == "destination_invalid"
+    assert failed.started_at is not None and failed.finished_at is not None
+
+
+@pytest.mark.postgres
+def test_dns_preflight_rejects_before_run_insert(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Panorama DNS Preflight Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            f"preflight-{uuid4().hex}",
+            "预检拒绝公司",
+            (),
+            ("https://example.com/jobs",),
+            True,
+        )
+    )
+
+    class Commands:
+        def append_turn(self, *args):
+            pytest.fail("preflight rejection must not dispatch")
+
+    service = PanoramaService(
+        repository,
+        coordinator=PanoramaRunCoordinator(
+            repository,
+            Commands(),
+            resolver=lambda _host, _port: ("10.0.0.7",),
+        ),
+    )
+    with pytest.raises(ValueError, match="destination invalid"):
+        service.start_run(
+            owner_id=scope["owner"],
+            request_id=uuid4(),
+            source_ids=(source.source_id,),
+            conversation_id=scope["conversation"],
+        )
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_hr.panorama_runs "
+            "where owner_internal_user_id=%s",
+            (scope["owner"],),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_concurrent_report_publication_replays_one_atomic_projection(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Atomic Panorama Concurrent Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            f"atomic-{uuid4().hex}",
+            "并发发布公司",
+            (),
+            ("https://example.com/jobs",),
+            True,
+        )
+    )
+    run = repository.create_run(
+        CreatePanoramaRun(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            (source.source_id,),
+            scope["conversation"],
+        )
+    )
+    running = repository.transition_run(
+        TransitionPanoramaRun(
+            scope["owner"], run.run_id, uuid4(), run.row_version, "running", None, {}
+        )
+    )
+    operation = _publication_operation(
+        scope,
+        running,
+        source,
+        expected_row_version=running.row_version,
+    )
+    gate = Barrier(2)
+
+    def publish(_index):
+        gate.wait()
+        return PanoramaRepository(
+            environment["urls"]["platform_control_app"]
+        ).publish_report(operation)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        tuple(pool.map(publish, range(2)))
+
+    assert len(repository.list_snapshots(scope["owner"], source.source_id)) == 1
+    assert len(repository.list_insights(scope["owner"])) == 1
+    assert repository.run(scope["owner"], run.run_id).state == "completed"
 
 
 @pytest.mark.postgres
@@ -584,6 +1042,12 @@ def test_cross_owner_links_and_unapproved_or_unbounded_content_fail_closed(
     with psycopg.connect(environment["admin"]) as admin:
         owner = _seed_owner_scope(admin, "Scope Owner")
         other = _seed_owner_scope(admin, "Wrong Scope Owner")
+        wrong_agent = _seed_owner_scope(admin, "Wrong Agent Owner")
+        admin.execute(
+            "update platform_control.conversations set direct_agent_id='fae-bot' "
+            "where conversation_id=%s",
+            (wrong_agent["conversation"],),
+        )
     app_url = environment["urls"]["platform_control_app"]
     with psycopg.connect(app_url) as app:
         source = app.execute(
@@ -599,6 +1063,22 @@ def test_cross_owner_links_and_unapproved_or_unbounded_content_fail_closed(
                     uuid4(),
                     [source[0]],
                     other["conversation"],
+                ),
+            )
+        app.rollback()
+        wrong_agent_source = app.execute(
+            CREATE_SOURCE, _source_values(wrong_agent, request_id=uuid4())
+        ).fetchone()
+        app.commit()
+        with pytest.raises(psycopg.errors.NoDataFound):
+            app.execute(
+                CREATE_RUN,
+                (
+                    uuid4(),
+                    wrong_agent["owner"],
+                    uuid4(),
+                    [wrong_agent_source[0]],
+                    wrong_agent["conversation"],
                 ),
             )
         app.rollback()

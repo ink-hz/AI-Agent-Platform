@@ -169,7 +169,7 @@ def test_snapshot_identity_currentness_and_insights_are_historical() -> None:
         "state in ( 'queued','running','completed','partially_completed','failed' )"
         in sql
     )
-    assert "old.state='queued' and selected_state='running'" in sql
+    assert "old.state='queued' and selected_state in ('running','failed')" in sql
     assert (
         "old.state='running' and selected_state in ( 'completed','partially_completed','failed' )"
         in sql
@@ -195,6 +195,8 @@ def test_migration_exposes_only_app_panorama_entrypoints() -> None:
         "read_public_job_snapshots_v79",
         "read_talent_insight_version_v79",
         "list_talent_insight_versions_page_v79",
+        "read_panorama_run_runtime_v79",
+        "claim_next_panorama_run_v79",
     }
 
     assert functions <= _migration_objects(sql)
@@ -212,6 +214,27 @@ def test_migration_exposes_only_app_panorama_entrypoints() -> None:
     assert "grant update" not in sql
     assert "grant delete" not in sql
     assert "revoke all on all tables in schema platform_hr from public" in sql
+
+
+def test_runtime_point_read_and_claim_are_durable_bounded_and_stable() -> None:
+    sql = _sql()
+
+    assert "projection_eligible_at timestamptz not null default now()" in sql
+    assert "create function platform_hr.read_panorama_run_runtime_v79" in sql
+    assert "create function platform_hr.claim_next_panorama_run_v79" in sql
+    assert "for update of run skip locked limit 1" in sql
+    assert "run.state in ('queued','running')" in sql
+    assert "order by run.projection_eligible_at,run.run_id" in sql
+    assert "binding.source_ordinal" in sql
+    assert "order by binding.source_ordinal" in sql
+    assert "grant select on platform_hr" not in sql
+    assert "conversation.mode='direct_agent'" in sql
+    assert "conversation.direct_agent_id='hr-bot'" in sql
+    assert "conversation.status='active'" in sql
+    assert "create index panorama_runs_projection_claim_idx" in sql
+    assert "on platform_hr.panorama_runs(projection_eligible_at,run_id)" in sql
+    assert "where state in ('queued','running')" in sql
+    assert "old.state='queued' and selected_state in ('running','failed')" in sql
 
 
 def test_point_and_keyset_reads_are_owner_scoped_bounded_and_stable() -> None:

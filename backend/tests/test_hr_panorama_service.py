@@ -75,6 +75,19 @@ class RecordingRepository:
         return ("insight",)
 
 
+class RecordingCoordinator:
+    def __init__(self) -> None:
+        self.run_ids: list[UUID] = []
+        self.preflight_calls: list[tuple] = []
+
+    def preflight(self, owner_id, source_ids):
+        self.preflight_calls.append((owner_id, source_ids))
+
+    def submit(self, run_id: UUID) -> UUID:
+        self.run_ids.append(run_id)
+        return run_id
+
+
 def test_add_company_replays_with_a_stable_company_kind_and_identity() -> None:
     owner_id, request_id = uuid4(), uuid4()
     repository = RecordingRepository()
@@ -102,7 +115,7 @@ def test_service_delegates_owner_scoped_reads_run_and_report() -> None:
     owner_id, request_id, conversation_id = uuid4(), uuid4(), uuid4()
     source_ids = (uuid4(), uuid4())
     repository = RecordingRepository()
-    service = PanoramaService(repository)
+    service = PanoramaService(repository, coordinator=RecordingCoordinator())
 
     assert service.list_companies(owner_id, include_inactive=True, limit=9) == ()
     run = service.start_run(
@@ -121,6 +134,67 @@ def test_service_delegates_owner_scoped_reads_run_and_report() -> None:
     run_command = repository.calls[1][1]
     assert run_command.selected_source_ids == source_ids
     assert run_command.conversation_id == conversation_id
+
+
+def test_start_run_replays_the_same_durable_run_and_resubmits_same_turn_identity() -> (
+    None
+):
+    owner_id, request_id, conversation_id = uuid4(), uuid4(), uuid4()
+    repository = RecordingRepository()
+    coordinator = RecordingCoordinator()
+    service = PanoramaService(repository, coordinator=coordinator)
+    values = {
+        "owner_id": owner_id,
+        "request_id": request_id,
+        "source_ids": (uuid4(),),
+        "conversation_id": conversation_id,
+    }
+
+    first = service.start_run(**values)
+    replay = service.start_run(**values)
+
+    assert replay.run_id == first.run_id
+    assert coordinator.run_ids == [first.run_id, first.run_id]
+    assert coordinator.preflight_calls == [
+        (owner_id, values["source_ids"]),
+        (owner_id, values["source_ids"]),
+    ]
+
+
+def test_start_run_without_runtime_fails_before_creating_a_run() -> None:
+    from app.hr.panorama_repository import PanoramaUnavailable
+
+    repository = RecordingRepository()
+    service = PanoramaService(repository)
+
+    with pytest.raises(PanoramaUnavailable, match="runtime unavailable"):
+        service.start_run(
+            owner_id=uuid4(),
+            request_id=uuid4(),
+            source_ids=(uuid4(),),
+            conversation_id=uuid4(),
+        )
+
+    assert repository.calls == []
+
+
+def test_preflight_failure_happens_before_run_insert() -> None:
+    class FailingCoordinator(RecordingCoordinator):
+        def preflight(self, owner_id, source_ids):
+            raise ValueError("destination invalid")
+
+    repository = RecordingRepository()
+    service = PanoramaService(repository, coordinator=FailingCoordinator())
+
+    with pytest.raises(ValueError, match="destination invalid"):
+        service.start_run(
+            owner_id=uuid4(),
+            request_id=uuid4(),
+            source_ids=(uuid4(),),
+            conversation_id=uuid4(),
+        )
+
+    assert repository.calls == []
 
 
 def test_service_lists_owner_scoped_reports_with_a_strict_repository_limit() -> None:

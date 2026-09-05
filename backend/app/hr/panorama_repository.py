@@ -78,6 +78,22 @@ def _run(row: Mapping[str, Any]) -> PanoramaRun:
     )
 
 
+def _runtime_source(row: Mapping[str, Any]) -> TalentSource:
+    return TalentSource(
+        source_id=row["source_id"],
+        owner_id=row["owner_internal_user_id"],
+        client_request_id=row["source_client_request_id"],
+        source_kind=row["source_kind"],
+        company_key=row["company_key"],
+        canonical_name=row["canonical_name"],
+        aliases=tuple(row["aliases"]),
+        approved_urls=tuple(row["approved_public_urls"]),
+        active=row["active"],
+        created_at=row["source_created_at"],
+        updated_at=row["source_updated_at"],
+    )
+
+
 def _snapshot(row: Mapping[str, Any]) -> PublicJobSnapshot:
     return PublicJobSnapshot(
         snapshot_id=row["snapshot_id"],
@@ -151,6 +167,94 @@ def _identifier(value: UUID) -> UUID:
     return value
 
 
+class _PanoramaPublication:
+    """Write a report and its terminal state on one caller-owned transaction."""
+
+    def __init__(self, connection: Any) -> None:
+        self._connection = connection
+
+    def create_snapshot(self, command: CreatePublicJobSnapshot) -> PublicJobSnapshot:
+        if not isinstance(command, CreatePublicJobSnapshot):
+            raise ValueError("public job snapshot command required")
+        row = self._connection.execute(
+            "select (platform_hr.create_public_job_snapshot_v79("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)).*",
+            (
+                command.snapshot_id,
+                command.owner_id,
+                command.client_request_id,
+                command.run_id,
+                command.source_id,
+                command.public_job_key,
+                command.title,
+                command.location,
+                command.duty_excerpt,
+                command.requirement_excerpt,
+                command.source_url,
+                command.observed_at,
+                command.content_sha256,
+                command.status,
+            ),
+        ).fetchone()
+        if row is None:
+            raise PanoramaUnavailable("public job snapshot unavailable")
+        return _snapshot(row)
+
+    def create_insight(
+        self, command: CreateTalentInsightVersion
+    ) -> TalentInsightVersion:
+        if not isinstance(command, CreateTalentInsightVersion):
+            raise ValueError("talent insight command required")
+        row = self._connection.execute(
+            "select (platform_hr.create_talent_insight_version_v79("
+            "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
+            "%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s)).*",
+            (
+                command.insight_version_id,
+                command.owner_id,
+                command.client_request_id,
+                command.run_id,
+                list(command.selected_source_ids),
+                list(command.snapshot_ids),
+                json.dumps(thaw_json(command.facts), ensure_ascii=False),
+                json.dumps(thaw_json(command.inferences), ensure_ascii=False),
+                json.dumps(thaw_json(command.unknowns), ensure_ascii=False),
+                json.dumps(
+                    thaw_json(command.direction_clusters),
+                    ensure_ascii=False,
+                ),
+                command.summary,
+                command.source_conversation_id,
+                command.source_turn_id,
+                command.agent_id,
+                command.model_version,
+            ),
+        ).fetchone()
+        if row is None:
+            raise PanoramaUnavailable("talent insight unavailable")
+        return _insight(row)
+
+    def transition_run(self, command: TransitionPanoramaRun) -> PanoramaRun:
+        if not isinstance(command, TransitionPanoramaRun):
+            raise ValueError("panorama run transition required")
+        row = self._connection.execute(
+            "select (platform_hr.transition_panorama_run_v79("
+            "%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
+            (
+                command.owner_id,
+                command.run_id,
+                command.client_request_id,
+                command.expected_row_version,
+                command.state,
+                command.error_code,
+                json.dumps(thaw_json(command.source_failures)),
+            ),
+        ).fetchone()
+        if row is None:
+            raise PanoramaUnavailable("panorama run unavailable")
+        return _run(row)
+
+
 class PanoramaRepository:
     def __init__(
         self, database_url: str, *, connect: Callable[..., Any] = psycopg.connect
@@ -169,6 +273,17 @@ class PanoramaRepository:
             options="-c statement_timeout=10000",
             row_factory=dict_row,
         )
+
+    def publish_report(self, operation: Callable[[object], Any]) -> Any:
+        if not callable(operation):
+            raise ValueError("panorama publication operation required")
+        try:
+            with self._connection() as connection:
+                return operation(_PanoramaPublication(connection))
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "report publication")
 
     @staticmethod
     def _raise(error: Exception, action: str) -> None:
@@ -282,6 +397,53 @@ class PanoramaRepository:
             raise
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "run")
+
+    def runtime_context(self, run_id: UUID):
+        from .panorama_runtime import PanoramaRunRuntime
+
+        _identifier(run_id)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from platform_hr.read_panorama_run_runtime_v79(%s)",
+                    (run_id,),
+                ).fetchall()
+            if not rows:
+                return None
+            run = _run(rows[0])
+            if any(_run(row) != run for row in rows) or tuple(
+                row["source_ordinal"] for row in rows
+            ) != tuple(range(1, len(rows) + 1)):
+                raise ValueError("panorama runtime rows invalid")
+            return PanoramaRunRuntime(run, tuple(_runtime_source(row) for row in rows))
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "runtime")
+
+    def claim_next_runtime(self, *, claim_seconds: int = 5):
+        from .panorama_runtime import PanoramaRunRuntime
+
+        if (
+            isinstance(claim_seconds, bool)
+            or not isinstance(claim_seconds, int)
+            or not 1 <= claim_seconds <= 300
+        ):
+            raise ValueError("panorama claim duration invalid")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from platform_hr.claim_next_panorama_run_v79(%s)",
+                    (claim_seconds,),
+                ).fetchall()
+            if not rows:
+                return None
+            run = _run(rows[0])
+            if any(_run(row) != run for row in rows) or tuple(
+                row["source_ordinal"] for row in rows
+            ) != tuple(range(1, len(rows) + 1)):
+                raise ValueError("panorama runtime rows invalid")
+            return PanoramaRunRuntime(run, tuple(_runtime_source(row) for row in rows))
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "runtime claim")
 
     def transition_run(self, command: TransitionPanoramaRun) -> PanoramaRun:
         if not isinstance(command, TransitionPanoramaRun):
@@ -447,6 +609,24 @@ class PanoramaRepository:
             return tuple(_source(row) for row in rows)
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "sources")
+
+    def sources_for_run(
+        self, owner_id: UUID, source_ids: tuple[UUID, ...]
+    ) -> tuple[TalentSource, ...]:
+        _identifier(owner_id)
+        if (
+            not isinstance(source_ids, tuple)
+            or not 1 <= len(source_ids) <= 100
+            or any(not isinstance(source_id, UUID) for source_id in source_ids)
+            or len(set(source_ids)) != len(source_ids)
+        ):
+            raise ValueError("panorama source selection invalid")
+        sources = self._read_sources(owner_id, source_ids)
+        if tuple(source.source_id for source in sources) != source_ids or any(
+            not source.active for source in sources
+        ):
+            raise PanoramaNotFound("panorama sources not found")
+        return sources
 
     def _read_snapshots(
         self, owner_id: UUID, snapshot_ids: tuple[UUID, ...]

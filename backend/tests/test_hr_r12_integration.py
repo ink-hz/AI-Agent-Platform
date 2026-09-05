@@ -20,6 +20,7 @@ def test_create_app_declares_all_hr_r12_service_boundaries() -> None:
         "hr_position_task_service",
         "hr_position_package_projector",
         "hr_panorama_service",
+        "hr_panorama_projector",
     }.issubset(parameters)
 
 
@@ -44,6 +45,45 @@ def test_create_app_constructs_panorama_from_the_shared_control_database() -> No
     assert len(repository_calls) == len(service_calls) == 1
     assert ast.unparse(repository_calls[0].args[0]) == "control_database_url"
     assert ast.unparse(service_calls[0].args[0]) == "panorama_repository"
+    assert {
+        keyword.arg: ast.unparse(keyword.value) for keyword in service_calls[0].keywords
+    }["coordinator"] == "hr_panorama_coordinator"
+
+
+def test_create_app_wires_one_durable_panorama_projection_loop() -> None:
+    source = inspect.getsource(create_app)
+    tree = ast.parse(source)
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "panorama_projection_loop"
+    ]
+
+    assert len(calls) == 1
+    assert ast.unparse(calls[0].args[0]) == "hr_panorama_projector"
+    assert '"direct_agent" in v1_mission_modes' in source
+
+
+def test_create_app_runs_panorama_projection_in_one_worker_thread() -> None:
+    caller_thread = threading.get_ident()
+    called = threading.Event()
+    worker_threads: list[int] = []
+
+    class _Projector:
+        def reconcile_one(self) -> bool:
+            worker_threads.append(threading.get_ident())
+            called.set()
+            return False
+
+    app = create_app(start_poller=False, hr_panorama_projector=_Projector())
+
+    with TestClient(app):
+        assert called.wait(timeout=2)
+
+    assert len(set(worker_threads)) == 1
+    assert worker_threads[0] != caller_thread
 
 
 def test_create_app_wires_candidate_documents_to_the_existing_download_service() -> None:

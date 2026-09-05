@@ -133,6 +133,39 @@ def replace_source(command, **changes):
     return CreateTalentSource(**values)
 
 
+def test_runtime_context_and_claim_use_only_dedicated_point_functions() -> None:
+    calls = []
+
+    class Cursor:
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def execute(self, sql, parameters):
+            calls.append((sql, parameters))
+            return Cursor()
+
+    repository = PanoramaRepository(
+        "postgresql://unused", connect=lambda *args, **kwargs: Connection()
+    )
+    run_id = uuid4()
+
+    assert repository.runtime_context(run_id) is None
+    assert repository.claim_next_runtime(claim_seconds=7) is None
+
+    assert "read_panorama_run_runtime_v79" in calls[0][0]
+    assert calls[0][1] == (run_id,)
+    assert "claim_next_panorama_run_v79" in calls[1][0]
+    assert calls[1][1] == (7,)
+    assert all("from platform_hr.panorama_runs" not in sql for sql, _ in calls)
+
+
 @pytest.mark.postgres
 def test_repository_creates_runs_snapshots_reports_and_ranks_deterministically(
     control_database,

@@ -336,6 +336,7 @@ create table platform_hr.panorama_runs (
     )
   ),
   row_version bigint not null default 1 check (row_version>0),
+  projection_eligible_at timestamptz not null default now(),
   started_at timestamptz,
   finished_at timestamptz,
   created_at timestamptz not null default now(),
@@ -377,6 +378,10 @@ create table platform_hr.panorama_run_sources (
   unique (run_id,source_id),
   unique (run_id,source_ordinal)
 );
+
+create index panorama_runs_projection_claim_idx
+on platform_hr.panorama_runs(projection_eligible_at,run_id)
+where state in ('queued','running');
 
 create table platform_hr.panorama_run_transition_events (
   owner_internal_user_id uuid not null
@@ -921,7 +926,10 @@ begin
   end if;
   perform 1 from platform_control.conversations conversation
   where conversation.conversation_id=selected_conversation_id
-    and conversation.owner_internal_user_id=selected_owner_internal_user_id;
+    and conversation.owner_internal_user_id=selected_owner_internal_user_id
+    and conversation.mode='direct_agent'
+    and conversation.direct_agent_id='hr-bot'
+    and conversation.status='active';
   if not found then raise no_data_found; end if;
   if (
     select count(*) from platform_hr.talent_sources source
@@ -1025,7 +1033,7 @@ begin
     raise serialization_failure using message='panorama run transition conflict';
   end if;
   if not (
-    (old.state='queued' and selected_state='running')
+    (old.state='queued' and selected_state in ('running','failed'))
     or (old.state='running' and selected_state in (
       'completed','partially_completed','failed'
     ))
@@ -1042,7 +1050,10 @@ begin
     error_code=selected_error_code,
     source_failures=selected_source_failures,
     row_version=row_version+1,
-    started_at=case when selected_state='running' then now() else started_at end,
+    started_at=case
+      when old.state='queued' and selected_state in ('running','failed') then now()
+      else started_at
+    end,
     finished_at=case when selected_state in (
       'completed','partially_completed','failed'
     ) then now() else null end,
@@ -1571,6 +1582,137 @@ begin
 end
 $function$;
 
+create function platform_hr.read_panorama_run_runtime_v79(
+  selected_run_id uuid
+) returns table (
+  run_id uuid,
+  owner_internal_user_id uuid,
+  client_request_id uuid,
+  selected_source_ids uuid[],
+  conversation_id uuid,
+  state text,
+  error_code text,
+  source_failures jsonb,
+  row_version bigint,
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz,
+  updated_at timestamptz,
+  source_id uuid,
+  source_client_request_id uuid,
+  source_kind text,
+  company_key text,
+  canonical_name text,
+  aliases jsonb,
+  approved_public_urls jsonb,
+  active boolean,
+  source_created_at timestamptz,
+  source_updated_at timestamptz,
+  source_ordinal integer
+)
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if selected_run_id is null then raise check_violation; end if;
+  return query
+    select run.run_id,run.owner_internal_user_id,run.client_request_id,
+      run.selected_source_ids,run.conversation_id,run.state,run.error_code,
+      run.source_failures,run.row_version,run.started_at,run.finished_at,
+      run.created_at,run.updated_at,source.source_id,
+      source.client_request_id,source.source_kind,source.company_key,
+      source.canonical_name,source.aliases,source.approved_public_urls,
+      source.active,source.created_at,source.updated_at,binding.source_ordinal
+    from platform_hr.panorama_runs run
+    join platform_hr.panorama_run_sources binding
+      on binding.run_id=run.run_id
+      and binding.owner_internal_user_id=run.owner_internal_user_id
+    join platform_hr.talent_sources source
+      on source.source_id=binding.source_id
+      and source.owner_internal_user_id=binding.owner_internal_user_id
+    where run.run_id=selected_run_id
+    order by binding.source_ordinal;
+end
+$function$;
+
+create function platform_hr.claim_next_panorama_run_v79(
+  selected_claim_seconds integer
+) returns table (
+  run_id uuid,
+  owner_internal_user_id uuid,
+  client_request_id uuid,
+  selected_source_ids uuid[],
+  conversation_id uuid,
+  state text,
+  error_code text,
+  source_failures jsonb,
+  row_version bigint,
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz,
+  updated_at timestamptz,
+  source_id uuid,
+  source_client_request_id uuid,
+  source_kind text,
+  company_key text,
+  canonical_name text,
+  aliases jsonb,
+  approved_public_urls jsonb,
+  active boolean,
+  source_created_at timestamptz,
+  source_updated_at timestamptz,
+  source_ordinal integer
+)
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare claimed_run_id uuid;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if selected_claim_seconds is null
+    or selected_claim_seconds not between 1 and 300 then
+    raise check_violation using message='panorama claim duration invalid';
+  end if;
+  select run.run_id into claimed_run_id
+  from platform_hr.panorama_runs run
+  where run.state in ('queued','running')
+    and run.projection_eligible_at<=clock_timestamp()
+  order by run.projection_eligible_at,run.run_id
+  for update of run skip locked limit 1;
+  if not found then return; end if;
+  update platform_hr.panorama_runs run
+  set projection_eligible_at=
+    clock_timestamp()+make_interval(secs=>selected_claim_seconds)
+  where run.run_id=claimed_run_id;
+  return query
+    select run.run_id,run.owner_internal_user_id,run.client_request_id,
+      run.selected_source_ids,run.conversation_id,run.state,run.error_code,
+      run.source_failures,run.row_version,run.started_at,run.finished_at,
+      run.created_at,run.updated_at,source.source_id,
+      source.client_request_id,source.source_kind,source.company_key,
+      source.canonical_name,source.aliases,source.approved_public_urls,
+      source.active,source.created_at,source.updated_at,binding.source_ordinal
+    from platform_hr.panorama_runs run
+    join platform_hr.panorama_run_sources binding
+      on binding.run_id=run.run_id
+      and binding.owner_internal_user_id=run.owner_internal_user_id
+    join platform_hr.talent_sources source
+      on source.source_id=binding.source_id
+      and source.owner_internal_user_id=binding.owner_internal_user_id
+    where run.run_id=claimed_run_id
+    order by binding.source_ordinal;
+end
+$function$;
+
 create function platform_hr.read_public_job_snapshots_v79(
   selected_owner_internal_user_id uuid,
   selected_snapshot_ids uuid[]
@@ -1709,6 +1851,12 @@ revoke all on function platform_hr.read_talent_insight_version_v79(
 revoke all on function platform_hr.list_talent_insight_versions_page_v79(
   uuid,bigint,integer
 ) from public;
+revoke all on function platform_hr.read_panorama_run_runtime_v79(
+  uuid
+) from public;
+revoke all on function platform_hr.claim_next_panorama_run_v79(
+  integer
+) from public;
 
 do $migration$
 declare selected_app name;
@@ -1788,6 +1936,14 @@ begin
   execute format(
     'grant execute on function platform_hr.list_talent_insight_versions_page_v79('
     'uuid,bigint,integer) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.read_panorama_run_runtime_v79('
+    'uuid) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.claim_next_panorama_run_v79('
+    'integer) to %I',selected_app
   );
 end
 $migration$;

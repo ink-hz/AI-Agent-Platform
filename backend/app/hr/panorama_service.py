@@ -15,6 +15,7 @@ from .panorama_models import (
     TalentInsightVersion,
     TalentSource,
 )
+from .panorama_repository import PanoramaUnavailable
 
 
 class PanoramaCommandRepository(Protocol):
@@ -44,6 +45,7 @@ class PanoramaService:
         self,
         repository: PanoramaCommandRepository,
         *,
+        coordinator: object | None = None,
         uuid_factory: Callable[[], UUID] | None = None,
     ) -> None:
         for method in (
@@ -59,7 +61,13 @@ class PanoramaService:
                 raise ValueError("panorama repository invalid")
         if uuid_factory is not None and not callable(uuid_factory):
             raise ValueError("panorama UUID factory invalid")
+        if coordinator is not None and any(
+            not callable(getattr(coordinator, name, None))
+            for name in ("preflight", "submit")
+        ):
+            raise ValueError("panorama coordinator invalid")
         self._repository = repository
+        self._coordinator = coordinator
         self._uuid_factory = uuid_factory
 
     def _resource_id(self, owner_id: UUID, request_id: UUID, operation: str) -> UUID:
@@ -108,7 +116,10 @@ class PanoramaService:
         source_ids: tuple[UUID, ...],
         conversation_id: UUID,
     ) -> PanoramaRun:
-        return self._repository.create_run(
+        if self._coordinator is None:
+            raise PanoramaUnavailable("panorama runtime unavailable")
+        self._coordinator.preflight(owner_id, source_ids)
+        run = self._repository.create_run(
             CreatePanoramaRun(
                 run_id=self._resource_id(owner_id, request_id, "run"),
                 owner_id=owner_id,
@@ -117,6 +128,9 @@ class PanoramaService:
                 conversation_id=conversation_id,
             )
         )
+        if self._coordinator is not None:
+            self._coordinator.submit(run.run_id)
+        return run
 
     def report(self, owner_id: UUID, insight_version_id: UUID) -> PanoramaReport:
         return self._repository.report(owner_id, insight_version_id)
