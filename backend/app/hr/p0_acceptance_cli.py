@@ -1,10 +1,9 @@
 """Controlled, status-only acceptance boundary for the HR P0 live workflow.
 
-The orchestration transport is deliberately injected.  The production wrapper runs
-this module inside the Platform container, where ``build_gateway`` is replaced by
-the release's audited live gateway wiring.  This module owns the security boundary:
-configuration, evidence validation, bounded execution, exact-ID archival and
-sanitised process output.
+The orchestration transport is injectable for contract tests.  The production
+wrapper uses the fixed Platform HTTP/PostgreSQL gateway in this module.  This module
+owns the security boundary: configuration, evidence validation, bounded execution,
+exact-ID archival and sanitised process output.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ import sys
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol, TextIO
 from urllib.parse import urlsplit
@@ -49,6 +49,8 @@ _CREATED_ID_KEYS = {
 }
 _EXPECTED_KINDS = (
     "panorama_report",
+    "position_package",
+    "panorama_retrieval",
     "position_package",
     "candidate_match",
     "candidate_match",
@@ -272,15 +274,9 @@ def load_config(path: Path, *, expected_path: Path) -> AcceptanceConfig:
             names.add(name)
             approved.update(company_urls)
             companies.append(CompanyConfig(name, tuple(aliases), company_urls))
-        connect_timeout_seconds = _plain_int(
-            document["connect_timeout_seconds"], 1, 10
-        )
-        request_timeout_seconds = _plain_int(
-            document["request_timeout_seconds"], 1, 60
-        )
-        run_timeout_seconds = _plain_int(
-            document["run_timeout_seconds"], 60, 1200
-        )
+        connect_timeout_seconds = _plain_int(document["connect_timeout_seconds"], 1, 10)
+        request_timeout_seconds = _plain_int(document["request_timeout_seconds"], 1, 60)
+        run_timeout_seconds = _plain_int(document["run_timeout_seconds"], 60, 1200)
         if run_timeout_seconds <= request_timeout_seconds:
             raise ValueError("timeout headroom")
         return AcceptanceConfig(
@@ -388,10 +384,42 @@ def _validate_evidence(config: AcceptanceConfig, value: object) -> None:
         if not isinstance(trace, str) or not trace.strip():
             raise AcceptanceFailure("EMPTY_TRACE")
         kind = turn.get("envelope_kind")
-        if kind != expected_kind or extract_hr_envelope(answer, expected_kind) is None:
+        if kind != expected_kind:
             raise AcceptanceFailure("INVALID_ENVELOPE")
-        if extract_hr_envelope(trace, expected_kind) is None:
-            raise AcceptanceFailure("INVALID_ENVELOPE")
+        if expected_kind == "panorama_retrieval":
+            if any(
+                extract_hr_envelope(answer, envelope_kind) is not None
+                for envelope_kind in (
+                    "position_package",
+                    "candidate_match",
+                    "candidate_interview_plan",
+                    "panorama_report",
+                )
+            ):
+                raise AcceptanceFailure("INVALID_ENVELOPE")
+            retrieval = turn.get("retrieval")
+            if (
+                not isinstance(retrieval, Mapping)
+                or retrieval.get("company") != config.companies[0].canonical_name
+                or not isinstance(retrieval.get("insight_version_ids"), list)
+                or len(retrieval["insight_version_ids"]) != 1
+                or not isinstance(retrieval.get("source_id"), str)
+                or not isinstance(retrieval.get("as_of"), str)
+            ):
+                raise AcceptanceFailure("TURN_EVIDENCE")
+            try:
+                UUID(retrieval["insight_version_ids"][0])
+                UUID(retrieval["source_id"])
+                selected_as_of = datetime.fromisoformat(retrieval["as_of"])
+            except (TypeError, ValueError):
+                raise AcceptanceFailure("TURN_EVIDENCE") from None
+            if selected_as_of.tzinfo is None:
+                raise AcceptanceFailure("TURN_EVIDENCE")
+        else:
+            if extract_hr_envelope(answer, expected_kind) is None:
+                raise AcceptanceFailure("INVALID_ENVELOPE")
+            if extract_hr_envelope(trace, expected_kind) is None:
+                raise AcceptanceFailure("INVALID_ENVELOPE")
         if (
             type(turn.get("progress_event_count")) is not int
             or turn["progress_event_count"] < 1
@@ -708,15 +736,82 @@ class PlatformP0AcceptanceGateway:
         )
         return str(completed.get("attachment_id"))
 
-    def _flywheel_answer(self, answer: str, *, deadline: float) -> str:
-        # The synchronized observability read model is the deployed Flywheel gate.
+    @staticmethod
+    def _aware_time(value: object) -> datetime:
+        if not isinstance(value, str):
+            raise TypeError
+        selected = datetime.fromisoformat(value)
+        if selected.tzinfo is None:
+            raise ValueError
+        return selected
+
+    def _flywheel_answer(
+        self,
+        config: AcceptanceConfig,
+        conversation_id: str,
+        turn_id: str,
+        answer: str,
+        *,
+        deadline: float,
+    ) -> str:
+        # Bind the public Flywheel projection to this exact Platform turn through
+        # the durable Mission run id, rather than accepting the first equal answer.
+        import psycopg
+
+        from app import local_secrets
+        from app.config import load_config as load_platform_config
+
+        self._remaining(deadline)
+        try:
+            UUID(conversation_id)
+            UUID(turn_id)
+            platform = load_platform_config()
+            database_url = local_secrets.read_secret_file(
+                platform.control_plane.control_database_url_file
+            )
+            with psycopg.connect(
+                database_url,
+                connect_timeout=max(1, min(10, int(self._remaining(deadline)))),
+                options="-c statement_timeout=10000",
+            ) as connection:
+                binding = connection.execute(
+                    "select run.run_id,run.created_at from "
+                    "platform_control.missions mission join "
+                    "platform_control.mission_runs run on "
+                    "run.mission_id=mission.mission_id where "
+                    "mission.owner_internal_user_id=%s and "
+                    "mission.conversation_id=%s and mission.turn_id=%s and "
+                    "mission.mode='direct_agent' and "
+                    "mission.direct_agent_id='hr-bot' and "
+                    "run.phase='direct' and run.agent_id='hr-bot' and "
+                    "run.status='completed' order by run.created_at desc limit 1",
+                    (config.owner_id, UUID(conversation_id), UUID(turn_id)),
+                ).fetchone()
+            if (
+                binding is None
+                or len(binding) != 2
+                or not isinstance(binding[0], UUID)
+                or not isinstance(binding[1], datetime)
+                or binding[1].tzinfo is None
+            ):
+                raise ValueError
+            run_id, run_created_at = binding
+        except (OSError, TypeError, ValueError, psycopg.Error):
+            raise AcceptanceFailure("TURN_EVIDENCE") from None
+        expected_trace_key = f"metabot:hr-bot:{run_id}"
         query = answer.strip()[:96]
         while True:
             page = self._json(
                 "GET",
                 "/api/sessions",
                 deadline=deadline,
-                params={"agent_id": "hr-bot", "q": query, "limit": 100},
+                params={
+                    "agent_id": "hr-bot",
+                    "source_kind": "metabot",
+                    "q": query,
+                    "date_from": (run_created_at - timedelta(seconds=5)).isoformat(),
+                    "limit": 100,
+                },
             )
             items = page.get("items")
             if isinstance(items, list):
@@ -738,9 +833,15 @@ class PlatformP0AcceptanceGateway:
                             continue
                         trace_key = turn.get("trace_key")
                         turn_key = turn.get("turn_key")
-                        if not isinstance(trace_key, str) or not isinstance(
+                        if trace_key != expected_trace_key or not isinstance(
                             turn_key, str
                         ):
+                            continue
+                        try:
+                            observed_at = self._aware_time(turn.get("created_at"))
+                        except (TypeError, ValueError):
+                            continue
+                        if observed_at < run_created_at - timedelta(seconds=5):
                             continue
                         trace = self._json(
                             "GET",
@@ -765,9 +866,115 @@ class PlatformP0AcceptanceGateway:
                             )
                         ):
                             raise AcceptanceFailure("BUSINESS_DELIVERY")
-                        if trace.get("trace_key") == trace_key:
+                        try:
+                            started_at = self._aware_time(trace.get("started_at"))
+                            completed_at = self._aware_time(trace.get("completed_at"))
+                        except (TypeError, ValueError):
+                            continue
+                        if (
+                            trace.get("trace_key") == expected_trace_key
+                            and trace.get("turn_key") == turn_key
+                            and trace.get("agent_id", "hr-bot") == "hr-bot"
+                            and trace.get("source_kind", "metabot") == "metabot"
+                            and trace.get("status") == "completed"
+                            and started_at >= run_created_at - timedelta(seconds=5)
+                            and completed_at >= started_at
+                            and completed_at
+                            <= datetime.now(timezone.utc) + timedelta(minutes=5)
+                        ):
                             return answer
             time.sleep(min(2.0, self._remaining(deadline)))
+
+    def _panorama_retrieval(
+        self,
+        config: AcceptanceConfig,
+        *,
+        position_id: str,
+        conversation_id: str,
+        turn_id: str,
+        insight_version_id: str,
+        source_id: str,
+        company: CompanyConfig,
+        expected_facts: list[dict[str, object]],
+        deadline: float,
+    ) -> dict[str, object]:
+        import psycopg
+
+        from app import local_secrets
+        from app.config import load_config as load_platform_config
+
+        try:
+            expected_insight = UUID(insight_version_id)
+            expected_source = UUID(source_id)
+            platform = load_platform_config()
+            database_url = local_secrets.read_secret_file(
+                platform.control_plane.control_database_url_file
+            )
+            with psycopg.connect(
+                database_url,
+                connect_timeout=max(1, min(10, int(self._remaining(deadline)))),
+                options="-c statement_timeout=10000",
+            ) as connection:
+                row = connection.execute(
+                    "select insight_version_ids,retrieved_excerpts from "
+                    "platform_hr.position_insight_retrievals where "
+                    "owner_internal_user_id=%s and position_id=%s and "
+                    "conversation_id=%s and turn_id=%s",
+                    (
+                        config.owner_id,
+                        UUID(position_id),
+                        UUID(conversation_id),
+                        UUID(turn_id),
+                    ),
+                ).fetchone()
+            if row is None or len(row) != 2:
+                raise ValueError
+            insight_ids, excerpts = row
+            if (
+                list(insight_ids) != [expected_insight]
+                or not isinstance(excerpts, list)
+                or len(excerpts) != 1
+            ):
+                raise ValueError
+            document = excerpts[0]
+            if not isinstance(document, dict):
+                raise TypeError
+            urls = document.get("source_urls")
+            facts = document.get("facts")
+            freshness = document.get("freshness")
+            expected_pairs = {
+                (str(item["source_url"]), str(item["observed_at"]))
+                for item in expected_facts
+            }
+            if not isinstance(facts, list) or not facts:
+                raise ValueError
+            observed_pairs = [
+                (str(fact["source_url"]), str(fact["observed_at"]))
+                for fact in facts
+                if isinstance(fact, dict)
+                and "source_url" in fact
+                and "observed_at" in fact
+            ]
+            allowed_urls = list(dict.fromkeys(pair[0] for pair in observed_pairs))
+            expected_as_of = max(self._aware_time(pair[1]) for pair in observed_pairs)
+            if (
+                document.get("insight_version_ids") != [insight_version_id]
+                or len(observed_pairs) != len(facts)
+                or any(pair not in expected_pairs for pair in observed_pairs)
+                or urls != allowed_urls
+                or not isinstance(freshness, dict)
+                or self._aware_time(freshness.get("as_of")) != expected_as_of
+            ):
+                raise ValueError
+        except (KeyError, OSError, TypeError, ValueError, psycopg.Error):
+            raise AcceptanceFailure("TURN_EVIDENCE") from None
+        return {
+            "insight_version_ids": [insight_version_id],
+            "source_id": str(expected_source),
+            "company": company.canonical_name,
+            "as_of": expected_as_of.isoformat(),
+            "source_urls": list(dict.fromkeys(allowed_urls)),
+        }
 
     def execute(
         self,
@@ -894,7 +1101,11 @@ class PlatformP0AcceptanceGateway:
                     "completed": True,
                     "assistant_answer": panorama_answer,
                     "trace_answer": self._flywheel_answer(
-                        panorama_answer, deadline=deadline
+                        config,
+                        str(insight["source_conversation_id"]),
+                        str(insight["source_turn_id"]),
+                        panorama_answer,
+                        deadline=deadline,
                     ),
                     "envelope_kind": "panorama_report",
                     "source_urls": panorama_urls,
@@ -910,9 +1121,6 @@ class PlatformP0AcceptanceGateway:
             if str(insight["source_conversation_id"]) != panorama_conversation_id:
                 raise AcceptanceFailure("PANORAMA_FAILED")
 
-            company_scope = "、".join(
-                company.canonical_name for company in config.companies
-            )
             position_started = self._json(
                 "POST",
                 "/api/v1/agents/hr-bot/conversations",
@@ -921,8 +1129,8 @@ class PlatformP0AcceptanceGateway:
                 idempotency_key=uuid5(run_id, "position"),
                 json_body={
                     "text": (
-                        f"合成验收 {run_id}：仅依据已完成的 {company_scope} 人才全景，"
-                        "拟定一个结构工程岗位。输出完整可读 Markdown，并追加唯一合法的 "
+                        f"合成验收 {run_id}：拟定一个结构工程岗位初版。"
+                        "输出完整可读 Markdown，并追加唯一合法的 "
                         "position_package platform-hr-v1 envelope；不要发送任何业务消息。"
                     )
                 },
@@ -939,7 +1147,13 @@ class PlatformP0AcceptanceGateway:
                 {
                     "completed": True,
                     "assistant_answer": answer,
-                    "trace_answer": self._flywheel_answer(answer, deadline=deadline),
+                    "trace_answer": self._flywheel_answer(
+                        config,
+                        position_conversation,
+                        position_turn,
+                        answer,
+                        deadline=deadline,
+                    ),
                     "envelope_kind": "position_package",
                     "source_urls": urls,
                     "progress_event_count": progress,
@@ -951,6 +1165,20 @@ class PlatformP0AcceptanceGateway:
                 f"/api/hr/conversations/{position_conversation}/position-package",
                 deadline=deadline,
             )
+            modules_v1 = package.get("modules")
+            if (
+                package.get("conversation_id") != position_conversation
+                or package.get("version_number") != 1
+                or not isinstance(modules_v1, dict)
+                or set(modules_v1) != {"mission", "jd", "jr"}
+                or any(
+                    not isinstance(module, dict)
+                    or not isinstance(module.get("text"), str)
+                    or not module["text"].strip()
+                    for module in modules_v1.values()
+                )
+            ):
+                raise AcceptanceFailure("API_CONTRACT")
             confirmed = self._json(
                 "POST",
                 f"/api/hr/position-drafts/{package['draft_id']}/versions/"
@@ -960,8 +1188,191 @@ class PlatformP0AcceptanceGateway:
                 json_body={"expected_row_version": package["row_version"]},
             )
             position_id = str(confirmed.get("position_id"))
-            context_id = str(confirmed.get("context_version_id"))
+            context_v1 = str(confirmed.get("context_version_id"))
+            if confirmed.get("conversation_id") != position_conversation:
+                raise AcceptanceFailure("API_CONTRACT")
+            try:
+                UUID(position_id)
+                UUID(context_v1)
+            except ValueError:
+                raise AcceptanceFailure("API_CONTRACT") from None
             self.created_ids["position_ids"].append(position_id)
+
+            first_company = config.companies[0]
+            retrieval_started = self._json(
+                "POST",
+                f"/api/v1/conversations/{position_conversation}/messages",
+                deadline=deadline,
+                expected=(201,),
+                idempotency_key=uuid5(run_id, "position-panorama-retrieval"),
+                json_body={
+                    "text": (
+                        f"仅按需读取并说明{first_company.canonical_name}的最新招聘情报，"
+                        "给出来源和截至时间；这是普通问答，不要生成或修改岗位草案，"
+                        "不要发送任何业务消息。"
+                    )
+                },
+            )
+            retrieval_turn = str(retrieval_started.get("turn", {}).get("turn_id"))
+            try:
+                UUID(retrieval_turn)
+            except ValueError:
+                raise AcceptanceFailure("API_CONTRACT") from None
+            retrieval_answer, _, _, retrieval_progress = self._wait_conversation(
+                position_conversation, retrieval_turn, deadline=deadline
+            )
+            insight_id = str(report_summary.get("insight_version_id"))
+            source_id = str(sources[0].get("source_id"))
+            source_urls = {
+                snapshot["source_url"]
+                for snapshot in snapshots
+                if isinstance(snapshot, dict)
+                and snapshot.get("source_id") == source_id
+                and isinstance(snapshot.get("source_url"), str)
+            }
+            raw_facts = insight.get("facts")
+            expected_facts = [
+                fact
+                for fact in (raw_facts if isinstance(raw_facts, list) else [])
+                if isinstance(fact, dict)
+                and isinstance(fact.get("source_url"), str)
+                and fact["source_url"] in source_urls
+                and any(
+                    fact["source_url"] == base
+                    or fact["source_url"].startswith(f"{base}/")
+                    for base in first_company.approved_urls
+                )
+            ]
+            retrieval = self._panorama_retrieval(
+                config,
+                position_id=position_id,
+                conversation_id=position_conversation,
+                turn_id=retrieval_turn,
+                insight_version_id=insight_id,
+                source_id=source_id,
+                company=first_company,
+                expected_facts=expected_facts,
+                deadline=deadline,
+            )
+            turns.append(
+                {
+                    "completed": True,
+                    "assistant_answer": retrieval_answer,
+                    "trace_answer": self._flywheel_answer(
+                        config,
+                        position_conversation,
+                        retrieval_turn,
+                        retrieval_answer,
+                        deadline=deadline,
+                    ),
+                    "envelope_kind": "panorama_retrieval",
+                    "retrieval": retrieval,
+                    "source_urls": retrieval["source_urls"],
+                    "progress_event_count": retrieval_progress,
+                }
+            )
+            conversation_turns.append((position_conversation, retrieval_turn))
+
+            revision_started = self._json(
+                "POST",
+                f"/api/v1/conversations/{position_conversation}/messages",
+                deadline=deadline,
+                expected=(201,),
+                idempotency_key=uuid5(run_id, "position-revision"),
+                json_body={
+                    "text": (
+                        f"依据刚才读取的{first_company.canonical_name}招聘情报修订 JD 和 JR。"
+                        "输出完整可读 Markdown，并追加唯一合法的 position_package "
+                        "platform-hr-v1 envelope；不要发送任何业务消息。"
+                    )
+                },
+            )
+            revision_turn = str(revision_started.get("turn", {}).get("turn_id"))
+            try:
+                UUID(revision_turn)
+            except ValueError:
+                raise AcceptanceFailure("API_CONTRACT") from None
+            revision_answer, revision_urls, _, revision_progress = (
+                self._wait_conversation(
+                    position_conversation, revision_turn, deadline=deadline
+                )
+            )
+            revision_envelope = extract_hr_envelope(revision_answer, "position_package")
+            modules_v2 = (
+                revision_envelope.payload.get("modules")
+                if revision_envelope is not None
+                else None
+            )
+            if (
+                not isinstance(modules_v2, dict)
+                or set(modules_v2) != {"mission", "jd", "jr"}
+                or modules_v2.get("jd") == modules_v1.get("jd")
+                or modules_v2.get("jr") == modules_v1.get("jr")
+            ):
+                raise AcceptanceFailure("INVALID_ENVELOPE")
+            context_draft = self._json(
+                "POST",
+                f"/api/hr/positions/{position_id}/context/drafts",
+                deadline=deadline,
+                idempotency_key=uuid5(run_id, "context-v2-draft"),
+                json_body={
+                    "base_context_version_id": context_v1,
+                    "official_version_id": None,
+                    "modules": modules_v2,
+                    "summary": "SYNTHETIC TEST DATA · 根据点名公司情报修订 JD/JR",
+                    "source_conversation_id": position_conversation,
+                    "source_turn_id": revision_turn,
+                    "source_artifact_version_id": None,
+                    "source_material_attachment_ids": [],
+                    "agent_id": "hr-bot",
+                    "model_version": "controlled-live-p0",
+                },
+            )
+            context_v2_draft = str(context_draft.get("context_version_id"))
+            if context_draft.get("modules") != modules_v2:
+                raise AcceptanceFailure("API_CONTRACT")
+            context_v2 = self._json(
+                "POST",
+                f"/api/hr/positions/{position_id}/context/drafts/"
+                f"{context_v2_draft}/confirm",
+                deadline=deadline,
+                idempotency_key=uuid5(run_id, "confirm-context-v2"),
+                json_body={
+                    "expected_current_context_version_id": context_v1,
+                    "expected_draft_row_version": context_draft.get("row_version"),
+                    "module_names": ["mission", "jd", "jr"],
+                },
+            )
+            context_id = str(context_v2.get("context_version_id"))
+            if (
+                context_id in {context_v1, context_v2_draft}
+                or context_v2.get("version_number") != 2
+                or context_v2.get("state") != "confirmed"
+                or context_v2.get("modules") != modules_v2
+            ):
+                raise AcceptanceFailure("API_CONTRACT")
+            try:
+                UUID(context_v2_draft)
+                UUID(context_id)
+            except ValueError:
+                raise AcceptanceFailure("API_CONTRACT") from None
+            turns.append(
+                {
+                    "completed": True,
+                    "assistant_answer": revision_answer,
+                    "trace_answer": self._flywheel_answer(
+                        config,
+                        position_conversation,
+                        revision_turn,
+                        revision_answer,
+                        deadline=deadline,
+                    ),
+                    "envelope_kind": "position_package",
+                    "source_urls": revision_urls,
+                    "progress_event_count": revision_progress,
+                }
+            )
+            conversation_turns.append((position_conversation, revision_turn))
 
             attachment_ids = [
                 self._upload(
@@ -1090,7 +1501,11 @@ class PlatformP0AcceptanceGateway:
                         "completed": True,
                         "assistant_answer": answer,
                         "trace_answer": self._flywheel_answer(
-                            answer, deadline=deadline
+                            config,
+                            conversation_id,
+                            turn_id,
+                            answer,
+                            deadline=deadline,
                         ),
                         "envelope_kind": "candidate_match",
                         "source_urls": urls,
@@ -1158,7 +1573,13 @@ class PlatformP0AcceptanceGateway:
                 {
                     "completed": True,
                     "assistant_answer": answer,
-                    "trace_answer": self._flywheel_answer(answer, deadline=deadline),
+                    "trace_answer": self._flywheel_answer(
+                        config,
+                        interview_conversation,
+                        interview_turn,
+                        answer,
+                        deadline=deadline,
+                    ),
                     "envelope_kind": "candidate_interview_plan",
                     "source_urls": urls,
                     "progress_event_count": progress,

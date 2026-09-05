@@ -5,6 +5,7 @@ import io
 import json
 import stat
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid5
@@ -93,7 +94,11 @@ def _write_config(tmp_path: Path, value: object | None = None) -> Path:
 
 
 def _turn(
-    kind: str, markdown: str, *, urls: list[str] | None = None
+    kind: str,
+    markdown: str,
+    *,
+    urls: list[str] | None = None,
+    **extra: object,
 ) -> dict[str, object]:
     return {
         "completed": True,
@@ -102,6 +107,7 @@ def _turn(
         "envelope_kind": kind,
         "source_urls": urls or [],
         "progress_event_count": 1,
+        **extra,
     }
 
 
@@ -127,6 +133,18 @@ def _evidence() -> dict[str, object]:
                     "https://example.com/company-alpha/jobs/structure-001",
                     "https://example.com/company-beta/jobs/process-002",
                 ],
+            ),
+            _turn("position_package", position),
+            _turn(
+                "panorama_retrieval",
+                "已按点名公司读取最新人才全景证据。",
+                urls=["https://example.com/company-alpha/jobs/structure-001"],
+                retrieval={
+                    "insight_version_ids": ["81000000-0000-4000-8000-000000000001"],
+                    "source_id": "82000000-0000-4000-8000-000000000001",
+                    "company": "示例光学科技甲",
+                    "as_of": "2026-09-05T00:00:00+00:00",
+                },
             ),
             _turn("position_package", position),
             _turn("candidate_match", strong_match),
@@ -254,7 +272,7 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
             "panorama-result.json", "partial_panorama_report"
         ),
         uid("conversation:position"): _fixture_result(
-            "recruiting-results.json", "revised_position_package"
+            "recruiting-results.json", "initial_position_package"
         ),
         uid("conversation:match:0"): _fixture_result(
             "recruiting-results.json", "strong_candidate_match"
@@ -265,6 +283,30 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
         uid("conversation:interview"): _fixture_result(
             "recruiting-results.json", "strong_candidate_interview_plan"
         ),
+    }
+    position_answers = {
+        uid("turn:position"): answers[uid("conversation:position")],
+        uid("turn:position-retrieval"): "已读取示例光学科技甲最新人才全景证据。",
+        uid("turn:position-revision"): _fixture_result(
+            "recruiting-results.json", "revised_position_package"
+        ),
+    }
+    run_by_turn = {
+        turn_id: uid(f"run:{turn_id}")
+        for turn_id in (
+            uid("turn:panorama"),
+            *position_answers,
+            uid("turn:match:0"),
+            uid("turn:match:1"),
+            uid("turn:interview"),
+        )
+    }
+    conversation_by_turn = {
+        uid("turn:panorama"): uid("conversation:panorama"),
+        **{turn_id: uid("conversation:position") for turn_id in position_answers},
+        uid("turn:match:0"): uid("conversation:match:0"),
+        uid("turn:match:1"): uid("conversation:match:1"),
+        uid("turn:interview"): uid("conversation:interview"),
     }
 
     class Response:
@@ -295,7 +337,12 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
             self.confirm_count = 0
             self.task_count = 0
             self.ticket_count = 0
+            self.append_count = 0
+            self.package_count = 0
+            self.context_draft_count = 0
             self.flywheel_answer = ""
+            self.flywheel_turn_id = ""
+            self.revised_modules = None
 
         def __enter__(self):
             return self
@@ -364,10 +411,28 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                         "insight": {
                             "source_conversation_id": uid("conversation:panorama"),
                             "source_turn_id": uid("turn:panorama"),
+                            "facts": [
+                                {
+                                    "source_url": "https://example.com/company-alpha/jobs/1",
+                                    "observed_at": "2026-09-05T00:00:00+00:00",
+                                },
+                                {
+                                    "source_url": "https://example.com/company-beta/jobs/2",
+                                    "observed_at": "2026-09-04T00:00:00+00:00",
+                                },
+                            ],
                         },
                         "snapshots": [
-                            {"source_url": "https://example.com/company-alpha/jobs/1"},
-                            {"source_url": "https://example.com/company-beta/jobs/2"},
+                            {
+                                "source_id": uid("source:existing"),
+                                "source_url": "https://example.com/company-alpha/jobs/1",
+                                "observed_at": "2026-09-05T00:00:00+00:00",
+                            },
+                            {
+                                "source_id": uid("source:1"),
+                                "source_url": "https://example.com/company-beta/jobs/2",
+                                "observed_at": "2026-09-04T00:00:00+00:00",
+                            },
                         ],
                     }
                 )
@@ -381,7 +446,31 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                     },
                     status=201,
                 )
-            if path.startswith("/api/v1/conversations/") and path.endswith("/messages"):
+            if (
+                method == "POST"
+                and path
+                == f"/api/v1/conversations/{uid('conversation:position')}/messages"
+            ):
+                self.append_count += 1
+                name = (
+                    "position-retrieval"
+                    if self.append_count == 1
+                    else "position-revision"
+                )
+                text = kwargs["json"]["text"]
+                assert "示例光学科技甲" in text
+                if self.append_count == 1:
+                    assert "不要生成或修改岗位草案" in text
+                    assert "position_package" not in text
+                else:
+                    assert "JD 和 JR" in text
+                    assert "position_package" in text
+                return Response({"turn": {"turn_id": uid(f"turn:{name}")}}, status=201)
+            if (
+                method == "GET"
+                and path.startswith("/api/v1/conversations/")
+                and path.endswith("/messages")
+            ):
                 conversation = path.split("/")[4]
                 name = next(
                     value
@@ -405,19 +494,29 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                             },
                         }
                     ]
-                return Response(
+                items = [
                     {
-                        "items": [
-                            {
-                                "role": "assistant",
-                                "turn_id": uid(f"turn:{name}"),
-                                "content": answers[conversation],
-                                "citations": [],
-                                "artifact_versions": artifacts,
-                            }
-                        ]
+                        "role": "assistant",
+                        "turn_id": uid(f"turn:{name}"),
+                        "content": answers[conversation],
+                        "citations": [],
+                        "artifact_versions": artifacts,
                     }
-                )
+                ]
+                if name == "position":
+                    items = [
+                        {
+                            "role": "assistant",
+                            "turn_id": turn_id,
+                            "content": answer,
+                            "citations": [],
+                            "artifact_versions": [],
+                        }
+                        for turn_id, answer in list(position_answers.items())[
+                            : self.append_count + 1
+                        ]
+                    ]
+                return Response({"items": items})
             if method == "GET" and path.startswith("/api/v1/conversations/"):
                 conversation = path.split("/")[4]
                 name = next(
@@ -431,47 +530,122 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                     )
                     if conversation == uid(f"conversation:{value}")
                 )
+                current_turn_id = uid(f"turn:{name}")
+                if name == "position":
+                    current_turn_id = list(position_answers)[self.append_count]
                 return Response(
                     {
                         "current_turn": {
-                            "turn_id": uid(f"turn:{name}"),
+                            "turn_id": current_turn_id,
                             "status": "completed",
                         }
                     }
                 )
             if path == "/api/sessions":
                 query = kwargs["params"]["q"]
-                self.flywheel_answer = next(
-                    answer for answer in answers.values() if answer.startswith(query)
+                assert kwargs["params"]["source_kind"] == "metabot"
+                assert kwargs["params"]["date_from"].endswith("+00:00")
+                candidates = {
+                    uid("turn:panorama"): answers[uid("conversation:panorama")],
+                    **position_answers,
+                    uid("turn:match:0"): answers[uid("conversation:match:0")],
+                    uid("turn:match:1"): answers[uid("conversation:match:1")],
+                    uid("turn:interview"): answers[uid("conversation:interview")],
+                }
+                self.flywheel_turn_id, self.flywheel_answer = next(
+                    (turn_id, answer)
+                    for turn_id, answer in candidates.items()
+                    if answer.startswith(query)
                 )
                 return Response({"items": [{"session_key": "metabot:session"}]})
             if path == "/api/sessions/metabot:session":
+                expected_trace = f"metabot:hr-bot:{run_by_turn[self.flywheel_turn_id]}"
                 return Response(
                     {
                         "turns": [
                             {
                                 "answer": self.flywheel_answer,
-                                "trace_key": "metabot:trace",
-                                "turn_key": "metabot:turn",
-                            }
+                                "trace_key": "metabot:hr-bot:historical",
+                                "turn_key": "metabot:hr-bot:historical-turn",
+                                "created_at": "2026-09-04T00:00:00+00:00",
+                            },
+                            {
+                                "answer": self.flywheel_answer,
+                                "trace_key": expected_trace,
+                                "turn_key": f"metabot:hr-bot:{self.flywheel_turn_id}",
+                                "created_at": "2026-09-05T00:00:01+00:00",
+                            },
                         ]
                     }
                 )
-            if path == "/api/turns/metabot:turn/trace":
-                return Response({"trace_key": "metabot:trace"})
+            if path == "/api/turns/metabot:hr-bot:historical-turn/trace":
+                return Response(
+                    {
+                        "trace_key": "metabot:hr-bot:historical",
+                        "steps": [{"name": "send_business_message"}],
+                    }
+                )
+            if path == f"/api/turns/metabot:hr-bot:{self.flywheel_turn_id}/trace":
+                return Response(
+                    {
+                        "trace_key": f"metabot:hr-bot:{run_by_turn[self.flywheel_turn_id]}",
+                        "turn_key": f"metabot:hr-bot:{self.flywheel_turn_id}",
+                        "status": "completed",
+                        "started_at": "2026-09-05T00:00:00+00:00",
+                        "completed_at": "2026-09-05T00:00:02+00:00",
+                        "steps": [],
+                    }
+                )
             if path.endswith("/position-package"):
+                self.package_count += 1
                 return Response(
                     {
                         "draft_id": uid("position-draft"),
-                        "draft_version_id": uid("position-version"),
+                        "draft_version_id": uid("position-version:1"),
+                        "conversation_id": uid("conversation:position"),
+                        "version_number": 1,
+                        "modules": {
+                            "mission": {"text": "构建合成团队"},
+                            "jd": {"text": "JD version 1"},
+                            "jr": {"text": "JR version 1"},
+                        },
                         "row_version": 1,
                     }
                 )
             if "/position-drafts/" in path and path.endswith("/confirm"):
+                assert uid("position-version:1") in path
                 return Response(
                     {
                         "position_id": uid("position"),
-                        "context_version_id": uid("context"),
+                        "context_version_id": uid("context:1"),
+                        "conversation_id": uid("conversation:position"),
+                    }
+                )
+            if method == "POST" and path.endswith("/context/drafts"):
+                self.context_draft_count += 1
+                assert kwargs["json"]["base_context_version_id"] == uid("context:1")
+                assert kwargs["json"]["source_turn_id"] == uid("turn:position-revision")
+                assert kwargs["json"]["modules"]["jd"] != {"text": "JD version 1"}
+                self.revised_modules = kwargs["json"]["modules"]
+                return Response(
+                    {
+                        "context_version_id": uid("context:2-draft"),
+                        "row_version": 1,
+                        "modules": kwargs["json"]["modules"],
+                    }
+                )
+            if (
+                method == "POST"
+                and "/context/drafts/" in path
+                and path.endswith("/confirm")
+            ):
+                assert uid("context:2-draft") in path
+                return Response(
+                    {
+                        "context_version_id": uid("context:2"),
+                        "version_number": 2,
+                        "state": "confirmed",
+                        "modules": self.revised_modules,
                     }
                 )
             if method == "POST" and path == "/api/v1/attachments/uploads":
@@ -563,7 +737,7 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                     {
                         "analysis_kind": "match",
                         "candidate_id": uid(f"candidate:{number}"),
-                        "context_version_id": uid("context"),
+                        "context_version_id": uid("context:2"),
                     }
                 ]
                 if number == 0:
@@ -615,11 +789,11 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
     )
 
     class DbResult:
-        def __init__(self, value: int) -> None:
+        def __init__(self, value) -> None:
             self.value = value
 
-        def fetchone(self) -> tuple[int]:
-            return (self.value,)
+        def fetchone(self):
+            return self.value
 
     class DbConnection:
         def __enter__(self):
@@ -628,8 +802,48 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
         def __exit__(self, *_args) -> None:
             return None
 
-        def execute(self, statement, _params):
-            return DbResult(0 if "agent_action_deliveries" in statement else 1)
+        def execute(self, statement, params):
+            if "platform_hr.position_insight_retrievals" in statement:
+                assert params == (
+                    UUID(_config_dict()["owner_id"]),
+                    UUID(uid("position")),
+                    UUID(uid("conversation:position")),
+                    UUID(uid("turn:position-retrieval")),
+                )
+                return DbResult(
+                    (
+                        [UUID(uid("insight"))],
+                        [
+                            {
+                                "insight_version_ids": [uid("insight")],
+                                "freshness": {
+                                    "as_of": "2026-09-05T00:00:00+00:00",
+                                    "status": "current",
+                                },
+                                "facts": [
+                                    {
+                                        "source_url": "https://example.com/company-alpha/jobs/1",
+                                        "observed_at": "2026-09-05T00:00:00+00:00",
+                                    }
+                                ],
+                                "source_urls": [
+                                    "https://example.com/company-alpha/jobs/1"
+                                ],
+                            }
+                        ],
+                    )
+                )
+            if "platform_control.mission_runs" in statement:
+                turn_id = str(params[2])
+                assert params[0] == UUID(_config_dict()["owner_id"])
+                assert str(params[1]) == conversation_by_turn[turn_id]
+                return DbResult(
+                    (
+                        UUID(run_by_turn[turn_id]),
+                        datetime(2026, 9, 5, tzinfo=timezone.utc),
+                    )
+                )
+            return DbResult((0,) if "agent_action_deliveries" in statement else (1,))
 
     import app.config as platform_config
     from app import local_secrets
@@ -676,6 +890,28 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
     assert client.source_count == 2
     assert client.upload_count == 3
     assert client.confirm_count == 2
+    assert client.append_count == 2
+    assert client.package_count == 1
+    assert client.context_draft_count == 1
+    assert (
+        "GET",
+        "/api/turns/metabot:hr-bot:historical-turn/trace",
+    ) not in client.calls
+    exact_trace_count = sum(
+        method == "GET"
+        and path.startswith("/api/turns/metabot:hr-bot:")
+        and path.endswith("/trace")
+        for method, path in client.calls
+    )
+    assert (
+        exact_trace_count
+        == {
+            None: 7,
+            "match:0": 4,
+            "match:1": 5,
+            "interview": 6,
+        }[failed_task]
+    )
     expected_task_count = {None: 3, "match:0": 1, "match:1": 2, "interview": 3}
     expected_conversation_count = {
         None: 5,
@@ -687,17 +923,33 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
     assert client.ticket_count == (2 if failed_task is None else 0)
     assert sum(path.endswith(":retry") for _, path in client.calls) == 1
     assert sum(path.endswith(":dismiss") for _, path in client.calls) == 1
-    assert sum(path.endswith("/archive") for _, path in client.calls) == (
-        expected_conversation_count[failed_task]
+    assert (
+        sum(path.endswith("/archive") for _, path in client.calls)
+        == (expected_conversation_count[failed_task])
     )
     manifest = json.loads((cleanup_root / "cleanup.json").read_text("utf-8"))
     assert stat.S_IMODE((cleanup_root / "cleanup.json").stat().st_mode) == 0o600
     assert manifest["schema_version"] == 1
     assert manifest["owner_id"] == _config_dict()["owner_id"]
     assert manifest["created_ids"] == gateway.created_ids
-    assert len(manifest["created_ids"]["conversation_ids"]) == (
-        expected_conversation_count[failed_task]
+    assert (
+        len(manifest["created_ids"]["conversation_ids"])
+        == (expected_conversation_count[failed_task])
     )
+    if failed_task is None:
+        package_path = (
+            f"/api/hr/conversations/{uid('conversation:position')}/position-package"
+        )
+        message_path = f"/api/v1/conversations/{uid('conversation:position')}/messages"
+        context_draft_path = f"/api/hr/positions/{uid('position')}/context/drafts"
+        package_index = client.calls.index(("GET", package_path))
+        first_message_index = client.calls.index(("POST", message_path))
+        second_message_index = client.calls.index(
+            ("POST", message_path), first_message_index + 1
+        )
+        context_draft_index = client.calls.index(("POST", context_draft_path))
+        assert package_index < first_message_index
+        assert first_message_index < second_message_index < context_draft_index
 
 
 @pytest.mark.parametrize(
