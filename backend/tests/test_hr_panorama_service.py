@@ -1,0 +1,157 @@
+# ruff: noqa: C408
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
+
+import pytest
+
+from app.hr.panorama_models import PanoramaRun, TalentSource
+from app.hr.panorama_service import PanoramaService
+
+NOW = datetime(2026, 9, 5, 8, tzinfo=UTC)
+
+
+class RecordingRepository:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+        self.source: TalentSource | None = None
+        self.run_value: PanoramaRun | None = None
+
+    def create_source(self, command):
+        self.calls.append(("create_source", command))
+        self.source = TalentSource(
+            command.source_id,
+            command.owner_id,
+            command.client_request_id,
+            "company",
+            command.company_key,
+            command.canonical_name,
+            command.aliases,
+            command.approved_urls,
+            command.active,
+            NOW,
+            NOW,
+        )
+        return self.source
+
+    def list_sources(self, *args, **kwargs):
+        self.calls.append(("list_sources", args, kwargs))
+        return () if self.source is None else (self.source,)
+
+    def create_run(self, command):
+        self.calls.append(("create_run", command))
+        self.run_value = PanoramaRun(
+            command.run_id,
+            command.owner_id,
+            command.client_request_id,
+            command.selected_source_ids,
+            command.conversation_id,
+            "queued",
+            None,
+            {},
+            1,
+            None,
+            None,
+            NOW,
+            NOW,
+        )
+        return self.run_value
+
+    def run(self, *args):
+        self.calls.append(("run", args))
+        return self.run_value
+
+    def report(self, *args):
+        self.calls.append(("report", args))
+        return "report"
+
+    def relevant_insights(self, *args, **kwargs):
+        self.calls.append(("relevant", args, kwargs))
+        return ("insight",)
+
+
+def test_add_company_replays_with_a_stable_company_kind_and_identity() -> None:
+    owner_id, request_id = uuid4(), uuid4()
+    repository = RecordingRepository()
+    service = PanoramaService(repository)
+    values = dict(
+        owner_id=owner_id,
+        request_id=request_id,
+        canonical_name="联合光电",
+        aliases=("Union Optech",),
+        approved_urls=("https://www.union-optech.com/jobs",),
+    )
+
+    first = service.add_company(**values)
+    second = service.add_company(**values)
+
+    commands = [call[1] for call in repository.calls]
+    assert first.source_kind == "company"
+    assert second.source_id == first.source_id
+    assert commands[0].source_id == commands[1].source_id
+    assert commands[0].company_key == commands[1].company_key
+    assert commands[0].company_key.startswith("company-")
+
+
+def test_service_delegates_owner_scoped_reads_run_and_report() -> None:
+    owner_id, request_id, conversation_id = uuid4(), uuid4(), uuid4()
+    source_ids = (uuid4(), uuid4())
+    repository = RecordingRepository()
+    service = PanoramaService(repository)
+
+    assert service.list_companies(owner_id, include_inactive=True, limit=9) == ()
+    run = service.start_run(
+        owner_id=owner_id,
+        request_id=request_id,
+        source_ids=source_ids,
+        conversation_id=conversation_id,
+    )
+    assert service.run_status(owner_id, run.run_id) is run
+    assert service.report(owner_id, uuid4()) == "report"
+    assert repository.calls[0] == (
+        "list_sources",
+        (owner_id,),
+        {"include_inactive": True, "limit": 9},
+    )
+    run_command = repository.calls[1][1]
+    assert run_command.selected_source_ids == source_ids
+    assert run_command.conversation_id == conversation_id
+
+
+def test_relevant_insights_keeps_position_and_limit_in_repository_boundary() -> None:
+    owner_id, position_id = uuid4(), uuid4()
+    repository = RecordingRepository()
+    service = PanoramaService(repository)
+
+    assert service.relevant_insights(
+        owner_id, "参考联合光电修订 JR", position_id, limit=3
+    ) == ("insight",)
+    assert repository.calls[-1] == (
+        "relevant",
+        (owner_id, "参考联合光电修订 JR", position_id),
+        {"limit": 3},
+    )
+
+
+def test_service_rejects_invalid_repository_and_uuid_factory() -> None:
+    with pytest.raises(ValueError, match="repository invalid"):
+        PanoramaService(object())
+    with pytest.raises(ValueError, match="UUID factory invalid"):
+        PanoramaService(RecordingRepository(), uuid_factory="bad")  # type: ignore[arg-type]
+
+
+def test_custom_uuid_factory_is_used_only_as_an_explicit_test_seam() -> None:
+    generated = UUID("00000000-0000-0000-0000-000000000123")
+    repository = RecordingRepository()
+    service = PanoramaService(repository, uuid_factory=lambda: generated)
+
+    source = service.add_company(
+        owner_id=uuid4(),
+        request_id=uuid4(),
+        canonical_name="Company",
+        aliases=(),
+        approved_urls=("https://example.com/jobs",),
+    )
+
+    assert source.source_id == generated

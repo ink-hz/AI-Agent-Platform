@@ -1515,6 +1515,149 @@ begin
 end
 $function$;
 
+create function platform_hr.read_talent_sources_v79(
+  selected_owner_internal_user_id uuid,
+  selected_source_ids uuid[]
+) returns setof platform_hr.talent_sources
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if cardinality(selected_source_ids) not between 1 and 100
+    or not platform_hr.uuid_array_is_unique_v79(selected_source_ids) then
+    raise check_violation using message='talent source read selection invalid';
+  end if;
+  if (
+    select count(*) from platform_hr.talent_sources source
+    where source.owner_internal_user_id=selected_owner_internal_user_id
+      and source.source_id=any(selected_source_ids)
+  )<>cardinality(selected_source_ids) then
+    raise no_data_found;
+  end if;
+  return query
+    select source.*
+    from unnest(selected_source_ids) with ordinality requested(source_id,ordinality)
+    join platform_hr.talent_sources source
+      on source.source_id=requested.source_id
+     and source.owner_internal_user_id=selected_owner_internal_user_id
+    order by requested.ordinality;
+end
+$function$;
+
+create function platform_hr.read_panorama_run_v79(
+  selected_owner_internal_user_id uuid,
+  selected_run_id uuid
+) returns platform_hr.panorama_runs
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.panorama_runs%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.panorama_runs run
+  where run.owner_internal_user_id=selected_owner_internal_user_id
+    and run.run_id=selected_run_id;
+  if not found then raise no_data_found; end if;
+  return selected;
+end
+$function$;
+
+create function platform_hr.read_public_job_snapshots_v79(
+  selected_owner_internal_user_id uuid,
+  selected_snapshot_ids uuid[]
+) returns setof platform_hr.public_job_snapshots
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if cardinality(selected_snapshot_ids) not between 1 and 1000
+    or not platform_hr.uuid_array_is_unique_v79(selected_snapshot_ids) then
+    raise check_violation using message='public job snapshot read selection invalid';
+  end if;
+  if (
+    select count(*) from platform_hr.public_job_snapshots snapshot
+    where snapshot.owner_internal_user_id=selected_owner_internal_user_id
+      and snapshot.snapshot_id=any(selected_snapshot_ids)
+  )<>cardinality(selected_snapshot_ids) then
+    raise no_data_found;
+  end if;
+  return query
+    select snapshot.*
+    from unnest(selected_snapshot_ids) with ordinality requested(snapshot_id,ordinality)
+    join platform_hr.public_job_snapshots snapshot
+      on snapshot.snapshot_id=requested.snapshot_id
+     and snapshot.owner_internal_user_id=selected_owner_internal_user_id
+    order by requested.ordinality;
+end
+$function$;
+
+create function platform_hr.read_talent_insight_version_v79(
+  selected_owner_internal_user_id uuid,
+  selected_insight_version_id uuid
+) returns platform_hr.talent_insight_versions
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.talent_insight_versions%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.talent_insight_versions insight
+  where insight.owner_internal_user_id=selected_owner_internal_user_id
+    and insight.insight_version_id=selected_insight_version_id;
+  if not found then raise no_data_found; end if;
+  return selected;
+end
+$function$;
+
+create function platform_hr.list_talent_insight_versions_page_v79(
+  selected_owner_internal_user_id uuid,
+  selected_before_version_number bigint,
+  selected_limit integer
+) returns setof platform_hr.talent_insight_versions
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if selected_limit is null or selected_limit not between 1 and 100
+    or selected_before_version_number is not null
+      and selected_before_version_number<1 then
+    raise check_violation using message='talent insight page invalid';
+  end if;
+  return query
+    select insight.* from platform_hr.talent_insight_versions insight
+    where insight.owner_internal_user_id=selected_owner_internal_user_id
+      and (
+        selected_before_version_number is null
+        or insight.version_number<selected_before_version_number
+      )
+    order by insight.version_number desc,insight.insight_version_id
+    limit selected_limit;
+end
+$function$;
+
 revoke all on all tables in schema platform_hr from public;
 revoke all on all functions in schema platform_hr from public;
 revoke all on function platform_hr.create_talent_source_v79(
@@ -1550,6 +1693,21 @@ revoke all on function platform_hr.create_position_insight_retrieval_v79(
 ) from public;
 revoke all on function platform_hr.list_position_insight_retrievals_v79(
   uuid,uuid,integer
+) from public;
+revoke all on function platform_hr.read_talent_sources_v79(
+  uuid,uuid[]
+) from public;
+revoke all on function platform_hr.read_panorama_run_v79(
+  uuid,uuid
+) from public;
+revoke all on function platform_hr.read_public_job_snapshots_v79(
+  uuid,uuid[]
+) from public;
+revoke all on function platform_hr.read_talent_insight_version_v79(
+  uuid,uuid
+) from public;
+revoke all on function platform_hr.list_talent_insight_versions_page_v79(
+  uuid,bigint,integer
 ) from public;
 
 do $migration$
@@ -1610,6 +1768,26 @@ begin
   execute format(
     'grant execute on function platform_hr.list_position_insight_retrievals_v79('
     'uuid,uuid,integer) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.read_talent_sources_v79('
+    'uuid,uuid[]) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.read_panorama_run_v79('
+    'uuid,uuid) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.read_public_job_snapshots_v79('
+    'uuid,uuid[]) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.read_talent_insight_version_v79('
+    'uuid,uuid) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.list_talent_insight_versions_page_v79('
+    'uuid,bigint,integer) to %I',selected_app
   );
 end
 $migration$;

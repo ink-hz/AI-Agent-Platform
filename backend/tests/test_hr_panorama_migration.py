@@ -190,6 +190,11 @@ def test_migration_exposes_only_app_panorama_entrypoints() -> None:
         "list_talent_insight_versions_v79",
         "create_position_insight_retrieval_v79",
         "list_position_insight_retrievals_v79",
+        "read_talent_sources_v79",
+        "read_panorama_run_v79",
+        "read_public_job_snapshots_v79",
+        "read_talent_insight_version_v79",
+        "list_talent_insight_versions_page_v79",
     }
 
     assert functions <= _migration_objects(sql)
@@ -207,6 +212,23 @@ def test_migration_exposes_only_app_panorama_entrypoints() -> None:
     assert "grant update" not in sql
     assert "grant delete" not in sql
     assert "revoke all on all tables in schema platform_hr from public" in sql
+
+
+def test_point_and_keyset_reads_are_owner_scoped_bounded_and_stable() -> None:
+    sql = _sql()
+
+    for marker in (
+        "source.owner_internal_user_id=selected_owner_internal_user_id",
+        "run.owner_internal_user_id=selected_owner_internal_user_id",
+        "snapshot.owner_internal_user_id=selected_owner_internal_user_id",
+        "insight.owner_internal_user_id=selected_owner_internal_user_id",
+        "selected_limit not between 1 and 100",
+        "insight.version_number<selected_before_version_number",
+        "order by insight.version_number desc,insight.insight_version_id",
+        "with ordinality requested",
+    ):
+        assert marker in sql
+    assert "grant select on platform_hr" not in sql
 
 
 def test_create_and_transition_entrypoints_have_durable_idempotency_guards() -> None:

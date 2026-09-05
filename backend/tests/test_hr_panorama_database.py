@@ -11,6 +11,8 @@ import psycopg
 import pytest
 from test_control_plane_migration import control_database  # noqa: F401
 
+from app.hr.panorama_repository import PanoramaRepository
+
 CREATE_SOURCE = (
     "select (platform_hr.create_talent_source_v79("
     "%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)).*"
@@ -38,6 +40,15 @@ CREATE_RETRIEVAL = (
 )
 LIST_RETRIEVALS = (
     "select * from platform_hr.list_position_insight_retrievals_v79(%s,%s,%s)"
+)
+READ_SOURCES = "select * from platform_hr.read_talent_sources_v79(%s,%s::uuid[])"
+READ_RUN = "select (platform_hr.read_panorama_run_v79(%s,%s)).*"
+READ_SNAPSHOTS = (
+    "select * from platform_hr.read_public_job_snapshots_v79(%s,%s::uuid[])"
+)
+READ_INSIGHT = "select (platform_hr.read_talent_insight_version_v79(%s,%s)).*"
+PAGE_INSIGHTS = (
+    "select * from platform_hr.list_talent_insight_versions_page_v79(%s,%s,%s)"
 )
 
 
@@ -238,6 +249,11 @@ def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
         "platform_hr.list_talent_insight_versions_v79(uuid,integer)",
         "platform_hr.create_position_insight_retrieval_v79(uuid,uuid,uuid,uuid,uuid,uuid,uuid[],text,jsonb)",
         "platform_hr.list_position_insight_retrievals_v79(uuid,uuid,integer)",
+        "platform_hr.read_talent_sources_v79(uuid,uuid[])",
+        "platform_hr.read_panorama_run_v79(uuid,uuid)",
+        "platform_hr.read_public_job_snapshots_v79(uuid,uuid[])",
+        "platform_hr.read_talent_insight_version_v79(uuid,uuid)",
+        "platform_hr.list_talent_insight_versions_page_v79(uuid,bigint,integer)",
     )
     with psycopg.connect(environment["admin"]) as admin:
         assert admin.execute(
@@ -295,6 +311,144 @@ def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
             pytest.raises(psycopg.errors.InsufficientPrivilege),
         ):
             connection.execute(LIST_SOURCES, (uuid4(), False, 10))
+
+
+@pytest.mark.postgres
+def test_point_reads_and_insight_keyset_cover_records_beyond_first_100(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Point Read Owner")
+        other = _seed_owner_scope(admin, "Point Read Other Owner")
+        source_id = uuid4()
+        admin.execute(
+            "insert into platform_hr.talent_sources("
+            "source_id,owner_internal_user_id,client_request_id,company_key,"
+            "canonical_name,approved_public_urls) values ("
+            "%s,%s,%s,'point-read-company','点查公司','[\"https://example.com/jobs\"]')",
+            (source_id, scope["owner"], uuid4()),
+        )
+        run_ids = [uuid4() for _ in range(101)]
+        for run_id in run_ids:
+            admin.execute(
+                "insert into platform_hr.panorama_runs("
+                "run_id,owner_internal_user_id,client_request_id,"
+                "selected_source_ids,conversation_id) values (%s,%s,%s,%s,%s)",
+                (
+                    run_id,
+                    scope["owner"],
+                    uuid4(),
+                    [source_id],
+                    scope["conversation"],
+                ),
+            )
+        snapshot_id, observation_id = uuid4(), uuid4()
+        admin.execute(
+            "insert into platform_hr.public_job_snapshots("
+            "snapshot_id,owner_internal_user_id,origin_client_request_id,run_id,"
+            "source_id,public_job_key,title,location,duty_excerpt,"
+            "requirement_excerpt,source_url,observed_at,content_sha256,status) "
+            "values (%s,%s,%s,%s,%s,'point-job','结构工程师','中山','结构设计',"
+            "'五年经验','https://example.com/jobs/point',%s,%s,'open')",
+            (
+                snapshot_id,
+                scope["owner"],
+                observation_id,
+                run_ids[0],
+                source_id,
+                datetime.fromisoformat("2026-09-05T08:00:00+00:00"),
+                "a" * 64,
+            ),
+        )
+        insight_ids = [uuid4() for _ in range(101)]
+        facts = json.dumps(
+            [
+                {
+                    "fact_id": "f1",
+                    "text": "公开招聘结构工程师",
+                    "snapshot_id": str(snapshot_id),
+                    "observation_id": str(observation_id),
+                    "source_url": "https://example.com/jobs/point",
+                    "observed_at": "2026-09-05T08:00:00Z",
+                }
+            ],
+            ensure_ascii=False,
+        )
+        for version_number, insight_id in enumerate(insight_ids, start=1):
+            admin.execute(
+                "insert into platform_hr.talent_insight_versions("
+                "insight_version_id,owner_internal_user_id,client_request_id,run_id,"
+                "version_number,selected_source_ids,snapshot_ids,facts,inferences,"
+                "unknowns,direction_clusters,summary,source_conversation_id,"
+                "source_turn_id,agent_id,model_version) values ("
+                "%s,%s,%s,%s,%s,%s,%s,%s::jsonb,'[]','[]','{}','点查报告',"
+                "%s,%s,'hr-bot','gpt-5')",
+                (
+                    insight_id,
+                    scope["owner"],
+                    uuid4(),
+                    run_ids[0],
+                    version_number,
+                    [source_id],
+                    [snapshot_id],
+                    facts,
+                    scope["conversation"],
+                    scope["turn"],
+                ),
+            )
+        admin.commit()
+
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        assert (
+            app.execute(READ_RUN, (scope["owner"], run_ids[0])).fetchone()[0]
+            == run_ids[0]
+        )
+        assert (
+            app.execute(READ_INSIGHT, (scope["owner"], insight_ids[0])).fetchone()[0]
+            == insight_ids[0]
+        )
+        first_page = app.execute(PAGE_INSIGHTS, (scope["owner"], None, 100)).fetchall()
+        second_page = app.execute(
+            PAGE_INSIGHTS, (scope["owner"], first_page[-1][4], 100)
+        ).fetchall()
+        assert [row[4] for row in first_page] == list(range(101, 1, -1))
+        assert [row[4] for row in second_page] == [1]
+        assert (
+            app.execute(READ_SOURCES, (scope["owner"], [source_id])).fetchone()[0]
+            == source_id
+        )
+        assert (
+            app.execute(READ_SNAPSHOTS, (scope["owner"], [snapshot_id])).fetchone()[0]
+            == snapshot_id
+        )
+        repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+        assert repository.run(scope["owner"], run_ids[0]).run_id == run_ids[0]
+        assert (
+            repository.insight(scope["owner"], insight_ids[0]).insight_version_id
+            == insight_ids[0]
+        )
+        assert (
+            repository.report(scope["owner"], insight_ids[0]).snapshots[0].snapshot_id
+            == snapshot_id
+        )
+        assert len(repository._ranking_candidates(scope["owner"])) == 101
+        for statement, parameters in (
+            (READ_RUN, (other["owner"], run_ids[0])),
+            (READ_INSIGHT, (other["owner"], insight_ids[0])),
+            (READ_SOURCES, (other["owner"], [source_id])),
+            (READ_SNAPSHOTS, (other["owner"], [snapshot_id])),
+        ):
+            with pytest.raises(psycopg.errors.NoDataFound):
+                app.execute(statement, parameters).fetchall()
+            app.rollback()
+        for invalid_limit in (None, 0, 101):
+            with pytest.raises(psycopg.errors.CheckViolation):
+                app.execute(
+                    PAGE_INSIGHTS,
+                    (scope["owner"], None, invalid_limit),
+                ).fetchall()
+            app.rollback()
 
 
 @pytest.mark.postgres
