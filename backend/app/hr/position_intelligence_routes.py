@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -204,6 +204,33 @@ def _official(record) -> dict[str, object]:
     }
 
 
+def _official_markdown(record) -> str:
+    inline = lambda value: " ".join(str(value).replace("\r", " ").splitlines()).strip()
+    block = lambda value: str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    locations = "、".join(record.locations) or "官网未公开"
+    facts = (
+        ("官网岗位编号", record.official_job_id),
+        ("部门", record.department or "官网未公开"),
+        ("地点", locations),
+        ("职位类别", record.category),
+        ("职位子类", record.subcategory or "官网未公开"),
+        ("招聘人数", record.headcount if record.headcount > 0 else "官网未公开"),
+        ("学历", record.degree or "官网未公开"),
+        ("用工类型", record.employment_type),
+        ("薪资", record.salary),
+        ("官网状态", record.official_status),
+        ("来源版本", record.source_version),
+        ("官网更新时间", record.source_changed_at.isoformat()),
+        ("平台最后采集时间", record.last_observed_at.isoformat()),
+    )
+    metadata = "\n".join(f"- **{label}**：{inline(value)}" for label, value in facts)
+    return (
+        f"# {inline(record.title)}\n\n{metadata}\n\n"
+        f"## 岗位职责\n\n{block(record.duty)}\n\n"
+        f"## 任职要求\n\n{block(record.requirement)}\n"
+    )
+
+
 def build_position_intelligence_router(service, require_hr_access) -> APIRouter:
     for name in (
         "current",
@@ -266,6 +293,35 @@ def build_position_intelligence_router(service, require_hr_access) -> APIRouter:
             official_version_id,
         )
         return _official(record)
+
+    @router.get(
+        "/api/hr/positions/{position_id}/official-versions/{official_version_id}/export"
+    )
+    async def export_official_version(
+        request: Request,
+        position_id: Annotated[UUID, Path()],
+        official_version_id: Annotated[UUID, Path()],
+    ):
+        owner_id = await owner(request)
+        record = await call(
+            service.official_version,
+            owner_id,
+            position_id,
+            official_version_id,
+        )
+        safe_job_id = "".join(
+            character if character.isalnum() or character in "-_" else "-"
+            for character in record.official_job_id
+        )
+        return Response(
+            _official_markdown(record),
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="official-position-{safe_job_id}.md"'
+                )
+            },
+        )
 
     @router.get("/api/hr/positions/{position_id}/context")
     async def current_context(

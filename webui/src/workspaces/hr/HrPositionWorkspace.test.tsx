@@ -103,6 +103,7 @@ async function openTaskMenu(container: HTMLElement) {
 
 function dependencies() {
   const r12Api = {
+    officialVersions: vi.fn().mockResolvedValue([]), officialVersion: vi.fn(), downloadOfficialVersion: vi.fn(),
     resources: vi.fn().mockResolvedValue({ materials: [{ attachmentId: "55555555-5555-4555-8555-555555555555", filename: "岗位说明.pdf", mediaType: "application/pdf", state: "ready", sizeBytes: 10, createdAt: "2026-09-04T00:00:00Z", sourceConversationId: null, sourceTurnId: null, previewAvailable: true, downloadAvailable: true }], artifacts: [] }),
     context: vi.fn().mockResolvedValue({ current: null, drafts: [], history: [] }), activeTasks: vi.fn().mockResolvedValue([]), taskStatus: vi.fn(), startTask: vi.fn().mockResolvedValue({ taskId: "task", status: "running", taskKind: "jd", error: null }),
     confirmContext: vi.fn(), compareContext: vi.fn(), candidateDrafts: vi.fn().mockResolvedValue([]), positionCandidates: vi.fn().mockResolvedValue([]), candidate: vi.fn(), candidateDocuments: vi.fn(), candidateAnalyses: vi.fn(), candidateFeedback: vi.fn(), retryDraft: vi.fn(), confirmDraft: vi.fn(), createCandidateDraftBatch: vi.fn(), createCandidateAnalysis: vi.fn(), appendCandidateFeedback: vi.fn(), compareCandidates: vi.fn(), downloadResource: vi.fn(), downloadCandidateDocument: vi.fn(),

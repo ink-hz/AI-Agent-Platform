@@ -19,6 +19,7 @@ const detail: HrPositionDetail = {
 
 function api() {
   return {
+    officialVersions: vi.fn().mockResolvedValue([]), officialVersion: vi.fn(), downloadOfficialVersion: vi.fn(),
     context: vi.fn().mockResolvedValue({ current: null, drafts: [], history: [] }),
     compareContext: vi.fn(), confirmContext: vi.fn(),
     candidateDrafts: vi.fn().mockResolvedValue([]), positionCandidates: vi.fn().mockResolvedValue([]),
@@ -48,8 +49,9 @@ describe("HrPositionDetailsDrawer", () => {
 
     expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).not.toBeNull();
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("岗位信息");
-    expect(container.textContent).toContain("当前岗位理解");
-    expect(container.textContent).toContain("官网同步");
+    expect(container.textContent).toContain("内部岗位理解");
+    expect(container.textContent).toContain("官网岗位原文");
+    expect(container.textContent).toContain("尚未形成内部岗位理解");
     expect(client.positionCandidates).not.toHaveBeenCalled();
     expect(client.resources).not.toHaveBeenCalled();
 

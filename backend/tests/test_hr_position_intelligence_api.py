@@ -130,6 +130,27 @@ def test_official_fact_api_returns_list_and_exact_version_detail() -> None:
     assert detail.json()["requirement"] == "Test."
 
 
+def test_official_fact_api_exports_the_selected_owner_scoped_version() -> None:
+    client, service, _, position_id = _client()
+
+    exported = client.get(
+        f"/api/hr/positions/{position_id}/official-versions/"
+        f"{service.official_record.official_position_version_id}/export"
+    )
+
+    assert exported.status_code == 200
+    assert exported.headers["content-type"] == "text/markdown; charset=utf-8"
+    assert exported.headers["content-disposition"].startswith("attachment;")
+    assert "# 算法工程师" in exported.text
+    assert "## 岗位职责\n\nBuild." in exported.text
+    assert "## 任职要求\n\nTest." in exported.text
+    assert ("official_detail", (
+        service.official_record.owner_id,
+        position_id,
+        service.official_record.official_position_version_id,
+    )) in service.calls
+
+
 def test_context_api_creates_and_human_confirms_selected_modules() -> None:
     client, service, owner_id, position_id = _client()
     request_id = str(uuid4())

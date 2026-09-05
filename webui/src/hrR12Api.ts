@@ -5,6 +5,7 @@ import type {
   HrDownloadTicket, HrHumanFeedback, HrPositionCandidate, HrPositionResources,
   HrCandidateTaskKind, HrPositionTaskKind, HrStartableTaskKind, HrTaskKind, HrTaskRecord,
   HrCandidateInterviewPlanResult, HrCandidateInterviewQuestion, HrCandidateMatchResult,
+  HrOfficialPositionDownload, HrOfficialPositionVersion,
 } from "./hrR12Types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,6 +26,7 @@ function identifier(value: unknown): string { if (typeof value !== "string" || !
 function string(value: unknown, message = "HR R1.2 response invalid"): string { if (typeof value !== "string" || value.length === 0) throw new Error(message); return value; }
 function nullableString(value: unknown): string | null { return value === null ? null : string(value); }
 function positive(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 1) throw new Error("HR R1.2 response invalid"); return Number(value); }
+function nonnegative(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error("HR R1.2 response invalid"); return Number(value); }
 function object(value: unknown): Record<string, unknown> { if (!record(value)) throw new Error("HR R1.2 response invalid"); return value; }
 function stringList(value: unknown): string[] { if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error("HR R1.2 response invalid"); return [...value]; }
 function idList(value: unknown): string[] { return stringList(value).map(identifier); }
@@ -82,6 +84,31 @@ function ticket(value: unknown): HrDownloadTicket {
   const raw = object(value);
   if (typeof raw.expires_at !== "string" || typeof raw.content_path !== "string" || !/^\/api\/v1\/attachments\/content\/[A-Za-z0-9_-]{32,256}$/.test(raw.content_path)) throw new Error("HR R1.2 ticket response invalid");
   return { contentPath: raw.content_path, expiresAt: raw.expires_at };
+}
+function officialVersion(value: unknown): HrOfficialPositionVersion {
+  const raw = object(value);
+  const keys = [
+    "official_position_version_id", "position_id", "official_job_id", "title", "department", "locations",
+    "category", "subcategory", "headcount", "degree", "employment_type", "salary", "duty", "requirement",
+    "source_version", "source_changed_at", "source_snapshot_at", "content_hash", "first_observed_at",
+    "last_observed_at", "official_status", "status_reason", "consecutive_misses", "official_status_code", "created_at",
+  ];
+  if (!exactKeys(raw, keys) || typeof raw.content_hash !== "string" || !SHA256.test(raw.content_hash)) {
+    throw new Error("HR official position response invalid");
+  }
+  return {
+    officialVersionId: identifier(raw.official_position_version_id), positionId: identifier(raw.position_id),
+    officialJobId: string(raw.official_job_id), title: string(raw.title), department: nullableString(raw.department),
+    locations: stringList(raw.locations), category: string(raw.category), subcategory: nullableString(raw.subcategory),
+    headcount: nonnegative(raw.headcount), degree: nullableString(raw.degree), employmentType: string(raw.employment_type),
+    salary: string(raw.salary), duty: string(raw.duty), requirement: string(raw.requirement),
+    officialStatus: string(raw.official_status), statusReason: string(raw.status_reason),
+    sourceVersion: string(raw.source_version), sourceChangedAt: string(raw.source_changed_at),
+    sourceSnapshotAt: string(raw.source_snapshot_at), contentHash: raw.content_hash,
+    firstObservedAt: string(raw.first_observed_at), lastObservedAt: string(raw.last_observed_at),
+    consecutiveMisses: nonnegative(raw.consecutive_misses), officialStatusCode: nonnegative(raw.official_status_code),
+    createdAt: string(raw.created_at),
+  };
 }
 function contextVersion(value: unknown): HrContextVersion {
   const raw = object(value);
@@ -175,6 +202,21 @@ export function createHrR12Api(csrfToken: string) {
   const positionPath = (positionId: string, suffix = "") => `/api/hr/positions/${encodeURIComponent(identifier(positionId))}${suffix}`;
   const write = (path: string, requestId: string, body: unknown, signal?: AbortSignal) => request(path, mutation(csrfToken, requestId, body, signal));
   return {
+    officialVersions(positionId: string, signal?: AbortSignal): Promise<HrOfficialPositionVersion[]> {
+      return request(positionPath(positionId, "/official-versions"), { signal }).then((value) => items(value).map(officialVersion));
+    },
+    officialVersion(positionId: string, officialVersionId: string, signal?: AbortSignal): Promise<HrOfficialPositionVersion> {
+      return request(positionPath(positionId, `/official-versions/${encodeURIComponent(identifier(officialVersionId))}`), { signal }).then(officialVersion);
+    },
+    async downloadOfficialVersion(positionId: string, officialVersionId: string, signal?: AbortSignal): Promise<HrOfficialPositionDownload> {
+      const response = await fetch(platformPath(positionPath(positionId, `/official-versions/${encodeURIComponent(identifier(officialVersionId))}/export`)), {
+        credentials: "same-origin", headers: { Accept: "text/markdown" }, signal,
+      });
+      if (!response.ok) throw new HrR12ApiError(response.status);
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? "official-position.md";
+      return { blob: await response.blob(), filename };
+    },
     resources(positionId: string, signal?: AbortSignal): Promise<HrPositionResources> { return request(positionPath(positionId, "/resources"), { signal }).then(resources); },
     downloadResource(positionId: string, attachmentId: string, requestId: string, purpose: "preview" | "download" = "download", signal?: AbortSignal): Promise<HrDownloadTicket> { return write(positionPath(positionId, `/resources/${encodeURIComponent(identifier(attachmentId))}/ticket`), requestId, { purpose }, signal).then(ticket); },
     async context(positionId: string, signal?: AbortSignal): Promise<{ current: HrContextVersion | null; drafts: HrContextVersion[]; history: HrContextVersion[] }> {
