@@ -19,7 +19,31 @@ def test_create_app_declares_all_hr_r12_service_boundaries() -> None:
         "hr_task_context_provider",
         "hr_position_task_service",
         "hr_position_package_projector",
+        "hr_panorama_service",
     }.issubset(parameters)
+
+
+def test_create_app_constructs_panorama_from_the_shared_control_database() -> None:
+    source = inspect.getsource(create_app)
+    tree = ast.parse(source)
+    repository_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "PanoramaRepository"
+    ]
+    service_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "PanoramaService"
+    ]
+
+    assert len(repository_calls) == len(service_calls) == 1
+    assert ast.unparse(repository_calls[0].args[0]) == "control_database_url"
+    assert ast.unparse(service_calls[0].args[0]) == "panorama_repository"
 
 
 def test_create_app_wires_candidate_documents_to_the_existing_download_service() -> None:

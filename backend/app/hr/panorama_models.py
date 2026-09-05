@@ -23,6 +23,9 @@ _DNS_NAME = re.compile(
     r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\."
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\Z"
 )
+_IPV4_STYLE_HOST = re.compile(
+    r"(?:0x[a-f0-9]+|[0-9]+)(?:\.(?:0x[a-f0-9]+|[0-9]+)){0,3}\Z"
+)
 _PERCENT_ESCAPE = re.compile(r"%[0-9A-F]{2}")
 _RUN_STATES = {"queued", "running", "completed", "partially_completed", "failed"}
 _JOB_STATUSES = {"open", "closed", "unknown"}
@@ -165,6 +168,7 @@ def _https_url(value: str) -> str:
     if (
         host == "localhost"
         or host.endswith(".localhost")
+        or _IPV4_STYLE_HOST.fullmatch(host) is not None
         or not _DNS_NAME.fullmatch(host)
     ):
         raise ValueError("source URL invalid")

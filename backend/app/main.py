@@ -167,6 +167,9 @@ from .hr.candidate_repository import CandidateRepository
 from .hr.candidate_routes import build_candidate_router
 from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
+from .hr.panorama_repository import PanoramaRepository
+from .hr.panorama_routes import build_panorama_router
+from .hr.panorama_service import PanoramaService
 from .hr.position_intelligence_repository import PositionIntelligenceRepository
 from .hr.position_intelligence_routes import build_position_intelligence_router
 from .hr.position_intelligence_service import PositionIntelligenceService
@@ -817,6 +820,7 @@ def create_app(
     hr_position_service=None,
     hr_position_intelligence_service=None,
     hr_candidate_service=None,
+    hr_panorama_service=None,
     hr_resource_service=None,
     hr_task_context_provider=None,
     hr_position_task_service=None,
@@ -1156,6 +1160,9 @@ def create_app(
     hr_model_version = None
     hr_model_version_checked = False
     if identity_enabled and control_database_url is not None:
+        if hr_panorama_service is None:
+            panorama_repository = PanoramaRepository(control_database_url)
+            hr_panorama_service = PanoramaService(panorama_repository)
         if (
             hr_position_intelligence_service is None
             or hr_task_context_provider is None
@@ -1473,6 +1480,7 @@ def create_app(
     app.state.hr_position_service = hr_position_service
     app.state.hr_position_intelligence_service = hr_position_intelligence_service
     app.state.hr_candidate_service = hr_candidate_service
+    app.state.hr_panorama_service = hr_panorama_service
     app.state.hr_resource_service = hr_resource_service
     app.state.hr_task_context_provider = hr_task_context_provider
     app.state.hr_position_task_service = hr_position_task_service
@@ -1619,6 +1627,10 @@ def create_app(
     if hr_candidate_service is not None and agent_use_authorization is not None:
         app.include_router(
             build_candidate_router(hr_candidate_service, require_hr_access)
+        )
+    if hr_panorama_service is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_panorama_router(hr_panorama_service, require_hr_access)
         )
     if hr_resource_service is not None and agent_use_authorization is not None:
         app.include_router(

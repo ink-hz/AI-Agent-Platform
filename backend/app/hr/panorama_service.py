@@ -28,6 +28,10 @@ class PanoramaCommandRepository(Protocol):
 
     def run(self, owner_id: UUID, run_id: UUID) -> PanoramaRun: ...
 
+    def list_insights(
+        self, owner_id: UUID, *, limit: int = 100
+    ) -> tuple[TalentInsightVersion, ...]: ...
+
     def report(self, owner_id: UUID, insight_version_id: UUID) -> PanoramaReport: ...
 
     def relevant_insights(
@@ -47,6 +51,7 @@ class PanoramaService:
             "list_sources",
             "create_run",
             "run",
+            "list_insights",
             "report",
             "relevant_insights",
         ):
@@ -115,6 +120,11 @@ class PanoramaService:
 
     def report(self, owner_id: UUID, insight_version_id: UUID) -> PanoramaReport:
         return self._repository.report(owner_id, insight_version_id)
+
+    def list_reports(
+        self, owner_id: UUID, *, limit: int = 100
+    ) -> tuple[TalentInsightVersion, ...]:
+        return self._repository.list_insights(owner_id, limit=limit)
 
     def run_status(self, owner_id: UUID, run_id: UUID) -> PanoramaRun:
         return self._repository.run(owner_id, run_id)

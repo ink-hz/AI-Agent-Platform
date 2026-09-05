@@ -66,6 +66,10 @@ class RecordingRepository:
         self.calls.append(("report", args))
         return "report"
 
+    def list_insights(self, *args, **kwargs):
+        self.calls.append(("list_insights", args, kwargs))
+        return ("report-summary",)
+
     def relevant_insights(self, *args, **kwargs):
         self.calls.append(("relevant", args, kwargs))
         return ("insight",)
@@ -117,6 +121,17 @@ def test_service_delegates_owner_scoped_reads_run_and_report() -> None:
     run_command = repository.calls[1][1]
     assert run_command.selected_source_ids == source_ids
     assert run_command.conversation_id == conversation_id
+
+
+def test_service_lists_owner_scoped_reports_with_a_strict_repository_limit() -> None:
+    owner_id = uuid4()
+    repository = RecordingRepository()
+    service = PanoramaService(repository)
+
+    assert service.list_reports(owner_id, limit=17) == ("report-summary",)
+    assert repository.calls == [
+        ("list_insights", (owner_id,), {"limit": 17}),
+    ]
 
 
 def test_relevant_insights_keeps_position_and_limit_in_repository_boundary() -> None:

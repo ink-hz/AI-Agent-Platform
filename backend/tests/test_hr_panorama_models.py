@@ -121,6 +121,15 @@ def test_talent_source_rejects_ambiguous_names_arbitrary_kinds_and_unsafe_urls(
         _source(**changes)
 
 
+@pytest.mark.parametrize(
+    "hostname",
+    ("127.1", "0177.0.0.1", "0x7f.0.0.1"),
+)
+def test_talent_source_rejects_legacy_ipv4_host_spellings(hostname) -> None:
+    with pytest.raises(ValueError, match="source URL invalid"):
+        _source(approved_urls=(f"https://{hostname}/jobs",))
+
+
 def test_run_snapshot_and_insight_commands_match_the_v79_bounds() -> None:
     owner_id, source_id, run_id = uuid4(), uuid4(), uuid4()
     run = CreatePanoramaRun(

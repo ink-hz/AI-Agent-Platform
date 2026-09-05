@@ -175,6 +175,12 @@ _HR_POSITION_ROUTES = frozenset({
     ("POST", "/api/hr/positions/{position_id}/tasks"),
     ("GET", "/api/hr/positions/{position_id}/tasks"),
     ("GET", "/api/hr/positions/{position_id}/tasks/{task_id}"),
+    ("GET", "/api/hr/panorama/sources"),
+    ("POST", "/api/hr/panorama/sources"),
+    ("POST", "/api/hr/panorama/runs"),
+    ("GET", "/api/hr/panorama/runs/{run_id}"),
+    ("GET", "/api/hr/panorama/reports"),
+    ("GET", "/api/hr/panorama/reports/{insight_version_id}"),
 })
 
 _HR_POSITION_MUTATION_ROUTES = frozenset(
