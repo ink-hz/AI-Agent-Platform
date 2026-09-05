@@ -188,6 +188,16 @@ def test_envelope_pins_position_context_materials_and_candidate_fragment() -> No
     assert envelope.material_attachment_ids == (material.attachment_id,)
     assert envelope.candidate_id == candidate_id
     assert envelope.canonical_sha256 == canonical_hash(envelope)
+    assert {item.selected_reason for item in envelope.context_references} >= {
+        "official_position_baseline",
+        "confirmed_position_context",
+        "selected_position_material",
+        "candidate_snapshot",
+    }
+    assert next(
+        item for item in envelope.context_references
+        if item.selected_reason == "official_position_baseline"
+    ).content_sha256 == official.content_hash
     assert "Build the system." in envelope.prompt_context
     assert "Candidate evidence" in envelope.prompt_context
     prompt = __import__("json").loads(envelope.prompt_context)

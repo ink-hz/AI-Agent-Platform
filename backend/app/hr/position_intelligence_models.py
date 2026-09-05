@@ -644,6 +644,31 @@ class PositionTaskRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class HrTaskContextReference:
+    source_type: str
+    source_id: UUID
+    version_id: UUID | None
+    selected_reason: str
+    content_sha256: str
+
+    def __post_init__(self) -> None:
+        if self.source_type not in {
+            "official_position", "confirmed_context", "position_material",
+            "candidate_snapshot",
+        }:
+            raise ValueError("HR task context reference source invalid")
+        _uuid(self.source_id, "HR task context reference identifier invalid")
+        _optional_uuid(self.version_id, "HR task context reference identifier invalid")
+        if self.selected_reason not in {
+            "official_position_baseline", "confirmed_position_context",
+            "selected_position_material", "candidate_snapshot",
+        }:
+            raise ValueError("HR task context reference reason invalid")
+        if _SHA256.fullmatch(self.content_sha256) is None:
+            raise ValueError("HR task context reference hash invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class HrPositionContextEnvelope:
     position_id: UUID
     official_version_id: UUID | None
@@ -656,6 +681,7 @@ class HrPositionContextEnvelope:
     human_feedback_ids: tuple[UUID, ...]
     prompt_context: str
     canonical_sha256: str
+    context_references: tuple[HrTaskContextReference, ...] = ()
 
     def __post_init__(self) -> None:
         _uuid(self.position_id)
@@ -668,3 +694,16 @@ class HrPositionContextEnvelope:
         object.__setattr__(self, "prompt_context", _text(self.prompt_context, 131072, "task prompt context invalid"))
         if _SHA256.fullmatch(self.canonical_sha256) is None:
             raise ValueError("task context hash invalid")
+        if (
+            not isinstance(self.context_references, tuple)
+            or len(self.context_references) > 104
+            or any(
+                not isinstance(value, HrTaskContextReference)
+                for value in self.context_references
+            )
+            or len({
+                (value.source_type, value.source_id, value.version_id)
+                for value in self.context_references
+            }) != len(self.context_references)
+        ):
+            raise ValueError("HR task context references invalid")

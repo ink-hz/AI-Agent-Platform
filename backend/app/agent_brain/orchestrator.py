@@ -155,6 +155,16 @@ def _request_sections(
             "human_feedback_ids": [
                 str(value) for value in hr_context.human_feedback_ids
             ],
+            "context_references": [
+                {
+                    "source_type": item.source_type,
+                    "source_id": str(item.source_id),
+                    "version_id": str(item.version_id) if item.version_id else None,
+                    "selected_reason": item.selected_reason,
+                    "content_sha256": item.content_sha256,
+                }
+                for item in hr_context.context_references
+            ],
             "prompt_context": hr_context.prompt_context,
             "canonical_sha256": hr_context.canonical_sha256,
         }
