@@ -46,6 +46,7 @@ export interface DirectAgentWorkspaceProps {
   threadSupplement?: ReactNode;
   initialDraftSnapshot?: DirectAgentDraftSnapshot;
   onDraftSnapshotChange?: (snapshot: DirectAgentDraftSnapshot) => void;
+  onConversationSettled?: () => void;
 }
 
 export interface DirectAgentDraftSnapshot {
@@ -100,6 +101,7 @@ export function DirectAgentWorkspace({
   threadSupplement,
   initialDraftSnapshot,
   onDraftSnapshotChange,
+  onConversationSettled,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
   historyClient = DEFAULT_HISTORY_CLIENT,
@@ -302,6 +304,7 @@ export function DirectAgentWorkspace({
           positionMaterialIds={positionMaterialIds}
           positionArtifactAttachmentIds={positionArtifactAttachmentIds}
           onPositionMaterialChange={onPositionMaterialChange}
+          onConversationSettled={onConversationSettled}
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
           composerTools={composerTools}

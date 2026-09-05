@@ -25,6 +25,7 @@ export function HrConversationOutcomePanel({
   onConfirmed,
   onNavigate = navigate,
   readOnly = false,
+  refreshKey = 0,
 }: {
   api?: PositionPackageApi;
   confirmed?: boolean;
@@ -33,6 +34,7 @@ export function HrConversationOutcomePanel({
   onConfirmed?: (confirmed: HrConfirmedPositionPackage, positionPackage: HrPositionPackage) => void;
   onNavigate?: (path: string) => void;
   readOnly?: boolean;
+  refreshKey?: number;
 }) {
   const defaultApi = useMemo(() => createHrApi(csrfToken), [csrfToken]);
   const client = api ?? defaultApi;
@@ -72,7 +74,7 @@ export function HrConversationOutcomePanel({
       controller.abort();
       if (packagePoll !== undefined) window.clearTimeout(packagePoll);
     };
-  }, [client, conversationId, loadAttempt]);
+  }, [client, conversationId, loadAttempt, refreshKey]);
 
   useEffect(() => () => mutation.current?.abort(), []);
 

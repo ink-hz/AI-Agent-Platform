@@ -86,10 +86,14 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   } | null>(null);
   const [revealedRouteKey, setRevealedRouteKey] = useState<string | null>(null);
   const [positionDetailsOpen, setPositionDetailsOpen] = useState(false);
+  const [conversationRevision, setConversationRevision] = useState(0);
   const draftOwnerId = props.account.internal_user_id;
   const retainFreeChatDraft = useCallback((snapshot: DirectAgentDraftSnapshot) => {
     freeChatDraftSnapshots.current.set(draftOwnerId, snapshot);
   }, [draftOwnerId]);
+  const handleConversationSettled = useCallback(() => {
+    setConversationRevision((value) => value + 1);
+  }, []);
 
   if (!positionsActive && !panoramaActive && props.conversationId) {
     lastChatTarget.current = { conversationId: props.conversationId };
@@ -228,6 +232,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
             <p>找岗位、做人才研究、筛简历、准备面试或整理招聘材料，直接告诉我。</p>
           </section>}
           onDraftSnapshotChange={retainFreeChatDraft}
+          onConversationSettled={handleConversationSettled}
           showTaskStarters={false}
           showWorkspaceBackLink={false}
           threadSupplement={chatConversationId ? <HrConversationOutcomePanel
@@ -236,6 +241,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
             csrfToken={props.account.csrf_token}
             onConfirmed={handleConfirmed}
             readOnly={props.account.hard_stale_read_only}
+            refreshKey={conversationRevision}
           /> : undefined}
           workspaceLabel="HR 智能工作台"
           workspaceMark="HR"
