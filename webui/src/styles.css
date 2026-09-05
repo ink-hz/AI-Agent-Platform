@@ -2057,8 +2057,8 @@ body {
 .hr-panorama-report-meta { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 22px; border-bottom: 1px solid #e2e9f0; background: #f7fafc; color: #405b76; font-size: 12.5px; font-weight: 720; }
 .hr-panorama-report-meta > div { display: flex; align-items: center; gap: 12px; }
 .hr-panorama-report-actions { display: flex; gap: 6px; }
-.hr-panorama-report-actions button { min-height: 34px; padding: 6px 10px; border: 1px solid #a9bfd5; border-radius: 8px; background: #fff; color: #174f9b; font: inherit; font-size: 12px; font-weight: 760; cursor: pointer; }
-.hr-panorama-report-actions button:hover,.hr-panorama-report-actions button:focus-visible { border-color: #2878d7; outline: 2px solid rgba(40,120,215,.18); outline-offset: 1px; }
+.hr-panorama-report-actions button,.hr-panorama-report-actions a { display: inline-flex; align-items: center; min-height: 34px; padding: 6px 10px; border: 1px solid #a9bfd5; border-radius: 8px; background: #fff; color: #174f9b; font: inherit; font-size: 12px; font-weight: 760; text-decoration: none; cursor: pointer; }
+.hr-panorama-report-actions button:hover,.hr-panorama-report-actions button:focus-visible,.hr-panorama-report-actions a:hover,.hr-panorama-report-actions a:focus-visible { border-color: #2878d7; outline: 2px solid rgba(40,120,215,.18); outline-offset: 1px; }
 .hr-panorama-report-lead { padding: clamp(28px,4vw,48px); }
 .hr-panorama-report-lead > p,.hr-panorama-evidence > header > p,.hr-panorama-sources > header > p { margin: 0; color: #185fa9; font-size: 12px; font-weight: 850; letter-spacing: .11em; }
 .hr-panorama-report-lead h1 { max-width: 880px; margin: 9px 0 15px; color: #17345c; font-size: clamp(29px,3.5vw,45px); line-height: 1.18; letter-spacing: -.04em; }

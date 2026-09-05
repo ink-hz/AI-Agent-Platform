@@ -222,7 +222,9 @@ describe("HrPanoramaReport", () => {
     expect(copied).toContain("https://example.com/jobs/1");
     expect(copied).toContain("观测于 2026-09-05T08:00:00Z");
 
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载报告")?.click());
+    expect(container.querySelector<HTMLAnchorElement>('a[href*="/export?format=pdf"]')?.textContent).toBe("下载 PDF");
+    expect(container.querySelector<HTMLAnchorElement>('a[href*="/export?format=xlsx"]')?.textContent).toBe("下载 Excel");
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载 Markdown")?.click());
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     const downloadedText = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();

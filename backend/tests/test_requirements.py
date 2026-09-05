@@ -56,6 +56,19 @@ def test_attachment_structural_parsers_have_stable_runtime_pins() -> None:
         ]
 
 
+def test_hr_report_exporters_have_stable_runtime_pins() -> None:
+    backend = Path(__file__).resolve().parents[1]
+
+    for filename in ("requirements.txt", "requirements.cloud.txt"):
+        requirements = (backend / filename).read_text(encoding="utf-8").splitlines()
+        assert [line for line in requirements if line.startswith("openpyxl")] == [
+            "openpyxl==3.1.5"
+        ]
+        assert [line for line in requirements if line.startswith("reportlab")] == [
+            "reportlab==4.4.10"
+        ]
+
+
 def test_contract_schema_validator_is_pinned_for_tests_only() -> None:
     """The FAE identity contract needs a real draft 2020-12 validator.
 

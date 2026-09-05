@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { platformPath } from "../../auth";
 import { copyVisibleText } from "../../clipboard";
 import type { HrPanoramaReport as PanoramaReport, HrPanoramaSnapshot } from "../../hrPanoramaTypes";
 
@@ -229,7 +230,7 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
     <header className="hr-panorama-report-cover">
       <div className="hr-panorama-report-meta">
         <span>全景分析 · 第 {report.insight.versionNumber} 版</span>
-        <div><time dateTime={report.insight.createdAt}>分析于 {time(report.insight.createdAt)}</time><span className="hr-panorama-report-actions"><button onClick={() => void copy()} type="button">{copyState === "copied" ? "已复制报告" : copyState === "error" ? "复制失败，请重试" : "复制报告"}</button><button onClick={() => downloadMarkdown(report, markdown)} type="button">下载报告</button></span></div>
+        <div><time dateTime={report.insight.createdAt}>分析于 {time(report.insight.createdAt)}</time><span className="hr-panorama-report-actions"><button onClick={() => void copy()} type="button">{copyState === "copied" ? "已复制报告" : copyState === "error" ? "复制失败，请重试" : "复制报告"}</button><a download href={platformPath(`/api/hr/panorama/reports/${encodeURIComponent(report.insight.insightVersionId)}/export?format=pdf`)}>下载 PDF</a><a download href={platformPath(`/api/hr/panorama/reports/${encodeURIComponent(report.insight.insightVersionId)}/export?format=xlsx`)}>下载 Excel</a><button onClick={() => downloadMarkdown(report, markdown)} type="button">下载 Markdown</button></span></div>
       </div>
       <div className="hr-panorama-report-lead">
         <p>公开招聘情报</p>

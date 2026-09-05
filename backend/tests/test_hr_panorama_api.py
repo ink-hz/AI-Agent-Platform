@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from io import BytesIO
 from types import SimpleNamespace
 from uuid import UUID, uuid4
+from zipfile import ZipFile
 
 import pytest
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 
 from app.control_plane.authorization import AuthorizationService
 from app.control_plane.middleware import IdentitySecurityMiddleware
@@ -342,6 +345,38 @@ def test_panorama_reports_list_and_detail_are_explicit_and_owner_scoped() -> Non
     assert "owner_id" not in serialized
     assert "client_request_id" not in serialized
     assert "origin_request_id" not in serialized
+
+
+def test_panorama_report_exports_are_owner_scoped_versioned_pdf_and_excel() -> None:
+    client, service, owner_id = _client()
+    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
+
+    pdf = client.get(f"{base}?format=pdf")
+    excel = client.get(f"{base}?format=xlsx")
+
+    assert pdf.status_code == excel.status_code == 200
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF-")
+    assert len(PdfReader(BytesIO(pdf.content)).pages) >= 2
+    assert "panorama-v1" in pdf.headers["content-disposition"]
+    assert excel.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert excel.content.startswith(b"PK")
+    assert "panorama-v1" in excel.headers["content-disposition"]
+    with ZipFile(BytesIO(excel.content)) as archive:
+        workbook = archive.read("xl/workbook.xml").decode("utf-8")
+        worksheet_xml = "".join(
+            archive.read(name).decode("utf-8")
+            for name in archive.namelist()
+            if name.startswith("xl/worksheets/") and name.endswith(".xml")
+        )
+    assert "岗位明细" in workbook
+    assert "结构工程师" in worksheet_xml
+    assert service.calls == [
+        ("report", owner_id, service.insight.insight_version_id),
+        ("report", owner_id, service.insight.insight_version_id),
+    ]
 
 
 def test_panorama_reads_and_failures_always_disable_storage() -> None:
