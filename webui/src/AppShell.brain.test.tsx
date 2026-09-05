@@ -217,6 +217,8 @@ describe("usage navigation", () => {
       { name: "hr-positions" },
       { name: "hr-conversation", conversationId: "c-1" },
       { name: "hr-position", positionId: "11111111-1111-4111-8111-111111111111" },
+      { name: "hr-panorama" },
+      { name: "hr-panorama-report", insightVersionId: "55555555-5555-4555-8555-555555555555" },
     ];
 
     for (const route of routes) {

@@ -28,6 +28,19 @@ describe("Platform router", () => {
     }
   });
 
+  it("round-trips the independent HR panorama routes", () => {
+    const insightVersionId = "00000000-0000-4000-8000-000000000009";
+    expect(parseRoute("/hr/panorama")).toEqual({ name: "hr-panorama" });
+    expect(parseRoute(`/hr/panorama/reports/${insightVersionId}`)).toEqual({
+      name: "hr-panorama-report", insightVersionId,
+    });
+    expect(routePath({ name: "hr-panorama" })).toBe("/hr/panorama");
+    expect(routePath({ name: "hr-panorama-report", insightVersionId }))
+      .toBe(`/hr/panorama/reports/${insightVersionId}`);
+    expect(parseRoute("/hr/panorama/reports/not-a-uuid")).toEqual({ name: "not-found" });
+    expect(parseRoute("/hr/panorama/reports/------------------------------------")).toEqual({ name: "not-found" });
+  });
+
   const compatibilityRoutes = [
     ["/agents/hr-bot", "/hr/", "spa"],
     ["/agents/hr-bot/conversations/hr%3Aone", "/hr/conversations/hr%3Aone", "spa"],
@@ -161,6 +174,7 @@ describe("Platform router", () => {
     expect(routeSection({ name: "admin-voc" })).toBe("admin");
     expect(routeSection({ name: "admin-access" })).toBe("admin");
     expect(routeSection({ name: "hr" })).toBe("agents");
+    expect(routeSection({ name: "hr-panorama" })).toBe("agents");
     expect(routeSection({ name: "marketing", agentSlug: "inbound" })).toBe("agents");
     expect(routeSection({ name: "fae-manage-overview" })).toBe("fae");
   });

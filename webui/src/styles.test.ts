@@ -114,7 +114,13 @@ describe("Executive Operations visual contract", () => {
     expect(styles).toContain('@media (max-width: 1260px)');
     const mobile = blockContaining("@media screen and (max-width: 720px)", ".hr-workspace-topbar");
     expect(mobile).toContain(".hr-workspace-platform-link { display: none; }");
+    expect(mobile).toContain(".hr-workspace-topbar { display: grid;");
+    expect(mobile).toContain(".hr-workspace-nav { display: grid;");
+    expect(mobile).toContain("grid-column: 1 / -1");
+    expect(mobile).toContain("grid-template-columns: repeat(3,minmax(0,1fr))");
+    expect(mobile).toContain(".hr-workspace-nav a { min-width: 0;");
     expect(mobile).toContain(".hr-position-card { grid-template-columns: 1fr;");
+    expect(styles).toContain("@media (prefers-reduced-motion: reduce) { .hr-panorama-run-pulse { animation: none; } }");
   });
 
   it("keeps the position conversation primary with on-demand responsive controls", () => {

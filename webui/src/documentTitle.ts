@@ -30,6 +30,8 @@ export function routeDocumentTitle(route: Route): string {
     case "hr-position-section": return "岗位 · HR 智能工作台";
     case "hr-position-conversation": return "岗位 · HR 智能工作台";
     case "hr-conversation": return `HR 智能工作台 · ${PLATFORM_TITLE}`;
+    case "hr-panorama": return "全景分析 · HR 智能工作台";
+    case "hr-panorama-report": return "全景分析 · HR 智能工作台";
     case "marketing": return `${MARKETING_TITLE_BY_SLUG[route.agentSlug]} · ${PLATFORM_TITLE}`;
     case "marketing-conversation": return `${MARKETING_TITLE_BY_SLUG[route.agentSlug]} · ${PLATFORM_TITLE}`;
     case "fae-manage-overview": return `FAE 工作台 · ${PLATFORM_TITLE}`;

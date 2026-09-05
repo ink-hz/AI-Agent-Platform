@@ -4,7 +4,7 @@ import { platformPath, type Account } from "../../auth";
 import { PlatformLink } from "../../components/PlatformLink";
 
 
-export type HrWorkspaceSection = "chat" | "positions";
+export type HrWorkspaceSection = "chat" | "positions" | "panorama";
 
 
 export function HrWorkspaceShell({
@@ -27,6 +27,7 @@ export function HrWorkspaceShell({
       <nav className="hr-workspace-nav" aria-label="HR 智能工作台">
         <PlatformLink aria-current={current === "chat" ? "page" : undefined} href={chatHref}>对话</PlatformLink>
         <PlatformLink aria-current={current === "positions" ? "page" : undefined} href="/hr/positions">岗位</PlatformLink>
+        <PlatformLink aria-current={current === "panorama" ? "page" : undefined} href="/hr/panorama">全景分析</PlatformLink>
       </nav>
       <div className="hr-workspace-actions">
         <span className="hr-workspace-identity"><span aria-hidden="true">人</span><strong>{account.display_name}</strong></span>

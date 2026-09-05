@@ -14,6 +14,7 @@ import {
   DirectAgentWorkspace, type AgentHistoryClient, type DirectAgentDraftSnapshot,
 } from "../direct/DirectAgentWorkspace";
 import { HrConversationOutcomePanel } from "./HrConversationOutcomePanel";
+import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
 import { HrPositionDetailsDrawer } from "./HrPositionDetailsDrawer";
 import { HrPositionHeader } from "./HrPositionHeader";
 import { HrPositionIndex } from "./HrPositionIndex";
@@ -62,8 +63,9 @@ function fallbackDetail(positionId: string, positionPackage: HrPositionPackage |
 }
 
 
-export function HrWorkspacePage(props: { account: Account; conversationId?: string; positionId?: string; section?: HrPositionSection; freeChat?: boolean; positions?: boolean }) {
+export function HrWorkspacePage(props: { account: Account; conversationId?: string; positionId?: string; section?: HrPositionSection; freeChat?: boolean; positions?: boolean; panorama?: boolean; panoramaReportId?: string }) {
   const positionsActive = Boolean(props.positions || props.positionId);
+  const panoramaActive = Boolean(props.panorama || props.panoramaReportId);
   const positionDetailActive = Boolean(props.positionId);
   const positionConversationRoute = Boolean(props.positionId && props.conversationId);
   const lastChatConversationId = useRef<string | undefined>(undefined);
@@ -89,7 +91,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
     freeChatDraftSnapshots.current.set(draftOwnerId, snapshot);
   }, [draftOwnerId]);
 
-  if (!positionsActive) lastChatConversationId.current = props.conversationId;
+  if (!positionsActive && !panoramaActive) lastChatConversationId.current = props.conversationId;
   const retainedPositionHost = Boolean(positionConversationRoute
     && props.conversationId === lastChatConversationId.current);
   const positionRouteValidated = Boolean(positionConversationRoute
@@ -98,7 +100,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const currentPositionRouteKey = positionConversationRoute
     ? `${props.positionId}:${props.conversationId}` : null;
   const positionRouteReady = positionRouteValidated && revealedRouteKey === currentPositionRouteKey;
-  const chatConversationId = props.conversationId ?? (positionsActive ? lastChatConversationId.current : undefined);
+  const chatConversationId = props.conversationId ?? (positionsActive || panoramaActive ? lastChatConversationId.current : undefined);
   const chatHref = chatConversationId ? hrConversationPath(chatConversationId) : "/hr/";
   const keepChatHost = !positionDetailActive || Boolean(positionConversationRoute && (retainedPositionHost || positionRouteValidated));
   const positionConversationPath = (conversationId: string) => props.positionId
@@ -178,10 +180,10 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   ) : null;
   const drawerDetail = continuedPositionDetail ?? degradedDetail;
 
-  return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={positionsActive ? "positions" : "chat"}>
+  return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={panoramaActive ? "panorama" : positionsActive ? "positions" : "chat"}>
     {keepChatHost && <div
       className={`hr-workspace-chat-panel${positionConversationRoute ? " is-position-conversation" : ""}`}
-      hidden={positionsActive && !positionThreadVisible}
+      hidden={panoramaActive || (positionsActive && !positionThreadVisible)}
     >
       {positionRouteReady && continuedPositionDetail && <HrPositionHeader
         detail={continuedPositionDetail}
@@ -259,6 +261,12 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
         {props.positionId
           ? <HrPositionWorkspace account={props.account} conversationId={props.conversationId} positionId={props.positionId} section={props.section} />
           : <HrPositionIndex account={props.account} />}
+      </WorkspaceErrorBoundary>
+    </div>}
+
+    {panoramaActive && <div className="hr-workspace-panorama-panel">
+      <WorkspaceErrorBoundary title="全景分析">
+        <HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} />
       </WorkspaceErrorBoundary>
     </div>}
 

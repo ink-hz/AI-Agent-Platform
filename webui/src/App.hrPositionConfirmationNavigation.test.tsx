@@ -38,11 +38,18 @@ vi.mock("./AppShell", () => ({
 }));
 vi.mock("./accessEventReporter", () => ({ AccessEventReporter: () => null }));
 vi.mock("./workspaces/hr/HrWorkspacePage", async () => {
+  const { useState } = await import("react");
   const { HrConversationOutcomePanel } = await import("./workspaces/hr/HrConversationOutcomePanel");
   return {
-    HrWorkspacePage: ({ conversationId, positionId }: { conversationId?: string; positionId?: string }) => positionId
-      ? <p data-testid="confirmed-route">{positionId}:{conversationId}</p>
-      : <HrConversationOutcomePanel api={fixtures.api} conversationId={conversationId} csrfToken="csrf" />,
+    HrWorkspacePage: ({ conversationId, positionId, panorama }: { conversationId?: string; positionId?: string; panorama?: boolean }) => {
+      const [draft, setDraft] = useState("");
+      return <section data-testid="hr-page-host">
+        <input aria-label="HR 草稿" onChange={(event) => setDraft(event.target.value)} value={draft} />
+        {positionId ? <p data-testid="confirmed-route">{positionId}:{conversationId}</p>
+          : panorama ? <p data-testid="panorama-route">全景分析</p>
+            : <HrConversationOutcomePanel api={fixtures.api} conversationId={conversationId} csrfToken="csrf" />}
+      </section>;
+    },
   };
 });
 
@@ -80,4 +87,22 @@ it("confirms through App routing without a document reload", async () => {
     .toBe(`${fixtures.positionId}:${fixtures.conversationId}`);
   expect(container.querySelector('[data-testid="app-shell"]')).toBe(shell);
   expect(container.querySelector('[data-testid="app-shell"] input')).toBe(preservedInput);
+});
+
+it("keeps the same HR page host and draft across the panorama route", async () => {
+  const { navigate } = await import("./router");
+  await act(async () => root.render(<App />));
+  const host = container.querySelector('[data-testid="hr-page-host"]');
+  const draft = container.querySelector<HTMLInputElement>('input[aria-label="HR 草稿"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(draft, "尚未发送");
+    draft.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  await act(async () => navigate("/hr/panorama"));
+
+  expect(container.querySelector('[data-testid="panorama-route"]')).not.toBeNull();
+  expect(container.querySelector('[data-testid="hr-page-host"]')).toBe(host);
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="HR 草稿"]')).toBe(draft);
+  expect(draft.value).toBe("尚未发送");
 });

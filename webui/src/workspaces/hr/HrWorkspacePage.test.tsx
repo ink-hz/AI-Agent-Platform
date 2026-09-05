@@ -46,6 +46,10 @@ vi.mock("./HrPositionWorkspace", async (importOriginal) => ({
   HrPositionWorkspace: () => <div className="agent-use-workspace" data-agent-id="hr-bot" />,
 }));
 
+vi.mock("./HrPanoramaWorkspace", () => ({
+  HrPanoramaWorkspace: () => <div data-panorama-workspace>全景报告</div>,
+}));
+
 vi.mock("../../attachmentApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../attachmentApi")>();
   const upload = {
@@ -224,6 +228,33 @@ describe("HrWorkspacePage", () => {
     await act(async () => root.render(<HrWorkspacePage account={account} />));
     expect(container.querySelector<HTMLTextAreaElement>(".hr-workspace-chat-panel textarea")?.value)
       .toBe("不要丢失的岗位需求");
+  });
+
+  it("keeps the same chat host, unsent text, selected upload, and current conversation while visiting panorama", async () => {
+    vi.mocked(fetchAgentCatalog).mockResolvedValue([{ ...hrCard,
+      accepted_input_types: ["text", "image", "pdf", "office"], supports_attachments_in: true,
+      attachment_limits: { max_file_bytes: 50 * 1024 * 1024, max_files_per_message: 5, max_bytes_per_message: 50 * 1024 * 1024, max_files_per_conversation: 50, max_bytes_per_conversation: 500 * 1024 * 1024 },
+    }]);
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    const workspace = container.querySelector<HTMLElement>('.agent-use-workspace[data-agent-id="hr-bot"]')!;
+    const textarea = container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")!;
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "不应丢失的草稿"); textarea.dispatchEvent(new Event("input", { bubbles: true })); });
+    const input = container.querySelector<HTMLInputElement>('.conversation-composer-attachments input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [new File(["resume"], "待发送简历.pdf", { type: "application/pdf" })] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    expect(container.querySelector("[data-panorama-workspace]")).not.toBeNull();
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(workspace);
+    expect(container.querySelector<HTMLElement>(".hr-workspace-chat-panel")?.hidden).toBe(true);
+    expect(textarea.value).toBe("不应丢失的草稿");
+    expect(container.textContent).toContain("待发送简历.pdf");
+    expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/conversations/c-7"]')).not.toBeNull();
+
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(workspace);
+    expect(container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")?.value).toBe("不应丢失的草稿");
+    expect(container.textContent).toContain("待发送简历.pdf");
   });
 
   it("mounts only the position conversation workspace on a position detail route", async () => {
