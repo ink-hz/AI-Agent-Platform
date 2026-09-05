@@ -14,6 +14,13 @@ cloud_admin_host=root@47.106.112.69
 cloud_admin_key=/Users/agentops/AgentRuntime/private/cloud-admin-ed25519
 ssh_bin=/usr/bin/ssh
 python_bin=/usr/bin/python3
+web_research_current=/Users/agentops/AgentRuntime/web-research/current
+expected_egress_source_sha256=5604d7ac150a5bcd9e722edd777c5946f9e82fdb1bc4df5e6a3aceed0b8d5fe6
+provider_gateway=10.10.20.133
+provider_port=8088
+target_denial_probe=1.1.1.1
+target_denial_port=443
+sandbox_profile='(version 1) (allow default) (deny network-outbound) (allow network-outbound (literal "/var/run/mDNSResponder")) (allow network-outbound (remote ip "*:8088"))'
 
 [[ $# -eq 1 && "$1" == "$required_config" ]] || fail
 [[ "$(/usr/bin/id -un)" == "$required_user" ]] || fail
@@ -50,6 +57,30 @@ for private_file in "$cloud_admin_key" "$required_known_hosts"; do
   [[ "$private_size" =~ ^[0-9]+$ && "$private_size" -gt 0 && "$private_size" -le 65536 ]] || fail
 done
 
+[[ -L "$web_research_current" ]] || fail
+web_research_release="$($python_bin - "$web_research_current" <<'PY'
+import pathlib
+import sys
+print(pathlib.Path(sys.argv[1]).resolve(strict=True))
+PY
+)" || fail
+[[ "$web_research_release" =~ ^/Users/agentops/AgentRuntime/web-research/releases/[0-9a-f]{64}$ ]] || fail
+web_research_manifest="$web_research_release/.manifest.sha256"
+web_research_source="$web_research_release/codex-process.mjs"
+for deployed_file in "$web_research_manifest" "$web_research_source"; do
+  [[ -f "$deployed_file" && ! -L "$deployed_file" ]] || fail
+  [[ "$(/usr/bin/stat -f '%Lp %Su' "$deployed_file")" == "600 $required_user" ]] || fail
+done
+manifest_digest="$(/usr/bin/shasum -a 256 "$web_research_manifest" | /usr/bin/awk '{print $1}')" || fail
+[[ "$web_research_release" == "/Users/agentops/AgentRuntime/web-research/releases/$manifest_digest" ]] || fail
+(cd "$web_research_release" && /usr/bin/shasum -a 256 -c .manifest.sha256 >/dev/null) || fail
+egress_digest="$(/usr/bin/shasum -a 256 "$web_research_source" | /usr/bin/awk '{print $1}')" || fail
+[[ "$egress_digest" == "$expected_egress_source_sha256" ]] || fail
+/usr/bin/sandbox-exec -p "$sandbox_profile" /usr/bin/nc -G 3 -z "$provider_gateway" "$provider_port" >/dev/null 2>&1 || fail
+if /usr/bin/sandbox-exec -p "$sandbox_profile" /usr/bin/nc -G 1 -z "$target_denial_probe" "$target_denial_port" >/dev/null 2>&1; then fail; fi
+egress_gate=SANDBOX_PROVIDER_EGRESS_OK
+[[ "$egress_gate" == SANDBOX_PROVIDER_EGRESS_OK ]] || fail
+
 ssh_options=(
   -i "$cloud_admin_key"
   -o BatchMode=yes
@@ -61,12 +92,12 @@ ssh_options=(
   -o UserKnownHostsFile="$required_known_hosts"
 )
 
-result="$($ssh_bin "${ssh_options[@]}" "$cloud_admin_host" /usr/bin/timeout -k 10 1200 /bin/bash -s <<'REMOTE'
+result="$($ssh_bin "${ssh_options[@]}" "$cloud_admin_host" /usr/bin/timeout -k 10 1200 /bin/bash -s -- "$egress_digest" <<'REMOTE'
 set -eEuo pipefail
 umask 077
 
 remote_config=/opt/orbbec-agent-platform/private/hr-p0-acceptance.json
-remote_egress_evidence=/opt/orbbec-agent-platform/private/hr-provider-egress.evidence.json
+deployment_egress_evidence_sha256=$1
 remote_fixture_root=/opt/orbbec-agent-platform/current/backend/tests/fixtures/hr_p0
 container_name=orbbec-agent-platform-platform-api-1
 container_root=/tmp/hr-p0-acceptance
@@ -101,7 +132,7 @@ trap cleanup EXIT
 [[ ! -e "$host_cleanup_root" && ! -L "$host_cleanup_root" ]] || remote_fail
 /bin/mkdir -m 700 -- "$host_cleanup_root" || remote_fail
 
-for remote_file in "$remote_config" "$remote_egress_evidence"; do
+for remote_file in "$remote_config"; do
   [[ -f "$remote_file" && ! -L "$remote_file" ]] || remote_fail
   [[ "$(/usr/bin/stat -c '%a %U' "$remote_file")" == "600 root" ]] || remote_fail
   remote_size="$(/usr/bin/stat -c '%s' "$remote_file")"
@@ -109,69 +140,42 @@ for remote_file in "$remote_config" "$remote_egress_evidence"; do
 done
 [[ "$(/usr/bin/stat -c '%a %U' "$(/usr/bin/dirname "$remote_config")")" == "700 root" ]] || remote_fail
 
-evidence_digest="$(/usr/bin/sha256sum "$remote_egress_evidence")"
-evidence_digest="${evidence_digest%% *}"
-"$python_bin" - "$remote_config" "$remote_egress_evidence" "$evidence_digest" "$target_agent" <<'PY' || remote_fail
+"$python_bin" - "$remote_config" "$deployment_egress_evidence_sha256" "$target_agent" <<'PY' || remote_fail
 import json
 import pathlib
 import sys
 from urllib.parse import urlsplit
 
 config = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
-evidence = json.loads(pathlib.Path(sys.argv[2]).read_bytes())
-digest, target_agent = sys.argv[3:]
+digest, target_agent = sys.argv[2:]
 config_keys = {
     "schema_version", "agent_id", "api_base_url", "public_origin", "owner_id",
     "session_cookie", "csrf_token", "companies", "connect_timeout_seconds",
     "request_timeout_seconds", "run_timeout_seconds", "poll_interval_seconds",
     "deployment_egress_evidence_sha256",
 }
-evidence_keys = {
-    "schema_version", "policy", "direct_target_egress", "allowed_authorities",
-}
 if not isinstance(config, dict) or set(config) != config_keys:
-    raise SystemExit(1)
-if not isinstance(evidence, dict) or set(evidence) != evidence_keys:
     raise SystemExit(1)
 if config.get("schema_version") != 1 or config.get("agent_id") != target_agent:
     raise SystemExit(1)
 if config.get("deployment_egress_evidence_sha256") != digest:
     raise SystemExit(1)
-if evidence != {
-    "schema_version": 1,
-    "policy": "provider-only",
-    "direct_target_egress": False,
-    "allowed_authorities": evidence.get("allowed_authorities"),
-}:
+companies = config.get("companies")
+if not isinstance(companies, list) or not companies:
     raise SystemExit(1)
-authorities = evidence["allowed_authorities"]
-if not isinstance(authorities, list) or not authorities:
-    raise SystemExit(1)
-expected_authorities = {
-    (urlsplit(url).hostname.lower(), urlsplit(url).port or 443)
-    for company in config.get("companies", [])
-    for url in company.get("approved_urls", [])
-}
-if any(not isinstance(value, str) for value in authorities):
-    raise SystemExit(1)
-provider_authorities = []
-for authority in authorities:
-    parsed = urlsplit("//" + authority)
-    try:
-        port = parsed.port or 443
-    except ValueError:
+for company in companies:
+    if not isinstance(company, dict) or not isinstance(company.get("approved_urls"), list) or not company["approved_urls"]:
         raise SystemExit(1)
-    if (
-        parsed.username is not None or parsed.password is not None
-        or not parsed.hostname or parsed.hostname.lower() != parsed.hostname
-        or parsed.hostname.endswith(".")
-        or parsed.path or parsed.query or parsed.fragment
-        or parsed.netloc != authority
-    ):
-        raise SystemExit(1)
-    provider_authorities.append((parsed.hostname, port))
-if len(provider_authorities) != len(set(provider_authorities)) or set(provider_authorities) & expected_authorities:
-    raise SystemExit(1)
+    for url in company["approved_urls"]:
+        parsed = urlsplit(url)
+        if (
+            not isinstance(url, str) or parsed.scheme != "https"
+            or not parsed.hostname or parsed.hostname.lower() != parsed.hostname
+            or parsed.hostname.endswith(".") or parsed.port not in (None, 443)
+            or parsed.username is not None or parsed.password is not None
+            or parsed.fragment
+        ):
+            raise SystemExit(1)
 PY
 
 expected_fixtures='panorama-result.json recruiting-results.json resume-adjacent.md resume-invalid.txt resume-strong.md'

@@ -12,7 +12,7 @@ def test_cloud_wrapper_is_fixed_bounded_and_status_only() -> None:
     for required in (
         "required_config=/Users/agentops/AgentRuntime/private/acceptance-config.json",
         "remote_config=/opt/orbbec-agent-platform/private/hr-p0-acceptance.json",
-        "remote_egress_evidence=/opt/orbbec-agent-platform/private/hr-provider-egress.evidence.json",
+        "web_research_current=/Users/agentops/AgentRuntime/web-research/current",
         "cloud_admin_host=root@47.106.112.69",
         "ssh_bin=/usr/bin/ssh",
         "python_bin=/usr/bin/python3",
@@ -54,12 +54,16 @@ def test_cloud_wrapper_requires_secure_strict_config_and_egress_evidence() -> No
         "! -L",
         "65536",
         "deployment_egress_evidence_sha256",
-        "sha256sum",
-        "provider-only",
-        "direct_target_egress",
-        '"direct_target_egress": False',
-        "set(provider_authorities) & expected_authorities",
-        'parsed.hostname.endswith(".")',
+        "shasum -a 256",
+        "expected_egress_source_sha256=5604d7ac150a5bcd9e722edd777c5946f9e82fdb1bc4df5e6a3aceed0b8d5fe6",
+        'web_research_source="$web_research_release/codex-process.mjs"',
+        'remote ip "*:8088"',
+        "/var/run/mDNSResponder",
+        "provider_gateway=10.10.20.133",
+        "provider_port=8088",
+        "target_denial_probe=1.1.1.1",
+        "target_denial_port=443",
+        "SANDBOX_PROVIDER_EGRESS_OK",
         "container_cleanup_manifest=$container_root/cleanup.json",
         '"/usr/bin/psql", "-X", "-v", "ON_ERROR_STOP=1"',
         "platform_hr.positions",
@@ -67,6 +71,7 @@ def test_cloud_wrapper_requires_secure_strict_config_and_egress_evidence() -> No
         "platform_hr.candidate_documents",
     ):
         assert required in source
+    assert "remote_egress_evidence" not in source
 
 
 def test_agentops_dispatches_only_fixed_hr_p0_command_and_config() -> None:
