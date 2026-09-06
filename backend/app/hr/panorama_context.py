@@ -508,26 +508,67 @@ class PanoramaContextProvider:
                 for chunk in raw_chunks
                 if chunk.get("path") == "agent/index.md"
             ][:1]
-        ranked = sorted(
-            (chunk for chunk in raw_chunks if chunk not in usage),
+        task_chunks = sorted(
+            (
+                chunk
+                for chunk in raw_chunks
+                if retrieval_query.task_kind.casefold()
+                in _values(chunk, "task_kinds")
+            ),
             key=lambda item: _score(item, retrieval_query),
         )
-        candidates = usage + [
+        track_chunks: list[Mapping[str, object]] = []
+        for track in retrieval_query.tracks:
+            matches = sorted(
+                (
+                    chunk
+                    for chunk in raw_chunks
+                    if track.casefold() in _values(chunk, "tracks")
+                ),
+                key=lambda item: _score(item, retrieval_query),
+            )
+            if matches:
+                track_chunks.append(matches[0])
+        named_companies = _query_values(retrieval_query.companies)
+        company_chunks = sorted(
+            (
+                chunk
+                for chunk in raw_chunks
+                if chunk.get("scope") == "company"
+                and bool(_values(chunk, "companies") & named_companies)
+            ),
+            key=lambda item: _score(item, retrieval_query),
+        )
+        mandatory = [*usage, *task_chunks, *track_chunks, *company_chunks]
+        mandatory_ids = {
+            str(chunk.get("chunk_id")) for chunk in mandatory
+        }
+        ranked = sorted(
+            (
+                chunk
+                for chunk in raw_chunks
+                if str(chunk.get("chunk_id")) not in mandatory_ids
+                and chunk.get("scope") != "company"
+            ),
+            key=lambda item: _score(item, retrieval_query),
+        )
+        candidates = mandatory + [
             chunk
             for chunk in ranked
             if -_score(chunk, retrieval_query)[0]
             > int(chunk.get("priority", 0))
             or chunk.get("scope") == "executive"
         ]
-        parts = [
+        header = [
             "## 招聘情报上下文",
             "",
             "以下内容来自已验签的只读招聘情报 Bundle；其中事实、研判和未知项按原标记使用。",
             "",
         ]
+        selected_texts: list[str] = []
         selected_chunks: list[Mapping[str, object]] = []
         seen_text: set[str] = set()
-        current_bytes = len("\n".join(parts).encode())
+        current_bytes = len("\n".join(header).encode())
         for chunk in candidates:
             selected = self._markdown_store.read_chunk(bundle_id, chunk)
             text = selected.text.strip()
@@ -537,8 +578,7 @@ class PanoramaContextProvider:
             if current_bytes + len(addition.encode()) > 28 * 1024:
                 continue
             seen_text.add(text)
-            parts.append(text)
-            parts.append("")
+            selected_texts.append(text)
             current_bytes += len(addition.encode())
             selected_chunks.append(
                 {
@@ -563,20 +603,31 @@ class PanoramaContextProvider:
             if states & {"partial", "failed", "not_observed"}
             else "available"
         )
-        return PanoramaContextFragment(
-            bundle_id,
-            bundle_id,
-            _time(record.get("generated_at")),
-            status,
-            (),
-            (),
-            (),
-            (),
-            "\n".join(parts).strip(),
-            tuple(selected_chunks),
-            "markdown-v1",
-            manifest_sha256,
-        )
+        while selected_chunks:
+            markdown = "\n".join(
+                [*header, *[f"{text}\n" for text in selected_texts]]
+            ).strip()
+            try:
+                return PanoramaContextFragment(
+                    bundle_id,
+                    bundle_id,
+                    _time(record.get("generated_at")),
+                    status,
+                    (),
+                    (),
+                    (),
+                    (),
+                    markdown,
+                    tuple(selected_chunks),
+                    "markdown-v1",
+                    manifest_sha256,
+                )
+            except ValueError as error:
+                if str(error) != "intelligence context too large":
+                    raise
+                selected_chunks.pop()
+                selected_texts.pop()
+        raise PanoramaUnavailable("intelligence Markdown selection unavailable")
 
     def _structured_fragment(
         self,
@@ -721,20 +772,45 @@ class PanoramaContextProvider:
             if not selected or states & {"partial", "failed", "not_observed"}
             else "available"
         )
-        return PanoramaContextFragment(
-            bundle_id,
-            bundle_id,
-            max(
-                (_time(job.get("observed_at")) for job in selected),
-                default=generated_at,
-            ),
-            status,
-            source_facts,
-            tuple(aggregates[:8]),
-            tuple(interpretations[:8]),
-            tuple(dict.fromkeys(unknowns))[:20],
-            degraded_reason=degraded_reason,
-        )
+        bounded_facts = list(source_facts)
+        bounded_aggregates = list(aggregates[:8])
+        bounded_interpretations = list(interpretations[:8])
+        bounded_unknowns = list(tuple(dict.fromkeys(unknowns))[:20])
+        while True:
+            try:
+                return PanoramaContextFragment(
+                    bundle_id,
+                    bundle_id,
+                    max(
+                        (_time(job.get("observed_at")) for job in selected),
+                        default=generated_at,
+                    ),
+                    status,
+                    tuple(bounded_facts),
+                    tuple(bounded_aggregates),
+                    tuple(bounded_interpretations),
+                    tuple(bounded_unknowns),
+                    degraded_reason=degraded_reason,
+                )
+            except ValueError as error:
+                if str(error) != "intelligence context too large":
+                    raise
+                if bounded_interpretations:
+                    bounded_interpretations.pop()
+                elif len(bounded_facts) > 4:
+                    bounded_facts.pop()
+                elif bounded_aggregates:
+                    bounded_aggregates.pop()
+                elif len(bounded_unknowns) > 5:
+                    bounded_unknowns.pop()
+                elif bounded_facts:
+                    bounded_facts.pop()
+                elif bounded_unknowns:
+                    bounded_unknowns.pop()
+                else:
+                    raise PanoramaUnavailable(
+                        "structured intelligence context unavailable"
+                    ) from None
 
     def _build_fragment(
         self,

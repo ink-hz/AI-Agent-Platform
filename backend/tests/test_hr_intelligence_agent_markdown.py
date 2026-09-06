@@ -130,6 +130,7 @@ def test_compiles_company_markdown_with_provenance_and_claim_classes() -> None:
     assert "scope_key: hesai" in body
     assert "confidence: high" in body
     assert "coverage: succeeded" in body
+    assert "evidence_count: 1" in body
     assert "## 可引用事实" in body
     assert "事实 F-company-hesai-1" in body
     assert "研判 I-company-hesai-1" in body
@@ -184,6 +185,30 @@ def test_compiler_always_emits_index_and_all_task_playbooks() -> None:
     }.issubset(package.files)
 
 
+def test_task_playbook_preserves_accepted_task_analysis_and_evidence() -> None:
+    inputs = _inputs()
+    task = deepcopy(inputs["analyses"][0])
+    task.update(
+        {
+            "unit_id": "00000000-0000-4000-8000-000000000004",
+            "kind": "task",
+            "scope_key": "interview",
+        }
+    )
+    task["response"]["summary"] = "面试任务应围绕可验证证据设计问题。"
+    inputs["analyses"] = (*inputs["analyses"], task)
+
+    package = compile_agent_markdown(**inputs)
+    body = package.files["agent/tasks/interview.md"].decode("utf-8")
+
+    assert "面试任务应围绕可验证证据设计问题" in body
+    assert "## 可引用事实" in body
+    assert "事实 F-company-hesai-1" in body
+    assert "evidence_count: 1" in body
+    assert SOURCE_URL in body
+    assert SHA256 in body
+
+
 def test_company_and_direction_chunks_carry_real_aggregate_routing() -> None:
     package = compile_agent_markdown(**_inputs())
 
@@ -230,3 +255,24 @@ def test_secondary_direction_analysis_is_preserved_as_agent_markdown() -> None:
     assert len(chunks) > 0
     assert chunks[0].directions == ("算法",)
     assert "禾赛招聘情报摘要" in package.files[chunks[0].path].decode("utf-8")
+
+
+def test_evidence_section_only_lists_exact_fact_references() -> None:
+    inputs = _inputs()
+    analysis = deepcopy(inputs["analyses"][0])
+    analysis["evidence"].append(
+        {
+            "job_id": "00000000-0000-4000-8000-000000000099",
+            "sha256": SHA256,
+            "source_url": "https://example.com/jobs/unused",
+            "observed_at": NOW.isoformat(),
+        }
+    )
+    inputs["analyses"] = (analysis,)
+
+    package = compile_agent_markdown(**inputs)
+    body = package.files["agent/companies/hesai.md"].decode("utf-8")
+
+    assert "evidence_count: 1" in body
+    assert SOURCE_URL in body
+    assert "https://example.com/jobs/unused" not in body

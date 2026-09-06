@@ -772,6 +772,38 @@ def _analysis_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _quality_check(args: argparse.Namespace) -> int:
+    bundle_id = _bundle_id(args.bundle_id)
+    work = _work(bundle_id)
+    units = tuple(
+        _unit_from_document(_read_json(path)) for path in _request_files(work)
+    )
+    if not units:
+        raise AnalysisContractError("analysis units unavailable")
+    completed = tuple(unit for unit in units if analysis_cache_hit(work, unit))
+    if args.strict and len(completed) != len(units):
+        raise AnalysisContractError("analysis units incomplete")
+    report = validate_analysis_set(
+        tuple(load_accepted(work, unit) for unit in completed)
+    )
+    print(
+        _canonical_json(
+            {
+                "bundle_id": str(bundle_id),
+                "unit_count": report.unit_count,
+                "factual_claim_count": report.factual_claim_count,
+                "inference_count": report.inference_count,
+                "recommendation_count": report.recommendation_count,
+                "generic_duplicate_pairs": [
+                    list(pair) for pair in report.duplicate_pairs
+                ],
+                "passed": report.passed,
+            }
+        )
+    )
+    return 0
+
+
 def _accept_one(
     work: Path, unit: AnalysisUnit, response_path: Path, usage_path: Path
 ) -> None:
@@ -901,13 +933,16 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument(
         "--units",
         default=(
-            "company,track,direction,secondary-direction,topic,"
-            "executive-summary,task"
+            "company,track,direction,secondary-direction,topic,task,comparison,"
+            "executive-summary"
         ),
     )
     status = commands.add_parser("analysis-status")
     status.add_argument("--bundle-id", required=True)
     status.add_argument("--require-complete", action="store_true")
+    quality = commands.add_parser("quality-check")
+    quality.add_argument("--bundle-id", required=True)
+    quality.add_argument("--strict", action="store_true")
     accept = commands.add_parser("accept-analysis")
     accept.add_argument("--bundle-id", required=True)
     accept.add_argument("--unit")
@@ -947,6 +982,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _prepare_analysis(args)
     if args.command == "analysis-status":
         return _analysis_status(args)
+    if args.command == "quality-check":
+        return _quality_check(args)
     if args.command == "accept-analysis":
         if not args.all_ready and not all((args.unit, args.response, args.usage)):
             raise ValueError("unit, response and usage are required")

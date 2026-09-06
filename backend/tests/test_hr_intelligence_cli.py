@@ -59,7 +59,8 @@ def test_prepare_analysis_defaults_to_complete_v2_unit_set() -> None:
     )
 
     assert args.units == (
-        "company,track,direction,secondary-direction,topic,executive-summary,task"
+        "company,track,direction,secondary-direction,topic,task,comparison,"
+        "executive-summary"
     )
 
 
@@ -398,6 +399,10 @@ def test_cli_prepares_accepts_builds_and_verifies_one_bundle(
     assert main(["accept-analysis", "--bundle-id", str(bundle_id), "--all-ready"]) == 0
     assert (
         main(["analysis-status", "--bundle-id", str(bundle_id), "--require-complete"])
+        == 0
+    )
+    assert (
+        main(["quality-check", "--bundle-id", str(bundle_id), "--strict"])
         == 0
     )
     assert main(["build", "--bundle-id", str(bundle_id)]) == 0

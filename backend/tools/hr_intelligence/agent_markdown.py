@@ -170,7 +170,7 @@ def _claim_lines(unit: Mapping[str, object]) -> tuple[list[str], set[str]]:
     response = _response(unit)
     available = _evidence_keys(unit)
     fact_ids: set[str] = set()
-    evidence_hashes: set[str] = set()
+    used_evidence: set[tuple[str, str, str]] = set()
     lines = ["## 可引用事实", ""]
     facts = _mappings(response.get("facts", []), "facts")
     if not facts:
@@ -188,7 +188,7 @@ def _claim_lines(unit: Mapping[str, object]) -> tuple[list[str], set[str]]:
         ):
             raise MarkdownContractError("Markdown fact evidence invalid")
         fact_ids.add(html.unescape(fact_id))
-        evidence_hashes.add(raw_sha)
+        used_evidence.add((raw_sha, raw_url, raw_time))
         lines.append(
             f"- **事实 {fact_id}：** {_text(fact.get('text'))} "
             f"([来源]({_text(raw_url, maximum=2048)})；"
@@ -277,16 +277,15 @@ def _claim_lines(unit: Mapping[str, object]) -> tuple[list[str], set[str]]:
         details = f"（{'；'.join(suffix)}）" if suffix else ""
         lines.append(f"- **替代解释 {alternative_id}：** {text}{details}")
     lines.extend(["", "## 证据", ""])
-    if not evidence_hashes:
+    if not used_evidence:
         lines.append("- 当前没有已接受的证据引用。")
-    for sha256, source_url, observed_at in sorted(available):
-        if sha256 in evidence_hashes:
-            lines.append(
-                f"- `{sha256}`｜[原始来源]({_text(source_url, maximum=2048)})｜"
-                f"{_text(observed_at, maximum=128)}"
-            )
+    for sha256, source_url, observed_at in sorted(used_evidence):
+        lines.append(
+            f"- `{sha256}`｜[原始来源]({_text(source_url, maximum=2048)})｜"
+            f"{_text(observed_at, maximum=128)}"
+        )
     lines.append("")
-    return lines, evidence_hashes
+    return lines, {sha256 for sha256, _source_url, _observed_at in used_evidence}
 
 
 def _render_unit(
@@ -326,7 +325,7 @@ def _render_unit(
         return "\n".join(lines).encode("utf-8")
     response = _response(unit)
     confidence = response.get("confidence", "low")
-    evidence_count = len(_evidence_keys(unit))
+    claims, used_evidence = _claim_lines(unit)
     lines = _front_matter(
         bundle_id=bundle_id,
         observed_at=generated_at,
@@ -334,7 +333,7 @@ def _render_unit(
         scope_key=scope_key,
         confidence=str(confidence),
         coverage=coverage,
-        evidence_count=evidence_count,
+        evidence_count=len(used_evidence),
     )
     lines.extend(
         [
@@ -346,7 +345,6 @@ def _render_unit(
             "",
         ]
     )
-    claims, _evidence = _claim_lines(unit)
     lines.extend(claims)
     return "\n".join(lines).encode("utf-8")
 
@@ -575,6 +573,20 @@ def compile_agent_markdown(
         task_kinds = tuple(
             key for key, value in _TASK_FILES.items() if value == filename
         )
+        task_unit = units.get(("task", filename))
+        path = f"agent/tasks/{filename}.md"
+        if task_unit is not None:
+            files[path] = _render_unit(
+                bundle_id=bundle_id,
+                generated_at=generated_at,
+                scope="task",
+                scope_key=filename,
+                title=title,
+                coverage="succeeded",
+                unit=task_unit,
+            )
+            routing[path] = {"task_kinds": task_kinds}
+            continue
         lines = _front_matter(
             bundle_id=bundle_id,
             observed_at=generated_at,
@@ -602,7 +614,6 @@ def compile_agent_markdown(
             or ["- 当前 Bundle 没有该任务的专项建议。"]
         )
         lines.append("")
-        path = f"agent/tasks/{filename}.md"
         files[path] = "\n".join(lines).encode("utf-8")
         routing[path] = {"task_kinds": task_kinds}
 
