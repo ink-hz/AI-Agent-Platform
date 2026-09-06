@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from .panorama_analysis import PanoramaAnalyzer
 from .panorama_collection import CollectionError, CollectionResult, SourceTarget
+from .panorama_dimensions import recruitment_track
 from .panorama_models import (
     CreatePublicJobSnapshot,
     CreateSourceCollectionAttempt,
@@ -266,8 +267,10 @@ class PanoramaProductionPipeline:
                 batch.owner_id, batch.batch_id
             )
             coverage = self._coverage_from_persisted(batch, snapshots, attempts)
-            successful_source_count = len({item.source_id for item in snapshots})
-            failed_source_count = len(batch.source_failures)
+            successful_source_count = sum(
+                item["state"] == "succeeded" for item in coverage
+            )
+            failed_source_count = sum(item["state"] == "failed" for item in coverage)
             return await self._analyze_and_publish(
                 batch,
                 snapshots,
@@ -485,12 +488,11 @@ class PanoramaProductionPipeline:
         campus = tuple(
             item
             for item in snapshots
-            if any(
-                marker in f"{item.title}{item.duty_excerpt}{item.requirement_excerpt}"
-                for marker in ("校招", "校园", "应届", "实习", "届毕业")
-            )
+            if recruitment_track(item) in {"campus", "intern"}
         )
-        social = tuple(item for item in snapshots if item not in campus)
+        social = tuple(
+            item for item in snapshots if recruitment_track(item) == "social"
+        )
         for topic, selected in (("社会招聘", social), ("校园招聘", campus)):
             if selected:
                 relevant = tuple(
@@ -589,12 +591,16 @@ class PanoramaProductionPipeline:
             observed_values.extend(item.observed_at for item in successful_attempts)
             record: dict[str, object] = {
                 "source_id": str(source_id),
-                "state": "succeeded" if selected_snapshots else "failed",
+                "state": (
+                    "succeeded"
+                    if selected_snapshots or successful_attempts
+                    else "failed"
+                ),
                 "observed_at": max(observed_values, default=batch.updated_at).isoformat(),
                 "source_urls": [target.source_url for target in targets],
                 "job_count": len(selected_snapshots),
             }
-            if selected_snapshots:
+            if selected_snapshots or successful_attempts:
                 if channel_failures:
                     record["channel_failures"] = channel_failures
             else:

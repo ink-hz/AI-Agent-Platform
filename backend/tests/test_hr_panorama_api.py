@@ -6,11 +6,6 @@ from io import BytesIO
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.testclient import TestClient
-from openpyxl import load_workbook
-from pypdf import PdfReader
-
 from app.hr.panorama_models import (
     PanoramaReport,
     PublicJobSnapshot,
@@ -26,6 +21,10 @@ from app.hr.panorama_repository import (
 )
 from app.hr.panorama_routes import build_panorama_router
 from app.hr.panorama_service import PanoramaEvidenceFile
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.testclient import TestClient
+from openpyxl import load_workbook
+from pypdf import PdfReader
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
 
@@ -273,9 +272,143 @@ def test_report_exports_preserve_ai_and_original_job_data() -> None:
     workbook = load_workbook(BytesIO(xlsx.content), read_only=True)
     assert "结构研发投入明确" in pdf_text
     assert "高级结构工程师" in pdf_text
-    assert {"原始岗位", "AI分析", "来源覆盖", "证据索引"} <= set(
+    assert "基线版本：尚不能判断月度变化" in pdf_text
+    assert {"原始岗位", "AI分析", "招聘结构", "来源覆盖", "证据索引"} <= set(
         workbook.sheetnames
     )
+
+
+@pytest.mark.parametrize("direction", ["quality", "product", "supply_chain"])
+def test_report_export_accepts_all_v2_technical_directions(direction: str) -> None:
+    client, service = _client()
+    base = f"/api/hr/panorama/reports/{service.report_value.publication.publication_id}/export"
+
+    response = client.get(f"{base}?format=xlsx&technical_direction={direction}")
+
+    assert response.status_code == 200
+
+
+def test_report_export_preserves_internship_as_its_own_track() -> None:
+    client, service = _client()
+    snapshot = replace(
+        service.report_value.snapshots[0],
+        source_url="https://example.com/intern/jobs/1",
+        title="结构实习生",
+    )
+    service.report_value = replace(service.report_value, snapshots=(snapshot,))
+    base = f"/api/hr/panorama/reports/{service.report_value.publication.publication_id}/export"
+
+    response = client.get(f"{base}?format=xlsx&recruitment_track=intern")
+    workbook = load_workbook(BytesIO(response.content), read_only=True)
+    rows = list(workbook["原始岗位"].iter_rows(values_only=True))
+
+    assert response.status_code == 200
+    assert rows[1][2] == "实习"
+
+
+def test_company_direction_rows_cite_snapshots_from_that_direction() -> None:
+    client, service = _client()
+    original = service.report_value.snapshots[0]
+    structure = tuple(
+        replace(
+            original,
+            snapshot_id=uuid4(),
+            observation_id=uuid4(),
+            public_job_key=f"structure-{index:02d}",
+            title=f"结构工程师 {index}",
+        )
+        for index in range(21)
+    )
+    optical = replace(
+        original,
+        snapshot_id=uuid4(),
+        observation_id=uuid4(),
+        public_job_key="zz-optics",
+        title="光学工程师",
+    )
+    service.report_value = replace(
+        service.report_value, snapshots=(*structure, optical)
+    )
+    base = f"/api/hr/panorama/reports/{service.report_value.publication.publication_id}/export"
+
+    response = client.get(f"{base}?format=xlsx")
+    workbook = load_workbook(BytesIO(response.content), read_only=True)
+    rows = list(workbook["招聘结构"].iter_rows(values_only=True))
+    optical_row = next(
+        row
+        for row in rows
+        if row[1:3] == ("公司 × 技术方向", "光学") and str(row[3]) == "1"
+    )
+
+    assert str(optical.snapshot_id) in optical_row[4]
+
+
+def test_pdf_source_coverage_distinguishes_failure_from_checked_empty() -> None:
+    client, service = _client()
+    publication_id = service.report_value.publication.publication_id
+
+    response = client.get(
+        f"/api/hr/panorama/reports/{publication_id}/export?format=pdf"
+    )
+    text = "".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages
+    )
+
+    assert "采集失败" in text
+    assert "source_timeout" in text
+    assert "岗位命中数：0" in text
+
+
+def test_pdf_uses_a_bounded_representative_job_appendix_for_large_reports() -> None:
+    client, service = _client()
+    original = service.report_value.snapshots[0]
+    snapshots = tuple(
+        replace(
+            original,
+            snapshot_id=uuid4(),
+            observation_id=uuid4(),
+            public_job_key=f"job-{index}",
+            title=f"结构工程师 {index}",
+        )
+        for index in range(250)
+    )
+    service.report_value = replace(service.report_value, snapshots=snapshots)
+    base = f"/api/hr/panorama/reports/{service.report_value.publication.publication_id}/export"
+
+    response = client.get(f"{base}?format=pdf")
+    reader = PdfReader(BytesIO(response.content))
+    text = "".join(page.extract_text() or "" for page in reader.pages)
+
+    assert response.status_code == 200
+    assert "PDF 展示 120 个代表岗位；完整 250 条原始岗位请下载 Excel" in text
+    assert len(reader.pages) < 100
+
+
+def test_export_labels_a_successfully_checked_empty_channel_without_claiming_failure() -> None:
+    client, service = _client()
+    publication = replace(
+        service.report_value.publication,
+        coverage_state="complete",
+        source_coverage=(
+            {
+                "source_id": str(service.report_value.sources[0].source_id),
+                "state": "succeeded",
+                "observed_at": NOW.isoformat(),
+                "source_urls": service.report_value.sources[0].approved_urls,
+                "job_count": 1,
+            },
+        ),
+    )
+    service.report_value = replace(service.report_value, publication=publication)
+    base = f"/api/hr/panorama/reports/{publication.publication_id}/export"
+
+    response = client.get(f"{base}?format=xlsx")
+    workbook = load_workbook(BytesIO(response.content), read_only=True)
+    rows = list(workbook["来源覆盖"].iter_rows(values_only=True))
+
+    campus = next(row for row in rows if row[1] == "https://example.com/campus")
+    assert campus[4] == "已检查，本次未发现公开岗位"
+    assert campus[5] in (None, "")
 
 
 def test_archived_raw_source_response_can_be_downloaded_without_mutation() -> None:

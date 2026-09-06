@@ -125,6 +125,47 @@ class CollectionResult:
         return self.evidence.sha256
 
 
+class _SyntheticEnvelope:
+    def __init__(self, maximum_bytes: int, source_url: str) -> None:
+        self.jobs: list[object] = []
+        self.pages: list[str] = []
+        self._maximum_bytes = maximum_bytes
+        self._estimated_bytes = 128 + len(source_url.encode("utf-8"))
+
+    @staticmethod
+    def _size(value: object) -> int:
+        return len(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+
+    def _append(self, values: list[object] | list[str], value: object) -> None:
+        selected_size = self._size(value) + 1
+        if self._estimated_bytes + selected_size > self._maximum_bytes:
+            raise CollectionError("response_too_large")
+        values.append(value)  # type: ignore[arg-type]
+        self._estimated_bytes += selected_size
+
+    def add_page(self, value: str) -> None:
+        self._append(self.pages, value)
+
+    def add_job(self, value: object) -> None:
+        self._append(self.jobs, value)
+
+    def payload(self, document: Mapping[str, object]) -> bytes:
+        body = json.dumps(
+            document,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
+        if len(body) > self._maximum_bytes:
+            raise CollectionError("response_too_large")
+        return body
+
+
 class _JsonLdParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -174,14 +215,48 @@ def _location(value: object) -> str:
             named = _plain(value.get(key), "")
             if named:
                 return named
+        regional_parts = [
+            _plain(value.get(key), "") for key in ("province", "city", "area")
+        ]
+        if any(regional_parts):
+            return "·".join(part for part in regional_parts if part)
         address = value.get("address", value)
         if isinstance(address, Mapping):
             parts = [
                 _plain(address.get(key), "")
                 for key in ("addressRegion", "addressLocality", "streetAddress")
             ]
+            if not any(parts):
+                parts = [
+                    _plain(address.get(key), "")
+                    for key in ("province", "city", "area", "address")
+                ]
             return "·".join(part for part in parts if part) or "未公开"
+        if isinstance(address, str):
+            return _plain(address)
     return _plain(value)
+
+
+def _split_job_text(value: object) -> tuple[str, str]:
+    text = _plain(value)
+    for marker in ("任职要求：", "任职要求", "岗位要求：", "岗位要求"):
+        if marker in text:
+            duty, requirement = text.split(marker, 1)
+            duty = re.sub(r"^(?:一、)?(?:工作|岗位)?职责[：:]?", "", duty).strip()
+            requirement = re.sub(r"^(?:二、)?", "", requirement).strip()
+            return duty or "未公开", requirement or "未公开"
+    return text, "未公开"
+
+
+def _without_html_comments(value: str) -> str:
+    return re.sub(r"<!--.*?-->", "", value, flags=re.DOTALL)
+
+
+def _states_no_open_jobs(value: str) -> bool:
+    return re.search(
+        r"暂无(?:招聘|职位|岗位)|暂无相关职位|没有(?:招聘|职位|岗位)|无在招岗位",
+        _plain(value, ""),
+    ) is not None
 
 
 def _job_from_mapping(
@@ -195,6 +270,7 @@ def _job_from_mapping(
     location = _location(
         item.get("jobLocation")
         or item.get("location")
+        or item.get("locations")
         or item.get("city_list")
         or item.get("city_info")
         or item.get("LocNames")
@@ -218,6 +294,8 @@ def _job_from_mapping(
     status = (
         status_value if status_value in {"open", "closed", "unknown"} else "unknown"
     )
+    description = item.get("description") or item.get("responsibilities")
+    description_duty, description_requirement = _split_job_text(description)
     return NormalizedPublicJob(
         public_job_key=_identifier(
             item.get("identifier")
@@ -232,10 +310,7 @@ def _job_from_mapping(
         title=title,
         location=location,
         duty_excerpt=_plain(
-            item.get("description")
-            or item.get("responsibilities")
-            or item.get("duty")
-            or item.get("Duty")
+            item.get("duty") or item.get("Duty") or description_duty
         ),
         requirement_excerpt=_plain(
             item.get("qualifications")
@@ -243,6 +318,7 @@ def _job_from_mapping(
             or item.get("requirement")
             or item.get("Require")
             or item.get("experienceRequirements")
+            or description_requirement
         ),
         source_url=source_url,
         status=status,
@@ -296,6 +372,14 @@ def parse_public_jobs(
         except json.JSONDecodeError:
             raise CollectionError("unsupported_schema") from None
         if isinstance(decoded, Mapping):
+            if (
+                "vnd.orbbec.hr-panorama+json" in mime.lower()
+                and isinstance(decoded.get("_collection_error"), str)
+            ):
+                raise CollectionError(
+                    decoded["_collection_error"],
+                    retryable=decoded.get("_collection_error_retryable") is True,
+                )
             data = decoded.get("data")
             if isinstance(data, Mapping) and isinstance(
                 data.get("job_post_list"), list
@@ -329,6 +413,21 @@ def parse_public_jobs(
                 if count > returned:
                     raise CollectionError("response_truncated")
                 if count == 0:
+                    return ()
+            moka_jobs = decoded.get("jobs")
+            if isinstance(moka_jobs, list) and "total" in decoded:
+                total = decoded.get("total")
+                if decoded.get("code") not in {None, 0}:
+                    raise CollectionError("source_rejected")
+                if (
+                    isinstance(total, bool)
+                    or not isinstance(total, int)
+                    or total < len(moka_jobs)
+                ):
+                    raise CollectionError("unsupported_schema")
+                if total > len(moka_jobs):
+                    raise CollectionError("response_truncated")
+                if total == 0:
                     return ()
         payloads.append(decoded)
     else:
@@ -417,6 +516,28 @@ class PublicSourceCollector:
 
     async def _fetch(self, target: SourceTarget) -> tuple[httpx.Response, str, bytes]:
         hostname = urlsplit(target.source_url).hostname or ""
+        path = urlsplit(target.source_url).path
+        if (
+            hostname == "app.mokahr.com"
+            or "dingtalkcloud.com" in hostname
+            or "dingtalkoxm.com" in hostname
+        ) and re.search(r"/(?:social|campus)-recruitment/[^/]+/\d+", path):
+            return await self._fetch_moka(target)
+        if hostname == "www.elegoo.com.cn" and path.endswith("/join/index.html"):
+            return await self._fetch_elegoo(target)
+        if hostname == "hr.revopoint3d.com.cn" and (
+            path in {"", "/"} or re.fullmatch(r"/gwtd1?\.html", path)
+        ):
+            return await self._fetch_revopoint(target)
+        if hostname == "career.huawei.com" and path in {
+            "/reccampportal/portal5/social-recruitment.html",
+            "/reccampportal/portal5/campus-recruitment.html",
+        }:
+            return await self._fetch_huawei_current(target)
+        if hostname == "career.huawei.com" and path.endswith(
+            "/huawei-special-recruitment.html"
+        ):
+            return await self._fetch_huawei(target)
         if hostname.endswith(".jobs.feishu.cn"):
             return await self._fetch_feishu(target, hostname)
         if hostname.endswith(".zhiye.com"):
@@ -456,22 +577,531 @@ class PublicSourceCollector:
                     raise CollectionError("source_unavailable", retryable=True)
                 if response.status_code >= 400:
                     raise CollectionError("source_rejected")
-                content_length = response.headers.get("content-length")
-                if (
-                    content_length
-                    and content_length.isdigit()
-                    and int(content_length) > self._maximum_response_bytes
-                ):
-                    raise CollectionError("response_too_large")
-                chunks: list[bytes] = []
-                size = 0
-                async for chunk in response.aiter_bytes():
-                    size += len(chunk)
-                    if size > self._maximum_response_bytes:
-                        raise CollectionError("response_too_large")
-                    chunks.append(chunk)
-                return response, current, b"".join(chunks)
+                return response, current, await self._read_bounded(response)
         raise CollectionError("redirect_not_approved")
+
+    async def _read_bounded(self, response: httpx.Response) -> bytes:
+        content_length = response.headers.get("content-length")
+        if (
+            content_length
+            and content_length.isdigit()
+            and int(content_length) > self._maximum_response_bytes
+        ):
+            raise CollectionError("response_too_large")
+        chunks: list[bytes] = []
+        size = 0
+        chunk_size = min(64 * 1024, self._maximum_response_bytes + 1)
+        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+            size += len(chunk)
+            if size > self._maximum_response_bytes:
+                raise CollectionError("response_too_large")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    async def _get_derived(
+        self, url: str, *, referer: str | None = None
+    ) -> tuple[httpx.Response, bytes]:
+        selected = canonical_panorama_url(self._destination_validator(url))
+        headers = {
+            "Accept": "application/json, text/javascript, text/html",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
+            ),
+        }
+        if referer:
+            headers["Referer"] = referer
+        async with self._client.stream(
+            "GET",
+            selected,
+            follow_redirects=False,
+            timeout=httpx.Timeout(connect=5, read=30, write=5, pool=5),
+            headers=headers,
+        ) as response:
+            if 300 <= response.status_code < 400:
+                raise CollectionError("redirect_not_approved")
+            if response.status_code >= 500:
+                raise CollectionError("source_unavailable", retryable=True)
+            if response.status_code >= 400:
+                raise CollectionError("source_rejected")
+            return response, await self._read_bounded(response)
+
+    @staticmethod
+    def _synthetic_response(body: bytes) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=body,
+            headers={"content-type": "application/vnd.orbbec.hr-panorama+json"},
+        )
+
+    async def _fetch_moka(
+        self, target: SourceTarget
+    ) -> tuple[httpx.Response, str, bytes]:
+        matched = re.search(
+            r"/(social|campus)-recruitment/([^/]+)/(\d+)",
+            urlsplit(target.source_url).path,
+        )
+        if matched is None:
+            raise CollectionError("unsupported_schema")
+        mode, org_id, site_id = matched.groups()
+        envelope = _SyntheticEnvelope(
+            self._maximum_response_bytes, target.source_url
+        )
+        seen_job_keys: set[str] = set()
+        total: int | None = None
+        offset = 0
+        while total is None or offset < total:
+            endpoint = (
+                f"https://api.mokahr.com/api-platform/v1/jobs/{org_id}"
+                f"?mode={mode}&limit=100&offset={offset}&siteId={site_id}"
+            )
+            _response, raw = await self._get_derived(endpoint)
+            try:
+                page = json.loads(raw)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                raise CollectionError("unsupported_schema") from None
+            page_jobs = page.get("jobs") if isinstance(page, Mapping) else None
+            page_total = page.get("total") if isinstance(page, Mapping) else None
+            if (
+                not isinstance(page, Mapping)
+                or page.get("code") != 0
+                or not isinstance(page_jobs, list)
+                or isinstance(page_total, bool)
+                or not isinstance(page_total, int)
+                or page_total < 0
+            ):
+                raise CollectionError("source_rejected")
+            if total is not None and total != page_total:
+                raise CollectionError("source_changed_during_collection", retryable=True)
+            total = page_total
+            envelope.add_page(raw.decode("utf-8-sig"))
+            for item in page_jobs:
+                if not isinstance(item, Mapping):
+                    return self._synthetic_failure(
+                        target, envelope, "unsupported_schema"
+                    )
+                try:
+                    public_job_key = _job_from_mapping(item, target).public_job_key
+                except ValueError:
+                    return self._synthetic_failure(
+                        target, envelope, "unsupported_schema"
+                    )
+                if public_job_key in seen_job_keys:
+                    return self._synthetic_failure(
+                        target,
+                        envelope,
+                        "source_changed_during_collection",
+                        retryable=True,
+                    )
+                seen_job_keys.add(public_job_key)
+                envelope.add_job(item)
+            if not page_jobs:
+                if offset < total:
+                    raise CollectionError("response_truncated")
+                break
+            offset += len(page_jobs)
+            if len(envelope.jobs) > 10000:
+                raise CollectionError("response_too_large")
+        if (
+            total is None
+            or len(envelope.jobs) != total
+            or len(seen_job_keys) != total
+        ):
+            return self._synthetic_failure(
+                target, envelope, "response_truncated"
+            )
+        payload = envelope.payload(
+            {
+                "code": 0,
+                "total": total or 0,
+                "jobs": envelope.jobs,
+                "_evidence_pages": envelope.pages,
+                "_source_url": target.source_url,
+            }
+        )
+        return self._synthetic_response(payload), target.source_url, payload
+
+    async def _fetch_elegoo(
+        self, target: SourceTarget
+    ) -> tuple[httpx.Response, str, bytes]:
+        _response, listing = await self._get_derived(target.source_url)
+        text = listing.decode("utf-8-sig")
+        active_text = _without_html_comments(text)
+        envelope = _SyntheticEnvelope(
+            self._maximum_response_bytes, target.source_url
+        )
+        envelope.add_page(text)
+        paths = tuple(
+            dict.fromkeys(
+                re.findall(
+                    r'href=["\']([^"\']*/index/join/detail/id/\d+\.html)["\']',
+                    active_text,
+                )
+            )
+        )
+        if not paths:
+            return self._synthetic_jobs(
+                target,
+                envelope,
+                verified_empty=_states_no_open_jobs(active_text),
+            )
+        if len(paths) > 100:
+            return self._synthetic_failure(
+                target, envelope, "response_truncated"
+            )
+        target_origin = urlsplit(target.source_url)
+        detail_urls: list[str] = []
+        for path in paths:
+            detail_url = canonical_panorama_url(urljoin(target.source_url, path))
+            detail_origin = urlsplit(detail_url)
+            if (
+                detail_origin.scheme,
+                detail_origin.hostname,
+                detail_origin.port or 443,
+            ) != (
+                target_origin.scheme,
+                target_origin.hostname,
+                target_origin.port or 443,
+            ):
+                continue
+            detail_urls.append(detail_url)
+        if not detail_urls:
+            return self._synthetic_failure(
+                target, envelope, "unsupported_schema"
+            )
+        for detail_url in detail_urls:
+            _detail_response, raw = await self._get_derived(detail_url)
+            detail = raw.decode("utf-8-sig")
+            envelope.add_page(detail)
+            title_match = re.search(
+                r'class=["\'][^"\']*xqtitle[^"\']*["\'][^>]*>.*?<h2>(.*?)</h2>',
+                detail,
+                re.IGNORECASE | re.DOTALL,
+            )
+            body_match = re.search(
+                r'class=["\'][^"\']*zpxq[^"\']*["\'][^>]*>(.*?)</div>',
+                detail,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if title_match is None or body_match is None:
+                return self._synthetic_failure(
+                    target, envelope, "unsupported_schema"
+                )
+            duty, requirement = _split_job_text(body_match.group(1))
+            envelope.add_job(
+                {
+                    "id": re.search(r"/id/(\d+)\.html", detail_url).group(1),
+                    "title": _plain(title_match.group(1)),
+                    "location": "未公开",
+                    "duty": duty,
+                    "requirements": requirement,
+                    "url": detail_url,
+                    "status": "open",
+                }
+            )
+        return self._synthetic_jobs(target, envelope)
+
+    async def _fetch_revopoint(
+        self, target: SourceTarget
+    ) -> tuple[httpx.Response, str, bytes]:
+        selected_path = urlsplit(target.source_url).path
+        initial_urls = (
+            (
+                "https://hr.revopoint3d.com.cn/gwtd.html",
+                "https://hr.revopoint3d.com.cn/gwtd1.html",
+            )
+            if selected_path in {"", "/"}
+            else (target.source_url,)
+        )
+        envelope = _SyntheticEnvelope(
+            self._maximum_response_bytes, target.source_url
+        )
+        listing_pages: list[tuple[str, str]] = []
+        for initial_url in initial_urls:
+            _response, first = await self._get_derived(initial_url)
+            first_text = first.decode("utf-8-sig")
+            envelope.add_page(first_text)
+            listing_pages.append((initial_url, first_text))
+            base_name = urlsplit(initial_url).path.rsplit(".", 1)[0].lstrip("/")
+            active_text = _without_html_comments(first_text)
+            page_paths = tuple(
+                dict.fromkeys(
+                    re.findall(
+                        rf'href=["\'](/?{re.escape(base_name)}-\d+\.html)["\']',
+                        active_text,
+                    )
+                )
+            )
+            if len(page_paths) > 20:
+                return self._synthetic_failure(
+                    target, envelope, "response_truncated"
+                )
+            for path in page_paths:
+                _page_response, raw = await self._get_derived(
+                    canonical_panorama_url(urljoin(initial_url, path))
+                )
+                page_url = canonical_panorama_url(urljoin(initial_url, path))
+                page_text = raw.decode("utf-8-sig")
+                envelope.add_page(page_text)
+                listing_pages.append((page_url, page_text))
+        for listing_url, listing in listing_pages:
+            active_listing = _without_html_comments(listing)
+            for row in re.findall(
+                r"<tr[^>]*>(.*?)</tr>",
+                active_listing,
+                re.IGNORECASE | re.DOTALL,
+            ):
+                job_id = re.search(r"my_load_more\((\d+)\)", row)
+                cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.IGNORECASE | re.DOTALL)
+                if job_id is None or len(cells) < 3:
+                    continue
+                detail_url = (
+                    "https://hr.revopoint3d.com.cn/index.php?s=api&c=api&m=template"
+                    "&name=content_data.html&module=join&catid=4&resume_count=0"
+                    f"&format=json&id={job_id.group(1)}"
+                )
+                _detail_response, raw = await self._get_derived(detail_url)
+                envelope.add_page(raw.decode("utf-8-sig"))
+                try:
+                    detail_payload = json.loads(raw)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    return self._synthetic_failure(
+                        target, envelope, "unsupported_schema"
+                    )
+                if (
+                    not isinstance(detail_payload, Mapping)
+                    or not isinstance(detail_payload.get("msg"), str)
+                ):
+                    return self._synthetic_failure(
+                        target, envelope, "unsupported_schema"
+                    )
+                duty, requirement = _split_job_text(detail_payload.get("msg"))
+                envelope.add_job(
+                    {
+                        "id": job_id.group(1),
+                        "title": _plain(cells[0]),
+                        "location": _plain(cells[2]),
+                        "duty": duty,
+                        "requirements": requirement,
+                        "url": listing_url,
+                        "status": "open",
+                    }
+                )
+        return self._synthetic_jobs(
+            target,
+            envelope,
+            verified_empty=bool(listing_pages)
+            and all(_states_no_open_jobs(page) for _, page in listing_pages),
+        )
+
+    async def _fetch_huawei_current(
+        self, target: SourceTarget
+    ) -> tuple[httpx.Response, str, bytes]:
+        _response, landing = await self._get_derived(target.source_url)
+        envelope = _SyntheticEnvelope(
+            self._maximum_response_bytes, target.source_url
+        )
+        envelope.add_page(landing.decode("utf-8-sig"))
+        campus = urlsplit(target.source_url).path.endswith(
+            "/campus-recruitment.html"
+        )
+        total_rows: int | None = None
+        total_pages: int | None = None
+        seen_job_keys: set[str] = set()
+        page_number = 1
+        while total_pages is None or page_number <= total_pages:
+            query = (
+                "jobType=0&jobTypes=2&language=zh_CN&"
+                "orderBy=ISS_STARTDATE_DESC_AND_IS_HOT_JOB"
+                if campus
+                else "jobType=1&orderBy=P_COUNT_DESC"
+            )
+            endpoint = (
+                "https://career.huawei.com/reccampportal/services/portal/"
+                f"portalpub/getJob/newHr/page/100/{page_number}?{query}"
+            )
+            _page_response, raw = await self._get_derived(
+                endpoint, referer=target.source_url
+            )
+            envelope.add_page(raw.decode("utf-8-sig"))
+            try:
+                page = json.loads(raw)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return self._synthetic_failure(
+                    target, envelope, "unsupported_schema"
+                )
+            page_info = page.get("pageVO") if isinstance(page, Mapping) else None
+            page_jobs = page.get("result") if isinstance(page, Mapping) else None
+            selected_total = (
+                page_info.get("totalRows")
+                if isinstance(page_info, Mapping)
+                else None
+            )
+            selected_pages = (
+                page_info.get("totalPages")
+                if isinstance(page_info, Mapping)
+                else None
+            )
+            selected_page = (
+                page_info.get("curPage")
+                if isinstance(page_info, Mapping)
+                else None
+            )
+            if (
+                not isinstance(page_jobs, list)
+                or isinstance(selected_total, bool)
+                or not isinstance(selected_total, int)
+                or selected_total < 0
+                or isinstance(selected_pages, bool)
+                or not isinstance(selected_pages, int)
+                or selected_pages < 0
+                or selected_page != page_number
+                or (total_rows is not None and total_rows != selected_total)
+                or (total_pages is not None and total_pages != selected_pages)
+            ):
+                return self._synthetic_failure(
+                    target, envelope, "source_changed_during_collection", retryable=True
+                )
+            total_rows = selected_total
+            total_pages = selected_pages
+            if not page_jobs and page_number <= total_pages:
+                return self._synthetic_failure(
+                    target, envelope, "response_truncated"
+                )
+            for item in page_jobs:
+                if not isinstance(item, Mapping):
+                    return self._synthetic_failure(
+                        target, envelope, "unsupported_schema"
+                    )
+                public_job_key = _plain(item.get("jobId"), "")
+                title = _plain(
+                    item.get("jobname") or item.get("externalJobName"), ""
+                )
+                if not public_job_key or not title or public_job_key in seen_job_keys:
+                    return self._synthetic_failure(
+                        target,
+                        envelope,
+                        "source_changed_during_collection",
+                        retryable=True,
+                    )
+                seen_job_keys.add(public_job_key)
+                envelope.add_job(
+                    {
+                        "id": public_job_key,
+                        "title": title,
+                        "location": item.get("jobArea")
+                        or item.get("jobAddress")
+                        or "未公开",
+                        "duty": item.get("mainBusiness") or "未公开",
+                        "requirements": item.get("jobRequire") or "未公开",
+                        "url": target.source_url,
+                        "status": "open",
+                    }
+                )
+            if len(envelope.jobs) > 10000:
+                raise CollectionError("response_too_large")
+            page_number += 1
+        if total_rows is None or len(envelope.jobs) != total_rows:
+            return self._synthetic_failure(
+                target, envelope, "response_truncated"
+            )
+        return self._synthetic_jobs(
+            target,
+            envelope,
+            verified_empty=total_rows == 0,
+        )
+
+    async def _fetch_huawei(
+        self, target: SourceTarget
+    ) -> tuple[httpx.Response, str, bytes]:
+        _response, landing = await self._get_derived(target.source_url)
+        script_url = urljoin(target.source_url, "./js/postDatas.js")
+        _script_response, raw = await self._get_derived(script_url)
+        script = raw.decode("utf-8-sig")
+        envelope = _SyntheticEnvelope(
+            self._maximum_response_bytes, target.source_url
+        )
+        landing_text = landing.decode("utf-8-sig")
+        envelope.add_page(landing_text)
+        envelope.add_page(script)
+        for block in re.findall(r"\{(.*?)\}(?:,|\s*\])", script, re.DOTALL):
+            fields: dict[str, str] = {}
+            for name in ("name", "type", "res", "int", "req", "link"):
+                matched = re.search(
+                    rf"\b{name}\s*:\s*(['`])(.*?)\1", block, re.DOTALL
+                )
+                fields[name] = "" if matched is None else matched.group(2)
+            job_id = re.search(r"[?&]jobId=(\d+)", fields["link"])
+            if not fields["name"] or job_id is None:
+                continue
+            responsibility = " ".join(
+                part
+                for part in (
+                    _plain(fields["type"], ""),
+                    _plain(fields["res"], ""),
+                    _plain(fields["int"], ""),
+                )
+                if part
+            )
+            envelope.add_job(
+                {
+                    "id": job_id.group(1),
+                    "title": fields["name"],
+                    "location": "多地",
+                    "duty": responsibility or "职位方向以官方详情页为准",
+                    "requirements": _plain(fields["req"]),
+                    "url": urljoin(target.source_url, fields["link"]),
+                    "status": "open",
+                }
+            )
+        structural_empty = re.search(
+            r"\b__data_list\s*=\s*\[\s*\]\s*;?", script
+        ) is not None
+        return self._synthetic_jobs(
+            target,
+            envelope,
+            verified_empty=_states_no_open_jobs(landing_text) and structural_empty,
+        )
+
+    def _synthetic_jobs(
+        self,
+        target: SourceTarget,
+        envelope: _SyntheticEnvelope,
+        *,
+        verified_empty: bool = False,
+    ) -> tuple[httpx.Response, str, bytes]:
+        if not envelope.jobs and not verified_empty:
+            return self._synthetic_failure(
+                target, envelope, "unsupported_schema"
+            )
+        payload = envelope.payload(
+            {
+                "code": 0,
+                "total": len(envelope.jobs),
+                "jobs": envelope.jobs,
+                "_evidence_pages": envelope.pages,
+            }
+        )
+        return self._synthetic_response(payload), target.source_url, payload
+
+    def _synthetic_failure(
+        self,
+        target: SourceTarget,
+        envelope: _SyntheticEnvelope,
+        code: str,
+        *,
+        retryable: bool = False,
+    ) -> tuple[httpx.Response, str, bytes]:
+        payload = envelope.payload(
+            {
+                "jobs": envelope.jobs,
+                "_evidence_pages": envelope.pages,
+                "_collection_error": code,
+                "_collection_error_retryable": retryable,
+            }
+        )
+        return self._synthetic_response(payload), target.source_url, payload
 
     async def _fetch_feishu(
         self, target: SourceTarget, hostname: str

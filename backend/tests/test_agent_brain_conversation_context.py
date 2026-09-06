@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import datetime
 from uuid import uuid4
@@ -116,9 +117,22 @@ def test_verified_hr_position_turn_receives_exactly_one_pinned_envelope(
         owner_id, position.position_id, started.conversation.conversation_id,
         uuid4(), "created_in_position",
     ))
+    prompt_context = json.dumps(
+        {
+            "position_title": "结构工程师",
+            "official_facts": None,
+            "confirmed_context": {
+                "modules": {
+                    "jd": {"text": "工作地点深圳，负责精密结构量产"},
+                    "jr": {"text": "五年以上结构设计经验"},
+                }
+            },
+        },
+        ensure_ascii=False,
+    )
     envelope = HrPositionContextEnvelope(
         position.position_id, None, None, "jd", (), None, None, (), (),
-        "Pinned position", "a" * 64,
+        prompt_context, "a" * 64,
     )
     envelope = replace(envelope, canonical_sha256=canonical_hash(envelope))
 
@@ -147,8 +161,8 @@ def test_verified_hr_position_turn_receives_exactly_one_pinned_envelope(
         def __init__(self):
             self.calls = []
 
-        def for_turn(self, selected_owner, position_id, query, turn_id, *, task_kind=None):
-            self.calls.append((selected_owner, position_id, query, turn_id, task_kind))
+        def for_turn(self, selected_owner, position_id, query, turn_id, *, task_kind=None, position_context=None):
+            self.calls.append((selected_owner, position_id, query, turn_id, task_kind, position_context))
             return panorama_fragment
 
     panorama_provider = PanoramaProvider()
@@ -164,7 +178,16 @@ def test_verified_hr_position_turn_receives_exactly_one_pinned_envelope(
         owner_id, started.conversation.conversation_id, started.turn.turn_id
     )]
     assert panorama_provider.calls == [(
-        owner_id, position.position_id, "生成 JD", started.turn.turn_id, "jd"
+        owner_id,
+        position.position_id,
+        "生成 JD",
+        started.turn.turn_id,
+        "jd",
+        {
+            "title": "结构工程师",
+            "jd": "工作地点深圳，负责精密结构量产",
+            "jr": "五年以上结构设计经验",
+        },
     )]
 
 
