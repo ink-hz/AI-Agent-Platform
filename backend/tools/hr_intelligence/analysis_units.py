@@ -11,8 +11,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
+from .dimensions import recruitment_track, technical_directions
 from .models import NormalizedJob
-
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 _KINDS = frozenset({"company", "track", "direction", "comparison", "executive-summary"})
@@ -73,7 +73,10 @@ class EvidenceReference:
             "https://"
         ):
             raise AnalysisContractError("analysis evidence invalid")
-        if not isinstance(self.observed_at, datetime) or self.observed_at.tzinfo is None:
+        if (
+            not isinstance(self.observed_at, datetime)
+            or self.observed_at.tzinfo is None
+        ):
             raise AnalysisContractError("analysis evidence invalid")
 
     def as_dict(self) -> dict[str, str]:
@@ -101,9 +104,10 @@ class AnalysisUnit:
         if self.kind not in _KINDS:
             raise AnalysisContractError("analysis kind invalid")
         _required_text(self.scope_key, 256, "analysis scope")
-        if not isinstance(self.input_sha256, str) or _SHA256.fullmatch(
-            self.input_sha256
-        ) is None:
+        if (
+            not isinstance(self.input_sha256, str)
+            or _SHA256.fullmatch(self.input_sha256) is None
+        ):
             raise AnalysisContractError("analysis input hash invalid")
         if not isinstance(self.evidence, tuple) or any(
             not isinstance(item, EvidenceReference) for item in self.evidence
@@ -156,6 +160,8 @@ class AcceptedAnalysis:
             "kind": self.unit.kind,
             "scope_key": self.unit.scope_key,
             "input_sha256": self.unit.input_sha256,
+            "evidence": [item.as_dict() for item in self.unit.evidence],
+            "request": json.loads(self.unit.request_json),
             "response_sha256": self.response_sha256,
             "response": json.loads(self.response_json),
             "usage": self.usage.as_dict(),
@@ -206,7 +212,9 @@ def _prepare_unit(
         },
         "jobs": [
             _job_dict(job)
-            for job in sorted(jobs, key=lambda item: (item.company_key, str(item.job_id)))
+            for job in sorted(
+                jobs, key=lambda item: (item.company_key, str(item.job_id))
+            )
         ],
         "aggregates": json.loads(_canonical_json(aggregates)),
     }
@@ -214,8 +222,7 @@ def _prepare_unit(
     input_sha256 = hashlib.sha256(request_json.encode("utf-8")).hexdigest()
     unit_id = uuid5(
         NAMESPACE_URL,
-        "orbbec:hr-intelligence:"
-        f"{bundle_id}:{kind}:{selected_scope}:{input_sha256}",
+        f"orbbec:hr-intelligence:{bundle_id}:{kind}:{selected_scope}:{input_sha256}",
     )
     evidence = tuple(
         EvidenceReference(
@@ -252,25 +259,90 @@ def prepare_units(
     bundle_id: UUID,
     jobs: tuple[NormalizedJob, ...],
     aggregates: Mapping[str, object],
-) -> tuple[AnalysisUnit, ...]:
-    companies = tuple(sorted({job.company_key for job in jobs}))
-    company_units = tuple(
-        prepare_company_unit(
-            bundle_id,
-            company,
-            tuple(job for job in jobs if job.company_key == company),
-            aggregates,
-        )
-        for company in companies
-    )
-    synthesis = _prepare_unit(
-        bundle_id,
+    *,
+    kinds: tuple[str, ...] = (
+        "company",
+        "track",
+        "direction",
+        "comparison",
         "executive-summary",
-        "all-companies",
-        jobs,
-        aggregates,
-    )
-    return (*company_units, synthesis)
+    ),
+) -> tuple[AnalysisUnit, ...]:
+    if (
+        not isinstance(kinds, tuple)
+        or not kinds
+        or len(set(kinds)) != len(kinds)
+        or any(kind not in _KINDS for kind in kinds)
+    ):
+        raise AnalysisContractError("analysis kinds invalid")
+    companies = tuple(sorted({job.company_key for job in jobs}))
+    units: list[AnalysisUnit] = []
+    for kind in (
+        "company",
+        "track",
+        "direction",
+        "comparison",
+        "executive-summary",
+    ):
+        if kind not in kinds:
+            continue
+        if kind == "company":
+            units.extend(
+                prepare_company_unit(
+                    bundle_id,
+                    company,
+                    tuple(job for job in jobs if job.company_key == company),
+                    aggregates,
+                )
+                for company in companies
+            )
+            continue
+        if kind == "track":
+            tracks = tuple(sorted({recruitment_track(job) for job in jobs}))
+            units.extend(
+                _prepare_unit(
+                    bundle_id,
+                    kind,
+                    track,
+                    tuple(job for job in jobs if recruitment_track(job) == track),
+                    aggregates,
+                )
+                for track in tracks
+            )
+            continue
+        if kind == "direction":
+            directions = tuple(
+                sorted(
+                    {
+                        direction
+                        for job in jobs
+                        for direction in technical_directions(job)
+                    }
+                )
+            )
+            units.extend(
+                _prepare_unit(
+                    bundle_id,
+                    kind,
+                    direction,
+                    tuple(
+                        job for job in jobs if direction in technical_directions(job)
+                    ),
+                    aggregates,
+                )
+                for direction in directions
+            )
+            continue
+        units.append(
+            _prepare_unit(
+                bundle_id,
+                kind,
+                "all-companies",
+                jobs,
+                aggregates,
+            )
+        )
+    return tuple(units)
 
 
 def _validate_response(
@@ -289,9 +361,7 @@ def _validate_response(
         raise AnalysisContractError("analysis inferences invalid")
     if not isinstance(unknowns, Sequence) or isinstance(unknowns, (str, bytes)):
         raise AnalysisContractError("analysis unknowns invalid")
-    if not isinstance(alternatives, Sequence) or isinstance(
-        alternatives, (str, bytes)
-    ):
+    if not isinstance(alternatives, Sequence) or isinstance(alternatives, (str, bytes)):
         raise AnalysisContractError("analysis alternatives invalid")
     available = {
         (item.sha256, item.source_url, item.observed_at.isoformat())
@@ -358,7 +428,10 @@ def _validate_usage(unit: AnalysisUnit, raw: Mapping[str, object]) -> AnalysisUs
     if tokens == ("unavailable", "unavailable") and estimated == "unavailable":
         unavailable_reason = _required_text(reason, 1000, "usage unavailable reason")
     else:
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in tokens):
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in tokens
+        ):
             raise AnalysisContractError("analysis token usage invalid")
         if not isinstance(estimated, str):
             raise AnalysisContractError("analysis cost invalid")
@@ -443,6 +516,30 @@ def analysis_cache_hit(root: str | Path, unit: AnalysisUnit) -> bool:
     )
 
 
+def load_accepted(root: str | Path, unit: AnalysisUnit) -> AcceptedAnalysis:
+    if not isinstance(unit, AnalysisUnit):
+        raise TypeError("analysis unit required")
+    path = _accepted_path(Path(root), unit.unit_id)
+    try:
+        saved = json.loads(path.read_text("utf-8"))
+        response = saved["response"]
+        usage = saved["usage"]
+    except (KeyError, OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        raise AnalysisContractError("accepted analysis unavailable") from None
+    if (
+        saved.get("bundle_id") != str(unit.bundle_id)
+        or saved.get("unit_id") != str(unit.unit_id)
+        or saved.get("input_sha256") != unit.input_sha256
+        or saved.get("request") != json.loads(unit.request_json)
+        or saved.get("evidence") != [item.as_dict() for item in unit.evidence]
+    ):
+        raise AnalysisContractError("accepted analysis input mismatch")
+    accepted = accept_unit_response(unit, response, usage)
+    if saved.get("response_sha256") != accepted.response_sha256:
+        raise AnalysisContractError("accepted analysis checksum mismatch")
+    return accepted
+
+
 __all__ = [
     "AcceptedAnalysis",
     "AnalysisContractError",
@@ -451,6 +548,7 @@ __all__ = [
     "EvidenceReference",
     "accept_unit_response",
     "analysis_cache_hit",
+    "load_accepted",
     "prepare_company_unit",
     "prepare_units",
     "save_accepted",

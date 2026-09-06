@@ -9,11 +9,12 @@ from tools.hr_intelligence.analysis_units import (
     AnalysisContractError,
     accept_unit_response,
     analysis_cache_hit,
+    load_accepted,
     prepare_company_unit,
+    prepare_units,
     save_accepted,
 )
 from tools.hr_intelligence.models import NormalizedJob
-
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=timezone.utc)
 
@@ -87,10 +88,14 @@ def test_completed_unit_reuses_only_the_same_input_hash(tmp_path) -> None:
     save_accepted(tmp_path, accepted)
 
     assert analysis_cache_hit(tmp_path, unit) is True
-    assert analysis_cache_hit(
-        tmp_path,
-        replace(unit, input_sha256="b" * 64),
-    ) is False
+    assert load_accepted(tmp_path, unit) == accepted
+    assert (
+        analysis_cache_hit(
+            tmp_path,
+            replace(unit, input_sha256="b" * 64),
+        )
+        is False
+    )
 
 
 def test_inference_requires_an_existing_basis_fact() -> None:
@@ -146,3 +151,29 @@ def test_unit_identity_and_request_bytes_are_deterministic() -> None:
 
     assert first == second
     assert first.canonical_request_bytes() == second.canonical_request_bytes()
+
+
+def test_requested_analysis_layers_are_prepared_in_stable_order() -> None:
+    selected = replace(
+        _job(),
+        source_url="https://example.com/social/jobs/algorithm-1",
+    )
+
+    units = prepare_units(
+        uuid4(),
+        (selected,),
+        {
+            "tracks": {"social": 1},
+            "directions": {"算法": 1},
+        },
+        kinds=("company", "track", "direction", "comparison", "executive-summary"),
+    )
+
+    assert [(unit.kind, unit.scope_key) for unit in units] == [
+        ("company", "hesai"),
+        ("track", "social"),
+        ("direction", "算法"),
+        ("direction", "软件"),
+        ("comparison", "all-companies"),
+        ("executive-summary", "all-companies"),
+    ]

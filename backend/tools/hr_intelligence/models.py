@@ -7,7 +7,6 @@ from uuid import UUID
 
 from app.hr.panorama_models import canonical_panorama_url
 
-
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 _COMPANY_KEY = re.compile(r"[a-z0-9][a-z0-9_-]{0,127}\Z")
 
@@ -58,11 +57,15 @@ class NormalizedJob:
             "source_url",
             canonical_panorama_url(self.source_url),
         )
-        if not isinstance(self.evidence_sha256, str) or _SHA256.fullmatch(
-            self.evidence_sha256
-        ) is None:
+        if (
+            not isinstance(self.evidence_sha256, str)
+            or _SHA256.fullmatch(self.evidence_sha256) is None
+        ):
             raise ValueError("normalized job evidence invalid")
-        if not isinstance(self.observed_at, datetime) or self.observed_at.tzinfo is None:
+        if (
+            not isinstance(self.observed_at, datetime)
+            or self.observed_at.tzinfo is None
+        ):
             raise ValueError("normalized job observation invalid")
         if self.status not in {"open", "closed", "unknown"}:
             raise ValueError("normalized job status invalid")

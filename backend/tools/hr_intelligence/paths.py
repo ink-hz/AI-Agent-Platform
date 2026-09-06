@@ -3,11 +3,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 REPOSITORY_ROOT = Path(__file__).parents[3].resolve()
 DEFAULT_LOCAL_ROOT = Path(
-    "/Users/neo/Library/Application Support/"
-    "OrbbecAI-Agent-Platform/hr-intelligence"
+    "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-intelligence"
 )
 
 

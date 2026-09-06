@@ -6,7 +6,6 @@ from uuid import NAMESPACE_URL, uuid5
 from .collectors import CollectionResult
 from .models import NormalizedJob
 
-
 _COMPANY_KEY = re.compile(r"[a-z0-9][a-z0-9_-]{0,127}\Z")
 
 
@@ -22,8 +21,7 @@ def normalize_jobs(
         NormalizedJob(
             job_id=uuid5(
                 NAMESPACE_URL,
-                "orbbec:hr-intelligence:job:"
-                f"{selected_company}:{job.public_job_key}",
+                f"orbbec:hr-intelligence:job:{selected_company}:{job.public_job_key}",
             ),
             source_id=result.target.source_id,
             company_key=selected_company,

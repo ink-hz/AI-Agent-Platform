@@ -9,7 +9,6 @@ from app.hr.panorama_models import PublicJobSnapshot
 
 from .models import NormalizedJob
 
-
 JobRecord = PublicJobSnapshot | NormalizedJob
 _JOB_TYPES = (PublicJobSnapshot, NormalizedJob)
 
@@ -28,27 +27,49 @@ _TRACK_PATTERNS = {
 
 _DIRECTIONS = {
     "光学": re.compile(r"光学|镜头|成像|光机|光电|zemax|code\s*v", re.IGNORECASE),
-    "硬件": re.compile(r"硬件|电子|电路|pcb|pcba|emc|ems|esd|fpga|soc|芯片|射频", re.IGNORECASE),
+    "硬件": re.compile(
+        r"硬件|电子|电路|pcb|pcba|emc|ems|esd|fpga|soc|芯片|射频", re.IGNORECASE
+    ),
     "结构": re.compile(r"结构|机械|机电|模具|公差|cad|cae|solidworks", re.IGNORECASE),
-    "软件": re.compile(r"软件|前端|后端|客户端|嵌入式|固件|操作系统|java|c\+\+|python|golang", re.IGNORECASE),
-    "算法": re.compile(r"算法|人工智能|机器学习|深度学习|计算机视觉|点云|slam|标定|(?<![a-z])ai(?![a-z])", re.IGNORECASE),
-    "制造工艺": re.compile(r"制造|工艺|生产|量产|试产|装配|注塑|钣金|cnc|良率", re.IGNORECASE),
+    "软件": re.compile(
+        r"软件|前端|后端|客户端|嵌入式|固件|操作系统|java|c\+\+|python|golang",
+        re.IGNORECASE,
+    ),
+    "算法": re.compile(
+        r"算法|人工智能|机器学习|深度学习|计算机视觉|点云|slam|标定|(?<![a-z])ai(?![a-z])",
+        re.IGNORECASE,
+    ),
+    "制造工艺": re.compile(
+        r"制造|工艺|生产|量产|试产|装配|注塑|钣金|cnc|良率", re.IGNORECASE
+    ),
     "质量": re.compile(
         r"质量|测试|可靠性|(?<![a-z])(?:dqe|sqe|qe)(?![a-z])|失效分析|认证",
         re.IGNORECASE,
     ),
-    "产品": re.compile(r"产品经理|产品规划|产品设计|需求分析|用户体验|ux|id设计", re.IGNORECASE),
+    "产品": re.compile(
+        r"产品经理|产品规划|产品设计|需求分析|用户体验|ux|id设计", re.IGNORECASE
+    ),
     "供应链": re.compile(r"供应链|采购|计划|pmc|物流|物料", re.IGNORECASE),
 }
 
 _SUPPLEMENTAL_DIRECTIONS = {
     "光学": re.compile(r"光学|镜头|成像|光机|光电|zemax|code\s*v", re.IGNORECASE),
-    "硬件": re.compile(r"硬件|电子|电路|pcb|pcba|emc|esd|fpga|芯片|射频", re.IGNORECASE),
-    "结构": re.compile(r"结构设计|机械设计|模具|公差|solidworks|creo|catia", re.IGNORECASE),
+    "硬件": re.compile(
+        r"硬件|电子|电路|pcb|pcba|emc|esd|fpga|芯片|射频", re.IGNORECASE
+    ),
+    "结构": re.compile(
+        r"结构设计|机械设计|模具|公差|solidworks|creo|catia", re.IGNORECASE
+    ),
     "软件": re.compile(r"嵌入式|固件|操作系统|java|c\+\+|python|golang", re.IGNORECASE),
-    "算法": re.compile(r"算法|机器学习|深度学习|计算机视觉|点云|slam|标定", re.IGNORECASE),
-    "制造工艺": re.compile(r"制造工艺|生产工艺|装配工艺|注塑|钣金|cnc|良率", re.IGNORECASE),
-    "质量": re.compile(r"可靠性|(?<![a-z])(?:dqe|sqe|qe)(?![a-z])|失效分析|认证", re.IGNORECASE),
+    "算法": re.compile(
+        r"算法|机器学习|深度学习|计算机视觉|点云|slam|标定", re.IGNORECASE
+    ),
+    "制造工艺": re.compile(
+        r"制造工艺|生产工艺|装配工艺|注塑|钣金|cnc|良率", re.IGNORECASE
+    ),
+    "质量": re.compile(
+        r"可靠性|(?<![a-z])(?:dqe|sqe|qe)(?![a-z])|失效分析|认证", re.IGNORECASE
+    ),
     "产品": re.compile(r"产品规划|产品经理|用户体验|ux|id设计", re.IGNORECASE),
     "供应链": re.compile(r"供应链|采购|pmc|物流|物料", re.IGNORECASE),
 }
@@ -63,11 +84,20 @@ _FAMILIES = (
     ),
     ("manufacturing", re.compile(r"制造|工艺|生产|量产|试产|装配|cnc", re.IGNORECASE)),
     ("supply_chain", re.compile(r"供应链|采购|计划|pmc|物流|物料", re.IGNORECASE)),
-    ("product", re.compile(r"产品经理|产品规划|产品设计|用户体验|ux|id设计", re.IGNORECASE)),
-    ("sales_marketing", re.compile(r"销售|市场|品牌|商务|渠道|电商|客户经理", re.IGNORECASE)),
+    (
+        "product",
+        re.compile(r"产品经理|产品规划|产品设计|用户体验|ux|id设计", re.IGNORECASE),
+    ),
+    (
+        "sales_marketing",
+        re.compile(r"销售|市场|品牌|商务|渠道|电商|客户经理", re.IGNORECASE),
+    ),
     ("operations", re.compile(r"运营|技术支持|售后|项目经理|交付", re.IGNORECASE)),
     ("corporate", re.compile(r"人力|招聘|财务|法务|行政|审计|秘书", re.IGNORECASE)),
-    ("research_development", re.compile(r"研发|工程师|开发|算法|研究|设计师|架构师", re.IGNORECASE)),
+    (
+        "research_development",
+        re.compile(r"研发|工程师|开发|算法|研究|设计师|架构师", re.IGNORECASE),
+    ),
 )
 
 _SKILLS = {
@@ -93,7 +123,9 @@ _SKILLS = {
     "CATIA": re.compile(r"(?<![a-z])catia(?![a-z])", re.IGNORECASE),
     "Linux": re.compile(r"(?<![a-z])linux(?![a-z])", re.IGNORECASE),
     "Docker": re.compile(r"(?<![a-z])docker(?![a-z])", re.IGNORECASE),
-    "Kubernetes": re.compile(r"(?<![a-z])kubernetes|(?<![a-z])k8s(?![a-z])", re.IGNORECASE),
+    "Kubernetes": re.compile(
+        r"(?<![a-z])kubernetes|(?<![a-z])k8s(?![a-z])", re.IGNORECASE
+    ),
 }
 
 _DIRECTION_KEYS = tuple(_DIRECTIONS) + ("其他",)
@@ -343,9 +375,7 @@ def compile_panorama_dimensions(
             for name, count in skills.most_common(100)
         ],
         "company_matrix": company_matrix,
-        "evidence_samples": {
-            layer: dict(values) for layer, values in evidence.items()
-        },
+        "evidence_samples": {layer: dict(values) for layer, values in evidence.items()},
         "trend": {
             "state": "baseline_only",
             "message": "基线版本：尚不能判断月度变化",
@@ -362,8 +392,8 @@ compile_dimensions = compile_panorama_dimensions
 
 
 __all__ = [
-    "compile_panorama_dimensions",
     "compile_dimensions",
+    "compile_panorama_dimensions",
     "recruitment_track",
     "technical_directions",
 ]
