@@ -79,6 +79,20 @@ describe("HR Panorama read-only API", () => {
     }
   });
 
+  it("accepts a production report with more than one thousand job snapshots", async () => {
+    const snapshots = Array.from({ length: 1001 }, (_, index) => {
+      const snapshotId = `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+      return { ...snapshot, snapshot_id: snapshotId, public_job_key: `job-${index + 1}` };
+    });
+    const largeInsight = { ...insight, snapshot_ids: snapshots.map((item) => item.snapshot_id),
+      facts: [{ ...insight.facts[0], snapshot_id: snapshots[0].snapshot_id }] };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ ...report, insight: largeInsight, snapshots }));
+
+    const selected = await createHrPanoramaApi("ignored").currentReport();
+
+    expect(selected?.snapshots).toHaveLength(1001);
+  });
+
   it("returns null when no publication exists", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
     await expect(createHrPanoramaApi("ignored").currentReport()).resolves.toBeNull();

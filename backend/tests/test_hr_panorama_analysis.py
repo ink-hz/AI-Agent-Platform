@@ -135,6 +135,9 @@ async def test_analysis_can_be_regenerated_without_mutating_raw_snapshots() -> N
     assert first.summary != second.summary
     assert selected == original
     assert first.snapshot_ids == second.snapshot_ids == (selected.snapshot_id,)
+    assert first.direction_clusters["_v2"]["scope"]["unique_job_count"] == 1
+    assert first.direction_clusters["结构"] == 1
+    assert first.direction_clusters["_v2"]["trend"]["state"] == "baseline_only"
 
 
 class HierarchicalModel:

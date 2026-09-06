@@ -108,6 +108,7 @@ class PanoramaOperatorRuntime:
         }
         created = 0
         retained = 0
+        updated = 0
         for item in _catalog(catalog):
             company_key = str(item["company_key"])
             command = CreateTalentSource(
@@ -128,19 +129,29 @@ class PanoramaOperatorRuntime:
             )
             current = existing.get(company_key)
             if current is not None:
+                command = CreateTalentSource(
+                    source_id=current.source_id,
+                    owner_id=self._owner_id,
+                    client_request_id=current.client_request_id,
+                    company_key=company_key,
+                    canonical_name=command.canonical_name,
+                    aliases=command.aliases,
+                    approved_urls=command.approved_urls,
+                    active=True,
+                )
                 if (
-                    current.source_id != command.source_id
-                    or current.canonical_name != command.canonical_name
+                    current.canonical_name != command.canonical_name
                     or current.aliases != command.aliases
                     or current.approved_urls != command.approved_urls
                     or not current.active
                 ):
-                    raise RuntimeError("panorama source catalog conflicts with storage")
+                    self._repository.reconcile_source(command)
+                    updated += 1
                 retained += 1
                 continue
             self._repository.create_source(command)
             created += 1
-        return {"created": created, "existing": retained}
+        return {"created": created, "existing": retained, "updated": updated}
 
     async def run(self, trigger: str) -> Mapping[str, object]:
         if trigger not in {"schedule", "operator"}:

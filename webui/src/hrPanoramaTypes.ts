@@ -46,6 +46,40 @@ export interface HrPanoramaInference {
 
 export interface HrPanoramaUnknown { text: string; }
 
+export interface HrPanoramaV2CompanyMetrics {
+  job_count: number;
+  tracks: Record<string, number>;
+  directions: Record<string, number>;
+  job_families: Record<string, number>;
+  seniority: Record<string, number>;
+  locations: Record<string, number>;
+  skills: Record<string, number>;
+  sample_snapshot_ids: string[];
+}
+
+export interface HrPanoramaV2Dimensions {
+  schema_version: 2;
+  scope: {
+    snapshot_count: number;
+    unique_job_count: number;
+    duplicate_snapshot_count: number;
+    source_count: number;
+    observed_from: string;
+    observed_to: string;
+  };
+  tracks: Record<string, number>;
+  directions: Record<string, number>;
+  job_families: Record<string, number>;
+  seniority: Record<string, number>;
+  education: Record<string, number>;
+  locations: Record<string, number>;
+  skills: Array<{ name: string; job_count: number }>;
+  company_matrix: Record<string, HrPanoramaV2CompanyMetrics>;
+  evidence_samples: Record<string, Record<string, string[]>>;
+  trend: { state: "baseline_only"; message: string };
+  interpretation_limits: string[];
+}
+
 export interface HrPanoramaInsight {
   insightVersionId: string;
   runId: string | null;

@@ -26,6 +26,47 @@ MAX_CONTEXT_BYTES = 96 * 1024
 COMPACTION_TRIGGER_BYTES = 64 * 1024
 
 
+def _panorama_position_context(
+    envelope: HrPositionContextEnvelope,
+) -> dict[str, object] | None:
+    try:
+        document = json.loads(envelope.prompt_context)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(document, dict):
+        return None
+    official = document.get("official_facts")
+    selected: dict[str, object] = {}
+    title = document.get("position_title")
+    if isinstance(title, str) and title.strip():
+        selected["title"] = title[:500]
+    if isinstance(official, dict):
+        for key in ("title", "department", "category", "subcategory"):
+            value = official.get(key)
+            if isinstance(value, str) and value.strip():
+                selected[key] = value[:500]
+        locations = official.get("locations")
+        if isinstance(locations, list):
+            selected["locations"] = [
+                value[:500] for value in locations[:20]
+                if isinstance(value, str) and value.strip()
+            ]
+        for key in ("duty", "requirement"):
+            value = official.get(key)
+            if isinstance(value, str) and value.strip():
+                selected[key] = value[:2000]
+    confirmed = document.get("confirmed_context")
+    if isinstance(confirmed, dict):
+        modules = confirmed.get("modules")
+        if isinstance(modules, dict):
+            for key in ("jd", "jr"):
+                module = modules.get(key)
+                value = module.get("text") if isinstance(module, dict) else None
+                if isinstance(value, str) and value.strip():
+                    selected[key] = value[:2000]
+    return selected or None
+
+
 class ConversationContextError(ConversationRepositoryError):
     def __init__(self, message: str = "conversation context unavailable") -> None:
         super().__init__(message)
@@ -260,6 +301,7 @@ class ConversationContextBuilder:
                         messages[-1].content,
                         turn_id,
                         task_kind=hr_position_context.task_kind,
+                        position_context=_panorama_position_context(hr_position_context),
                     )
                     if hr_panorama_context is not None and not isinstance(
                         hr_panorama_context, PanoramaContextFragment

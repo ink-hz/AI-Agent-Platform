@@ -10,8 +10,6 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from test_control_plane_migration import control_database  # noqa: F401
-
 from app.agent_brain.conversation_repository import (
     ConversationRepository,
     ConversationRepositoryConflict,
@@ -32,6 +30,7 @@ from app.hr.panorama_models import (
 from app.hr.panorama_repository import PanoramaConflict, PanoramaRepository
 from app.hr.panorama_runtime import PanoramaRunCoordinator
 from app.hr.panorama_service import PanoramaService
+from test_control_plane_migration import control_database  # noqa: F401
 
 CREATE_SOURCE = (
     "select (platform_hr.create_talent_source_v79("
@@ -421,6 +420,51 @@ def test_panorama_contract_migrates_and_is_app_only_in_each_environment(
             pytest.raises(psycopg.errors.InsufficientPrivilege),
         ):
             connection.execute(LIST_SOURCES, (uuid4(), False, 10))
+
+
+@pytest.mark.postgres
+def test_operator_can_reconcile_catalog_urls_without_replacing_source_identity(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Panorama Source Reconciliation Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    created = repository.create_source(
+        CreateTalentSource(
+            uuid4(),
+            scope["owner"],
+            uuid4(),
+            "source-reconciliation-company",
+            "来源维护公司",
+            ("Source Company",),
+            ("https://example.com/jobs",),
+            True,
+        )
+    )
+
+    reconciled = repository.reconcile_source(
+        CreateTalentSource(
+            created.source_id,
+            scope["owner"],
+            uuid4(),
+            created.company_key,
+            created.canonical_name,
+            ("Source Company", "来源公司"),
+            (
+                "https://example.com/jobs",
+                "https://ats.example.com/social/source-company/1",
+            ),
+            True,
+        )
+    )
+
+    assert reconciled.source_id == created.source_id
+    assert reconciled.company_key == created.company_key
+    assert reconciled.aliases == ("Source Company", "来源公司")
+    assert reconciled.approved_urls[-1] == (
+        "https://ats.example.com/social/source-company/1"
+    )
 
 
 @pytest.mark.postgres

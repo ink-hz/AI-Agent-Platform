@@ -6,16 +6,16 @@
 
 每个版本保留三层独立数据：
 
-1. 原始公开响应：内容寻址、不可变，位于 `/data/agent-platform/hr-intelligence/evidence/sha256/`。
+1. 原始公开响应：内容寻址、不可变；宿主机位于 `/data/orbbec-agent-platform/hr-intelligence/evidence/sha256/`，容器内映射为 `/data/agent-platform/hr-intelligence/evidence/sha256/`。
 2. 标准化岗位明细：数据库中的岗位快照和批次观测记录，包含来源、观测时间和内容 SHA-256。
 3. AI 分析：独立版本，包含事实、推断、未知项、模型版本和事实依据。更换模型只能新增分析版本，不能改写前两层。
 
 ## 首次准备
 
-来源目录必须部署到：
+来源目录随代码和镜像部署到：
 
 ```text
-/data/agent-platform/hr-intelligence/source-catalog.json
+/app/backend/app/hr/panorama_source_catalog.v1.json
 ```
 
 目录由代码评审和后台运维维护，不在 HR 页面开放编辑。所需配置通过 secret file 和环境变量注入，禁止把数据库口令、模型密钥或响应正文写入日志。
@@ -83,7 +83,7 @@ sudo deploy/cloud/hr-panorama-producer.sh resume <batch_id>
 ## 发布与回滚纪律
 
 - 发布 staging 只使用 `/data/staging/agent-platform/<deployment_id>/`，成功或失败均以 trap 精确清理本次目录。
-- 持久证据、数据库备份和长期日志只能位于 `/data/agent-platform/`，不得进入 release、`/tmp` 或根盘持久目录。
+- 持久证据位于宿主机 `/data/orbbec-agent-platform/hr-intelligence/`；数据库备份和长期日志也只能位于 `/data/` 下对应应用目录，不得进入 release、`/tmp` 或根盘持久目录。
 - 发布前运行 `df -B1 / /data`；根盘可用低于 25GB或预计发布后低于 20GB时停止。
 - 根盘只保留当前版本和两个回滚版本；历史版本归档到 `/data/archive/agent-platform/releases/`，最多 10 个或 30 天，取更严格者。
 - 不修改共享 Nginx，不重启无关服务，不清理其他应用镜像。

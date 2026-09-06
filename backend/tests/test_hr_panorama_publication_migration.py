@@ -17,8 +17,8 @@ def test_v80_is_the_contiguous_publication_migration() -> None:
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions[-4:] == [80, 81, 82, 83]
-    assert versions == list(range(1, 84))
+    assert versions[-5:] == [80, 81, 82, 83, 84]
+    assert versions == list(range(1, 85))
 
 
 def test_v80_defines_background_batches_attempts_and_atomic_publication() -> None:

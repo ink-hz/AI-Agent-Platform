@@ -13,7 +13,11 @@ from app.hr.panorama_collection import (
     SourceTarget,
 )
 from app.hr.panorama_evidence import EvidenceRecord
-from app.hr.panorama_models import ProductionBatch, PublicJobSnapshot
+from app.hr.panorama_models import (
+    ProductionBatch,
+    PublicJobSnapshot,
+    SourceCollectionAttempt,
+)
 from app.hr.panorama_producer import PanoramaProducer, PanoramaProductionPipeline
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=timezone.utc)
@@ -280,6 +284,51 @@ class PipelineRepository:
         self.events.append("published")
         self.publication = command
         return command
+
+
+def test_persisted_coverage_keeps_a_verified_zero_job_channel_successful() -> None:
+    with_jobs, verified_empty = target("A"), target("B")
+    batch = ProductionBatch(
+        uuid4(),
+        uuid4(),
+        uuid4(),
+        (with_jobs.source_id, verified_empty.source_id),
+        "operator",
+        "analyzing",
+        "gpt-research-v1",
+        {},
+        None,
+        2,
+        NOW,
+        None,
+        NOW,
+        NOW,
+    )
+    snapshot = PublicJobSnapshot(
+        uuid4(), batch.owner_id, uuid4(), None, with_jobs.source_id, "job-1",
+        "算法工程师", "深圳", "负责算法", "熟悉 Python", with_jobs.source_url,
+        NOW, "a" * 64, "open", NOW, batch.batch_id, uuid4(),
+    )
+    empty_attempt = SourceCollectionAttempt(
+        uuid4(), batch.batch_id, batch.owner_id, verified_empty.source_id,
+        verified_empty.source_url, 1, "succeeded", None, "b" * 64,
+        "sha256/bb/" + "b" * 64, "application/json", 24, 0, NOW, NOW,
+    )
+    pipeline = PanoramaProductionPipeline(
+        batch=batch,
+        targets=(with_jobs, verified_empty),
+        collector=PipelineCollector(),
+        analyzer=PanoramaAnalyzer(AnalysisModel()),
+        repository=PipelineRepository(batch),
+    )
+
+    coverage = pipeline._coverage_from_persisted(
+        batch, (snapshot,), (empty_attempt,)
+    )
+
+    assert coverage[1]["state"] == "succeeded"
+    assert coverage[1]["job_count"] == 0
+    assert "error_code" not in coverage[1]
 
 
 @pytest.mark.asyncio

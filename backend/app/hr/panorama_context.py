@@ -34,7 +34,16 @@ _EXPLICIT_TRIGGERS = (
     "外部岗位",
     "参考关注公司",
 )
-_PANORAMA_DEFAULT_TASKS = frozenset({"talent_profile", "sourcing_strategy"})
+_PANORAMA_DEFAULT_TASKS = frozenset(
+    {"jd", "jr", "talent_profile", "sourcing_strategy", "position_interview_plan"}
+)
+_TASK_INTENT_TERMS = {
+    "jd": ("职责", "负责", "工作内容", "交付", "使命"),
+    "jr": ("要求", "经验", "学历", "能力", "熟悉", "资格"),
+    "talent_profile": ("能力", "经验", "学历", "人才", "特征", "技术"),
+    "sourcing_strategy": ("招聘", "地点", "渠道", "关键词", "人才来源"),
+    "position_interview_plan": ("要求", "经验", "能力", "风险", "验证"),
+}
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 
 _USAGE_BOUNDARY = {
@@ -167,6 +176,66 @@ def _mentions_source(query: str, sources: tuple[TalentSource, ...]) -> bool:
         for source in sources
         if source.active
         for name in (source.canonical_name, *source.aliases)
+    )
+
+
+def _position_terms(position_context: Mapping[str, object] | None) -> tuple[str, ...]:
+    if position_context is None:
+        return ()
+    if not isinstance(position_context, Mapping) or _encoded_size(position_context) > 8192:
+        raise ValueError("panorama position context invalid")
+    allowed = {
+        "title",
+        "department",
+        "location",
+        "locations",
+        "category",
+        "subcategory",
+        "duty",
+        "requirement",
+        "jd",
+        "jr",
+    }
+    values: list[str] = []
+    for key, raw in position_context.items():
+        if key not in allowed:
+            raise ValueError("panorama position context invalid")
+        candidates = raw if isinstance(raw, (list, tuple)) else (raw,)
+        for candidate in candidates:
+            if isinstance(candidate, str) and candidate.strip():
+                values.append(candidate.strip())
+    terms: list[str] = []
+    known = (
+        "光学", "硬件", "结构", "软件", "算法", "制造", "工艺", "质量", "测试",
+        "产品", "供应链", "机械", "电子", "嵌入式", "标定", "点云", "深圳", "中山",
+        "上海", "东莞", "杭州", "西安", "武汉", "北京", "苏州", "成都",
+    )
+    for value in values:
+        normalized = _normalized(value)
+        if 2 <= len(normalized) <= 64 and normalized not in terms:
+            terms.append(normalized)
+        for keyword in known:
+            selected = _normalized(keyword)
+            if selected in normalized and selected not in terms:
+                terms.append(selected)
+        for token in re.findall(r"(?<![a-z0-9])[a-z][a-z0-9+#.]{1,20}(?![a-z0-9])", value.casefold()):
+            selected = _normalized(token)
+            if selected and selected not in terms:
+                terms.append(selected)
+    return tuple(terms[:64])
+
+
+def _fact_relevance(fact: Mapping[str, object], terms: tuple[str, ...]) -> int:
+    text = _normalized(str(fact.get("text", "")))
+    return sum(1 + min(len(term), 12) for term in terms if term in text)
+
+
+def _task_relevance(fact: Mapping[str, object], task_kind: str | None) -> int:
+    text = _normalized(str(fact.get("text", "")))
+    return sum(
+        1
+        for term in _TASK_INTENT_TERMS.get(task_kind or "", ())
+        if _normalized(term) in text
     )
 
 
@@ -471,6 +540,7 @@ class PanoramaContextProvider:
     def for_turn(
         self, owner_id: UUID, position_id: UUID, query: str, turn_id: UUID,
         *, task_kind: str | None = None,
+        position_context: Mapping[str, object] | None = None,
     ) -> PanoramaContextFragment | None:
         if any(
             not isinstance(value, UUID) for value in (owner_id, position_id, turn_id)
@@ -501,7 +571,9 @@ class PanoramaContextProvider:
             ):
                 raise PanoramaContextError("panorama publication scope invalid")
             fragment = self._compose(
-                (insight,), query_sha256, source_scope, publication.publication_id
+                (insight,), query_sha256, source_scope, publication.publication_id,
+                position_context=position_context,
+                task_kind=task_kind,
             )
             try:
                 recorded = self._source.record_retrieval_for_turn(
@@ -597,6 +669,9 @@ class PanoramaContextProvider:
         query_sha256: str,
         source_scope: tuple[TalentSource, ...] = (),
         publication_id: UUID | None = None,
+        *,
+        position_context: Mapping[str, object] | None = None,
+        task_kind: str | None = None,
     ) -> PanoramaContextFragment:
         if not isinstance(publication_id, UUID):
             raise PanoramaContextError("panorama publication scope invalid")
@@ -614,8 +689,34 @@ class PanoramaContextProvider:
             raise PanoramaContextError("panorama context clock invalid")
         facts: list[dict[str, object]] = []
         source_urls: list[str] = []
+        terms = _position_terms(position_context)
         for insight in insights:
-            for fact in insight.facts:
+            candidates = tuple(
+                fact for fact in insight.facts
+                if _fact_matches_sources(fact, source_scope)
+            )
+            if terms:
+                ranked = sorted(
+                    (
+                        (
+                            -_fact_relevance(fact, terms),
+                            -_task_relevance(fact, task_kind),
+                            index,
+                            fact,
+                        )
+                        for index, fact in enumerate(candidates)
+                    ),
+                    key=lambda item: (item[0], item[1], item[2]),
+                )
+                if any(score < 0 for score, _task_score, _index, _fact in ranked):
+                    candidates = tuple(
+                        fact
+                        for score, _task_score, _index, fact in ranked
+                        if score < 0
+                    )
+                else:
+                    candidates = ()
+            for fact in candidates:
                 if not _fact_matches_sources(fact, source_scope):
                     continue
                 text, truncated = _bounded_text(fact.get("text"), 2000)

@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.hr.panorama_context import (
     MAX_PANORAMA_CONTEXT_BYTES,
     PanoramaContextError,
@@ -219,21 +218,130 @@ def test_named_followed_company_retrieves_only_latest_version_and_records_turn()
     assert source.recorded.query_sha256 == fragment.query_sha256
 
 
-def test_position_task_kind_selects_panorama_only_for_external_market_tasks() -> None:
-    sourcing = PanoramaContextProvider(
+@pytest.mark.parametrize(
+    "task_kind",
+    ("jd", "jr", "talent_profile", "sourcing_strategy", "position_interview_plan"),
+)
+def test_all_position_generation_tasks_can_use_published_panorama(task_kind) -> None:
+    fragment = PanoramaContextProvider(
         MemorySource((_insight(uuid4()),)), now=lambda: NOW
-    ).for_turn(
-        OWNER, POSITION, "生成搜寻策略", TURN, task_kind="sourcing_strategy"
-    )
-    interview = PanoramaContextProvider(
-        MemorySource((_insight(uuid4()),)), now=lambda: NOW
-    ).for_turn(
-        OWNER, POSITION, "生成岗位面试方案", uuid4(),
-        task_kind="position_interview_plan",
+    ).for_turn(OWNER, POSITION, "生成岗位材料", uuid4(), task_kind=task_kind)
+
+    assert fragment is not None
+
+
+def test_position_context_ranks_and_keeps_only_relevant_published_facts() -> None:
+    insight = replace(
+        _insight(uuid4()),
+        facts=(
+            {
+                "fact_id": "structure",
+                "text": "深圳公开招聘高级结构工程师，强调量产导入",
+                "snapshot_id": str(uuid4()),
+                "observation_id": str(uuid4()),
+                "source_url": "https://example.com/jobs/structure",
+                "observed_at": NOW.isoformat(),
+            },
+            {
+                "fact_id": "finance",
+                "text": "上海公开招聘财务专员",
+                "snapshot_id": str(uuid4()),
+                "observation_id": str(uuid4()),
+                "source_url": "https://example.com/jobs/finance",
+                "observed_at": NOW.isoformat(),
+            },
+        ),
+        inferences=(),
     )
 
-    assert sourcing is not None
-    assert interview is None
+    fragment = PanoramaContextProvider(
+        MemorySource((insight,)), now=lambda: NOW
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成面试方案",
+        TURN,
+        task_kind="position_interview_plan",
+        position_context={"title": "高级结构工程师", "locations": ["深圳"]},
+    )
+
+    assert fragment is not None
+    assert [fact["fact_id"] for fact in fragment.facts] == ["structure"]
+
+
+def test_position_context_accepts_the_singular_location_key() -> None:
+    fragment = PanoramaContextProvider(
+        MemorySource(
+            (_insight(uuid4(), text="深圳公开招聘光学工程师"),)
+        ),
+        now=lambda: NOW,
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成面试方案",
+        TURN,
+        task_kind="position_interview_plan",
+        position_context={"title": "光学工程师", "location": "深圳"},
+    )
+
+    assert fragment is not None
+
+
+def test_task_kind_breaks_position_relevance_ties_with_task_intent() -> None:
+    insight = replace(
+        _insight(uuid4()),
+        facts=(
+            {
+                "fact_id": "requirements",
+                "text": "结构岗位要求五年以上经验，熟悉公差分析",
+                "snapshot_id": str(uuid4()),
+                "observation_id": str(uuid4()),
+                "source_url": "https://example.com/jobs/requirements",
+                "observed_at": NOW.isoformat(),
+            },
+            {
+                "fact_id": "responsibilities",
+                "text": "结构岗位职责是负责产品设计与量产交付",
+                "snapshot_id": str(uuid4()),
+                "observation_id": str(uuid4()),
+                "source_url": "https://example.com/jobs/responsibilities",
+                "observed_at": NOW.isoformat(),
+            },
+        ),
+        inferences=(),
+    )
+
+    jd_fragment = PanoramaContextProvider(
+        MemorySource((insight,)), now=lambda: NOW
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成岗位材料",
+        uuid4(),
+        task_kind="jd",
+        position_context={"title": "结构岗位"},
+    )
+    jr_fragment = PanoramaContextProvider(
+        MemorySource((insight,)), now=lambda: NOW
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成岗位材料",
+        uuid4(),
+        task_kind="jr",
+        position_context={"title": "结构岗位"},
+    )
+
+    assert jd_fragment is not None
+    assert jr_fragment is not None
+    assert [fact["fact_id"] for fact in jd_fragment.facts] == [
+        "responsibilities",
+        "requirements",
+    ]
+    assert [fact["fact_id"] for fact in jr_fragment.facts] == [
+        "requirements",
+        "responsibilities",
+    ]
 
 
 def test_named_company_filters_unrelated_facts_from_a_multi_company_insight() -> None:

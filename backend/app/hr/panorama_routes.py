@@ -236,7 +236,7 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
         export_format: Annotated[Literal["pdf", "xlsx"], Query(alias="format")],
         source_id: Annotated[UUID | None, Query()] = None,
         recruitment_track: Annotated[
-            Literal["social", "campus", "unknown"] | None, Query()
+            Literal["social", "campus", "intern", "unknown"] | None, Query()
         ] = None,
         location: Annotated[str | None, Query(min_length=1, max_length=1000)] = None,
         status: Annotated[Literal["open", "closed", "unknown"] | None, Query()] = None,
@@ -248,6 +248,9 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
                 "structure",
                 "software",
                 "manufacturing",
+                "quality",
+                "product",
+                "supply_chain",
                 "other",
             ]
             | None,

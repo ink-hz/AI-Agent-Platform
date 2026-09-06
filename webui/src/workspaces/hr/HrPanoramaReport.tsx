@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { platformPath } from "../../auth";
 import { copyVisibleText } from "../../clipboard";
-import type { HrPanoramaReport as PanoramaReport, HrPanoramaSnapshot } from "../../hrPanoramaTypes";
+import type { HrPanoramaReport as PanoramaReport, HrPanoramaSnapshot, HrPanoramaV2Dimensions } from "../../hrPanoramaTypes";
 
 const NUMBER = new Intl.NumberFormat("zh-CN");
 const DATE_TIME = new Intl.DateTimeFormat("zh-CN", {
@@ -17,6 +17,24 @@ function clusterValue(value: unknown): string {
   if (value && typeof value === "object") return Object.entries(value).map(([key, item]) => `${key} ${clusterValue(item)}`).join(" · ");
   return "待补充";
 }
+
+function v2Dimensions(report: PanoramaReport): HrPanoramaV2Dimensions | null {
+  const value = report.insight.directionClusters._v2;
+  return value && typeof value === "object" && "schema_version" in value && value.schema_version === 2
+    ? value as HrPanoramaV2Dimensions : null;
+}
+
+function legacyDirections(report: PanoramaReport): Array<[string, number]> {
+  return Object.entries(report.insight.directionClusters)
+    .filter((entry): entry is [string, number] => entry[0] !== "_v2" && typeof entry[1] === "number");
+}
+
+const TRACK_LABELS: Record<string, string> = { social: "社招", campus: "校招", intern: "实习", unknown: "待分类" };
+const SENIORITY_LABELS: Record<string, string> = { senior: "高级 / 专家", mid: "中级", junior: "初级", graduate: "应届 / 实习", unspecified: "未明确" };
+const FAMILY_LABELS: Record<string, string> = {
+  research_development: "研发", quality: "质量", manufacturing: "制造工艺", supply_chain: "供应链",
+  product: "产品", sales_marketing: "销售与市场", operations: "运营与交付", corporate: "职能", other: "其他",
+};
 
 function countBy(items: HrPanoramaSnapshot[], selected: (item: HrPanoramaSnapshot) => string): Array<[string, number]> {
   const counts = new Map<string, number>();
@@ -82,13 +100,14 @@ function currentFailureIds(comparison: HrPanoramaComparison): string[] {
   return comparison.state === "available" || comparison.state === "none" ? Object.keys(comparison.currentSourceFailures) : [];
 }
 
-type ReportView = "overview" | "social" | "campus" | "strategy" | "jobs" | "evidence";
-type RecruitmentTrack = "social" | "campus" | "unknown";
+type ReportView = "overview" | "social" | "campus" | "intern" | "strategy" | "jobs" | "evidence";
+type RecruitmentTrack = "social" | "campus" | "intern" | "unknown";
 
 const REPORT_VIEWS: Array<{ id: ReportView; label: string }> = [
   { id: "overview", label: "AI 分析" },
   { id: "social", label: "社招" },
   { id: "campus", label: "校招" },
+  { id: "intern", label: "实习" },
   { id: "strategy", label: "产品与业务方向" },
   { id: "jobs", label: "原始岗位数据" },
   { id: "evidence", label: "来源证据" },
@@ -97,27 +116,66 @@ const REPORT_VIEWS: Array<{ id: ReportView; label: string }> = [
 function recruitmentTrack(item: HrPanoramaSnapshot): RecruitmentTrack {
   const text = `${item.title} ${item.dutyExcerpt} ${item.requirementExcerpt}`.toLocaleLowerCase("zh-CN");
   const url = item.sourceUrl.toLocaleLowerCase("zh-CN");
-  if (/(校招|校园招聘|应届|毕业生|实习|(?<![a-z])(?:campus|graduate|intern(?:ship)?)(?![a-z]))/i.test(text)
-    || /(?:^|[/_.-])(?:campus|graduate|intern(?:ship|recruitment)?)(?:$|[/_.?&#-])/i.test(url)) return "campus";
-  const searchable = `${text} ${url}`;
-  if (/(社招|社会招聘|社会人才|(?<![a-z])experienced(?![a-z])|professional-hire)/i.test(searchable)) return "social";
+  if (/^https:\/\/kwh0jtf778\.jobs\.feishu\.cn\/index(?:\/|$)/i.test(url)
+    || /^https:\/\/[^/]+\.zhiye\.com\/$/i.test(url)
+    || /^https:\/\/www\.elegoo\.com\.cn\/index\/join\//i.test(url)
+    || /(?:^|[/_.-])(?:social(?:eng|[-_/]?recruitment)?|experienced|professional-hire)(?:$|[/_.?&#-])|\/gwtd1(?:-\d+)?\.html$/i.test(url)) return "social";
+  if (/^https:\/\/kwh0jtf778\.jobs\.feishu\.cn\/229043(?:\/|$)/i.test(url)
+    || /(?:^|[/_.-])(?:campus|graduate)(?:[-_/]?recruitment)?(?:$|[/_.?&#-])|\/gwtd(?:-\d+)?\.html$/i.test(url)) return "campus";
+  if (/^https:\/\/kwh0jtf778\.jobs\.feishu\.cn\/073183(?:\/|$)/i.test(url)
+    || /(?:^|[/_.-])intern(?:ship|recruitment)?(?:$|[/_.?&#-])/i.test(url)) return "intern";
+  if (/(实习|(?<![a-z])intern(?:ship)?(?![a-z]))/i.test(text)) return "intern";
+  if (/(校招|校园招聘|应届|毕业生|\d{2}届|(?<![a-z])(?:campus|graduate)(?![a-z]))/i.test(text)) return "campus";
+  if (/(社招|社会招聘|社会人才|(?<![a-z])experienced(?![a-z])|professional-hire)/i.test(text)) return "social";
   return "unknown";
 }
 
 const DIRECTION_KEYS: Record<string, string> = {
   算法: "algorithm", 光学: "optics", 硬件: "hardware", 结构: "structure",
-  软件: "software", 制造工艺: "manufacturing", 其他: "other",
+  软件: "software", 制造工艺: "manufacturing", 质量: "quality", 产品: "product",
+  供应链: "supply_chain", 其他: "other",
 };
 
+const TECHNICAL_DIRECTION_PATTERNS: Array<[string, RegExp]> = [
+  ["光学", /(光学|镜头|成像|光机|光电|zemax|code\s*v)/i],
+  ["硬件", /(硬件|电子|电路|pcb|pcba|emc|ems|esd|fpga|soc|芯片|射频)/i],
+  ["结构", /(结构|机械|机电|模具|公差|cad|cae|solidworks)/i],
+  ["软件", /(软件|前端|后端|客户端|嵌入式|固件|操作系统|java|c\+\+|python|golang)/i],
+  ["算法", /(算法|人工智能|机器学习|深度学习|计算机视觉|点云|slam|标定|(?<![a-z])ai(?![a-z]))/i],
+  ["制造工艺", /(制造|工艺|生产|量产|试产|装配|注塑|钣金|cnc|良率)/i],
+  ["质量", /(质量|测试|可靠性|(?<![a-z])(?:dqe|sqe|qe)(?![a-z])|失效分析|认证)/i],
+  ["产品", /(产品经理|产品规划|产品设计|需求分析|用户体验|ux|id设计)/i],
+  ["供应链", /(供应链|采购|计划|pmc|物流|物料)/i],
+];
+
+const SUPPLEMENTAL_TECHNICAL_DIRECTION_PATTERNS: Array<[string, RegExp]> = [
+  ["光学", /(光学|镜头|成像|光机|光电|zemax|code\s*v)/i],
+  ["硬件", /(硬件|电子|电路|pcb|pcba|emc|esd|fpga|芯片|射频)/i],
+  ["结构", /(结构设计|机械设计|模具|公差|solidworks|creo|catia)/i],
+  ["软件", /(嵌入式|固件|操作系统|java|c\+\+|python|golang)/i],
+  ["算法", /(算法|机器学习|深度学习|计算机视觉|点云|slam|标定)/i],
+  ["制造工艺", /(制造工艺|生产工艺|装配工艺|注塑|钣金|cnc|良率)/i],
+  ["质量", /(可靠性|(?<![a-z])(?:dqe|sqe|qe)(?![a-z])|失效分析|认证)/i],
+  ["产品", /(产品规划|产品经理|用户体验|ux|id设计)/i],
+  ["供应链", /(供应链|采购|pmc|物流|物料)/i],
+];
+
+function technicalDirections(item: HrPanoramaSnapshot): string[] {
+  const title = item.title.toLocaleLowerCase("zh-CN");
+  const fromTitle = TECHNICAL_DIRECTION_PATTERNS.filter(([, pattern]) => pattern.test(title)).map(([label]) => label);
+  const text = `${item.title} ${item.dutyExcerpt} ${item.requirementExcerpt}`.toLocaleLowerCase("zh-CN");
+  if (fromTitle.length) {
+    const supplemental = SUPPLEMENTAL_TECHNICAL_DIRECTION_PATTERNS
+      .filter(([label, pattern]) => !fromTitle.includes(label) && pattern.test(text))
+      .map(([label]) => label);
+    return [...fromTitle, ...supplemental];
+  }
+  const fromText = TECHNICAL_DIRECTION_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([label]) => label);
+  return fromText.length ? fromText : ["其他"];
+}
+
 function technicalDirection(item: HrPanoramaSnapshot): string {
-  const searchable = `${item.title} ${item.dutyExcerpt} ${item.requirementExcerpt}`.toLocaleLowerCase("zh-CN");
-  if (/(算法|人工智能|机器学习|视觉|点云|(?<![a-z])ai(?![a-z])|slam)/i.test(searchable)) return "算法";
-  if (/(光学|镜头|zemax|成像)/i.test(searchable)) return "光学";
-  if (/(硬件|电子|电路|pcb|嵌入式)/i.test(searchable)) return "硬件";
-  if (/(结构|机械|机电|模具|cad)/i.test(searchable)) return "结构";
-  if (/(软件|前端|后端|客户端|java|c\+\+|python)/i.test(searchable)) return "软件";
-  if (/(制造|工艺|质量|dqe|生产|供应链)/i.test(searchable)) return "制造工艺";
-  return "其他";
+  return technicalDirections(item)[0];
 }
 
 function sourceChannel(url: string): string {
@@ -149,12 +207,12 @@ function JobCards({ items, sourceById }: { items: HrPanoramaSnapshot[]; sourceBy
 }
 
 function TrackView({ track, report, comparison, sourceById }: { track: Exclude<RecruitmentTrack, "unknown">; report: PanoramaReport; comparison: HrPanoramaComparison; sourceById: Map<string, PanoramaReport["sources"][number]> }) {
-  const label = track === "social" ? "社招" : "校招";
+  const label = TRACK_LABELS[track];
   const items = report.snapshots.filter((item) => recruitmentTrack(item) === track);
   const unknown = report.snapshots.filter((item) => recruitmentTrack(item) === "unknown");
   const failures = new Set(currentFailureIds(comparison));
   return <section className="hr-panorama-track-view" data-report-view={track}>
-    <header><div><p>{track === "social" ? "SOCIAL RECRUITING" : "CAMPUS RECRUITING"}</p><h2>{label}招聘</h2></div><strong>{items.length} 个可判定岗位</strong></header>
+    <header><div><p>{track === "social" ? "SOCIAL RECRUITING" : track === "campus" ? "CAMPUS RECRUITING" : "INTERNSHIPS"}</p><h2>{label}{track === "intern" ? "岗位" : "招聘"}</h2></div><strong>{items.length} 个可判定岗位</strong></header>
     <div className="hr-panorama-track-coverage">{report.sources.map((source) => {
       const count = items.filter((item) => item.sourceId === source.sourceId).length;
       const hasUnknown = unknown.some((item) => item.sourceId === source.sourceId);
@@ -163,8 +221,9 @@ function TrackView({ track, report, comparison, sourceById }: { track: Exclude<R
         : count > 0 ? `${count} 个公开岗位`
           : hasUnknown ? `未识别到${label}标记，待确认` : `本轮没有可判定的${label}记录，待确认`}</span></article>;
     })}</div>
-    {unknown.length > 0 && <p className="hr-panorama-track-warning">{unknown.length} 个岗位尚未识别招聘类型，未强行归入社招或校招。</p>}
-    <JobCards items={items} sourceById={sourceById} />
+    {unknown.length > 0 && <p className="hr-panorama-track-warning">{unknown.length} 个岗位尚未识别招聘类型，未强行归入社招、校招或实习。</p>}
+    {items.length > 200 && <p className="hr-panorama-track-warning">页面先展示前 200 条；完整数据可在“原始岗位数据”筛选或下载 Excel。</p>}
+    <JobCards items={items.slice(0, 200)} sourceById={sourceById} />
   </section>;
 }
 
@@ -187,7 +246,27 @@ export function formatHrPanoramaReportMarkdown(
   const observationTimes = selectedSnapshots.map((item) => item.observedAt).sort();
   const asOf = observationTimes[observationTimes.length - 1] ?? report.insight.createdAt;
   const geography = countBy(selectedSnapshots, (item) => item.location);
-  const directions = filtered ? countBy(selectedSnapshots, technicalDirection) : Object.entries(report.insight.directionClusters);
+  const directions = filtered ? countBy(selectedSnapshots, technicalDirection) : legacyDirections(report);
+  const dimensions = filtered ? null : v2Dimensions(report);
+  const structureLines = dimensions ? [
+    "", "## 招聘结构", "",
+    ...Object.entries(dimensions.tracks).map(([key, value]) => `- ${TRACK_LABELS[key] ?? key}：${value}`),
+    "", "### 岗位族", "",
+    ...Object.entries(dimensions.job_families).map(([key, value]) => `- ${FAMILY_LABELS[key] ?? key}：${value}`),
+    "", "### 资历结构", "",
+    ...Object.entries(dimensions.seniority).map(([key, value]) => `- ${SENIORITY_LABELS[key] ?? key}：${value}`),
+    "", "### 显式技术栈", "",
+    ...(dimensions.skills.length ? dimensions.skills.map((item) => `- ${item.name}：${item.job_count}`) : ["- 暂无可核验的显式技术栈。"]),
+    "", "## 公司 × 技术方向", "",
+    ...selectedSources.map((source) => {
+      const metrics = dimensions.company_matrix[source.sourceId];
+      const directionText = metrics ? Object.entries(metrics.directions).filter(([, value]) => value > 0).map(([key, value]) => `${key} ${value}`).join("、") : "无岗位证据";
+      return `- ${source.canonicalName}：${metrics?.job_count ?? 0} 个岗位；${directionText || "未识别技术方向"}`;
+    }),
+    "", "## 分析边界", "",
+    `- ${dimensions.trend.message}`,
+    ...dimensions.interpretation_limits.map((item) => `- ${item}`),
+  ] : [];
   const jobStatus = (status: HrPanoramaSnapshot["status"]) => status === "open" ? "公开招聘中" : status === "closed" ? "已下线" : "状态待确认";
   const lines = [
     `# 全景分析 · 第 ${report.insight.versionNumber} 版`, "",
@@ -207,6 +286,7 @@ export function formatHrPanoramaReportMarkdown(
     ...(geography.length ? geography.map(([location, count]) => `- ${location}：${count} 个岗位`) : ["暂无可用岗位地点。"]),
     "", "## 关键能力", "",
     ...(selectedSnapshots.length ? selectedSnapshots.map((item) => `- ${sourceNames.get(item.sourceId) ?? "关注公司"}｜${item.title}：${item.requirementExcerpt}`) : ["暂无可核验的岗位能力要求。"]),
+    ...structureLines,
     "", "## 公开事实", "",
     ...selectedFacts.map((fact) => `- ${fact.text}\n  - 来源：${fact.sourceUrl}\n  - 观测于 ${fact.observedAt}`),
     "", "## AI 推断", "",
@@ -242,20 +322,23 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
   const [locationFilter, setLocationFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<HrPanoramaSnapshot["status"] | "all">("all");
   const [directionFilter, setDirectionFilter] = useState("all");
+  const [jobLimit, setJobLimit] = useState(100);
   const sourceById = new Map(report.sources.map((source) => [source.sourceId, source]));
   const coverageById = new Map(report.publication.sourceCoverage.map((item) => [item.sourceId, item]));
   const factById = new Map(report.insight.facts.map((fact) => [fact.factId, fact]));
   const openJobs = report.snapshots.filter((item) => item.status === "open").length;
   const geography = countBy(report.snapshots, (item) => item.location);
   const changes = recruitmentChanges(report, comparison);
+  const dimensions = v2Dimensions(report);
+  const directionEntries = legacyDirections(report);
   const markdown = formatHrPanoramaReportMarkdown(report, comparison);
   const locations = [...new Set(report.snapshots.map((item) => item.location))].sort((left, right) => left.localeCompare(right, "zh-CN"));
-  const directions = [...new Set(report.snapshots.map(technicalDirection))].sort((left, right) => left.localeCompare(right, "zh-CN"));
+  const directions = [...new Set(report.snapshots.flatMap(technicalDirections))].sort((left, right) => left.localeCompare(right, "zh-CN"));
   const filteredJobs = report.snapshots.filter((item) => (companyFilter === "all" || item.sourceId === companyFilter)
     && (trackFilter === "all" || recruitmentTrack(item) === trackFilter)
     && (locationFilter === "all" || item.location === locationFilter)
     && (statusFilter === "all" || item.status === statusFilter)
-    && (directionFilter === "all" || technicalDirection(item) === directionFilter));
+    && (directionFilter === "all" || technicalDirections(item).includes(directionFilter)));
   const filtersActive = companyFilter !== "all" || trackFilter !== "all" || locationFilter !== "all"
     || statusFilter !== "all" || directionFilter !== "all";
   const exportPath = (format: "pdf" | "xlsx") => {
@@ -271,7 +354,9 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
   useEffect(() => {
     setCopyState("idle"); setView("overview"); setCompanyFilter("all"); setTrackFilter("all");
     setLocationFilter("all"); setStatusFilter("all"); setDirectionFilter("all");
+    setJobLimit(100);
   }, [report.publication.publicationId]);
+  useEffect(() => { setJobLimit(100); }, [companyFilter, trackFilter, locationFilter, statusFilter, directionFilter]);
   useEffect(() => {
     if (copyState === "idle") return;
     const timer = window.setTimeout(() => setCopyState("idle"), 1800);
@@ -306,11 +391,12 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
 
     {view === "social" && <TrackView comparison={comparison} report={report} sourceById={sourceById} track="social" />}
     {view === "campus" && <TrackView comparison={comparison} report={report} sourceById={sourceById} track="campus" />}
+    {view === "intern" && <TrackView comparison={comparison} report={report} sourceById={sourceById} track="intern" />}
 
     <section className="hr-panorama-signal-grid" aria-label="招聘信号概览" hidden={view !== "overview"}>
       <section>
         <header><span>01</span><h2>研发方向</h2></header>
-        {Object.keys(report.insight.directionClusters).length ? <dl>{Object.entries(report.insight.directionClusters).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{clusterValue(value)}</dd></div>)}</dl> : <p>公开信息尚不足以形成方向聚类。</p>}
+        {directionEntries.length ? <dl>{directionEntries.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{clusterValue(value)}</dd></div>)}</dl> : <p>公开信息尚不足以形成方向聚类。</p>}
       </section>
       <section>
         <header><span>02</span><h2>招聘变化</h2></header>
@@ -328,13 +414,31 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
         <header><span>05</span><h2>重点团队与投入信号</h2></header>
         {report.insight.inferences.length ? <ul>{report.insight.inferences.slice(0, 4).map((item, index) => <li key={`${index}:${item.text}`}><strong>AI 推断</strong><span>{item.text}</span></li>)}</ul> : <p>公开事实尚不足以判断重点团队或研发资源投入。</p>}
       </section>
+      <section>
+        <header><span>06</span><h2>公开事实与来源</h2></header>
+        {report.insight.facts.length ? <ul>{report.insight.facts.slice(0, 4).map((fact) => <li key={fact.factId}><strong>公开事实</strong><span>{fact.text}</span><a href={fact.sourceUrl} rel="noreferrer" target="_blank">查看公开来源 ↗</a></li>)}</ul> : <p>本版没有可展示的公开事实。</p>}
+      </section>
     </section>
+
+    {view === "overview" && dimensions && <section className="hr-panorama-v2" aria-label="招聘结构分析">
+      <header><div><p>CODE-COMPILED INTELLIGENCE</p><h2>公司 × 技术方向</h2></div><span>{dimensions.scope.unique_job_count} 个去重岗位 · {dimensions.scope.duplicate_snapshot_count} 个重复观测已剔除</span></header>
+      <div className="hr-panorama-v2-table-wrap"><table><thead><tr><th>公司</th><th>岗位</th>{Object.keys(dimensions.directions).filter((key) => key !== "其他").map((key) => <th key={key}>{key}</th>)}</tr></thead><tbody>
+        {report.sources.map((source) => { const metrics = dimensions.company_matrix[source.sourceId]; const coverage = coverageById.get(source.sourceId); return <tr key={source.sourceId}><th>{source.canonicalName}<small>{coverage?.state === "failed" ? "本版未覆盖" : coverage?.jobCount === 0 ? "已检查，本次未发现公开岗位" : "已形成岗位证据"}</small></th><td>{metrics?.job_count ?? 0}</td>{Object.keys(dimensions.directions).filter((key) => key !== "其他").map((key) => <td key={key}>{metrics?.directions[key] ?? 0}</td>)}</tr>; })}
+      </tbody></table></div>
+      <div className="hr-panorama-v2-grid">
+        <section><h3>社招、校招与实习</h3><dl>{Object.entries(dimensions.tracks).map(([key, value]) => <div key={key}><dt>{TRACK_LABELS[key] ?? key}</dt><dd>{value}</dd></div>)}</dl></section>
+        <section><h3>资历与能力结构</h3><dl>{Object.entries(dimensions.seniority).map(([key, value]) => <div key={key}><dt>{SENIORITY_LABELS[key] ?? key}</dt><dd>{value}</dd></div>)}</dl></section>
+        <section><h3>岗位族分布</h3><dl>{Object.entries(dimensions.job_families).map(([key, value]) => <div key={key}><dt>{FAMILY_LABELS[key] ?? key}</dt><dd>{value}</dd></div>)}</dl></section>
+        <section><h3>显式技术栈</h3><div className="hr-panorama-skill-list">{dimensions.skills.slice(0, 16).map((item) => <span key={item.name}>{item.name}<b>{item.job_count}</b></span>)}</div></section>
+      </div>
+      <aside><strong>{dimensions.trend.message}</strong><span>{dimensions.interpretation_limits.join("；")}</span></aside>
+    </section>}
 
     {view === "strategy" && <section className="hr-panorama-strategy" data-report-view="strategy">
       <header><p>PRODUCT &amp; BUSINESS SIGNALS</p><h2>产品与业务方向</h2><span>方向判断来自公开岗位事实；推断与事实严格分开。</span></header>
       <div className="hr-panorama-strategy-grid">
-        <section><h3>研发资源方向</h3>{Object.keys(report.insight.directionClusters).length
-          ? <dl>{Object.entries(report.insight.directionClusters).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{clusterValue(value)}</dd></div>)}</dl>
+        <section><h3>研发资源方向</h3>{directionEntries.length
+          ? <dl>{directionEntries.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{clusterValue(value)}</dd></div>)}</dl>
           : <p>公开信息尚不足以形成方向聚类。</p>}</section>
         <section><h3>业务投入信号</h3>{report.insight.inferences.length
           ? <ul>{report.insight.inferences.map((item, index) => <li key={`${index}:${item.text}`}>{item.text}</li>)}</ul>
@@ -347,15 +451,16 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
       <header><div><p>PUBLIC JOB RECORDS</p><h2>岗位明细</h2></div><strong>{filteredJobs.length} / {report.snapshots.length} 条</strong></header>
       <div className="hr-panorama-job-filters">
         <label><span>公司</span><select aria-label="公司" onChange={(event) => setCompanyFilter(event.target.value)} value={companyFilter}><option value="all">全部公司</option>{report.sources.map((source) => <option key={source.sourceId} value={source.sourceId}>{source.canonicalName}</option>)}</select></label>
-        <label><span>招聘类型</span><select aria-label="招聘类型" onChange={(event) => setTrackFilter(event.target.value as RecruitmentTrack | "all")} value={trackFilter}><option value="all">全部类型</option><option value="social">社招</option><option value="campus">校招/实习</option><option value="unknown">待分类</option></select></label>
+        <label><span>招聘类型</span><select aria-label="招聘类型" onChange={(event) => setTrackFilter(event.target.value as RecruitmentTrack | "all")} value={trackFilter}><option value="all">全部类型</option><option value="social">社招</option><option value="campus">校招</option><option value="intern">实习</option><option value="unknown">待分类</option></select></label>
         <label><span>地点</span><select aria-label="地点" onChange={(event) => setLocationFilter(event.target.value)} value={locationFilter}><option value="all">全部地点</option>{locations.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
         <label><span>岗位状态</span><select aria-label="岗位状态" onChange={(event) => setStatusFilter(event.target.value as HrPanoramaSnapshot["status"] | "all")} value={statusFilter}><option value="all">全部状态</option><option value="open">招聘中</option><option value="closed">已关闭</option><option value="unknown">待确认</option></select></label>
         <label><span>技术方向</span><select aria-label="技术方向" onChange={(event) => setDirectionFilter(event.target.value)} value={directionFilter}><option value="all">全部方向</option>{directions.map((direction) => <option key={direction} value={direction}>{direction}</option>)}</select></label>
       </div>
-      <JobCards items={filteredJobs} sourceById={sourceById} />
+      <JobCards items={filteredJobs.slice(0, jobLimit)} sourceById={sourceById} />
+      {filteredJobs.length > jobLimit && <button className="hr-panorama-load-more" onClick={() => setJobLimit((value) => value + 100)} type="button">再显示 100 条</button>}
     </section>}
 
-    <section className="hr-panorama-source-matrix" data-evidence-kind="source-matrix" hidden={view !== "evidence"}>
+    {view === "evidence" && <section className="hr-panorama-source-matrix" data-evidence-kind="source-matrix">
       <header><p>SOURCE MATRIX</p><h2>情报来源矩阵</h2><span>逐家公司展示批准渠道、本版观测结果和失败边界。</span></header>
       <div>{report.sources.map((source) => {
         const snapshots = report.snapshots.filter((item) => item.sourceId === source.sourceId);
@@ -367,51 +472,52 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
             const observed = items.map((item) => item.observedAt).sort();
             const latest = observed[observed.length - 1];
             const failureCode = coverage?.channelFailures?.[url];
-            return <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a><small>{failureCode ? `本轮失败 · ${collectionFailureLabel(failureCode)}` : items.length ? `命中 ${items.length} 条` : "未形成岗位证据，待确认"}</small>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</li>;
+            const checked = coverage?.state === "succeeded" && coverage.sourceUrls.includes(url);
+            return <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a><small>{failureCode ? `本轮失败 · ${collectionFailureLabel(failureCode)}` : items.length ? `命中 ${items.length} 条` : checked ? "已检查，本次未发现公开岗位" : "本版未覆盖"}</small>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</li>;
           })}</ul>
         </article>;
       })}</div>
-    </section>
+    </section>}
 
-    <section className="hr-panorama-evidence" data-evidence-kind="facts" hidden={view !== "evidence"}>
+    {view === "evidence" && <section className="hr-panorama-evidence" data-evidence-kind="facts">
       <header><p>FACTS</p><h2>公开事实</h2><span>以下内容可回到原始公开页面核验。</span></header>
       <ol>{report.insight.facts.map((fact) => <li id={`panorama-fact-${encodeURIComponent(fact.factId)}`} key={fact.factId}>
         <p>{fact.text}</p>
         <footer><a href={fact.sourceUrl} rel="noreferrer" target="_blank">查看公开来源 ↗</a><time dateTime={fact.observedAt}>观测于 {time(fact.observedAt)}</time></footer>
       </li>)}</ol>
-    </section>
+    </section>}
 
-    <section className="hr-panorama-evidence is-inference" data-evidence-kind="inferences" hidden={view !== "evidence"}>
+    {view === "evidence" && <section className="hr-panorama-evidence is-inference" data-evidence-kind="inferences">
       <header><p>INFERENCES</p><h2>AI 推断</h2><span>推断不是公开事实，并列出其事实依据。</span></header>
       {report.insight.inferences.length ? <ol>{report.insight.inferences.map((item, index) => <li key={`${index}:${item.text}`}>
         <p>{item.text}</p><div className="hr-panorama-inference-basis">{item.basisFactIds.map((factId) => factById.get(factId)).filter((fact) => fact !== undefined).map((fact) => <span key={fact.factId}><a href={fact.sourceUrl} rel="noreferrer" target="_blank">{fact.text} ↗</a><time dateTime={fact.observedAt}>观测于 {time(fact.observedAt)}</time></span>)}</div>
       </li>)}</ol> : <p className="hr-panorama-empty-copy">本版没有发布 AI 推断。</p>}
-    </section>
+    </section>}
 
-    <section className="hr-panorama-evidence is-unknown" data-evidence-kind="unknowns" hidden={view !== "evidence"}>
+    {view === "evidence" && <section className="hr-panorama-evidence is-unknown" data-evidence-kind="unknowns">
       <header><p>UNKNOWNS</p><h2>仍待确认</h2><span>公开材料没有证明的事项，不作为否定结论。</span></header>
       {report.insight.unknowns.length ? <ul>{report.insight.unknowns.map((item, index) => <li key={`${index}:${item.text}`}>{item.text}</li>)}</ul> : <p className="hr-panorama-empty-copy">本版没有额外未知项。</p>}
-    </section>
+    </section>}
 
-    <section className="hr-panorama-sources" hidden={view !== "evidence"}>
+    {view === "evidence" && <section className="hr-panorama-sources">
       <header><p>SOURCES</p><h2>来源记录</h2><span>每条岗位记录保留公开链接和实际观测时间。</span></header>
-      {report.snapshots.length ? <div>{report.snapshots.map((item) => <article key={item.snapshotId}>
+      {report.snapshots.length ? <><p className="hr-panorama-track-warning">页面展示前 200 条岗位来源；完整原始数据请下载 Excel。</p><div>{report.snapshots.slice(0, 200).map((item) => <article key={item.snapshotId}>
         <span>{sourceById.get(item.sourceId)?.canonicalName ?? "关注公司"}</span><h3>{item.title}</h3><p>{item.location} · {item.dutyExcerpt}</p>
         <footer><a href={item.sourceUrl} rel="noreferrer" target="_blank">打开岗位来源 ↗</a><time dateTime={item.observedAt}>{time(item.observedAt)}</time></footer>
-      </article>)}</div> : <p className="hr-panorama-empty-copy">本版没有可展示的岗位快照。</p>}
-    </section>
+      </article>)}</div></> : <p className="hr-panorama-empty-copy">本版没有可展示的岗位快照。</p>}
+    </section>}
 
-    <section className="hr-panorama-sources" data-evidence-kind="raw-responses" hidden={view !== "evidence"}>
+    {view === "evidence" && <section className="hr-panorama-sources" data-evidence-kind="raw-responses">
       <header><p>RAW SOURCE RESPONSES</p><h2>原始来源响应</h2><span>按内容哈希永久保留，与 AI 分析分开，可下载复核。</span></header>
       {report.evidence.length ? <div>{report.evidence.map((item) => <article key={`${item.sourceId}:${item.sourceUrl}:${item.attemptNumber}`}>
-        <span>{sourceById.get(item.sourceId)?.canonicalName ?? "关注公司"} · 第 {item.attemptNumber} 次采集</span><h3>{item.mime} · {item.sizeBytes} bytes</h3><p>SHA-256: {item.sha256}</p>
+        <span>{sourceById.get(item.sourceId)?.canonicalName ?? "关注公司"} · 官方来源响应</span><h3>{item.mime} · {item.sizeBytes} bytes</h3><p>SHA-256: {item.sha256}</p>
         <footer><a download href={platformPath(`/api/hr/panorama/reports/${encodeURIComponent(report.publication.publicationId)}/evidence/${item.sha256}`)}>下载原始响应</a><time dateTime={item.observedAt}>{time(item.observedAt)}</time></footer>
       </article>)}</div> : <p className="hr-panorama-empty-copy">本版没有可下载的原始响应。</p>}
-    </section>
+    </section>}
 
     <details className="hr-panorama-diagnostics">
       <summary>高级诊断</summary>
-      <dl><div><dt>发布版本</dt><dd>{report.publication.publicationId}</dd></div><div><dt>原始数据批次</dt><dd>{report.publication.batchId}</dd></div><div><dt>分析版本</dt><dd>{report.insight.insightVersionId}</dd></div><div><dt>模型版本</dt><dd>{report.insight.modelVersion}</dd></div><div><dt>生成 Agent</dt><dd>{report.insight.agentId}</dd></div></dl>
+      <dl><div><dt>发布版本</dt><dd>{report.publication.publicationId}</dd></div><div><dt>模型版本</dt><dd>{report.insight.modelVersion}</dd></div></dl>
     </details>
   </article>;
 }

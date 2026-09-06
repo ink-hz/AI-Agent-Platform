@@ -27,7 +27,13 @@ const report: Report = {
     facts: [{ factId: "f1", text: "联合光电公开招聘结构工程师", snapshotId: "66666666-6666-4666-8666-666666666666",
       observationId: "88888888-8888-4888-8888-888888888888", sourceUrl: "https://example.com/jobs/1", observedAt: "2026-09-05T08:00:00Z" }],
     inferences: [{ text: "精密结构人才投入可能增加", basisFactIds: ["f1"] }],
-    unknowns: [{ text: "实际招聘人数仍待确认" }], directionClusters: { 精密结构: 4, 光学设计: 2 },
+    unknowns: [{ text: "实际招聘人数仍待确认" }], directionClusters: { 精密结构: 4, 光学设计: 2,
+      _v2: { schema_version: 2, scope: { snapshot_count: 2, unique_job_count: 2, duplicate_snapshot_count: 0, source_count: 2, observed_from: "2026-09-05T08:00:00Z", observed_to: "2026-09-05T08:05:00Z" },
+        tracks: { social: 1, campus: 1, intern: 0, unknown: 0 }, directions: { 结构: 1, 光学: 1, 其他: 0 },
+        job_families: { research_development: 2, quality: 0, manufacturing: 0, supply_chain: 0, product: 0, sales_marketing: 0, operations: 0, corporate: 0, other: 0 },
+        seniority: { senior: 1, mid: 0, junior: 0, graduate: 1, unspecified: 0 }, education: { doctorate: 0, master: 0, bachelor: 0, college: 0, unspecified: 2 }, locations: { 中山: 1, 宁波: 1 }, skills: [{ name: "Zemax", job_count: 1 }],
+        company_matrix: { "11111111-1111-4111-8111-111111111111": { job_count: 1, tracks: { social: 1 }, directions: { 结构: 1 }, job_families: { research_development: 1 }, seniority: { senior: 1 }, locations: { 中山: 1 }, skills: {}, sample_snapshot_ids: ["66666666-6666-4666-8666-666666666666"] }, "22222222-2222-4222-8222-222222222222": { job_count: 1, tracks: { campus: 1 }, directions: { 光学: 1 }, job_families: { research_development: 1 }, seniority: { graduate: 1 }, locations: { 宁波: 1 }, skills: { Zemax: 1 }, sample_snapshot_ids: ["77777777-7777-4777-8777-777777777777"] } },
+        evidence_samples: {}, trend: { state: "baseline_only", message: "基线版本：尚不能判断月度变化" }, interpretation_limits: ["公开岗位数不等于HC"] } },
     summary: "两家公司持续布局光学与精密结构人才。", sourceConversationId: null,
     sourceTurnId: null, agentId: "hr-intelligence-producer", modelVersion: "gpt-5",
     createdAt: "2026-09-05T09:00:00Z",
@@ -96,6 +102,12 @@ describe("HrPanoramaReport", () => {
   it("shows an auditable intelligence source matrix for every company", async () => {
     const multiChannel = {
       ...report,
+      publication: {
+        ...report.publication,
+        sourceCoverage: report.publication.sourceCoverage.map((coverage) => coverage.sourceId === report.sources[0].sourceId
+          ? { ...coverage, sourceUrls: ["https://example.com/jobs", "https://example.com/campus"] }
+          : coverage),
+      },
       sources: [
         { ...report.sources[0], approvedUrls: ["https://example.com/jobs", "https://example.com/campus"] },
         report.sources[1],
@@ -109,7 +121,7 @@ describe("HrPanoramaReport", () => {
     expect(matrix?.textContent).toContain("联合光电");
     expect(matrix?.textContent).toContain("舜宇光学");
     expect(matrix?.textContent).toContain("命中 1 条");
-    expect(matrix?.textContent).toContain("未形成岗位证据，待确认");
+    expect(matrix?.textContent).toContain("已检查，本次未发现公开岗位");
     expect(matrix?.textContent).toContain("最近观测");
     expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://example.com/jobs"]')).not.toBeNull();
     expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://example.com/campus"]')).not.toBeNull();
@@ -145,6 +157,90 @@ describe("HrPanoramaReport", () => {
     expect(social?.textContent).toContain("结构工程师");
     expect(social?.textContent).not.toContain("2027届校园招聘｜光学工程师");
     expect(social?.textContent).toContain("1 个岗位尚未识别招聘类型");
+  });
+
+  it("keeps internships separate in the report view, filters, and export URL", async () => {
+    const internship = {
+      ...report,
+      snapshots: [{
+        ...report.snapshots[0],
+        title: "算法实习生",
+        sourceUrl: "https://example.com/internrecruitment/jobs/1",
+      }],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={internship} />));
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "实习")?.click());
+    expect(container.querySelector('[data-report-view="intern"]')?.textContent).toContain("算法实习生");
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "原始岗位数据")?.click());
+    const track = container.querySelector<HTMLSelectElement>('select[aria-label="招聘类型"]');
+    expect([...track!.options].map((option) => option.textContent)).toContain("实习");
+    await act(async () => {
+      track!.value = "intern";
+      track!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector<HTMLAnchorElement>('a[href*="format=xlsx"]')?.href)
+      .toContain("recruitment_track=intern");
+  });
+
+  it("does not expose producer or batch identifiers in business diagnostics", async () => {
+    await act(async () => root.render(<HrPanoramaReport report={report} />));
+
+    expect(container.textContent).not.toContain(report.publication.batchId);
+    expect(container.textContent).not.toContain(report.insight.insightVersionId);
+    expect(container.textContent).not.toContain(report.insight.agentId);
+    expect(container.textContent).toContain(report.insight.modelVersion);
+  });
+
+  it("classifies an ELEGOO detail URL as social recruiting", async () => {
+    const detail: Report = {
+      ...report,
+      snapshots: [{
+        ...report.snapshots[0],
+        sourceUrl: "https://www.elegoo.com.cn/index/join/detail/id/713.html",
+      }],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={detail} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "社招")?.click());
+
+    expect(container.querySelector('[data-report-view="social"]')?.textContent)
+      .toContain(report.snapshots[0].title);
+  });
+
+  it("does not expose collection retry numbers in source evidence", async () => {
+    const retried: Report = {
+      ...report,
+      evidence: [{ ...report.evidence[0], attemptNumber: 2 }],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={retried} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "来源证据")?.click());
+
+    expect(container.querySelector('[data-evidence-kind="raw-responses"]')?.textContent)
+      .not.toContain("第 2 次采集");
+  });
+
+  it("uses the recruiting portal before incidental track words in job text", async () => {
+    const tracked: Report = {
+      ...report,
+      snapshots: [
+        { ...report.snapshots[0], requirementExcerpt: "有实习经验优先", sourceUrl: "https://example.com/social/jobs/1" },
+        { ...report.snapshots[1], requirementExcerpt: "有实习经历优先", sourceUrl: "https://sunny.example/campus/jobs/2" },
+      ],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={tracked} />));
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "社招")?.click());
+    expect(container.querySelector('[data-report-view="social"]')?.textContent).toContain("结构工程师");
+    expect(container.querySelector('[data-report-view="social"]')?.textContent).not.toContain("光学工程师");
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "校招")?.click());
+    expect(container.querySelector('[data-report-view="campus"]')?.textContent).toContain("光学工程师");
+    expect(container.querySelector('[data-report-view="campus"]')?.textContent).not.toContain("结构工程师");
   });
 
   it("does not mistake international roles for internships", async () => {
@@ -230,7 +326,7 @@ describe("HrPanoramaReport", () => {
     expect(markdown).not.toContain("两家公司共同增加研发投入");
     expect(markdown).not.toContain("光学设计：2");
     expect(markdown).not.toContain("本轮采集失败");
-    expect(markdown).toContain("光学：1");
+    expect(markdown).toContain("结构：1");
   });
 
   it("filters job details by company, recruiting type, location, status, and technical direction", async () => {
@@ -256,9 +352,55 @@ describe("HrPanoramaReport", () => {
     expect(excel?.href).toContain(`source_id=${report.sources[0].sourceId}`);
   });
 
+  it("offers every title-derived direction for a multi-discipline role", async () => {
+    const multiDirection: Report = {
+      ...report,
+      snapshots: [{ ...report.snapshots[0], title: "硬件测试工程师", dutyExcerpt: "负责功能开发" }],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={multiDirection} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "原始岗位数据")?.click());
+
+    const direction = container.querySelector<HTMLSelectElement>('select[aria-label="技术方向"]');
+    expect([...direction!.options].map((option) => option.textContent)).toEqual(expect.arrayContaining(["硬件", "质量"]));
+    await act(async () => {
+      direction!.value = "质量";
+      direction!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-report-view="jobs"]')?.textContent).toContain("硬件测试工程师");
+    expect(container.querySelector<HTMLAnchorElement>('a[href*="format=xlsx"]')?.href).toContain("technical_direction=quality");
+  });
+
+  it("adds a strong technical direction found in duties to the title direction", async () => {
+    const multiDirection: Report = {
+      ...report,
+      snapshots: [{
+        ...report.snapshots[0],
+        title: "硬件工程师",
+        dutyExcerpt: "负责光学系统设计、镜头选型与成像质量验证",
+      }],
+    };
+    await act(async () => root.render(<HrPanoramaReport report={multiDirection} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "原始岗位数据")?.click());
+
+    const direction = container.querySelector<HTMLSelectElement>('select[aria-label="技术方向"]');
+    expect([...direction!.options].map((option) => option.textContent)).toEqual(expect.arrayContaining(["硬件", "光学"]));
+  });
+
   it("labels a report without a prior same-scope version as the first baseline", async () => {
     await act(async () => root.render(<HrPanoramaReport comparison={{ state: "none", currentSourceFailures: {} }} report={report} />));
     expect(container.textContent).toContain("首次分析，暂无变化基线");
+  });
+
+  it("renders code-compiled company, track, seniority and baseline layers", async () => {
+    await act(async () => root.render(<HrPanoramaReport report={report} />));
+
+    expect(container.textContent).toContain("公司 × 技术方向");
+    expect(container.textContent).toContain("社招、校招与实习");
+    expect(container.textContent).toContain("资历与能力结构");
+    expect(container.textContent).toContain("岗位族分布");
+    expect(container.textContent).toContain("显式技术栈");
+    expect(container.textContent).toContain("基线版本：尚不能判断月度变化");
+    expect(container.textContent).not.toContain("_v2");
   });
 
   it("does not call an unavailable comparison baseline the first analysis", async () => {
@@ -331,6 +473,10 @@ describe("HrPanoramaReport", () => {
     expect(copied).toContain("## 地域分布");
     expect(copied).toContain("中山：1 个岗位");
     expect(copied).toContain("## 关键能力");
+    expect(copied).toContain("## 招聘结构");
+    expect(copied).toContain("社招：1");
+    expect(copied).toContain("## 分析边界");
+    expect(copied).toContain("公开岗位数不等于HC");
     expect(copied).toContain("联合光电｜结构工程师：五年以上光学行业经验");
     expect(copied).toContain("联合光电｜结构工程师｜公开招聘中｜中山");
     expect(copied).toContain("职责：负责精密结构设计");

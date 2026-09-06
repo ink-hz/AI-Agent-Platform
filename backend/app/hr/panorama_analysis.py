@@ -13,6 +13,7 @@ from app.agent_brain.model_adapter import (
     BrainModelRequest,
 )
 
+from .panorama_dimensions import compile_panorama_dimensions
 from .panorama_models import (
     CreateTalentInsightVersion,
     PublicJobSnapshot,
@@ -441,15 +442,17 @@ class PanoramaAnalyzer:
             ],
         }
         if _canonical_size(direct_prompt) <= _MAX_PROMPT_BYTES:
-            return await self._analyze("report", direct_prompt, snapshots)
+            result = await self._analyze("report", direct_prompt, snapshots)
+            return self._with_dimensions(result, snapshots)
         if analysis_parts:
-            return await self._synthesize(
+            result = await self._synthesize(
                 "report",
                 base,
                 "analysis_parts",
                 analysis_parts,
                 snapshots,
             )
+            return self._with_dimensions(result, snapshots)
         chunks = self._snapshot_chunks(snapshots, base)
         chunk_analyses = []
         for index, chunk in enumerate(chunks, start=1):
@@ -466,12 +469,34 @@ class PanoramaAnalyzer:
                     chunk,
                 )
             )
-        return await self._synthesize(
+        result = await self._synthesize(
             "report",
             base,
             "analysis_parts",
             tuple(chunk_analyses),
             snapshots,
+        )
+        return self._with_dimensions(result, snapshots)
+
+    @staticmethod
+    def _with_dimensions(
+        analysis: PanoramaAnalysis,
+        snapshots: tuple[PublicJobSnapshot, ...],
+    ) -> PanoramaAnalysis:
+        dimensions = compile_panorama_dimensions(snapshots)
+        direction_clusters = {
+            **dimensions["directions"],  # type: ignore[arg-type]
+            "_v2": dimensions,
+        }
+        return PanoramaAnalysis(
+            facts=analysis.facts,
+            inferences=analysis.inferences,
+            unknowns=analysis.unknowns,
+            direction_clusters=direction_clusters,
+            summary=analysis.summary,
+            source_ids=analysis.source_ids,
+            snapshot_ids=analysis.snapshot_ids,
+            model_version=analysis.model_version,
         )
 
     @staticmethod

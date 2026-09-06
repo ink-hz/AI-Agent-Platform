@@ -24,31 +24,30 @@ from reportlab.platypus import (
     Spacer,
 )
 
+from .panorama_dimensions import (
+    compile_panorama_dimensions,
+    technical_directions,
+)
+from .panorama_dimensions import (
+    recruitment_track as classify_recruitment_track,
+)
 from .panorama_models import PanoramaReport, PublicJobSnapshot, TalentSource, thaw_json
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _FONT_NAME = "STSong-Light"
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
-_CAMPUS_TEXT = re.compile(
-    r"校招|校园招聘|应届|毕业生|实习|(?<![a-z])(?:campus|graduate|intern(?:ship)?)(?![a-z])",
-    re.IGNORECASE,
-)
-_CAMPUS_URL = re.compile(
-    r"(?:^|[/_.-])(?:campus|graduate|intern(?:ship|recruitment)?)(?:$|[/_.?&#-])",
-    re.IGNORECASE,
-)
-_SOCIAL = re.compile(
-    r"社招|社会招聘|社会人才|(?<![a-z])experienced(?![a-z])|professional-hire",
-    re.IGNORECASE,
-)
-_DIRECTION_PATTERNS = (
-    ("algorithm", "算法", re.compile(r"算法|人工智能|机器学习|视觉|点云|(?<![a-z])ai(?![a-z])|slam", re.IGNORECASE)),
-    ("optics", "光学", re.compile(r"光学|镜头|zemax|成像", re.IGNORECASE)),
-    ("hardware", "硬件", re.compile(r"硬件|电子|电路|pcb|嵌入式", re.IGNORECASE)),
-    ("structure", "结构", re.compile(r"结构|机械|机电|模具|cad", re.IGNORECASE)),
-    ("software", "软件", re.compile(r"软件|前端|后端|客户端|java|c\+\+|python", re.IGNORECASE)),
-    ("manufacturing", "制造工艺", re.compile(r"制造|工艺|质量|dqe|生产|供应链", re.IGNORECASE)),
-)
+_DIRECTION_KEYS = {
+    "算法": "algorithm",
+    "光学": "optics",
+    "硬件": "hardware",
+    "结构": "structure",
+    "软件": "software",
+    "制造工艺": "manufacturing",
+    "质量": "quality",
+    "产品": "product",
+    "供应链": "supply_chain",
+    "其他": "other",
+}
 
 
 def _text(value: object, maximum: int = 32767) -> str:
@@ -62,31 +61,24 @@ def _xlsx_text(value: object, maximum: int = 32767) -> str:
 
 
 def recruitment_track(item: PublicJobSnapshot) -> str:
-    text = f"{item.title} {item.duty_excerpt} {item.requirement_excerpt}"
-    if _CAMPUS_TEXT.search(text) or _CAMPUS_URL.search(item.source_url):
-        return "campus"
-    if _SOCIAL.search(f"{text} {item.source_url}"):
-        return "social"
-    return "unknown"
+    return classify_recruitment_track(item)
 
 
 def technical_direction(item: PublicJobSnapshot) -> str:
-    text = f"{item.title} {item.duty_excerpt} {item.requirement_excerpt}"
-    for key, _, pattern in _DIRECTION_PATTERNS:
-        if pattern.search(text):
-            return key
-    return "other"
+    return _DIRECTION_KEYS[technical_directions(item)[0]]
 
 
 def _direction_label(item: PublicJobSnapshot) -> str:
-    key = technical_direction(item)
-    return next((label for value, label, _ in _DIRECTION_PATTERNS if value == key), "其他")
+    return "、".join(technical_directions(item))
 
 
 def _track_label(item: PublicJobSnapshot) -> str:
-    return {"social": "社招", "campus": "校招/实习", "unknown": "待分类"}[
-        recruitment_track(item)
-    ]
+    return {
+        "social": "社招",
+        "campus": "校招",
+        "intern": "实习",
+        "unknown": "待分类",
+    }[recruitment_track(item)]
 
 
 def filter_panorama_snapshots(
@@ -110,7 +102,8 @@ def filter_panorama_snapshots(
         and (status is None or item.status == status)
         and (
             technical_direction_filter is None
-            or technical_direction(item) == technical_direction_filter
+            or technical_direction_filter
+            in {_DIRECTION_KEYS[value] for value in technical_directions(item)}
         )
     )
 
@@ -133,6 +126,35 @@ def _channel_snapshots(
 
 def _source_names(report: PanoramaReport) -> dict[object, str]:
     return {source.source_id: source.canonical_name for source in report.sources}
+
+
+def _company_direction_samples(
+    snapshots: tuple[PublicJobSnapshot, ...],
+) -> dict[tuple[UUID, str], tuple[str, ...]]:
+    newest: dict[tuple[UUID, str], PublicJobSnapshot] = {}
+    for item in snapshots:
+        key = (item.source_id, item.public_job_key)
+        previous = newest.get(key)
+        if previous is None or (item.observed_at, str(item.snapshot_id)) > (
+            previous.observed_at,
+            str(previous.snapshot_id),
+        ):
+            newest[key] = item
+    selected: dict[tuple[UUID, str], list[str]] = {}
+    for item in sorted(
+        newest.values(),
+        key=lambda value: (
+            str(value.source_id),
+            value.public_job_key,
+            value.observed_at,
+            str(value.snapshot_id),
+        ),
+    ):
+        for direction in technical_directions(item):
+            samples = selected.setdefault((item.source_id, direction), [])
+            if len(samples) < 20:
+                samples.append(str(item.snapshot_id))
+    return {key: tuple(values) for key, values in selected.items()}
 
 
 def _scoped_content(
@@ -217,6 +239,8 @@ def _coverage_rows(
                 if failure
                 else "已形成岗位证据"
                 if items
+                else "已检查，本次未发现公开岗位"
+                if coverage.get("state") == "succeeded"
                 else "未形成岗位证据，待确认"
             )
             rows.append(
@@ -268,6 +292,12 @@ def build_panorama_xlsx(
     sources, facts, inferences, unknowns, summary, directions = _scoped_content(
         report, selected_snapshots, filtered=filtered
     )
+    dimensions = (
+        compile_panorama_dimensions(selected_snapshots)
+        if selected_snapshots
+        else None
+    )
+    direction_samples = _company_direction_samples(selected_snapshots)
     workbook = Workbook()
     workbook.remove(workbook.active)
     overview = workbook.create_sheet("总览")
@@ -344,6 +374,44 @@ def build_panorama_xlsx(
             *[("仍待确认", item["text"], "", "", "") for item in unknowns],
         ],
     )
+    if dimensions is not None:
+        structure_rows: list[tuple[object, ...]] = []
+        for layer, values in (
+            ("招聘类型", dimensions["tracks"]),
+            ("技术方向", dimensions["directions"]),
+            ("岗位族", dimensions["job_families"]),
+            ("资历层级", dimensions["seniority"]),
+            ("学历", dimensions["education"]),
+            ("地点", dimensions["locations"]),
+        ):
+            structure_rows.extend(
+                ("全部公司", layer, key, count, "")
+                for key, count in values.items()
+            )
+        structure_rows.extend(
+            ("全部公司", "显式技术栈", item["name"], item["job_count"], "")
+            for item in dimensions["skills"]
+        )
+        for source_id, metrics in dimensions["company_matrix"].items():
+            company = names.get(UUID(source_id), "关注公司")
+            for direction, count in metrics["directions"].items():
+                structure_rows.append(
+                    (
+                        company,
+                        "公司 × 技术方向",
+                        direction,
+                        count,
+                        "、".join(
+                            direction_samples.get((UUID(source_id), direction), ())
+                        ),
+                    )
+                )
+        _sheet(
+            workbook,
+            "招聘结构",
+            ("公司", "分析层", "维度", "去重岗位数", "样本岗位快照ID"),
+            structure_rows,
+        )
     _sheet(
         workbook,
         "证据索引",
@@ -378,6 +446,66 @@ def _footer(canvas, document) -> None:
         A4[0] - 18 * mm, 9 * mm, f"Orbbec HR Agent | 第 {document.page} 页"
     )
     canvas.restoreState()
+
+
+def _representative_pdf_snapshots(
+    snapshots: tuple[PublicJobSnapshot, ...], *, limit: int = 120
+) -> tuple[PublicJobSnapshot, ...]:
+    if len(snapshots) <= limit:
+        return snapshots
+    groups: dict[UUID, list[PublicJobSnapshot]] = {}
+    for item in snapshots:
+        groups.setdefault(item.source_id, []).append(item)
+    quota = max(1, limit // len(groups))
+    selected: list[PublicJobSnapshot] = []
+    selected_ids: set[UUID] = set()
+    ordered_groups = sorted(groups.items(), key=lambda entry: str(entry[0]))
+    for _, values in ordered_groups:
+        ordered = sorted(
+            values,
+            key=lambda item: (
+                recruitment_track(item),
+                technical_directions(item),
+                item.title,
+                item.public_job_key,
+                str(item.snapshot_id),
+            ),
+        )
+        buckets: set[tuple[str, tuple[str, ...]]] = set()
+        company_selected: list[PublicJobSnapshot] = []
+        for item in ordered:
+            bucket = (recruitment_track(item), technical_directions(item))
+            if bucket in buckets:
+                continue
+            buckets.add(bucket)
+            company_selected.append(item)
+            if len(company_selected) == quota:
+                break
+        if len(company_selected) < quota:
+            chosen = {item.snapshot_id for item in company_selected}
+            company_selected.extend(
+                item
+                for item in ordered
+                if item.snapshot_id not in chosen
+            )
+        for item in company_selected[:quota]:
+            selected.append(item)
+            selected_ids.add(item.snapshot_id)
+    if len(selected) < limit:
+        selected.extend(
+            item
+            for item in sorted(
+                snapshots,
+                key=lambda value: (
+                    str(value.source_id),
+                    value.title,
+                    value.public_job_key,
+                    str(value.snapshot_id),
+                ),
+            )
+            if item.snapshot_id not in selected_ids
+        )
+    return tuple(selected[:limit])
 
 
 def build_panorama_pdf(
@@ -439,6 +567,12 @@ def build_panorama_pdf(
     sources, facts, inferences, unknowns, summary, directions = _scoped_content(
         report, selected_snapshots, filtered=filtered
     )
+    dimensions = (
+        compile_panorama_dimensions(selected_snapshots)
+        if selected_snapshots
+        else None
+    )
+    appendix_snapshots = _representative_pdf_snapshots(selected_snapshots)
     story = [
         _paragraph(f"招聘情报全景分析 - 第 {report.insight.version_number} 版", title),
         Spacer(1, 7 * mm),
@@ -461,6 +595,27 @@ def build_panorama_pdf(
                 sort_keys=True,
             ),
             body,
+        ),
+        *(
+            [
+                _paragraph("代码统计的招聘结构", heading),
+                _paragraph(
+                    "招聘类型：" + json.dumps(dimensions["tracks"], ensure_ascii=False),
+                    body,
+                ),
+                _paragraph(
+                    "岗位族：" + json.dumps(dimensions["job_families"], ensure_ascii=False),
+                    body,
+                ),
+                _paragraph(
+                    "资历层级：" + json.dumps(dimensions["seniority"], ensure_ascii=False),
+                    body,
+                ),
+                _paragraph(dimensions["trend"]["message"], body),
+                _paragraph("；".join(dimensions["interpretation_limits"]), small),
+            ]
+            if dimensions is not None
+            else []
         ),
         _paragraph("公开事实（可核验）", heading),
     ]
@@ -489,7 +644,16 @@ def build_panorama_pdf(
     story.extend((PageBreak(), _paragraph("原始岗位数据附录", heading)))
     if not selected_snapshots:
         story.append(_paragraph("当前筛选条件下没有岗位记录。", body))
-    for item in selected_snapshots:
+    elif len(appendix_snapshots) < len(selected_snapshots):
+        story.append(
+            _paragraph(
+                f"PDF 展示 {len(appendix_snapshots)} 个代表岗位；完整 "
+                f"{len(selected_snapshots)} 条原始岗位请下载 Excel。代表岗位按公司、"
+                "招聘类型与技术方向分层选取。",
+                body,
+            )
+        )
+    for item in appendix_snapshots:
         story.extend(
             (
                 _paragraph(
@@ -509,9 +673,17 @@ def build_panorama_pdf(
             )
         )
     story.extend((Spacer(1, 5 * mm), _paragraph("来源覆盖", heading)))
-    for source in sources:
-        story.append(_paragraph(source.canonical_name, body))
-        story.extend(_paragraph(f"- {url}", small) for url in source.approved_urls)
+    for company, url, count, observed_at, state, error_code in _coverage_rows(
+        report, sources, selected_snapshots
+    ):
+        story.append(
+            _paragraph(f"{company} | {state} | 岗位命中数：{count}", body)
+        )
+        story.append(_paragraph(f"来源：{url}", small))
+        if observed_at:
+            story.append(_paragraph(f"最近观测：{observed_at}", small))
+        if error_code:
+            story.append(_paragraph(f"失败代码：{error_code}", small))
         story.append(Spacer(1, 3 * mm))
     story.append(_paragraph("原始来源证据索引", heading))
     for item in report.evidence_attempts:

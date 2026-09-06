@@ -654,6 +654,32 @@ class PanoramaRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "source")
 
+    def reconcile_source(self, command: CreateTalentSource) -> TalentSource:
+        if not isinstance(command, CreateTalentSource):
+            raise ValueError("talent source command required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.reconcile_talent_source_v84("
+                    "%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)).*",
+                    (
+                        command.source_id,
+                        command.owner_id,
+                        command.company_key,
+                        command.canonical_name,
+                        json.dumps(command.aliases, ensure_ascii=False),
+                        json.dumps(command.approved_urls, ensure_ascii=False),
+                        command.active,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PanoramaUnavailable("panorama source unavailable")
+            return _source(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "source reconciliation")
+
     def list_sources(
         self, owner_id: UUID, *, include_inactive: bool = False, limit: int = 100
     ) -> tuple[TalentSource, ...]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -12,6 +13,7 @@ from app.hr.panorama_cli import (
     build_parser,
     main,
 )
+from app.hr.panorama_models import TalentSource
 
 CATALOG = Path(__file__).parents[1] / "app/hr/panorama_source_catalog.v1.json"
 
@@ -65,6 +67,24 @@ def test_bundled_catalog_contains_priority_and_session_companies() -> None:
         "影石创新",
         "华为",
     } <= companies
+    robosense = next(
+        item for item in document["companies"] if item["canonical_name"] == "速腾聚创"
+    )
+    assert {
+        "https://app.mokahr.com/social-recruitment/robosense/77883",
+        "https://app.mokahr.com/campus-recruitment/robosense/69887",
+    } <= set(robosense["approved_urls"])
+    scantech = next(
+        item for item in document["companies"] if item["canonical_name"] == "思看科技"
+    )
+    assert any("sikankeji/100000204" in url for url in scantech["approved_urls"])
+    assert any("sikankeji/100000205" in url for url in scantech["approved_urls"])
+    huawei = next(
+        item for item in document["companies"] if item["canonical_name"] == "华为"
+    )
+    assert "https://career.huawei.com/reccampportal/portal5/social-recruitment.html" in huawei["approved_urls"]
+    assert "https://career.huawei.com/reccampportal/portal5/campus-recruitment.html" in huawei["approved_urls"]
+    assert any("huawei-special-recruitment.html" in url for url in huawei["approved_urls"])
     insta360 = next(
         item for item in document["companies"] if item["canonical_name"] == "影石创新"
     )
@@ -86,6 +106,78 @@ def test_production_run_selects_only_bundled_catalog_keys_in_catalog_order() -> 
 
     with pytest.raises(RuntimeError, match="catalog is incomplete"):
         _select_catalog_sources((hesai,), ("huawei", "hesai"))
+
+
+def test_seed_sources_reconciles_changed_catalog_without_replacing_identity(
+    tmp_path,
+) -> None:
+    owner_id = uuid4()
+    source_id = uuid4()
+    existing = TalentSource(
+        source_id,
+        owner_id,
+        uuid4(),
+        "company",
+        "robosense",
+        "速腾聚创",
+        ("RoboSense",),
+        ("https://www.robosense.cn/about/joinus",),
+        True,
+        datetime.now(timezone.utc),
+        datetime.now(timezone.utc),
+    )
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "companies": [
+                    {
+                        "company_key": "robosense",
+                        "canonical_name": "速腾聚创",
+                        "aliases": ["RoboSense"],
+                        "approved_urls": [
+                            "https://www.robosense.cn/about/joinus",
+                            "https://app.mokahr.com/social-recruitment/robosense/77883",
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        "utf-8",
+    )
+
+    class Repository:
+        def __init__(self) -> None:
+            self.reconciled = []
+
+        def list_sources(self, selected_owner_id, **_kwargs):
+            assert selected_owner_id == owner_id
+            return (existing,)
+
+        def reconcile_source(self, command):
+            self.reconciled.append(command)
+            return command
+
+        def create_source(self, _command):
+            raise AssertionError("existing source must not be recreated")
+
+    repository = Repository()
+    runtime = PanoramaOperatorRuntime(
+        owner_id=owner_id,
+        repository=repository,
+        collector=object(),
+        analyzer=object(),
+        async_client=object(),
+        model_client=object(),
+    )
+
+    assert runtime.seed_sources(catalog) == {"created": 0, "existing": 1, "updated": 1}
+    assert repository.reconciled[0].source_id == source_id
+    assert repository.reconciled[0].approved_urls[-1].startswith(
+        "https://app.mokahr.com/"
+    )
 
 
 @pytest.mark.parametrize(
