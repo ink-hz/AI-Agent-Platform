@@ -13,6 +13,7 @@ from uuid import UUID, uuid5
 
 from .panorama_models import (
     PositionInsightRetrieval,
+    PublishedPanorama,
     TalentInsightVersion,
     TalentSource,
     canonical_panorama_url,
@@ -60,9 +61,11 @@ class PanoramaContextSource(Protocol):
         limit: int = 100,
     ) -> tuple[TalentSource, ...]: ...
 
-    def relevant_insights(
-        self, owner_id: UUID, query: str, position_id: UUID, *, limit: int = 5
-    ) -> tuple[TalentInsightVersion, ...]: ...
+    def current_publication(self) -> PublishedPanorama | None: ...
+
+    def insight(
+        self, owner_id: UUID, insight_version_id: UUID
+    ) -> TalentInsightVersion: ...
 
     def retrieval_for_turn(
         self, owner_id: UUID, position_id: UUID, turn_id: UUID
@@ -221,6 +224,7 @@ def _latest_per_scope(
 @dataclass(frozen=True, slots=True)
 class PanoramaContextFragment:
     insight_version_ids: tuple[UUID, ...]
+    publication_id: UUID
     query_sha256: str
     as_of: datetime
     facts: tuple[Mapping[str, object], ...]
@@ -237,6 +241,8 @@ class PanoramaContextFragment:
             or len(set(self.insight_version_ids)) != len(self.insight_version_ids)
         ):
             raise ValueError("panorama context insight IDs invalid")
+        if not isinstance(self.publication_id, UUID):
+            raise ValueError("panorama context publication ID invalid")
         if (
             not isinstance(self.query_sha256, str)
             or _SHA256.fullmatch(self.query_sha256) is None
@@ -375,6 +381,7 @@ class PanoramaContextFragment:
                 }
             )
         return {
+            "publication_id": str(self.publication_id),
             "insight_version_ids": [str(value) for value in self.insight_version_ids],
             "query_sha256": self.query_sha256,
             "freshness": freshness,
@@ -388,6 +395,7 @@ class PanoramaContextFragment:
     @classmethod
     def from_prompt_document(cls, value: object) -> PanoramaContextFragment:
         if not isinstance(value, Mapping) or set(value) != {
+            "publication_id",
             "insight_version_ids",
             "query_sha256",
             "freshness",
@@ -419,6 +427,7 @@ class PanoramaContextFragment:
             )
             fragment = cls(
                 insight_version_ids=document_ids,
+                publication_id=UUID(str(value["publication_id"])),
                 query_sha256=str(value["query_sha256"]),
                 as_of=_observed_at(freshness["as_of"]),
                 facts=tuple(dict(item) for item in value["facts"]),
@@ -444,7 +453,8 @@ class PanoramaContextProvider:
     ) -> None:
         for method in (
             "list_sources_page",
-            "relevant_insights",
+            "current_publication",
+            "insight",
             "retrieval_for_turn",
             "record_retrieval_for_turn",
         ):
@@ -473,18 +483,26 @@ class PanoramaContextProvider:
                 return self._replay(
                     existing, query_sha256, owner_id, position_id, turn_id
                 )
-            source_scope = self._query_source_scope(owner_id, query, task_kind)
+            publication = self._source.current_publication()
+            if publication is None:
+                return None
+            source_scope = self._query_source_scope(
+                publication.owner_id, query, task_kind
+            )
             if source_scope is None:
                 return None
-            insights = _latest_per_scope(
-                self._source.relevant_insights(
-                    owner_id, query, position_id, limit=MAX_PANORAMA_INSIGHTS
-                ),
-                owner_id,
+            insight = self._source.insight(
+                publication.owner_id, publication.insight_version_id
             )
-            if not insights:
-                return None
-            fragment = self._compose(insights, query_sha256, source_scope)
+            if (
+                insight.owner_id != publication.owner_id
+                or insight.insight_version_id != publication.insight_version_id
+                or insight.production_batch_id != publication.batch_id
+            ):
+                raise PanoramaContextError("panorama publication scope invalid")
+            fragment = self._compose(
+                (insight,), query_sha256, source_scope, publication.publication_id
+            )
             try:
                 recorded = self._source.record_retrieval_for_turn(
                     retrieval_id=uuid5(turn_id, "hr-panorama-context-v1"),
@@ -578,7 +596,10 @@ class PanoramaContextProvider:
         insights: tuple[TalentInsightVersion, ...],
         query_sha256: str,
         source_scope: tuple[TalentSource, ...] = (),
+        publication_id: UUID | None = None,
     ) -> PanoramaContextFragment:
+        if not isinstance(publication_id, UUID):
+            raise PanoramaContextError("panorama publication scope invalid")
         insight_ids = tuple(insight.insight_version_id for insight in insights)
         available_observed = tuple(
             _observed_at(fact["observed_at"])
@@ -612,6 +633,7 @@ class PanoramaContextProvider:
                     candidate_urls.append(source_url)
                 if self._fits(
                     insight_ids,
+                    publication_id,
                     query_sha256,
                     provisional_as_of,
                     None,
@@ -634,6 +656,7 @@ class PanoramaContextProvider:
             source_urls = list(dict.fromkeys(str(fact["source_url"]) for fact in facts))
             if self._fits(
                 insight_ids,
+                publication_id,
                 query_sha256,
                 as_of,
                 stale_age_days,
@@ -677,6 +700,7 @@ class PanoramaContextProvider:
                 }
                 if self._fits(
                     insight_ids,
+                    publication_id,
                     query_sha256,
                     as_of,
                     stale_age_days,
@@ -713,6 +737,7 @@ class PanoramaContextProvider:
                 }
                 if self._fits(
                     insight_ids,
+                    publication_id,
                     query_sha256,
                     as_of,
                     stale_age_days,
@@ -724,6 +749,7 @@ class PanoramaContextProvider:
                     unknowns.append(candidate)
         return PanoramaContextFragment(
             insight_ids,
+            publication_id,
             query_sha256,
             as_of,
             tuple(facts),
@@ -736,6 +762,7 @@ class PanoramaContextProvider:
     @staticmethod
     def _fits(
         insight_ids,
+        publication_id,
         query_sha256,
         as_of,
         stale_age_days,
@@ -747,6 +774,7 @@ class PanoramaContextProvider:
         try:
             fragment = PanoramaContextFragment(
                 insight_ids,
+                publication_id,
                 query_sha256,
                 as_of,
                 tuple(facts),
