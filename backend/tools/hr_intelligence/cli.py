@@ -234,13 +234,42 @@ def _initialize(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _collect_async(bundle_id: UUID) -> int:
+def _resumable_collection(
+    work: Path,
+) -> tuple[dict[str, Mapping[str, object]], dict[UUID, NormalizedJob]]:
+    coverage_path = work / "source-coverage.json"
+    jobs_path = work / "normalized-jobs.jsonl"
+    if not coverage_path.is_file():
+        return {}, {}
+    document = _require_mapping(_read_json(coverage_path), "source coverage")
+    raw_companies = document.get("companies")
+    if not isinstance(raw_companies, list):
+        raise TypeError("source coverage invalid")
+    companies = {
+        str(item.get("company_key")): item
+        for raw in raw_companies
+        for item in (_require_mapping(raw, "source coverage"),)
+        if str(item.get("company_key", ""))
+    }
+    jobs = _read_jobs(jobs_path) if jobs_path.is_file() else ()
+    if not jobs_path.is_file() and any(
+        isinstance(item.get("job_count"), int) and item["job_count"] > 0
+        for item in companies.values()
+    ):
+        raise ValueError("resumable normalized jobs unavailable")
+    return companies, {job.job_id: job for job in jobs}
+
+
+async def _collect_async(bundle_id: UUID, *, resume: bool = False) -> int:
     work = _work(bundle_id)
     catalog = _read_json(work / "source-catalog.json")
     companies = _catalog_companies(catalog)
     archive = EvidenceArchive(work / "evidence")
+    previous_coverage, previous_jobs = (
+        _resumable_collection(work) if resume else ({}, {})
+    )
     coverage: list[dict[str, object]] = []
-    all_jobs: dict[UUID, NormalizedJob] = {}
+    all_jobs: dict[UUID, NormalizedJob] = dict(previous_jobs)
     async with httpx.AsyncClient() as client:
         collector = PublicSourceCollector(client, archive)
         for company in companies:
@@ -260,10 +289,38 @@ async def _collect_async(bundle_id: UUID) -> int:
                 )
                 continue
             urls = tuple(str(value) for value in raw_urls)
+            previous_company = previous_coverage.get(company_key)
+            previous_channels = (
+                previous_company.get("channels", [])
+                if isinstance(previous_company, Mapping)
+                else []
+            )
+            if not isinstance(previous_channels, list):
+                raise TypeError("resumable source channels invalid")
+            succeeded_channels: dict[tuple[int, str], dict[str, object]] = {}
+            for raw_channel in previous_channels:
+                channel = _require_mapping(raw_channel, "source channel")
+                ordinal = channel.get("ordinal")
+                source_url = channel.get("source_url")
+                if (
+                    channel.get("state") == "succeeded"
+                    and isinstance(ordinal, int)
+                    and isinstance(source_url, str)
+                ):
+                    succeeded_channels[(ordinal, source_url)] = dict(channel)
             channels: list[dict[str, object]] = []
             successful = 0
-            company_jobs: dict[UUID, NormalizedJob] = {}
+            company_jobs: dict[UUID, NormalizedJob] = {
+                job_id: job
+                for job_id, job in previous_jobs.items()
+                if job.company_key == company_key
+            }
             for ordinal, source_url in enumerate(urls):
+                preserved = succeeded_channels.get((ordinal, source_url))
+                if preserved is not None:
+                    successful += 1
+                    channels.append(preserved)
+                    continue
                 source_id = _company_source_id(company_key)
                 target = SourceTarget(source_id, company_name, source_url, urls)
                 try:
@@ -613,7 +670,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "init":
         return _initialize(args)
     if args.command == "collect":
-        return asyncio.run(_collect_async(_bundle_id(args.bundle_id)))
+        return asyncio.run(
+            _collect_async(_bundle_id(args.bundle_id), resume=args.resume)
+        )
     if args.command == "validate":
         return _validate_work(
             _bundle_id(args.bundle_id),

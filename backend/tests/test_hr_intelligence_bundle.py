@@ -1,4 +1,5 @@
 import hashlib
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -94,6 +95,30 @@ def test_verified_bundle_contains_every_required_file(tmp_path) -> None:
     assert {item.name for item in path.iterdir()} == REQUIRED
     assert verified.bundle_id == inputs.bundle_id
     assert verified.job_count == 1
+
+
+def test_bundle_evidence_index_preserves_archived_mime_type(tmp_path) -> None:
+    inputs = _inputs(tmp_path)
+    evidence_path = (
+        inputs.evidence_root / "sha256" / EVIDENCE_SHA256[:2] / EVIDENCE_SHA256
+    )
+    metadata = {
+        "mime": "application/json; charset=utf-8",
+        "response_headers": {"content-type": "application/json; charset=utf-8"},
+        "sha256": EVIDENCE_SHA256,
+        "size_bytes": len(EVIDENCE_BODY),
+        "source_url": "https://example.com/jobs",
+    }
+    body = json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    metadata_sha = hashlib.sha256(body.encode()).hexdigest()
+    evidence_path.with_name(
+        f"{EVIDENCE_SHA256}.metadata.{metadata_sha}.json"
+    ).write_text(body, encoding="utf-8")
+
+    path = build_bundle(inputs, root=tmp_path / "bundles")
+    index = json.loads((path / "raw-evidence-index.json").read_text("utf-8"))
+
+    assert index[0]["mime"] == "application/json; charset=utf-8"
 
 
 def test_verification_fails_after_tampering(tmp_path) -> None:

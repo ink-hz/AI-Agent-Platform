@@ -135,13 +135,14 @@ def _evidence_index(inputs: BundleInputs) -> list[dict[str, object]]:
         body = path.read_bytes()
         if hashlib.sha256(body).hexdigest() != job.evidence_sha256:
             raise BundleVerificationError("bundle evidence checksum mismatch")
+        mime = _evidence_mime(path, job.evidence_sha256, len(body))
         current = selected.setdefault(
             job.evidence_sha256,
             {
                 "sha256": job.evidence_sha256,
                 "source_url": job.source_url,
                 "observed_at": job.observed_at.isoformat(),
-                "mime": "application/octet-stream",
+                "mime": mime,
                 "size_bytes": len(body),
                 "locator": (
                     f"evidence/sha256/{job.evidence_sha256[:2]}/{job.evidence_sha256}"
@@ -151,6 +152,32 @@ def _evidence_index(inputs: BundleInputs) -> list[dict[str, object]]:
         if current["source_url"] != job.source_url:
             current["source_url"] = min(str(current["source_url"]), job.source_url)
     return [selected[key] for key in sorted(selected)]
+
+
+def _evidence_mime(path: Path, sha256: str, size_bytes: int) -> str:
+    metadata_paths = sorted(path.parent.glob(f"{sha256}.metadata.*.json"))
+    if not metadata_paths:
+        return "application/octet-stream"
+    body = metadata_paths[0].read_bytes()
+    expected_metadata_sha = metadata_paths[0].name.removeprefix(
+        f"{sha256}.metadata."
+    ).removesuffix(".json")
+    if hashlib.sha256(body).hexdigest() != expected_metadata_sha:
+        raise BundleVerificationError("bundle evidence metadata checksum mismatch")
+    try:
+        metadata = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise BundleVerificationError("bundle evidence metadata invalid") from None
+    mime = metadata.get("mime") if isinstance(metadata, Mapping) else None
+    if (
+        not isinstance(mime, str)
+        or not mime.strip()
+        or len(mime) > 255
+        or metadata.get("sha256") != sha256
+        or metadata.get("size_bytes") != size_bytes
+    ):
+        raise BundleVerificationError("bundle evidence metadata invalid")
+    return mime.strip()
 
 
 def _input_fingerprint(
