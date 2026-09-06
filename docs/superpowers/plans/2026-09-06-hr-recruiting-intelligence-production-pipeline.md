@@ -1,5 +1,8 @@
 # HR Recruiting Intelligence Production Pipeline Implementation Plan
 
+> **已废弃：** 本计划允许在生产环境采集和分析，与当前架构约束冲突。不得继续执行。新的唯一
+> 事实源是 `docs/superpowers/specs/2026-09-06-hr-local-intelligence-factory-design.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace user-triggered HR Bot panorama runs with a durable background code-and-model production pipeline, while making the HR workbench a read-only consumer of the latest valid, sourced, downloadable intelligence.

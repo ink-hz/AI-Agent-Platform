@@ -1,5 +1,8 @@
 # HR Panorama Intelligence V2 Implementation Plan
 
+> **已废弃：** 本计划不得继续执行。招聘情报的新唯一事实源是
+> `docs/superpowers/specs/2026-09-06-hr-local-intelligence-factory-design.md`；本文仅保留历史审计记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn the first published HR panorama baseline into a sourced, maintainable, six-layer recruiting-intelligence product covering the 12 confirmed companies and supplying relevant evidence to HR position tasks.
