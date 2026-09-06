@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -45,10 +46,22 @@ def _inputs(*, fact_sha256: str = SHA256, summary: str = "禾赛招聘情报摘�
             ],
         },
         "aggregates": {
-            "schema_version": 2,
+            "schema_version": 3,
             "tracks": {"social": 1},
             "directions": {"算法": 1},
+            "secondary_directions": {"算法/点云": 1},
             "job_families": {"research_development": 1},
+            "company_matrix": {
+                "hesai": {
+                    "tracks": {"social": 1},
+                    "directions": {"算法": 1},
+                    "secondary_directions": {"算法/点云": 1},
+                    "job_families": {"research_development": 1},
+                    "locations": {"上海": 1},
+                    "seniority": {"senior": 1},
+                    "skills": {"C++": 1},
+                }
+            },
         },
         "analyses": (
             {
@@ -169,3 +182,51 @@ def test_compiler_always_emits_index_and_all_task_playbooks() -> None:
         "agent/tasks/resume-review.md",
         "agent/tasks/interview.md",
     }.issubset(package.files)
+
+
+def test_company_and_direction_chunks_carry_real_aggregate_routing() -> None:
+    package = compile_agent_markdown(**_inputs())
+
+    company = next(
+        item for item in package.chunks if item.path == "agent/companies/hesai.md"
+    )
+    direction = next(
+        item
+        for item in package.chunks
+        if item.path == "agent/directions/algorithm.md"
+    )
+
+    assert company.companies == ("hesai",)
+    assert company.tracks == ("social",)
+    assert company.directions == ("算法",)
+    assert company.secondary_directions == ("算法/点云",)
+    assert company.job_families == ("research_development",)
+    assert company.locations == ("上海",)
+    assert company.seniority == ("senior",)
+    assert company.skills == ("C++",)
+    assert direction.secondary_directions == ("算法/点云",)
+
+
+def test_secondary_direction_analysis_is_preserved_as_agent_markdown() -> None:
+    inputs = _inputs()
+    secondary = deepcopy(inputs["analyses"][0])
+    secondary.update(
+        {
+            "unit_id": "00000000-0000-4000-8000-000000000004",
+            "kind": "secondary-direction",
+            "scope_key": "算法/点云",
+        }
+    )
+    inputs["analyses"] = (*inputs["analyses"], secondary)
+
+    package = compile_agent_markdown(**inputs)
+    chunks = [
+        item
+        for item in package.chunks
+        if item.scope == "secondary-direction"
+        and item.secondary_directions == ("算法/点云",)
+    ]
+
+    assert len(chunks) > 0
+    assert chunks[0].directions == ("算法",)
+    assert "禾赛招聘情报摘要" in package.files[chunks[0].path].decode("utf-8")

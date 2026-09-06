@@ -37,6 +37,11 @@ from .public_documents import (
     PublicIntelligenceDocument,
     collect_public_document,
 )
+from .retrieval_eval import (
+    LocalBundleRetrievalProbe,
+    evaluate_retrieval,
+    load_cases,
+)
 
 _COVERAGE_STATES = frozenset(
     {"succeeded", "empty_confirmed", "partial", "failed", "not_observed"}
@@ -865,6 +870,19 @@ def _summary(path: Path) -> int:
     return 0
 
 
+def _evaluate_retrieval(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    cases = Path(args.cases)
+    if not bundle.is_absolute() or not cases.is_absolute():
+        raise ValueError("retrieval evaluation paths must be absolute")
+    result = evaluate_retrieval(
+        LocalBundleRetrievalProbe(bundle.resolve()),
+        load_cases(cases.resolve()),
+    )
+    print(_canonical_json(result.as_dict()))
+    return 0 if result.accepted else 1
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hr-intelligence")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -901,6 +919,9 @@ def _parser() -> argparse.ArgumentParser:
     verify = commands.add_parser("verify")
     verify.add_argument("--bundle", required=True)
     verify.add_argument("--strict", action="store_true")
+    evaluate = commands.add_parser("evaluate-retrieval")
+    evaluate.add_argument("--bundle", required=True)
+    evaluate.add_argument("--cases", required=True)
     summary = commands.add_parser("summary")
     group = summary.add_mutually_exclusive_group(required=True)
     group.add_argument("--bundle-id")
@@ -949,6 +970,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "evaluate-retrieval":
+        return _evaluate_retrieval(args)
     if args.command == "summary":
         if args.bundle_id:
             bundle_id = _bundle_id(args.bundle_id)

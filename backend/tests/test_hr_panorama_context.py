@@ -140,6 +140,16 @@ class MarkdownBundleSource(BundleSource):
                 task_kinds=["position_interview_plan", "candidate_interview_plan"],
                 priority=180,
             ),
+            _chunk(
+                "dfm",
+                "agent/directions/manufacturing-process--dfm.md",
+                "## DFM 工艺方向\n\n制造工艺/DFM 的岗位证据。\n",
+                scope="secondary-direction",
+                scope_key="制造工艺/DFM",
+                directions=["制造工艺"],
+                secondary_directions=["制造工艺/DFM"],
+                priority=175,
+            ),
         ]
         self.text_by_id = {item["chunk_id"]: item.pop("_text") for item in chunks}
         self.record.update({
@@ -387,3 +397,20 @@ def test_general_hr_chat_replays_pinned_markdown_without_a_current_bundle() -> N
     )
 
     assert replay.as_prompt_document() == first.as_prompt_document()
+
+
+def test_company_in_position_context_and_indexed_secondary_route_are_retrieved() -> None:
+    source = MarkdownBundleSource()
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成人才画像",
+        TURN,
+        task_kind="talent_profile",
+        position_context={"title": "禾赛 DFM 工艺工程师"},
+    )
+
+    selected_ids = {item["chunk_id"] for item in fragment.chunks}
+    assert {"hesai-company", "dfm"} <= selected_ids

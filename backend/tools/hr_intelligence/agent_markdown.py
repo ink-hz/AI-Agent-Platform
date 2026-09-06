@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import re
@@ -357,6 +358,33 @@ def _safe_key(value: object, label: str) -> str:
     return selected
 
 
+def _positive_keys(value: object, label: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, Mapping):
+        raise MarkdownContractError(f"Markdown {label} invalid")
+    selected: list[str] = []
+    for key, count in value.items():
+        if (
+            not isinstance(key, str)
+            or not key.strip()
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+        ):
+            raise MarkdownContractError(f"Markdown {label} invalid")
+        if count > 0:
+            selected.append(key.strip())
+    return sorted(set(selected))
+
+
+def _secondary_slug(value: str) -> str:
+    parent = value.split("/", 1)[0]
+    prefix = _DIRECTION_SLUGS.get(parent, "other")
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}--{digest}"
+
+
 def compile_agent_markdown(
     *,
     bundle_id: UUID,
@@ -392,6 +420,10 @@ def compile_agent_markdown(
             raise MarkdownContractError("Markdown analysis identity invalid")
         units[(kind, scope_key)] = unit
 
+    company_matrix = aggregates.get("company_matrix", {})
+    if not isinstance(company_matrix, Mapping):
+        raise MarkdownContractError("Markdown company matrix invalid")
+
     files: dict[str, bytes] = {}
     routing: dict[str, Mapping[str, object]] = {}
     for company in sorted(companies, key=lambda item: str(item.get("company_key"))):
@@ -408,7 +440,35 @@ def compile_agent_markdown(
             coverage=state,
             unit=units.get(("company", company_key)),
         )
-        routing[path] = {"companies": [company_key]}
+        raw_company_dimensions = company_matrix.get(company_key, {})
+        if not isinstance(raw_company_dimensions, Mapping):
+            raise MarkdownContractError("Markdown company dimensions invalid")
+        routing[path] = {
+            "companies": [company_key],
+            "tracks": _positive_keys(
+                raw_company_dimensions.get("tracks"), "company tracks"
+            ),
+            "directions": _positive_keys(
+                raw_company_dimensions.get("directions"), "company directions"
+            ),
+            "secondary_directions": _positive_keys(
+                raw_company_dimensions.get("secondary_directions"),
+                "company secondary directions",
+            ),
+            "job_families": _positive_keys(
+                raw_company_dimensions.get("job_families"),
+                "company job families",
+            ),
+            "locations": _positive_keys(
+                raw_company_dimensions.get("locations"), "company locations"
+            ),
+            "seniority": _positive_keys(
+                raw_company_dimensions.get("seniority"), "company seniority"
+            ),
+            "skills": _positive_keys(
+                raw_company_dimensions.get("skills"), "company skills"
+            ),
+        }
 
     directions = aggregates.get("directions", {})
     if not isinstance(directions, Mapping):
@@ -427,7 +487,38 @@ def compile_agent_markdown(
             coverage="succeeded",
             unit=units.get(("direction", direction)),
         )
-        routing[path] = {"directions": [direction]}
+        raw_secondary = aggregates.get("secondary_directions", {})
+        secondary = _positive_keys(raw_secondary, "secondary directions")
+        routing[path] = {
+            "directions": [direction],
+            "secondary_directions": [
+                item for item in secondary if item.startswith(f"{direction}/")
+            ],
+        }
+
+    for (kind, scope_key), unit in sorted(units.items()):
+        if kind != "secondary-direction":
+            continue
+        if "/" not in scope_key:
+            raise MarkdownContractError("Markdown secondary direction invalid")
+        direction = scope_key.split("/", 1)[0]
+        path = f"agent/directions/{_secondary_slug(scope_key)}.md"
+        files[path] = _render_unit(
+            bundle_id=bundle_id,
+            generated_at=generated_at,
+            scope="secondary-direction",
+            scope_key=_secondary_slug(scope_key),
+            title=f"{scope_key}招聘情报",
+            coverage="succeeded",
+            unit=unit,
+        )
+        routing[path] = {
+            "scope": "secondary-direction",
+            "scope_key": scope_key,
+            "directions": [direction],
+            "secondary_directions": [scope_key],
+            "priority": 175,
+        }
 
     for topic_key, filename in _TOPIC_FILES.items():
         unit = units.get(("track", topic_key)) or units.get(("topic", topic_key))

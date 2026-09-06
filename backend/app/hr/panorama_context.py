@@ -288,21 +288,34 @@ def _values(chunk: Mapping[str, object], key: str) -> frozenset[str]:
     raw = chunk.get(key, [])
     if not isinstance(raw, (list, tuple)):
         raise PanoramaContextError("intelligence chunk routing invalid")
-    return frozenset(str(item) for item in raw if isinstance(item, str))
+    return frozenset(
+        item.casefold() for item in raw if isinstance(item, str) and item.strip()
+    )
+
+
+def _query_values(values: tuple[str, ...]) -> set[str]:
+    return {item.casefold() for item in values}
 
 
 def _score(chunk: Mapping[str, object], query: RetrievalQuery) -> tuple[int, str]:
     score = 0
-    score += 100 * len(_values(chunk, "companies") & set(query.companies))
+    score += 100 * len(_values(chunk, "companies") & _query_values(query.companies))
     score += 50 * len(
-        _values(chunk, "secondary_directions") & set(query.secondary_directions)
+        _values(chunk, "secondary_directions")
+        & _query_values(query.secondary_directions)
     )
-    score += 35 * len(_values(chunk, "job_families") & set(query.job_families))
-    score += 30 * int(query.task_kind in _values(chunk, "task_kinds"))
-    score += 25 * len(_values(chunk, "directions") & set(query.directions))
-    score += 15 * len(_values(chunk, "tracks") & set(query.tracks))
-    score += 10 * len(_values(chunk, "locations") & set(query.locations))
-    score += 5 * len(_values(chunk, "skills") & set(query.skills))
+    score += 35 * len(
+        _values(chunk, "job_families") & _query_values(query.job_families)
+    )
+    score += 30 * int(query.task_kind.casefold() in _values(chunk, "task_kinds"))
+    score += 25 * len(
+        _values(chunk, "directions") & _query_values(query.directions)
+    )
+    score += 15 * len(_values(chunk, "tracks") & _query_values(query.tracks))
+    score += 10 * len(
+        _values(chunk, "locations") & _query_values(query.locations)
+    )
+    score += 5 * len(_values(chunk, "skills") & _query_values(query.skills))
     priority = chunk.get("priority", 0)
     if isinstance(priority, bool) or not isinstance(priority, int):
         raise PanoramaContextError("intelligence chunk priority invalid")
@@ -367,47 +380,47 @@ class PanoramaContextProvider:
         position_context: Mapping[str, object] | None,
         task_kind: str,
     ) -> RetrievalQuery:
-        _companies, named = self._companies(record, query)
         values = [query]
         if position_context is not None:
             if not isinstance(position_context, Mapping):
                 raise ValueError("panorama position context invalid")
             values.extend(str(value) for value in position_context.values())
         text = " ".join(values)
-        directions = tuple(
-            item
-            for item in (
-                "光学",
-                "硬件",
-                "结构",
-                "软件",
-                "算法",
-                "制造工艺",
-                "质量",
-                "产品",
-                "供应链",
-            )
-            if item in text
-        )
-        secondary_rules = (
-            ("点云", "算法/点云"),
-            ("SLAM", "算法/SLAM"),
-            ("镜头", "光学/镜头"),
-            ("PCB", "硬件/PCB"),
-            ("嵌入式", "软件/嵌入式"),
-            ("DQE", "质量/DQE"),
-            ("可靠性", "质量/可靠性"),
-            ("失效分析", "质量/失效分析"),
-        )
+        _companies, named = self._companies(record, text)
         folded = text.casefold()
+        raw_chunks = _mappings(record.get("agent_chunk_index", []), "Agent chunks")
+
+        def available(field: str) -> tuple[str, ...]:
+            raw: set[str] = set()
+            for chunk in raw_chunks:
+                values = chunk.get(field, [])
+                if not isinstance(values, (list, tuple)):
+                    raise PanoramaContextError("intelligence chunk routing invalid")
+                raw.update(
+                    item for item in values if isinstance(item, str) and item.strip()
+                )
+            return tuple(sorted(raw))
+
+        def mentioned(value: str) -> bool:
+            candidates = (value, value.rsplit("/", 1)[-1])
+            return any(
+                len(candidate.strip()) >= 2
+                and candidate.strip().casefold() in folded
+                for candidate in candidates
+            )
+
         secondary = tuple(
-            value for token, value in secondary_rules if token.casefold() in folded
+            value for value in available("secondary_directions") if mentioned(value)
         )
+        selected_directions = {
+            value for value in available("directions") if mentioned(value)
+        }
+        selected_directions.update(
+            value.split("/", 1)[0] for value in secondary if "/" in value
+        )
+        directions = tuple(sorted(selected_directions))
         locations = tuple(
-            value
-            for value in _SIGNALS
-            if value in {"深圳", "中山", "上海", "东莞", "杭州", "西安", "武汉", "北京", "苏州", "成都", "合肥"}
-            and value in text
+            value for value in available("locations") if mentioned(value)
         )
         tracks = tuple(
             value
@@ -415,19 +428,50 @@ class PanoramaContextProvider:
             if token in text
         )
         skills = tuple(
-            dict.fromkeys(
-                token.casefold()
-                for token in re.findall(r"[A-Za-z][A-Za-z0-9+#.]{1,20}", text)
+            value for value in available("skills") if mentioned(value)
+        )
+        job_family_rules = (
+            ("quality", ("质量", "测试", "可靠性", "DQE", "SQE")),
+            ("manufacturing", ("制造", "工艺", "生产", "量产", "装配")),
+            ("supply_chain", ("供应链", "采购", "物流", "物料")),
+            ("product", ("产品经理", "产品规划", "用户体验")),
+            ("sales_marketing", ("销售", "市场", "品牌", "商务")),
+            ("operations", ("运营", "技术支持", "售后", "交付")),
+            ("corporate", ("人力", "招聘", "财务", "法务", "行政")),
+            (
+                "research_development",
+                ("研发", "工程师", "开发", "算法", "研究", "设计", "架构"),
+            ),
+        )
+        possible_families = set(available("job_families"))
+        job_families = tuple(
+            key
+            for key, tokens in job_family_rules
+            if key in possible_families
+            and any(token.casefold() in folded for token in tokens)
+        )
+        seniority = tuple(
+            value
+            for token, value in (
+                ("高级", "senior"),
+                ("资深", "senior"),
+                ("专家", "senior"),
+                ("中级", "mid"),
+                ("初级", "junior"),
+                ("校招", "graduate"),
+                ("应届", "graduate"),
+                ("实习", "graduate"),
             )
+            if token in text and value in set(available("seniority"))
         )
         return RetrievalQuery(
             named,
             tracks,
-            directions,
+            job_families,
             directions,
             secondary,
             locations,
-            (),
+            tuple(dict.fromkeys(seniority)),
             skills,
             task_kind,
         )
