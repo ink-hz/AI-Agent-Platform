@@ -1,0 +1,31 @@
+services:
+  platform-hr-intelligence-import:
+    image: ${PLATFORM_IMAGE}
+    profiles: ["hr-intelligence-import"]
+    user: "10001:10001"
+    read_only: true
+    healthcheck:
+      disable: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    command:
+      - python
+      - -m
+      - app.hr.intelligence_import
+      - --expected-bundle-id
+      - ${PLATFORM_HR_INTELLIGENCE_BUNDLE_ID}
+    environment:
+      PLATFORM_CONTROL_DATABASE_URL_FILE: /run/control-secrets/control-database-url
+      PLATFORM_HR_PANORAMA_OWNER_ID: "${PLATFORM_HR_PANORAMA_OWNER_ID:-}"
+      PLATFORM_HR_INTELLIGENCE_BUNDLE_PATH: /bundle
+      PLATFORM_HR_INTELLIGENCE_ROOT: /data/agent-platform/hr-intelligence
+    volumes:
+      - platform-api-secrets:/run/control-secrets:ro
+      - ${PLATFORM_HR_INTELLIGENCE_BUNDLE_PATH}:/bundle:ro
+      - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:rw
+    networks:
+      - platform-internal

@@ -5,8 +5,7 @@ import yaml
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy/cloud"
 DATA_MOUNT = (
-    "/data/orbbec-agent-platform/hr-intelligence:"
-    "/data/agent-platform/hr-intelligence"
+    "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence"
 )
 
 
@@ -60,8 +59,7 @@ def test_remote_stage_prepares_only_the_scoped_persistent_data_directory() -> No
     stage = (CLOUD / "remote-stage.sh").read_text("utf-8")
 
     assert (
-        "hr_intelligence_data_path=/data/orbbec-agent-platform/hr-intelligence"
-        in stage
+        "hr_intelligence_data_path=/data/orbbec-agent-platform/hr-intelligence" in stage
     )
     assert '"$hr_intelligence_data_path"' in stage
     assert "/usr/bin/install -d -o 10001 -g 10001 -m 0750" in stage

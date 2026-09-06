@@ -2,7 +2,6 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).parents[2]
 APP_HR = ROOT / "backend/app/hr"
 CLOUD = ROOT / "deploy/cloud"
@@ -32,6 +31,25 @@ def test_production_has_no_run_or_resume_surface() -> None:
     )
     assert "platform-hr-intelligence" not in deployed_text
     assert "panorama_cli" not in deployed_text
+
+
+def test_production_repository_has_no_collection_or_analysis_commands() -> None:
+    repository = (APP_HR / "panorama_repository.py").read_text(encoding="utf-8")
+
+    for forbidden in (
+        "def create_production_batch(",
+        "def transition_production_batch(",
+        "def retry_production_analysis(",
+        "def record_source_attempt(",
+        "def publish_production_report(",
+        "def create_run(",
+        "def runtime_context(",
+        "def claim_next_runtime(",
+        "def transition_run(",
+        "def create_snapshot(",
+        "def create_insight(",
+    ):
+        assert forbidden not in repository
 
 
 def test_import_service_has_no_model_secret_or_external_network() -> None:
