@@ -290,7 +290,7 @@ class _PanoramaPublication:
         )
         if command.production_batch_id is not None:
             sql = (
-                "select result.* from platform_hr.create_production_insight_v80("
+                "select result.* from platform_hr.create_production_insight_v81("
                 "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
                 "%s::jsonb,%s::jsonb,%s,%s,%s) result"
             )
@@ -887,7 +887,7 @@ class PanoramaRepository:
                 if command.production_batch_id is not None:
                     sql = (
                         "select result.* from "
-                        "platform_hr.create_production_insight_v80("
+                        "platform_hr.create_production_insight_v81("
                         "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
                         "%s::jsonb,%s::jsonb,%s,%s,%s) result"
                     )

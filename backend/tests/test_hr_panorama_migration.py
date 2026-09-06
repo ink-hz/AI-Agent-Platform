@@ -26,9 +26,9 @@ def test_v79_is_the_contiguous_panorama_migration() -> None:
     )
 
     assert MIGRATION.is_file(), f"missing migration: {MIGRATION}"
-    assert versions[-2:] == [79, 80]
+    assert versions[-2:] == [80, 81]
     assert len(versions) == len(set(versions))
-    assert versions == list(range(1, 81))
+    assert versions == list(range(1, 82))
 
 
 def test_migration_defines_the_panorama_data_contract() -> None:
@@ -116,8 +116,8 @@ def test_migration_enforces_owner_exact_references_and_bounded_values() -> None:
     assert "access[ _-]?token|api[ _-]?key|token|key|password" in sql
     assert "|sig|credential|auth)$" in sql
     assert "content_sha256 ~ '^[a-f0-9]{64}$'" in sql
-    assert "cardinality(snapshot_ids) between 1 and 10000" in sql
-    assert "cardinality(selected_snapshot_ids) not between 1 and 10000" in sql
+    assert "cardinality(snapshot_ids) between 1 and 1000" in sql
+    assert "cardinality(selected_snapshot_ids) not between 1 and 1000" in sql
     assert "query_sha256 ~ '^[a-f0-9]{64}$'" in sql
     assert "error_code ~ '^[a-z][a-z0-9_]{0,63}$'" in sql
     assert "reason_code !~ '^[a-z][a-z0-9_]{0,63}$'" in sql

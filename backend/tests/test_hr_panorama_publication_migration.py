@@ -17,8 +17,8 @@ def test_v80_is_the_contiguous_publication_migration() -> None:
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions[-2:] == [79, 80]
-    assert versions == list(range(1, 81))
+    assert versions[-2:] == [80, 81]
+    assert versions == list(range(1, 82))
 
 
 def test_v80_defines_background_batches_attempts_and_atomic_publication() -> None:
@@ -37,7 +37,7 @@ def test_v80_defines_background_batches_attempts_and_atomic_publication() -> Non
     assert "create function platform_hr.read_current_panorama_publication_v80" in sql
     assert "create function platform_hr.create_production_job_snapshot_v80" in sql
     assert "create function platform_hr.create_production_insight_v80" in sql
-    assert "cardinality(selected_snapshot_ids) not between 1 and 10000" in sql
+    assert "cardinality(selected_snapshot_ids) not between 1 and 1000" in sql
     assert "pg_advisory_xact_lock" in sql
     assert "workspace_key text primary key" in sql
     assert "coverage_state text not null" in sql
