@@ -9,8 +9,8 @@ def test_v82_is_the_contiguous_analysis_retry_migration() -> None:
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions[-4:] == [83, 84, 85, 86]
-    assert versions == list(range(1, 87))
+    assert versions[-4:] == [84, 85, 86, 87]
+    assert versions == list(range(1, 88))
 
 
 def test_v82_allows_only_safe_failed_analysis_retry() -> None:

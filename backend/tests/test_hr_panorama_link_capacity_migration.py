@@ -9,8 +9,8 @@ def test_v83_is_the_contiguous_link_capacity_migration() -> None:
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions[-2:] == [85, 86]
-    assert versions == list(range(1, 87))
+    assert versions[-2:] == [86, 87]
+    assert versions == list(range(1, 88))
 
 
 def test_v83_expands_the_snapshot_link_ordinal_without_mutating_history() -> None:
