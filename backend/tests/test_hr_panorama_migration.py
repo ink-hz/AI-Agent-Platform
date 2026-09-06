@@ -116,6 +116,8 @@ def test_migration_enforces_owner_exact_references_and_bounded_values() -> None:
     assert "access[ _-]?token|api[ _-]?key|token|key|password" in sql
     assert "|sig|credential|auth)$" in sql
     assert "content_sha256 ~ '^[a-f0-9]{64}$'" in sql
+    assert "cardinality(snapshot_ids) between 1 and 10000" in sql
+    assert "cardinality(selected_snapshot_ids) not between 1 and 10000" in sql
     assert "query_sha256 ~ '^[a-f0-9]{64}$'" in sql
     assert "error_code ~ '^[a-z][a-z0-9_]{0,63}$'" in sql
     assert "reason_code !~ '^[a-z][a-z0-9_]{0,63}$'" in sql

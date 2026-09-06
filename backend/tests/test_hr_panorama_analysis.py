@@ -208,6 +208,26 @@ async def test_large_company_analysis_is_hierarchical_and_never_drops_raw_jobs()
     assert result.snapshot_ids == tuple(item.snapshot_id for item in snapshots)
 
 
+@pytest.mark.asyncio
+async def test_company_analysis_retains_more_than_one_thousand_raw_job_references() -> None:
+    base = snapshot()
+    snapshots = tuple(
+        replace(
+            base,
+            snapshot_id=uuid4(),
+            origin_request_id=uuid4(),
+            public_job_key=f"job-{index}",
+            title=f"研发岗位 {index}",
+        )
+        for index in range(1001)
+    )
+    model = HierarchicalModel(snapshots)
+
+    result = await PanoramaAnalyzer(model).analyze_company("大型研发公司", snapshots)
+
+    assert result.snapshot_ids == tuple(item.snapshot_id for item in snapshots)
+
+
 class BrainAdapter:
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload

@@ -37,6 +37,7 @@ def test_v80_defines_background_batches_attempts_and_atomic_publication() -> Non
     assert "create function platform_hr.read_current_panorama_publication_v80" in sql
     assert "create function platform_hr.create_production_job_snapshot_v80" in sql
     assert "create function platform_hr.create_production_insight_v80" in sql
+    assert "cardinality(selected_snapshot_ids) not between 1 and 10000" in sql
     assert "pg_advisory_xact_lock" in sql
     assert "workspace_key text primary key" in sql
     assert "coverage_state text not null" in sql

@@ -737,7 +737,7 @@ begin
     raise check_violation using
       message='production insight source selection invalid';
   end if;
-  if cardinality(selected_snapshot_ids) not between 1 and 1000
+  if cardinality(selected_snapshot_ids) not between 1 and 10000
     or not platform_hr.uuid_array_is_unique_v79(selected_snapshot_ids)
     or (
       select count(distinct observation.result_snapshot_id)

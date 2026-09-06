@@ -164,7 +164,7 @@ def _snapshot_index(
     if (
         not isinstance(snapshots, tuple)
         or not snapshots
-        or len(snapshots) > 1000
+        or len(snapshots) > 10000
         or any(not isinstance(item, PublicJobSnapshot) for item in snapshots)
         or len({item.snapshot_id for item in snapshots}) != len(snapshots)
     ):

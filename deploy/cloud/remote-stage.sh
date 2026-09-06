@@ -668,14 +668,6 @@ read_previous_feature() {
   [[ "$value" == "0" || "$value" == "1" ]] || value="$fallback"
   /usr/bin/printf '%s' "$value"
 }
-read_previous_panorama_owner() {
-  local value=""
-  if [[ -f "$environment_path" ]]; then
-    value="$(/usr/bin/grep -m1 -E '^PLATFORM_HR_PANORAMA_OWNER_ID=[0-9a-f-]{36}$' "$environment_path" | /usr/bin/cut -d= -f2- || true)"
-  fi
-  [[ "$value" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || value=""
-  /usr/bin/printf '%s' "$value"
-}
 if [[ -z "${PLATFORM_AGENT_BRAIN_ENABLED+x}" ]]; then
   PLATFORM_AGENT_BRAIN_ENABLED="$(read_previous_feature PLATFORM_AGENT_BRAIN_ENABLED 0)"
 fi
@@ -685,6 +677,14 @@ fi
 PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
 PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
 PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"
+read_previous_panorama_owner() {
+  local value=""
+  if [[ -f "$environment_path" ]]; then
+    value="$(/usr/bin/grep -m1 -E '^PLATFORM_HR_PANORAMA_OWNER_ID=[0-9a-f-]{36}$' "$environment_path" | /usr/bin/cut -d= -f2- || true)"
+  fi
+  [[ "$value" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || value=""
+  /usr/bin/printf '%s' "$value"
+}
 if [[ -z "${PLATFORM_HR_PANORAMA_OWNER_ID+x}" ]]; then
   PLATFORM_HR_PANORAMA_OWNER_ID="$(read_previous_panorama_owner)"
 fi

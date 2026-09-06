@@ -624,7 +624,7 @@ create table platform_hr.talent_insight_versions (
     and platform_hr.uuid_array_is_unique_v79(selected_source_ids)
   ),
   snapshot_ids uuid[] not null check (
-    cardinality(snapshot_ids) between 1 and 1000
+    cardinality(snapshot_ids) between 1 and 10000
     and platform_hr.uuid_array_is_unique_v79(snapshot_ids)
   ),
   facts jsonb not null check (
@@ -1429,7 +1429,7 @@ begin
     or not selected_source_ids<@run.selected_source_ids then
     raise check_violation using message='talent insight source selection invalid';
   end if;
-  if cardinality(selected_snapshot_ids) not between 1 and 1000
+  if cardinality(selected_snapshot_ids) not between 1 and 10000
     or not platform_hr.uuid_array_is_unique_v79(selected_snapshot_ids)
     or (
       select count(*) from platform_hr.public_job_snapshots snapshot

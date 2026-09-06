@@ -762,7 +762,7 @@ class TalentInsightVersion:
         _uuid_tuple(
             self.snapshot_ids,
             minimum=1,
-            maximum=1000,
+            maximum=10000,
             message="insight snapshot selection invalid",
         )
         facts = _facts(self.facts)
