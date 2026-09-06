@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.hr.panorama_dimensions import compile_panorama_dimensions
+from tools.hr_intelligence.dimensions import compile_panorama_dimensions
 from app.hr.panorama_export import recruitment_track, technical_direction
 from app.hr.panorama_models import PublicJobSnapshot
 

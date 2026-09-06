@@ -5,12 +5,12 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from app.hr.panorama_collection import (
+from tools.hr_intelligence.collectors import (
     CollectionError,
     PublicSourceCollector,
     SourceTarget,
 )
-from app.hr.panorama_evidence import EvidenceArchive
+from tools.hr_intelligence.evidence import EvidenceArchive
 
 
 def _target(company: str, url: str, *approved: str) -> SourceTarget:
