@@ -1,37 +1,37 @@
 from __future__ import annotations
 
-import hashlib
-import json
-import socket
-from base64 import b64encode
-from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
+from io import BytesIO
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-from test_agent_brain_conversation_repository import _codec
+from openpyxl import load_workbook
 from test_control_plane_migration import control_database  # noqa: F401
+from test_hr_panorama_database import _seed_owner_scope
 
-import app.main as main_module
-from app.agent_brain.conversation_context import ConversationContextBuilder
-from app.agent_brain.conversation_projection import ConversationProjection
 from app.agent_brain.models import load_capability_cards
-from app.agent_brain.orchestrator import MissionOrchestrator
-from app.attachments.result_projection import ConversationResultProjection
 from app.control_plane.auth import AuthSecrets
 from app.control_plane.models import AuthContext, IdentityMode, Role
-from app.execution_relay.models import RelayEvent
-from app.execution_relay.repository import ExecutionRelayRepository
-from app.hr.models import CreateManualPosition
+from app.hr.panorama_analysis import PanoramaAnalyzer
+from app.hr.panorama_collection import (
+    CollectionError,
+    CollectionResult,
+    NormalizedPublicJob,
+    SourceTarget,
+)
+from app.hr.panorama_context import PanoramaContextProvider
+from app.hr.panorama_evidence import EvidenceArchive, EvidencePayload
+from app.hr.panorama_models import CreateProductionBatch, CreateTalentSource
+from app.hr.panorama_producer import PanoramaProductionPipeline
 from app.hr.panorama_repository import PanoramaRepository
-from app.hr.panorama_runtime import PanoramaResultProjector
-from app.hr.repository import HrPositionRepository
-from app.hr.structured_output import encode_hr_envelope
-from app.main import create_app
+from app.hr.panorama_routes import build_panorama_router
+from app.hr.panorama_service import PanoramaService
+
+NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
 
 
 class _AllowHrAgent:
@@ -41,7 +41,9 @@ class _AllowHrAgent:
         return SimpleNamespace(allowed=True)
 
     def permitted_agents_for_user_id(self, _owner_id: UUID):
-        return tuple(card for card in load_capability_cards() if card.agent_id == "hr-bot")
+        return tuple(
+            card for card in load_capability_cards() if card.agent_id == "hr-bot"
+        )
 
     def permitted_catalog_for_user_id(self, _owner_id: UUID):
         return ()
@@ -68,287 +70,186 @@ class _IdentityAuth:
         return submitted == expected == "csrf"
 
 
-def _main_app(monkeypatch, tmp_path: Path, app_url: str, owner_id: UUID):
-    database_secret = tmp_path / "control-database-url"
-    database_secret.write_text(app_url, encoding="utf-8")
-    database_secret.chmod(0o600)
-    keyring = tmp_path / "content-keyring.json"
-    keyring.write_text(json.dumps({
-        "purpose": "platform-content-encryption", "active_version": 4,
-        "keys": {"3": b64encode(b"3" * 32).decode(), "4": b64encode(b"4" * 32).decode()},
-    }), encoding="utf-8")
-    keyring.chmod(0o600)
-    base = main_module.load_config()
-    config = replace(
-        base,
-        execution_relay_enabled=True,
-        direct_agent_enabled=True,
-        agent_brain_enabled=False,
-        agent_brain_v2_enabled=False,
-        content_encryption_keyring_file=str(keyring),
-        metabot_contract_path=str(Path(__file__).parents[2] / "deploy/cloud/metabot.runtime-contract.json"),
-        control_plane=replace(
-            base.control_plane,
-            mode=IdentityMode.PRODUCTION,
-            route_prefix="/",
-            control_database_url_file=str(database_secret),
-            audit_database_url_file="",
-        ),
-    )
-    monkeypatch.setattr(main_module, "load_config", lambda: config)
-    monkeypatch.setattr(main_module, "AgentUseAuthorization", lambda _url: _AllowHrAgent())
-    original_getaddrinfo = socket.getaddrinfo
-    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *args, **kwargs:
-        [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))]
-        if str(host).endswith(".example.com") else original_getaddrinfo(host, port, *args, **kwargs))
-    app = create_app(
-        registry_path=str(Path(__file__).parents[2] / "registry.yaml"),
-        cluster_contract_path=config.metabot_contract_path,
-        start_poller=False,
-        identity_auth=_IdentityAuth(owner_id),
-    )
-    return app
+class _AnalysisModel:
+    version = "configured:gpt:acceptance-v1"
+
+    async def generate_json(self, stage, payload):
+        jobs = payload["jobs"]
+        facts = [
+            {
+                "fact_id": f"{stage}-fact-{index}",
+                "text": f"公开招聘{job['title']}，工作地点为{job['location']}",
+                "snapshot_id": job["snapshot_id"],
+                "observation_id": job["observation_id"],
+                "source_url": job["source_url"],
+                "observed_at": job["observed_at"],
+            }
+            for index, job in enumerate(jobs, start=1)
+        ]
+        return {
+            "facts": facts,
+            "inferences": [
+                {
+                    "text": "精密结构和量产能力是当前共同招聘信号",
+                    "basis_fact_ids": [fact["fact_id"] for fact in facts],
+                }
+            ],
+            "unknowns": [{"text": "实际招聘人数和产品项目归属未公开"}],
+            "direction_clusters": {"结构": len(jobs)},
+            "summary": "两家重点企业持续招聘精密结构与量产人才。",
+        }
 
 
-def _public_resolver(_hostname: str, port: int) -> tuple[str, ...]:
-    assert port == 443
-    return ("93.184.216.34",)
+class _Collector:
+    def __init__(self, archive: EvidenceArchive, failed_source_id: UUID) -> None:
+        self._archive = archive
+        self._failed_source_id = failed_source_id
 
-
-def _answer(run: dict, sources: list[dict], failed_ids: set[str], revision: str) -> tuple[str, list[str]]:
-    observed_at = run["created_at"]
-    successful = [source for source in sources if source["source_id"] not in failed_ids]
-    jobs = []
-    facts = []
-    citations = []
-    for index, source in enumerate(successful, start=1):
-        url = f"{source['approved_urls'][0]}/{revision}-job-{index}"
-        public_key = f"{revision}-job-{index}"
-        jobs.append({
-            "company": source["canonical_name"], "public_job_key": public_key,
-            "title": "高级结构工程师", "location": "深圳",
-            "duty_excerpt": f"负责{source['canonical_name']}精密结构研发",
-            "requirement_excerpt": "需要量产与可靠性经验", "source_url": url,
-            "observed_at": observed_at,
-            "content_sha256": hashlib.sha256(url.encode()).hexdigest(),
-        })
-        facts.append({
-            "fact_id": f"{revision}-fact-{index}",
-            "text": f"{source['canonical_name']}公开招聘高级结构工程师",
-            "company": source["canonical_name"], "public_job_key": public_key,
-            "source_url": url, "observed_at": observed_at,
-        })
-        citations.append(url)
-    payload = {
-        "companies": [{
-            "source_id": source["source_id"],
-            "canonical_name": source["canonical_name"],
-            "approved_urls": source["approved_urls"],
-            "status": "failed" if source["source_id"] in failed_ids else "completed",
-            "error_code": "SEARCH_UNAVAILABLE" if source["source_id"] in failed_ids else None,
-        } for source in sources],
-        "jobs": jobs,
-        "facts": facts,
-        "direction_clusters": {"精密结构": len(successful)},
-        "inferences": [{
-            "text": "关注公司持续投入精密结构方向",
-            "basis_fact_ids": [fact["fact_id"] for fact in facts],
-        }],
-        "unknowns": [{"text": "团队编制仍待确认"}],
-        "summary": f"{revision} 全景招聘分析",
-    }
-    return f"# {revision} 全景招聘分析\n\n" + encode_hr_envelope("panorama_report", payload), citations
-
-
-def _complete_run(*, environment, run: dict, sources: list[dict], failed_ids: set[str], revision: str,
-                  orchestrator: MissionOrchestrator, relay: ExecutionRelayRepository,
-                  projector: PanoramaResultProjector, client: TestClient) -> dict:
-    worker_id = f"panorama-acceptance-{revision}"
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute(
-            "insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) "
-            "values (%s,array['hr-bot'],'active')", (worker_id,),
+    async def collect(self, target: SourceTarget) -> CollectionResult:
+        if target.source_id == self._failed_source_id:
+            raise CollectionError("source_unavailable")
+        body = (
+            f'{{"company":"{target.company_name}","jobs":'
+            f'{{"title":"高级结构工程师"}}}}'
+        ).encode()
+        evidence = self._archive.store(
+            EvidencePayload(
+                source_url=target.source_url,
+                mime="application/json",
+                body=body,
+                response_headers={"Content-Type": "application/json"},
+            )
         )
-    assert orchestrator.advance_pending(limit=50) == 1
-    lease = relay.lease(worker_id, ("hr-bot",), 300, ("direct_agent",))
-    assert lease is not None
-    relay.mark_dispatched(worker_id, lease.payload.run_id)
-    answer, urls = _answer(run, sources, failed_ids, revision)
-    relay.append_events(worker_id, (RelayEvent(
-        run_id=lease.payload.run_id, seq=1, event_type="agent.complete",
-        created_at=datetime.now(UTC), payload={"result": {
-            "contractVersion": "core_chat_collaboration_v4",
-            "publicAnswerMarkdown": answer,
-            "citations": [{
-                "citationKey": f"source-{index}", "title": "公开招聘岗位",
-                "url": url, "site": url.split("/", 3)[2], "retrievedAt": run["created_at"],
-                "supports": ["公开岗位"],
-            } for index, url in enumerate(urls, start=1)],
-            "artifacts": [], "completion": "completed", "recovery": None,
-        }},
-    ),))
-    relay.finish(worker_id, lease.payload.run_id, "completed")
-    assert orchestrator.advance_pending(limit=50) >= 1
-    orchestrator.advance_pending(limit=50)
-    assert projector.reconcile_one() is True
-    status = client.get(f"/api/hr/panorama/runs/{run['run_id']}")
-    assert status.status_code == 200
-    return status.json()
+        return CollectionResult(
+            target=target,
+            jobs=(
+                NormalizedPublicJob(
+                    public_job_key=f"structure-{target.source_id}",
+                    title="高级结构工程师",
+                    location="深圳",
+                    duty_excerpt="负责精密结构研发、喷嘴和挤出系统量产",
+                    requirement_excerpt="五年以上精密结构、可靠性和制造工艺经验",
+                    source_url=f"{target.source_url}/positions/structure",
+                ),
+            ),
+            evidence=evidence,
+            observed_at=NOW,
+        )
 
 
 @pytest.mark.postgres
-def test_panorama_public_flow_preserves_last_valid_retries_one_source_and_reuses_latest_in_position(
-    control_database, monkeypatch, tmp_path,  # noqa: F811
+@pytest.mark.asyncio
+async def test_background_intelligence_keeps_raw_jobs_and_ai_analysis_then_serves_both(
+    control_database, tmp_path,  # noqa: F811
 ) -> None:
     environment = control_database["environments"]["production"]
-    app_url = environment["urls"]["platform_control_app"]
-    owner_id = uuid4()
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute(
-            "insert into platform_control.internal_users(internal_user_id,display_name,status) "
-            "values (%s,'Panorama acceptance','active')", (owner_id,),
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Panorama production acceptance")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    companies = ("联合光电", "禾赛科技", "拓竹科技")
+    sources = tuple(
+        repository.create_source(
+            CreateTalentSource(
+                source_id=uuid4(),
+                owner_id=scope["owner"],
+                client_request_id=uuid4(),
+                company_key=f"acceptance-{index}-{uuid4().hex[:8]}",
+                canonical_name=company,
+                aliases=(),
+                approved_urls=(f"https://company-{index}.example.com/jobs",),
+                active=True,
+            )
         )
-
-    app = _main_app(monkeypatch, tmp_path, app_url, owner_id)
-    commands = app.state.conversation_command_service
-    repository = PanoramaRepository(app_url)
-    relay = app.state.execution_relay_repository
-    orchestrator = app.state.agent_brain_orchestrator
-    projector = app.state.hr_panorama_projector
-    assert orchestrator is not None and projector is not None
-    panorama_orchestrator = MissionOrchestrator(
-        app.state.mission_repository,
-        relay,
-        capability_provider=lambda _owner: tuple(
-            card for card in load_capability_cards() if card.agent_id == "hr-bot"
-        ),
-        conversation_context_builder=ConversationContextBuilder(
-            app.state.conversation_repository
-        ),
-        conversation_projection=ConversationProjection(
-            app.state.conversation_repository,
-            result_projection=ConversationResultProjection(content_codec=_codec()),
-        ),
-        mission_modes=("direct_agent",),
+        for index, company in enumerate(companies, start=1)
     )
+    targets = tuple(
+        SourceTarget(
+            source.source_id,
+            source.canonical_name,
+            source.approved_urls[0],
+            source.approved_urls,
+        )
+        for source in sources
+    )
+    batch = repository.create_production_batch(
+        CreateProductionBatch(
+            batch_id=uuid4(),
+            owner_id=scope["owner"],
+            client_request_id=uuid4(),
+            selected_source_ids=tuple(source.source_id for source in sources),
+            trigger_kind="schedule",
+            analyzer_version=_AnalysisModel.version,
+        )
+    )
+    archive = EvidenceArchive(tmp_path / "evidence")
 
-    with TestClient(
-        app,
-        cookies={"panorama-session": "valid", "panorama-csrf": "csrf"},
-        headers={"Origin": "https://agent.example.test"},
-    ) as client:
-        sources = []
-        for index, company in enumerate(("联合光电", "奥比中光", "舜宇光学"), start=1):
-            response = client.post(
-                "/api/hr/panorama/sources",
-                headers={"Idempotency-Key": str(uuid4()), "X-CSRF-Token": "csrf"},
-                json={"canonical_name": company, "aliases": [],
-                      "approved_urls": [f"https://company-{index}.example.com/jobs"]},
-            )
-            assert response.status_code == 200
-            sources.append(response.json())
+    delivery = await PanoramaProductionPipeline(
+        batch=batch,
+        targets=targets,
+        collector=_Collector(archive, sources[2].source_id),
+        analyzer=PanoramaAnalyzer(_AnalysisModel()),
+        repository=repository,
+    ).run()
 
-        def start(selected: list[dict]) -> dict:
-            response = client.post(
-                "/api/hr/panorama/runs",
-                headers={"Idempotency-Key": str(uuid4()), "X-CSRF-Token": "csrf"},
-                json={"source_ids": [item["source_id"] for item in selected]},
-            )
-            assert response.status_code == 202, response.text
-            return response.json()
+    assert delivery.coverage_state == "partial"
+    assert delivery.snapshot_count == 2
+    service = PanoramaService(repository, evidence_archive=archive)
+    report = service.current_report()
+    assert report is not None
+    assert report.publication is not None
+    assert report.publication.batch_id == batch.batch_id
+    assert report.insight.model_version == _AnalysisModel.version
+    assert len(report.snapshots) == 2
+    assert len(report.evidence_attempts) == 3
+    assert all(snapshot.duty_excerpt for snapshot in report.snapshots)
+    assert all(fact["snapshot_id"] for fact in report.insight.facts)
+    assert report.insight.inferences[0]["basis_fact_ids"]
 
-        baseline_run = start([sources[2]])
-        assert _complete_run(
-            environment=environment, run=baseline_run, sources=[sources[2]], failed_ids=set(),
-            revision="baseline", orchestrator=panorama_orchestrator, relay=relay,
-            projector=projector, client=client,
-        )["state"] == "completed"
-        baseline_insight = next(
-            item for item in client.get("/api/hr/panorama/reports").json()["items"]
-            if item["run_id"] == baseline_run["run_id"]
+    app = FastAPI()
+
+    async def authorize(_request: Request, *, writable: bool = False):
+        assert writable is False
+        return scope["owner"]
+
+    app.include_router(build_panorama_router(service, authorize))
+    with TestClient(app) as client:
+        current = client.get("/api/hr/panorama/current")
+        assert current.status_code == 200
+        payload = current.json()
+        assert len(payload["snapshots"]) == 2
+        assert payload["insight"]["inferences"]
+        assert payload["publication"]["coverage_state"] == "partial"
+        assert len(payload["evidence"]) == 2
+
+        evidence = payload["evidence"][0]
+        raw = client.get(
+            f"/api/hr/panorama/reports/{payload['publication']['publication_id']}"
+            f"/evidence/{evidence['sha256']}"
         )
-        baseline_report = client.get(
-            f"/api/hr/panorama/reports/{baseline_insight['insight_version_id']}"
-        ).json()
+        assert raw.status_code == 200
+        assert raw.content == archive.read(evidence["sha256"])
 
-        partial_run = start(sources)
-        partial = _complete_run(
-            environment=environment, run=partial_run, sources=sources,
-            failed_ids={sources[2]["source_id"]}, revision="partial",
-            orchestrator=panorama_orchestrator, relay=relay, projector=projector, client=client,
+        exported = client.get(
+            f"/api/hr/panorama/reports/{payload['publication']['publication_id']}"
+            "/export?format=xlsx"
         )
-        assert partial["state"] == "partially_completed"
-        assert partial["source_failures"] == {sources[2]["source_id"]: "search_unavailable"}
-        assert client.get(
-            f"/api/hr/panorama/reports/{baseline_insight['insight_version_id']}"
-        ).json() == baseline_report
-        current_before_retry = repository.list_snapshots(owner_id, UUID(sources[2]["source_id"]))[0]
-        assert str(current_before_retry.snapshot_id) == baseline_report["snapshots"][0]["snapshot_id"]
-
-        partial_insight = next(
-            item for item in client.get("/api/hr/panorama/reports").json()["items"]
-            if item["run_id"] == partial_run["run_id"]
-        )
-        partial_report = client.get(
-            f"/api/hr/panorama/reports/{partial_insight['insight_version_id']}"
-        ).json()
-        assert partial_report["insight"]["direction_clusters"] == {"精密结构": 2}
-        assert {fact["source_url"] for fact in partial_report["insight"]["facts"]} == {
-            item["source_url"] for item in partial_report["snapshots"]
-        }
-
-        retry_run = start([sources[2]])
-        assert _complete_run(
-            environment=environment, run=retry_run, sources=[sources[2]], failed_ids=set(),
-            revision="retry", orchestrator=panorama_orchestrator, relay=relay,
-            projector=projector, client=client,
-        )["state"] == "completed"
-        retry_insight = next(
-            item for item in client.get("/api/hr/panorama/reports").json()["items"]
-            if item["run_id"] == retry_run["run_id"]
+        workbook = load_workbook(BytesIO(exported.content), read_only=True)
+        assert {"原始岗位", "AI分析", "来源覆盖", "证据索引"} <= set(
+            workbook.sheetnames
         )
 
-        position_repository = HrPositionRepository(app_url)
-        position = position_repository.create_manual(
-            CreateManualPosition(owner_id, uuid4(), uuid4(), "高级结构工程师")
-        )
-        shell = commands.ensure_direct_conversation_shell(
-            owner_id, uuid4(), direct_agent_id="hr-bot", title="高级结构工程师招聘"
-        )
-        response = client.post(
-            f"/api/hr/positions/{position.position_id}/conversations/{shell.conversation_id}",
-            headers={"Idempotency-Key": str(uuid4()), "X-CSRF-Token": "csrf"},
-            json={},
-        )
-        assert response.status_code == 200
-        response = client.post(
-            f"/api/v1/conversations/{shell.conversation_id}/messages",
-            headers={"Idempotency-Key": str(uuid4()), "X-CSRF-Token": "csrf"},
-            json={"text": "参考舜宇光学最新全景分析，修订这个岗位的 JD/JR"},
-        )
-        assert response.status_code == 201
-        position_turn_id = UUID(response.json()["turn"]["turn_id"])
-        assert orchestrator.advance_pending(limit=50) == 1
-        worker_id = "panorama-position-acceptance"
-        with psycopg.connect(environment["admin"]) as connection:
-            connection.execute(
-                "insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) "
-                "values (%s,array['hr-bot'],'active')", (worker_id,),
-            )
-        position_lease = relay.lease(worker_id, ("hr-bot",), 300, ("direct_agent",))
-        assert position_lease is not None
-        envelope = json.loads(position_lease.payload.prompt.split("\n", 1)[1])
-        panorama = envelope["hr_panorama_context"]
-        assert panorama["insight_version_ids"] == [retry_insight["insight_version_id"]]
-        assert panorama["facts"]
-        assert all("舜宇光学" in fact["text"] for fact in panorama["facts"])
-        assert panorama["source_urls"] == [
-            "https://company-3.example.com/jobs/retry-job-1"
-        ]
-        assert panorama["freshness"]["as_of"] == retry_run["created_at"]
-        retrieval = repository.retrieval_for_turn(
-            owner_id, position.position_id, position_turn_id
-        )
-        assert retrieval is not None
-        assert retrieval.turn_id == position_turn_id
-        assert retrieval.insight_version_ids == (UUID(retry_insight["insight_version_id"]),)
+    fragment = PanoramaContextProvider(repository, now=lambda: NOW).for_turn(
+        scope["owner"],
+        scope["position"],
+        "参考招聘全景分析，完善高级结构工程师人才画像",
+        scope["turn"],
+        task_kind="talent_profile",
+    )
+    assert fragment is not None
+    assert fragment.publication_id == report.publication.publication_id
+    assert fragment.insight_version_ids == (report.insight.insight_version_id,)
+    assert fragment.facts
+    assert fragment.inferences
+    assert set(fragment.source_urls) == {
+        snapshot.source_url for snapshot in report.snapshots
+    }

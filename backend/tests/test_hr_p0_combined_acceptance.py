@@ -20,7 +20,6 @@ from test_agent_brain_conversation_repository import _codec
 from test_control_plane_migration import control_database  # noqa: F401
 from test_hr_p0_panorama_flow import (
     _AllowHrAgent,
-    _complete_run,
     _IdentityAuth,
 )
 from test_hr_position_package_projection import _seed_conversation, _seed_turn
@@ -360,7 +359,6 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
     tasks = app.state.hr_position_task_service
     task_contexts = app.state.hr_task_context_provider
     relay = app.state.execution_relay_repository
-    projector = app.state.hr_panorama_projector
     package_projector = app.state.hr_position_package_projector
     assert all(
         value is not None
@@ -371,7 +369,6 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
             tasks,
             task_contexts,
             relay,
-            projector,
             package_projector,
         )
     )
@@ -428,10 +425,6 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
     _, interview_payload = _result_payload(
         "recruiting-results.json", "strong_candidate_interview_plan"
     )
-    panorama_markdown, panorama_fixture = _result_payload(
-        "panorama-result.json", "partial_panorama_report"
-    )
-    assert "SYNTHETIC TEST DATA" in panorama_markdown
     monkeypatch.setattr(
         recruiting_flow, "MATCH_PAYLOADS", (strong_match, adjacent_match)
     )
@@ -568,50 +561,6 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
         position_id = UUID(confirmed_response.json()["position_id"])
         initial_context_id = UUID(confirmed_response.json()["context_version_id"])
 
-        created_sources = []
-        fixture_companies = panorama_fixture["companies"]
-        for company in fixture_companies:
-            response = client.post(
-                "/api/hr/panorama/sources",
-                headers={"Idempotency-Key": str(uuid4())},
-                json={
-                    "canonical_name": company["canonical_name"],
-                    "aliases": [],
-                    "approved_urls": company["approved_urls"],
-                },
-            )
-            assert response.status_code == 200, response.text
-            created_sources.append(response.json())
-        run_response = client.post(
-            "/api/hr/panorama/runs",
-            headers={"Idempotency-Key": str(uuid4())},
-            json={"source_ids": [source["source_id"] for source in created_sources]},
-        )
-        assert run_response.status_code == 202, run_response.text
-        run = run_response.json()
-        run_result = _complete_run(
-            environment=environment,
-            run=run,
-            sources=created_sources,
-            failed_ids={created_sources[2]["source_id"]},
-            revision="combined",
-            orchestrator=orchestrator,
-            relay=relay,
-            projector=projector,
-            client=client,
-        )
-        assert run_result["state"] == "partially_completed"
-        reports = client.get("/api/hr/panorama/reports").json()["items"]
-        report_summary = next(
-            item for item in reports if item["run_id"] == run["run_id"]
-        )
-        report = client.get(
-            f"/api/hr/panorama/reports/{report_summary['insight_version_id']}"
-        ).json()
-        expected_source = created_sources[0]
-        expected_source_name = expected_source["canonical_name"]
-        expected_source_url = f"{expected_source['approved_urls'][0]}/combined-job-1"
-
         bind = client.post(
             f"/api/hr/positions/{position_id}/conversations/{conversation_id}",
             headers={"Idempotency-Key": str(uuid4())},
@@ -621,7 +570,7 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
         position_message = client.post(
             f"/api/v1/conversations/{conversation_id}/messages",
             headers={"Idempotency-Key": str(uuid4())},
-            json={"text": (f"只参考{expected_source_name}最新全景证据修订岗位 JD/JR")},
+            json={"text": "补充量产良率与失效分析要求，修订岗位 JD/JR"},
         )
         assert position_message.status_code == 201, position_message.text
         position_turn_id = UUID(position_message.json()["turn"]["turn_id"])
@@ -637,21 +586,7 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
         position_lease = relay.lease(worker_id, ("hr-bot",), 300, ("direct_agent",))
         assert position_lease is not None
         prompt = json.loads(position_lease.payload.prompt.split("\n", 1)[1])
-        panorama_context = prompt["hr_panorama_context"]
-        assert panorama_context["insight_version_ids"] == [
-            report_summary["insight_version_id"]
-        ]
-        assert panorama_context["facts"]
-        assert all(
-            expected_source_name in fact["text"] for fact in panorama_context["facts"]
-        )
-        assert panorama_context["source_urls"] == [expected_source_url]
-        assert panorama_context["freshness"]["as_of"] == run["created_at"]
-        assert all(
-            other["canonical_name"]
-            not in json.dumps(panorama_context, ensure_ascii=False)
-            for other in created_sources[1:]
-        )
+        assert prompt.get("hr_panorama_context") is None
         relay.mark_dispatched(worker_id, position_lease.payload.run_id)
         relay.append_events(
             worker_id,
@@ -790,9 +725,6 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
         history = client.get(
             f"/api/hr/positions/{position_id}/context/versions"
         ).json()["items"]
-        reloaded_report = client.get(
-            f"/api/hr/panorama/reports/{report_summary['insight_version_id']}"
-        ).json()
         reloaded_candidates = client.get(
             f"/api/hr/positions/{position_id}/candidates"
         ).json()["items"]
@@ -813,7 +745,6 @@ def test_combined_p0_business_flow_survives_failures_and_reloads_every_result(
             str(initial_context_id),
             str(context_id),
         }
-        assert reloaded_report == report
         assert len(reloaded_candidates) == 2
         for relation, versions in zip(
             reloaded_candidates, reloaded_analyses, strict=True

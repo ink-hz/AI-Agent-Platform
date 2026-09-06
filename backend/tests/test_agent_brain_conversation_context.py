@@ -133,6 +133,7 @@ def test_verified_hr_position_turn_receives_exactly_one_pinned_envelope(
     provider = Provider()
     panorama_fragment = PanoramaContextFragment(
         insight_version_ids=(uuid4(),),
+        publication_id=uuid4(),
         query_sha256="b" * 64,
         as_of=datetime.now().astimezone(),
         facts=(),

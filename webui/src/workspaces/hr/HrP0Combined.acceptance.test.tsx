@@ -29,7 +29,8 @@ const fixture = vi.hoisted(() => ({
   upload: "20000000-0000-4000-8000-000000000001",
   attachment: "20000000-0000-4000-8000-000000000002",
   insight: "30000000-0000-4000-8000-000000000001",
-  run: "30000000-0000-4000-8000-000000000002",
+  publication: "30000000-0000-4000-8000-000000000002",
+  productionBatch: "30000000-0000-4000-8000-000000000003",
   sources: [
     "40000000-0000-4000-8000-000000000001",
     "40000000-0000-4000-8000-000000000002",
@@ -257,7 +258,8 @@ function source(index: number) {
 function insight() {
   return {
     insight_version_id: fixture.insight,
-    run_id: fixture.run,
+    run_id: null,
+    production_batch_id: fixture.productionBatch,
     version_number: 1,
     selected_source_ids: fixture.sources,
     snapshot_ids: fixture.snapshots,
@@ -273,11 +275,74 @@ function insight() {
     unknowns: [{ text: "团队编制仍待确认" }],
     direction_clusters: { 精密结构: 2 },
     summary: "全景招聘分析已完成",
-    source_conversation_id: fixture.conversation,
-    source_turn_id: "90000000-0000-4000-8000-000000000002",
-    agent_id: "hr-bot",
-    model_version: "combined-p0",
+    source_conversation_id: null,
+    source_turn_id: null,
+    agent_id: "hr-intelligence-producer",
+    model_version: "configured-model-v1",
     created_at: now,
+  };
+}
+
+function panoramaPublication() {
+  return {
+    publication_id: fixture.publication,
+    batch_id: fixture.productionBatch,
+    insight_version_id: fixture.insight,
+    coverage_state: "partial",
+    source_coverage: fixture.sources.map((sourceId, index) => index === 2 ? {
+      source_id: sourceId,
+      state: "failed",
+      observed_at: now,
+      source_urls: [`https://example.com/company-${index + 1}`],
+      job_count: 0,
+      error_code: "search_unavailable",
+      channel_failures: { [`https://example.com/company-${index + 1}`]: "search_unavailable" },
+    } : {
+      source_id: sourceId,
+      state: "succeeded",
+      observed_at: now,
+      source_urls: [`https://example.com/company-${index + 1}`],
+      job_count: 1,
+    }),
+    published_at: now,
+  };
+}
+
+function panoramaReport() {
+  const value = insight();
+  return {
+    publication: panoramaPublication(),
+    insight: value,
+    sources: fixture.sources.map((_id, index) => source(index)),
+    snapshots: value.facts.map((fact, index) => ({
+      snapshot_id: fact.snapshot_id,
+      run_id: null,
+      production_batch_id: fixture.productionBatch,
+      observation_id: fact.observation_id,
+      source_id: fixture.sources[index],
+      public_job_key: `structure-${index + 1}`,
+      title: "高级结构工程师",
+      location: "深圳",
+      duty_excerpt: "负责精密结构研发与量产",
+      requirement_excerpt: "需要可靠性与工艺经验",
+      source_url: fact.source_url,
+      observed_at: now,
+      content_sha256: `${index + 1}`.repeat(64),
+      status: "open",
+      created_at: now,
+    })),
+    evidence: value.facts.map((fact, index) => ({
+      source_id: fixture.sources[index],
+      source_url: `https://example.com/company-${index + 1}`,
+      attempt_number: 1,
+      state: "succeeded",
+      error_code: null,
+      sha256: `${index + 1}`.repeat(64),
+      mime: "text/html",
+      size_bytes: 2048,
+      normalized_job_count: 1,
+      observed_at: now,
+    })),
   };
 }
 
@@ -525,8 +590,6 @@ let confirmed: boolean;
 let ticketRequests: string[];
 let opened: Array<{ replace: ReturnType<typeof vi.fn> }>;
 let requests: string[];
-let followedSources: number[];
-let reportReady: boolean;
 let drafts: Array<ReturnType<typeof rawDraft>>;
 let confirmedCandidates: number[];
 let readyAnalyses: Map<number, "none" | "match" | "interview">;
@@ -542,8 +605,6 @@ beforeEach(() => {
   ticketRequests = [];
   opened = [];
   requests = [];
-  followedSources = [];
-  reportReady = false;
   drafts = [];
   confirmedCandidates = [];
   readyAnalyses = new Map([[0, "none"], [1, "none"]]);
@@ -738,77 +799,14 @@ beforeEach(() => {
     if (path === `/api/hr/positions/${fixture.position}/context/versions`) {
       return json({ items: [rawContext()] });
     }
-    if (path === "/api/hr/panorama/sources?limit=100" && method === "GET") {
-      return json({ items: followedSources.map((index) => source(index)) });
-    }
-    if (path === "/api/hr/panorama/sources" && method === "POST") {
-      const request = body(init);
-      const index = companies.indexOf(String(request.canonical_name));
-      expect(index).toBeGreaterThanOrEqual(0);
-      expect(request).toEqual({
-        canonical_name: companies[index],
-        aliases: [],
-        approved_urls: [`https://example.com/company-${index + 1}`],
-      });
-      followedSources = [...followedSources, index];
-      return json(source(index));
-    }
     if (path === "/api/hr/panorama/reports?limit=100" && method === "GET") {
-      return json({ items: reportReady ? [insight()] : [] });
+      return json({ items: [{ publication: panoramaPublication(), insight: insight() }] });
     }
-    if (path === "/api/hr/panorama/runs" && method === "POST") {
-      expect(body(init)).toEqual({ source_ids: fixture.sources });
-      return json({
-        run_id: fixture.run,
-        selected_source_ids: fixture.sources,
-        conversation_id: fixture.conversation,
-        state: "queued",
-        error_code: null,
-        source_failures: {},
-        row_version: 1,
-        started_at: null,
-        finished_at: null,
-        created_at: now,
-        updated_at: now,
-      }, 202);
+    if (path === "/api/hr/panorama/current" && method === "GET") {
+      return json(panoramaReport());
     }
-    if (path === `/api/hr/panorama/reports/${fixture.insight}`) {
-      const value = insight();
-      return json({
-        insight: value,
-        sources: fixture.sources.map((_id, index) => source(index)),
-        snapshots: value.facts.map((fact, index) => ({
-          snapshot_id: fact.snapshot_id,
-          run_id: fixture.run,
-          source_id: fixture.sources[index],
-          public_job_key: `structure-${index + 1}`,
-          title: "高级结构工程师",
-          location: "深圳",
-          duty_excerpt: "负责精密结构研发与量产",
-          requirement_excerpt: "需要可靠性与工艺经验",
-          source_url: fact.source_url,
-          observed_at: now,
-          content_sha256: `${index + 1}`.repeat(64),
-          status: "open",
-          created_at: now,
-        })),
-      });
-    }
-    if (path === `/api/hr/panorama/runs/${fixture.run}`) {
-      reportReady = true;
-      return json({
-        run_id: fixture.run,
-        selected_source_ids: fixture.sources,
-        conversation_id: fixture.conversation,
-        state: "partially_completed",
-        error_code: null,
-        source_failures: { [fixture.sources[2]]: "search_unavailable" },
-        row_version: 3,
-        started_at: now,
-        finished_at: now,
-        created_at: now,
-        updated_at: now,
-      });
+    if (path === `/api/hr/panorama/reports/${fixture.publication}` && method === "GET") {
+      return json(panoramaReport());
     }
     if (path === `/api/hr/positions/${fixture.position}/candidate-drafts` && method === "GET") {
       return json({ items: drafts });
@@ -999,23 +997,6 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   ).toBe(true));
 
   await follow(container, "全景分析");
-  await waitFor(() => expect(container.textContent).toContain("从公开招聘信息开始"));
-  for (let index = 0; index < companies.length; index += 1) {
-    await click(container, "添加关注公司");
-    const inputs = container.querySelectorAll<HTMLInputElement>(
-      '[aria-label="添加关注公司"] input',
-    );
-    await act(async () => {
-      setInput(inputs[0], companies[index]);
-      setInput(inputs[1], `https://example.com/company-${index + 1}`);
-    });
-    await click(container, "确认关注");
-  }
-  expect(followedSources).toEqual([0, 1, 2]);
-  vi.useFakeTimers();
-  await act(async () => button(container, "立即更新").click());
-  await act(async () => vi.advanceTimersByTimeAsync(1_500));
-  vi.useRealTimers();
   await waitFor(() => expect(container.textContent).toContain("全景招聘分析已完成"));
   expect(container.textContent).toContain("示例光学甲公开招聘研发岗位");
   expect(container.textContent).toContain("两家公司持续投入精密结构方向");
@@ -1155,9 +1136,8 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   await follow(container, "全景分析");
   await waitFor(() => expect(container.textContent).toContain("全景招聘分析已完成"));
   expectSafeUi(container);
-  expect(requests.filter((request) => request === "POST /api/hr/panorama/sources"))
-    .toHaveLength(3);
-  expect(requests).toContain("POST /api/hr/panorama/runs");
+  expect(requests.some((request) => request.startsWith("POST /api/hr/panorama/")))
+    .toBe(false);
   expect(requests).toContain(
     `POST /api/hr/positions/${fixture.position}/candidate-drafts:batch`,
   );

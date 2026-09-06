@@ -3,23 +3,19 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 from io import BytesIO
-from types import SimpleNamespace
-from uuid import UUID, uuid4
-from zipfile import ZipFile
+from uuid import uuid4
 
 import pytest
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
-from app.control_plane.authorization import AuthorizationService
-from app.control_plane.middleware import IdentitySecurityMiddleware
-from app.control_plane.models import AuthContext, Role
 from app.hr.panorama_models import (
     PanoramaReport,
-    PanoramaRun,
     PublicJobSnapshot,
+    PublishedPanorama,
+    SourceCollectionAttempt,
     TalentInsightVersion,
     TalentSource,
 )
@@ -28,907 +24,328 @@ from app.hr.panorama_repository import (
     PanoramaNotFound,
     PanoramaUnavailable,
 )
+from app.hr.panorama_routes import build_panorama_router
+from app.hr.panorama_service import PanoramaEvidenceFile
 
-NOW = datetime(2026, 9, 5, 8, tzinfo=UTC)
-
-
-def _router_builder():
-    try:
-        from app.hr.panorama_routes import build_panorama_router
-    except ImportError:
-        pytest.fail("Panorama router is absent")
-    return build_panorama_router
+NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
 
 
 class FakePanoramaService:
-    def __init__(self, owner_id: UUID) -> None:
-        self.owner_id = owner_id
-        self.source = TalentSource(
+    def __init__(self) -> None:
+        owner_id, source_id, batch_id, snapshot_id, observation_id = (
             uuid4(),
+            uuid4(),
+            uuid4(),
+            uuid4(),
+            uuid4(),
+        )
+        source = TalentSource(
+            source_id,
             owner_id,
             uuid4(),
             "company",
-            f"company-{uuid4().hex}",
+            "company-union-optech",
             "联合光电",
             ("Union Optech",),
-            ("https://example.com/jobs",),
+            ("https://example.com/jobs", "https://example.com/campus"),
             True,
             NOW,
             NOW,
         )
-        self.run = PanoramaRun(
-            uuid4(),
-            owner_id,
-            uuid4(),
-            (self.source.source_id,),
-            uuid4(),
-            "queued",
-            None,
-            {},
-            1,
-            None,
-            None,
-            NOW,
-            NOW,
-        )
-        observation_id = uuid4()
-        self.snapshot = PublicJobSnapshot(
-            uuid4(),
+        snapshot = PublicJobSnapshot(
+            snapshot_id,
             owner_id,
             observation_id,
-            self.run.run_id,
-            self.source.source_id,
+            None,
+            source_id,
             "job-1",
-            "结构工程师",
+            "高级结构工程师",
             "中山",
             "负责精密结构设计",
-            "五年以上经验",
+            "五年以上量产经验",
             "https://example.com/jobs/1",
             NOW,
             "a" * 64,
             "open",
             NOW,
+            batch_id,
+            observation_id,
         )
-        self.insight = TalentInsightVersion(
+        insight = TalentInsightVersion(
             uuid4(),
             owner_id,
             uuid4(),
-            self.run.run_id,
+            None,
             1,
-            (self.source.source_id,),
-            (self.snapshot.snapshot_id,),
+            (source_id,),
+            (snapshot_id,),
             (
                 {
                     "fact_id": "f1",
-                    "text": "公开招聘结构工程师",
-                    "snapshot_id": str(self.snapshot.snapshot_id),
+                    "text": "联合光电公开招聘高级结构工程师",
+                    "snapshot_id": str(snapshot_id),
                     "observation_id": str(observation_id),
-                    "source_url": self.snapshot.source_url,
-                    "observed_at": "2026-09-05T08:00:00Z",
+                    "source_url": snapshot.source_url,
+                    "observed_at": NOW.isoformat(),
                 },
             ),
-            ({"text": "结构投入增加", "basis_fact_ids": ("f1",)},),
-            ({"text": "招聘人数未知"},),
-            {"结构": 4},
-            "结构人才需求上升",
-            self.run.conversation_id,
+            ({"text": "结构研发投入明确", "basis_fact_ids": ("f1",)},),
+            ({"text": "实际 HC 未公开"},),
+            {"结构": 1},
+            "结构研发招聘持续",
+            None,
+            None,
+            "hr-intelligence-producer",
+            "configured-model-v1",
+            NOW,
+            batch_id,
+        )
+        publication = PublishedPanorama(
             uuid4(),
-            "hr-bot",
-            "gpt-5",
+            uuid4(),
+            batch_id,
+            owner_id,
+            insight.insight_version_id,
+            "hr",
+            "partial",
+            (
+                {
+                    "source_id": str(source_id),
+                    "state": "succeeded",
+                    "observed_at": NOW.isoformat(),
+                    "source_urls": source.approved_urls,
+                    "job_count": 1,
+                    "channel_failures": {
+                        "https://example.com/campus": "source_timeout"
+                    },
+                },
+            ),
+            NOW,
+        )
+        attempt = SourceCollectionAttempt(
+            uuid4(),
+            batch_id,
+            owner_id,
+            source_id,
+            "https://example.com/jobs",
+            1,
+            "succeeded",
+            None,
+            "a" * 64,
+            "sha256/aa/" + "a" * 64,
+            "application/json",
+            len('{"jobs":[{"title":"高级结构工程师"}]}'.encode()),
+            1,
+            NOW,
             NOW,
         )
         self.report_value = PanoramaReport(
-            insight=self.insight,
-            sources=(self.source,),
-            snapshots=(self.snapshot,),
+            insight, (source,), (snapshot,), publication, (attempt,)
         )
         self.calls: list[tuple] = []
         self.error: Exception | None = None
+        self.empty = False
+        self.raw_evidence = '{"jobs":[{"title":"高级结构工程师"}]}'.encode()
 
     def _result(self, value):
         if self.error is not None:
             raise self.error
         return value
 
-    def add_company(self, **values):
-        self.calls.append(("add_company", values))
-        return self._result(self.source)
+    def current_report(self):
+        self.calls.append(("current",))
+        return self._result(None if self.empty else self.report_value)
 
-    def list_companies(self, owner_id, *, include_inactive=False, limit=100):
-        self.calls.append(("list_companies", owner_id, include_inactive, limit))
-        return self._result((self.source,))
+    def list_reports(self, *, limit=100):
+        self.calls.append(("list", limit))
+        return self._result((self.report_value,))
 
-    def start_run(self, **values):
-        self.calls.append(("start_run", values))
-        return self._result(self.run)
-
-    def run_status(self, owner_id, run_id):
-        self.calls.append(("run_status", owner_id, run_id))
-        if run_id != self.run.run_id:
-            raise PanoramaNotFound()
-        return self._result(self.run)
-
-    def list_reports(self, owner_id, *, limit=100):
-        self.calls.append(("list_reports", owner_id, limit))
-        return self._result((self.insight,))
-
-    def report(self, owner_id, insight_version_id):
-        self.calls.append(("report", owner_id, insight_version_id))
-        if insight_version_id != self.insight.insight_version_id:
+    def report(self, publication_id):
+        self.calls.append(("report", publication_id))
+        if publication_id != self.report_value.publication.publication_id:
             raise PanoramaNotFound()
         return self._result(self.report_value)
 
+    def evidence_file(self, publication_id, sha256):
+        self.calls.append(("evidence", publication_id, sha256))
+        if publication_id != self.report_value.publication.publication_id:
+            raise PanoramaNotFound()
+        return PanoramaEvidenceFile(
+            sha256=sha256,
+            mime="application/json",
+            body=self.raw_evidence,
+        )
 
-def _client(
-    *,
-    owner_id: UUID | None = None,
-    stale: bool = False,
-    entitled: bool = True,
-):
-    owner_id = owner_id or uuid4()
-    service = FakePanoramaService(owner_id)
+
+def _client(*, entitled: bool = True, stale: bool = False):
+    owner_id = uuid4()
+    service = FakePanoramaService()
     app = FastAPI()
 
-    @app.middleware("http")
-    async def identity(request: Request, call_next):
-        request.state.auth_context = AuthContext(owner_id, Role.MEMBER, uuid4(), stale)
-        return await call_next(request)
-
-    async def require_hr_access(request: Request, *, writable: bool = False):
-        context = request.state.auth_context
+    async def require_hr_access(_request: Request, *, writable: bool = False):
+        assert writable is False
         if not entitled:
             raise HTTPException(403, "HR Agent use denied")
-        if writable and context.hard_stale_read_only:
-            raise HTTPException(503, "account is read only")
-        return context.internal_user_id
+        assert stale in {True, False}
+        return owner_id
 
-    app.include_router(_router_builder()(service, require_hr_access))
-    return TestClient(app), service, owner_id
+    app.include_router(build_panorama_router(service, require_hr_access))
+    return TestClient(app), service
 
 
-def _headers(request_id: UUID | None = None) -> dict[str, str]:
-    return {
-        "Idempotency-Key": str(request_id or uuid4()),
-        "X-CSRF-Token": "csrf",
+def test_business_router_exposes_only_published_reads() -> None:
+    router = build_panorama_router(FakePanoramaService(), lambda _request, **_: uuid4())
+    routes = {
+        (route.path, method)
+        for route in router.routes
+        for method in (getattr(route, "methods", None) or ())
     }
 
-
-def test_panorama_sources_are_owner_scoped_idempotent_and_explicitly_serialized() -> (
-    None
-):
-    client, service, owner_id = _client()
-    request_id = uuid4()
-
-    created = client.post(
-        "/api/hr/panorama/sources",
-        headers=_headers(request_id),
-        json={
-            "canonical_name": "联合光电",
-            "aliases": ["Union Optech"],
-            "approved_urls": ["https://example.com/jobs"],
-        },
+    assert ("/api/hr/panorama/current", "GET") in routes
+    assert not any(
+        path.startswith("/api/hr/panorama") and method not in {"GET", "HEAD"}
+        for path, method in routes
     )
-    listed = client.get("/api/hr/panorama/sources?include_inactive=true&limit=20")
+    assert not any("/runs" in path or "/sources" in path for path, _ in routes)
 
-    assert created.status_code == listed.status_code == 200
-    assert created.json() == {
-        "source_id": str(service.source.source_id),
-        "source_kind": "company",
-        "canonical_name": "联合光电",
-        "aliases": ["Union Optech"],
-        "approved_urls": ["https://example.com/jobs"],
-        "active": True,
-        "created_at": NOW.isoformat(),
-        "updated_at": NOW.isoformat(),
+
+def test_current_returns_204_before_the_first_published_report() -> None:
+    client, service = _client()
+    service.empty = True
+
+    response = client.get("/api/hr/panorama/current")
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_current_keeps_ai_analysis_raw_jobs_and_publication_coverage_separate() -> None:
+    client, service = _client()
+
+    response = client.get("/api/hr/panorama/current")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["insight"]["inferences"][0]["text"] == "结构研发投入明确"
+    assert body["snapshots"][0]["title"] == "高级结构工程师"
+    assert body["snapshots"][0]["content_sha256"] == "a" * 64
+    assert body["evidence"][0]["sha256"] == "a" * 64
+    assert body["publication"]["coverage_state"] == "partial"
+    assert body["publication"]["source_coverage"][0]["channel_failures"] == {
+        "https://example.com/campus": "source_timeout"
     }
-    assert listed.json() == {"items": [created.json()]}
-    assert service.calls == [
-        (
-            "add_company",
-            {
-                "owner_id": owner_id,
-                "request_id": request_id,
-                "canonical_name": "联合光电",
-                "aliases": ("Union Optech",),
-                "approved_urls": ("https://example.com/jobs",),
-            },
-        ),
-        ("list_companies", owner_id, True, 20),
-    ]
-    assert "owner_id" not in created.text
-    assert "client_request_id" not in created.text
-    assert "company_key" not in created.text
-
-
-def test_panorama_runs_are_owner_scoped_and_serialize_progress_without_internals() -> (
-    None
-):
-    client, service, owner_id = _client()
-    request_id = uuid4()
-
-    started = client.post(
-        "/api/hr/panorama/runs",
-        headers=_headers(request_id),
-        json={
-            "source_ids": [str(service.source.source_id)],
-            "conversation_id": str(service.run.conversation_id),
-        },
+    assert body["insight"]["run_id"] is None
+    assert body["insight"]["production_batch_id"] == str(
+        service.report_value.publication.batch_id
     )
-    status = client.get(f"/api/hr/panorama/runs/{service.run.run_id}")
+    assert response.headers["cache-control"] == "private, no-store"
 
-    assert started.status_code == 202
-    assert status.status_code == 200
-    assert status.json() == started.json()
-    assert started.json() == {
-        "run_id": str(service.run.run_id),
-        "selected_source_ids": [str(service.source.source_id)],
-        "conversation_id": str(service.run.conversation_id),
-        "state": "queued",
-        "error_code": None,
-        "source_failures": {},
-        "row_version": 1,
-        "started_at": None,
-        "finished_at": None,
-        "created_at": NOW.isoformat(),
-        "updated_at": NOW.isoformat(),
-    }
-    assert service.calls[0] == (
-        "start_run",
-        {
-            "owner_id": owner_id,
-            "request_id": request_id,
-            "source_ids": (service.source.source_id,),
-            "conversation_id": service.run.conversation_id,
-        },
+
+def test_history_and_detail_use_publication_ids() -> None:
+    client, service = _client()
+    publication_id = service.report_value.publication.publication_id
+
+    history = client.get("/api/hr/panorama/reports?limit=20")
+    detail = client.get(f"/api/hr/panorama/reports/{publication_id}")
+
+    assert history.status_code == detail.status_code == 200
+    assert history.json()["items"][0]["publication"]["publication_id"] == str(
+        publication_id
     )
-    assert "client_request_id" not in started.text
-    assert "owner_id" not in started.text
+    assert "snapshots" not in history.json()["items"][0]
+    assert detail.json()["snapshots"][0]["observation_id"]
+    assert service.calls == [("list", 20), ("report", publication_id)]
 
 
-def test_panorama_run_can_create_its_own_conversation_shell() -> None:
-    client, service, owner_id = _client()
-    request_id = uuid4()
-
-    started = client.post(
-        "/api/hr/panorama/runs",
-        headers=_headers(request_id),
-        json={"source_ids": [str(service.source.source_id)]},
-    )
-
-    assert started.status_code == 202
-    assert started.headers["cache-control"] == "private, no-store"
-    assert started.json()["conversation_id"] == str(service.run.conversation_id)
-    assert service.calls == [
-        (
-            "start_run",
-            {
-                "owner_id": owner_id,
-                "request_id": request_id,
-                "source_ids": (service.source.source_id,),
-                "conversation_id": None,
-            },
-        )
-    ]
-
-
-def test_panorama_reports_list_and_detail_are_explicit_and_owner_scoped() -> None:
-    client, service, owner_id = _client()
-
-    listed = client.get("/api/hr/panorama/reports?limit=25")
-    detail = client.get(
-        f"/api/hr/panorama/reports/{service.insight.insight_version_id}"
-    )
-
-    assert listed.status_code == detail.status_code == 200
-    assert listed.json()["items"][0]["summary"] == "结构人才需求上升"
-    assert listed.json()["items"][0]["direction_clusters"] == {"结构": 4}
-    assert detail.json()["insight"] == listed.json()["items"][0]
-    assert detail.json()["sources"][0]["source_id"] == str(service.source.source_id)
-    assert detail.json()["snapshots"][0] == {
-        "snapshot_id": str(service.snapshot.snapshot_id),
-        "run_id": str(service.run.run_id),
-        "source_id": str(service.source.source_id),
-        "public_job_key": "job-1",
-        "title": "结构工程师",
-        "location": "中山",
-        "duty_excerpt": "负责精密结构设计",
-        "requirement_excerpt": "五年以上经验",
-        "source_url": "https://example.com/jobs/1",
-        "observed_at": NOW.isoformat(),
-        "content_sha256": "a" * 64,
-        "status": "open",
-        "created_at": NOW.isoformat(),
-    }
-    assert service.calls == [
-        ("list_reports", owner_id, 25),
-        ("report", owner_id, service.insight.insight_version_id),
-    ]
-    serialized = listed.text + detail.text
-    assert "owner_id" not in serialized
-    assert "client_request_id" not in serialized
-    assert "origin_request_id" not in serialized
-
-
-def test_panorama_report_exports_are_owner_scoped_versioned_pdf_and_excel() -> None:
-    client, service, owner_id = _client()
-    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
+def test_report_exports_preserve_ai_and_original_job_data() -> None:
+    client, service = _client()
+    base = f"/api/hr/panorama/reports/{service.report_value.publication.publication_id}/export"
 
     pdf = client.get(f"{base}?format=pdf")
-    excel = client.get(f"{base}?format=xlsx")
+    xlsx = client.get(f"{base}?format=xlsx")
 
-    assert pdf.status_code == excel.status_code == 200
+    assert pdf.status_code == xlsx.status_code == 200
     assert pdf.headers["content-type"] == "application/pdf"
-    assert pdf.content.startswith(b"%PDF-")
-    assert len(PdfReader(BytesIO(pdf.content)).pages) >= 2
-    assert "panorama-v1" in pdf.headers["content-disposition"]
-    assert excel.headers["content-type"] == (
+    assert xlsx.headers["content-type"].startswith(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    assert excel.content.startswith(b"PK")
-    assert "panorama-v1" in excel.headers["content-disposition"]
-    with ZipFile(BytesIO(excel.content)) as archive:
-        workbook = archive.read("xl/workbook.xml").decode("utf-8")
-        worksheet_xml = "".join(
-            archive.read(name).decode("utf-8")
-            for name in archive.namelist()
-            if name.startswith("xl/worksheets/") and name.endswith(".xml")
-        )
-    assert "岗位明细" in workbook
-    assert "结构工程师" in worksheet_xml
-    assert service.calls == [
-        ("report", owner_id, service.insight.insight_version_id),
-        ("report", owner_id, service.insight.insight_version_id),
-    ]
+    pdf_text = "".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf.content)).pages)
+    workbook = load_workbook(BytesIO(xlsx.content), read_only=True)
+    assert "结构研发投入明确" in pdf_text
+    assert "高级结构工程师" in pdf_text
+    assert {"原始岗位", "AI分析", "来源覆盖", "证据索引"} <= set(
+        workbook.sheetnames
+    )
 
 
-def test_panorama_excel_neutralizes_formula_cells_from_public_content() -> None:
-    client, service, _ = _client()
-    poisoned = PublicJobSnapshot(
-        service.snapshot.snapshot_id,
-        service.snapshot.owner_id,
-        service.snapshot.origin_request_id,
-        service.snapshot.run_id,
-        service.snapshot.source_id,
-        service.snapshot.public_job_key,
-        '=HYPERLINK("https://attacker.invalid","岗位")',
-        service.snapshot.location,
-        service.snapshot.duty_excerpt,
-        service.snapshot.requirement_excerpt,
-        service.snapshot.source_url,
-        service.snapshot.observed_at,
-        service.snapshot.content_sha256,
-        service.snapshot.status,
-        service.snapshot.created_at,
-    )
-    service.report_value = PanoramaReport(
-        service.insight, (service.source,), (poisoned,)
-    )
+def test_archived_raw_source_response_can_be_downloaded_without_mutation() -> None:
+    client, service = _client()
+    publication_id = service.report_value.publication.publication_id
 
     response = client.get(
-        f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export?format=xlsx"
+        f"/api/hr/panorama/reports/{publication_id}/evidence/{'a' * 64}"
     )
 
     assert response.status_code == 200
+    assert response.content == service.raw_evidence
+    assert response.headers["content-type"] == "application/json"
+    assert "attachment" in response.headers["content-disposition"]
+
+
+def test_excel_neutralizes_formula_cells_from_public_content() -> None:
+    client, service = _client()
+    snapshot = replace(service.report_value.snapshots[0], title="=HYPERLINK(\"x\")")
+    service.report_value = PanoramaReport(
+        service.report_value.insight,
+        service.report_value.sources,
+        (snapshot,),
+        service.report_value.publication,
+        service.report_value.evidence_attempts,
+    )
+    publication_id = service.report_value.publication.publication_id
+
+    response = client.get(
+        f"/api/hr/panorama/reports/{publication_id}/export?format=xlsx"
+    )
     workbook = load_workbook(BytesIO(response.content), data_only=False)
-    assert all(
-        cell.data_type != "f"
-        for sheet in workbook.worksheets
-        for row in sheet.iter_rows()
-        for cell in row
-    )
-    assert workbook["岗位明细"]["B2"].value.startswith("'=HYPERLINK")
 
-
-def test_panorama_pdf_accepts_maximum_valid_job_excerpts() -> None:
-    client, service, _ = _client()
-    long_snapshot = PublicJobSnapshot(
-        service.snapshot.snapshot_id,
-        service.snapshot.owner_id,
-        service.snapshot.origin_request_id,
-        service.snapshot.run_id,
-        service.snapshot.source_id,
-        service.snapshot.public_job_key,
-        service.snapshot.title,
-        service.snapshot.location,
-        "职责" * 8_000,
-        "要求" * 8_000,
-        service.snapshot.source_url,
-        service.snapshot.observed_at,
-        service.snapshot.content_sha256,
-        service.snapshot.status,
-        service.snapshot.created_at,
-    )
-    service.report_value = PanoramaReport(
-        service.insight, (service.source,), (long_snapshot,)
-    )
-
-    response = client.get(
-        f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export?format=pdf"
-    )
-
-    assert response.status_code == 200
-    assert response.content.startswith(b"%PDF-")
-
-
-def test_panorama_export_applies_job_filters_and_includes_analysis_dimensions() -> None:
-    client, service, _ = _client()
-    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
-
-    included = client.get(
-        f"{base}?format=xlsx&recruitment_track=unknown&technical_direction=structure"
-    )
-    excluded = client.get(
-        f"{base}?format=xlsx&recruitment_track=campus&technical_direction=algorithm"
-    )
-
-    assert included.status_code == excluded.status_code == 200
-    included_book = load_workbook(BytesIO(included.content), data_only=False)
-    excluded_book = load_workbook(BytesIO(excluded.content), data_only=False)
-    included_rows = list(included_book["岗位明细"].iter_rows(values_only=True))
-    excluded_rows = list(excluded_book["岗位明细"].iter_rows(values_only=True))
-    assert included_rows[0][:6] == (
-        "公司",
-        "岗位",
-        "招聘类型",
-        "技术方向",
-        "地点",
-        "状态",
-    )
-    assert included_rows[1][1:4] == ("结构工程师", "待分类", "结构")
-    assert excluded_rows == [included_rows[0]]
-    assert list(excluded_book["情报来源"].iter_rows(values_only=True)) == [
-        ("公司", "渠道地址", "岗位命中数", "最近观测", "证据状态")
-    ]
-    assert list(excluded_book["公开事实"].iter_rows(values_only=True)) == [
-        ("事实", "来源", "观测时间")
-    ]
-    assert excluded_book["总览"]["B3"].value is None
-
-
-def test_panorama_filtered_export_keeps_only_complete_inference_evidence() -> None:
-    client, service, _ = _client()
-    second_source = replace(
-        service.source,
-        source_id=uuid4(),
-        client_request_id=uuid4(),
-        company_key="second-company",
-        canonical_name="第二家公司",
-        approved_urls=("https://second.example.com/jobs",),
-    )
-    second_snapshot = replace(
-        service.snapshot,
-        snapshot_id=uuid4(),
-        origin_request_id=uuid4(),
-        source_id=second_source.source_id,
-        public_job_key="job-2",
-        title="AI_Engineer",
-        duty_excerpt="Build AI systems",
-        requirement_excerpt="experienced_hires welcome",
-        source_url="https://second.example.com/jobs/experienced_hires",
-        content_sha256="b" * 64,
-    )
-    second_fact = {
-        "fact_id": "f2",
-        "text": "第二家公司公开招聘 AI 工程师",
-        "snapshot_id": str(second_snapshot.snapshot_id),
-        "observation_id": str(second_snapshot.origin_request_id),
-        "source_url": second_snapshot.source_url,
-        "observed_at": NOW.isoformat(),
-    }
-    insight = replace(
-        service.insight,
-        selected_source_ids=(service.source.source_id, second_source.source_id),
-        snapshot_ids=(service.snapshot.snapshot_id, second_snapshot.snapshot_id),
-        facts=(*service.insight.facts, second_fact),
-        inferences=(
-            {
-                "text": "两家公司正在共同增加研发投入",
-                "basis_fact_ids": ("f1", "f2"),
-            },
-        ),
-        direction_clusters={"结构": 10, "算法": 99},
-    )
-    service.report_value = PanoramaReport(
-        insight,
-        (service.source, second_source),
-        (service.snapshot, second_snapshot),
-    )
-    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
-
-    response = client.get(
-        f"{base}?format=xlsx&source_id={service.source.source_id}"
-    )
-
-    assert response.status_code == 200
-    workbook = load_workbook(BytesIO(response.content), data_only=False)
-    assert list(workbook["AI推断"].iter_rows(values_only=True)) == [
-        ("推断", "依据事实ID")
-    ]
-    assert workbook["总览"]["B6"].value == '{"结构": 1}'
-    assert "第二家公司" not in str(workbook["总览"]["B3"].value)
-
-
-def test_panorama_export_keyword_boundaries_match_web_classification() -> None:
-    client, service, _ = _client()
-    service.report_value = PanoramaReport(
-        service.insight,
-        (service.source,),
-        (
-            replace(
-                service.snapshot,
-                title="AI_Engineer",
-                requirement_excerpt="experienced_hires welcome",
-                source_url="https://example.com/jobs/experienced_hires",
-            ),
-        ),
-    )
-    base = f"/api/hr/panorama/reports/{service.insight.insight_version_id}/export"
-
-    algorithm = client.get(f"{base}?format=xlsx&technical_direction=algorithm")
-    social = client.get(f"{base}?format=xlsx&recruitment_track=social")
-
-    assert algorithm.status_code == social.status_code == 200
-    assert load_workbook(BytesIO(algorithm.content))["岗位明细"]["B2"].value == "AI_Engineer"
-    assert load_workbook(BytesIO(social.content))["岗位明细"]["B2"].value == "AI_Engineer"
-
-
-def test_panorama_reads_and_failures_always_disable_storage() -> None:
-    client, service, _ = _client()
-    responses = (
-        client.get("/api/hr/panorama/sources"),
-        client.get(f"/api/hr/panorama/runs/{service.run.run_id}"),
-        client.get("/api/hr/panorama/reports"),
-        client.get(f"/api/hr/panorama/reports/{service.insight.insight_version_id}"),
-        client.get("/api/hr/panorama/reports?limit=101"),
-    )
-
-    assert [response.status_code for response in responses] == [200, 200, 200, 200, 422]
-    assert all(
-        response.headers["cache-control"] == "private, no-store"
-        for response in responses
-    )
-    assert all(response.headers["pragma"] == "no-cache" for response in responses)
+    assert workbook["原始岗位"]["B2"].value.startswith("'=")
 
 
 @pytest.mark.parametrize(
-    ("path", "payload"),
-    (
-        (
-            "/api/hr/panorama/sources",
-            {
-                "canonical_name": "联合光电",
-                "aliases": [],
-                "approved_urls": ["http://example.com/jobs"],
-            },
-        ),
-        (
-            "/api/hr/panorama/sources",
-            {
-                "canonical_name": "联合光电",
-                "aliases": [],
-                "approved_urls": ["https://example.com/jobs"],
-                "source_kind": "person",
-            },
-        ),
-        (
-            "/api/hr/panorama/runs",
-            {"source_ids": [], "conversation_id": str(uuid4())},
-        ),
-    ),
-)
-def test_panorama_mutations_require_valid_bounded_bodies(path, payload) -> None:
-    client, service, _ = _client()
-
-    response = client.post(path, json=payload, headers=_headers())
-
-    assert response.status_code == 422
-    assert response.json() == {"detail": "HR panorama request invalid"}
-    assert service.calls == []
-
-
-def test_panorama_limits_and_idempotency_keys_are_strict() -> None:
-    client, service, _ = _client()
-    source_payload = {
-        "canonical_name": "联合光电",
-        "aliases": [],
-        "approved_urls": ["https://example.com/jobs"],
-    }
-    run_payload = {
-        "source_ids": [str(service.source.source_id)],
-        "conversation_id": str(service.run.conversation_id),
-    }
-
-    responses = (
-        client.get("/api/hr/panorama/sources?limit=0"),
-        client.get("/api/hr/panorama/sources?limit=101"),
-        client.get("/api/hr/panorama/reports?limit=0"),
-        client.get("/api/hr/panorama/reports?limit=101"),
-        client.post("/api/hr/panorama/sources", json=source_payload),
-        client.post(
-            "/api/hr/panorama/sources",
-            json=source_payload,
-            headers={"Idempotency-Key": "not-a-uuid"},
-        ),
-        client.post("/api/hr/panorama/runs", json=run_payload),
-    )
-
-    assert all(response.status_code == 422 for response in responses)
-    assert service.calls == []
-
-
-def test_panorama_stale_mutations_and_unentitled_access_stop_before_service() -> None:
-    stale, stale_service, _ = _client(stale=True)
-    denied, denied_service, _ = _client(entitled=False)
-    payload = {
-        "canonical_name": "联合光电",
-        "aliases": [],
-        "approved_urls": ["https://example.com/jobs"],
-    }
-
-    blocked = stale.post("/api/hr/panorama/sources", json=payload, headers=_headers())
-    denied_read = denied.get("/api/hr/panorama/sources")
-
-    assert blocked.status_code == 503
-    assert denied_read.status_code == 403
-    assert stale_service.calls == denied_service.calls == []
-
-
-def test_panorama_another_owner_ids_are_concealed_as_not_found() -> None:
-    owner_client, owner_service, _ = _client()
-    other_client, other_service, _ = _client()
-
-    hidden_run = other_client.get(f"/api/hr/panorama/runs/{owner_service.run.run_id}")
-    hidden_report = other_client.get(
-        f"/api/hr/panorama/reports/{owner_service.insight.insight_version_id}"
-    )
-
-    assert hidden_run.status_code == hidden_report.status_code == 404
-    assert (
-        hidden_run.json() == hidden_report.json() == {"detail": "HR panorama not found"}
-    )
-    assert (
-        owner_client.get(
-            f"/api/hr/panorama/runs/{owner_service.run.run_id}"
-        ).status_code
-        == 200
-    )
-    assert other_service.calls[0][1] == other_service.owner_id
-
-
-@pytest.mark.parametrize(
-    ("error", "expected_status", "expected_detail"),
+    ("error", "status", "detail"),
     (
         (PanoramaNotFound("secret"), 404, "HR panorama not found"),
         (PanoramaConflict("secret"), 409, "HR panorama conflict"),
         (PanoramaUnavailable("secret"), 503, "HR panorama unavailable"),
+        (TypeError("secret"), 422, "HR panorama request invalid"),
         (ValueError("secret"), 422, "HR panorama request invalid"),
     ),
 )
-def test_panorama_repository_errors_are_mapped_without_leaking_details(
-    error, expected_status, expected_detail
-) -> None:
-    client, service, _ = _client()
+def test_errors_are_sanitized(error, status, detail) -> None:
+    client, service = _client()
     service.error = error
 
-    response = client.get("/api/hr/panorama/sources")
+    response = client.get("/api/hr/panorama/current")
 
-    assert response.status_code == expected_status
-    assert response.json() == {"detail": expected_detail}
-    assert response.headers["cache-control"] == "private, no-store"
+    assert response.status_code == status
+    assert response.json() == {"detail": detail}
     assert "secret" not in response.text
+    assert response.headers["cache-control"] == "private, no-store"
 
 
-class _SecurityAuth:
-    route_prefix = "/"
-    cookie_name = "session"
-    csrf_cookie_name = "csrf"
-    public_base_url = "https://agent.example.test"
-    trusted_proxy_networks = ()
-    rate_limiter = None
-    hard_stale_audit = lambda *_args: None
+def test_unentitled_users_are_blocked_but_stale_accounts_keep_read_access() -> None:
+    blocked, blocked_service = _client(entitled=False)
+    stale, stale_service = _client(stale=True)
 
-    def __init__(self, owner_id: UUID, *, stale: bool = False) -> None:
-        self.owner_id = owner_id
-        self.stale = stale
-        self.repository = SimpleNamespace(directory_freshness=lambda **_kwargs: None)
-
-    def authenticate(self, token):
-        if token != "valid":
-            return None
-        return (
-            AuthContext(self.owner_id, Role.MEMBER, uuid4(), self.stale),
-            b"csrf-digest",
-        )
-
-    def verify_csrf(self, token, digest):
-        return token == "csrf-token" and digest == b"csrf-digest"
+    assert blocked.get("/api/hr/panorama/current").status_code == 403
+    assert blocked_service.calls == []
+    assert stale.get("/api/hr/panorama/current").status_code == 200
+    assert stale_service.calls == [("current",)]
 
 
-def _security_client(*, stale: bool = False):
-    owner_id = uuid4()
-    service = FakePanoramaService(owner_id)
-    app = FastAPI()
-
-    async def require_hr_access(request: Request, *, writable: bool = False):
-        return request.state.auth_context.internal_user_id
-
-    app.include_router(_router_builder()(service, require_hr_access))
-    app.add_middleware(
-        IdentitySecurityMiddleware,
-        auth=_SecurityAuth(owner_id, stale=stale),
-        public_assets=frozenset(),
-        authorization=AuthorizationService(
-            SimpleNamespace(permits=lambda *_args: False)
-        ),
-        routes=tuple(app.router.routes),
-    )
-    client = TestClient(app)
-    client.cookies.set("session", "valid")
-    client.cookies.set("csrf", "csrf-token")
-    return client, service
-
-
-def test_real_security_middleware_authorizes_panorama_in_the_existing_hr_universe() -> (
-    None
-):
-    client, service = _security_client()
-    payload = {
-        "canonical_name": "联合光电",
-        "aliases": [],
-        "approved_urls": ["https://example.com/jobs"],
-    }
-
-    readable_without_csrf = client.get("/api/hr/panorama/sources")
-    missing_csrf = client.post(
-        "/api/hr/panorama/sources",
-        json=payload,
-        headers={
-            "Origin": "https://agent.example.test",
-            "Idempotency-Key": str(uuid4()),
-        },
-    )
-    accepted = client.post(
-        "/api/hr/panorama/sources",
-        json=payload,
-        headers={
-            "Origin": "https://agent.example.test",
-            "X-CSRF-Token": "csrf-token",
-            "Idempotency-Key": str(uuid4()),
-        },
-    )
-
-    assert readable_without_csrf.status_code == 200
-    assert missing_csrf.status_code == 403
-    assert accepted.status_code == 200
-    assert service.calls[0][0] == "list_companies"
-    assert service.calls[1][0] == "add_company"
-
-
-def test_real_security_middleware_protects_generated_conversation_run() -> None:
-    client, service = _security_client()
-    payload = {"source_ids": [str(service.source.source_id)]}
-    origin = "https://agent.example.test"
-
-    missing_csrf = client.post(
-        "/api/hr/panorama/runs",
-        json=payload,
-        headers={"Origin": origin, "Idempotency-Key": str(uuid4())},
-    )
-    accepted = client.post(
-        "/api/hr/panorama/runs",
-        json=payload,
-        headers={
-            "Origin": origin,
-            "X-CSRF-Token": "csrf-token",
-            "Idempotency-Key": str(uuid4()),
-        },
-    )
-
-    assert missing_csrf.status_code == 403
-    assert accepted.status_code == 202
-    assert accepted.headers["cache-control"] == "private, no-store"
-    assert service.calls[0][0] == "start_run"
-
-
-def test_real_security_middleware_blocks_stale_panorama_mutations() -> None:
-    client, service = _security_client(stale=True)
-
-    readable = client.get("/api/hr/panorama/sources")
-    blocked = client.post(
-        "/api/hr/panorama/sources",
-        json={
-            "canonical_name": "联合光电",
-            "aliases": [],
-            "approved_urls": ["https://example.com/jobs"],
-        },
-        headers={
-            "Origin": "https://agent.example.test",
-            "X-CSRF-Token": "csrf-token",
-            "Idempotency-Key": str(uuid4()),
-        },
-    )
-    blocked_run = client.post(
-        "/api/hr/panorama/runs",
-        json={"source_ids": [str(service.source.source_id)]},
-        headers={
-            "Origin": "https://agent.example.test",
-            "X-CSRF-Token": "csrf-token",
-            "Idempotency-Key": str(uuid4()),
-        },
-    )
-
-    assert readable.status_code == 200
-    assert blocked.status_code == blocked_run.status_code == 503
-    assert service.calls == [("list_companies", service.owner_id, False, 100)]
-
-
-class _AgentAuthorization:
-    def __init__(self, *, allowed: bool = True) -> None:
-        self.allowed = allowed
-
-    def decide_for_user_id(self, _owner_id, agent_id):
-        assert agent_id == "hr-bot"
-        return SimpleNamespace(allowed=self.allowed)
-
-    def permitted_catalog_for_user_id(self, _owner_id):
-        return ()
-
-
-def _create_app_security_client(monkeypatch, *, stale=False, allowed=True):
-    from app import main as app_main
-
-    owner_id = uuid4()
-    service = FakePanoramaService(owner_id)
-    identity_auth = _SecurityAuth(owner_id, stale=stale)
-    monkeypatch.setattr(
-        app_main,
-        "build_auth_router",
-        lambda *_args, **_kwargs: APIRouter(),
-    )
-    app = app_main.create_app(
-        start_poller=False,
-        identity_auth=identity_auth,
-        agent_use_authorization=_AgentAuthorization(allowed=allowed),
-        hr_panorama_service=service,
-    )
-    client = TestClient(app)
-    client.cookies.set("session", "valid")
-    client.cookies.set("csrf", "csrf-token")
-    return client, service
-
-
-def test_create_app_uses_real_identity_middleware_and_hr_entitlement(
-    monkeypatch,
-) -> None:
-    client, service = _create_app_security_client(monkeypatch)
-    denied, denied_service = _create_app_security_client(monkeypatch, allowed=False)
-    stale, stale_service = _create_app_security_client(monkeypatch, stale=True)
-    mutation_headers = {
-        "Origin": "https://agent.example.test",
-        "X-CSRF-Token": "csrf-token",
-        "Idempotency-Key": str(uuid4()),
-    }
-
-    readable = client.get("/api/hr/panorama/sources")
-    hidden = client.get(f"/api/hr/panorama/runs/{denied_service.run.run_id}")
-    denied_read = denied.get("/api/hr/panorama/sources")
-    stale_read = stale.get("/api/hr/panorama/sources")
-    stale_write = stale.post(
-        "/api/hr/panorama/sources",
-        headers=mutation_headers,
-        json={
-            "canonical_name": "联合光电",
-            "aliases": [],
-            "approved_urls": ["https://example.com/jobs"],
-        },
-    )
-
-    assert readable.status_code == stale_read.status_code == 200
-    assert hidden.status_code == 404
-    assert denied_read.status_code == 403
-    assert stale_write.status_code == 503
-    assert service.calls[0][0] == "list_companies"
-    assert denied_service.calls == []
-    assert stale_service.calls == [
-        ("list_companies", stale_service.owner_id, False, 100)
-    ]
+def test_invalid_publication_id_is_rejected_before_service() -> None:
+    client, service = _client()
+    response = client.get("/api/hr/panorama/reports/not-a-uuid")
+    assert response.status_code == 422
+    assert service.calls == []

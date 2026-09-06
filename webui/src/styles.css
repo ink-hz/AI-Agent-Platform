@@ -1998,6 +1998,13 @@ body {
 .hr-workspace-panorama-panel { overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
 
 .hr-panorama-workspace { width: min(1440px,calc(100% - 40px)); box-sizing: border-box; margin: 0 auto; padding: 10px 0 48px; color: #172b42; font-size: 14px; line-height: 1.65; }
+.hr-panorama-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; padding: 24px 28px; border: 1px solid #c9d9e9; border-radius: 20px; background: linear-gradient(135deg,#fff 0%,#f4f8fc 100%); box-shadow: 0 12px 34px rgba(32,50,70,.07); }
+.hr-panorama-header p { margin: 0; color: #185fa9; font-size: 12px; font-weight: 850; letter-spacing: .11em; }
+.hr-panorama-header h1 { margin: 5px 0 4px; color: #17345c; font-size: clamp(29px,3vw,40px); line-height: 1.1; letter-spacing: -.04em; }
+.hr-panorama-header > div:first-child > span { color: #405b76; font-size: 14px; }
+.hr-panorama-as-of { display: grid; flex: 0 0 auto; gap: 2px; padding: 11px 14px; border: 1px solid #c4d7e8; border-radius: 12px; background: rgba(255,255,255,.86); }
+.hr-panorama-as-of span { color: #607797; font-size: 12px; font-weight: 760; letter-spacing: .05em; }
+.hr-panorama-as-of strong { color: #173f6d; font-size: 14px; white-space: nowrap; }
 .hr-panorama-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; padding: 22px 26px; border: 1px solid #c9d9e9; border-radius: 20px; background: #fff; box-shadow: 0 12px 34px rgba(32,50,70,.07); }
 .hr-panorama-toolbar > div:first-child > span { color: #185fa9; font-size: 12px; font-weight: 850; letter-spacing: .11em; }
 .hr-panorama-toolbar h1 { margin: 5px 0 4px; color: #17345c; font-size: clamp(29px,3vw,40px); line-height: 1.1; letter-spacing: -.04em; }
@@ -2024,6 +2031,16 @@ body {
 .hr-panorama-operation-error { justify-content: space-between; border-color: #dfb1b1; background: #fff5f5; color: #7a2828; }
 .hr-panorama-operation-error button { border-color: #bd8a8a; color: #7a2828; }
 .hr-panorama-layout { display: grid; grid-template-columns: 250px minmax(0,1fr); align-items: start; gap: 18px; margin-top: 18px; }
+.hr-panorama-sidebar { position: sticky; top: 10px; display: grid; max-height: calc(100dvh - 120px); gap: 12px; overflow-y: auto; }
+.hr-panorama-sidebar > section { padding: 16px; border: 1px solid #cedbe8; border-radius: 14px; background: #fff; }
+.hr-panorama-sidebar header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #e2e9f0; color: #17345c; font-weight: 800; }
+.hr-panorama-sidebar header strong { display: grid; min-width: 28px; height: 28px; place-items: center; border-radius: 99px; background: #e4f0fc; color: #185fa9; font-size: 12px; }
+.hr-panorama-sidebar nav { display: grid; gap: 7px; margin-top: 10px; }
+.hr-panorama-sidebar nav a { display: grid; gap: 3px; padding: 10px; border: 1px solid transparent; border-radius: 9px; color: inherit; text-decoration: none; }
+.hr-panorama-sidebar nav a:hover,.hr-panorama-sidebar nav a[aria-current="page"] { border-color: #bfd6ed; background: #edf5fd; }
+.hr-panorama-sidebar nav a > span { display: -webkit-box; overflow: hidden; color: #405b76; font-size: 12.5px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.hr-panorama-sidebar nav time,.hr-panorama-sidebar > section > p { color: #607797; font-size: 12px; }
+.hr-panorama-content { min-width: 0; }
 .hr-panorama-master { position: sticky; top: 10px; display: grid; max-height: calc(100dvh - 120px); gap: 12px; overflow-y: auto; }
 .hr-panorama-master > section { padding: 16px; border: 1px solid #cedbe8; border-radius: 14px; background: #fff; }
 .hr-panorama-master header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #e2e9f0; }
@@ -2050,6 +2067,7 @@ body {
 .hr-panorama-detail { min-width: 0; }
 .hr-panorama-state { display: grid; min-height: 420px; box-sizing: border-box; place-items: center; align-content: center; padding: 40px; border: 1px dashed #afc4d7; border-radius: 18px; background: rgba(255,255,255,.76); text-align: center; }
 .hr-panorama-state strong { color: #17345c; font-size: 23px; }
+.hr-panorama-state span { max-width: 540px; margin-top: 9px; color: #405b76; font-size: 14px; }
 .hr-panorama-state p { max-width: 540px; margin: 9px 0 0; color: #405b76; font-size: 14px; }
 .hr-panorama-state button { margin-top: 15px; padding: 8px 12px; border: 1px solid #8aabc9; border-radius: 8px; background: #fff; color: #174f9b; font: inherit; font-weight: 750; }
 .hr-panorama-report { display: grid; gap: 18px; color: #172b42; }
@@ -2161,11 +2179,14 @@ body {
 
 @media (max-width: 960px) {
   .hr-panorama-layout { grid-template-columns: 1fr; }
+  .hr-panorama-sidebar { position: static; max-height: none; }
   .hr-panorama-master { position: static; max-height: none; grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 
 @media screen and (max-width: 720px) {
   .hr-panorama-workspace { width: calc(100% - 20px); padding-top: 2px; }
+  .hr-panorama-header { align-items: stretch; flex-direction: column; padding: 18px; }
+  .hr-panorama-as-of { width: fit-content; }
   .hr-panorama-toolbar { align-items: stretch; flex-direction: column; padding: 18px; }
   .hr-panorama-toolbar > div:last-child { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
   .hr-panorama-scope-count { grid-column: 1 / -1; }

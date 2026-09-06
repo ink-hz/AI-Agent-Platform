@@ -14,6 +14,7 @@ from app.hr.panorama_context import (
 )
 from app.hr.panorama_models import (
     PositionInsightRetrieval,
+    PublishedPanorama,
     TalentInsightVersion,
     TalentSource,
     thaw_json,
@@ -26,6 +27,8 @@ POSITION = uuid4()
 TURN = uuid4()
 CONVERSATION = uuid4()
 SOURCE = uuid4()
+BATCH = uuid4()
+PUBLICATION = uuid4()
 
 
 def _source(*, name: str = "联合光电", aliases=("Union Optech",)) -> TalentSource:
@@ -57,7 +60,7 @@ def _insight(
         insight_id,
         OWNER,
         uuid4(),
-        uuid4(),
+        None,
         1,
         (source_id,),
         (uuid4(),),
@@ -75,11 +78,12 @@ def _insight(
         ({"text": "招聘人数未知"},),
         {"结构": 4},
         "结构人才需求上升",
-        uuid4(),
-        uuid4(),
-        "hr-bot",
+        None,
+        None,
+        "hr-intelligence-producer",
         "gpt-5",
         created_at,
+        BATCH,
     )
 
 
@@ -87,7 +91,7 @@ class MemorySource:
     def __init__(self, insights=(), *, sources=None):
         self.insights = tuple(insights)
         self.sources = tuple(sources or (_source(),))
-        self.relevant_calls = []
+        self.insight_calls = []
         self.source_page_calls = []
         self.recorded: PositionInsightRetrieval | None = None
 
@@ -114,9 +118,38 @@ class MemorySource:
             )
         return self.sources[start : start + limit]
 
-    def relevant_insights(self, owner_id, query, position_id, *, limit=5):
-        self.relevant_calls.append((owner_id, query, position_id, limit))
-        return self.insights[:limit]
+    def current_publication(self):
+        if not self.insights:
+            return None
+        insight = self.insights[0]
+        return PublishedPanorama(
+            PUBLICATION,
+            uuid4(),
+            BATCH,
+            OWNER,
+            insight.insight_version_id,
+            "hr",
+            "complete",
+            tuple(
+                {
+                    "source_id": str(source_id),
+                    "state": "succeeded",
+                    "observed_at": NOW.isoformat(),
+                    "source_urls": ("https://example.com/jobs",),
+                    "job_count": 1,
+                }
+                for source_id in insight.selected_source_ids
+            ),
+            NOW,
+        )
+
+    def insight(self, owner_id, insight_version_id):
+        self.insight_calls.append((owner_id, insight_version_id))
+        return next(
+            insight
+            for insight in self.insights
+            if insight.insight_version_id == insight_version_id
+        )
 
     def retrieval_for_turn(self, owner_id, position_id, turn_id):
         if self.recorded is None:
@@ -174,6 +207,7 @@ def test_named_followed_company_retrieves_only_latest_version_and_records_turn()
     fragment = provider.for_turn(OWNER, POSITION, "参考联合光电修订这个岗位的 JR", TURN)
 
     assert fragment is not None
+    assert fragment.publication_id == PUBLICATION
     assert fragment.insight_version_ids == (latest_id,)
     assert fragment.facts
     assert fragment.inferences
@@ -270,7 +304,7 @@ def test_alias_or_explicit_language_triggers_retrieval(query: str) -> None:
     )
 
     assert fragment is not None
-    assert len(source.relevant_calls) == 1
+    assert len(source.insight_calls) == 1
 
 
 def test_unrelated_question_returns_none_without_relevance_lookup_or_record() -> None:
@@ -281,8 +315,24 @@ def test_unrelated_question_returns_none_without_relevance_lookup_or_record() ->
     )
 
     assert fragment is None
-    assert source.relevant_calls == []
+    assert source.insight_calls == []
     assert len(source.source_page_calls) == 1
+    assert source.recorded is None
+
+
+def test_position_turn_returns_no_intelligence_before_first_publication() -> None:
+    source = MemorySource()
+
+    fragment = PanoramaContextProvider(source, now=lambda: NOW).for_turn(
+        OWNER,
+        POSITION,
+        "参考全景分析生成搜寻策略",
+        TURN,
+        task_kind="sourcing_strategy",
+    )
+
+    assert fragment is None
+    assert source.insight_calls == []
     assert source.recorded is None
 
 
@@ -307,7 +357,7 @@ def _insight_with_facts(facts) -> TalentInsightVersion:
         uuid4(),
         OWNER,
         uuid4(),
-        uuid4(),
+        None,
         1,
         (SOURCE,),
         tuple(uuid4() for _ in facts),
@@ -316,11 +366,12 @@ def _insight_with_facts(facts) -> TalentInsightVersion:
         (),
         {"结构": 1},
         "结构方向",
-        uuid4(),
-        uuid4(),
-        "hr-bot",
+        None,
+        None,
+        "hr-intelligence-producer",
         "gpt-5",
         NOW,
+        BATCH,
     )
 
 
@@ -425,10 +476,12 @@ def test_prompt_separates_derived_inference_provenance_and_unverified_unknowns()
 
 def test_cross_owner_or_position_lookup_fails_closed() -> None:
     class HiddenSource(MemorySource):
-        def relevant_insights(self, owner_id, query, position_id, *, limit=5):
+        def insight(self, owner_id, insight_version_id):
             raise PanoramaNotFound("panorama position not found")
 
-    provider = PanoramaContextProvider(HiddenSource(), now=lambda: NOW)
+    provider = PanoramaContextProvider(
+        HiddenSource((_insight(uuid4()),)), now=lambda: NOW
+    )
 
     with pytest.raises(PanoramaContextError):
         provider.for_turn(OWNER, POSITION, "参考全景分析", TURN)
@@ -446,7 +499,7 @@ def test_exact_turn_replay_reuses_recorded_ids_and_different_query_conflicts() -
     assert replay == first
     assert replay is not None
     assert replay.insight_version_ids == (insight_id,)
-    assert len(source.relevant_calls) == 1
+    assert len(source.insight_calls) == 1
     with pytest.raises(PanoramaConflict):
         provider.for_turn(OWNER, POSITION, "参考竞品招聘情报", TURN)
 

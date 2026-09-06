@@ -186,6 +186,54 @@ def _fit_columns(sheet, *, maximum: int = 48) -> None:
         sheet.column_dimensions[get_column_letter(index)].width = max(10, width)
 
 
+def _coverage_rows(
+    report: PanoramaReport,
+    sources: tuple[TalentSource, ...],
+    snapshots: tuple[PublicJobSnapshot, ...],
+) -> list[tuple[object, ...]]:
+    published = (
+        {
+            str(item["source_id"]): item
+            for item in thaw_json(report.publication.source_coverage)
+        }
+        if report.publication is not None
+        else {}
+    )
+    rows: list[tuple[object, ...]] = []
+    for source in sources:
+        coverage = published.get(str(source.source_id), {})
+        channel_failures = coverage.get("channel_failures", {})
+        channels = _channel_snapshots(
+            source, (item for item in snapshots if item.source_id == source.source_id)
+        )
+        for url, items in channels.items():
+            failure = (
+                channel_failures.get(url)
+                if isinstance(channel_failures, dict)
+                else None
+            )
+            state = (
+                "采集失败"
+                if failure
+                else "已形成岗位证据"
+                if items
+                else "未形成岗位证据，待确认"
+            )
+            rows.append(
+                (
+                    source.canonical_name,
+                    url,
+                    len(items),
+                    max((item.observed_at for item in items), default=None).isoformat()
+                    if items
+                    else coverage.get("observed_at", ""),
+                    state,
+                    failure or coverage.get("error_code", ""),
+                )
+            )
+    return rows
+
+
 def _sheet(
     workbook: Workbook,
     title: str,
@@ -225,6 +273,12 @@ def build_panorama_xlsx(
     overview = workbook.create_sheet("总览")
     overview.append(("全景分析版本", report.insight.version_number))
     overview.append(("分析时间", _xlsx_text(report.insight.created_at.isoformat())))
+    if report.publication is not None:
+        overview.append(("发布版本", _xlsx_text(str(report.publication.publication_id))))
+        overview.append(("原始数据批次", _xlsx_text(str(report.publication.batch_id))))
+        overview.append(("发布时间", _xlsx_text(report.publication.published_at.isoformat())))
+        overview.append(("来源覆盖", _xlsx_text(report.publication.coverage_state)))
+    overview.append(("分析模型", _xlsx_text(report.insight.model_version)))
     overview.append(
         ("覆盖公司", _xlsx_text("、".join(source.canonical_name for source in sources)))
     )
@@ -252,8 +306,8 @@ def build_panorama_xlsx(
 
     _sheet(
         workbook,
-        "岗位明细",
-        ("公司", "岗位", "招聘类型", "技术方向", "地点", "状态", "职责", "要求", "来源", "观测时间"),
+        "原始岗位",
+        ("公司", "岗位", "招聘类型", "技术方向", "地点", "状态", "完整职责", "完整要求", "来源", "观测时间", "内容SHA-256", "岗位快照ID", "观测ID"),
         [
             (
                 names.get(item.source_id, "关注公司"),
@@ -266,51 +320,45 @@ def build_panorama_xlsx(
                 item.requirement_excerpt,
                 item.source_url,
                 item.observed_at.isoformat(),
+                item.content_sha256,
+                item.snapshot_id,
+                item.observation_id or item.origin_request_id,
             )
             for item in selected_snapshots
         ],
     )
     _sheet(
         workbook,
-        "情报来源",
-        ("公司", "渠道地址", "岗位命中数", "最近观测", "证据状态"),
+        "来源覆盖",
+        ("公司", "渠道地址", "岗位命中数", "最近观测", "证据状态", "失败代码"),
+        _coverage_rows(report, sources, selected_snapshots),
+    )
+    _sheet(
+        workbook,
+        "AI分析",
+        ("类型", "内容", "依据事实ID", "公开来源", "观测时间"),
+        [
+            ("摘要", summary, "", "", report.insight.created_at.isoformat()),
+            *[("公开事实", fact["text"], fact["fact_id"], fact["source_url"], fact["observed_at"]) for fact in facts],
+            *[("AI推断", item["text"], "、".join(str(value) for value in item["basis_fact_ids"]), "", "") for item in inferences],
+            *[("仍待确认", item["text"], "", "", "") for item in unknowns],
+        ],
+    )
+    _sheet(
+        workbook,
+        "证据索引",
+        ("公司", "来源URL", "采集次数", "状态", "失败代码", "SHA-256", "归档定位", "类型", "字节数", "标准化岗位数", "观测时间"),
         [
             (
-                source.canonical_name,
-                url,
-                len(items),
-                max((item.observed_at for item in items), default=None).isoformat()
-                if items
-                else "",
-                "已形成岗位证据" if items else "未形成岗位证据，待确认",
+                names.get(item.source_id, "关注公司"), item.source_url,
+                item.attempt_number, item.state, item.error_code or "",
+                item.evidence_sha256 or "", item.evidence_locator or "",
+                item.evidence_mime or "", item.evidence_size_bytes or 0,
+                item.normalized_job_count, item.observed_at.isoformat(),
             )
-            for source in sources
-            for url, items in _channel_snapshots(source, selected_snapshots).items()
+            for item in report.evidence_attempts
+            if item.source_id in {source.source_id for source in sources}
         ],
-    )
-    _sheet(
-        workbook,
-        "公开事实",
-        ("事实", "来源", "观测时间"),
-        [
-            (fact["text"], fact["source_url"], fact["observed_at"])
-            for fact in facts
-        ],
-    )
-    _sheet(
-        workbook,
-        "AI推断",
-        ("推断", "依据事实ID"),
-        [
-            (item["text"], "、".join(str(value) for value in item["basis_fact_ids"]))
-            for item in inferences
-        ],
-    )
-    _sheet(
-        workbook,
-        "待确认",
-        ("未知项",),
-        [(item["text"],) for item in unknowns],
     )
     output = BytesIO()
     workbook.save(output)
@@ -404,7 +452,8 @@ def build_panorama_pdf(
             f"分析时间：{report.insight.created_at.isoformat()} | 公开岗位记录：{len(selected_snapshots)}",
             small,
         ),
-        _paragraph("研发与业务方向", heading),
+        _paragraph("AI 分析", heading),
+        _paragraph("研发与业务方向", body),
         _paragraph(
             json.dumps(
                 directions,
@@ -413,7 +462,7 @@ def build_panorama_pdf(
             ),
             body,
         ),
-        _paragraph("公开事实", heading),
+        _paragraph("公开事实（可核验）", heading),
     ]
     for fact in facts:
         story.extend(
@@ -425,7 +474,7 @@ def build_panorama_pdf(
                 Spacer(1, 2 * mm),
             )
         )
-    story.append(_paragraph("AI 推断", heading))
+    story.append(_paragraph("AI 推断（非原始事实）", heading))
     story.extend(
         _paragraph(
             f"- {item['text']}（依据：{'、'.join(str(value) for value in item['basis_fact_ids'])}）",
@@ -437,7 +486,7 @@ def build_panorama_pdf(
     story.extend(
         _paragraph(f"- {item['text']}", body) for item in unknowns
     )
-    story.extend((PageBreak(), _paragraph("岗位明细", heading)))
+    story.extend((PageBreak(), _paragraph("原始岗位数据附录", heading)))
     if not selected_snapshots:
         story.append(_paragraph("当前筛选条件下没有岗位记录。", body))
     for item in selected_snapshots:
@@ -459,11 +508,31 @@ def build_panorama_pdf(
                 Spacer(1, 3 * mm),
             )
         )
-    story.extend((Spacer(1, 5 * mm), _paragraph("情报来源矩阵", heading)))
+    story.extend((Spacer(1, 5 * mm), _paragraph("来源覆盖", heading)))
     for source in sources:
         story.append(_paragraph(source.canonical_name, body))
         story.extend(_paragraph(f"- {url}", small) for url in source.approved_urls)
         story.append(Spacer(1, 3 * mm))
+    story.append(_paragraph("原始来源证据索引", heading))
+    for item in report.evidence_attempts:
+        if item.source_id not in {source.source_id for source in sources}:
+            continue
+        story.extend(
+            (
+                _paragraph(
+                    f"{names.get(item.source_id, '关注公司')} | {item.source_url}",
+                    body,
+                ),
+                _paragraph(
+                    f"SHA-256: {item.evidence_sha256 or '无'} | "
+                    f"{item.evidence_mime or '未知类型'} | "
+                    f"{item.evidence_size_bytes or 0} bytes | "
+                    f"观测：{item.observed_at.isoformat()}",
+                    small,
+                ),
+                Spacer(1, 2 * mm),
+            )
+        )
     document.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return output.getvalue()
 

@@ -644,7 +644,10 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     for forbidden in ("clientSecret:", "dingtalk-app-secret:", "corp-id:"):
         assert forbidden not in serialized
     assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
-    assert api["volumes"] == ["platform-api-secrets:/run/secrets:ro"]
+    assert api["volumes"] == [
+        "platform-api-secrets:/run/secrets:ro",
+        "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
+    ]
     assert services["platform-loopback"]["volumes"] == []
     assert services["platform-loopback"]["environment"] == {
         "PLATFORM_LOOPBACK_TARGET_BASE_URL": "http://172.30.0.4:8080",
