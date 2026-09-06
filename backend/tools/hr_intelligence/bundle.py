@@ -90,6 +90,7 @@ def _job_dict(job: NormalizedJob) -> dict[str, object]:
         "public_job_key": job.public_job_key,
         "title": job.title,
         "location": job.location,
+        "raw_location": job.raw_location,
         "duty_excerpt": job.duty_excerpt,
         "requirement_excerpt": job.requirement_excerpt,
         "source_url": job.source_url,

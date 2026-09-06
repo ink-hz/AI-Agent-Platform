@@ -108,6 +108,7 @@ def _job_dict(job: NormalizedJob) -> dict[str, object]:
         "public_job_key": job.public_job_key,
         "title": job.title,
         "location": job.location,
+        "raw_location": job.raw_location,
         "duty_excerpt": job.duty_excerpt,
         "requirement_excerpt": job.requirement_excerpt,
         "source_url": job.source_url,
@@ -126,6 +127,7 @@ def _job_from_dict(value: Mapping[str, object]) -> NormalizedJob:
             public_job_key=str(value["public_job_key"]),
             title=str(value["title"]),
             location=str(value["location"]),
+            raw_location=str(value.get("raw_location", value["location"])),
             duty_excerpt=str(value["duty_excerpt"]),
             requirement_excerpt=str(value["requirement_excerpt"]),
             source_url=str(value["source_url"]),
@@ -164,7 +166,7 @@ def _read_jobs(path: Path) -> tuple[NormalizedJob, ...]:
 
 def _empty_dimensions() -> dict[str, object]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "scope": {
             "snapshot_count": 0,
             "unique_job_count": 0,
@@ -175,13 +177,20 @@ def _empty_dimensions() -> dict[str, object]:
         },
         "tracks": {"social": 0, "campus": 0, "intern": 0, "unknown": 0},
         "directions": {},
+        "secondary_directions": {},
         "job_families": {},
         "seniority": {},
         "education": {},
         "locations": {},
         "skills": [],
         "company_matrix": {},
-        "evidence_samples": {"directions": {}, "skills": {}},
+        "company_comparison": {},
+        "evidence_samples": {
+            "directions": {},
+            "secondary_directions": {},
+            "skills": {},
+        },
+        "data_quality": {"invalid_locations": {}},
         "trend": {"state": "baseline_only", "message": "基线版本：尚不能判断月度变化"},
         "interpretation_limits": [
             "公开岗位数不等于HC、预算、产量或实际研发投入",

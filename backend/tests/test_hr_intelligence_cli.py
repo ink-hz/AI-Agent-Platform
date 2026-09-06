@@ -5,12 +5,50 @@ from uuid import UUID
 
 import pytest
 
-from tools.hr_intelligence.cli import _company_source_id, main
+from tools.hr_intelligence.cli import (
+    _company_source_id,
+    _empty_dimensions,
+    _job_dict,
+    _job_from_dict,
+    main,
+)
 from tools.hr_intelligence.collectors import (
     CollectionResult,
     NormalizedPublicJob,
 )
 from tools.hr_intelligence.evidence import EvidenceArchive, EvidencePayload
+from tools.hr_intelligence.models import NormalizedJob
+
+
+def test_cli_job_serialization_preserves_raw_location() -> None:
+    job = NormalizedJob(
+        job_id=UUID("00000000-0000-4000-8000-000000000011"),
+        source_id=UUID("00000000-0000-4000-8000-000000000012"),
+        company_key="example",
+        public_job_key="job-1",
+        title="算法工程师",
+        location="深圳",
+        raw_location="广东省·深圳市",
+        duty_excerpt="负责算法开发",
+        requirement_excerpt="本科",
+        source_url="https://example.com/jobs/1",
+        evidence_sha256="a" * 64,
+        observed_at=datetime(2026, 9, 6, 8, tzinfo=UTC),
+    )
+
+    encoded = _job_dict(job)
+
+    assert encoded["raw_location"] == "广东省·深圳市"
+    assert _job_from_dict(encoded).raw_location == "广东省·深圳市"
+
+
+def test_cli_empty_dimensions_match_v3_shape() -> None:
+    dimensions = _empty_dimensions()
+
+    assert dimensions["schema_version"] == 3
+    assert dimensions["secondary_directions"] == {}
+    assert dimensions["company_comparison"] == {}
+    assert dimensions["data_quality"] == {"invalid_locations": {}}
 
 
 def test_company_source_identity_is_stable_across_recruiting_channels() -> None:

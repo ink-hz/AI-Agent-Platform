@@ -57,6 +57,13 @@ def test_dimensions_keep_track_direction_and_evidence_layers_separate() -> None:
         str(social.job_id)
     ]
     assert dimensions["trend"]["state"] == "baseline_only"
+    assert dimensions["schema_version"] == 3
+    assert dimensions["secondary_directions"]["光学/镜头"] == 1
+    assert dimensions["secondary_directions"]["算法/点云"] == 1
+    comparison = dimensions["company_comparison"]["robosense"]
+    assert comparison["absolute"]["job_count"] == 2
+    assert comparison["internal_share"]["算法"] == 0.5
+    assert comparison["sample_confidence"] == "low"
 
 
 def test_verified_campus_board_url_is_classified_as_campus() -> None:
