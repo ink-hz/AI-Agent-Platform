@@ -122,16 +122,11 @@ BUNDLE_PATH="/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-i
 
 联合光电和思看科技保留 `partial`，失败渠道不解释为“没有招聘”。禾赛、拓竹、智元的非招聘官网材料本轮未通过采集，但招聘渠道成功；产品路线判断因此维持中低置信度。当前只有一个时间点，所有月度增长、收缩和资源迁移结论均为未知。
 
-## Owner 审批门禁
+## Owner 发布授权
 
-生产导入前必须收到以下两行精确批准：
+Owner 明确发出上线指令即构成发布授权，不再要求重复复制版本或 Bundle 口令。发布工具必须从已推送的 `master` 自动读取完整 40 位 Git SHA，并从已通过严格校验的 Bundle 目录读取 Bundle UUID；实际发布对象与二者不一致时立即停止。
 
-```text
-APPROVE_RELEASE_SHA=<40 位小写 Git SHA>
-APPROVE_HR_BUNDLE_ID=<已审阅 Bundle UUID>
-```
-
-缩写 SHA、不同 Bundle、不同措辞或审批后发生的代码/数据变化均使审批失效。
+该授权只取消重复的人工作文门槛，不取消 Bundle 清单与哈希校验、磁盘门禁、发布锁、签名 Release、精确 staging 清理、回滚和生产验收。授权后代码或 Bundle 内容发生变化时，必须重新完成校验后才能发布。
 
 ## 唯一一次导入
 
