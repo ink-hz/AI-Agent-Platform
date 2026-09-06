@@ -1,18 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 
-from app.hr.panorama_models import (
-    PanoramaReport,
-    PublicJobSnapshot,
-    PublishedPanorama,
-    SourceCollectionAttempt,
-    TalentInsightVersion,
-    TalentSource,
-)
 from app.hr.panorama_service import PanoramaService
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
@@ -20,207 +13,109 @@ NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
 
 class Repository:
     def __init__(self, *, published: bool = True) -> None:
-        owner_id, batch_id, source_id, snapshot_id, observation_id = (
-            uuid4(),
-            uuid4(),
-            uuid4(),
-            uuid4(),
-            uuid4(),
-        )
-        source = TalentSource(
-            source_id,
-            owner_id,
-            uuid4(),
-            "company",
-            "company-union-optech",
-            "联合光电",
-            (),
-            ("https://example.com/jobs",),
-            True,
-            NOW,
-            NOW,
-        )
-        snapshot = PublicJobSnapshot(
-            snapshot_id,
-            owner_id,
-            observation_id,
-            None,
-            source_id,
-            "job-1",
-            "结构工程师",
-            "中山",
-            "负责结构研发",
-            "五年以上经验",
-            "https://example.com/jobs/1",
-            NOW,
-            "a" * 64,
-            "open",
-            NOW,
-            batch_id,
-            observation_id,
-        )
-        insight = TalentInsightVersion(
-            uuid4(),
-            owner_id,
-            uuid4(),
-            None,
-            1,
-            (source_id,),
-            (snapshot_id,),
-            (
-                {
-                    "fact_id": "f1",
-                    "text": "公开招聘结构工程师",
-                    "snapshot_id": str(snapshot_id),
-                    "observation_id": str(observation_id),
-                    "source_url": snapshot.source_url,
-                    "observed_at": NOW.isoformat(),
-                },
-            ),
-            ({"text": "结构投入明确", "basis_fact_ids": ("f1",)},),
-            ({"text": "实际 HC 未公开"},),
-            {"结构": 1},
-            "结构研发招聘持续",
-            None,
-            None,
-            "hr-intelligence-producer",
-            "configured-model-v1",
-            NOW,
-            batch_id,
-        )
-        self.publication_value = PublishedPanorama(
-            uuid4(),
-            uuid4(),
-            batch_id,
-            owner_id,
-            insight.insight_version_id,
-            "hr",
-            "complete",
-            (
-                {
-                    "source_id": str(source_id),
-                    "state": "succeeded",
-                    "observed_at": NOW.isoformat(),
-                    "source_urls": ("https://example.com/jobs",),
-                    "job_count": 1,
-                },
-            ),
-            NOW,
-        )
-        self.base_report = PanoramaReport(insight, (source,), (snapshot,))
+        self.bundle_id = uuid4()
+        self.source_id = uuid4()
+        self.job_id = uuid4()
         self.published = published
         self.calls: list[tuple] = []
-        self.attempts = ()
+        self.record = {
+            "bundle_id": self.bundle_id,
+            "manifest_sha256": "b" * 64,
+            "bundle_locator": f"bundles/{self.bundle_id}",
+            "schema_version": 1,
+            "generated_at": NOW,
+            "company_count": 2,
+            "job_count": 1,
+            "analysis_count": 1,
+            "evidence_count": 1,
+            "manifest": {"schema_version": 1},
+            "source_catalog": {"schema_version": 1, "companies": [
+                {"company_key": "hesai", "canonical_name": "禾赛科技", "aliases": ["禾赛"], "approved_urls": ["https://example.com/jobs"]},
+                {"company_key": "empty", "canonical_name": "空样本公司", "aliases": [], "approved_urls": ["https://empty.example.com/jobs"]},
+            ]},
+            "source_coverage": {"schema_version": 1, "companies": [
+                {"company_key": "hesai", "state": "succeeded", "observed_at": NOW.isoformat(), "job_count": 1},
+                {"company_key": "empty", "state": "not_observed", "observed_at": None, "job_count": None},
+            ]},
+            "aggregates": {"schema_version": 2, "tracks": {"social": 1}},
+            "analysis": [{
+                "unit_id": str(uuid4()), "kind": "company", "scope_key": "hesai",
+                "response": {
+                    "facts": [{"fact_id": "f1", "text": "禾赛公开招聘算法工程师", "evidence_sha256": "a" * 64, "source_url": "https://example.com/jobs/1", "observed_at": NOW.isoformat()}],
+                    "inferences": [{"text": "算法人才投入明确", "basis_fact_ids": ["f1"]}],
+                    "unknowns": ["实际 HC 未公开"], "alternatives": [], "summary": "算法岗位有公开证据", "confidence": "high",
+                },
+                "usage": {"model": "gpt-5.6", "provider": "openai"},
+            }],
+            "analysis_usage": [{"provider": "openai", "model": "gpt-5.6"}],
+            "evidence_index": [{"sha256": "a" * 64, "source_url": "https://example.com/jobs/1", "observed_at": NOW.isoformat(), "mime": "application/json", "size_bytes": 20, "locator": "evidence/sha256/aa/" + "a" * 64}],
+            "document_index": {"report.pdf": {"sha256": hashlib.sha256(b"pdf").hexdigest(), "size_bytes": 3, "mime": "application/pdf"}},
+            "imported_at": NOW,
+        }
+        self.jobs = ({
+            "job_id": str(self.job_id), "source_id": str(self.source_id), "company_key": "hesai", "public_job_key": "job-1",
+            "title": "算法工程师", "location": "上海", "duty_excerpt": "负责点云算法", "requirement_excerpt": "熟悉 Python",
+            "source_url": "https://example.com/jobs/1", "evidence_sha256": "a" * 64, "observed_at": NOW.isoformat(), "status": "open",
+        },)
 
-    def current_publication(self):
+    def current_bundle(self):
         self.calls.append(("current",))
-        return self.publication_value if self.published else None
+        return self.record if self.published else None
 
-    def list_publications(self, *, limit=100):
+    def list_bundles(self, *, limit=100):
         self.calls.append(("list", limit))
-        return (self.publication_value,)
+        return (self.record,)
 
-    def publication(self, publication_id):
-        self.calls.append(("publication", publication_id))
-        return self.publication_value
+    def bundle(self, bundle_id):
+        self.calls.append(("bundle", bundle_id))
+        return self.record
 
-    def report(self, owner_id, insight_version_id):
-        self.calls.append(("report", owner_id, insight_version_id))
-        return self.base_report
-
-    def source_attempts_for_production_batch(self, owner_id, batch_id):
-        self.calls.append(("attempts", owner_id, batch_id))
-        return self.attempts
+    def bundle_jobs(self, bundle_id):
+        self.calls.append(("jobs", bundle_id))
+        return self.jobs
 
 
-def test_service_returns_none_without_a_quality_gated_publication() -> None:
-    service = PanoramaService(Repository(published=False))
-    assert service.current_report() is None
+class Documents:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def read_document(self, bundle_id, name):
+        self.calls.append(("document", bundle_id, name))
+        return {"name": name, "mime": "application/pdf", "sha256": "c" * 64, "body": b"prebuilt"}
+
+    def read_evidence(self, bundle_id, sha256):
+        self.calls.append(("evidence", bundle_id, sha256))
+        return {"name": sha256, "mime": "application/json", "sha256": sha256, "body": b"source"}
 
 
-def test_service_attaches_publication_metadata_to_current_report() -> None:
+def test_service_returns_none_without_a_published_bundle() -> None:
+    assert PanoramaService(Repository(published=False), documents=Documents()).current_report() is None
+
+
+def test_service_projects_bundle_jobs_analysis_and_five_state_coverage() -> None:
     repository = Repository()
-    report = PanoramaService(repository).current_report()
-
+    report = PanoramaService(repository, documents=Documents()).current_report()
     assert report is not None
-    assert report.publication == repository.publication_value
-    assert report.snapshots == repository.base_report.snapshots
-    assert repository.calls == [
-        ("current",),
-        (
-            "report",
-            repository.publication_value.owner_id,
-            repository.publication_value.insight_version_id,
-        ),
-        (
-            "attempts",
-            repository.publication_value.owner_id,
-            repository.publication_value.batch_id,
-        ),
-    ]
+    assert report["publication"]["bundle_id"] == str(repository.bundle_id)
+    assert report["publication"]["manifest_sha256"] == "b" * 64
+    assert report["publication"]["source_coverage"][1]["state"] == "not_observed"
+    assert report["snapshots"][0]["title"] == "算法工程师"
+    assert report["insight"]["inferences"][0]["text"] == "算法人才投入明确"
+    assert report["analysis_usage"][0]["model"] == "gpt-5.6"
+    assert repository.calls == [("current",), ("jobs", repository.bundle_id)]
 
 
-def test_service_history_and_detail_are_publication_scoped() -> None:
+def test_service_reads_prebuilt_documents_without_an_exporter() -> None:
     repository = Repository()
-    service = PanoramaService(repository)
-
-    history = service.list_reports(limit=20)
-    selected = service.report(repository.publication_value.publication_id)
-
-    assert history[0].publication == selected.publication
-    assert repository.calls[0] == ("list", 20)
-    assert repository.calls[3] == (
-        "publication",
-        repository.publication_value.publication_id,
-    )
+    documents = Documents()
+    service = PanoramaService(repository, documents=documents)
+    selected = service.document(repository.bundle_id, "pdf")
+    assert selected["body"] == b"prebuilt"
+    assert documents.calls == [("document", repository.bundle_id, "report.pdf")]
+    assert not hasattr(service, "start_run")
 
 
-def test_service_has_no_collection_or_source_mutation_surface() -> None:
-    service = PanoramaService(Repository())
-    for forbidden in ("add_company", "start_run", "run_status", "list_companies"):
-        assert not hasattr(service, forbidden)
-
-
-def test_service_downloads_only_evidence_bound_to_the_selected_publication() -> None:
-    repository = Repository()
-    body = b'{"jobs":[]}'
-    repository.attempts = (
-        SourceCollectionAttempt(
-            uuid4(),
-            repository.publication_value.batch_id,
-            repository.publication_value.owner_id,
-            repository.base_report.sources[0].source_id,
-            "https://example.com/jobs",
-            1,
-            "succeeded",
-            None,
-            "a" * 64,
-            "sha256/aa/" + "a" * 64,
-            "application/json; charset=utf-8",
-            len(body),
-            1,
-            NOW,
-            NOW,
-        ),
-    )
-
-    class Archive:
-        def read(self, sha256):
-            assert sha256 == "a" * 64
-            return body
-
-    selected = PanoramaService(
-        repository, evidence_archive=Archive()
-    ).evidence_file(repository.publication_value.publication_id, "a" * 64)
-
-    assert selected.body == body
-    assert selected.mime == "application/json"
-
-
-@pytest.mark.parametrize("sha256", (None, 7, "A" * 64, "a" * 63))
-def test_evidence_download_rejects_noncanonical_hashes(sha256) -> None:
-    repository = Repository()
-    service = PanoramaService(repository)
-
-    with pytest.raises(TypeError, match="evidence identifier invalid"):
-        service.evidence_file(repository.publication_value.publication_id, sha256)
+@pytest.mark.parametrize("format", ["docx", "", None])
+def test_service_rejects_unknown_document_formats(format) -> None:
+    with pytest.raises(TypeError, match="format"):
+        PanoramaService(Repository(), documents=Documents()).document(uuid4(), format)

@@ -10,14 +10,17 @@ import { formatHrPanoramaReportMarkdown, HrPanoramaReport } from "./HrPanoramaRe
 const report: Report = {
   publication: {
     publicationId: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+    bundleId: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+    manifestSha256: "c".repeat(64),
     batchId: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb",
     insightVersionId: "55555555-5555-4555-8555-555555555555",
-    coverageState: "complete",
+    coverageState: "succeeded",
     sourceCoverage: [
       { sourceId: "11111111-1111-4111-8111-111111111111", state: "succeeded", observedAt: "2026-09-05T08:00:00Z", sourceUrls: ["https://example.com/jobs"], jobCount: 1 },
       { sourceId: "22222222-2222-4222-8222-222222222222", state: "succeeded", observedAt: "2026-09-05T08:05:00Z", sourceUrls: ["https://sunny.example/jobs"], jobCount: 1 },
     ],
     publishedAt: "2026-09-05T09:05:00Z",
+    generatedAt: "2026-09-05T09:00:00Z",
   },
   insight: {
     insightVersionId: "55555555-5555-4555-8555-555555555555", runId: null,
@@ -50,6 +53,7 @@ const report: Report = {
     { sourceId: "11111111-1111-4111-8111-111111111111", sourceUrl: "https://example.com/jobs", attemptNumber: 1, state: "succeeded", errorCode: null, sha256: "a".repeat(64), mime: "text/html", sizeBytes: 1024, normalizedJobCount: 1, observedAt: "2026-09-05T08:00:00Z" },
     { sourceId: "22222222-2222-4222-8222-222222222222", sourceUrl: "https://sunny.example/jobs", attemptNumber: 1, state: "succeeded", errorCode: null, sha256: "b".repeat(64), mime: "text/html", sizeBytes: 1024, normalizedJobCount: 1, observedAt: "2026-09-05T08:05:00Z" },
   ],
+  analysisUsage: [{ provider: "openai", model: "gpt-5.6" }],
 };
 const previousReport: Report = {
   ...report,
@@ -121,7 +125,7 @@ describe("HrPanoramaReport", () => {
     expect(matrix?.textContent).toContain("联合光电");
     expect(matrix?.textContent).toContain("舜宇光学");
     expect(matrix?.textContent).toContain("命中 1 条");
-    expect(matrix?.textContent).toContain("已检查，本次未发现公开岗位");
+    expect(matrix?.textContent).toContain("本版没有岗位证据");
     expect(matrix?.textContent).toContain("最近观测");
     expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://example.com/jobs"]')).not.toBeNull();
     expect(matrix?.querySelector<HTMLAnchorElement>('a[href="https://example.com/campus"]')).not.toBeNull();
@@ -159,7 +163,7 @@ describe("HrPanoramaReport", () => {
     expect(social?.textContent).toContain("1 个岗位尚未识别招聘类型");
   });
 
-  it("keeps internships separate in the report view, filters, and export URL", async () => {
+  it("keeps internships separate while the Bundle download stays immutable", async () => {
     const internship = {
       ...report,
       snapshots: [{
@@ -183,7 +187,7 @@ describe("HrPanoramaReport", () => {
       track!.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(container.querySelector<HTMLAnchorElement>('a[href*="format=xlsx"]')?.href)
-      .toContain("recruitment_track=intern");
+      .toMatch(/\/export\?format=xlsx$/);
   });
 
   it("does not expose producer or batch identifiers in business diagnostics", async () => {
@@ -325,7 +329,7 @@ describe("HrPanoramaReport", () => {
     expect(markdown).not.toContain("https://sunny.example/jobs/2");
     expect(markdown).not.toContain("两家公司共同增加研发投入");
     expect(markdown).not.toContain("光学设计：2");
-    expect(markdown).not.toContain("本轮采集失败");
+    expect(markdown).not.toContain("本版来源失败");
     expect(markdown).toContain("结构：1");
   });
 
@@ -348,8 +352,8 @@ describe("HrPanoramaReport", () => {
     expect(jobs?.textContent).toContain("1 / 2 条");
     const pdf = container.querySelector<HTMLAnchorElement>('a[href*="format=pdf"]');
     const excel = container.querySelector<HTMLAnchorElement>('a[href*="format=xlsx"]');
-    expect(pdf?.href).toContain(`source_id=${report.sources[0].sourceId}`);
-    expect(excel?.href).toContain(`source_id=${report.sources[0].sourceId}`);
+    expect(pdf?.href).toMatch(/\/export\?format=pdf$/);
+    expect(excel?.href).toMatch(/\/export\?format=xlsx$/);
   });
 
   it("offers every title-derived direction for a multi-discipline role", async () => {
@@ -367,7 +371,7 @@ describe("HrPanoramaReport", () => {
       direction!.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(container.querySelector('[data-report-view="jobs"]')?.textContent).toContain("硬件测试工程师");
-    expect(container.querySelector<HTMLAnchorElement>('a[href*="format=xlsx"]')?.href).toContain("technical_direction=quality");
+    expect(container.querySelector<HTMLAnchorElement>('a[href*="format=xlsx"]')?.href).toMatch(/\/export\?format=xlsx$/);
   });
 
   it("adds a strong technical direction found in duties to the title direction", async () => {
@@ -422,7 +426,7 @@ describe("HrPanoramaReport", () => {
 
     const changes = [...container.querySelectorAll(".hr-panorama-signal-grid section")].find((section) => section.textContent?.includes("招聘变化"));
     expect(changes?.textContent).toContain("明确关闭0");
-    expect(changes?.textContent).toContain("联合光电本轮采集失败，无法判断变化");
+    expect(changes?.textContent).toContain("联合光电本版来源失败，无法判断变化");
   });
 
   it("does not treat an unknown current status as an explicit closure", async () => {
@@ -453,14 +457,8 @@ describe("HrPanoramaReport", () => {
     expect(changes?.textContent).toContain("明确关闭1");
   });
 
-  it("copies and downloads a deterministic readable Markdown report", async () => {
+  it("copies readable text and downloads immutable Bundle documents", async () => {
     const copy = vi.fn().mockResolvedValue(true);
-    const createObjectURL = vi.fn().mockReturnValue("blob:panorama");
-    const revokeObjectURL = vi.fn();
-    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
-    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
-    let downloaded = "";
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { downloaded = this.download; });
     await act(async () => root.render(<HrPanoramaReport comparison={{ state: "available", previousReport, currentSourceFailures: {}, previousSourceFailures: {} }} onCopy={copy} report={report} />));
 
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("复制报告"))?.click());
@@ -468,7 +466,7 @@ describe("HrPanoramaReport", () => {
     expect(copied).toContain("# 全景分析 · 第 2 版");
     expect(copied).toContain("新增岗位：1");
     expect(copied).toContain("明确关闭：0");
-    expect(copied).toContain("本次未再次采集到（待验证，不代表停止招聘）：1");
+    expect(copied).toContain("本版未再次观测到（待验证，不代表停止招聘）：1");
     expect(copied).toContain("## 公开事实");
     expect(copied).toContain("## 地域分布");
     expect(copied).toContain("中山：1 个岗位");
@@ -486,15 +484,19 @@ describe("HrPanoramaReport", () => {
 
     expect(container.querySelector<HTMLAnchorElement>('a[href*="/export?format=pdf"]')?.textContent).toBe("下载 PDF");
     expect(container.querySelector<HTMLAnchorElement>('a[href*="/export?format=xlsx"]')?.textContent).toBe("下载 Excel");
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "下载 Markdown")?.click());
-    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
-    const downloadedText = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsText(createObjectURL.mock.calls[0][0] as Blob);
-    });
-    expect(downloadedText).toBe(copied);
-    expect(downloaded).toBe("全景分析-第2版-2026-09-05.md");
-    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)));
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:panorama");
+    expect(container.querySelector<HTMLAnchorElement>('a[href*="/export?format=md"]')?.textContent).toBe("下载 Markdown");
+  });
+
+  it("does not present failed or unobserved coverage as zero jobs", async () => {
+    const unavailable: Report = {
+      ...report,
+      publication: { ...report.publication, coverageState: "not_observed", sourceCoverage: report.publication.sourceCoverage.map((item) => ({ ...item, state: "not_observed", jobCount: 0 })) },
+      snapshots: [],
+      insight: { ...report.insight, snapshotIds: [], facts: [], inferences: [] },
+    };
+    await act(async () => root.render(<HrPanoramaReport report={unavailable} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "来源证据")?.click());
+    expect(container.querySelector('[data-evidence-kind="source-matrix"]')?.textContent).toContain("本版未观测，无法判断岗位数量");
+    expect(container.querySelector('[data-evidence-kind="source-matrix"]')?.textContent).not.toContain("命中 0 条");
   });
 });

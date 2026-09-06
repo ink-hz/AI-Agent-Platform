@@ -37,14 +37,15 @@ const snapshot = {
 };
 const publication = {
   publication_id: IDS.publication, batch_id: IDS.batch, insight_version_id: IDS.insight,
-  coverage_state: "complete", source_coverage: [{ source_id: IDS.source, state: "succeeded",
+  bundle_id: IDS.publication, manifest_sha256: "c".repeat(64), generated_at: "2026-09-05T08:02:00Z",
+  coverage_state: "succeeded", source_coverage: [{ source_id: IDS.source, state: "succeeded",
     observed_at: "2026-09-05T08:00:00Z", source_urls: ["https://example.com/jobs"], job_count: 1 }],
   published_at: "2026-09-05T08:03:00Z",
 };
 const evidence = { source_id: IDS.source, source_url: "https://example.com/jobs", attempt_number: 1,
   state: "succeeded", error_code: null, sha256: "a".repeat(64), mime: "application/json",
   size_bytes: 512, normalized_job_count: 1, observed_at: "2026-09-05T08:00:00Z" };
-const report = { publication, insight, sources: [source], snapshots: [snapshot], evidence: [evidence] };
+const report = { publication, insight, sources: [source], snapshots: [snapshot], evidence: [evidence], analysis_usage: [{ provider: "openai", model: "gpt-5.6" }] };
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
@@ -69,6 +70,8 @@ describe("HR Panorama read-only API", () => {
     const selected = await createHrPanoramaApi("ignored").currentReport();
 
     expect(selected?.insight.summary).toBe("结构人才需求上升");
+    expect(selected?.publication.bundleId).toBe(IDS.publication);
+    expect(selected?.analysisUsage[0]).toMatchObject({ provider: "openai", model: "gpt-5.6" });
     expect(fetcher.mock.calls.map(([request]) => String(request))).toEqual([
       "/api/hr/panorama/current",
     ]);
@@ -78,6 +81,19 @@ describe("HR Panorama read-only API", () => {
       expect(init?.method).toBeUndefined();
     }
   });
+
+  it.each(["succeeded", "empty_confirmed", "partial", "failed", "not_observed"] as const)(
+    "accepts the explicit %s source coverage state",
+    async (state) => {
+      const selectedPublication = {
+        ...publication,
+        coverage_state: state,
+        source_coverage: [{ ...publication.source_coverage[0], state, ...(state === "failed" ? { error_code: "source_timeout" } : {}) }],
+      };
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ ...report, publication: selectedPublication }));
+      await expect(createHrPanoramaApi("ignored").currentReport()).resolves.toMatchObject({ publication: { coverageState: state } });
+    },
+  );
 
   it("accepts a production report with more than one thousand job snapshots", async () => {
     const snapshots = Array.from({ length: 1001 }, (_, index) => {
@@ -104,7 +120,7 @@ describe("HR Panorama read-only API", () => {
       .mockResolvedValueOnce(json(report));
     const api = createHrPanoramaApi("ignored");
 
-    expect((await api.listReports())[0].insight.modelVersion).toBe("configured-model-v1");
+    expect((await api.listReports())[0].insight.summary).toBe("结构人才需求上升");
     expect((await api.report(IDS.publication)).snapshots[0].title).toBe("结构工程师");
   });
 

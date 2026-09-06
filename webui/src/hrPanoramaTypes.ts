@@ -13,7 +13,7 @@ export interface HrPanoramaSource {
 
 export interface HrPanoramaSourceCoverage {
   sourceId: string;
-  state: "succeeded" | "failed";
+  state: "succeeded" | "empty_confirmed" | "partial" | "failed" | "not_observed";
   observedAt: string;
   sourceUrls: string[];
   jobCount: number;
@@ -23,10 +23,13 @@ export interface HrPanoramaSourceCoverage {
 
 export interface HrPanoramaPublication {
   publicationId: string;
+  bundleId: string;
   batchId: string;
   insightVersionId: string;
-  coverageState: "complete" | "partial";
+  manifestSha256: string;
+  coverageState: HrPanoramaSourceCoverage["state"];
   sourceCoverage: HrPanoramaSourceCoverage[];
+  generatedAt: string;
   publishedAt: string;
 }
 
@@ -130,13 +133,23 @@ export interface HrPanoramaEvidence {
   observedAt: string;
 }
 
+export interface HrPanoramaInsightSummary {
+  insightVersionId: string;
+  versionNumber: number;
+  selectedSourceIds: string[];
+  summary: string;
+  createdAt: string;
+}
+
 export interface HrPanoramaReportSummary {
   publication: HrPanoramaPublication;
-  insight: HrPanoramaInsight;
+  insight: HrPanoramaInsightSummary;
 }
 
 export interface HrPanoramaReport extends HrPanoramaReportSummary {
+  insight: HrPanoramaInsight;
   sources: HrPanoramaSource[];
   snapshots: HrPanoramaSnapshot[];
   evidence: HrPanoramaEvidence[];
+  analysisUsage: Array<Record<string, unknown>>;
 }

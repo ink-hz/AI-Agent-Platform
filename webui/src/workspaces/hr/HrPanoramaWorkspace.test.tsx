@@ -34,11 +34,14 @@ const insight: HrPanoramaInsight = {
 const report: HrPanoramaReport = {
   publication: {
     publicationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    bundleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    manifestSha256: "b".repeat(64),
     batchId: insight.productionBatchId!,
     insightVersionId: insight.insightVersionId,
-    coverageState: "complete",
+    coverageState: "succeeded",
     sourceCoverage: [{ sourceId: source.sourceId, state: "succeeded", observedAt: "2026-09-05T08:00:00Z", sourceUrls: source.approvedUrls, jobCount: 1 }],
     publishedAt: "2026-09-05T09:05:00Z",
+    generatedAt: "2026-09-05T09:00:00Z",
   },
   insight, sources: [source], snapshots: [{
     snapshotId: insight.snapshotIds[0], runId: null, productionBatchId: insight.productionBatchId, observationId: insight.facts[0].observationId, sourceId: source.sourceId, publicJobKey: "optics-structure-1",
@@ -48,6 +51,7 @@ const report: HrPanoramaReport = {
     createdAt: "2026-09-05T08:01:00Z",
   }],
   evidence: [{ sourceId: source.sourceId, sourceUrl: source.approvedUrls[0], attemptNumber: 1, state: "succeeded", errorCode: null, sha256: "a".repeat(64), mime: "text/html", sizeBytes: 1024, normalizedJobCount: 1, observedAt: insight.facts[0].observedAt }],
+  analysisUsage: [{ provider: "openai", model: "gpt-5.6" }],
 };
 
 function fakeApi(overrides: Partial<HrPanoramaApi> = {}): HrPanoramaApi {
@@ -115,29 +119,26 @@ describe("HrPanoramaWorkspace", () => {
     expect(container.textContent).not.toContain("招聘情报暂时无法读取");
   });
 
-  it("shows a read-only empty state while the first publication is prepared", async () => {
+  it("shows a read-only empty state when nothing has been published", async () => {
     const api = fakeApi({ currentReport: vi.fn().mockResolvedValue(null), listReports: vi.fn().mockResolvedValue([]) });
     await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} />));
     await settle();
 
-    expect(container.textContent).toContain("首份招聘情报正在后台准备");
-    expect(container.textContent).toContain("无需手动发起");
+    expect(container.textContent).toContain("当前没有已发布情报");
+    expect(container.textContent).toContain("仅展示已经审核并发布");
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("turns read failures into a retry of reads only", async () => {
-    const currentReport = vi.fn()
-      .mockRejectedValueOnce(new HrPanoramaApiError(503))
-      .mockResolvedValueOnce(report);
+  it("shows a stable read-only failure without an execution control", async () => {
+    const currentReport = vi.fn().mockRejectedValue(new HrPanoramaApiError(503));
     const api = fakeApi({ currentReport });
     await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} />));
     await settle();
     expect(container.textContent).toContain("招聘情报暂时无法读取");
 
-    await act(async () => container.querySelector<HTMLButtonElement>("button")?.click());
-    await settle();
-    expect(currentReport).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("光学与结构研发招聘保持投入");
+    expect(currentReport).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).not.toContain("重试");
   });
 
   it("loads the nearest previous report with the same company scope", async () => {

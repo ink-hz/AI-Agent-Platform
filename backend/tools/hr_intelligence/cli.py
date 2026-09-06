@@ -36,6 +36,13 @@ _COVERAGE_STATES = frozenset(
 )
 
 
+def _company_source_id(company_key: str) -> UUID:
+    selected = company_key.strip() if isinstance(company_key, str) else ""
+    if not selected:
+        raise ValueError("company key invalid")
+    return uuid5(NAMESPACE_URL, f"orbbec:hr-intelligence:source:{selected}")
+
+
 def _canonical_json(value: object) -> str:
     return json.dumps(
         value,
@@ -257,10 +264,7 @@ async def _collect_async(bundle_id: UUID) -> int:
             successful = 0
             company_jobs: dict[UUID, NormalizedJob] = {}
             for ordinal, source_url in enumerate(urls):
-                source_id = uuid5(
-                    NAMESPACE_URL,
-                    f"orbbec:hr-intelligence:source:{company_key}:{source_url}",
-                )
+                source_id = _company_source_id(company_key)
                 target = SourceTarget(source_id, company_name, source_url, urls)
                 try:
                     result = await collector.collect(target)

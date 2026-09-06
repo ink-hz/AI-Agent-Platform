@@ -26,9 +26,9 @@ def test_v79_is_the_contiguous_panorama_migration() -> None:
     )
 
     assert MIGRATION.is_file(), f"missing migration: {MIGRATION}"
-    assert versions[-5:] == [80, 81, 82, 83, 84]
+    assert versions[-5:] == [81, 82, 83, 84, 85]
     assert len(versions) == len(set(versions))
-    assert versions == list(range(1, 85))
+    assert versions == list(range(1, 86))
 
 
 def test_migration_defines_the_panorama_data_contract() -> None:

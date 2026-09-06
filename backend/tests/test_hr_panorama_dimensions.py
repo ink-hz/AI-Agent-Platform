@@ -4,9 +4,12 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from tools.hr_intelligence.dimensions import compile_panorama_dimensions
-from app.hr.panorama_export import recruitment_track, technical_direction
 from app.hr.panorama_models import PublicJobSnapshot
+from tools.hr_intelligence.dimensions import (
+    compile_panorama_dimensions,
+    recruitment_track,
+    technical_directions,
+)
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=timezone.utc)
 
@@ -166,7 +169,7 @@ def test_recruitment_portal_path_overrides_incidental_track_words_in_body() -> N
     assert recruitment_track(social) == "social"
 
 
-def test_export_direction_uses_the_same_title_first_classification() -> None:
+def test_local_direction_uses_the_same_title_first_classification() -> None:
     job = _job(
         "软件开发工程师",
         key="software-export-1",
@@ -174,7 +177,7 @@ def test_export_direction_uses_the_same_title_first_classification() -> None:
         requirement="熟悉 Python",
     )
 
-    assert technical_direction(job) == "software"
+    assert technical_directions(job)[0] == "软件"
 
 
 def test_verified_portal_paths_supply_track_when_titles_are_unmarked() -> None:

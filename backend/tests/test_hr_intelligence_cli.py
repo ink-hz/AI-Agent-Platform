@@ -4,7 +4,12 @@ from uuid import UUID
 
 import pytest
 
-from tools.hr_intelligence.cli import main
+from tools.hr_intelligence.cli import _company_source_id, main
+
+
+def test_company_source_identity_is_stable_across_recruiting_channels() -> None:
+    assert _company_source_id("hesai") == _company_source_id("hesai")
+    assert _company_source_id("hesai") != _company_source_id("robosense")
 
 
 def test_cli_initializes_only_the_explicit_external_local_root(

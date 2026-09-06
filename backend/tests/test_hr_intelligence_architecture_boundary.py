@@ -18,6 +18,9 @@ def test_production_image_cannot_collect_or_analyze_panorama() -> None:
         "panorama_collection.py",
         "panorama_analysis.py",
         "panorama_runtime.py",
+        "panorama_export.py",
+        "panorama_evidence.py",
+        "panorama_dimensions.py",
     ):
         assert not (APP_HR / name).exists()
 
@@ -70,3 +73,6 @@ def test_import_service_has_no_model_secret_or_external_network() -> None:
 def test_local_factory_is_outside_the_production_package() -> None:
     assert (LOCAL_FACTORY / "cli.py").is_file()
     assert (LOCAL_FACTORY / "source_catalog.v1.json").is_file()
+    assert "tools.hr_intelligence" not in "\n".join(
+        path.read_text(encoding="utf-8") for path in APP_HR.glob("*.py")
+    )

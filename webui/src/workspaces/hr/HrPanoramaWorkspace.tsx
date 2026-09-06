@@ -40,7 +40,6 @@ export function HrPanoramaWorkspace({
   const [comparison, setComparison] = useState<HrPanoramaComparison>({ state: "loading" });
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,14 +84,14 @@ export function HrPanoramaWorkspace({
     };
     void load();
     return () => controller.abort();
-  }, [api, attempt, insightVersionId]);
+  }, [api, insightVersionId]);
 
   return <main className="hr-panorama-workspace">
     <header className="hr-panorama-header">
       <div>
         <p>RECRUITING INTELLIGENCE</p>
         <h1>招聘全景分析</h1>
-        <span>后台持续整理公开招聘原始数据，并用 AI 形成可追溯的分析结果。</span>
+        <span>查看已发布的公开招聘原始数据、AI 分析与来源证据。</span>
       </div>
       {report && <div className="hr-panorama-as-of">
         <span>数据截至</span>
@@ -112,14 +111,14 @@ export function HrPanoramaWorkspace({
             <strong>第 {item.insight.versionNumber} 版</strong>
             <span>{item.insight.summary}</span>
             <time dateTime={item.publication.publishedAt}>{DATE_TIME.format(new Date(item.publication.publishedAt))}</time>
-          </PlatformLink>)}</nav> : <p>首份情报正在后台准备。</p>}
+          </PlatformLink>)}</nav> : <p>当前没有已发布情报。</p>}
         </section>
       </aside>
 
       <section className="hr-panorama-content">
         {loading && <div className="hr-panorama-state"><strong>正在读取已发布情报</strong><span>无需操作，完成后会直接展示。</span></div>}
-        {!loading && failure && <div className="hr-panorama-state is-error"><strong>{failure}</strong><span>稍后重新进入页面即可，后台采集不会占用你的对话。</span><button onClick={() => setAttempt((value) => value + 1)} type="button">重新读取</button></div>}
-        {!loading && !failure && !report && <div className="hr-panorama-state"><strong>首份招聘情报正在后台准备</strong><span>完成质量核验后会自动出现在这里，无需手动发起。</span></div>}
+        {!loading && failure && <div className="hr-panorama-state is-error"><strong>{failure}</strong><span>已发布数据保持不变，请稍后重新进入页面。</span></div>}
+        {!loading && !failure && !report && <div className="hr-panorama-state"><strong>当前没有已发布情报</strong><span>这里仅展示已经审核并发布的招聘情报。</span></div>}
         {!loading && !failure && report && <Report comparison={comparison} report={report} />}
       </section>
     </div>
