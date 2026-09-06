@@ -313,6 +313,30 @@ class ConversationContextBuilder:
                         exc_info=True,
                     )
                     hr_panorama_context = None
+        elif is_hr_agent and self._panorama_context_provider is not None:
+            general_retrieval = getattr(
+                self._panorama_context_provider,
+                "for_conversation_turn",
+                None,
+            )
+            if callable(general_retrieval):
+                try:
+                    hr_panorama_context = general_retrieval(
+                        row["owner_internal_user_id"],
+                        conversation_id,
+                        messages[-1].content,
+                        turn_id,
+                    )
+                    if hr_panorama_context is not None and not isinstance(
+                        hr_panorama_context, PanoramaContextFragment
+                    ):
+                        raise ValueError
+                except Exception:
+                    logger.warning(
+                        "General HR intelligence context omitted for conversation turn",
+                        exc_info=True,
+                    )
+                    hr_panorama_context = None
         candidate_parser_attachment_id = None
         if (
             is_hr_agent
