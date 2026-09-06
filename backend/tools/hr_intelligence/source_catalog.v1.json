@@ -5,7 +5,10 @@
       "company_key": "union-optech",
       "canonical_name": "联合光电",
       "aliases": ["中山联合光电", "Union Optech"],
-      "approved_urls": ["https://www.union-optech.com"]
+      "approved_urls": [
+        "https://www.union-optech.com",
+        "https://cshbzy.bysjy.com.cn/detail/career?id=708375"
+      ]
     },
     {
       "company_key": "robosense",
@@ -76,7 +79,8 @@
       "aliases": ["SCANTECH", "思看科技（杭州）股份有限公司"],
       "approved_urls": [
         "https://app135149.eapps.dingtalkcloud.com/social-recruitment/sikankeji/100000204",
-        "https://app135149.dingtalkoxm.com/campus-recruitment/sikankeji/100000205"
+        "https://app135149.dingtalkoxm.com/campus-recruitment/sikankeji/100000205",
+        "https://www.3d-scantech.com.cn/corporation/join-us/"
       ]
     },
     {

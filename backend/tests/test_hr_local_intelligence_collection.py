@@ -84,3 +84,27 @@ def test_normalization_is_stable_and_preserves_provenance() -> None:
     assert first[0].evidence_sha256 == result.evidence.sha256
     assert first[0].source_url == "https://example.com/jobs/algorithm-1"
     assert first[0].observed_at == NOW
+
+
+def test_verified_campus_board_embedded_jobs_are_parsed_with_full_details() -> None:
+    from tools.hr_intelligence.collectors import SourceTarget, parse_public_jobs
+
+    source_url = "https://example.bysjy.com.cn/detail/career?id=708375"
+    body = br'''<html><script>
+    var data = JSON.parse(JSON.stringify({"data":{"jobs":[{
+      "publish_id":3227283,"job_name":"\u6a21\u5177\u7f16\u7a0b\u5de5\u7a0b\u5e08",
+      "city_name":"\u4e2d\u5c71\u5e02",
+      "job_descript":"<p>\u8d1f\u8d23\u6ce8\u5851\u6a21\u5177\u6570\u63a7\u94e3\u7a0b\u5e8f\u7f16\u5236</p>",
+      "job_require":"<p>\u672c\u79d1\uff0c\u6a21\u5177\u8bbe\u8ba1\u76f8\u5173\u4e13\u4e1a</p>"
+    }]}}));
+    </script></html>'''
+    target = SourceTarget(uuid4(), "联合光电", source_url, (source_url,))
+
+    jobs = parse_public_jobs(body, "text/html; charset=utf-8", target)
+
+    assert len(jobs) == 1
+    assert jobs[0].public_job_key == "3227283"
+    assert jobs[0].title == "模具编程工程师"
+    assert jobs[0].location == "中山市"
+    assert jobs[0].duty_excerpt == "负责注塑模具数控铣程序编制"
+    assert jobs[0].requirement_excerpt == "本科，模具设计相关专业"

@@ -144,6 +144,8 @@ def _track(item: JobRecord, text: str) -> str:
     parsed = urlsplit(url)
     hostname = parsed.hostname or ""
     path = parsed.path
+    if hostname.endswith(".bysjy.com.cn") and path == "/detail/career":
+        return "campus"
     if hostname == "kwh0jtf778.jobs.feishu.cn":
         if path == "/index" or path.startswith("/index/"):
             return "social"

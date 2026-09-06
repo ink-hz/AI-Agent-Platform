@@ -57,3 +57,17 @@ def test_dimensions_keep_track_direction_and_evidence_layers_separate() -> None:
         str(social.job_id)
     ]
     assert dimensions["trend"]["state"] == "baseline_only"
+
+
+def test_verified_campus_board_url_is_classified_as_campus() -> None:
+    from tools.hr_intelligence.dimensions import recruitment_track
+
+    job = _job(
+        "模具编程工程师",
+        "campus-board-1",
+        url="https://example.bysjy.com.cn/detail/career?id=708375",
+        duty="负责模具数控加工",
+        requirement="本科，机械相关专业",
+    )
+
+    assert recruitment_track(job) == "campus"

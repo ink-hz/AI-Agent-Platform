@@ -331,7 +331,13 @@ def _states_no_open_jobs(value: str) -> bool:
 def _job_from_mapping(
     item: Mapping[str, object], target: SourceTarget
 ) -> NormalizedPublicJob:
-    title = _plain(item.get("title") or item.get("name") or item.get("JobAdName"), "")
+    title = _plain(
+        item.get("title")
+        or item.get("name")
+        or item.get("JobAdName")
+        or item.get("job_name"),
+        "",
+    )
     if not title:
         raise ValueError("job title unavailable")
     location = _location(
@@ -341,6 +347,7 @@ def _job_from_mapping(
         or item.get("city_list")
         or item.get("city_info")
         or item.get("LocNames")
+        or item.get("city_name")
     )
     raw_url = item.get("url")
     source_url = target.source_url
@@ -361,7 +368,11 @@ def _job_from_mapping(
     status = (
         status_value if status_value in {"open", "closed", "unknown"} else "unknown"
     )
-    description = item.get("description") or item.get("responsibilities")
+    description = (
+        item.get("description")
+        or item.get("responsibilities")
+        or item.get("job_descript")
+    )
     description_duty, description_requirement = _split_job_text(description)
     return NormalizedPublicJob(
         public_job_key=_identifier(
@@ -369,7 +380,8 @@ def _job_from_mapping(
             or item.get("id")
             or item.get("jobId")
             or item.get("JobAdId")
-            or item.get("Id"),
+            or item.get("Id")
+            or item.get("publish_id"),
             title=title,
             location=location,
             source_url=source_url,
@@ -383,6 +395,7 @@ def _job_from_mapping(
             or item.get("requirement")
             or item.get("Require")
             or item.get("experienceRequirements")
+            or item.get("job_require")
             or description_requirement
         ),
         source_url=source_url,
@@ -502,6 +515,22 @@ def parse_public_jobs(
                 payloads.append(json.loads(block))
             except json.JSONDecodeError:
                 continue
+        parsed_url = urlsplit(target.source_url)
+        if (
+            (parsed_url.hostname or "").endswith(".bysjy.com.cn")
+            and parsed_url.path == "/detail/career"
+        ):
+            marker = "var data = JSON.parse(JSON.stringify("
+            start = text.find(marker)
+            if start >= 0:
+                try:
+                    embedded, _ = json.JSONDecoder().raw_decode(
+                        text[start + len(marker) :].lstrip()
+                    )
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    payloads.append(embedded)
     jobs: list[NormalizedPublicJob] = []
     for payload in payloads:
         for item in _candidate_mappings(payload):
