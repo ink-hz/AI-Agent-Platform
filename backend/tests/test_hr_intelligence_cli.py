@@ -274,3 +274,66 @@ def test_cli_prepares_accepts_builds_and_verifies_one_bundle(
     assert main(["build", "--bundle-id", str(bundle_id)]) == 0
     built = local_root / "bundles" / str(bundle_id)
     assert main(["verify", "--bundle", str(built), "--strict"]) == 0
+
+
+def test_cli_provenance_validation_covers_channel_evidence_without_jobs(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    bundle_id = UUID("00000000-0000-4000-8000-000000000099")
+    local_root = tmp_path / "factory"
+    work = local_root / "work" / str(bundle_id)
+    work.mkdir(parents=True)
+    monkeypatch.setenv("HR_INTELLIGENCE_LOCAL_ROOT", str(local_root))
+    (work / "source-catalog.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "companies": [
+                    {
+                        "company_key": "scantech",
+                        "canonical_name": "思看科技",
+                        "approved_urls": ["https://example.com/jobs"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    missing_sha256 = hashlib.sha256(b"missing channel evidence").hexdigest()
+    (work / "source-coverage.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "companies": [
+                    {
+                        "company_key": "scantech",
+                        "state": "empty_confirmed",
+                        "job_count": 0,
+                        "channels": [
+                            {
+                                "source_url": "https://example.com/jobs",
+                                "state": "succeeded",
+                                "job_count": 0,
+                                "evidence_sha256": missing_sha256,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (work / "normalized-jobs.jsonl").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="source coverage evidence invalid"):
+        main(
+            [
+                "validate",
+                "--bundle-id",
+                str(bundle_id),
+                "--require-company-count",
+                "1",
+                "--require-provenance",
+            ]
+        )

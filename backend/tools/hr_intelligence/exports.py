@@ -41,7 +41,9 @@ def _text(value: object, maximum: int = 32767) -> str:
     return _CONTROL.sub("", selected)[:maximum]
 
 
-def _xlsx_text(value: object) -> str:
+def _xlsx_value(value: object) -> object:
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
     selected = _text(value)
     if selected.startswith(_FORMULA_PREFIXES):
         return "'" + selected[:32766]
@@ -184,25 +186,91 @@ def build_pdf(report: Mapping[str, object]) -> bytes:
         leading=14,
         textColor=colors.HexColor("#263238"),
     )
+    small = ParagraphStyle(
+        "SmallCN",
+        parent=body,
+        fontSize=7.5,
+        leading=11,
+        textColor=colors.HexColor("#475569"),
+    )
+    jobs = _rows(report.get("jobs"))
+    aggregates = report.get("aggregates", {})
+    aggregates = aggregates if isinstance(aggregates, Mapping) else {}
     story = [
         _paragraph("HR 招聘全景情报", title),
         Spacer(1, 5 * mm),
         _paragraph(f"Bundle ID：{_text(report.get('bundle_id'))}", body),
         _paragraph(f"生成时间：{_text(report.get('generated_at'))}", body),
+        _paragraph(f"可追溯岗位快照：{len(jobs)} 条", body),
         Spacer(1, 4 * mm),
-        _paragraph("来源覆盖", heading),
+        _paragraph("确定性概览", heading),
     ]
+    overview_rows = []
+    labels = {
+        "tracks": "招聘类型",
+        "job_families": "岗位族",
+        "directions": "技术方向（多标签）",
+    }
+    for key in ("tracks", "job_families", "directions"):
+        values = aggregates.get(key)
+        if isinstance(values, Mapping):
+            ranked = sorted(
+                ((str(name), value) for name, value in values.items()),
+                key=lambda item: (-int(item[1]), item[0]),
+            )
+            overview_rows.append(
+                [
+                    _paragraph(labels[key], body),
+                    _paragraph(
+                        "、".join(f"{name} {value}条" for name, value in ranked),
+                        body,
+                    ),
+                ]
+            )
+    if overview_rows:
+        overview = Table(overview_rows, colWidths=(34 * mm, 126 * mm))
+        overview.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#ECFDF5")),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CBD5E1")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        story.append(overview)
+    story.extend(
+        [
+            Spacer(1, 4 * mm),
+            _paragraph("来源覆盖", heading),
+        ]
+    )
     coverage = _rows(report.get("coverage"))
     if coverage:
-        data = [[_paragraph("公司", body), _paragraph("状态", body)]]
+        data = [
+            [
+                _paragraph("公司", body),
+                _paragraph("状态", body),
+                _paragraph("岗位快照", body),
+                _paragraph("限制", body),
+            ]
+        ]
         data.extend(
             [
                 _paragraph(item.get("company_key"), body),
                 _paragraph(item.get("state"), body),
+                _paragraph(item.get("job_count", ""), body),
+                _paragraph(item.get("limitations", ""), small),
             ]
             for item in coverage
         )
-        table = Table(data, colWidths=(90 * mm, 70 * mm), repeatRows=1)
+        table = Table(
+            data, colWidths=(42 * mm, 28 * mm, 25 * mm, 65 * mm), repeatRows=1
+        )
         table.setStyle(
             TableStyle(
                 [
@@ -213,37 +281,88 @@ def build_pdf(report: Mapping[str, object]) -> bytes:
             )
         )
         story.append(table)
-    story.extend([Spacer(1, 4 * mm), _paragraph("AI 分析", heading)])
+    story.extend(
+        [
+            Spacer(1, 4 * mm),
+            _paragraph("口径与限制", heading),
+            _paragraph(
+                "公开岗位数不等于HC、预算、录用人数或研发投入。技术方向采用多标签归类，计数会交叉重叠。"
+                "当前为单次基线；只有形成跨期可比版本后，才能判断新增、消失和趋势变化。"
+                "采集失败或无可解析岗位不代表企业没有招聘。",
+                body,
+            ),
+            PageBreak(),
+            _paragraph("AI 分析", heading),
+        ]
+    )
     analyses = _rows(report.get("analysis"))
     if not analyses:
         story.append(_paragraph("尚无已接受的 AI 分析。", body))
-    for item in analyses:
+    kind_order = {
+        "executive-summary": 0,
+        "comparison": 1,
+        "company": 2,
+        "track": 3,
+        "direction": 4,
+    }
+    for item in sorted(
+        analyses,
+        key=lambda value: (
+            kind_order.get(str(value.get("kind")), 9),
+            str(value.get("scope_key", "")),
+        ),
+    ):
         response = item.get("response", item)
         if isinstance(response, Mapping):
             story.append(
-                _paragraph(item.get("scope_key", item.get("kind", "分析")), heading)
+                _paragraph(
+                    f"{item.get('scope_key', item.get('kind', '分析'))} "
+                    f"｜置信度 {response.get('confidence', '未标注')}",
+                    heading,
+                )
             )
             story.append(_paragraph(response.get("summary", ""), body))
-            for fact in _rows(response.get("facts")):
+            inferences = _rows(response.get("inferences"))
+            if inferences:
+                story.append(_paragraph("关键判断", small))
+                for inference in inferences[:3]:
+                    story.append(_paragraph(f"— {inference.get('text', '')}", body))
+            facts = _rows(response.get("facts"))
+            if facts:
+                story.append(_paragraph("代表性证据", small))
+            for fact in facts[:3]:
                 story.append(
                     _paragraph(
-                        f"• {fact.get('text', '')}｜{fact.get('source_url', '')}｜"
-                        f"SHA-256 {fact.get('evidence_sha256', '')}",
-                        body,
+                        f"— {fact.get('text', '')}\n来源：{fact.get('source_url', '')}\n"
+                        f"SHA-256：{fact.get('evidence_sha256', '')}",
+                        small,
                     )
                 )
-    story.extend([PageBreak(), _paragraph("原始岗位与证据", heading)])
-    for item in _rows(report.get("jobs")):
-        story.append(
+            unknowns = response.get("unknowns")
+            if isinstance(unknowns, Sequence) and not isinstance(
+                unknowns, (str, bytes)
+            ):
+                story.append(_paragraph("未知与限制", small))
+                for unknown in list(unknowns)[:2]:
+                    story.append(_paragraph(f"— {unknown}", small))
+    story.extend(
+        [
+            PageBreak(),
+            _paragraph("数据与审计附件", heading),
             _paragraph(
-                f"{item.get('company_key', '')}｜{item.get('title', '')}｜"
-                f"{item.get('location', '')}｜{item.get('source_url', '')}｜"
-                f"SHA-256 {item.get('evidence_sha256', '')}",
+                f"原始岗位明细请查看 report.xlsx 的“原始岗位”工作表，共 {len(jobs)} 条。"
+                "AI分析、来源覆盖、证据索引和成本记录分别保存在同一工作簿的独立工作表；"
+                "机器可读原文另见 normalized-jobs.jsonl、analysis.json、raw-evidence-index.json 与 checksums.sha256。",
                 body,
-            )
-        )
-    story.extend([Spacer(1, 4 * mm), _paragraph("成本记录", heading)])
-    story.append(_paragraph(report.get("usage", []), body))
+            ),
+            Spacer(1, 4 * mm),
+            _paragraph("成本记录", heading),
+            _paragraph(
+                f"分析单元 {len(_rows(report.get('usage')))} 个。逐单元模型、Token、成本及不可用原因详见 report.xlsx 的“成本记录”工作表。",
+                body,
+            ),
+        ]
+    )
     document.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return output.getvalue()
 
@@ -265,7 +384,7 @@ def _write_sheet(
         cell.fill = PatternFill("solid", fgColor="0F766E")
         cell.alignment = Alignment(horizontal="center", vertical="center")
     for row in rows:
-        sheet.append([_xlsx_text(row.get(header)) for header in headers])
+        sheet.append([_xlsx_value(row.get(header)) for header in headers])
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     for row in sheet.iter_rows(min_row=2):

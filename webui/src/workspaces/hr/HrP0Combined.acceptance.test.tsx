@@ -286,8 +286,10 @@ function insight() {
 function panoramaPublication() {
   return {
     publication_id: fixture.publication,
+    bundle_id: fixture.publication,
     batch_id: fixture.productionBatch,
     insight_version_id: fixture.insight,
+    manifest_sha256: "f".repeat(64),
     coverage_state: "partial",
     source_coverage: fixture.sources.map((sourceId, index) => index === 2 ? {
       source_id: sourceId,
@@ -304,6 +306,7 @@ function panoramaPublication() {
       source_urls: [`https://example.com/company-${index + 1}`],
       job_count: 1,
     }),
+    generated_at: now,
     published_at: now,
   };
 }
@@ -343,6 +346,7 @@ function panoramaReport() {
       normalized_job_count: 1,
       observed_at: now,
     })),
+    analysis_usage: [],
   };
 }
 

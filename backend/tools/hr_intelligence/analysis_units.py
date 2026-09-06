@@ -267,6 +267,7 @@ def prepare_units(
         "comparison",
         "executive-summary",
     ),
+    company_keys: tuple[str, ...] | None = None,
 ) -> tuple[AnalysisUnit, ...]:
     if (
         not isinstance(kinds, tuple)
@@ -275,7 +276,18 @@ def prepare_units(
         or any(kind not in _KINDS for kind in kinds)
     ):
         raise AnalysisContractError("analysis kinds invalid")
-    companies = tuple(sorted({job.company_key for job in jobs}))
+    if company_keys is not None and (
+        not isinstance(company_keys, tuple)
+        or any(not isinstance(key, str) or not key.strip() for key in company_keys)
+    ):
+        raise AnalysisContractError("analysis company keys invalid")
+    companies = tuple(
+        sorted(
+            set(company_keys)
+            if company_keys is not None
+            else {job.company_key for job in jobs}
+        )
+    )
     units: list[AnalysisUnit] = []
     for kind in (
         "company",

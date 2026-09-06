@@ -425,20 +425,29 @@ def _validate_work(bundle_id: UUID, company_count: int, provenance: bool) -> int
         raise ValueError("source coverage state invalid")
     jobs = _read_jobs(work / "normalized-jobs.jsonl")
     if provenance:
-        for job in jobs:
-            evidence = (
-                work
-                / "evidence"
-                / "sha256"
-                / job.evidence_sha256[:2]
-                / job.evidence_sha256
-            )
+
+        def require_evidence(sha256: object, error: str) -> None:
+            selected = str(sha256) if isinstance(sha256, str) else ""
+            evidence = work / "evidence" / "sha256" / selected[:2] / selected
             if (
-                not evidence.is_file()
-                or hashlib.sha256(evidence.read_bytes()).hexdigest()
-                != job.evidence_sha256
+                len(selected) != 64
+                or not evidence.is_file()
+                or hashlib.sha256(evidence.read_bytes()).hexdigest() != selected
             ):
-                raise ValueError("normalized job evidence invalid")
+                raise ValueError(error)
+
+        for raw_company in coverage:
+            company = _require_mapping(raw_company, "source coverage")
+            raw_channels = company.get("channels", [])
+            if not isinstance(raw_channels, list):
+                raise TypeError("source coverage channels invalid")
+            for raw_channel in raw_channels:
+                channel = _require_mapping(raw_channel, "source coverage channel")
+                sha256 = channel.get("evidence_sha256")
+                if sha256 is not None:
+                    require_evidence(sha256, "source coverage evidence invalid")
+        for job in jobs:
+            require_evidence(job.evidence_sha256, "normalized job evidence invalid")
     print(
         _canonical_json(
             {
@@ -501,8 +510,18 @@ def _prepare_analysis(args: argparse.Namespace) -> int:
     work = _work(bundle_id)
     jobs = _read_jobs(work / "normalized-jobs.jsonl")
     aggregates = _require_mapping(_read_json(work / "aggregates.json"), "aggregates")
+    catalog = _read_json(work / "source-catalog.json")
+    company_keys = tuple(
+        str(company["company_key"]) for company in _catalog_companies(catalog)
+    )
     kinds = tuple(value.strip() for value in args.units.split(",") if value.strip())
-    units = prepare_units(bundle_id, jobs, aggregates, kinds=kinds)
+    units = prepare_units(
+        bundle_id,
+        jobs,
+        aggregates,
+        kinds=kinds,
+        company_keys=company_keys,
+    )
     request_root = work / "analysis" / "requests"
     for unit in units:
         _write_json(request_root / f"{unit.unit_id}.json", _unit_document(unit))

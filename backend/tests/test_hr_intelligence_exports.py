@@ -1,6 +1,7 @@
 from io import BytesIO
 
 from openpyxl import load_workbook
+from pypdf import PdfReader
 
 from tools.hr_intelligence.exports import build_markdown, build_pdf, build_xlsx
 
@@ -18,7 +19,7 @@ def _report_input():
                 "evidence_sha256": "a" * 64,
             }
         ],
-        "coverage": [{"company_key": "hesai", "state": "succeeded"}],
+        "coverage": [{"company_key": "hesai", "state": "succeeded", "job_count": 1}],
         "analysis": [],
         "usage": [],
         "aggregates": {"tracks": {"social": 1}},
@@ -46,3 +47,18 @@ def test_exports_preserve_raw_jobs_analysis_sources_and_cost_layers() -> None:
         "证据索引",
         "成本记录",
     ]
+    assert workbook["来源覆盖"]["D2"].value == 1
+
+
+def test_pdf_keeps_raw_job_detail_in_workbook_instead_of_unbounded_appendix() -> None:
+    report_input = _report_input()
+    report_input["jobs"] = [
+        report_input["jobs"][0] | {"title": f"算法工程师-{index}"}
+        for index in range(250)
+    ]
+
+    reader = PdfReader(BytesIO(build_pdf(report_input)))
+    text = "".join(page.extract_text() or "" for page in reader.pages)
+
+    assert len(reader.pages) <= 4
+    assert "原始岗位明细请查看 report.xlsx" in text

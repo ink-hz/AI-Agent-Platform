@@ -177,3 +177,18 @@ def test_requested_analysis_layers_are_prepared_in_stable_order() -> None:
         ("comparison", "all-companies"),
         ("executive-summary", "all-companies"),
     ]
+
+
+def test_company_units_include_catalog_company_without_normalized_jobs() -> None:
+    units = prepare_units(
+        uuid4(),
+        (_job(),),
+        {"tracks": {"social": 1}},
+        kinds=("company",),
+        company_keys=("hesai", "scantech"),
+    )
+
+    assert [(unit.scope_key, len(unit.evidence)) for unit in units] == [
+        ("hesai", 1),
+        ("scantech", 0),
+    ]
