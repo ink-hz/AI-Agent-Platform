@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/schemas/hr-intelligence-analysis-v1.json",
+  "title": "HR Intelligence Analysis Unit Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "facts",
+    "inferences",
+    "unknowns",
+    "alternatives",
+    "summary",
+    "confidence"
+  ],
+  "properties": {
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fact_id",
+          "text",
+          "evidence_sha256",
+          "source_url",
+          "observed_at"
+        ],
+        "properties": {
+          "fact_id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "evidence_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "source_url": {"type": "string", "pattern": "^https://"},
+          "observed_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    },
+    "inferences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "basis_fact_ids"],
+        "properties": {
+          "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "basis_fact_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "maxLength": 128}
+          }
+        }
+      }
+    },
+    "unknowns": {"type": "array", "items": {"type": "string"}},
+    "alternatives": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 32768},
+    "confidence": {"enum": ["low", "medium", "high"]}
+  }
+}
