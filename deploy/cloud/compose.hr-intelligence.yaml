@@ -4,6 +4,8 @@ services:
     profiles: ["hr-intelligence"]
     user: "10001:10001"
     read_only: true
+    healthcheck:
+      disable: true
     cap_drop:
       - ALL
     security_opt:

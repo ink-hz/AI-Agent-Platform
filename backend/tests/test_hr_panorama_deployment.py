@@ -30,6 +30,7 @@ def test_operator_compose_is_isolated_from_hr_bot_and_writes_only_data_disk() ->
         "--current",
     ]
     assert service["read_only"] is True
+    assert service["healthcheck"] == {"disable": True}
     assert service["user"] == "10001:10001"
     assert service["cap_drop"] == ["ALL"]
     assert service["security_opt"] == ["no-new-privileges:true"]
