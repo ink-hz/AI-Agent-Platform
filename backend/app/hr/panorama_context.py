@@ -1,58 +1,26 @@
-# ruff: noqa: TRY004
 from __future__ import annotations
 
-import hashlib
 import json
 import re
-import unicodedata
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Protocol
-from uuid import UUID, uuid5
+from datetime import datetime
+from typing import Literal, Protocol
+from uuid import NAMESPACE_URL, UUID, uuid5
 
-from .panorama_models import (
-    PositionInsightRetrieval,
-    PublishedPanorama,
-    TalentInsightVersion,
-    TalentSource,
-    canonical_panorama_url,
-    thaw_json,
-)
-from .panorama_repository import (
-    PanoramaConflict,
-    PanoramaRepositoryError,
-)
+from .panorama_repository import PanoramaConflict, PanoramaUnavailable
 
 MAX_PANORAMA_CONTEXT_BYTES = 32 * 1024
-MAX_PANORAMA_INSIGHTS = 5
-DEFAULT_STALE_AFTER = timedelta(days=30)
-_EXPLICIT_TRIGGERS = (
-    "竞品",
-    "招聘情报",
-    "全景分析",
-    "外部岗位",
-    "参考关注公司",
-)
-_PANORAMA_DEFAULT_TASKS = frozenset(
-    {"jd", "jr", "talent_profile", "sourcing_strategy", "position_interview_plan"}
-)
-_TASK_INTENT_TERMS = {
-    "jd": ("职责", "负责", "工作内容", "交付", "使命"),
-    "jr": ("要求", "经验", "学历", "能力", "熟悉", "资格"),
-    "talent_profile": ("能力", "经验", "学历", "人才", "特征", "技术"),
-    "sourcing_strategy": ("招聘", "地点", "渠道", "关键词", "人才来源"),
-    "position_interview_plan": ("要求", "经验", "能力", "风险", "验证"),
-}
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
-
-_USAGE_BOUNDARY = {
-    "facts": "may_be_cited_with_https_source",
-    "inferences": "must_be_explicitly_labelled_as_ai_inference",
-    "unknowns": "must_remain_unknown_not_negative_fact",
-    "position_changes": "draft_only_until_user_confirmation",
-    "automatic_position_write": "forbidden",
-}
+_DEFAULT_TASKS = frozenset({"jd", "jr", "talent_profile", "sourcing_strategy", "position_interview_plan"})
+_EXPLICIT_TRIGGERS = ("竞品", "招聘情报", "全景分析", "外部岗位", "关注公司")
+_SIGNALS = (
+    "光学", "硬件", "结构", "软件", "算法", "制造", "工艺", "质量", "测试",
+    "产品", "供应链", "机械", "电子", "嵌入式", "标定", "点云", "深圳", "中山",
+    "上海", "东莞", "杭州", "西安", "武汉", "北京", "苏州", "成都", "合肥",
+    "社招", "校招", "实习",
+)
 
 
 class PanoramaContextError(RuntimeError):
@@ -60,843 +28,311 @@ class PanoramaContextError(RuntimeError):
 
 
 class PanoramaContextSource(Protocol):
-    def list_sources_page(
-        self,
-        owner_id: UUID,
-        *,
-        include_inactive: bool = False,
-        before_created_at: datetime | None = None,
-        before_source_id: UUID | None = None,
-        limit: int = 100,
-    ) -> tuple[TalentSource, ...]: ...
-
-    def current_publication(self) -> PublishedPanorama | None: ...
-
-    def insight(
-        self, owner_id: UUID, insight_version_id: UUID
-    ) -> TalentInsightVersion: ...
-
-    def retrieval_for_turn(
-        self, owner_id: UUID, position_id: UUID, turn_id: UUID
-    ) -> PositionInsightRetrieval | None: ...
-
-    def record_retrieval_for_turn(
-        self,
-        *,
-        retrieval_id: UUID,
-        owner_id: UUID,
-        client_request_id: UUID,
-        position_id: UUID,
-        turn_id: UUID,
-        insight_version_ids: tuple[UUID, ...],
-        query_sha256: str,
-        retrieved_excerpts: tuple[Mapping[str, object], ...],
-    ) -> PositionInsightRetrieval: ...
+    def current_bundle(self) -> Mapping[str, object] | None: ...
+    def bundle_jobs(self, bundle_id: UUID) -> tuple[Mapping[str, object], ...]: ...
+    def bundle_reference_for_turn(self, owner_id: UUID, position_id: UUID, turn_id: UUID) -> Mapping[str, object] | None: ...
+    def record_bundle_reference(self, **values) -> Mapping[str, object]: ...
 
 
-def _encoded_size(value: object) -> int:
-    return len(
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-    )
+def _time(value: object) -> datetime:
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value
+    if isinstance(value, str):
+        try:
+            selected = datetime.fromisoformat(value)
+        except ValueError:
+            pass
+        else:
+            if selected.tzinfo is not None:
+                return selected
+    raise PanoramaContextError("intelligence timestamp invalid")
 
 
-def _postgres_jsonb_text_size(value: object) -> int:
-    return len(
-        json.dumps(
-            thaw_json(value),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(", ", ": "),
-            allow_nan=False,
-        ).encode("utf-8")
-    )
+def _uuid(value: object) -> UUID:
+    try:
+        return value if isinstance(value, UUID) else UUID(str(value))
+    except (TypeError, ValueError):
+        raise PanoramaContextError("intelligence bundle identity invalid") from None
 
 
-def _bounded_text(value: object, maximum_bytes: int) -> tuple[str, bool]:
-    if not isinstance(value, str) or not value.strip() or "\0" in value:
-        raise PanoramaContextError("panorama excerpt invalid")
-    normalized = value.strip()
-    encoded = normalized.encode("utf-8")
-    if len(encoded) <= maximum_bytes:
-        return normalized, False
-    suffix = "…"
-    budget = maximum_bytes - len(suffix.encode("utf-8"))
-    clipped = encoded[:budget]
+def _text(value: object, maximum: int = 4096) -> str:
+    selected = value.strip() if isinstance(value, str) else ""
+    if not selected or "\0" in selected:
+        raise PanoramaContextError("intelligence excerpt invalid")
+    encoded = selected.encode("utf-8")
+    if len(encoded) <= maximum:
+        return selected
+    clipped = encoded[: maximum - 3]
     while True:
         try:
-            return clipped.decode("utf-8") + suffix, True
+            return clipped.decode("utf-8") + "…"
         except UnicodeDecodeError:
             clipped = clipped[:-1]
 
 
-def _query_hash(query: str) -> str:
-    if not isinstance(query, str):
-        raise ValueError("panorama query invalid")
-    encoded = query.encode("utf-8")
-    if not query.strip() or "\0" in query or len(encoded) > 32768:
-        raise ValueError("panorama query invalid")
-    return hashlib.sha256(encoded).hexdigest()
+def _mappings(value: object, label: str) -> tuple[Mapping[str, object], ...]:
+    if not isinstance(value, (list, tuple)) or any(not isinstance(item, Mapping) for item in value):
+        raise PanoramaContextError(f"intelligence {label} invalid")
+    return tuple(value)
 
 
-def _normalized(value: str) -> str:
-    return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", value).casefold())
+@dataclass(frozen=True, slots=True)
+class GroundedExcerpt:
+    category: Literal["source_fact", "deterministic_aggregate", "ai_interpretation"]
+    text: str
+    source_url: str
+    evidence_sha256: str
+    observed_at: datetime
+    bundle_id: UUID
 
+    def __post_init__(self) -> None:
+        if self.category not in {"source_fact", "deterministic_aggregate", "ai_interpretation"}:
+            raise ValueError("intelligence excerpt category invalid")
+        object.__setattr__(self, "text", _text(self.text))
+        if not isinstance(self.source_url, str) or not self.source_url.startswith("https://"):
+            raise ValueError("intelligence excerpt source invalid")
+        if not isinstance(self.evidence_sha256, str) or _SHA256.fullmatch(self.evidence_sha256) is None:
+            raise ValueError("intelligence excerpt evidence invalid")
+        if not isinstance(self.observed_at, datetime) or self.observed_at.tzinfo is None or not isinstance(self.bundle_id, UUID):
+            raise ValueError("intelligence excerpt provenance invalid")
 
-def _mentions_name(query: str, name: str) -> bool:
-    folded_query = unicodedata.normalize("NFKC", query).casefold()
-    folded_name = unicodedata.normalize("NFKC", name).strip().casefold()
-    if not folded_name:
-        return False
-    if folded_name.isascii() and all(
-        character.isalnum() or character in " ._-" for character in folded_name
-    ):
-        words = [re.escape(word) for word in re.split(r"[\s._-]+", folded_name) if word]
-        if not words:
-            return False
-        pattern = r"(?<![a-z0-9])" + r"[\s._-]+".join(words) + r"(?![a-z0-9])"
-        return re.search(pattern, folded_query) is not None
-    name_key = _normalized(folded_name)
-    return len(name_key) >= 2 and name_key in _normalized(folded_query)
-
-
-def _has_explicit_trigger(query: str) -> bool:
-    query_key = _normalized(query)
-    return any(_normalized(trigger) in query_key for trigger in _EXPLICIT_TRIGGERS)
-
-
-def _mentions_source(query: str, sources: tuple[TalentSource, ...]) -> bool:
-    return any(
-        _mentions_name(query, name)
-        for source in sources
-        if source.active
-        for name in (source.canonical_name, *source.aliases)
-    )
-
-
-def _position_terms(position_context: Mapping[str, object] | None) -> tuple[str, ...]:
-    if position_context is None:
-        return ()
-    if not isinstance(position_context, Mapping) or _encoded_size(position_context) > 8192:
-        raise ValueError("panorama position context invalid")
-    allowed = {
-        "title",
-        "department",
-        "location",
-        "locations",
-        "category",
-        "subcategory",
-        "duty",
-        "requirement",
-        "jd",
-        "jr",
-    }
-    values: list[str] = []
-    for key, raw in position_context.items():
-        if key not in allowed:
-            raise ValueError("panorama position context invalid")
-        candidates = raw if isinstance(raw, (list, tuple)) else (raw,)
-        for candidate in candidates:
-            if isinstance(candidate, str) and candidate.strip():
-                values.append(candidate.strip())
-    terms: list[str] = []
-    known = (
-        "光学", "硬件", "结构", "软件", "算法", "制造", "工艺", "质量", "测试",
-        "产品", "供应链", "机械", "电子", "嵌入式", "标定", "点云", "深圳", "中山",
-        "上海", "东莞", "杭州", "西安", "武汉", "北京", "苏州", "成都",
-    )
-    for value in values:
-        normalized = _normalized(value)
-        if 2 <= len(normalized) <= 64 and normalized not in terms:
-            terms.append(normalized)
-        for keyword in known:
-            selected = _normalized(keyword)
-            if selected in normalized and selected not in terms:
-                terms.append(selected)
-        for token in re.findall(r"(?<![a-z0-9])[a-z][a-z0-9+#.]{1,20}(?![a-z0-9])", value.casefold()):
-            selected = _normalized(token)
-            if selected and selected not in terms:
-                terms.append(selected)
-    return tuple(terms[:64])
-
-
-def _fact_relevance(fact: Mapping[str, object], terms: tuple[str, ...]) -> int:
-    text = _normalized(str(fact.get("text", "")))
-    return sum(1 + min(len(term), 12) for term in terms if term in text)
-
-
-def _task_relevance(fact: Mapping[str, object], task_kind: str | None) -> int:
-    text = _normalized(str(fact.get("text", "")))
-    return sum(
-        1
-        for term in _TASK_INTENT_TERMS.get(task_kind or "", ())
-        if _normalized(term) in text
-    )
-
-
-def _fact_matches_sources(
-    fact: Mapping[str, object], sources: tuple[TalentSource, ...]
-) -> bool:
-    if not sources:
-        return True
-    source_url = canonical_panorama_url(fact.get("source_url"))
-    company = fact.get("company")
-    for source in sources:
-        if isinstance(company, str) and any(
-            _mentions_name(company, name)
-            for name in (source.canonical_name, *source.aliases)
-        ):
-            return True
-        for approved_url in source.approved_urls:
-            approved = canonical_panorama_url(approved_url).rstrip("/")
-            if source_url == approved or source_url.startswith(f"{approved}/"):
-                return True
-    return False
-
-
-def _observed_at(value: object) -> datetime:
-    if not isinstance(value, str):
-        raise PanoramaContextError("panorama fact timestamp invalid")
-    try:
-        observed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        raise PanoramaContextError("panorama fact timestamp invalid") from None
-    if observed.tzinfo is None:
-        raise PanoramaContextError("panorama fact timestamp invalid")
-    return observed
-
-
-def _latest_per_scope(
-    insights: tuple[TalentInsightVersion, ...], owner_id: UUID
-) -> tuple[TalentInsightVersion, ...]:
-    if len(insights) > MAX_PANORAMA_INSIGHTS:
-        raise PanoramaContextError("panorama insight selection invalid")
-    groups: dict[tuple[str, ...], tuple[int, TalentInsightVersion]] = {}
-    for index, insight in enumerate(insights):
-        if (
-            not isinstance(insight, TalentInsightVersion)
-            or insight.owner_id != owner_id
-        ):
-            raise PanoramaContextError("panorama insight scope invalid")
-        key = tuple(sorted(str(value) for value in insight.selected_source_ids))
-        previous = groups.get(key)
-        if previous is None or insight.created_at > previous[1].created_at:
-            groups[key] = (index if previous is None else previous[0], insight)
-    return tuple(item[1] for item in sorted(groups.values(), key=lambda item: item[0]))
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "category": self.category,
+            "text": self.text,
+            "source_url": self.source_url,
+            "evidence_sha256": self.evidence_sha256,
+            "observed_at": self.observed_at.isoformat(),
+            "bundle_id": str(self.bundle_id),
+        }
 
 
 @dataclass(frozen=True, slots=True)
 class PanoramaContextFragment:
-    insight_version_ids: tuple[UUID, ...]
-    publication_id: UUID
-    query_sha256: str
-    as_of: datetime
-    facts: tuple[Mapping[str, object], ...]
-    inferences: tuple[Mapping[str, object], ...]
-    unknowns: tuple[Mapping[str, object], ...]
-    source_urls: tuple[str, ...]
-    stale_age_days: int | None
+    bundle_id: UUID | None
+    insight_version_id: UUID | None
+    observed_at: datetime | None
+    status: Literal["available", "partial", "unavailable"]
+    source_facts: tuple[GroundedExcerpt, ...]
+    aggregates: tuple[GroundedExcerpt, ...]
+    interpretations: tuple[GroundedExcerpt, ...]
+    unknowns: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        if (
-            not isinstance(self.insight_version_ids, tuple)
-            or not 1 <= len(self.insight_version_ids) <= MAX_PANORAMA_INSIGHTS
-            or any(not isinstance(value, UUID) for value in self.insight_version_ids)
-            or len(set(self.insight_version_ids)) != len(self.insight_version_ids)
-        ):
-            raise ValueError("panorama context insight IDs invalid")
-        if not isinstance(self.publication_id, UUID):
-            raise ValueError("panorama context publication ID invalid")
-        if (
-            not isinstance(self.query_sha256, str)
-            or _SHA256.fullmatch(self.query_sha256) is None
-        ):
-            raise ValueError("panorama context query hash invalid")
-        if not isinstance(self.as_of, datetime) or self.as_of.tzinfo is None:
-            raise ValueError("panorama context as-of invalid")
-        for values in (self.facts, self.inferences, self.unknowns):
-            if not isinstance(values, tuple) or any(
-                not isinstance(value, Mapping) for value in values
-            ):
-                raise ValueError("panorama context excerpts invalid")
-        normalized_urls = tuple(
-            canonical_panorama_url(value) for value in self.source_urls
-        )
-        if len(set(normalized_urls)) != len(normalized_urls):
-            raise ValueError("panorama context citations invalid")
-        object.__setattr__(self, "source_urls", normalized_urls)
-        if self.stale_age_days is not None and (
-            isinstance(self.stale_age_days, bool)
-            or not isinstance(self.stale_age_days, int)
-            or self.stale_age_days < 0
-        ):
-            raise ValueError("panorama context age invalid")
-        insight_ids = {str(value) for value in self.insight_version_ids}
-        fact_keys = {
-            (str(item.get("insight_version_id")), str(item.get("fact_id")))
-            for item in self.facts
-        }
-        fact_sources: dict[tuple[str, str], tuple[str, str]] = {}
-        retained_urls: list[str] = []
-        for item in self.facts:
-            if set(item) != {
-                "insight_version_id",
-                "fact_id",
-                "text",
-                "source_url",
-                "observed_at",
-                "truncated",
-            }:
-                raise ValueError("panorama context fact schema invalid")
-            insight_id = str(item.get("insight_version_id"))
-            fact_id = item.get("fact_id")
-            text = item.get("text")
-            truncated = item.get("truncated")
-            source_url = item.get("source_url")
-            observed_at = item.get("observed_at")
-            if (
-                insight_id not in insight_ids
-                or not isinstance(fact_id, str)
-                or not fact_id
-                or not isinstance(text, str)
-                or not text
-                or type(truncated) is not bool
-                or not isinstance(source_url, str)
-                or canonical_panorama_url(source_url) != source_url
-            ):
-                raise ValueError("panorama context fact scope invalid")
-            _observed_at(observed_at)
-            fact_sources[(insight_id, fact_id)] = (source_url, str(observed_at))
-            if source_url not in retained_urls:
-                retained_urls.append(source_url)
-        if tuple(retained_urls) != self.source_urls:
-            raise ValueError("panorama context fact citations invalid")
-        for item in self.inferences:
-            if set(item) != {
-                "insight_version_id",
-                "text",
-                "basis_fact_ids",
-                "basis_sources",
-                "truncated",
-            }:
-                raise ValueError("panorama context inference schema invalid")
-            insight_id = str(item.get("insight_version_id"))
-            basis = item.get("basis_fact_ids")
-            basis_sources = item.get("basis_sources")
-            if (
-                insight_id not in insight_ids
-                or not isinstance(item.get("text"), str)
-                or not item.get("text")
-                or type(item.get("truncated")) is not bool
-                or not isinstance(basis, (tuple, list))
-                or not basis
-                or any((insight_id, str(fact_id)) not in fact_keys for fact_id in basis)
-                or not isinstance(basis_sources, (tuple, list))
-            ):
-                raise ValueError("panorama context inference boundary invalid")
-            expected_sources = [
-                {
-                    "source_url": fact_sources[(insight_id, str(fact_id))][0],
-                    "observed_at": fact_sources[(insight_id, str(fact_id))][1],
-                }
-                for fact_id in basis
-            ]
-            if list(basis_sources) != expected_sources:
-                raise ValueError("panorama context inference provenance invalid")
-        for item in self.unknowns:
-            if (
-                set(item)
-                != {
-                    "insight_version_id",
-                    "text",
-                    "source_urls",
-                    "evidence_status",
-                    "as_of",
-                    "truncated",
-                }
-                or str(item.get("insight_version_id")) not in insight_ids
-                or not isinstance(item.get("text"), str)
-                or not item.get("text")
-                or item.get("source_urls") not in ((), [])
-                or item.get("evidence_status") != "unverified"
-                or type(item.get("truncated")) is not bool
-            ):
-                raise ValueError("panorama context unknown scope invalid")
-            _observed_at(item.get("as_of"))
-        if _encoded_size(self.as_prompt_document()) > MAX_PANORAMA_CONTEXT_BYTES:
-            raise ValueError("panorama context exceeds limit")
+        if self.status not in {"available", "partial", "unavailable"}:
+            raise ValueError("intelligence context status invalid")
+        if (self.bundle_id is None) != (self.insight_version_id is None) or self.bundle_id != self.insight_version_id:
+            raise ValueError("intelligence context identity invalid")
+        if self.bundle_id is None:
+            if self.status != "unavailable" or self.observed_at is not None or any((self.source_facts, self.aggregates, self.interpretations)):
+                raise ValueError("unavailable intelligence context invalid")
+        elif self.observed_at is None or self.observed_at.tzinfo is None:
+            raise ValueError("intelligence context timestamp invalid")
+        for collection, category in ((self.source_facts, "source_fact"), (self.aggregates, "deterministic_aggregate"), (self.interpretations, "ai_interpretation")):
+            if not isinstance(collection, tuple) or any(item.category != category or item.bundle_id != self.bundle_id for item in collection):
+                raise ValueError("intelligence context excerpts invalid")
+        if not isinstance(self.unknowns, tuple) or any(not isinstance(item, str) or not item.strip() for item in self.unknowns):
+            raise ValueError("intelligence context unknowns invalid")
+        if len(json.dumps(self.as_prompt_document(), ensure_ascii=False, separators=(",", ":")).encode()) > MAX_PANORAMA_CONTEXT_BYTES:
+            raise ValueError("intelligence context too large")
 
     def as_prompt_document(self) -> dict[str, object]:
-        freshness: dict[str, object] = {
-            "as_of": self.as_of.isoformat(),
-            "status": "current",
-        }
-        if self.stale_age_days is not None:
-            freshness.update(
-                {
-                    "status": "stale_last_valid",
-                    "age_days": self.stale_age_days,
-                    "warning": (
-                        "This fragment contains stale Panorama evidence; the oldest "
-                        f"included evidence is {self.stale_age_days} days old. Cite "
-                        "its age and do not "
-                        "infer that missing current data means hiring stopped."
-                    ),
-                }
-            )
         return {
-            "publication_id": str(self.publication_id),
-            "insight_version_ids": [str(value) for value in self.insight_version_ids],
-            "query_sha256": self.query_sha256,
-            "freshness": freshness,
-            "facts": [thaw_json(value) for value in self.facts],
-            "inferences": [thaw_json(value) for value in self.inferences],
-            "unknowns": [thaw_json(value) for value in self.unknowns],
-            "source_urls": list(self.source_urls),
-            "usage_boundary": dict(_USAGE_BOUNDARY),
+            "schema_version": 2,
+            "intelligence_status": self.status,
+            "bundle_id": str(self.bundle_id) if self.bundle_id else None,
+            "insight_version_id": str(self.insight_version_id) if self.insight_version_id else None,
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
+            "source_facts": [item.as_dict() for item in self.source_facts],
+            "deterministic_aggregates": [item.as_dict() for item in self.aggregates],
+            "ai_interpretations": [item.as_dict() for item in self.interpretations],
+            "unknowns": list(self.unknowns),
+            "usage_boundary": {
+                "source_facts": "可作为公开事实引用，但必须保留来源与观测时间",
+                "deterministic_aggregates": "仅表示当前 Bundle 的代码统计",
+                "ai_interpretations": "必须明确标注为 AI 解读",
+                "unknowns": "不得改写为否定事实",
+                "position_write": "仅可形成草稿，需用户确认后写入岗位库",
+            },
         }
 
     @classmethod
     def from_prompt_document(cls, value: object) -> PanoramaContextFragment:
-        if not isinstance(value, Mapping) or set(value) != {
-            "publication_id",
-            "insight_version_ids",
-            "query_sha256",
-            "freshness",
-            "facts",
-            "inferences",
-            "unknowns",
-            "source_urls",
-            "usage_boundary",
-        }:
-            raise PanoramaContextError("recorded panorama context invalid")
-        if thaw_json(value.get("usage_boundary")) != _USAGE_BOUNDARY:
-            raise PanoramaContextError("recorded panorama context invalid")
-        freshness = value.get("freshness")
-        if not isinstance(freshness, Mapping):
-            raise PanoramaContextError("recorded panorama context invalid")
+        if not isinstance(value, Mapping):
+            raise PanoramaContextError("intelligence context document invalid")
         try:
-            status = freshness["status"]
-            stale_age_days = (
-                int(freshness["age_days"]) if status == "stale_last_valid" else None
-            )
-            if status not in {"current", "stale_last_valid"}:
-                raise ValueError
-            if status == "stale_last_valid" and not isinstance(
-                freshness.get("warning"), str
-            ):
-                raise ValueError
-            document_ids = tuple(
-                UUID(str(item)) for item in value["insight_version_ids"]
-            )
-            fragment = cls(
-                insight_version_ids=document_ids,
-                publication_id=UUID(str(value["publication_id"])),
-                query_sha256=str(value["query_sha256"]),
-                as_of=_observed_at(freshness["as_of"]),
-                facts=tuple(dict(item) for item in value["facts"]),
-                inferences=tuple(dict(item) for item in value["inferences"]),
-                unknowns=tuple(dict(item) for item in value["unknowns"]),
-                source_urls=tuple(value["source_urls"]),
-                stale_age_days=stale_age_days,
+            bundle_id = None if value.get("bundle_id") is None else _uuid(value.get("bundle_id"))
+            insight_id = None if value.get("insight_version_id") is None else _uuid(value.get("insight_version_id"))
+            observed_at = None if value.get("observed_at") is None else _time(value.get("observed_at"))
+            def excerpts(key: str, category: str) -> tuple[GroundedExcerpt, ...]:
+                return tuple(GroundedExcerpt(
+                    category, str(item["text"]), str(item["source_url"]),
+                    str(item["evidence_sha256"]), _time(item["observed_at"]),
+                    _uuid(item["bundle_id"]),
+                ) for item in _mappings(value.get(key), key))
+            return cls(
+                bundle_id, insight_id, observed_at, str(value.get("intelligence_status")),
+                excerpts("source_facts", "source_fact"),
+                excerpts("deterministic_aggregates", "deterministic_aggregate"),
+                excerpts("ai_interpretations", "ai_interpretation"),
+                tuple(_text(item, 4096) for item in value.get("unknowns", [])),
             )
         except (KeyError, TypeError, ValueError):
-            raise PanoramaContextError("recorded panorama context invalid") from None
-        if fragment.as_prompt_document() != thaw_json(value):
-            raise PanoramaContextError("recorded panorama context invalid")
-        return fragment
+            raise PanoramaContextError("intelligence context document invalid") from None
+
+
+def _terms(query: str, position_context: Mapping[str, object] | None) -> tuple[str, ...]:
+    values = [query]
+    if position_context is not None:
+        if not isinstance(position_context, Mapping):
+            raise ValueError("panorama position context invalid")
+        for value in position_context.values():
+            values.extend(value if isinstance(value, (list, tuple)) else (value,))
+    joined = " ".join(value for value in values if isinstance(value, str))
+    selected = [signal for signal in _SIGNALS if signal.casefold() in joined.casefold()]
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9+#.]{1,20}", joined):
+        if token.casefold() not in {value.casefold() for value in selected}:
+            selected.append(token)
+    return tuple(selected[:64])
+
+
+def _job_text(job: Mapping[str, object], company: str) -> str:
+    return " ".join(str(job.get(key, "")) for key in ("title", "location", "duty_excerpt", "requirement_excerpt")) + f" {company}"
+
+
+def _track(job: Mapping[str, object]) -> str:
+    text = _job_text(job, "").casefold() + " " + str(job.get("source_url", "")).casefold()
+    if "实习" in text or "intern" in text:
+        return "实习"
+    if "校招" in text or "campus" in text or "应届" in text:
+        return "校招"
+    return "社招"
+
+
+def _excerpt(category: str, text: str, job: Mapping[str, object], bundle_id: UUID) -> GroundedExcerpt:
+    return GroundedExcerpt(
+        category, _text(text), _text(job.get("source_url"), 2048),
+        _text(job.get("evidence_sha256"), 64), _time(job.get("observed_at")), bundle_id,
+    )
 
 
 class PanoramaContextProvider:
-    def __init__(
-        self,
-        source: PanoramaContextSource,
-        *,
-        now=None,
-        stale_after: timedelta = DEFAULT_STALE_AFTER,
-    ) -> None:
-        for method in (
-            "list_sources_page",
-            "current_publication",
-            "insight",
-            "retrieval_for_turn",
-            "record_retrieval_for_turn",
-        ):
-            if not callable(getattr(source, method, None)):
-                raise ValueError("panorama context source invalid")
-        if now is not None and not callable(now):
-            raise ValueError("panorama context clock invalid")
-        if not isinstance(stale_after, timedelta) or stale_after <= timedelta(0):
-            raise ValueError("panorama stale duration invalid")
+    def __init__(self, source: PanoramaContextSource, **_compatibility) -> None:
+        if any(not callable(getattr(source, method, None)) for method in (
+            "current_bundle", "bundle_jobs", "bundle_reference_for_turn", "record_bundle_reference",
+        )):
+            raise TypeError("panorama context source invalid")
         self._source = source
-        self._now = now or (lambda: datetime.now().astimezone())
-        self._stale_after = stale_after
 
     def for_turn(
-        self, owner_id: UUID, position_id: UUID, query: str, turn_id: UUID,
-        *, task_kind: str | None = None,
-        position_context: Mapping[str, object] | None = None,
-    ) -> PanoramaContextFragment | None:
-        if any(
-            not isinstance(value, UUID) for value in (owner_id, position_id, turn_id)
-        ):
-            raise ValueError("panorama context identifiers invalid")
-        query_sha256 = _query_hash(query)
-        try:
-            existing = self._source.retrieval_for_turn(owner_id, position_id, turn_id)
-            if existing is not None:
-                return self._replay(
-                    existing, query_sha256, owner_id, position_id, turn_id
-                )
-            publication = self._source.current_publication()
-            if publication is None:
-                return None
-            source_scope = self._query_source_scope(
-                publication.owner_id, query, task_kind
-            )
-            if source_scope is None:
-                return None
-            insight = self._source.insight(
-                publication.owner_id, publication.insight_version_id
-            )
-            if (
-                insight.owner_id != publication.owner_id
-                or insight.insight_version_id != publication.insight_version_id
-                or insight.production_batch_id != publication.batch_id
-            ):
-                raise PanoramaContextError("panorama publication scope invalid")
-            fragment = self._compose(
-                (insight,), query_sha256, source_scope, publication.publication_id,
-                position_context=position_context,
-                task_kind=task_kind,
-            )
-            try:
-                recorded = self._source.record_retrieval_for_turn(
-                    retrieval_id=uuid5(turn_id, "hr-panorama-context-v1"),
-                    owner_id=owner_id,
-                    client_request_id=turn_id,
-                    position_id=position_id,
-                    turn_id=turn_id,
-                    insight_version_ids=fragment.insight_version_ids,
-                    query_sha256=query_sha256,
-                    retrieved_excerpts=(fragment.as_prompt_document(),),
-                )
-            except PanoramaConflict:
-                recorded = self._source.retrieval_for_turn(
-                    owner_id, position_id, turn_id
-                )
-                if recorded is None:
-                    raise
-            return self._replay(recorded, query_sha256, owner_id, position_id, turn_id)
-        except PanoramaConflict:
-            raise
-        except (PanoramaRepositoryError, ValueError, TypeError, UnicodeError):
-            raise PanoramaContextError("panorama context unavailable") from None
-
-    def _query_source_scope(
-        self, owner_id: UUID, query: str, task_kind: str | None = None
-    ) -> tuple[TalentSource, ...] | None:
-        explicitly_requested = (
-            task_kind in _PANORAMA_DEFAULT_TASKS or _has_explicit_trigger(query)
-        )
-        matched: list[TalentSource] = []
-        before_created_at = None
-        before_source_id = None
-        while True:
-            sources = self._source.list_sources_page(
-                owner_id,
-                include_inactive=False,
-                before_created_at=before_created_at,
-                before_source_id=before_source_id,
-                limit=100,
-            )
-            if not isinstance(sources, tuple) or any(
-                not isinstance(source, TalentSource)
-                or source.owner_id != owner_id
-                or not source.active
-                for source in sources
-            ):
-                raise PanoramaContextError("panorama source scope invalid")
-            matched.extend(
-                source for source in sources if _mentions_source(query, (source,))
-            )
-            if len(sources) < 100:
-                if matched:
-                    return tuple(matched)
-                return () if explicitly_requested else None
-            cursor = (sources[-1].created_at, sources[-1].source_id)
-            if cursor == (before_created_at, before_source_id):
-                raise PanoramaContextError("panorama source page invalid")
-            before_created_at, before_source_id = cursor
-
-    @staticmethod
-    def _replay(
-        retrieval: PositionInsightRetrieval,
-        query_sha256: str,
+        self,
         owner_id: UUID,
         position_id: UUID,
+        query: str,
         turn_id: UUID,
-    ) -> PanoramaContextFragment:
-        if (
-            not isinstance(retrieval, PositionInsightRetrieval)
-            or retrieval.owner_id != owner_id
-            or retrieval.position_id != position_id
-            or retrieval.turn_id != turn_id
-        ):
-            raise PanoramaContextError("recorded panorama context scope invalid")
-        if retrieval.query_sha256 != query_sha256:
-            raise PanoramaConflict("panorama turn query conflict")
-        if len(retrieval.retrieved_excerpts) != 1:
-            raise PanoramaContextError("recorded panorama context invalid")
-        fragment = PanoramaContextFragment.from_prompt_document(
-            retrieval.retrieved_excerpts[0]
-        )
-        if (
-            fragment.insight_version_ids != retrieval.insight_version_ids
-            or fragment.query_sha256 != retrieval.query_sha256
-        ):
-            raise PanoramaContextError("recorded panorama context invalid")
-        return fragment
-
-    def _compose(
-        self,
-        insights: tuple[TalentInsightVersion, ...],
-        query_sha256: str,
-        source_scope: tuple[TalentSource, ...] = (),
-        publication_id: UUID | None = None,
         *,
-        position_context: Mapping[str, object] | None = None,
         task_kind: str | None = None,
-    ) -> PanoramaContextFragment:
-        if not isinstance(publication_id, UUID):
-            raise PanoramaContextError("panorama publication scope invalid")
-        insight_ids = tuple(insight.insight_version_id for insight in insights)
-        available_observed = tuple(
-            _observed_at(fact["observed_at"])
-            for insight in insights
-            for fact in insight.facts
-        )
-        if not available_observed:
-            raise PanoramaContextError("panorama facts unavailable")
-        provisional_as_of = max(available_observed)
-        now = self._now()
-        if not isinstance(now, datetime) or now.tzinfo is None:
-            raise PanoramaContextError("panorama context clock invalid")
-        facts: list[dict[str, object]] = []
-        source_urls: list[str] = []
-        terms = _position_terms(position_context)
-        for insight in insights:
-            candidates = tuple(
-                fact for fact in insight.facts
-                if _fact_matches_sources(fact, source_scope)
-            )
-            if terms:
-                ranked = sorted(
-                    (
-                        (
-                            -_fact_relevance(fact, terms),
-                            -_task_relevance(fact, task_kind),
-                            index,
-                            fact,
-                        )
-                        for index, fact in enumerate(candidates)
-                    ),
-                    key=lambda item: (item[0], item[1], item[2]),
-                )
-                if any(score < 0 for score, _task_score, _index, _fact in ranked):
-                    candidates = tuple(
-                        fact
-                        for score, _task_score, _index, fact in ranked
-                        if score < 0
-                    )
-                else:
-                    candidates = ()
-            for fact in candidates:
-                if not _fact_matches_sources(fact, source_scope):
-                    continue
-                text, truncated = _bounded_text(fact.get("text"), 2000)
-                source_url = canonical_panorama_url(fact.get("source_url"))
-                candidate = {
-                    "insight_version_id": str(insight.insight_version_id),
-                    "fact_id": str(fact.get("fact_id")),
-                    "text": text,
-                    "source_url": source_url,
-                    "observed_at": _observed_at(fact.get("observed_at")).isoformat(),
-                    "truncated": truncated,
-                }
-                candidate_urls = [*source_urls]
-                if source_url not in candidate_urls:
-                    candidate_urls.append(source_url)
-                if self._fits(
-                    insight_ids,
-                    publication_id,
-                    query_sha256,
-                    provisional_as_of,
-                    None,
-                    [*facts, candidate],
-                    [],
-                    [],
-                    candidate_urls,
-                ):
-                    facts.append(candidate)
-                    source_urls = candidate_urls
-        if not facts:
-            raise PanoramaContextError("panorama facts unavailable")
-        while True:
-            retained_observed = tuple(
-                _observed_at(fact["observed_at"]) for fact in facts
-            )
-            as_of = max(retained_observed)
-            oldest_age = max(now - min(retained_observed), timedelta(0))
-            stale_age_days = oldest_age.days if oldest_age > self._stale_after else None
-            source_urls = list(dict.fromkeys(str(fact["source_url"]) for fact in facts))
-            if self._fits(
-                insight_ids,
-                publication_id,
-                query_sha256,
-                as_of,
-                stale_age_days,
-                facts,
-                [],
-                [],
-                source_urls,
-            ):
-                break
-            facts.pop()
-            if not facts:
-                raise PanoramaContextError("panorama facts unavailable")
-        fact_keys = {(item["insight_version_id"], item["fact_id"]) for item in facts}
-        fact_sources = {
-            (item["insight_version_id"], item["fact_id"]): {
-                "source_url": item["source_url"],
-                "observed_at": item["observed_at"],
-            }
-            for item in facts
+        position_context: Mapping[str, object] | None = None,
+    ) -> PanoramaContextFragment | None:
+        if any(not isinstance(value, UUID) for value in (owner_id, position_id, turn_id)) or not isinstance(query, str) or not query.strip():
+            raise ValueError("panorama context request invalid")
+        if task_kind not in _DEFAULT_TASKS and not any(trigger in query for trigger in _EXPLICIT_TRIGGERS):
+            return None
+        existing = self._source.bundle_reference_for_turn(owner_id, position_id, turn_id)
+        if existing is not None:
+            return PanoramaContextFragment.from_prompt_document(existing.get("context_document"))
+        record = self._source.current_bundle()
+        if record is None:
+            return PanoramaContextFragment(None, None, None, "unavailable", (), (), (), ("当前没有已发布招聘情报",))
+        bundle_id = _uuid(record.get("bundle_id"))
+        generated_at = _time(record.get("generated_at"))
+        jobs = _mappings(self._source.bundle_jobs(bundle_id), "jobs")
+        catalog = record.get("source_catalog")
+        coverage_doc = record.get("source_coverage")
+        analysis = _mappings(record.get("analysis"), "analysis")
+        if not isinstance(catalog, Mapping) or not isinstance(coverage_doc, Mapping):
+            raise PanoramaUnavailable("published intelligence context unavailable")
+        companies = _mappings(catalog.get("companies"), "companies")
+        coverage = _mappings(coverage_doc.get("companies"), "coverage")
+        names = {str(item.get("company_key")): str(item.get("canonical_name", item.get("company_key", ""))) for item in companies}
+        terms = _terms(query, position_context)
+        explicitly_named = {
+            key for key, name in names.items()
+            if name and (name.casefold() in query.casefold() or any(str(alias).casefold() in query.casefold() for alias in next((item.get("aliases", []) for item in companies if item.get("company_key") == key), [])))
         }
-        inferences: list[dict[str, object]] = []
-        for insight in insights:
-            insight_id = str(insight.insight_version_id)
-            for inference in insight.inferences:
-                basis = tuple(
-                    str(value) for value in inference.get("basis_fact_ids", ())
-                )
-                if not basis or any(
-                    (insight_id, fact_id) not in fact_keys for fact_id in basis
-                ):
+        ranked = []
+        for job in jobs:
+            company_key = str(job.get("company_key")); text = _job_text(job, names.get(company_key, company_key))
+            score = sum(1 for term in terms if term.casefold() in text.casefold()) + (20 if company_key in explicitly_named else 0)
+            if score > 0:
+                ranked.append((score, str(job.get("job_id")), job))
+        selected = tuple(item[2] for item in sorted(ranked, key=lambda value: (-value[0], value[1]))[:12])
+        unknowns: list[str] = []
+        if not selected:
+            unknowns.append("当前 Bundle 没有与本岗位匹配的公开岗位证据")
+        source_facts = tuple(
+            _excerpt("source_fact", f"{names.get(str(job.get('company_key')), '关注公司')}｜{job.get('title')}｜{job.get('location')}｜职责：{job.get('duty_excerpt')}｜要求：{job.get('requirement_excerpt')}", job, bundle_id)
+            for job in selected
+        )
+        aggregates: list[GroundedExcerpt] = []
+        if selected:
+            representative = selected[0]
+            for label, values in (
+                ("公司", Counter(names.get(str(job.get("company_key")), str(job.get("company_key"))) for job in selected)),
+                ("地点", Counter(str(job.get("location")) for job in selected)),
+                ("招聘类型", Counter(_track(job) for job in selected)),
+                ("技术方向", Counter(signal for signal in _SIGNALS[:12] for job in selected if signal in _job_text(job, ""))),
+            ):
+                if values:
+                    text = f"与当前岗位相关的{label}分布：" + "、".join(f"{key} {count}" for key, count in sorted(values.items()))
+                    aggregates.append(_excerpt("deterministic_aggregate", text, representative, bundle_id))
+        selected_urls = {str(job.get("source_url")) for job in selected}
+        interpretations: list[GroundedExcerpt] = []
+        for unit in analysis:
+            response = unit.get("response")
+            if not isinstance(response, Mapping):
+                continue
+            facts = {str(item.get("fact_id")): item for item in _mappings(response.get("facts", []), "analysis facts") if str(item.get("source_url")) in selected_urls}
+            for inference in _mappings(response.get("inferences", []), "analysis inferences"):
+                basis = inference.get("basis_fact_ids")
+                if not isinstance(basis, list) or not basis or any(str(value) not in facts for value in basis):
                     continue
-                text, truncated = _bounded_text(inference.get("text"), 1200)
-                candidate = {
-                    "insight_version_id": insight_id,
-                    "text": text,
-                    "basis_fact_ids": basis,
-                    "basis_sources": tuple(
-                        fact_sources[(insight_id, fact_id)] for fact_id in basis
-                    ),
-                    "truncated": truncated,
-                }
-                if self._fits(
-                    insight_ids,
-                    publication_id,
-                    query_sha256,
-                    as_of,
-                    stale_age_days,
-                    facts,
-                    [*inferences, candidate],
-                    [],
-                    source_urls,
-                ):
-                    inferences.append(candidate)
-        unknowns: list[dict[str, object]] = []
-        # Unknowns currently carry no source identifier or fact basis.  A named-
-        # company retrieval may retain them only when the complete insight is
-        # scoped to that company; multi-company unknowns cannot be attributed.
-        scoped_source_ids = {source.source_id for source in source_scope}
-        unknown_insights = (
-            tuple(
-                insight
-                for insight in insights
-                if set(insight.selected_source_ids) <= scoped_source_ids
-            )
-            if source_scope
-            else insights
+                fact = facts[str(basis[0])]
+                matched = next((job for job in selected if job.get("source_url") == fact.get("source_url") and job.get("evidence_sha256") == fact.get("evidence_sha256")), None)
+                if matched is not None:
+                    interpretations.append(_excerpt("ai_interpretation", str(inference.get("text")), matched, bundle_id))
+            if facts:
+                raw_unknowns = response.get("unknowns", [])
+                if isinstance(raw_unknowns, list):
+                    unknowns.extend(value.strip() for value in raw_unknowns if isinstance(value, str) and value.strip())
+        states = {str(item.get("state")) for item in coverage}
+        status = "partial" if not selected or states & {"partial", "failed", "not_observed"} else "available"
+        fragment = PanoramaContextFragment(
+            bundle_id, bundle_id,
+            max((_time(job.get("observed_at")) for job in selected), default=generated_at),
+            status, source_facts, tuple(aggregates[:8]), tuple(interpretations[:8]), tuple(dict.fromkeys(unknowns))[:20],
         )
-        for insight in unknown_insights:
-            for unknown in insight.unknowns:
-                text, truncated = _bounded_text(unknown.get("text"), 800)
-                candidate = {
-                    "insight_version_id": str(insight.insight_version_id),
-                    "text": text,
-                    "source_urls": (),
-                    "evidence_status": "unverified",
-                    "as_of": insight.created_at.isoformat(),
-                    "truncated": truncated,
-                }
-                if self._fits(
-                    insight_ids,
-                    publication_id,
-                    query_sha256,
-                    as_of,
-                    stale_age_days,
-                    facts,
-                    inferences,
-                    [*unknowns, candidate],
-                    source_urls,
-                ):
-                    unknowns.append(candidate)
-        return PanoramaContextFragment(
-            insight_ids,
-            publication_id,
-            query_sha256,
-            as_of,
-            tuple(facts),
-            tuple(inferences),
-            tuple(unknowns),
-            tuple(source_urls),
-            stale_age_days,
-        )
-
-    @staticmethod
-    def _fits(
-        insight_ids,
-        publication_id,
-        query_sha256,
-        as_of,
-        stale_age_days,
-        facts,
-        inferences,
-        unknowns,
-        source_urls,
-    ) -> bool:
+        reference_id = uuid5(NAMESPACE_URL, f"orbbec:hr-intelligence:task-reference:{owner_id}:{position_id}:{turn_id}")
         try:
-            fragment = PanoramaContextFragment(
-                insight_ids,
-                publication_id,
-                query_sha256,
-                as_of,
-                tuple(facts),
-                tuple(inferences),
-                tuple(unknowns),
-                tuple(source_urls),
-                stale_age_days,
+            recorded = self._source.record_bundle_reference(
+                reference_id=reference_id,
+                owner_id=owner_id,
+                client_request_id=reference_id,
+                position_id=position_id,
+                turn_id=turn_id,
+                bundle_id=bundle_id,
+                observed_at=fragment.observed_at,
+                context_document=fragment.as_prompt_document(),
             )
-        except ValueError:
-            return False
-        document = fragment.as_prompt_document()
-        return (
-            _encoded_size(document) <= MAX_PANORAMA_CONTEXT_BYTES
-            and _postgres_jsonb_text_size((document,)) <= MAX_PANORAMA_CONTEXT_BYTES
-        )
+        except PanoramaConflict:
+            recorded = self._source.bundle_reference_for_turn(
+                owner_id, position_id, turn_id
+            )
+            if recorded is None:
+                raise PanoramaContextError(
+                    "intelligence bundle task reference conflict"
+                ) from None
+        return PanoramaContextFragment.from_prompt_document(recorded.get("context_document"))
 
 
-__all__ = [
-    "MAX_PANORAMA_CONTEXT_BYTES",
-    "PanoramaContextError",
-    "PanoramaContextFragment",
-    "PanoramaContextProvider",
-    "PanoramaContextSource",
-]
+__all__ = ["MAX_PANORAMA_CONTEXT_BYTES", "GroundedExcerpt", "PanoramaContextError", "PanoramaContextFragment", "PanoramaContextProvider"]

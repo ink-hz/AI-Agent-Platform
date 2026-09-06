@@ -157,6 +157,58 @@ class PanoramaRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "jobs")
 
+    def bundle_reference_for_turn(
+        self, owner_id: UUID, position_id: UUID, turn_id: UUID
+    ) -> Mapping[str, object] | None:
+        for value in (owner_id, position_id, turn_id):
+            _identifier(value)
+        try:
+            with self._connection() as connection:
+                return connection.execute(
+                    "select * from platform_hr."
+                    "read_intelligence_bundle_reference_for_turn_v86(%s,%s,%s)",
+                    (owner_id, position_id, turn_id),
+                ).fetchone()
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "bundle task reference")
+
+    def record_bundle_reference(
+        self,
+        *,
+        reference_id: UUID,
+        owner_id: UUID,
+        client_request_id: UUID,
+        position_id: UUID,
+        turn_id: UUID,
+        bundle_id: UUID,
+        observed_at: object,
+        context_document: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        for value in (
+            reference_id, owner_id, client_request_id, position_id, turn_id, bundle_id
+        ):
+            _identifier(value)
+        if not isinstance(context_document, Mapping):
+            raise TypeError("panorama bundle context invalid")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.create_intelligence_bundle_reference_v86("
+                    "%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
+                    (
+                        reference_id, owner_id, client_request_id, position_id,
+                        turn_id, bundle_id, observed_at,
+                        json.dumps(context_document, ensure_ascii=False),
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PanoramaUnavailable("panorama bundle task reference unavailable")
+            return row
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "bundle task reference")
+
     def bundle_by_manifest(
         self,
         owner_id: UUID,

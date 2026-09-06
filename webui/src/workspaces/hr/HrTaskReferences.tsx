@@ -7,6 +7,9 @@ export function HrTaskReferences({ references }: { references: HrTaskReference[]
     <ul>{references.map((reference) => <li key={`${reference.sourceType}:${reference.sourceId}`}>
       <strong>{reference.displayLabel}</strong>
       <span>{reference.selectedReason}</span>
+      {reference.freshness && <small>数据截至 {reference.freshness}</small>}
+      {reference.sourceUrl && <a href={reference.sourceUrl} rel="noreferrer" target="_blank">查看公开来源 ↗</a>}
+      {reference.evidenceSha256 && <code title={reference.evidenceSha256}>证据 {reference.evidenceSha256.slice(0, 12)}</code>}
     </li>)}</ul>
   </details>;
 }

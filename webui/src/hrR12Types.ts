@@ -114,10 +114,12 @@ export interface HrTaskRecord {
   references?: HrTaskReference[];
 }
 export interface HrTaskReference {
-  sourceType: "official_position" | "confirmed_context" | "position_material" | "candidate_snapshot" | "panorama_insight";
+  sourceType: "official_position" | "confirmed_context" | "position_material" | "candidate_snapshot" | "panorama_insight" | "intelligence_bundle";
   sourceId: string;
   displayLabel: string;
   version: string | null;
   selectedReason: string;
   freshness: string | null;
+  sourceUrl?: string | null;
+  evidenceSha256?: string | null;
 }

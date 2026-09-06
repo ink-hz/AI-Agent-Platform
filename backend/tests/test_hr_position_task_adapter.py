@@ -33,11 +33,11 @@ from app.hr.task_repository import PostgresHrPositionTaskRepository
 from app.hr.task_routes import build_hr_position_task_router
 from app.hr.task_service import (
     HrPositionTask,
-    HrTaskReference,
     HrPositionTaskConflict,
     HrPositionTaskNotFound,
     HrPositionTaskService,
     HrPositionTaskUnavailable,
+    HrTaskReference,
 )
 from app.main import create_app
 
@@ -723,6 +723,40 @@ def test_task_detail_route_projects_only_safe_human_readable_references():
         "freshness": "2026-09-05",
     }]
     assert "prompt_context" not in json.dumps(response.json())
+
+
+def test_task_detail_exposes_compact_bundle_evidence_provenance():
+    client, service = route_client()
+    bundle_id = uuid4()
+    service.task = replace(
+        service.task,
+        references=(HrTaskReference(
+            source_type="intelligence_bundle",
+            source_id=bundle_id,
+            display_label=f"招聘情报 Bundle · {str(bundle_id)[:8]}",
+            version=str(bundle_id),
+            selected_reason="与本岗位方向相关的已发布招聘情报",
+            freshness="2026-09-06",
+            source_url="https://example.com/jobs/structure",
+            evidence_sha256="a" * 64,
+        ),),
+    )
+
+    response = client.get(
+        f"/api/hr/positions/{POSITION}/tasks/{service.task.task_id}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["references"][0] == {
+        "source_type": "intelligence_bundle",
+        "source_id": str(bundle_id),
+        "display_label": f"招聘情报 Bundle · {str(bundle_id)[:8]}",
+        "version": str(bundle_id),
+        "selected_reason": "与本岗位方向相关的已发布招聘情报",
+        "freshness": "2026-09-06",
+        "source_url": "https://example.com/jobs/structure",
+        "evidence_sha256": "a" * 64,
+    }
 
 
 @pytest.mark.parametrize(

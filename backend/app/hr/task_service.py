@@ -92,11 +92,13 @@ class HrTaskReference:
     version: str | None
     selected_reason: str
     freshness: str | None
+    source_url: str | None = None
+    evidence_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if self.source_type not in {
             "official_position", "confirmed_context", "position_material",
-            "candidate_snapshot", "panorama_insight",
+            "candidate_snapshot", "panorama_insight", "intelligence_bundle",
         } or not isinstance(self.source_id, UUID):
             raise ValueError("HR task reference invalid")
         for value, maximum in (
@@ -109,6 +111,18 @@ class HrTaskReference:
                 not isinstance(value, str) or not value.strip() or len(value) > 256
             ):
                 raise ValueError("HR task reference invalid")
+        if self.source_url is not None and (
+            not isinstance(self.source_url, str)
+            or not self.source_url.startswith("https://")
+            or len(self.source_url) > 2048
+        ):
+            raise ValueError("HR task reference source invalid")
+        if self.evidence_sha256 is not None and (
+            not isinstance(self.evidence_sha256, str)
+            or len(self.evidence_sha256) != 64
+            or any(value not in "0123456789abcdef" for value in self.evidence_sha256)
+        ):
+            raise ValueError("HR task reference evidence invalid")
 
 
 @dataclass(frozen=True, slots=True)

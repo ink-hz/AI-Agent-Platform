@@ -15,7 +15,7 @@ def test_v85_is_the_next_contiguous_control_migration() -> None:
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions == list(range(1, 86))
+    assert versions == list(range(1, 87))
 
 
 def test_v85_defines_immutable_bundle_jobs_and_current_publication() -> None:

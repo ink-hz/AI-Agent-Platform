@@ -14,8 +14,8 @@ def test_v81_is_the_contiguous_large_report_capacity_migration() -> None:
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions[-5:] == [81, 82, 83, 84, 85]
-    assert versions == list(range(1, 86))
+    assert versions[-5:] == [82, 83, 84, 85, 86]
+    assert versions == list(range(1, 87))
 
 
 def test_v81_preserves_old_migrations_and_adds_a_bounded_production_entrypoint() -> None:

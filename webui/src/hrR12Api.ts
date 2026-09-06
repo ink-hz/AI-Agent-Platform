@@ -161,7 +161,7 @@ function task(value: unknown, requireCandidateBinding = false): HrTaskRecord {
   if (!Array.isArray(references)) throw new Error("HR R1.2 task references invalid");
   const parsedReferences = references.map((value) => {
     const reference = object(value);
-    if (!["official_position", "confirmed_context", "position_material", "candidate_snapshot", "panorama_insight"].includes(String(reference.source_type))) throw new Error("HR R1.2 task references invalid");
+    if (!["official_position", "confirmed_context", "position_material", "candidate_snapshot", "panorama_insight", "intelligence_bundle"].includes(String(reference.source_type))) throw new Error("HR R1.2 task references invalid");
     return {
       sourceType: reference.source_type as HrTaskReference["sourceType"],
       sourceId: identifier(reference.source_id),
@@ -169,6 +169,8 @@ function task(value: unknown, requireCandidateBinding = false): HrTaskRecord {
       version: reference.version == null ? null : string(reference.version),
       selectedReason: string(reference.selected_reason),
       freshness: reference.freshness == null ? null : string(reference.freshness),
+      ...(reference.source_url == null ? {} : { sourceUrl: string(reference.source_url) }),
+      ...(reference.evidence_sha256 == null ? {} : { evidenceSha256: string(reference.evidence_sha256) }),
     };
   });
   return {
