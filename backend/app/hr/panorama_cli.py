@@ -95,9 +95,12 @@ class PanoramaOperatorRuntime:
         self._model_client = model_client
         self._source_keys = tuple(source_keys)
 
-    def close(self) -> None:
-        asyncio.run(self._async_client.aclose())
+    async def aclose(self) -> None:
+        await self._async_client.aclose()
         self._model_client.close()
+
+    def close(self) -> None:
+        asyncio.run(self.aclose())
 
     def seed_sources(self, catalog: str | Path) -> Mapping[str, object]:
         existing = {
@@ -294,6 +297,27 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+async def _run_and_close(awaitable, runtime: OperatorRuntime):
+    operation_failed = False
+    try:
+        return await awaitable
+    except BaseException:
+        operation_failed = True
+        raise
+    finally:
+        try:
+            async_close = getattr(runtime, "aclose", None)
+            if async_close is not None:
+                await async_close()
+            else:
+                close = getattr(runtime, "close", None)
+                if close is not None:
+                    close()
+        except Exception:
+            if not operation_failed:
+                raise
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -301,20 +325,29 @@ def main(
 ) -> int:
     arguments = build_parser().parse_args(argv)
     selected = runtime or build_runtime()
-    try:
-        if arguments.command == "seed-sources":
-            result = selected.seed_sources(arguments.catalog)
-        elif arguments.command == "run":
-            result = asyncio.run(selected.run(arguments.trigger))
-        elif arguments.command == "resume":
-            result = asyncio.run(selected.resume(arguments.batch_id))
-        else:
-            result = selected.status(arguments.current)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        return 0
-    finally:
-        if runtime is None and hasattr(selected, "close"):
-            selected.close()  # type: ignore[attr-defined]
+    owns_runtime = runtime is None
+    if arguments.command in {"run", "resume"}:
+        awaitable = (
+            selected.run(arguments.trigger)
+            if arguments.command == "run"
+            else selected.resume(arguments.batch_id)
+        )
+        result = asyncio.run(
+            _run_and_close(awaitable, selected) if owns_runtime else awaitable
+        )
+    else:
+        try:
+            if arguments.command == "seed-sources":
+                result = selected.seed_sources(arguments.catalog)
+            else:
+                result = selected.status(arguments.current)
+        finally:
+            if owns_runtime:
+                close = getattr(selected, "close", None)
+                if close is not None:
+                    close()
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
