@@ -170,8 +170,7 @@ def _normalize_part(value: str) -> str | None:
     selected = _REGION_ALIASES.get(value, value)
     if selected.endswith("省") and selected[:-1] in _PROVINCES:
         return selected[:-1]
-    if selected.endswith("市"):
-        selected = selected[:-1]
+    selected = selected.removesuffix("市")
     if _DISTRICT.search(selected):
         return None
     return _REGION_ALIASES.get(selected, selected)

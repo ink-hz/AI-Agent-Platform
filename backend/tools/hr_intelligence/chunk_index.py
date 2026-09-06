@@ -180,7 +180,7 @@ def build_chunk_index(
             selected = body[start:end]
             sha256 = hashlib.sha256(selected).hexdigest()
             identity = hashlib.sha256(
-                f"{path}\0{heading}\0{sha256}".encode("utf-8")
+                f"{path}\0{heading}\0{sha256}".encode()
             ).hexdigest()[:24]
             evidence = tuple(
                 sorted(set(_EMBEDDED_SHA256.findall(selected.decode("utf-8"))))

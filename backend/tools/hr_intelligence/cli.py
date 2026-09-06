@@ -13,6 +13,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import httpx
 
+from .analysis_quality import validate_analysis_set
 from .analysis_units import (
     AnalysisContractError,
     AnalysisUnit,
@@ -606,6 +607,7 @@ def _build(args: argparse.Namespace) -> int:
     if any(not analysis_cache_hit(work, unit) for unit in units):
         raise AnalysisContractError("analysis units incomplete")
     analyses = tuple(load_accepted(work, unit) for unit in units)
+    validate_analysis_set(analyses)
     state = _require_mapping(_read_json(work / "state.json"), "bundle state")
     generated_at = datetime.fromisoformat(str(state["created_at"]))
     inputs = BundleInputs(
@@ -670,7 +672,11 @@ def _parser() -> argparse.ArgumentParser:
     prepare = commands.add_parser("prepare-analysis")
     prepare.add_argument("--bundle-id", required=True)
     prepare.add_argument(
-        "--units", default="company,track,direction,comparison,executive-summary"
+        "--units",
+        default=(
+            "company,track,direction,secondary-direction,topic,"
+            "executive-summary,task"
+        ),
     )
     status = commands.add_parser("analysis-status")
     status.add_argument("--bundle-id", required=True)

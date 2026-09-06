@@ -10,6 +10,7 @@ from tools.hr_intelligence.cli import (
     _empty_dimensions,
     _job_dict,
     _job_from_dict,
+    _parser,
     main,
 )
 from tools.hr_intelligence.collectors import (
@@ -49,6 +50,16 @@ def test_cli_empty_dimensions_match_v3_shape() -> None:
     assert dimensions["secondary_directions"] == {}
     assert dimensions["company_comparison"] == {}
     assert dimensions["data_quality"] == {"invalid_locations": {}}
+
+
+def test_prepare_analysis_defaults_to_complete_v2_unit_set() -> None:
+    args = _parser().parse_args(
+        ["prepare-analysis", "--bundle-id", "00000000-0000-4000-8000-000000000001"]
+    )
+
+    assert args.units == (
+        "company,track,direction,secondary-direction,topic,executive-summary,task"
+    )
 
 
 def test_company_source_identity_is_stable_across_recruiting_channels() -> None:
@@ -272,6 +283,7 @@ def test_cli_prepares_accepts_builds_and_verifies_one_bundle(
         unit_id = request["unit_id"]
         evidence_ref = request["evidence"][0]
         response = {
+            "schema_version": 2,
             "facts": [
                 {
                     "fact_id": "fact-1",
@@ -282,10 +294,29 @@ def test_cli_prepares_accepts_builds_and_verifies_one_bundle(
                 }
             ],
             "inferences": [
-                {"text": "存在点云算法人才需求信号", "basis_fact_ids": ["fact-1"]}
+                {
+                    "inference_id": "inference-1",
+                    "text": "存在点云算法人才需求信号",
+                    "basis_fact_ids": ["fact-1"],
+                }
             ],
             "unknowns": ["实际 HC 未公开"],
-            "alternatives": ["可能是常规补员"],
+            "alternatives": [
+                {
+                    "alternative_id": "alternative-1",
+                    "text": "可能是常规补员",
+                    "basis_fact_ids": ["fact-1"],
+                    "challenged_inference_ids": ["inference-1"],
+                }
+            ],
+            "recommendations": [
+                {
+                    "recommendation_id": "recommendation-1",
+                    "text": "建立点云算法人才池",
+                    "basis_fact_ids": ["fact-1"],
+                    "target_tasks": ["talent_profile", "sourcing_strategy"],
+                }
+            ],
             "summary": "公开招聘信号指向点云算法能力。",
             "confidence": "medium",
         }

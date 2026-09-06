@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/schemas/hr-intelligence-analysis-v2.json",
+  "title": "HR Intelligence Analysis Unit Response v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "facts",
+    "inferences",
+    "alternatives",
+    "unknowns",
+    "recommendations",
+    "summary",
+    "confidence"
+  ],
+  "properties": {
+    "schema_version": {"const": 2},
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fact_id", "text", "evidence_sha256", "source_url", "observed_at"],
+        "properties": {
+          "fact_id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "evidence_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "source_url": {"type": "string", "pattern": "^https://"},
+          "observed_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    },
+    "inferences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["inference_id", "text", "basis_fact_ids"],
+        "properties": {
+          "inference_id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "basis_fact_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+        }
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["alternative_id", "text", "basis_fact_ids", "challenged_inference_ids"],
+        "properties": {
+          "alternative_id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "basis_fact_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "challenged_inference_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+        }
+      }
+    },
+    "unknowns": {"type": "array", "items": {"type": "string"}},
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["recommendation_id", "text", "basis_fact_ids", "target_tasks"],
+        "properties": {
+          "recommendation_id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "basis_fact_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "target_tasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"enum": ["jd", "jr", "talent_profile", "sourcing_strategy", "candidate_match", "position_interview_plan", "candidate_interview_plan"]}
+          }
+        }
+      }
+    },
+    "summary": {"type": "string", "minLength": 1, "maxLength": 32768},
+    "confidence": {"enum": ["low", "medium", "high"]}
+  }
+}
