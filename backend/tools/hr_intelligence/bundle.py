@@ -152,34 +152,45 @@ class VerifiedBundle:
 
 def _evidence_index(inputs: BundleInputs) -> list[dict[str, object]]:
     selected: dict[str, dict[str, object]] = {}
-    for job in inputs.jobs:
+    references = [
+        (job.evidence_sha256, job.source_url, job.observed_at.isoformat())
+        for job in inputs.jobs
+    ]
+    references.extend(
+        (
+            evidence.sha256,
+            evidence.source_url,
+            evidence.observed_at.isoformat(),
+        )
+        for analysis in inputs.analyses
+        for evidence in analysis.unit.evidence
+    )
+    for sha256, source_url, observed_at in references:
         path = (
             inputs.evidence_root
             / "sha256"
-            / job.evidence_sha256[:2]
-            / job.evidence_sha256
+            / sha256[:2]
+            / sha256
         )
         if not path.is_file():
             raise BundleVerificationError("bundle evidence missing")
         body = path.read_bytes()
-        if hashlib.sha256(body).hexdigest() != job.evidence_sha256:
+        if hashlib.sha256(body).hexdigest() != sha256:
             raise BundleVerificationError("bundle evidence checksum mismatch")
-        mime = _evidence_mime(path, job.evidence_sha256, len(body))
+        mime = _evidence_mime(path, sha256, len(body))
         current = selected.setdefault(
-            job.evidence_sha256,
+            sha256,
             {
-                "sha256": job.evidence_sha256,
-                "source_url": job.source_url,
-                "observed_at": job.observed_at.isoformat(),
+                "sha256": sha256,
+                "source_url": source_url,
+                "observed_at": observed_at,
                 "mime": mime,
                 "size_bytes": len(body),
-                "locator": (
-                    f"evidence/sha256/{job.evidence_sha256[:2]}/{job.evidence_sha256}"
-                ),
+                "locator": f"evidence/sha256/{sha256[:2]}/{sha256}",
             },
         )
-        if current["source_url"] != job.source_url:
-            current["source_url"] = min(str(current["source_url"]), job.source_url)
+        if current["source_url"] != source_url:
+            current["source_url"] = min(str(current["source_url"]), source_url)
     return [selected[key] for key in sorted(selected)]
 
 

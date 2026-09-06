@@ -12,7 +12,6 @@ from tools.hr_intelligence.agent_markdown import (
 )
 from tools.hr_intelligence.chunk_index import validate_chunk_index
 
-
 BUNDLE_ID = UUID("00000000-0000-4000-8000-000000000001")
 NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
 SHA256 = "a" * 64

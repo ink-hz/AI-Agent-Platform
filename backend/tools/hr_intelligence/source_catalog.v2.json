@@ -1,0 +1,150 @@
+{
+  "schema_version": 2,
+  "companies": [
+    {
+      "company_key": "union-optech",
+      "canonical_name": "联合光电",
+      "aliases": ["中山联合光电", "Union Optech"],
+      "approved_urls": [
+        "https://www.union-optech.com",
+        "https://cshbzy.bysjy.com.cn/detail/career?id=708375"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.union-optech.com", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "robosense",
+      "canonical_name": "速腾聚创",
+      "aliases": ["RoboSense", "深圳市速腾聚创科技有限公司"],
+      "approved_urls": [
+        "https://app.mokahr.com/social-recruitment/robosense/77883",
+        "https://app.mokahr.com/campus-recruitment/robosense/69887"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.robosense.ai", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "hesai",
+      "canonical_name": "禾赛科技",
+      "aliases": ["禾赛", "Hesai"],
+      "approved_urls": [
+        "https://kwh0jtf778.jobs.feishu.cn/index",
+        "https://kwh0jtf778.jobs.feishu.cn/229043",
+        "https://kwh0jtf778.jobs.feishu.cn/073183"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.hesaitech.com", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "bambu-lab",
+      "canonical_name": "拓竹",
+      "aliases": ["拓竹科技", "Bambu Lab", "深圳拓竹科技有限公司"],
+      "approved_urls": [
+        "https://bambulab.jobs.feishu.cn/experienced",
+        "https://bambulab.jobs.feishu.cn/campus"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://bambulab.com", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "creality",
+      "canonical_name": "创想三维",
+      "aliases": ["Creality", "深圳市创想三维科技股份有限公司"],
+      "approved_urls": [
+        "https://creality.zhiye.com/",
+        "https://creality.zhiye.com/campus"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.creality.cn", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "elegoo",
+      "canonical_name": "智能派",
+      "aliases": ["深圳市智能派科技有限公司", "ELEGOO", "爱乐酷"],
+      "approved_urls": ["https://www.elegoo.com.cn/index/join/index.html"],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.elegoo.com.cn", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "revopoint",
+      "canonical_name": "知象光电",
+      "aliases": ["西安知象光电科技有限公司", "Revopoint"],
+      "approved_urls": [
+        "https://hr.revopoint3d.com.cn/gwtd.html",
+        "https://hr.revopoint3d.com.cn/gwtd1.html"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.revopoint3d.com", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "shining3d",
+      "canonical_name": "先临三维",
+      "aliases": ["SHINING 3D", "先临三维科技股份有限公司"],
+      "approved_urls": [
+        "https://shining3d.zhiye.com/",
+        "https://shining3d.zhiye.com/campus"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.shining3d.com", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "scantech",
+      "canonical_name": "思看科技",
+      "aliases": ["SCANTECH", "思看科技（杭州）股份有限公司"],
+      "approved_urls": [
+        "https://app135149.eapps.dingtalkcloud.com/social-recruitment/sikankeji/100000204",
+        "https://app135149.dingtalkoxm.com/campus-recruitment/sikankeji/100000205",
+        "https://www.3d-scantech.com.cn/corporation/join-us/"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.3d-scantech.com.cn", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "agibot",
+      "canonical_name": "智元机器人",
+      "aliases": ["智元", "AGIBOT", "智元创新"],
+      "approved_urls": [
+        "https://agirobot.jobs.feishu.cn/socialrecruitment",
+        "https://agirobot.jobs.feishu.cn/campusrecruitment",
+        "https://agirobot.jobs.feishu.cn/internrecruitment"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.zhiyuan-robot.com", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "insta360",
+      "canonical_name": "影石创新",
+      "aliases": ["影石", "Insta360", "影石创新科技股份有限公司"],
+      "approved_urls": [
+        "https://arashivision.jobs.feishu.cn/socialENG",
+        "https://arashivision.jobs.feishu.cn/campus"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.insta360.com", "trust_tier": "primary"}
+      ]
+    },
+    {
+      "company_key": "huawei",
+      "canonical_name": "华为",
+      "aliases": ["Huawei", "华为技术有限公司"],
+      "approved_urls": [
+        "https://career.huawei.com/reccampportal/portal5/social-recruitment.html",
+        "https://career.huawei.com/reccampportal/portal5/campus-recruitment.html",
+        "https://career.huawei.com/reccampportal/globle/huawei-special-recruitment.html"
+      ],
+      "public_documents": [
+        {"source_type": "official_product", "source_url": "https://www.huawei.com/cn", "trust_tier": "primary"}
+      ]
+    }
+  ]
+}

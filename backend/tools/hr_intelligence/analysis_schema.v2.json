@@ -36,9 +36,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["inference_id", "text", "basis_fact_ids"],
+        "required": ["inference_id", "claim_type", "text", "basis_fact_ids"],
         "properties": {
           "inference_id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "claim_type": {"enum": ["recruiting_signal", "product_route", "business_direction", "organization_chain", "talent_competition", "geography", "trend", "task_guidance"]},
           "text": {"type": "string", "minLength": 1, "maxLength": 4096},
           "basis_fact_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}}
         }

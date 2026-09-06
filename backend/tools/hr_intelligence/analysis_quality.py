@@ -11,6 +11,10 @@ from .analysis_units import (
 )
 
 _NORMALIZE_TEXT = re.compile(r"[^0-9a-z\u4e00-\u9fff]+", re.IGNORECASE)
+_STRATEGIC_CLAIMS = frozenset(
+    {"product_route", "business_direction", "organization_chain"}
+)
+_CROSS_SOURCE_UNKNOWN = re.compile(r"交叉|非招聘|招聘证据|官网|产品来源")
 _TASK_TARGETS = {
     "jd-jr": frozenset({"jd", "jr"}),
     "talent-profile": frozenset({"talent_profile"}),
@@ -109,6 +113,55 @@ def validate_analysis_set(
                     for recommendation in recommendations
                 ):
                     raise AnalysisContractError("analysis task recommendation required")
+            evidence_by_key = {
+                (
+                    evidence.sha256,
+                    evidence.source_url,
+                    evidence.observed_at.isoformat(),
+                ): evidence
+                for evidence in analysis.unit.evidence
+            }
+            fact_evidence = {
+                str(fact.get("fact_id")): evidence_by_key.get(
+                    (
+                        fact.get("evidence_sha256"),
+                        fact.get("source_url"),
+                        fact.get("observed_at"),
+                    )
+                )
+                for fact in facts
+            }
+            unknowns = response.get("unknowns", [])
+            for inference in inferences:
+                if inference.get("claim_type") not in _STRATEGIC_CLAIMS:
+                    continue
+                sources = tuple(
+                    fact_evidence.get(str(fact_id))
+                    for fact_id in inference.get("basis_fact_ids", [])
+                )
+                has_job = any(
+                    source is not None and source.evidence_kind == "job"
+                    for source in sources
+                )
+                has_primary_document = any(
+                    source is not None
+                    and source.evidence_kind == "public_document"
+                    and source.trust_tier == "primary"
+                    for source in sources
+                )
+                if has_job and has_primary_document:
+                    continue
+                if response.get("confidence") == "high":
+                    raise AnalysisContractError(
+                        "analysis strategic claim cross-source evidence required"
+                    )
+                if not isinstance(unknowns, list) or not any(
+                    isinstance(item, str) and _CROSS_SOURCE_UNKNOWN.search(item)
+                    for item in unknowns
+                ):
+                    raise AnalysisContractError(
+                        "analysis strategic claim cross-source unknown required"
+                    )
         if analysis.unit.kind == "company":
             company_inferences.extend(
                 (analysis.unit.scope_key, str(inference.get("text", "")))

@@ -13,6 +13,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from .dimensions import recruitment_track, technical_directions
 from .models import NormalizedJob
+from .public_documents import PublicIntelligenceDocument
 from .taxonomy import secondary_directions
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
@@ -29,6 +30,18 @@ _KINDS = frozenset(
     }
 )
 _CONFIDENCE = frozenset({"low", "medium", "high"})
+_CLAIM_TYPES = frozenset(
+    {
+        "recruiting_signal",
+        "product_route",
+        "business_direction",
+        "organization_chain",
+        "talent_competition",
+        "geography",
+        "trend",
+        "task_guidance",
+    }
+)
 _RESPONSE_V1_KEYS = frozenset(
     {"facts", "inferences", "unknowns", "alternatives", "summary", "confidence"}
 )
@@ -96,14 +109,28 @@ def _required_text(value: object, maximum: int, label: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class EvidenceReference:
-    job_id: UUID
+    job_id: UUID | None
     sha256: str
     source_url: str
     observed_at: datetime
+    evidence_kind: str = "job"
+    evidence_id: UUID | None = None
+    trust_tier: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.job_id, UUID):
+        if self.evidence_kind not in {"job", "public_document"}:
             raise AnalysisContractError("analysis evidence invalid")
+        if self.evidence_kind == "job":
+            if not isinstance(self.job_id, UUID) or self.trust_tier is not None:
+                raise AnalysisContractError("analysis evidence invalid")
+            evidence_id = self.job_id if self.evidence_id is None else self.evidence_id
+        else:
+            if self.job_id is not None or self.trust_tier not in {"primary", "secondary"}:
+                raise AnalysisContractError("analysis evidence invalid")
+            evidence_id = self.evidence_id
+        if not isinstance(evidence_id, UUID):
+            raise AnalysisContractError("analysis evidence invalid")
+        object.__setattr__(self, "evidence_id", evidence_id)
         if not isinstance(self.sha256, str) or _SHA256.fullmatch(self.sha256) is None:
             raise AnalysisContractError("analysis evidence invalid")
         if not isinstance(self.source_url, str) or not self.source_url.startswith(
@@ -117,12 +144,18 @@ class EvidenceReference:
             raise AnalysisContractError("analysis evidence invalid")
 
     def as_dict(self) -> dict[str, str]:
-        return {
-            "job_id": str(self.job_id),
+        result = {
+            "evidence_kind": self.evidence_kind,
+            "evidence_id": str(self.evidence_id),
             "sha256": self.sha256,
             "source_url": self.source_url,
             "observed_at": self.observed_at.isoformat(),
         }
+        if self.job_id is not None:
+            result["job_id"] = str(self.job_id)
+        if self.trust_tier is not None:
+            result["trust_tier"] = self.trust_tier
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,12 +256,19 @@ def _job_dict(job: NormalizedJob) -> dict[str, object]:
     }
 
 
+def _public_document_dict(
+    document: PublicIntelligenceDocument,
+) -> dict[str, object]:
+    return document.as_dict()
+
+
 def _prepare_unit(
     bundle_id: UUID,
     kind: str,
     scope_key: str,
     jobs: tuple[NormalizedJob, ...],
     aggregates: Mapping[str, object],
+    public_documents: tuple[PublicIntelligenceDocument, ...] = (),
 ) -> AnalysisUnit:
     if not isinstance(bundle_id, UUID) or kind not in _KINDS:
         raise AnalysisContractError("analysis unit invalid")
@@ -237,6 +277,11 @@ def _prepare_unit(
         not isinstance(job, NormalizedJob) for job in jobs
     ):
         raise AnalysisContractError("analysis jobs invalid")
+    if not isinstance(public_documents, tuple) or any(
+        not isinstance(item, PublicIntelligenceDocument)
+        for item in public_documents
+    ):
+        raise AnalysisContractError("analysis public documents invalid")
     request = {
         "schema_version": 2,
         "bundle_id": str(bundle_id),
@@ -259,6 +304,18 @@ def _prepare_unit(
                 jobs, key=lambda item: (item.company_key, str(item.job_id))
             )
         ],
+        "public_documents": [
+            _public_document_dict(document)
+            for document in sorted(
+                public_documents,
+                key=lambda item: (
+                    item.company_key,
+                    item.source_type,
+                    item.source_url,
+                    str(item.document_id),
+                ),
+            )
+        ],
         "aggregates": json.loads(_canonical_json(aggregates)),
     }
     request_json = _canonical_json(request)
@@ -267,7 +324,7 @@ def _prepare_unit(
         NAMESPACE_URL,
         f"orbbec:hr-intelligence:{bundle_id}:{kind}:{selected_scope}:{input_sha256}",
     )
-    evidence = tuple(
+    job_evidence = tuple(
         EvidenceReference(
             job.job_id,
             job.evidence_sha256,
@@ -276,13 +333,33 @@ def _prepare_unit(
         )
         for job in sorted(jobs, key=lambda item: (item.company_key, str(item.job_id)))
     )
+    document_evidence = tuple(
+        EvidenceReference(
+            None,
+            document.evidence_sha256,
+            document.source_url,
+            document.observed_at,
+            "public_document",
+            document.document_id,
+            document.trust_tier,
+        )
+        for document in sorted(
+            public_documents,
+            key=lambda item: (
+                item.company_key,
+                item.source_type,
+                item.source_url,
+                str(item.document_id),
+            ),
+        )
+    )
     return AnalysisUnit(
         bundle_id,
         unit_id,
         kind,
         selected_scope,
         input_sha256,
-        evidence,
+        job_evidence + document_evidence,
         request_json,
     )
 
@@ -292,10 +369,21 @@ def prepare_company_unit(
     company_key: str,
     jobs: tuple[NormalizedJob, ...],
     aggregates: Mapping[str, object],
+    *,
+    public_documents: tuple[PublicIntelligenceDocument, ...] = (),
 ) -> AnalysisUnit:
     if any(job.company_key != company_key for job in jobs):
         raise AnalysisContractError("analysis company scope invalid")
-    return _prepare_unit(bundle_id, "company", company_key, jobs, aggregates)
+    if any(document.company_key != company_key for document in public_documents):
+        raise AnalysisContractError("analysis company scope invalid")
+    return _prepare_unit(
+        bundle_id,
+        "company",
+        company_key,
+        jobs,
+        aggregates,
+        public_documents,
+    )
 
 
 def prepare_units(
@@ -303,6 +391,7 @@ def prepare_units(
     jobs: tuple[NormalizedJob, ...],
     aggregates: Mapping[str, object],
     *,
+    public_documents: tuple[PublicIntelligenceDocument, ...] = (),
     kinds: tuple[str, ...] = (
         "company",
         "track",
@@ -326,6 +415,11 @@ def prepare_units(
         or any(not isinstance(key, str) or not key.strip() for key in company_keys)
     ):
         raise AnalysisContractError("analysis company keys invalid")
+    if not isinstance(public_documents, tuple) or any(
+        not isinstance(item, PublicIntelligenceDocument)
+        for item in public_documents
+    ):
+        raise AnalysisContractError("analysis public documents invalid")
     companies = tuple(
         sorted(
             set(company_keys)
@@ -353,6 +447,11 @@ def prepare_units(
                     company,
                     tuple(job for job in jobs if job.company_key == company),
                     aggregates,
+                    public_documents=tuple(
+                        document
+                        for document in public_documents
+                        if document.company_key == company
+                    ),
                 )
                 for company in companies
             )
@@ -366,6 +465,16 @@ def prepare_units(
                     track,
                     tuple(job for job in jobs if recruitment_track(job) == track),
                     aggregates,
+                    tuple(
+                        document
+                        for document in public_documents
+                        if document.company_key
+                        in {
+                            job.company_key
+                            for job in jobs
+                            if recruitment_track(job) == track
+                        }
+                    ),
                 )
                 for track in tracks
             )
@@ -389,6 +498,16 @@ def prepare_units(
                         job for job in jobs if direction in technical_directions(job)
                     ),
                     aggregates,
+                    tuple(
+                        document
+                        for document in public_documents
+                        if document.company_key
+                        in {
+                            job.company_key
+                            for job in jobs
+                            if direction in technical_directions(job)
+                        }
+                    ),
                 )
                 for direction in directions
             )
@@ -412,19 +531,33 @@ def prepare_units(
                         if direction in secondary_directions(job)
                     ),
                     aggregates,
+                    tuple(
+                        document
+                        for document in public_documents
+                        if document.company_key
+                        in {
+                            job.company_key
+                            for job in jobs
+                            if direction in secondary_directions(job)
+                        }
+                    ),
                 )
                 for direction in directions
             )
             continue
         if kind == "topic":
             units.extend(
-                _prepare_unit(bundle_id, kind, scope, jobs, aggregates)
+                _prepare_unit(
+                    bundle_id, kind, scope, jobs, aggregates, public_documents
+                )
                 for scope in _TOPIC_SCOPES
             )
             continue
         if kind == "task":
             units.extend(
-                _prepare_unit(bundle_id, kind, scope, jobs, aggregates)
+                _prepare_unit(
+                    bundle_id, kind, scope, jobs, aggregates, public_documents
+                )
                 for scope in _TASK_SCOPES
             )
             continue
@@ -435,6 +568,7 @@ def prepare_units(
                 "all-companies",
                 jobs,
                 aggregates,
+                public_documents,
             )
         )
     return tuple(units)
@@ -497,7 +631,7 @@ def _validate_response(
     inference_keys = (
         {"text", "basis_fact_ids"}
         if request_version == 1
-        else {"inference_id", "text", "basis_fact_ids"}
+        else {"inference_id", "claim_type", "text", "basis_fact_ids"}
     )
     for ordinal, inference in enumerate(inferences, start=1):
         if not isinstance(inference, Mapping) or set(inference) != inference_keys:
@@ -512,6 +646,8 @@ def _validate_response(
         if inference_id in inference_ids:
             raise AnalysisContractError("analysis inference identity invalid")
         inference_ids.add(inference_id)
+        if request_version == 2 and inference.get("claim_type") not in _CLAIM_TYPES:
+            raise AnalysisContractError("analysis inference type invalid")
         _required_text(inference.get("text"), 4096, "analysis inference")
         basis = inference.get("basis_fact_ids")
         if (
@@ -712,12 +848,28 @@ def load_accepted(root: str | Path, unit: AnalysisUnit) -> AcceptedAnalysis:
         usage = saved["usage"]
     except (KeyError, OSError, UnicodeError, json.JSONDecodeError, TypeError):
         raise AnalysisContractError("accepted analysis unavailable") from None
+    current_evidence = [item.as_dict() for item in unit.evidence]
+    legacy_evidence = [
+        {
+            "job_id": str(item.job_id),
+            "sha256": item.sha256,
+            "source_url": item.source_url,
+            "observed_at": item.observed_at.isoformat(),
+        }
+        for item in unit.evidence
+        if item.evidence_kind == "job" and item.job_id is not None
+    ]
+    evidence_matches = saved.get("evidence") == current_evidence or (
+        json.loads(unit.request_json).get("schema_version") == 1
+        and len(legacy_evidence) == len(unit.evidence)
+        and saved.get("evidence") == legacy_evidence
+    )
     if (
         saved.get("bundle_id") != str(unit.bundle_id)
         or saved.get("unit_id") != str(unit.unit_id)
         or saved.get("input_sha256") != unit.input_sha256
         or saved.get("request") != json.loads(unit.request_json)
-        or saved.get("evidence") != [item.as_dict() for item in unit.evidence]
+        or not evidence_matches
     ):
         raise AnalysisContractError("accepted analysis input mismatch")
     accepted = accept_unit_response(unit, response, usage)

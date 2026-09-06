@@ -2,18 +2,25 @@ import hashlib
 import json
 from dataclasses import replace
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
+from tools.hr_intelligence.analysis_units import (
+    accept_unit_response,
+    prepare_company_unit,
+)
 from tools.hr_intelligence.bundle import (
     BundleInputs,
     BundleVerificationError,
     build_bundle,
     verify_bundle,
 )
+from tools.hr_intelligence.evidence import EvidenceArchive, EvidencePayload
 from tools.hr_intelligence.models import NormalizedJob
+from tools.hr_intelligence.public_documents import PublicIntelligenceDocument
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=timezone.utc)
 EVIDENCE_BODY = b"public source evidence"
@@ -188,6 +195,81 @@ def test_bundle_evidence_index_preserves_archived_mime_type(tmp_path) -> None:
     index = json.loads((path / "raw-evidence-index.json").read_text("utf-8"))
 
     assert index[0]["mime"] == "application/json; charset=utf-8"
+
+
+def test_bundle_archives_public_document_evidence_referenced_by_analysis(
+    tmp_path,
+) -> None:
+    inputs = _inputs(tmp_path)
+    document_body = b"Hesai product portfolio"
+    record = EvidenceArchive(inputs.evidence_root).store(
+        EvidencePayload(
+            "https://www.hesaitech.com", "text/html", document_body
+        )
+    )
+    document = PublicIntelligenceDocument(
+        document_id=uuid4(),
+        company_key="hesai",
+        source_type="official_product",
+        source_url="https://www.hesaitech.com",
+        title="Hesai products",
+        text_excerpt="Hesai product portfolio",
+        evidence_sha256=record.sha256,
+        text_sha256=hashlib.sha256(b"Hesai product portfolio").hexdigest(),
+        observed_at=NOW,
+        trust_tier="primary",
+    )
+    job = inputs.jobs[0]
+    unit = prepare_company_unit(
+        inputs.bundle_id,
+        "hesai",
+        (job,),
+        inputs.aggregates,
+        public_documents=(document,),
+    )
+    accepted = accept_unit_response(
+        unit,
+        {
+            "schema_version": 2,
+            "facts": [{
+                "fact_id": "fact-1",
+                "text": "禾赛官网展示产品组合",
+                "evidence_sha256": document.evidence_sha256,
+                "source_url": document.source_url,
+                "observed_at": NOW.isoformat(),
+            }],
+            "inferences": [],
+            "alternatives": [],
+            "unknowns": ["实际产品销量未公开"],
+            "recommendations": [{
+                "recommendation_id": "recommendation-1",
+                "text": "持续跟踪产品能力对应人才",
+                "basis_fact_ids": ["fact-1"],
+                "target_tasks": ["talent_profile"],
+            }],
+            "summary": "官网产品证据摘要",
+            "confidence": "medium",
+        },
+        {
+            "unit_id": str(unit.unit_id),
+            "provider": "openai",
+            "model": "gpt-5.6-sol",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "estimated_cost": str(Decimal("0.01")),
+            "unavailable_reason": None,
+        },
+    )
+
+    path = build_bundle(
+        replace(inputs, analyses=(accepted,)), root=tmp_path / "bundles"
+    )
+    index = json.loads((path / "raw-evidence-index.json").read_text("utf-8"))
+
+    assert {item["sha256"] for item in index} == {
+        EVIDENCE_SHA256,
+        record.sha256,
+    }
 
 
 def test_verification_fails_after_tampering(tmp_path) -> None:

@@ -63,6 +63,7 @@ def _response(unit):
         "inferences": [
             {
                 "inference_id": "inference-1",
+                "claim_type": "recruiting_signal",
                 "text": "点云算法是当前公开人才需求信号之一",
                 "basis_fact_ids": ["fact-1"],
             }
@@ -259,7 +260,7 @@ def test_v2_request_demands_company_specific_contrary_and_orbbec_analysis() -> N
     assert request["instructions"]["contrary_evidence_and_uncertainty"] is True
 
 
-def test_accepted_v1_analysis_remains_readable() -> None:
+def test_accepted_v1_analysis_remains_readable(tmp_path) -> None:
     unit = _unit()
     request = json.loads(unit.request_json)
     request["schema_version"] = 1
@@ -293,6 +294,27 @@ def test_accepted_v1_analysis_remains_readable() -> None:
         "confidence": "medium",
     }
 
-    assert accept_unit_response(
-        legacy_unit, response, _usage(legacy_unit)
-    ).response_sha256
+    accepted = accept_unit_response(legacy_unit, response, _usage(legacy_unit))
+    path = save_accepted(tmp_path, accepted)
+    saved = json.loads(path.read_text("utf-8"))
+    saved["evidence"] = [
+        {
+            "job_id": item["job_id"],
+            "sha256": item["sha256"],
+            "source_url": item["source_url"],
+            "observed_at": item["observed_at"],
+        }
+        for item in saved["evidence"]
+    ]
+    path.write_text(
+        json.dumps(
+            saved,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert load_accepted(tmp_path, legacy_unit).response_sha256

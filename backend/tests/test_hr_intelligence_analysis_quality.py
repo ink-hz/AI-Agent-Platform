@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -16,11 +17,19 @@ from tools.hr_intelligence.analysis_units import (
     prepare_company_unit,
 )
 from tools.hr_intelligence.models import NormalizedJob
+from tools.hr_intelligence.public_documents import PublicIntelligenceDocument
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
 
 
-def _accepted(company_key: str, inference: str) -> AcceptedAnalysis:
+def _accepted(
+    company_key: str,
+    inference: str,
+    *,
+    claim_type: str = "recruiting_signal",
+    confidence: str = "medium",
+    include_primary_document: bool = False,
+) -> AcceptedAnalysis:
     job = NormalizedJob(
         job_id=uuid4(),
         source_id=uuid4(),
@@ -34,24 +43,62 @@ def _accepted(company_key: str, inference: str) -> AcceptedAnalysis:
         evidence_sha256=("a" if company_key == "hesai" else "b") * 64,
         observed_at=NOW,
     )
+    documents = ()
+    if include_primary_document:
+        excerpt = f"{company_key} lidar product portfolio"
+        documents = (
+            PublicIntelligenceDocument(
+                document_id=uuid4(),
+                company_key=company_key,
+                source_type="official_product",
+                source_url=(
+                    "https://www.hesaitech.com"
+                    if company_key == "hesai"
+                    else "https://www.robosense.ai"
+                ),
+                title=f"{company_key} products",
+                text_excerpt=excerpt,
+                evidence_sha256="c" * 64,
+                text_sha256=hashlib.sha256(excerpt.encode()).hexdigest(),
+                observed_at=NOW,
+                trust_tier="primary",
+            ),
+        )
     unit = prepare_company_unit(
-        uuid4(), company_key, (job,), {"directions": {"算法": 1}}
+        uuid4(),
+        company_key,
+        (job,),
+        {"directions": {"算法": 1}},
+        public_documents=documents,
     )
     fact_id = f"F-{company_key}-1"
     inference_id = f"I-{company_key}-1"
+    facts = [{
+        "fact_id": fact_id,
+        "text": f"{company_key} 公开招聘点云算法工程师",
+        "evidence_sha256": job.evidence_sha256,
+        "source_url": job.source_url,
+        "observed_at": NOW.isoformat(),
+    }]
+    basis_fact_ids = [fact_id]
+    if documents:
+        document_fact_id = f"F-{company_key}-document-1"
+        facts.append({
+            "fact_id": document_fact_id,
+            "text": f"{company_key} 官网展示激光雷达产品组合",
+            "evidence_sha256": documents[0].evidence_sha256,
+            "source_url": documents[0].source_url,
+            "observed_at": NOW.isoformat(),
+        })
+        basis_fact_ids.append(document_fact_id)
     response = {
         "schema_version": 2,
-        "facts": [{
-            "fact_id": fact_id,
-            "text": f"{company_key} 公开招聘点云算法工程师",
-            "evidence_sha256": job.evidence_sha256,
-            "source_url": job.source_url,
-            "observed_at": NOW.isoformat(),
-        }],
+        "facts": facts,
         "inferences": [{
             "inference_id": inference_id,
+            "claim_type": claim_type,
             "text": inference,
-            "basis_fact_ids": [fact_id],
+            "basis_fact_ids": basis_fact_ids,
         }],
         "alternatives": [{
             "alternative_id": f"X-{company_key}-1",
@@ -67,7 +114,7 @@ def _accepted(company_key: str, inference: str) -> AcceptedAnalysis:
             "target_tasks": ["talent_profile", "sourcing_strategy"],
         }],
         "summary": f"{company_key} 公开招聘信号摘要",
-        "confidence": "medium",
+        "confidence": confidence,
     }
     usage = {
         "unit_id": str(unit.unit_id),
@@ -116,3 +163,27 @@ def test_rejects_company_analysis_without_alternative() -> None:
 
     with pytest.raises(AnalysisContractError, match="alternative"):
         validate_analysis_set((modified,))
+
+
+def test_high_confidence_product_route_requires_recruiting_and_primary_source() -> None:
+    analysis = _accepted(
+        "hesai",
+        "禾赛正在强化车载激光雷达产品路线",
+        claim_type="product_route",
+        confidence="high",
+    )
+
+    with pytest.raises(AnalysisContractError, match="cross-source"):
+        validate_analysis_set((analysis,))
+
+
+def test_high_confidence_product_route_accepts_cross_source_grounding() -> None:
+    analysis = _accepted(
+        "hesai",
+        "禾赛招聘与官网产品证据共同支持车载激光雷达路线判断",
+        claim_type="product_route",
+        confidence="high",
+        include_primary_document=True,
+    )
+
+    assert validate_analysis_set((analysis,)).passed is True
