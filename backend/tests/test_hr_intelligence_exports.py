@@ -62,3 +62,19 @@ def test_pdf_keeps_raw_job_detail_in_workbook_instead_of_unbounded_appendix() ->
 
     assert len(reader.pages) <= 4
     assert "原始岗位明细请查看 report.xlsx" in text
+
+
+def test_human_markdown_uses_readable_summary_instead_of_raw_data_dump() -> None:
+    report_input = _report_input()
+    report_input["aggregates"] = {
+        "tracks": {"social": 1},
+        "directions": {"算法": 1},
+        "job_families": {"research_development": 1},
+    }
+
+    body = build_markdown(report_input).decode("utf-8")
+
+    assert "```json" not in body
+    assert "## 原始岗位" not in body
+    assert "原始岗位明细请查看 report.xlsx" in body
+    assert "社招：1" in body
