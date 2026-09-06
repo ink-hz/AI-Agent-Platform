@@ -239,6 +239,26 @@ def test_repository_transitions_and_reads_a_production_batch() -> None:
     assert "read_panorama_production_batch_v80" in factory.connection.calls[1][0]
 
 
+def test_repository_reopens_only_a_failed_analysis_batch_for_retry() -> None:
+    batch_id, owner_id, request_id, source_id = uuid4(), uuid4(), uuid4(), uuid4()
+    retrying = batch_row(batch_id, owner_id, request_id, source_id) | {
+        "state": "analyzing",
+        "row_version": 5,
+        "started_at": NOW,
+    }
+    factory = Factory([retrying])
+    repository = PanoramaRepository("postgresql://test", connect=factory)
+
+    result = repository.retry_production_analysis(
+        owner_id, batch_id, expected_row_version=4
+    )
+
+    assert result.state == "analyzing"
+    sql, parameters = factory.connection.calls[0]
+    assert "retry_panorama_analysis_v82" in sql
+    assert parameters == (owner_id, batch_id, 4)
+
+
 def test_repository_reads_persisted_jobs_and_attempts_for_batch_resume() -> None:
     batch_id, owner_id, source_id, snapshot_id, observation_id = (
         uuid4(),

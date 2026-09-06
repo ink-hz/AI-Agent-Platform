@@ -462,6 +462,36 @@ class PanoramaRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "production transition")
 
+    def retry_production_analysis(
+        self,
+        owner_id: UUID,
+        batch_id: UUID,
+        *,
+        expected_row_version: int,
+    ) -> ProductionBatch:
+        _identifier(owner_id)
+        _identifier(batch_id)
+        if (
+            isinstance(expected_row_version, bool)
+            or not isinstance(expected_row_version, int)
+            or expected_row_version < 1
+        ):
+            raise ValueError("panorama production row version invalid")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select result.* from "
+                    "platform_hr.retry_panorama_analysis_v82(%s,%s,%s) result",
+                    (owner_id, batch_id, expected_row_version),
+                ).fetchone()
+            if row is None:
+                raise PanoramaUnavailable("panorama analysis retry unavailable")
+            return _production_batch(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "analysis retry")
+
     def record_source_attempt(
         self, command: CreateSourceCollectionAttempt
     ) -> SourceCollectionAttempt:

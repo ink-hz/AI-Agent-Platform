@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from app.hr.panorama_cli import build_parser, main
+from app.hr.panorama_cli import (
+    PanoramaOperatorRuntime,
+    _select_catalog_sources,
+    build_parser,
+    main,
+)
 
 CATALOG = Path(__file__).parents[1] / "app/hr/panorama_source_catalog.v1.json"
 
@@ -68,6 +74,20 @@ def test_bundled_catalog_contains_priority_and_session_companies() -> None:
     } <= set(insta360["approved_urls"])
 
 
+def test_production_run_selects_only_bundled_catalog_keys_in_catalog_order() -> None:
+    legacy = SimpleNamespace(company_key="company-legacy")
+    huawei = SimpleNamespace(company_key="huawei")
+    hesai = SimpleNamespace(company_key="hesai")
+
+    assert _select_catalog_sources((legacy, hesai, huawei), ("huawei", "hesai")) == (
+        huawei,
+        hesai,
+    )
+
+    with pytest.raises(RuntimeError, match="catalog is incomplete"):
+        _select_catalog_sources((hesai,), ("huawei", "hesai"))
+
+
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
@@ -87,3 +107,60 @@ def test_cli_dispatches_commands_and_prints_machine_readable_status(
     assert runtime.calls[0][0] == expected
     output = json.loads(capsys.readouterr().out)
     assert isinstance(output, dict)
+
+
+@pytest.mark.asyncio
+async def test_runtime_retries_a_failed_analysis_without_recollecting() -> None:
+    owner_id, batch_id, source_id = uuid4(), uuid4(), uuid4()
+    failed = SimpleNamespace(
+        state="failed",
+        error_code="analysis_failed",
+        row_version=4,
+        selected_source_ids=(source_id,),
+    )
+    analyzing = SimpleNamespace(
+        state="analyzing",
+        error_code=None,
+        row_version=5,
+        selected_source_ids=(source_id,),
+    )
+
+    class Repository:
+        def __init__(self) -> None:
+            self.retry_calls = []
+
+        def production_batch(self, selected_owner_id, selected_batch_id):
+            assert (selected_owner_id, selected_batch_id) == (owner_id, batch_id)
+            return failed
+
+        def retry_production_analysis(
+            self, selected_owner_id, selected_batch_id, *, expected_row_version
+        ):
+            self.retry_calls.append(
+                (selected_owner_id, selected_batch_id, expected_row_version)
+            )
+            return analyzing
+
+        def sources_for_run(self, selected_owner_id, selected_source_ids):
+            assert (selected_owner_id, selected_source_ids) == (
+                owner_id,
+                (source_id,),
+            )
+            return ("source",)
+
+    repository = Repository()
+    runtime = object.__new__(PanoramaOperatorRuntime)
+    runtime._owner_id = owner_id
+    runtime._repository = repository
+
+    async def deliver(batch, sources):
+        assert batch is analyzing
+        assert sources == ("source",)
+        return {"batch_id": str(batch_id)}
+
+    runtime._deliver = deliver
+
+    result = await runtime.resume(batch_id)
+
+    assert result == {"batch_id": str(batch_id)}
+    assert repository.retry_calls == [(owner_id, batch_id, 4)]

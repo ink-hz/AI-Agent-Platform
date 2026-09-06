@@ -36,6 +36,17 @@ class OperatorRuntime(Protocol):
     def status(self, current: bool) -> Mapping[str, object]: ...
 
 
+def _select_catalog_sources(
+    sources: Sequence[object], source_keys: Sequence[str]
+) -> tuple[object, ...]:
+    if not source_keys or len(set(source_keys)) != len(source_keys):
+        raise RuntimeError("panorama source catalog invalid")
+    by_key = {getattr(source, "company_key", None): source for source in sources}
+    if any(key not in by_key for key in source_keys):
+        raise RuntimeError("panorama source catalog is incomplete")
+    return tuple(by_key[key] for key in source_keys)
+
+
 def _required_environment(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
@@ -74,6 +85,7 @@ class PanoramaOperatorRuntime:
         analyzer: PanoramaAnalyzer,
         async_client: httpx.AsyncClient,
         model_client: httpx.Client,
+        source_keys: Sequence[str] = (),
     ) -> None:
         self._owner_id = owner_id
         self._repository = repository
@@ -81,6 +93,7 @@ class PanoramaOperatorRuntime:
         self._analyzer = analyzer
         self._async_client = async_client
         self._model_client = model_client
+        self._source_keys = tuple(source_keys)
 
     def close(self) -> None:
         asyncio.run(self._async_client.aclose())
@@ -132,7 +145,8 @@ class PanoramaOperatorRuntime:
     async def run(self, trigger: str) -> Mapping[str, object]:
         if trigger not in {"schedule", "operator"}:
             raise ValueError("panorama trigger invalid")
-        sources = self._repository.list_sources(self._owner_id, limit=100)
+        stored_sources = self._repository.list_sources(self._owner_id, limit=100)
+        sources = _select_catalog_sources(stored_sources, self._source_keys)
         if not sources:
             raise RuntimeError("panorama source catalog is empty")
         batch = self._repository.create_production_batch(
@@ -149,6 +163,12 @@ class PanoramaOperatorRuntime:
 
     async def resume(self, batch_id: UUID) -> Mapping[str, object]:
         batch = self._repository.production_batch(self._owner_id, batch_id)
+        if batch.state == "failed" and batch.error_code == "analysis_failed":
+            batch = self._repository.retry_production_analysis(
+                self._owner_id,
+                batch_id,
+                expected_row_version=batch.row_version,
+            )
         if batch.state not in {"queued", "running", "analyzing"}:
             raise RuntimeError("panorama batch cannot be resumed")
         sources = self._repository.sources_for_run(
@@ -229,6 +249,9 @@ def build_runtime() -> PanoramaOperatorRuntime:
         limits=httpx.Limits(max_connections=4, max_keepalive_connections=4)
     )
     archive = EvidenceArchive(production=True)
+    catalog_path = os.getenv(
+        "PLATFORM_HR_PANORAMA_SOURCE_CATALOG", str(DEFAULT_CATALOG)
+    )
     return PanoramaOperatorRuntime(
         owner_id=owner_id,
         repository=PanoramaRepository(database_url),
@@ -236,6 +259,7 @@ def build_runtime() -> PanoramaOperatorRuntime:
         analyzer=PanoramaAnalyzer(ConfiguredPanoramaModel(adapter, manifest)),
         async_client=async_client,
         model_client=model_client,
+        source_keys=tuple(str(item["company_key"]) for item in _catalog(catalog_path)),
     )
 
 
