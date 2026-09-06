@@ -1,4 +1,3 @@
-export type HrPanoramaRunState = "queued" | "running" | "completed" | "partially_completed" | "failed";
 export type HrPanoramaJobStatus = "open" | "closed" | "unknown";
 
 export interface HrPanoramaSource {
@@ -12,18 +11,23 @@ export interface HrPanoramaSource {
   updatedAt: string;
 }
 
-export interface HrPanoramaRun {
-  runId: string;
-  selectedSourceIds: string[];
-  conversationId: string;
-  state: HrPanoramaRunState;
-  errorCode: string | null;
-  sourceFailures: Record<string, string>;
-  rowVersion: number;
-  startedAt: string | null;
-  finishedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+export interface HrPanoramaSourceCoverage {
+  sourceId: string;
+  state: "succeeded" | "failed";
+  observedAt: string;
+  sourceUrls: string[];
+  jobCount: number;
+  errorCode?: string;
+  channelFailures?: Record<string, string>;
+}
+
+export interface HrPanoramaPublication {
+  publicationId: string;
+  batchId: string;
+  insightVersionId: string;
+  coverageState: "complete" | "partial";
+  sourceCoverage: HrPanoramaSourceCoverage[];
+  publishedAt: string;
 }
 
 export interface HrPanoramaFact {
@@ -44,7 +48,8 @@ export interface HrPanoramaUnknown { text: string; }
 
 export interface HrPanoramaInsight {
   insightVersionId: string;
-  runId: string;
+  runId: string | null;
+  productionBatchId: string | null;
   versionNumber: number;
   selectedSourceIds: string[];
   snapshotIds: string[];
@@ -53,8 +58,8 @@ export interface HrPanoramaInsight {
   unknowns: HrPanoramaUnknown[];
   directionClusters: Record<string, unknown>;
   summary: string;
-  sourceConversationId: string;
-  sourceTurnId: string;
+  sourceConversationId: string | null;
+  sourceTurnId: string | null;
   agentId: string;
   modelVersion: string;
   createdAt: string;
@@ -62,7 +67,9 @@ export interface HrPanoramaInsight {
 
 export interface HrPanoramaSnapshot {
   snapshotId: string;
-  runId: string;
+  runId: string | null;
+  productionBatchId: string | null;
+  observationId: string | null;
   sourceId: string;
   publicJobKey: string;
   title: string;
@@ -76,19 +83,12 @@ export interface HrPanoramaSnapshot {
   createdAt: string;
 }
 
-export interface HrPanoramaReport {
+export interface HrPanoramaReportSummary {
+  publication: HrPanoramaPublication;
   insight: HrPanoramaInsight;
+}
+
+export interface HrPanoramaReport extends HrPanoramaReportSummary {
   sources: HrPanoramaSource[];
   snapshots: HrPanoramaSnapshot[];
-}
-
-export interface AddHrPanoramaCompanyInput {
-  canonicalName: string;
-  aliases: string[];
-  approvedUrls: string[];
-}
-
-export interface StartHrPanoramaRunInput {
-  sourceIds: string[];
-  conversationId?: string;
 }

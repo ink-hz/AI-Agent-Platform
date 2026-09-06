@@ -232,6 +232,7 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
   const [statusFilter, setStatusFilter] = useState<HrPanoramaSnapshot["status"] | "all">("all");
   const [directionFilter, setDirectionFilter] = useState("all");
   const sourceById = new Map(report.sources.map((source) => [source.sourceId, source]));
+  const coverageById = new Map(report.publication.sourceCoverage.map((item) => [item.sourceId, item]));
   const factById = new Map(report.insight.facts.map((fact) => [fact.factId, fact]));
   const openJobs = report.snapshots.filter((item) => item.status === "open").length;
   const geography = countBy(report.snapshots, (item) => item.location);
@@ -253,13 +254,13 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
     if (locationFilter !== "all") parameters.set("location", locationFilter);
     if (statusFilter !== "all") parameters.set("status", statusFilter);
     if (directionFilter !== "all") parameters.set("technical_direction", DIRECTION_KEYS[directionFilter] ?? "other");
-    return platformPath(`/api/hr/panorama/reports/${encodeURIComponent(report.insight.insightVersionId)}/export?${parameters.toString()}`);
+    return platformPath(`/api/hr/panorama/reports/${encodeURIComponent(report.publication.publicationId)}/export?${parameters.toString()}`);
   };
   const filteredMarkdown = formatHrPanoramaReportMarkdown(report, comparison, filteredJobs, filtersActive);
   useEffect(() => {
     setCopyState("idle"); setView("overview"); setCompanyFilter("all"); setTrackFilter("all");
     setLocationFilter("all"); setStatusFilter("all"); setDirectionFilter("all");
-  }, [report.insight.insightVersionId]);
+  }, [report.publication.publicationId]);
   useEffect(() => {
     if (copyState === "idle") return;
     const timer = window.setTimeout(() => setCopyState("idle"), 1800);
@@ -269,11 +270,11 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
     try { setCopyState(await onCopy(markdown) ? "copied" : "error"); }
     catch { setCopyState("error"); }
   };
-  return <article className="hr-panorama-report" data-report-id={report.insight.insightVersionId}>
+  return <article className="hr-panorama-report" data-report-id={report.publication.publicationId}>
     <header className="hr-panorama-report-cover">
       <div className="hr-panorama-report-meta">
-        <span>全景分析 · 第 {report.insight.versionNumber} 版</span>
-        <div><time dateTime={report.insight.createdAt}>分析于 {time(report.insight.createdAt)}</time><span className="hr-panorama-report-actions"><button onClick={() => void copy()} type="button">{copyState === "copied" ? "已复制报告" : copyState === "error" ? "复制失败，请重试" : "复制报告"}</button><a download href={exportPath("pdf")}>下载 PDF</a><a download href={exportPath("xlsx")}>下载 Excel</a><button onClick={() => downloadMarkdown(report, filteredMarkdown)} type="button">下载 Markdown</button></span></div>
+        <span>全景分析 · 第 {report.insight.versionNumber} 版 · {report.publication.coverageState === "complete" ? "来源完整" : "部分来源可用"}</span>
+        <div><time dateTime={report.publication.publishedAt}>发布于 {time(report.publication.publishedAt)}</time><span className="hr-panorama-report-actions"><button onClick={() => void copy()} type="button">{copyState === "copied" ? "已复制报告" : copyState === "error" ? "复制失败，请重试" : "复制报告"}</button><a download href={exportPath("pdf")}>下载 PDF</a><a download href={exportPath("xlsx")}>下载 Excel</a><button onClick={() => downloadMarkdown(report, filteredMarkdown)} type="button">下载 Markdown</button></span></div>
       </div>
       <div className="hr-panorama-report-lead">
         <p>公开招聘情报</p>
@@ -347,13 +348,15 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
       <header><p>SOURCE MATRIX</p><h2>情报来源矩阵</h2><span>逐家公司展示批准渠道、本版观测结果和失败边界。</span></header>
       <div>{report.sources.map((source) => {
         const snapshots = report.snapshots.filter((item) => item.sourceId === source.sourceId);
-        const failed = currentFailureIds(comparison).includes(source.sourceId);
+        const coverage = coverageById.get(source.sourceId);
+        const failed = coverage?.state === "failed";
         const channels = channelSnapshots(source, snapshots);
         return <article key={source.sourceId}><header><div><h3>{source.canonicalName}</h3><span>{failed ? "本轮公司采集失败，逐渠道状态见下方" : `${source.approvedUrls.length} 个批准渠道`}</span></div></header>
           <ul>{[...channels].map(([url, items]) => {
             const observed = items.map((item) => item.observedAt).sort();
             const latest = observed[observed.length - 1];
-            return <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a><small>{failed ? "公司本轮失败，渠道结果未知" : items.length ? `命中 ${items.length} 条` : "未形成岗位证据，待确认"}</small>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</li>;
+            const failureCode = coverage?.channelFailures?.[url];
+            return <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a><small>{failureCode ? `本轮失败 · ${failureCode}` : items.length ? `命中 ${items.length} 条` : "未形成岗位证据，待确认"}</small>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</li>;
           })}</ul>
         </article>;
       })}</div>
@@ -389,7 +392,7 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
 
     <details className="hr-panorama-diagnostics">
       <summary>高级诊断</summary>
-      <dl><div><dt>分析版本</dt><dd>{report.insight.insightVersionId}</dd></div><div><dt>执行记录</dt><dd>{report.insight.sourceConversationId}</dd></div><div><dt>模型版本</dt><dd>{report.insight.modelVersion}</dd></div><div><dt>生成 Agent</dt><dd>{report.insight.agentId}</dd></div></dl>
+      <dl><div><dt>发布版本</dt><dd>{report.publication.publicationId}</dd></div><div><dt>原始数据批次</dt><dd>{report.publication.batchId}</dd></div><div><dt>分析版本</dt><dd>{report.insight.insightVersionId}</dd></div><div><dt>模型版本</dt><dd>{report.insight.modelVersion}</dd></div><div><dt>生成 Agent</dt><dd>{report.insight.agentId}</dd></div></dl>
     </details>
   </article>;
 }

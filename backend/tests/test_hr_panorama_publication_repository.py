@@ -191,6 +191,26 @@ def test_repository_returns_none_before_the_first_publication() -> None:
     assert repository.current_publication() is None
 
 
+def test_repository_reads_shared_publication_history_and_detail() -> None:
+    publication_id, request_id, batch_id, owner_id, insight_id = (
+        uuid4(),
+        uuid4(),
+        uuid4(),
+        uuid4(),
+        uuid4(),
+    )
+    row = publication_row(publication_id, request_id, batch_id, owner_id, insight_id)
+    factory = Factory([[row], row])
+    repository = PanoramaRepository("postgresql://test", connect=factory)
+
+    history = repository.list_publications(limit=20)
+    selected = repository.publication(publication_id)
+
+    assert history == (selected,)
+    assert "list_panorama_publications_v80" in factory.connection.calls[0][0]
+    assert "read_panorama_publication_v80" in factory.connection.calls[1][0]
+
+
 def test_repository_transitions_and_reads_a_production_batch() -> None:
     batch_id, owner_id, request_id, source_id = uuid4(), uuid4(), uuid4(), uuid4()
     queued = batch_row(batch_id, owner_id, request_id, source_id)

@@ -936,6 +936,48 @@ begin
 end
 $function$;
 
+create function platform_hr.read_panorama_publication_v80(
+  selected_publication_id uuid
+) returns setof platform_hr.panorama_publications
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  return query select publication.*
+  from platform_hr.panorama_publications publication
+  where publication.publication_id=selected_publication_id
+    and publication.workspace_key='hr';
+end
+$function$;
+
+create function platform_hr.list_panorama_publications_v80(
+  selected_limit integer
+) returns setof platform_hr.panorama_publications
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if selected_limit is null or selected_limit<1 or selected_limit>100 then
+    raise check_violation using message='panorama publication limit invalid';
+  end if;
+  return query select publication.*
+  from platform_hr.panorama_publications publication
+  where publication.workspace_key='hr'
+  order by publication.published_at desc,publication.publication_id desc
+  limit selected_limit;
+end
+$function$;
+
 create function platform_hr.read_panorama_production_snapshots_v80(
   selected_owner_internal_user_id uuid,
   selected_batch_id uuid
@@ -1047,6 +1089,10 @@ revoke all on function platform_hr.publish_panorama_version_v80(
 ) from public;
 revoke all on function platform_hr.read_current_panorama_publication_v80(text)
   from public;
+revoke all on function platform_hr.read_panorama_publication_v80(uuid)
+  from public;
+revoke all on function platform_hr.list_panorama_publications_v80(integer)
+  from public;
 revoke all on function platform_hr.read_panorama_production_snapshots_v80(
   uuid,uuid
 ) from public;
@@ -1077,6 +1123,10 @@ grant execute on function platform_hr.publish_panorama_version_v80(
   uuid,uuid,uuid,uuid,text,jsonb
 ) to platform_control_app,platform_control_app_preview;
 grant execute on function platform_hr.read_current_panorama_publication_v80(text)
+  to platform_control_app,platform_control_app_preview;
+grant execute on function platform_hr.read_panorama_publication_v80(uuid)
+  to platform_control_app,platform_control_app_preview;
+grant execute on function platform_hr.list_panorama_publications_v80(integer)
   to platform_control_app,platform_control_app_preview;
 grant execute on function platform_hr.read_panorama_production_snapshots_v80(
   uuid,uuid

@@ -8,16 +8,28 @@ import type { HrPanoramaReport as Report } from "../../hrPanoramaTypes";
 import { formatHrPanoramaReportMarkdown, HrPanoramaReport } from "./HrPanoramaReport";
 
 const report: Report = {
+  publication: {
+    publicationId: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+    batchId: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb",
+    insightVersionId: "55555555-5555-4555-8555-555555555555",
+    coverageState: "complete",
+    sourceCoverage: [
+      { sourceId: "11111111-1111-4111-8111-111111111111", state: "succeeded", observedAt: "2026-09-05T08:00:00Z", sourceUrls: ["https://example.com/jobs"], jobCount: 1 },
+      { sourceId: "22222222-2222-4222-8222-222222222222", state: "succeeded", observedAt: "2026-09-05T08:05:00Z", sourceUrls: ["https://sunny.example/jobs"], jobCount: 1 },
+    ],
+    publishedAt: "2026-09-05T09:05:00Z",
+  },
   insight: {
-    insightVersionId: "55555555-5555-4555-8555-555555555555", runId: "33333333-3333-4333-8333-333333333333",
+    insightVersionId: "55555555-5555-4555-8555-555555555555", runId: null,
+    productionBatchId: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb",
     versionNumber: 2, selectedSourceIds: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"],
     snapshotIds: ["66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777"],
     facts: [{ factId: "f1", text: "联合光电公开招聘结构工程师", snapshotId: "66666666-6666-4666-8666-666666666666",
       observationId: "88888888-8888-4888-8888-888888888888", sourceUrl: "https://example.com/jobs/1", observedAt: "2026-09-05T08:00:00Z" }],
     inferences: [{ text: "精密结构人才投入可能增加", basisFactIds: ["f1"] }],
     unknowns: [{ text: "实际招聘人数仍待确认" }], directionClusters: { 精密结构: 4, 光学设计: 2 },
-    summary: "两家公司持续布局光学与精密结构人才。", sourceConversationId: "44444444-4444-4444-8444-444444444444",
-    sourceTurnId: "99999999-9999-4999-8999-999999999999", agentId: "hr-bot", modelVersion: "gpt-5",
+    summary: "两家公司持续布局光学与精密结构人才。", sourceConversationId: null,
+    sourceTurnId: null, agentId: "hr-intelligence-producer", modelVersion: "gpt-5",
     createdAt: "2026-09-05T09:00:00Z",
   },
   sources: [
@@ -25,8 +37,8 @@ const report: Report = {
     { sourceId: "22222222-2222-4222-8222-222222222222", sourceKind: "company", canonicalName: "舜宇光学", aliases: [], approvedUrls: ["https://sunny.example/jobs"], active: true, createdAt: "2026-09-04T08:00:00Z", updatedAt: "2026-09-05T08:00:00Z" },
   ],
   snapshots: [
-    { snapshotId: "66666666-6666-4666-8666-666666666666", runId: "33333333-3333-4333-8333-333333333333", sourceId: "11111111-1111-4111-8111-111111111111", publicJobKey: "job-1", title: "结构工程师", location: "中山", dutyExcerpt: "负责精密结构设计", requirementExcerpt: "五年以上光学行业经验", sourceUrl: "https://example.com/jobs/1", observedAt: "2026-09-05T08:00:00Z", contentSha256: "a".repeat(64), status: "open", createdAt: "2026-09-05T08:01:00Z" },
-    { snapshotId: "77777777-7777-4777-8777-777777777777", runId: "33333333-3333-4333-8333-333333333333", sourceId: "22222222-2222-4222-8222-222222222222", publicJobKey: "job-2", title: "光学工程师", location: "宁波", dutyExcerpt: "负责光学系统设计", requirementExcerpt: "熟悉 Zemax", sourceUrl: "https://sunny.example/jobs/2", observedAt: "2026-09-05T08:05:00Z", contentSha256: "b".repeat(64), status: "open", createdAt: "2026-09-05T08:06:00Z" },
+    { snapshotId: "66666666-6666-4666-8666-666666666666", runId: null, productionBatchId: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb", observationId: "88888888-8888-4888-8888-888888888888", sourceId: "11111111-1111-4111-8111-111111111111", publicJobKey: "job-1", title: "结构工程师", location: "中山", dutyExcerpt: "负责精密结构设计", requirementExcerpt: "五年以上光学行业经验", sourceUrl: "https://example.com/jobs/1", observedAt: "2026-09-05T08:00:00Z", contentSha256: "a".repeat(64), status: "open", createdAt: "2026-09-05T08:01:00Z" },
+    { snapshotId: "77777777-7777-4777-8777-777777777777", runId: null, productionBatchId: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb", observationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sourceId: "22222222-2222-4222-8222-222222222222", publicJobKey: "job-2", title: "光学工程师", location: "宁波", dutyExcerpt: "负责光学系统设计", requirementExcerpt: "熟悉 Zemax", sourceUrl: "https://sunny.example/jobs/2", observedAt: "2026-09-05T08:05:00Z", contentSha256: "b".repeat(64), status: "open", createdAt: "2026-09-05T08:06:00Z" },
   ],
 };
 const previousReport: Report = {

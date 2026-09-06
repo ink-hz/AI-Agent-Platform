@@ -45,12 +45,10 @@ def test_create_app_constructs_panorama_from_the_shared_control_database() -> No
     assert len(repository_calls) == len(service_calls) == 1
     assert ast.unparse(repository_calls[0].args[0]) == "control_database_url"
     assert ast.unparse(service_calls[0].args[0]) == "panorama_repository"
-    assert {
-        keyword.arg: ast.unparse(keyword.value) for keyword in service_calls[0].keywords
-    }["coordinator"] == "hr_panorama_coordinator"
+    assert service_calls[0].keywords == []
 
 
-def test_create_app_wires_one_durable_panorama_projection_loop() -> None:
+def test_create_app_does_not_run_panorama_collection_in_the_web_process() -> None:
     source = inspect.getsource(create_app)
     tree = ast.parse(source)
     calls = [
@@ -61,29 +59,23 @@ def test_create_app_wires_one_durable_panorama_projection_loop() -> None:
         and node.func.id == "panorama_projection_loop"
     ]
 
-    assert len(calls) == 1
-    assert ast.unparse(calls[0].args[0]) == "hr_panorama_projector"
-    assert '"direct_agent" in v1_mission_modes' in source
+    assert calls == []
+    assert "PanoramaRunCoordinator" not in source
+    assert "PanoramaResultProjector" not in source
 
 
-def test_create_app_runs_panorama_projection_in_one_worker_thread() -> None:
-    caller_thread = threading.get_ident()
+def test_create_app_does_not_start_an_injected_legacy_panorama_projector() -> None:
     called = threading.Event()
-    worker_threads: list[int] = []
 
     class _Projector:
         def reconcile_one(self) -> bool:
-            worker_threads.append(threading.get_ident())
             called.set()
             return False
 
     app = create_app(start_poller=False, hr_panorama_projector=_Projector())
 
     with TestClient(app):
-        assert called.wait(timeout=2)
-
-    assert len(set(worker_threads)) == 1
-    assert worker_threads[0] != caller_thread
+        assert not called.wait(timeout=0.1)
 
 
 def test_create_app_wires_candidate_documents_to_the_existing_download_service() -> None:

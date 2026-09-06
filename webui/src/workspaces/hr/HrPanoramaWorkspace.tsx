@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Account } from "../../auth";
 import { PlatformLink } from "../../components/PlatformLink";
 import { createHrPanoramaApi, HrPanoramaApiError, type HrPanoramaApi } from "../../hrPanoramaApi";
-import type { HrPanoramaInsight, HrPanoramaReport } from "../../hrPanoramaTypes";
+import type { HrPanoramaReport, HrPanoramaReportSummary } from "../../hrPanoramaTypes";
 import { HrPanoramaReport as Report, type HrPanoramaComparison } from "./HrPanoramaReport";
 
 const DATE_TIME = new Intl.DateTimeFormat("zh-CN", {
@@ -36,7 +36,7 @@ export function HrPanoramaWorkspace({
   const defaultApi = useMemo(() => createHrPanoramaApi(account.csrf_token), [account.csrf_token]);
   const api = injectedApi ?? defaultApi;
   const [report, setReport] = useState<HrPanoramaReport | null>(null);
-  const [reports, setReports] = useState<HrPanoramaInsight[]>([]);
+  const [reports, setReports] = useState<HrPanoramaReportSummary[]>([]);
   const [comparison, setComparison] = useState<HrPanoramaComparison>({ state: "loading" });
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
@@ -49,7 +49,7 @@ export function HrPanoramaWorkspace({
       setFailure(null);
       setComparison({ state: "loading" });
       try {
-        const historyPromise = api.listReports(controller.signal).catch(() => [] as HrPanoramaInsight[]);
+        const historyPromise = api.listReports(controller.signal).catch(() => [] as HrPanoramaReportSummary[]);
         const selected = insightVersionId
           ? await api.report(insightVersionId, controller.signal)
           : await api.currentReport(controller.signal);
@@ -62,15 +62,15 @@ export function HrPanoramaWorkspace({
           return;
         }
         const previous = history
-          .filter((item) => item.versionNumber < selected.insight.versionNumber
-            && sameScope(item.selectedSourceIds, selected.insight.selectedSourceIds))
-          .sort((left, right) => right.versionNumber - left.versionNumber)[0];
+          .filter((item) => item.insight.versionNumber < selected.insight.versionNumber
+            && sameScope(item.insight.selectedSourceIds, selected.insight.selectedSourceIds))
+          .sort((left, right) => right.insight.versionNumber - left.insight.versionNumber)[0];
         if (!previous) {
           setComparison({ state: "none", currentSourceFailures: {} });
           return;
         }
         try {
-          const previousReport = await api.report(previous.insightVersionId, controller.signal);
+          const previousReport = await api.report(previous.publication.publicationId, controller.signal);
           if (!controller.signal.aborted) setComparison({
             state: "available", previousReport, currentSourceFailures: {}, previousSourceFailures: {},
           });
@@ -105,13 +105,13 @@ export function HrPanoramaWorkspace({
         <section>
           <header><span>分析历史</span><strong>{reports.length}</strong></header>
           {reports.length ? <nav>{reports.map((item) => <PlatformLink
-            aria-current={item.insightVersionId === report?.insight.insightVersionId ? "page" : undefined}
-            href={`/hr/panorama/reports/${item.insightVersionId}`}
-            key={item.insightVersionId}
+            aria-current={item.publication.publicationId === report?.publication.publicationId ? "page" : undefined}
+            href={`/hr/panorama/reports/${item.publication.publicationId}`}
+            key={item.publication.publicationId}
           >
-            <strong>第 {item.versionNumber} 版</strong>
-            <span>{item.summary}</span>
-            <time dateTime={item.createdAt}>{DATE_TIME.format(new Date(item.createdAt))}</time>
+            <strong>第 {item.insight.versionNumber} 版</strong>
+            <span>{item.insight.summary}</span>
+            <time dateTime={item.publication.publishedAt}>{DATE_TIME.format(new Date(item.publication.publishedAt))}</time>
           </PlatformLink>)}</nav> : <p>首份情报正在后台准备。</p>}
         </section>
       </aside>

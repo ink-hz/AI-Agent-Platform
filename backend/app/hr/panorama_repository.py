@@ -512,6 +512,36 @@ class PanoramaRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "current publication")
 
+    def list_publications(self, *, limit: int = 100) -> tuple[PublishedPanorama, ...]:
+        _limit(limit)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from platform_hr.list_panorama_publications_v80(%s)",
+                    (limit,),
+                ).fetchall()
+            return tuple(_publication(row) for row in rows)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "publication history")
+
+    def publication(self, publication_id: UUID) -> PublishedPanorama:
+        _identifier(publication_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_hr.read_panorama_publication_v80(%s)",
+                    (publication_id,),
+                ).fetchone()
+            if row is None:
+                raise PanoramaNotFound("panorama publication not found")
+            return _publication(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "publication")
+
     def publish_production_report(
         self, command: PublishPanoramaReport
     ) -> PublishedPanorama:

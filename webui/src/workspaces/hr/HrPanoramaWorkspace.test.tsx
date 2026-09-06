@@ -21,19 +21,27 @@ const source: HrPanoramaSource = {
 };
 const insight: HrPanoramaInsight = {
   insightVersionId: "55555555-5555-4555-8555-555555555555",
-  runId: "33333333-3333-4333-8333-333333333333", versionNumber: 2,
+  runId: null, productionBatchId: "33333333-3333-4333-8333-333333333333", versionNumber: 2,
   selectedSourceIds: [source.sourceId], snapshotIds: ["66666666-6666-4666-8666-666666666666"],
   facts: [{ factId: "fact-1", text: "联合光电公开招聘光学结构工程师", snapshotId: "66666666-6666-4666-8666-666666666666",
     observationId: "77777777-7777-4777-8777-777777777777", sourceUrl: "https://www.union-optech.com/jobs/1", observedAt: "2026-09-05T08:00:00Z" }],
   inferences: [{ text: "光学与结构能力正在形成组合投入", basisFactIds: ["fact-1"] }],
   unknowns: [{ text: "实际 HC 未公开" }], directionClusters: { 光学: 1, 结构: 1 },
-  summary: "光学与结构研发招聘保持投入", sourceConversationId: "44444444-4444-4444-8444-444444444444",
-  sourceTurnId: "99999999-9999-4999-8999-999999999999", agentId: "hr-intelligence-producer",
+  summary: "光学与结构研发招聘保持投入", sourceConversationId: null,
+  sourceTurnId: null, agentId: "hr-intelligence-producer",
   modelVersion: "configured-model-v1", createdAt: "2026-09-05T09:00:00Z",
 };
 const report: HrPanoramaReport = {
+  publication: {
+    publicationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    batchId: insight.productionBatchId!,
+    insightVersionId: insight.insightVersionId,
+    coverageState: "complete",
+    sourceCoverage: [{ sourceId: source.sourceId, state: "succeeded", observedAt: "2026-09-05T08:00:00Z", sourceUrls: source.approvedUrls, jobCount: 1 }],
+    publishedAt: "2026-09-05T09:05:00Z",
+  },
   insight, sources: [source], snapshots: [{
-    snapshotId: insight.snapshotIds[0], runId: insight.runId, sourceId: source.sourceId, publicJobKey: "optics-structure-1",
+    snapshotId: insight.snapshotIds[0], runId: null, productionBatchId: insight.productionBatchId, observationId: insight.facts[0].observationId, sourceId: source.sourceId, publicJobKey: "optics-structure-1",
     title: "光学结构工程师", location: "中山", dutyExcerpt: "负责光学产品结构研发",
     requirementExcerpt: "五年以上精密结构经验", sourceUrl: insight.facts[0].sourceUrl,
     observedAt: insight.facts[0].observedAt, contentSha256: "a".repeat(64), status: "open",
@@ -44,7 +52,7 @@ const report: HrPanoramaReport = {
 function fakeApi(overrides: Partial<HrPanoramaApi> = {}): HrPanoramaApi {
   return {
     currentReport: vi.fn().mockResolvedValue(report),
-    listReports: vi.fn().mockResolvedValue([insight]),
+    listReports: vi.fn().mockResolvedValue([{ publication: report.publication, insight }]),
     report: vi.fn().mockResolvedValue(report),
     ...overrides,
   };
@@ -89,11 +97,11 @@ describe("HrPanoramaWorkspace", () => {
   it("opens a historical deep link without loading current", async () => {
     const historical = { ...report, insight: { ...insight, summary: "历史版本分析" } };
     const api = fakeApi({ report: vi.fn().mockResolvedValue(historical) });
-    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} insightVersionId={insight.insightVersionId} />));
+    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} insightVersionId={report.publication.publicationId} />));
     await settle();
 
     expect(api.currentReport).not.toHaveBeenCalled();
-    expect(api.report).toHaveBeenCalledWith(insight.insightVersionId, expect.any(AbortSignal));
+    expect(api.report).toHaveBeenCalledWith(report.publication.publicationId, expect.any(AbortSignal));
     expect(container.textContent).toContain("历史版本分析");
   });
 
@@ -132,15 +140,17 @@ describe("HrPanoramaWorkspace", () => {
   });
 
   it("loads the nearest previous report with the same company scope", async () => {
-    const previous = { ...insight, insightVersionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", versionNumber: 1 };
+    const previous = { ...insight, insightVersionId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", versionNumber: 1 };
+    const previousPublication = { ...report.publication, publicationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", insightVersionId: previous.insightVersionId };
     const otherScope = { ...previous, insightVersionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", selectedSourceIds: ["22222222-2222-4222-8222-222222222222"] };
-    const previousReport = { ...report, insight: previous };
-    const detail = vi.fn().mockImplementation(async (id: string) => id === previous.insightVersionId ? previousReport : report);
-    const api = fakeApi({ listReports: vi.fn().mockResolvedValue([insight, otherScope, previous]), report: detail });
+    const otherPublication = { ...previousPublication, publicationId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", insightVersionId: otherScope.insightVersionId };
+    const previousReport = { ...report, publication: previousPublication, insight: previous };
+    const detail = vi.fn().mockImplementation(async (id: string) => id === previousPublication.publicationId ? previousReport : report);
+    const api = fakeApi({ listReports: vi.fn().mockResolvedValue([{ publication: report.publication, insight }, { publication: otherPublication, insight: otherScope }, { publication: previousPublication, insight: previous }]), report: detail });
     await act(async () => root.render(<HrPanoramaWorkspace account={account} api={api} />));
     await settle();
 
-    expect(detail).toHaveBeenCalledWith(previous.insightVersionId, expect.any(AbortSignal));
-    expect(detail).not.toHaveBeenCalledWith(otherScope.insightVersionId, expect.anything());
+    expect(detail).toHaveBeenCalledWith(previousPublication.publicationId, expect.any(AbortSignal));
+    expect(detail).not.toHaveBeenCalledWith(otherPublication.publicationId, expect.anything());
   });
 });
