@@ -11,9 +11,25 @@ from app.hr.panorama_models import (
     PublishedPanorama,
     PublishPanoramaReport,
     SourceCollectionAttempt,
+    TransitionProductionBatch,
 )
 
 NOW = datetime(2026, 9, 6, tzinfo=timezone.utc)
+
+
+def test_production_transition_is_optimistic_and_sanitized() -> None:
+    source_id = uuid4()
+    transition = TransitionProductionBatch(
+        owner_id=uuid4(),
+        batch_id=uuid4(),
+        expected_row_version=2,
+        state="analyzing",
+        error_code=None,
+        source_failures={str(source_id): "source_timeout"},
+    )
+
+    assert transition.expected_row_version == 2
+    assert transition.source_failures == {str(source_id): "source_timeout"}
 
 
 def test_production_batch_is_not_a_conversation_run() -> None:

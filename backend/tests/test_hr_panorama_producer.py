@@ -5,9 +5,16 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import pytest
-from app.hr.panorama_collection import CollectionError, CollectionResult, SourceTarget
+from app.hr.panorama_analysis import PanoramaAnalyzer
+from app.hr.panorama_collection import (
+    CollectionError,
+    CollectionResult,
+    NormalizedPublicJob,
+    SourceTarget,
+)
 from app.hr.panorama_evidence import EvidenceRecord
-from app.hr.panorama_producer import PanoramaProducer
+from app.hr.panorama_models import ProductionBatch, PublicJobSnapshot
+from app.hr.panorama_producer import PanoramaProducer, PanoramaProductionPipeline
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=timezone.utc)
 
@@ -106,3 +113,311 @@ async def test_schema_failures_are_not_retried() -> None:
     assert summary.failed_sources == {selected.source_id: "unsupported_schema"}
     assert collector.calls == [selected.source_id]
     assert len(recorder.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_company_channels_are_isolated_and_one_success_keeps_the_company() -> (
+    None
+):
+    source_id = uuid4()
+    social = SourceTarget(
+        source_id=source_id,
+        company_name="A",
+        source_url="https://a.example/jobs/social",
+        approved_urls=("https://a.example/jobs",),
+    )
+    campus = SourceTarget(
+        source_id=source_id,
+        company_name="A",
+        source_url="https://a.example/jobs/campus",
+        approved_urls=("https://a.example/jobs",),
+    )
+
+    class ChannelCollector:
+        async def collect(self, selected):
+            if selected.source_url.endswith("campus"):
+                raise CollectionError("source_rejected")
+            return result(selected)
+
+    summary = await PanoramaProducer(
+        owner_id=uuid4(),
+        batch_id=uuid4(),
+        collector=ChannelCollector(),
+        attempt_repository=Recorder([]),
+        targets=(social, campus),
+    ).run()
+
+    assert summary.successful_sources == (source_id,)
+    assert summary.failed_sources == {}
+    assert summary.failed_channels == {campus.source_url: "source_rejected"}
+
+
+class AnalysisModel:
+    version = "gpt-research-v1"
+
+    async def generate_json(self, stage, payload):
+        job = payload["jobs"][0]
+        return {
+            "facts": [
+                {
+                    "fact_id": f"{stage}-fact-1",
+                    "text": f"公开招聘{job['title']}",
+                    "snapshot_id": job["snapshot_id"],
+                    "observation_id": job["observation_id"],
+                    "source_url": job["source_url"],
+                    "observed_at": job["observed_at"],
+                }
+            ],
+            "inferences": [
+                {
+                    "text": "结构研发投入明确",
+                    "basis_fact_ids": [f"{stage}-fact-1"],
+                }
+            ],
+            "unknowns": [{"text": "实际 HC 未公开"}],
+            "direction_clusters": {"结构": 1},
+            "summary": "结构研发投入明确。",
+        }
+
+
+class PipelineCollector:
+    async def collect(self, selected):
+        return CollectionResult(
+            target=selected,
+            jobs=(
+                NormalizedPublicJob(
+                    public_job_key="structure-1",
+                    title="高级结构工程师",
+                    location="深圳",
+                    duty_excerpt="负责精密结构研发",
+                    requirement_excerpt="五年以上量产经验",
+                    source_url=f"{selected.source_url}/structure-1",
+                ),
+            ),
+            evidence=EvidenceRecord(
+                sha256="c" * 64,
+                locator="sha256/cc/" + "c" * 64,
+                mime="text/html",
+                size_bytes=1024,
+                metadata_json="{}",
+            ),
+            observed_at=NOW,
+        )
+
+
+class PipelineRepository:
+    def __init__(self, batch):
+        self.batch = batch
+        self.events = []
+        self.snapshots = []
+        self.insight = None
+        self.publication = None
+
+    def transition_production_batch(self, command):
+        self.events.append(command.state)
+        self.batch = ProductionBatch(
+            batch_id=self.batch.batch_id,
+            owner_id=self.batch.owner_id,
+            client_request_id=self.batch.client_request_id,
+            selected_source_ids=self.batch.selected_source_ids,
+            trigger_kind=self.batch.trigger_kind,
+            state=command.state,
+            analyzer_version=self.batch.analyzer_version,
+            source_failures=command.source_failures,
+            error_code=command.error_code,
+            row_version=self.batch.row_version + 1,
+            started_at=NOW,
+            finished_at=NOW if command.state == "failed" else None,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        return self.batch
+
+    def record_source_attempt(self, command):
+        self.events.append("attempt")
+        return command
+
+    def create_snapshot(self, command):
+        self.events.append("raw-job")
+        value = PublicJobSnapshot(
+            snapshot_id=command.snapshot_id,
+            owner_id=command.owner_id,
+            origin_request_id=command.client_request_id,
+            run_id=None,
+            source_id=command.source_id,
+            public_job_key=command.public_job_key,
+            title=command.title,
+            location=command.location,
+            duty_excerpt=command.duty_excerpt,
+            requirement_excerpt=command.requirement_excerpt,
+            source_url=command.source_url,
+            observed_at=command.observed_at,
+            content_sha256=command.content_sha256,
+            status=command.status,
+            created_at=NOW,
+            production_batch_id=command.production_batch_id,
+            observation_id=command.client_request_id,
+        )
+        self.snapshots.append(value)
+        return value
+
+    def snapshots_for_production_batch(self, owner_id, batch_id):
+        assert owner_id == self.batch.owner_id
+        assert batch_id == self.batch.batch_id
+        return tuple(self.snapshots)
+
+    def source_attempts_for_production_batch(self, owner_id, batch_id):
+        assert owner_id == self.batch.owner_id
+        assert batch_id == self.batch.batch_id
+        return ()
+
+    def create_insight(self, command):
+        self.events.append("ai-analysis")
+        self.insight = command.as_version(version_number=1, created_at=NOW)
+        return self.insight
+
+    def publish_production_report(self, command):
+        self.events.append("published")
+        self.publication = command
+        return command
+
+
+@pytest.mark.asyncio
+async def test_pipeline_persists_raw_jobs_before_separate_ai_analysis_and_publication() -> (
+    None
+):
+    selected = target("A")
+    batch = ProductionBatch(
+        batch_id=uuid4(),
+        owner_id=uuid4(),
+        client_request_id=uuid4(),
+        selected_source_ids=(selected.source_id,),
+        trigger_kind="schedule",
+        state="queued",
+        analyzer_version="gpt-research-v1",
+        source_failures={},
+        error_code=None,
+        row_version=1,
+        started_at=None,
+        finished_at=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    repository = PipelineRepository(batch)
+    pipeline = PanoramaProductionPipeline(
+        batch=batch,
+        targets=(selected,),
+        collector=PipelineCollector(),
+        analyzer=PanoramaAnalyzer(AnalysisModel()),
+        repository=repository,
+    )
+
+    delivery = await pipeline.run()
+
+    assert delivery.snapshot_count == 1
+    assert delivery.coverage_state == "complete"
+    assert repository.events.index("raw-job") < repository.events.index("ai-analysis")
+    assert repository.events[-1] == "published"
+    assert repository.insight.production_batch_id == batch.batch_id
+    assert not hasattr(repository.insight, "conversation_id")
+
+
+@pytest.mark.asyncio
+async def test_pipeline_marks_batch_failed_when_sources_have_no_public_jobs() -> None:
+    selected = target("A")
+    batch = ProductionBatch(
+        batch_id=uuid4(),
+        owner_id=uuid4(),
+        client_request_id=uuid4(),
+        selected_source_ids=(selected.source_id,),
+        trigger_kind="schedule",
+        state="queued",
+        analyzer_version="gpt-research-v1",
+        source_failures={},
+        error_code=None,
+        row_version=1,
+        started_at=None,
+        finished_at=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    repository = PipelineRepository(batch)
+
+    class EmptyCollector:
+        async def collect(self, target):
+            return result(target)
+
+    pipeline = PanoramaProductionPipeline(
+        batch=batch,
+        targets=(selected,),
+        collector=EmptyCollector(),
+        analyzer=PanoramaAnalyzer(AnalysisModel()),
+        repository=repository,
+    )
+
+    with pytest.raises(CollectionError, match="no_public_jobs"):
+        await pipeline.run()
+
+    assert repository.batch.state == "failed"
+    assert repository.batch.error_code == "no_public_jobs"
+    assert repository.events[-1] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_resumes_analysis_from_persisted_raw_jobs_without_recollecting() -> (
+    None
+):
+    selected = target("A")
+    batch = ProductionBatch(
+        batch_id=uuid4(),
+        owner_id=uuid4(),
+        client_request_id=uuid4(),
+        selected_source_ids=(selected.source_id,),
+        trigger_kind="operator",
+        state="analyzing",
+        analyzer_version="gpt-research-v1",
+        source_failures={},
+        error_code=None,
+        row_version=3,
+        started_at=NOW,
+        finished_at=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    repository = PipelineRepository(batch)
+    repository.snapshots.append(
+        PublicJobSnapshot(
+            snapshot_id=uuid4(),
+            owner_id=batch.owner_id,
+            origin_request_id=uuid4(),
+            run_id=None,
+            source_id=selected.source_id,
+            public_job_key="structure-1",
+            title="高级结构工程师",
+            location="深圳",
+            duty_excerpt="负责精密结构研发",
+            requirement_excerpt="五年以上量产经验",
+            source_url=f"{selected.source_url}/structure-1",
+            observed_at=NOW,
+            content_sha256="c" * 64,
+            status="open",
+            created_at=NOW,
+            production_batch_id=batch.batch_id,
+            observation_id=uuid4(),
+        )
+    )
+
+    class MustNotCollect:
+        async def collect(self, target):  # pragma: no cover - assertion is the body
+            raise AssertionError("analyzing resume must not recollect")
+
+    delivery = await PanoramaProductionPipeline(
+        batch=batch,
+        targets=(selected,),
+        collector=MustNotCollect(),
+        analyzer=PanoramaAnalyzer(AnalysisModel()),
+        repository=repository,
+    ).run()
+
+    assert delivery.snapshot_count == 1
+    assert repository.events == ["ai-analysis", "published"]

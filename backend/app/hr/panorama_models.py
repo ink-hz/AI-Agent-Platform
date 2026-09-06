@@ -614,6 +614,7 @@ class PublicJobSnapshot:
     status: JobStatus
     created_at: datetime
     production_batch_id: UUID | None = None
+    observation_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -629,6 +630,8 @@ class PublicJobSnapshot:
             _uuid(self.run_id)
         if self.production_batch_id is not None:
             _uuid(self.production_batch_id)
+        if self.observation_id is not None:
+            _uuid(self.observation_id)
         for name, maximum in (
             ("public_job_key", 512),
             ("title", 1000),
@@ -869,6 +872,7 @@ def _coverage(
     seen: set[UUID] = set()
     for record in records:
         allowed = {
+            "channel_failures",
             "source_id",
             "state",
             "observed_at",
@@ -899,6 +903,7 @@ def _coverage(
         urls = record["source_urls"]
         job_count = record["job_count"]
         error_code = record.get("error_code")
+        channel_failures = record.get("channel_failures", MappingProxyType({}))
         if (
             state not in {"succeeded", "failed"}
             or not isinstance(urls, tuple)
@@ -907,6 +912,15 @@ def _coverage(
             or isinstance(job_count, bool)
             or not isinstance(job_count, int)
             or not 0 <= job_count <= 10000
+            or not isinstance(channel_failures, Mapping)
+            or len(channel_failures) > 20
+            or any(
+                not isinstance(url, str)
+                or url not in urls
+                or not isinstance(reason, str)
+                or _ERROR_CODE.fullmatch(reason) is None
+                for url, reason in channel_failures.items()
+            )
             or (state == "succeeded" and error_code is not None)
             or (
                 state == "failed"
@@ -1027,6 +1041,46 @@ class CreateProductionBatch:
             "analyzer_version",
             _text(self.analyzer_version, 160, "analyzer version invalid"),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TransitionProductionBatch:
+    owner_id: UUID
+    batch_id: UUID
+    expected_row_version: int
+    state: ProductionBatchState
+    error_code: str | None
+    source_failures: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        _uuid(self.owner_id)
+        _uuid(self.batch_id)
+        _positive(self.expected_row_version, "production row version invalid")
+        if self.state not in {"running", "analyzing", "failed"}:
+            raise ValueError("production transition invalid")
+        error = _optional_text(self.error_code, 64, "production error invalid")
+        if error is not None and _ERROR_CODE.fullmatch(error) is None:
+            raise ValueError("production error invalid")
+        if (self.state == "failed") != (error is not None):
+            raise ValueError("production transition invalid")
+        if (
+            not isinstance(self.source_failures, Mapping)
+            or len(self.source_failures) > 100
+        ):
+            raise ValueError("production source failures invalid")
+        failures: dict[str, str] = {}
+        for key, reason in self.source_failures.items():
+            try:
+                selected_key = str(UUID(str(key)))
+            except ValueError:
+                raise ValueError("production source failures invalid") from None
+            selected_reason = _text(reason, 64, "production source failures invalid")
+            if _ERROR_CODE.fullmatch(selected_reason) is None:
+                raise ValueError("production source failures invalid")
+            failures[selected_key] = selected_reason
+        _json_size(failures, 8192, "production source failures invalid")
+        object.__setattr__(self, "error_code", error)
+        object.__setattr__(self, "source_failures", MappingProxyType(failures))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1365,6 +1419,7 @@ __all__ = [
     "TalentInsightVersion",
     "TalentSource",
     "TransitionPanoramaRun",
+    "TransitionProductionBatch",
     "canonical_panorama_url",
     "thaw_json",
 ]

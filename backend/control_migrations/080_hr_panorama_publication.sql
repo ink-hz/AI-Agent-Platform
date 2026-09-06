@@ -142,6 +142,20 @@ alter table platform_hr.public_job_snapshots
   add constraint public_job_snapshot_origin_v80
   check ((run_id is not null) <> (production_batch_id is not null));
 
+alter table platform_hr.public_job_snapshot_requests
+  add column production_batch_id uuid;
+alter table platform_hr.public_job_snapshot_requests
+  alter column run_id drop not null;
+alter table platform_hr.public_job_snapshot_requests
+  add constraint public_job_observation_batch_owner_v80
+  foreign key (production_batch_id,owner_internal_user_id)
+  references platform_hr.panorama_production_batches(
+    batch_id,producer_owner_internal_user_id
+  );
+alter table platform_hr.public_job_snapshot_requests
+  add constraint public_job_observation_origin_v80
+  check ((run_id is not null) <> (production_batch_id is not null));
+
 alter table platform_hr.talent_insight_versions
   add column production_batch_id uuid;
 alter table platform_hr.talent_insight_versions
@@ -349,6 +363,27 @@ begin
 end
 $function$;
 
+create function platform_hr.read_panorama_production_batch_v80(
+  selected_producer_owner_internal_user_id uuid,
+  selected_batch_id uuid
+) returns setof platform_hr.panorama_production_batches
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  return query select batch.*
+  from platform_hr.panorama_production_batches batch
+  where batch.batch_id=selected_batch_id
+    and batch.producer_owner_internal_user_id=
+      selected_producer_owner_internal_user_id;
+end
+$function$;
+
 create function platform_hr.record_panorama_source_attempt_v80(
   selected_attempt_id uuid,
   selected_batch_id uuid,
@@ -429,6 +464,354 @@ begin
 end
 $function$;
 
+create function platform_hr.create_production_job_snapshot_v80(
+  selected_snapshot_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_client_request_id uuid,
+  selected_production_batch_id uuid,
+  selected_source_id uuid,
+  selected_public_job_key text,
+  selected_title text,
+  selected_location text,
+  selected_duty_excerpt text,
+  selected_requirement_excerpt text,
+  selected_source_url text,
+  selected_observed_at timestamptz,
+  selected_content_sha256 text,
+  selected_status text
+) returns table (
+  snapshot_id uuid,
+  owner_internal_user_id uuid,
+  origin_client_request_id uuid,
+  run_id uuid,
+  source_id uuid,
+  public_job_key text,
+  title text,
+  location text,
+  duty_excerpt text,
+  requirement_excerpt text,
+  source_url text,
+  observed_at timestamptz,
+  content_sha256 text,
+  status text,
+  created_at timestamptz,
+  production_batch_id uuid,
+  observation_id uuid
+)
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected_batch platform_hr.panorama_production_batches%rowtype;
+declare selected_source platform_hr.talent_sources%rowtype;
+declare selected_snapshot platform_hr.public_job_snapshots%rowtype;
+declare replay platform_hr.public_job_snapshot_requests%rowtype;
+declare selected_payload jsonb;
+declare selected_payload_hash bytea;
+declare current_observed_at timestamptz;
+declare current_observation_id uuid;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected_batch
+  from platform_hr.panorama_production_batches batch
+  where batch.batch_id=selected_production_batch_id
+    and batch.producer_owner_internal_user_id=
+      selected_owner_internal_user_id
+    and batch.state='running'
+    and selected_source_id=any(batch.selected_source_ids);
+  if not found then raise no_data_found; end if;
+  select * into selected_source from platform_hr.talent_sources source
+  where source.source_id=selected_source_id
+    and source.owner_internal_user_id=selected_owner_internal_user_id
+    and source.active;
+  if not found or not platform_hr.url_is_approved_v79(
+    selected_source_url,selected_source.approved_public_urls
+  ) then
+    raise check_violation using message='production job source invalid';
+  end if;
+  selected_payload := jsonb_build_object(
+    'snapshot_id',selected_snapshot_id,
+    'production_batch_id',selected_production_batch_id,
+    'source_id',selected_source_id,
+    'public_job_key',selected_public_job_key,
+    'title',selected_title,'location',selected_location,
+    'duty_excerpt',selected_duty_excerpt,
+    'requirement_excerpt',selected_requirement_excerpt,
+    'source_url',selected_source_url,'observed_at',selected_observed_at,
+    'content_sha256',selected_content_sha256,'status',selected_status
+  );
+  selected_payload_hash := sha256(convert_to(selected_payload::text,'UTF8'));
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':public-job-request:' ||
+    selected_client_request_id::text,0
+  ));
+  select * into replay from platform_hr.public_job_snapshot_requests request
+  where request.owner_internal_user_id=selected_owner_internal_user_id
+    and request.client_request_id=selected_client_request_id;
+  if found then
+    if replay.payload_sha256<>selected_payload_hash then
+      raise unique_violation using
+        message='production job observation idempotency mismatch';
+    end if;
+    select * into selected_snapshot
+    from platform_hr.public_job_snapshots snapshot
+    where snapshot.snapshot_id=replay.result_snapshot_id
+      and snapshot.owner_internal_user_id=selected_owner_internal_user_id;
+  else
+    perform pg_advisory_xact_lock(hashtextextended(
+      selected_owner_internal_user_id::text || ':public-job:' ||
+      selected_source_id::text || ':' || btrim(selected_public_job_key),0
+    ));
+    select * into selected_snapshot
+    from platform_hr.public_job_snapshots snapshot
+    where snapshot.owner_internal_user_id=selected_owner_internal_user_id
+      and snapshot.source_id=selected_source_id
+      and snapshot.public_job_key=btrim(selected_public_job_key)
+      and snapshot.content_sha256=selected_content_sha256;
+    if found then
+      if selected_snapshot.title is distinct from btrim(selected_title)
+        or selected_snapshot.location is distinct from btrim(selected_location)
+        or selected_snapshot.duty_excerpt is distinct from
+          btrim(selected_duty_excerpt)
+        or selected_snapshot.requirement_excerpt is distinct from
+          btrim(selected_requirement_excerpt)
+        or selected_snapshot.source_url is distinct from selected_source_url
+        or selected_snapshot.status is distinct from selected_status then
+        raise check_violation using
+          message='production job snapshot hash collision';
+      end if;
+    else
+      insert into platform_hr.public_job_snapshots(
+        snapshot_id,owner_internal_user_id,origin_client_request_id,run_id,
+        source_id,public_job_key,title,location,duty_excerpt,
+        requirement_excerpt,source_url,observed_at,content_sha256,status,
+        production_batch_id
+      ) values (
+        selected_snapshot_id,selected_owner_internal_user_id,
+        selected_client_request_id,null,selected_source_id,
+        btrim(selected_public_job_key),btrim(selected_title),
+        btrim(selected_location),btrim(selected_duty_excerpt),
+        btrim(selected_requirement_excerpt),selected_source_url,
+        selected_observed_at,selected_content_sha256,selected_status,
+        selected_production_batch_id
+      ) returning * into selected_snapshot;
+    end if;
+    insert into platform_hr.public_job_snapshot_requests(
+      owner_internal_user_id,client_request_id,observation_id,
+      requested_snapshot_id,run_id,source_id,public_job_key,
+      result_snapshot_id,source_url,observed_at,status,payload_sha256,
+      production_batch_id
+    ) values (
+      selected_owner_internal_user_id,selected_client_request_id,
+      selected_client_request_id,selected_snapshot_id,null,
+      selected_source_id,btrim(selected_public_job_key),
+      selected_snapshot.snapshot_id,selected_source_url,
+      selected_observed_at,selected_status,selected_payload_hash,
+      selected_production_batch_id
+    );
+    select observation.observed_at,observation.observation_id
+    into current_observed_at,current_observation_id
+    from platform_hr.public_job_current_snapshots current_snapshot
+    join platform_hr.public_job_snapshot_requests observation
+      on observation.owner_internal_user_id=
+        current_snapshot.owner_internal_user_id
+      and observation.observation_id=current_snapshot.latest_observation_id
+    where current_snapshot.owner_internal_user_id=
+        selected_owner_internal_user_id
+      and current_snapshot.source_id=selected_source_id
+      and current_snapshot.public_job_key=btrim(selected_public_job_key);
+    if not found or (selected_observed_at,selected_client_request_id)>
+        (current_observed_at,current_observation_id) then
+      insert into platform_hr.public_job_current_snapshots(
+        owner_internal_user_id,source_id,public_job_key,snapshot_id,
+        latest_observation_id
+      ) values (
+        selected_owner_internal_user_id,selected_source_id,
+        btrim(selected_public_job_key),selected_snapshot.snapshot_id,
+        selected_client_request_id
+      ) on conflict on constraint public_job_current_snapshots_pkey
+        do update set snapshot_id=excluded.snapshot_id,
+          latest_observation_id=excluded.latest_observation_id,
+          updated_at=now();
+    end if;
+  end if;
+  return query select
+    selected_snapshot.snapshot_id,
+    selected_snapshot.owner_internal_user_id,
+    selected_snapshot.origin_client_request_id,
+    selected_snapshot.run_id,
+    selected_snapshot.source_id,
+    selected_snapshot.public_job_key,
+    selected_snapshot.title,
+    selected_snapshot.location,
+    selected_snapshot.duty_excerpt,
+    selected_snapshot.requirement_excerpt,
+    selected_snapshot.source_url,
+    selected_snapshot.observed_at,
+    selected_snapshot.content_sha256,
+    selected_snapshot.status,
+    selected_snapshot.created_at,
+    selected_snapshot.production_batch_id,
+    selected_client_request_id;
+end
+$function$;
+
+create function platform_hr.create_production_insight_v80(
+  selected_insight_version_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_client_request_id uuid,
+  selected_production_batch_id uuid,
+  selected_source_ids uuid[],
+  selected_snapshot_ids uuid[],
+  selected_facts jsonb,
+  selected_inferences jsonb,
+  selected_unknowns jsonb,
+  selected_direction_clusters jsonb,
+  selected_summary text,
+  selected_agent_id text,
+  selected_model_version text
+) returns platform_hr.talent_insight_versions
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected_batch platform_hr.panorama_production_batches%rowtype;
+declare selected platform_hr.talent_insight_versions%rowtype;
+declare next_version bigint;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':talent-insight-request:' ||
+    selected_client_request_id::text,0
+  ));
+  select * into selected from platform_hr.talent_insight_versions insight
+  where insight.owner_internal_user_id=selected_owner_internal_user_id
+    and insight.client_request_id=selected_client_request_id;
+  if found then
+    if selected.insight_version_id is distinct from
+        selected_insight_version_id
+      or selected.production_batch_id is distinct from
+        selected_production_batch_id
+      or selected.selected_source_ids is distinct from selected_source_ids
+      or selected.snapshot_ids is distinct from selected_snapshot_ids
+      or selected.facts is distinct from selected_facts
+      or selected.inferences is distinct from selected_inferences
+      or selected.unknowns is distinct from selected_unknowns
+      or selected.direction_clusters is distinct from
+        selected_direction_clusters
+      or selected.summary is distinct from btrim(selected_summary)
+      or selected.agent_id is distinct from btrim(selected_agent_id)
+      or selected.model_version is distinct from
+        btrim(selected_model_version) then
+      raise unique_violation using
+        message='production insight idempotency mismatch';
+    end if;
+    return selected;
+  end if;
+  select * into selected_batch
+  from platform_hr.panorama_production_batches batch
+  where batch.batch_id=selected_production_batch_id
+    and batch.producer_owner_internal_user_id=
+      selected_owner_internal_user_id
+    and batch.state='analyzing'
+  for update;
+  if not found then raise no_data_found; end if;
+  if cardinality(selected_source_ids) not between 1 and 100
+    or not platform_hr.uuid_array_is_unique_v79(selected_source_ids)
+    or not selected_source_ids<@selected_batch.selected_source_ids
+    or exists (
+      select 1 from unnest(selected_source_ids) requested(source_id)
+      where not exists (
+        select 1 from platform_hr.panorama_source_attempts attempt
+        where attempt.batch_id=selected_production_batch_id
+          and attempt.source_id=requested.source_id
+          and attempt.state='succeeded'
+      )
+    ) then
+    raise check_violation using
+      message='production insight source selection invalid';
+  end if;
+  if cardinality(selected_snapshot_ids) not between 1 and 1000
+    or not platform_hr.uuid_array_is_unique_v79(selected_snapshot_ids)
+    or (
+      select count(distinct observation.result_snapshot_id)
+      from platform_hr.public_job_snapshot_requests observation
+      join platform_hr.public_job_snapshots snapshot
+        on snapshot.snapshot_id=observation.result_snapshot_id
+        and snapshot.owner_internal_user_id=observation.owner_internal_user_id
+      where observation.owner_internal_user_id=
+          selected_owner_internal_user_id
+        and observation.production_batch_id=selected_production_batch_id
+        and observation.result_snapshot_id=any(selected_snapshot_ids)
+        and observation.source_id=any(selected_source_ids)
+    )<>cardinality(selected_snapshot_ids) then
+    raise no_data_found;
+  end if;
+  if not platform_hr.insight_payload_is_valid_v79(
+      selected_facts,selected_inferences,selected_unknowns
+    ) or not platform_hr.facts_have_https_urls_v79(selected_facts) then
+    raise check_violation using
+      message='production insight fact source invalid';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(selected_facts) fact
+    where not exists (
+      select 1
+      from platform_hr.public_job_snapshot_requests observation
+      join platform_hr.public_job_snapshots snapshot
+        on snapshot.owner_internal_user_id=
+          observation.owner_internal_user_id
+        and snapshot.snapshot_id=observation.result_snapshot_id
+        and snapshot.source_id=observation.source_id
+      join platform_hr.talent_sources source
+        on source.owner_internal_user_id=observation.owner_internal_user_id
+        and source.source_id=observation.source_id
+      where observation.owner_internal_user_id=
+          selected_owner_internal_user_id
+        and observation.production_batch_id=selected_production_batch_id
+        and observation.observation_id=(fact->>'observation_id')::uuid
+        and observation.result_snapshot_id=(fact->>'snapshot_id')::uuid
+        and observation.result_snapshot_id=any(selected_snapshot_ids)
+        and observation.source_id=any(selected_source_ids)
+        and observation.source_url=fact->>'source_url'
+        and observation.observed_at=(fact->>'observed_at')::timestamptz
+        and platform_hr.url_is_approved_v79(
+          fact->>'source_url',source.approved_public_urls
+        )
+    )
+  ) then
+    raise check_violation using
+      message='production insight fact observation binding invalid';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(
+    selected_owner_internal_user_id::text || ':talent-insight-version',0
+  ));
+  select coalesce(max(insight.version_number),0)+1 into next_version
+  from platform_hr.talent_insight_versions insight
+  where insight.owner_internal_user_id=selected_owner_internal_user_id;
+  insert into platform_hr.talent_insight_versions(
+    insight_version_id,owner_internal_user_id,client_request_id,run_id,
+    version_number,selected_source_ids,snapshot_ids,facts,inferences,
+    unknowns,direction_clusters,summary,source_conversation_id,
+    source_turn_id,agent_id,model_version,production_batch_id
+  ) values (
+    selected_insight_version_id,selected_owner_internal_user_id,
+    selected_client_request_id,null,next_version,selected_source_ids,
+    selected_snapshot_ids,selected_facts,selected_inferences,
+    selected_unknowns,selected_direction_clusters,btrim(selected_summary),
+    null,null,btrim(selected_agent_id),btrim(selected_model_version),
+    selected_production_batch_id
+  ) returning * into selected;
+  return selected;
+end
+$function$;
+
 create function platform_hr.publish_panorama_version_v80(
   selected_publication_id uuid,
   selected_client_request_id uuid,
@@ -475,15 +858,16 @@ begin
     select 1
     from platform_hr.talent_insight_versions insight
     cross join lateral jsonb_array_elements(insight.facts) fact
-    left join platform_hr.public_job_snapshots snapshot
-      on snapshot.snapshot_id=(fact->>'snapshot_id')::uuid
-      and snapshot.owner_internal_user_id=insight.owner_internal_user_id
+    left join platform_hr.public_job_snapshot_requests observation
+      on observation.observation_id=(fact->>'observation_id')::uuid
+      and observation.owner_internal_user_id=insight.owner_internal_user_id
+      and observation.result_snapshot_id=(fact->>'snapshot_id')::uuid
     where insight.insight_version_id=selected_insight_version_id
       and (
-        snapshot.snapshot_id is null
-        or snapshot.production_batch_id is distinct from selected_batch_id
-        or snapshot.source_url is distinct from fact->>'source_url'
-        or snapshot.observed_at is distinct from
+        observation.observation_id is null
+        or observation.production_batch_id is distinct from selected_batch_id
+        or observation.source_url is distinct from fact->>'source_url'
+        or observation.observed_at is distinct from
           (fact->>'observed_at')::timestamptz
       )
   ) then
@@ -552,6 +936,92 @@ begin
 end
 $function$;
 
+create function platform_hr.read_panorama_production_snapshots_v80(
+  selected_owner_internal_user_id uuid,
+  selected_batch_id uuid
+) returns table (
+  snapshot_id uuid,
+  owner_internal_user_id uuid,
+  origin_client_request_id uuid,
+  run_id uuid,
+  source_id uuid,
+  public_job_key text,
+  title text,
+  location text,
+  duty_excerpt text,
+  requirement_excerpt text,
+  source_url text,
+  observed_at timestamptz,
+  content_sha256 text,
+  status text,
+  created_at timestamptz,
+  production_batch_id uuid,
+  observation_id uuid
+)
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if not exists (
+    select 1 from platform_hr.panorama_production_batches batch
+    where batch.batch_id=selected_batch_id
+      and batch.producer_owner_internal_user_id=
+        selected_owner_internal_user_id
+  ) then raise no_data_found; end if;
+  return query
+    select distinct on (snapshot.snapshot_id)
+      snapshot.snapshot_id,snapshot.owner_internal_user_id,
+      snapshot.origin_client_request_id,snapshot.run_id,snapshot.source_id,
+      snapshot.public_job_key,snapshot.title,snapshot.location,
+      snapshot.duty_excerpt,snapshot.requirement_excerpt,snapshot.source_url,
+      observation.observed_at,snapshot.content_sha256,observation.status,
+      snapshot.created_at,observation.production_batch_id,
+      observation.observation_id
+    from platform_hr.public_job_snapshot_requests observation
+    join platform_hr.public_job_snapshots snapshot
+      on snapshot.owner_internal_user_id=observation.owner_internal_user_id
+      and snapshot.snapshot_id=observation.result_snapshot_id
+    where observation.owner_internal_user_id=
+        selected_owner_internal_user_id
+      and observation.production_batch_id=selected_batch_id
+    order by snapshot.snapshot_id,observation.observed_at desc,
+      observation.observation_id desc;
+end
+$function$;
+
+create function platform_hr.read_panorama_source_attempts_v80(
+  selected_owner_internal_user_id uuid,
+  selected_batch_id uuid
+) returns setof platform_hr.panorama_source_attempts
+language plpgsql stable security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app') then
+    raise insufficient_privilege;
+  end if;
+  if not exists (
+    select 1 from platform_hr.panorama_production_batches batch
+    where batch.batch_id=selected_batch_id
+      and batch.producer_owner_internal_user_id=
+        selected_owner_internal_user_id
+  ) then raise no_data_found; end if;
+  return query
+    select attempt.* from platform_hr.panorama_source_attempts attempt
+    where attempt.batch_id=selected_batch_id
+      and attempt.producer_owner_internal_user_id=
+        selected_owner_internal_user_id
+    order by attempt.source_id,attempt.source_url,attempt.attempt_number;
+end
+$function$;
+
 revoke all on all tables in schema platform_hr from public;
 revoke all on function platform_hr.create_panorama_production_batch_v80(
   uuid,uuid,uuid,uuid[],text,text
@@ -559,15 +1029,30 @@ revoke all on function platform_hr.create_panorama_production_batch_v80(
 revoke all on function platform_hr.transition_panorama_production_batch_v80(
   uuid,uuid,bigint,text,text,jsonb
 ) from public;
+revoke all on function platform_hr.read_panorama_production_batch_v80(
+  uuid,uuid
+) from public;
 revoke all on function platform_hr.record_panorama_source_attempt_v80(
   uuid,uuid,uuid,uuid,text,integer,text,text,text,text,text,bigint,integer,
   timestamptz
+) from public;
+revoke all on function platform_hr.create_production_job_snapshot_v80(
+  uuid,uuid,uuid,uuid,uuid,text,text,text,text,text,text,timestamptz,text,text
+) from public;
+revoke all on function platform_hr.create_production_insight_v80(
+  uuid,uuid,uuid,uuid,uuid[],uuid[],jsonb,jsonb,jsonb,jsonb,text,text,text
 ) from public;
 revoke all on function platform_hr.publish_panorama_version_v80(
   uuid,uuid,uuid,uuid,text,jsonb
 ) from public;
 revoke all on function platform_hr.read_current_panorama_publication_v80(text)
   from public;
+revoke all on function platform_hr.read_panorama_production_snapshots_v80(
+  uuid,uuid
+) from public;
+revoke all on function platform_hr.read_panorama_source_attempts_v80(
+  uuid,uuid
+) from public;
 
 grant execute on function platform_hr.create_panorama_production_batch_v80(
   uuid,uuid,uuid,uuid[],text,text
@@ -575,12 +1060,27 @@ grant execute on function platform_hr.create_panorama_production_batch_v80(
 grant execute on function platform_hr.transition_panorama_production_batch_v80(
   uuid,uuid,bigint,text,text,jsonb
 ) to platform_control_app,platform_control_app_preview;
+grant execute on function platform_hr.read_panorama_production_batch_v80(
+  uuid,uuid
+) to platform_control_app,platform_control_app_preview;
 grant execute on function platform_hr.record_panorama_source_attempt_v80(
   uuid,uuid,uuid,uuid,text,integer,text,text,text,text,text,bigint,integer,
   timestamptz
+) to platform_control_app,platform_control_app_preview;
+grant execute on function platform_hr.create_production_job_snapshot_v80(
+  uuid,uuid,uuid,uuid,uuid,text,text,text,text,text,text,timestamptz,text,text
+) to platform_control_app,platform_control_app_preview;
+grant execute on function platform_hr.create_production_insight_v80(
+  uuid,uuid,uuid,uuid,uuid[],uuid[],jsonb,jsonb,jsonb,jsonb,text,text,text
 ) to platform_control_app,platform_control_app_preview;
 grant execute on function platform_hr.publish_panorama_version_v80(
   uuid,uuid,uuid,uuid,text,jsonb
 ) to platform_control_app,platform_control_app_preview;
 grant execute on function platform_hr.read_current_panorama_publication_v80(text)
   to platform_control_app,platform_control_app_preview;
+grant execute on function platform_hr.read_panorama_production_snapshots_v80(
+  uuid,uuid
+) to platform_control_app,platform_control_app_preview;
+grant execute on function platform_hr.read_panorama_source_attempts_v80(
+  uuid,uuid
+) to platform_control_app,platform_control_app_preview;

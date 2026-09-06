@@ -9,7 +9,9 @@ import psycopg
 import pytest
 from app.hr.panorama_models import (
     CreateProductionBatch,
+    CreatePublicJobSnapshot,
     CreateSourceCollectionAttempt,
+    CreateTalentInsightVersion,
     CreateTalentSource,
     PublishPanoramaReport,
 )
@@ -59,6 +61,7 @@ def _transition(app, owner_id, batch_id, version, state, failures=None):
 def _seed_grounded_insight(admin, owner_id, source_id, batch_id):
     snapshot_id = uuid4()
     insight_id = uuid4()
+    observation_id = uuid4()
     source_url = "https://example.com/jobs/structure"
     admin.execute(
         "insert into platform_hr.public_job_snapshots("
@@ -79,12 +82,32 @@ def _seed_grounded_insight(admin, owner_id, source_id, batch_id):
             "a" * 64,
         ),
     )
+    admin.execute(
+        "insert into platform_hr.public_job_snapshot_requests("
+        "owner_internal_user_id,client_request_id,observation_id,"
+        "requested_snapshot_id,run_id,source_id,public_job_key,"
+        "result_snapshot_id,source_url,observed_at,status,payload_sha256,"
+        "production_batch_id) values ("
+        "%s,%s,%s,%s,null,%s,'structure-1',%s,%s,%s,'open',%s,%s)",
+        (
+            owner_id,
+            observation_id,
+            observation_id,
+            snapshot_id,
+            source_id,
+            snapshot_id,
+            source_url,
+            NOW,
+            b"a" * 32,
+            batch_id,
+        ),
+    )
     facts = [
         {
             "fact_id": "fact-1",
             "text": "测试公司公开招聘高级结构工程师",
             "snapshot_id": str(snapshot_id),
-            "observation_id": str(uuid4()),
+            "observation_id": str(observation_id),
             "source_url": source_url,
             "observed_at": NOW.isoformat(),
         }
@@ -243,3 +266,102 @@ def test_atomic_publication_is_shared_and_retains_last_known_good(
         )
 
     assert repository.current_publication() == published
+
+
+@pytest.mark.postgres
+def test_repository_persists_raw_jobs_and_ai_analysis_as_separate_production_records(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        scope = _seed_owner_scope(admin, "Panorama Production Records Owner")
+    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
+    source_id = _seed_source(repository, scope["owner"])
+    batch = repository.create_production_batch(
+        CreateProductionBatch(
+            batch_id=uuid4(),
+            owner_id=scope["owner"],
+            client_request_id=uuid4(),
+            selected_source_ids=(source_id,),
+            trigger_kind="schedule",
+            analyzer_version="configured-model-v1",
+        )
+    )
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        running_version = _transition(
+            app, scope["owner"], batch.batch_id, batch.row_version, "running"
+        )
+    repository.record_source_attempt(
+        CreateSourceCollectionAttempt(
+            attempt_id=uuid4(),
+            batch_id=batch.batch_id,
+            owner_id=scope["owner"],
+            source_id=source_id,
+            source_url="https://example.com/jobs",
+            attempt_number=1,
+            state="succeeded",
+            error_code=None,
+            evidence_sha256="b" * 64,
+            evidence_locator="sha256/bb/" + "b" * 64,
+            evidence_mime="text/html",
+            evidence_size_bytes=1024,
+            normalized_job_count=1,
+            observed_at=NOW,
+        )
+    )
+    observation_id = uuid4()
+    snapshot = repository.create_snapshot(
+        CreatePublicJobSnapshot(
+            snapshot_id=uuid4(),
+            owner_id=scope["owner"],
+            client_request_id=observation_id,
+            run_id=None,
+            source_id=source_id,
+            public_job_key="structure-production-1",
+            title="高级结构工程师",
+            location="深圳",
+            duty_excerpt="负责精密结构研发",
+            requirement_excerpt="五年以上量产经验",
+            source_url="https://example.com/jobs/structure-production-1",
+            observed_at=NOW,
+            content_sha256="c" * 64,
+            status="open",
+            production_batch_id=batch.batch_id,
+        )
+    )
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        _transition(app, scope["owner"], batch.batch_id, running_version, "analyzing")
+    fact = {
+        "fact_id": "fact-production-1",
+        "text": "公开招聘高级结构工程师",
+        "snapshot_id": str(snapshot.snapshot_id),
+        "observation_id": str(observation_id),
+        "source_url": snapshot.source_url,
+        "observed_at": snapshot.observed_at.isoformat(),
+    }
+    insight = repository.create_insight(
+        CreateTalentInsightVersion(
+            insight_version_id=uuid4(),
+            owner_id=scope["owner"],
+            client_request_id=uuid4(),
+            run_id=None,
+            selected_source_ids=(source_id,),
+            snapshot_ids=(snapshot.snapshot_id,),
+            facts=(fact,),
+            inferences=(
+                {"text": "结构投入明确", "basis_fact_ids": ("fact-production-1",)},
+            ),
+            unknowns=({"text": "实际 HC 未公开"},),
+            direction_clusters={"结构": 1},
+            summary="结构投入分析",
+            source_conversation_id=None,
+            source_turn_id=None,
+            agent_id="hr-intelligence-producer",
+            model_version="configured-model-v1",
+            production_batch_id=batch.batch_id,
+        )
+    )
+
+    assert snapshot.production_batch_id == batch.batch_id
+    assert insight.production_batch_id == batch.batch_id
+    assert insight.facts[0]["snapshot_id"] == str(snapshot.snapshot_id)

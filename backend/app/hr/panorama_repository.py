@@ -31,6 +31,7 @@ from .panorama_models import (
     TalentInsightVersion,
     TalentSource,
     TransitionPanoramaRun,
+    TransitionProductionBatch,
     thaw_json,
 )
 
@@ -119,6 +120,7 @@ def _snapshot(row: Mapping[str, Any]) -> PublicJobSnapshot:
         status=row["status"],
         created_at=row["created_at"],
         production_batch_id=row.get("production_batch_id"),
+        observation_id=row.get("observation_id"),
     )
 
 
@@ -238,14 +240,20 @@ class _PanoramaPublication:
     def create_snapshot(self, command: CreatePublicJobSnapshot) -> PublicJobSnapshot:
         if not isinstance(command, CreatePublicJobSnapshot):
             raise ValueError("public job snapshot command required")
+        function = (
+            "create_production_job_snapshot_v80"
+            if command.production_batch_id is not None
+            else "create_public_job_snapshot_v79"
+        )
+        origin_id = command.production_batch_id or command.run_id
         row = self._connection.execute(
-            "select (platform_hr.create_public_job_snapshot_v79("
-            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)).*",
+            f"select result.* from platform_hr.{function}("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) result",
             (
                 command.snapshot_id,
                 command.owner_id,
                 command.client_request_id,
-                command.run_id,
+                origin_id,
                 command.source_id,
                 command.public_job_key,
                 command.title,
@@ -267,31 +275,39 @@ class _PanoramaPublication:
     ) -> TalentInsightVersion:
         if not isinstance(command, CreateTalentInsightVersion):
             raise ValueError("talent insight command required")
-        row = self._connection.execute(
-            "select (platform_hr.create_talent_insight_version_v79("
-            "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
-            "%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s)).*",
-            (
-                command.insight_version_id,
-                command.owner_id,
-                command.client_request_id,
-                command.run_id,
-                list(command.selected_source_ids),
-                list(command.snapshot_ids),
-                json.dumps(thaw_json(command.facts), ensure_ascii=False),
-                json.dumps(thaw_json(command.inferences), ensure_ascii=False),
-                json.dumps(thaw_json(command.unknowns), ensure_ascii=False),
-                json.dumps(
-                    thaw_json(command.direction_clusters),
-                    ensure_ascii=False,
-                ),
-                command.summary,
+        common = (
+            command.insight_version_id,
+            command.owner_id,
+            command.client_request_id,
+            command.production_batch_id or command.run_id,
+            list(command.selected_source_ids),
+            list(command.snapshot_ids),
+            json.dumps(thaw_json(command.facts), ensure_ascii=False),
+            json.dumps(thaw_json(command.inferences), ensure_ascii=False),
+            json.dumps(thaw_json(command.unknowns), ensure_ascii=False),
+            json.dumps(thaw_json(command.direction_clusters), ensure_ascii=False),
+            command.summary,
+        )
+        if command.production_batch_id is not None:
+            sql = (
+                "select result.* from platform_hr.create_production_insight_v80("
+                "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
+                "%s::jsonb,%s::jsonb,%s,%s,%s) result"
+            )
+            parameters = common + (command.agent_id, command.model_version)
+        else:
+            sql = (
+                "select result.* from platform_hr.create_talent_insight_version_v79("
+                "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
+                "%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s) result"
+            )
+            parameters = common + (
                 command.source_conversation_id,
                 command.source_turn_id,
                 command.agent_id,
                 command.model_version,
-            ),
-        ).fetchone()
+            )
+        row = self._connection.execute(sql, parameters).fetchone()
         if row is None:
             raise PanoramaUnavailable("talent insight unavailable")
         return _insight(row)
@@ -363,6 +379,88 @@ class PanoramaRepository:
             raise
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "production batch")
+
+    def production_batch(self, owner_id: UUID, batch_id: UUID) -> ProductionBatch:
+        _identifier(owner_id)
+        _identifier(batch_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_hr.read_panorama_production_batch_v80("
+                    "%s,%s)",
+                    (owner_id, batch_id),
+                ).fetchone()
+            if row is None:
+                raise PanoramaNotFound("panorama production batch not found")
+            return _production_batch(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "production batch")
+
+    def snapshots_for_production_batch(
+        self, owner_id: UUID, batch_id: UUID
+    ) -> tuple[PublicJobSnapshot, ...]:
+        _identifier(owner_id)
+        _identifier(batch_id)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from "
+                    "platform_hr.read_panorama_production_snapshots_v80(%s,%s)",
+                    (owner_id, batch_id),
+                ).fetchall()
+            return tuple(_snapshot(row) for row in rows)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "production snapshots")
+
+    def source_attempts_for_production_batch(
+        self, owner_id: UUID, batch_id: UUID
+    ) -> tuple[SourceCollectionAttempt, ...]:
+        _identifier(owner_id)
+        _identifier(batch_id)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from "
+                    "platform_hr.read_panorama_source_attempts_v80(%s,%s)",
+                    (owner_id, batch_id),
+                ).fetchall()
+            return tuple(_source_attempt(row) for row in rows)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "source attempts")
+
+    def transition_production_batch(
+        self, command: TransitionProductionBatch
+    ) -> ProductionBatch:
+        if not isinstance(command, TransitionProductionBatch):
+            raise ValueError("panorama production transition required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select result.* from "
+                    "platform_hr.transition_panorama_production_batch_v80("
+                    "%s,%s,%s,%s,%s,%s::jsonb) result",
+                    (
+                        command.owner_id,
+                        command.batch_id,
+                        command.expected_row_version,
+                        command.state,
+                        command.error_code,
+                        json.dumps(thaw_json(command.source_failures)),
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PanoramaUnavailable("panorama production transition unavailable")
+            return _production_batch(row)
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "production transition")
 
     def record_source_attempt(
         self, command: CreateSourceCollectionAttempt
@@ -684,14 +782,20 @@ class PanoramaRepository:
             raise ValueError("public job snapshot command required")
         try:
             with self._connection() as connection:
+                function = (
+                    "create_production_job_snapshot_v80"
+                    if command.production_batch_id is not None
+                    else "create_public_job_snapshot_v79"
+                )
+                origin_id = command.production_batch_id or command.run_id
                 row = connection.execute(
-                    "select (platform_hr.create_public_job_snapshot_v79("
-                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)).*",
+                    f"select result.* from platform_hr.{function}("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) result",
                     (
                         command.snapshot_id,
                         command.owner_id,
                         command.client_request_id,
-                        command.run_id,
+                        origin_id,
                         command.source_id,
                         command.public_job_key,
                         command.title,
@@ -735,31 +839,43 @@ class PanoramaRepository:
             raise ValueError("talent insight command required")
         try:
             with self._connection() as connection:
-                row = connection.execute(
-                    "select (platform_hr.create_talent_insight_version_v79("
-                    "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
-                    "%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s)).*",
-                    (
-                        command.insight_version_id,
-                        command.owner_id,
-                        command.client_request_id,
-                        command.run_id,
-                        list(command.selected_source_ids),
-                        list(command.snapshot_ids),
-                        json.dumps(thaw_json(command.facts), ensure_ascii=False),
-                        json.dumps(thaw_json(command.inferences), ensure_ascii=False),
-                        json.dumps(thaw_json(command.unknowns), ensure_ascii=False),
-                        json.dumps(
-                            thaw_json(command.direction_clusters),
-                            ensure_ascii=False,
-                        ),
-                        command.summary,
+                common = (
+                    command.insight_version_id,
+                    command.owner_id,
+                    command.client_request_id,
+                    command.production_batch_id or command.run_id,
+                    list(command.selected_source_ids),
+                    list(command.snapshot_ids),
+                    json.dumps(thaw_json(command.facts), ensure_ascii=False),
+                    json.dumps(thaw_json(command.inferences), ensure_ascii=False),
+                    json.dumps(thaw_json(command.unknowns), ensure_ascii=False),
+                    json.dumps(
+                        thaw_json(command.direction_clusters), ensure_ascii=False
+                    ),
+                    command.summary,
+                )
+                if command.production_batch_id is not None:
+                    sql = (
+                        "select result.* from "
+                        "platform_hr.create_production_insight_v80("
+                        "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
+                        "%s::jsonb,%s::jsonb,%s,%s,%s) result"
+                    )
+                    parameters = common + (command.agent_id, command.model_version)
+                else:
+                    sql = (
+                        "select result.* from "
+                        "platform_hr.create_talent_insight_version_v79("
+                        "%s,%s,%s,%s,%s::uuid[],%s::uuid[],%s::jsonb,%s::jsonb,"
+                        "%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s) result"
+                    )
+                    parameters = common + (
                         command.source_conversation_id,
                         command.source_turn_id,
                         command.agent_id,
                         command.model_version,
-                    ),
-                ).fetchone()
+                    )
+                row = connection.execute(sql, parameters).fetchone()
             if row is None:
                 raise PanoramaUnavailable("talent insight unavailable")
             return _insight(row)
