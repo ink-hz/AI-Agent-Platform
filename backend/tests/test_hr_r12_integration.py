@@ -45,10 +45,12 @@ def test_create_app_constructs_panorama_from_the_shared_control_database() -> No
     assert len(repository_calls) == len(service_calls) == 1
     assert ast.unparse(repository_calls[0].args[0]) == "control_database_url"
     assert ast.unparse(service_calls[0].args[0]) == "panorama_repository"
-    assert {
-        keyword.arg: ast.unparse(keyword.value)
-        for keyword in service_calls[0].keywords
-    } == {"evidence_archive": "EvidenceArchive(production=True)"}
+    service_keywords = {
+        keyword.arg: keyword.value for keyword in service_calls[0].keywords
+    }
+    assert set(service_keywords) == {"documents"}
+    assert isinstance(service_keywords["documents"], ast.Call)
+    assert ast.unparse(service_keywords["documents"].func) == "IntelligenceDocumentStore"
 
 
 def test_create_app_does_not_run_panorama_collection_in_the_web_process() -> None:

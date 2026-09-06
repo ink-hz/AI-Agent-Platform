@@ -93,7 +93,7 @@ function collectionFailureLabel(errorCode: string): string {
     unsupported_schema: "来源结构暂未适配",
     source_unavailable: "来源暂时不可访问",
   };
-  return labels[errorCode] ?? "采集未完成";
+  return labels[errorCode] ?? "来源读取未完成";
 }
 
 function currentFailureIds(comparison: HrPanoramaComparison): string[] {
@@ -129,12 +129,6 @@ function recruitmentTrack(item: HrPanoramaSnapshot): RecruitmentTrack {
   if (/(社招|社会招聘|社会人才|(?<![a-z])experienced(?![a-z])|professional-hire)/i.test(text)) return "social";
   return "unknown";
 }
-
-const DIRECTION_KEYS: Record<string, string> = {
-  算法: "algorithm", 光学: "optics", 硬件: "hardware", 结构: "structure",
-  软件: "software", 制造工艺: "manufacturing", 质量: "quality", 产品: "product",
-  供应链: "supply_chain", 其他: "other",
-};
 
 const TECHNICAL_DIRECTION_PATTERNS: Array<[string, RegExp]> = [
   ["光学", /(光学|镜头|成像|光机|光电|zemax|code\s*v)/i],
@@ -217,7 +211,7 @@ function TrackView({ track, report, comparison, sourceById }: { track: Exclude<R
       const count = items.filter((item) => item.sourceId === source.sourceId).length;
       const hasUnknown = unknown.some((item) => item.sourceId === source.sourceId);
       return <article key={source.sourceId}><strong>{source.canonicalName}</strong><span>{failures.has(source.sourceId)
-        ? "本轮采集失败，无法判断"
+        ? "本版来源失败，无法判断"
         : count > 0 ? `${count} 个公开岗位`
           : hasUnknown ? `未识别到${label}标记，待确认` : `本轮没有可判定的${label}记录，待确认`}</span></article>;
     })}</div>
@@ -279,9 +273,9 @@ export function formatHrPanoramaReportMarkdown(
     "", "## 招聘变化", "",
     ...(filtered ? ["- 已按当前筛选范围导出岗位；招聘变化请查看完整报告。"] : changes ? [
       `- 新增岗位：${changes.added}`, `- 明确关闭：${changes.removed}`, `- 持续招聘：${changes.continued}`,
-      `- 本次未再次采集到（待验证，不代表停止招聘）：${changes.unobserved}`,
-      ...(changes.failedSourceIds.length ? [`- ${changes.failedSourceIds.map((id) => sourceNames.get(id) ?? "关注公司").join("、")}本轮采集失败，无法判断变化。`] : []),
-    ] : [comparisonMessage(comparison), ...currentFailureIds(comparison).map((id) => `- ${sourceNames.get(id) ?? "关注公司"}本轮采集失败，无法判断变化。`)]),
+      `- 本版未再次观测到（待验证，不代表停止招聘）：${changes.unobserved}`,
+      ...(changes.failedSourceIds.length ? [`- ${changes.failedSourceIds.map((id) => sourceNames.get(id) ?? "关注公司").join("、")}本版来源失败，无法判断变化。`] : []),
+    ] : [comparisonMessage(comparison), ...currentFailureIds(comparison).map((id) => `- ${sourceNames.get(id) ?? "关注公司"}本版来源失败，无法判断变化。`)]),
     "", "## 地域分布", "",
     ...(geography.length ? geography.map(([location, count]) => `- ${location}：${count} 个岗位`) : ["暂无可用岗位地点。"]),
     "", "## 关键能力", "",
@@ -303,15 +297,14 @@ export function formatHrPanoramaReportMarkdown(
   return `${lines.join("\n").trim()}\n`;
 }
 
-function downloadMarkdown(report: PanoramaReport, content: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `全景分析-第${report.insight.versionNumber}版-${report.insight.createdAt.slice(0, 10)}.md`;
-  anchor.hidden = true;
-  document.body.append(anchor);
-  try { anchor.click(); }
-  finally { anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 0); }
+function coverageLabel(state: PanoramaReport["publication"]["coverageState"]): string {
+  return {
+    succeeded: "来源已核验",
+    empty_confirmed: "已核验，本版未发现公开岗位",
+    partial: "部分来源可用",
+    failed: "来源读取失败",
+    not_observed: "本版未观测",
+  }[state];
 }
 
 export function HrPanoramaReport({ report, comparison = { state: "none", currentSourceFailures: {} }, onCopy = copyVisibleText }: { report: PanoramaReport; comparison?: HrPanoramaComparison; onCopy?: (text: string) => Promise<boolean> }) {
@@ -339,18 +332,9 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
     && (locationFilter === "all" || item.location === locationFilter)
     && (statusFilter === "all" || item.status === statusFilter)
     && (directionFilter === "all" || technicalDirections(item).includes(directionFilter)));
-  const filtersActive = companyFilter !== "all" || trackFilter !== "all" || locationFilter !== "all"
-    || statusFilter !== "all" || directionFilter !== "all";
-  const exportPath = (format: "pdf" | "xlsx") => {
-    const parameters = new URLSearchParams({ format });
-    if (companyFilter !== "all") parameters.set("source_id", companyFilter);
-    if (trackFilter !== "all") parameters.set("recruitment_track", trackFilter);
-    if (locationFilter !== "all") parameters.set("location", locationFilter);
-    if (statusFilter !== "all") parameters.set("status", statusFilter);
-    if (directionFilter !== "all") parameters.set("technical_direction", DIRECTION_KEYS[directionFilter] ?? "other");
-    return platformPath(`/api/hr/panorama/reports/${encodeURIComponent(report.publication.publicationId)}/export?${parameters.toString()}`);
-  };
-  const filteredMarkdown = formatHrPanoramaReportMarkdown(report, comparison, filteredJobs, filtersActive);
+  const exportPath = (format: "pdf" | "xlsx" | "md") => platformPath(
+    `/api/hr/panorama/reports/${encodeURIComponent(report.publication.bundleId)}/export?format=${format}`,
+  );
   useEffect(() => {
     setCopyState("idle"); setView("overview"); setCompanyFilter("all"); setTrackFilter("all");
     setLocationFilter("all"); setStatusFilter("all"); setDirectionFilter("all");
@@ -369,8 +353,8 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
   return <article className="hr-panorama-report" data-report-id={report.publication.publicationId}>
     <header className="hr-panorama-report-cover">
       <div className="hr-panorama-report-meta">
-        <span>全景分析 · 第 {report.insight.versionNumber} 版 · {report.publication.coverageState === "complete" ? "来源完整" : "部分来源可用"}</span>
-        <div><time dateTime={report.publication.publishedAt}>发布于 {time(report.publication.publishedAt)}</time><span className="hr-panorama-report-actions"><button onClick={() => void copy()} type="button">{copyState === "copied" ? "已复制报告" : copyState === "error" ? "复制失败，请重试" : "复制报告"}</button><a download href={exportPath("pdf")}>下载 PDF</a><a download href={exportPath("xlsx")}>下载 Excel</a><button onClick={() => downloadMarkdown(report, filteredMarkdown)} type="button">下载 Markdown</button></span></div>
+        <span>已发布招聘情报 · {coverageLabel(report.publication.coverageState)}</span>
+        <div><time dateTime={report.publication.generatedAt}>数据截至 {time(report.publication.generatedAt)}</time><span className="hr-panorama-report-actions"><button onClick={() => void copy()} type="button">{copyState === "copied" ? "已复制报告" : copyState === "error" ? "复制失败" : "复制报告"}</button><a download href={exportPath("pdf")}>下载 PDF</a><a download href={exportPath("xlsx")}>下载 Excel</a><a download href={exportPath("md")}>下载 Markdown</a></span></div>
       </div>
       <div className="hr-panorama-report-lead">
         <p>公开招聘情报</p>
@@ -400,7 +384,7 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
       </section>
       <section>
         <header><span>02</span><h2>招聘变化</h2></header>
-        {changes ? <><dl><div><dt>新增岗位</dt><dd>{changes.added}</dd></div><div><dt>明确关闭</dt><dd>{changes.removed}</dd></div><div><dt>持续招聘</dt><dd>{changes.continued}</dd></div><div><dt>本次未再次采集到</dt><dd>{changes.unobserved}</dd></div></dl><p>“本次未再次采集到”仍待验证，不代表停止招聘。</p>{changes.failedSourceIds.length > 0 && <p>{changes.failedSourceIds.map((id) => sourceById.get(id)?.canonicalName ?? "关注公司").join("、")}本轮采集失败，无法判断变化。</p>}</> : <><p>{comparisonMessage(comparison)}</p>{currentFailureIds(comparison).map((id) => <p key={id}>{sourceById.get(id)?.canonicalName ?? "关注公司"}本轮采集失败，无法判断变化。</p>)}</>}
+        {changes ? <><dl><div><dt>新增岗位</dt><dd>{changes.added}</dd></div><div><dt>明确关闭</dt><dd>{changes.removed}</dd></div><div><dt>持续招聘</dt><dd>{changes.continued}</dd></div><div><dt>本版未再次观测到</dt><dd>{changes.unobserved}</dd></div></dl><p>“本版未再次观测到”仍待验证，不代表停止招聘。</p>{changes.failedSourceIds.length > 0 && <p>{changes.failedSourceIds.map((id) => sourceById.get(id)?.canonicalName ?? "关注公司").join("、")}本版来源失败，无法判断变化。</p>}</> : <><p>{comparisonMessage(comparison)}</p>{currentFailureIds(comparison).map((id) => <p key={id}>{sourceById.get(id)?.canonicalName ?? "关注公司"}本版来源失败，无法判断变化。</p>)}</>}
       </section>
       <section>
         <header><span>03</span><h2>地域分布</h2></header>
@@ -423,7 +407,7 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
     {view === "overview" && dimensions && <section className="hr-panorama-v2" aria-label="招聘结构分析">
       <header><div><p>CODE-COMPILED INTELLIGENCE</p><h2>公司 × 技术方向</h2></div><span>{dimensions.scope.unique_job_count} 个去重岗位 · {dimensions.scope.duplicate_snapshot_count} 个重复观测已剔除</span></header>
       <div className="hr-panorama-v2-table-wrap"><table><thead><tr><th>公司</th><th>岗位</th>{Object.keys(dimensions.directions).filter((key) => key !== "其他").map((key) => <th key={key}>{key}</th>)}</tr></thead><tbody>
-        {report.sources.map((source) => { const metrics = dimensions.company_matrix[source.sourceId]; const coverage = coverageById.get(source.sourceId); return <tr key={source.sourceId}><th>{source.canonicalName}<small>{coverage?.state === "failed" ? "本版未覆盖" : coverage?.jobCount === 0 ? "已检查，本次未发现公开岗位" : "已形成岗位证据"}</small></th><td>{metrics?.job_count ?? 0}</td>{Object.keys(dimensions.directions).filter((key) => key !== "其他").map((key) => <td key={key}>{metrics?.directions[key] ?? 0}</td>)}</tr>; })}
+        {report.sources.map((source) => { const metrics = dimensions.company_matrix[source.sourceId]; const coverage = coverageById.get(source.sourceId); const unavailable = coverage?.state === "failed" || coverage?.state === "not_observed"; return <tr key={source.sourceId}><th>{source.canonicalName}<small>{coverage ? coverageLabel(coverage.state) : "本版未观测"}</small></th><td>{unavailable ? "—" : metrics?.job_count ?? 0}</td>{Object.keys(dimensions.directions).filter((key) => key !== "其他").map((key) => <td key={key}>{unavailable ? "—" : metrics?.directions[key] ?? 0}</td>)}</tr>; })}
       </tbody></table></div>
       <div className="hr-panorama-v2-grid">
         <section><h3>社招、校招与实习</h3><dl>{Object.entries(dimensions.tracks).map(([key, value]) => <div key={key}><dt>{TRACK_LABELS[key] ?? key}</dt><dd>{value}</dd></div>)}</dl></section>
@@ -465,15 +449,15 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
       <div>{report.sources.map((source) => {
         const snapshots = report.snapshots.filter((item) => item.sourceId === source.sourceId);
         const coverage = coverageById.get(source.sourceId);
-        const failed = coverage?.state === "failed";
+        const unavailable = coverage?.state === "failed" || coverage?.state === "not_observed";
         const channels = channelSnapshots(source, snapshots);
-        return <article key={source.sourceId}><header><div><h3>{source.canonicalName}</h3><span>{failed ? "本轮公司采集失败，逐渠道状态见下方" : `${source.approvedUrls.length} 个批准渠道`}</span></div></header>
+        return <article key={source.sourceId}><header><div><h3>{source.canonicalName}</h3><span>{coverage?.state === "failed" ? "来源读取失败，无法判断岗位数量" : coverage?.state === "not_observed" ? "本版未观测，无法判断岗位数量" : `${source.approvedUrls.length} 个来源渠道`}</span></div></header>
           <ul>{[...channels].map(([url, items]) => {
             const observed = items.map((item) => item.observedAt).sort();
             const latest = observed[observed.length - 1];
             const failureCode = coverage?.channelFailures?.[url];
-            const checked = coverage?.state === "succeeded" && coverage.sourceUrls.includes(url);
-            return <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a><small>{failureCode ? `本轮失败 · ${collectionFailureLabel(failureCode)}` : items.length ? `命中 ${items.length} 条` : checked ? "已检查，本次未发现公开岗位" : "本版未覆盖"}</small>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</li>;
+            const checkedEmpty = coverage?.state === "empty_confirmed" && coverage.sourceUrls.includes(url);
+            return <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a><small>{failureCode ? `来源失败 · ${collectionFailureLabel(failureCode)}` : items.length ? `命中 ${items.length} 条` : checkedEmpty ? "已核验，本版未发现公开岗位" : unavailable ? "无法判断" : "本版没有岗位证据"}</small>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</li>;
           })}</ul>
         </article>;
       })}</div>

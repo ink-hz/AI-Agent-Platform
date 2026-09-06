@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import html
+import ipaddress
 import json
 import re
+import socket
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,9 +16,73 @@ from uuid import UUID
 
 import httpx
 
-from .panorama_evidence import EvidenceArchive, EvidencePayload, EvidenceRecord
-from .panorama_models import canonical_panorama_url
-from .panorama_runtime import validate_panorama_destination
+from .evidence import EvidenceArchive, EvidencePayload, EvidenceRecord
+from .models import canonical_panorama_url
+
+_NON_NATIVE_IPV6_PREFIXES = tuple(
+    ipaddress.ip_network(value)
+    for value in ("64:ff9b::/96", "64:ff9b:1::/48", "2002::/16", "2001::/32")
+)
+
+
+def _system_resolver(hostname: str, port: int) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            item[4][0]
+            for item in socket.getaddrinfo(
+                hostname,
+                port,
+                type=socket.SOCK_STREAM,
+                proto=socket.IPPROTO_TCP,
+            )
+        )
+    )
+
+
+def _is_public_unicast(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    if isinstance(address, ipaddress.IPv6Address) and any(
+        address in prefix for prefix in _NON_NATIVE_IPV6_PREFIXES
+    ):
+        return False
+    candidates = [address]
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        candidates.append(address.ipv4_mapped)
+    return all(
+        candidate.is_global
+        and not candidate.is_multicast
+        and not candidate.is_unspecified
+        and not candidate.is_loopback
+        and not candidate.is_link_local
+        and not candidate.is_private
+        and not candidate.is_reserved
+        for candidate in candidates
+    )
+
+
+def validate_panorama_destination(
+    raw: str,
+    *,
+    resolver: Callable[[str, int], tuple[str, ...] | list[str]] = _system_resolver,
+) -> str:
+    try:
+        selected = canonical_panorama_url(raw)
+        hostname = urlsplit(selected).hostname
+    except ValueError:
+        raise ValueError("panorama destination invalid") from None
+    if hostname is None:
+        raise ValueError("panorama destination invalid")
+    try:
+        addresses = tuple(resolver(hostname, 443))
+        parsed_addresses = tuple(ipaddress.ip_address(value) for value in addresses)
+    except Exception:  # noqa: BLE001 - injected DNS failures must fail closed
+        raise ValueError("panorama destination invalid") from None
+    if not parsed_addresses or any(
+        not _is_public_unicast(address) for address in parsed_addresses
+    ):
+        raise ValueError("panorama destination invalid")
+    return selected
 
 
 class CollectionError(RuntimeError):
@@ -253,17 +319,24 @@ def _without_html_comments(value: str) -> str:
 
 
 def _states_no_open_jobs(value: str) -> bool:
-    return re.search(
-        r"暂无(?:招聘|职位|岗位)|暂无相关职位|没有(?:招聘|职位|岗位)|无在招岗位",
-        _plain(value, ""),
-    ) is not None
+    return (
+        re.search(
+            r"暂无(?:招聘|职位|岗位)|暂无相关职位|没有(?:招聘|职位|岗位)|无在招岗位",
+            _plain(value, ""),
+        )
+        is not None
+    )
 
 
 def _job_from_mapping(
     item: Mapping[str, object], target: SourceTarget
 ) -> NormalizedPublicJob:
     title = _plain(
-        item.get("title") or item.get("name") or item.get("JobAdName"), ""
+        item.get("title")
+        or item.get("name")
+        or item.get("JobAdName")
+        or item.get("job_name"),
+        "",
     )
     if not title:
         raise ValueError("job title unavailable")
@@ -274,6 +347,7 @@ def _job_from_mapping(
         or item.get("city_list")
         or item.get("city_info")
         or item.get("LocNames")
+        or item.get("city_name")
     )
     raw_url = item.get("url")
     source_url = target.source_url
@@ -294,7 +368,11 @@ def _job_from_mapping(
     status = (
         status_value if status_value in {"open", "closed", "unknown"} else "unknown"
     )
-    description = item.get("description") or item.get("responsibilities")
+    description = (
+        item.get("description")
+        or item.get("responsibilities")
+        or item.get("job_descript")
+    )
     description_duty, description_requirement = _split_job_text(description)
     return NormalizedPublicJob(
         public_job_key=_identifier(
@@ -302,22 +380,22 @@ def _job_from_mapping(
             or item.get("id")
             or item.get("jobId")
             or item.get("JobAdId")
-            or item.get("Id"),
+            or item.get("Id")
+            or item.get("publish_id"),
             title=title,
             location=location,
             source_url=source_url,
         ),
         title=title,
         location=location,
-        duty_excerpt=_plain(
-            item.get("duty") or item.get("Duty") or description_duty
-        ),
+        duty_excerpt=_plain(item.get("duty") or item.get("Duty") or description_duty),
         requirement_excerpt=_plain(
             item.get("qualifications")
             or item.get("requirements")
             or item.get("requirement")
             or item.get("Require")
             or item.get("experienceRequirements")
+            or item.get("job_require")
             or description_requirement
         ),
         source_url=source_url,
@@ -347,6 +425,7 @@ def _candidate_mappings(value: object) -> list[Mapping[str, object]]:
         "results",
         "job_post_list",
         "Data",
+        "career",
     ):
         nested = value.get(key)
         if isinstance(nested, list):
@@ -372,9 +451,8 @@ def parse_public_jobs(
         except json.JSONDecodeError:
             raise CollectionError("unsupported_schema") from None
         if isinstance(decoded, Mapping):
-            if (
-                "vnd.orbbec.hr-panorama+json" in mime.lower()
-                and isinstance(decoded.get("_collection_error"), str)
+            if "vnd.orbbec.hr-panorama+json" in mime.lower() and isinstance(
+                decoded.get("_collection_error"), str
             ):
                 raise CollectionError(
                     decoded["_collection_error"],
@@ -438,6 +516,22 @@ def parse_public_jobs(
                 payloads.append(json.loads(block))
             except json.JSONDecodeError:
                 continue
+        parsed_url = urlsplit(target.source_url)
+        if (
+            (parsed_url.hostname or "").endswith(".bysjy.com.cn")
+            and parsed_url.path == "/detail/career"
+        ):
+            marker = "var data = JSON.parse(JSON.stringify("
+            start = text.find(marker)
+            if start >= 0:
+                try:
+                    embedded, _ = json.JSONDecoder().raw_decode(
+                        text[start + len(marker) :].lstrip()
+                    )
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    payloads.append(embedded)
     jobs: list[NormalizedPublicJob] = []
     for payload in payloads:
         for item in _candidate_mappings(payload):
@@ -645,9 +739,7 @@ class PublicSourceCollector:
         if matched is None:
             raise CollectionError("unsupported_schema")
         mode, org_id, site_id = matched.groups()
-        envelope = _SyntheticEnvelope(
-            self._maximum_response_bytes, target.source_url
-        )
+        envelope = _SyntheticEnvelope(self._maximum_response_bytes, target.source_url)
         seen_job_keys: set[str] = set()
         total: int | None = None
         offset = 0
@@ -673,7 +765,9 @@ class PublicSourceCollector:
             ):
                 raise CollectionError("source_rejected")
             if total is not None and total != page_total:
-                raise CollectionError("source_changed_during_collection", retryable=True)
+                raise CollectionError(
+                    "source_changed_during_collection", retryable=True
+                )
             total = page_total
             envelope.add_page(raw.decode("utf-8-sig"))
             for item in page_jobs:
@@ -703,14 +797,8 @@ class PublicSourceCollector:
             offset += len(page_jobs)
             if len(envelope.jobs) > 10000:
                 raise CollectionError("response_too_large")
-        if (
-            total is None
-            or len(envelope.jobs) != total
-            or len(seen_job_keys) != total
-        ):
-            return self._synthetic_failure(
-                target, envelope, "response_truncated"
-            )
+        if total is None or len(envelope.jobs) != total or len(seen_job_keys) != total:
+            return self._synthetic_failure(target, envelope, "response_truncated")
         payload = envelope.payload(
             {
                 "code": 0,
@@ -728,9 +816,7 @@ class PublicSourceCollector:
         _response, listing = await self._get_derived(target.source_url)
         text = listing.decode("utf-8-sig")
         active_text = _without_html_comments(text)
-        envelope = _SyntheticEnvelope(
-            self._maximum_response_bytes, target.source_url
-        )
+        envelope = _SyntheticEnvelope(self._maximum_response_bytes, target.source_url)
         envelope.add_page(text)
         paths = tuple(
             dict.fromkeys(
@@ -747,9 +833,7 @@ class PublicSourceCollector:
                 verified_empty=_states_no_open_jobs(active_text),
             )
         if len(paths) > 100:
-            return self._synthetic_failure(
-                target, envelope, "response_truncated"
-            )
+            return self._synthetic_failure(target, envelope, "response_truncated")
         target_origin = urlsplit(target.source_url)
         detail_urls: list[str] = []
         for path in paths:
@@ -767,9 +851,7 @@ class PublicSourceCollector:
                 continue
             detail_urls.append(detail_url)
         if not detail_urls:
-            return self._synthetic_failure(
-                target, envelope, "unsupported_schema"
-            )
+            return self._synthetic_failure(target, envelope, "unsupported_schema")
         for detail_url in detail_urls:
             _detail_response, raw = await self._get_derived(detail_url)
             detail = raw.decode("utf-8-sig")
@@ -785,9 +867,7 @@ class PublicSourceCollector:
                 re.IGNORECASE | re.DOTALL,
             )
             if title_match is None or body_match is None:
-                return self._synthetic_failure(
-                    target, envelope, "unsupported_schema"
-                )
+                return self._synthetic_failure(target, envelope, "unsupported_schema")
             duty, requirement = _split_job_text(body_match.group(1))
             envelope.add_job(
                 {
@@ -814,9 +894,7 @@ class PublicSourceCollector:
             if selected_path in {"", "/"}
             else (target.source_url,)
         )
-        envelope = _SyntheticEnvelope(
-            self._maximum_response_bytes, target.source_url
-        )
+        envelope = _SyntheticEnvelope(self._maximum_response_bytes, target.source_url)
         listing_pages: list[tuple[str, str]] = []
         for initial_url in initial_urls:
             _response, first = await self._get_derived(initial_url)
@@ -834,9 +912,7 @@ class PublicSourceCollector:
                 )
             )
             if len(page_paths) > 20:
-                return self._synthetic_failure(
-                    target, envelope, "response_truncated"
-                )
+                return self._synthetic_failure(target, envelope, "response_truncated")
             for path in page_paths:
                 _page_response, raw = await self._get_derived(
                     canonical_panorama_url(urljoin(initial_url, path))
@@ -853,7 +929,9 @@ class PublicSourceCollector:
                 re.IGNORECASE | re.DOTALL,
             ):
                 job_id = re.search(r"my_load_more\((\d+)\)", row)
-                cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.IGNORECASE | re.DOTALL)
+                cells = re.findall(
+                    r"<td[^>]*>(.*?)</td>", row, re.IGNORECASE | re.DOTALL
+                )
                 if job_id is None or len(cells) < 3:
                     continue
                 detail_url = (
@@ -869,9 +947,8 @@ class PublicSourceCollector:
                     return self._synthetic_failure(
                         target, envelope, "unsupported_schema"
                     )
-                if (
-                    not isinstance(detail_payload, Mapping)
-                    or not isinstance(detail_payload.get("msg"), str)
+                if not isinstance(detail_payload, Mapping) or not isinstance(
+                    detail_payload.get("msg"), str
                 ):
                     return self._synthetic_failure(
                         target, envelope, "unsupported_schema"
@@ -899,13 +976,9 @@ class PublicSourceCollector:
         self, target: SourceTarget
     ) -> tuple[httpx.Response, str, bytes]:
         _response, landing = await self._get_derived(target.source_url)
-        envelope = _SyntheticEnvelope(
-            self._maximum_response_bytes, target.source_url
-        )
+        envelope = _SyntheticEnvelope(self._maximum_response_bytes, target.source_url)
         envelope.add_page(landing.decode("utf-8-sig"))
-        campus = urlsplit(target.source_url).path.endswith(
-            "/campus-recruitment.html"
-        )
+        campus = urlsplit(target.source_url).path.endswith("/campus-recruitment.html")
         total_rows: int | None = None
         total_pages: int | None = None
         seen_job_keys: set[str] = set()
@@ -928,25 +1001,17 @@ class PublicSourceCollector:
             try:
                 page = json.loads(raw)
             except (UnicodeDecodeError, json.JSONDecodeError):
-                return self._synthetic_failure(
-                    target, envelope, "unsupported_schema"
-                )
+                return self._synthetic_failure(target, envelope, "unsupported_schema")
             page_info = page.get("pageVO") if isinstance(page, Mapping) else None
             page_jobs = page.get("result") if isinstance(page, Mapping) else None
             selected_total = (
-                page_info.get("totalRows")
-                if isinstance(page_info, Mapping)
-                else None
+                page_info.get("totalRows") if isinstance(page_info, Mapping) else None
             )
             selected_pages = (
-                page_info.get("totalPages")
-                if isinstance(page_info, Mapping)
-                else None
+                page_info.get("totalPages") if isinstance(page_info, Mapping) else None
             )
             selected_page = (
-                page_info.get("curPage")
-                if isinstance(page_info, Mapping)
-                else None
+                page_info.get("curPage") if isinstance(page_info, Mapping) else None
             )
             if (
                 not isinstance(page_jobs, list)
@@ -966,18 +1031,14 @@ class PublicSourceCollector:
             total_rows = selected_total
             total_pages = selected_pages
             if not page_jobs and page_number <= total_pages:
-                return self._synthetic_failure(
-                    target, envelope, "response_truncated"
-                )
+                return self._synthetic_failure(target, envelope, "response_truncated")
             for item in page_jobs:
                 if not isinstance(item, Mapping):
                     return self._synthetic_failure(
                         target, envelope, "unsupported_schema"
                     )
                 public_job_key = _plain(item.get("jobId"), "")
-                title = _plain(
-                    item.get("jobname") or item.get("externalJobName"), ""
-                )
+                title = _plain(item.get("jobname") or item.get("externalJobName"), "")
                 if not public_job_key or not title or public_job_key in seen_job_keys:
                     return self._synthetic_failure(
                         target,
@@ -1003,9 +1064,7 @@ class PublicSourceCollector:
                 raise CollectionError("response_too_large")
             page_number += 1
         if total_rows is None or len(envelope.jobs) != total_rows:
-            return self._synthetic_failure(
-                target, envelope, "response_truncated"
-            )
+            return self._synthetic_failure(target, envelope, "response_truncated")
         return self._synthetic_jobs(
             target,
             envelope,
@@ -1019,18 +1078,14 @@ class PublicSourceCollector:
         script_url = urljoin(target.source_url, "./js/postDatas.js")
         _script_response, raw = await self._get_derived(script_url)
         script = raw.decode("utf-8-sig")
-        envelope = _SyntheticEnvelope(
-            self._maximum_response_bytes, target.source_url
-        )
+        envelope = _SyntheticEnvelope(self._maximum_response_bytes, target.source_url)
         landing_text = landing.decode("utf-8-sig")
         envelope.add_page(landing_text)
         envelope.add_page(script)
         for block in re.findall(r"\{(.*?)\}(?:,|\s*\])", script, re.DOTALL):
             fields: dict[str, str] = {}
             for name in ("name", "type", "res", "int", "req", "link"):
-                matched = re.search(
-                    rf"\b{name}\s*:\s*(['`])(.*?)\1", block, re.DOTALL
-                )
+                matched = re.search(rf"\b{name}\s*:\s*(['`])(.*?)\1", block, re.DOTALL)
                 fields[name] = "" if matched is None else matched.group(2)
             job_id = re.search(r"[?&]jobId=(\d+)", fields["link"])
             if not fields["name"] or job_id is None:
@@ -1055,9 +1110,9 @@ class PublicSourceCollector:
                     "status": "open",
                 }
             )
-        structural_empty = re.search(
-            r"\b__data_list\s*=\s*\[\s*\]\s*;?", script
-        ) is not None
+        structural_empty = (
+            re.search(r"\b__data_list\s*=\s*\[\s*\]\s*;?", script) is not None
+        )
         return self._synthetic_jobs(
             target,
             envelope,
@@ -1072,9 +1127,7 @@ class PublicSourceCollector:
         verified_empty: bool = False,
     ) -> tuple[httpx.Response, str, bytes]:
         if not envelope.jobs and not verified_empty:
-            return self._synthetic_failure(
-                target, envelope, "unsupported_schema"
-            )
+            return self._synthetic_failure(target, envelope, "unsupported_schema")
         payload = envelope.payload(
             {
                 "code": 0,
@@ -1109,9 +1162,7 @@ class PublicSourceCollector:
         path = urlsplit(target.source_url).path.strip("/").split("/", 1)[0]
         website_path = path or "index"
         endpoint = canonical_panorama_url(
-            self._destination_validator(
-                f"https://{hostname}/api/v1/search/job/posts"
-            )
+            self._destination_validator(f"https://{hostname}/api/v1/search/job/posts")
         )
         parsed_endpoint = urlsplit(endpoint)
         parsed_target = urlsplit(target.source_url)

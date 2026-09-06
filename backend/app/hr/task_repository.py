@@ -36,6 +36,9 @@ _TASK_PROJECTION_CTE = """
              retrieval.retrieval_id as panorama_retrieval_id,
              retrieval.insight_version_ids as panorama_insight_version_ids,
              retrieval.retrieved_excerpts as panorama_retrieved_excerpts,
+             bundle_reference.bundle_id as intelligence_bundle_id,
+             bundle_reference.observed_at as intelligence_observed_at,
+             bundle_reference.context_document as intelligence_context_document,
              coalesce(scoped.updated_at,request.created_at) as updated_at,
              case
                when scoped.turn_status in ('failed','cancelled','interrupted')
@@ -106,6 +109,9 @@ _TASK_PROJECTION_CTE = """
       left join lateral platform_hr.read_position_insight_retrieval_for_turn_v79(
         request.owner_internal_user_id,request.position_id,scoped.turn_id
       ) retrieval on true
+      left join lateral platform_hr.read_intelligence_bundle_reference_for_turn_v86(
+        request.owner_internal_user_id,request.position_id,scoped.turn_id
+      ) bundle_reference on true
       left join lateral platform_hr.read_hr_task_result_projection_state_v71(
         record.task_record_id
       ) projection on true
@@ -171,6 +177,25 @@ def _references(row: dict[str, Any]) -> tuple[HrTaskReference, ...]:
             "candidate_snapshot", candidate_id,
             f"候选人分析上下文 · {str(candidate_id)[:8]}", None,
             "任务启动时固定的候选人资料与分析上下文", None,
+        ))
+    bundle_id = row.get("intelligence_bundle_id")
+    if isinstance(bundle_id, UUID):
+        document = row.get("intelligence_context_document")
+        facts = document.get("source_facts") if isinstance(document, dict) else None
+        first = (
+            facts[0]
+            if isinstance(facts, list) and facts and isinstance(facts[0], dict)
+            else {}
+        )
+        source_url = first.get("source_url")
+        evidence_sha256 = first.get("evidence_sha256")
+        references.append(HrTaskReference(
+            "intelligence_bundle", bundle_id,
+            f"招聘情报 Bundle · {str(bundle_id)[:8]}", str(bundle_id),
+            "与本岗位方向相关的已发布招聘情报",
+            _freshness_date(row.get("intelligence_observed_at")),
+            source_url if isinstance(source_url, str) else None,
+            evidence_sha256 if isinstance(evidence_sha256, str) else None,
         ))
     retrieval_id = row.get("panorama_retrieval_id")
     if isinstance(retrieval_id, UUID):
@@ -252,7 +277,8 @@ class PostgresHrPositionTaskRepository:
                    material_attachment_ids,official_source_version,
                    official_freshness,context_version_number,
                    panorama_retrieval_id,panorama_insight_version_ids,
-                   panorama_retrieved_excerpts
+                   panorama_retrieved_excerpts,intelligence_bundle_id,
+                   intelligence_observed_at,intelligence_context_document
             from projected
             where status in ('accepted','running')
                or updated_at > now()-interval '24 hours'
@@ -284,7 +310,8 @@ class PostgresHrPositionTaskRepository:
                    material_attachment_ids,official_source_version,
                    official_freshness,context_version_number,
                    panorama_retrieval_id,panorama_insight_version_ids,
-                   panorama_retrieved_excerpts
+                   panorama_retrieved_excerpts,intelligence_bundle_id,
+                   intelligence_observed_at,intelligence_context_document
             from projected
             where task_id=%s
         """

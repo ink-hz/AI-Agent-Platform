@@ -5,7 +5,12 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping
 from urllib.parse import urlsplit
 
-from .panorama_models import PublicJobSnapshot
+from app.hr.panorama_models import PublicJobSnapshot
+
+from .models import NormalizedJob
+
+JobRecord = PublicJobSnapshot | NormalizedJob
+_JOB_TYPES = (PublicJobSnapshot, NormalizedJob)
 
 _TRACK_PATTERNS = {
     "intern": re.compile(r"实习|(?<![a-z])intern(?:ship)?(?![a-z])", re.IGNORECASE),
@@ -22,27 +27,49 @@ _TRACK_PATTERNS = {
 
 _DIRECTIONS = {
     "光学": re.compile(r"光学|镜头|成像|光机|光电|zemax|code\s*v", re.IGNORECASE),
-    "硬件": re.compile(r"硬件|电子|电路|pcb|pcba|emc|ems|esd|fpga|soc|芯片|射频", re.IGNORECASE),
+    "硬件": re.compile(
+        r"硬件|电子|电路|pcb|pcba|emc|ems|esd|fpga|soc|芯片|射频", re.IGNORECASE
+    ),
     "结构": re.compile(r"结构|机械|机电|模具|公差|cad|cae|solidworks", re.IGNORECASE),
-    "软件": re.compile(r"软件|前端|后端|客户端|嵌入式|固件|操作系统|java|c\+\+|python|golang", re.IGNORECASE),
-    "算法": re.compile(r"算法|人工智能|机器学习|深度学习|计算机视觉|点云|slam|标定|(?<![a-z])ai(?![a-z])", re.IGNORECASE),
-    "制造工艺": re.compile(r"制造|工艺|生产|量产|试产|装配|注塑|钣金|cnc|良率", re.IGNORECASE),
+    "软件": re.compile(
+        r"软件|前端|后端|客户端|嵌入式|固件|操作系统|java|c\+\+|python|golang",
+        re.IGNORECASE,
+    ),
+    "算法": re.compile(
+        r"算法|人工智能|机器学习|深度学习|计算机视觉|点云|slam|标定|(?<![a-z])ai(?![a-z])",
+        re.IGNORECASE,
+    ),
+    "制造工艺": re.compile(
+        r"制造|工艺|生产|量产|试产|装配|注塑|钣金|cnc|良率", re.IGNORECASE
+    ),
     "质量": re.compile(
         r"质量|测试|可靠性|(?<![a-z])(?:dqe|sqe|qe)(?![a-z])|失效分析|认证",
         re.IGNORECASE,
     ),
-    "产品": re.compile(r"产品经理|产品规划|产品设计|需求分析|用户体验|ux|id设计", re.IGNORECASE),
+    "产品": re.compile(
+        r"产品经理|产品规划|产品设计|需求分析|用户体验|ux|id设计", re.IGNORECASE
+    ),
     "供应链": re.compile(r"供应链|采购|计划|pmc|物流|物料", re.IGNORECASE),
 }
 
 _SUPPLEMENTAL_DIRECTIONS = {
     "光学": re.compile(r"光学|镜头|成像|光机|光电|zemax|code\s*v", re.IGNORECASE),
-    "硬件": re.compile(r"硬件|电子|电路|pcb|pcba|emc|esd|fpga|芯片|射频", re.IGNORECASE),
-    "结构": re.compile(r"结构设计|机械设计|模具|公差|solidworks|creo|catia", re.IGNORECASE),
+    "硬件": re.compile(
+        r"硬件|电子|电路|pcb|pcba|emc|esd|fpga|芯片|射频", re.IGNORECASE
+    ),
+    "结构": re.compile(
+        r"结构设计|机械设计|模具|公差|solidworks|creo|catia", re.IGNORECASE
+    ),
     "软件": re.compile(r"嵌入式|固件|操作系统|java|c\+\+|python|golang", re.IGNORECASE),
-    "算法": re.compile(r"算法|机器学习|深度学习|计算机视觉|点云|slam|标定", re.IGNORECASE),
-    "制造工艺": re.compile(r"制造工艺|生产工艺|装配工艺|注塑|钣金|cnc|良率", re.IGNORECASE),
-    "质量": re.compile(r"可靠性|(?<![a-z])(?:dqe|sqe|qe)(?![a-z])|失效分析|认证", re.IGNORECASE),
+    "算法": re.compile(
+        r"算法|机器学习|深度学习|计算机视觉|点云|slam|标定", re.IGNORECASE
+    ),
+    "制造工艺": re.compile(
+        r"制造工艺|生产工艺|装配工艺|注塑|钣金|cnc|良率", re.IGNORECASE
+    ),
+    "质量": re.compile(
+        r"可靠性|(?<![a-z])(?:dqe|sqe|qe)(?![a-z])|失效分析|认证", re.IGNORECASE
+    ),
     "产品": re.compile(r"产品规划|产品经理|用户体验|ux|id设计", re.IGNORECASE),
     "供应链": re.compile(r"供应链|采购|pmc|物流|物料", re.IGNORECASE),
 }
@@ -57,11 +84,20 @@ _FAMILIES = (
     ),
     ("manufacturing", re.compile(r"制造|工艺|生产|量产|试产|装配|cnc", re.IGNORECASE)),
     ("supply_chain", re.compile(r"供应链|采购|计划|pmc|物流|物料", re.IGNORECASE)),
-    ("product", re.compile(r"产品经理|产品规划|产品设计|用户体验|ux|id设计", re.IGNORECASE)),
-    ("sales_marketing", re.compile(r"销售|市场|品牌|商务|渠道|电商|客户经理", re.IGNORECASE)),
+    (
+        "product",
+        re.compile(r"产品经理|产品规划|产品设计|用户体验|ux|id设计", re.IGNORECASE),
+    ),
+    (
+        "sales_marketing",
+        re.compile(r"销售|市场|品牌|商务|渠道|电商|客户经理", re.IGNORECASE),
+    ),
     ("operations", re.compile(r"运营|技术支持|售后|项目经理|交付", re.IGNORECASE)),
     ("corporate", re.compile(r"人力|招聘|财务|法务|行政|审计|秘书", re.IGNORECASE)),
-    ("research_development", re.compile(r"研发|工程师|开发|算法|研究|设计师|架构师", re.IGNORECASE)),
+    (
+        "research_development",
+        re.compile(r"研发|工程师|开发|算法|研究|设计师|架构师", re.IGNORECASE),
+    ),
 )
 
 _SKILLS = {
@@ -87,7 +123,9 @@ _SKILLS = {
     "CATIA": re.compile(r"(?<![a-z])catia(?![a-z])", re.IGNORECASE),
     "Linux": re.compile(r"(?<![a-z])linux(?![a-z])", re.IGNORECASE),
     "Docker": re.compile(r"(?<![a-z])docker(?![a-z])", re.IGNORECASE),
-    "Kubernetes": re.compile(r"(?<![a-z])kubernetes|(?<![a-z])k8s(?![a-z])", re.IGNORECASE),
+    "Kubernetes": re.compile(
+        r"(?<![a-z])kubernetes|(?<![a-z])k8s(?![a-z])", re.IGNORECASE
+    ),
 }
 
 _DIRECTION_KEYS = tuple(_DIRECTIONS) + ("其他",)
@@ -97,15 +135,17 @@ _SENIORITY_KEYS = ("senior", "mid", "junior", "graduate", "unspecified")
 _EDUCATION_KEYS = ("doctorate", "master", "bachelor", "college", "unspecified")
 
 
-def _job_text(item: PublicJobSnapshot) -> str:
+def _job_text(item: JobRecord) -> str:
     return f"{item.title} {item.duty_excerpt} {item.requirement_excerpt}"
 
 
-def _track(item: PublicJobSnapshot, text: str) -> str:
+def _track(item: JobRecord, text: str) -> str:
     url = item.source_url.casefold()
     parsed = urlsplit(url)
     hostname = parsed.hostname or ""
     path = parsed.path
+    if hostname.endswith(".bysjy.com.cn") and path == "/detail/career":
+        return "campus"
     if hostname == "kwh0jtf778.jobs.feishu.cn":
         if path == "/index" or path.startswith("/index/"):
             return "social"
@@ -136,14 +176,14 @@ def _track(item: PublicJobSnapshot, text: str) -> str:
     return "unknown"
 
 
-def recruitment_track(item: PublicJobSnapshot) -> str:
-    if not isinstance(item, PublicJobSnapshot):
+def recruitment_track(item: JobRecord) -> str:
+    if not isinstance(item, _JOB_TYPES):
         raise TypeError("public job snapshot required")
     return _track(item, _job_text(item))
 
 
-def technical_directions(item: PublicJobSnapshot) -> tuple[str, ...]:
-    if not isinstance(item, PublicJobSnapshot):
+def technical_directions(item: JobRecord) -> tuple[str, ...]:
+    if not isinstance(item, _JOB_TYPES):
         raise TypeError("public job snapshot required")
     title_selected = tuple(
         key for key, pattern in _DIRECTIONS.items() if pattern.search(item.title)
@@ -217,16 +257,16 @@ def _counts(keys: tuple[str, ...], selected: Counter[str]) -> dict[str, int]:
 
 
 def compile_panorama_dimensions(
-    snapshots: tuple[PublicJobSnapshot, ...],
+    snapshots: tuple[JobRecord, ...],
 ) -> Mapping[str, object]:
     if (
         not isinstance(snapshots, tuple)
         or not snapshots
         or len(snapshots) > 10000
-        or any(not isinstance(item, PublicJobSnapshot) for item in snapshots)
+        or any(not isinstance(item, _JOB_TYPES) for item in snapshots)
     ):
         raise ValueError("panorama dimensions evidence invalid")
-    unique: dict[tuple[object, str], PublicJobSnapshot] = {}
+    unique: dict[tuple[object, str], JobRecord] = {}
     for item in snapshots:
         key = (item.source_id, item.public_job_key)
         previous = unique.get(key)
@@ -337,9 +377,7 @@ def compile_panorama_dimensions(
             for name, count in skills.most_common(100)
         ],
         "company_matrix": company_matrix,
-        "evidence_samples": {
-            layer: dict(values) for layer, values in evidence.items()
-        },
+        "evidence_samples": {layer: dict(values) for layer, values in evidence.items()},
         "trend": {
             "state": "baseline_only",
             "message": "基线版本：尚不能判断月度变化",
@@ -352,7 +390,11 @@ def compile_panorama_dimensions(
     }
 
 
+compile_dimensions = compile_panorama_dimensions
+
+
 __all__ = [
+    "compile_dimensions",
     "compile_panorama_dimensions",
     "recruitment_track",
     "technical_directions",

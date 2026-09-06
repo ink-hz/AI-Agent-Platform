@@ -10,7 +10,7 @@ from pathlib import Path
 from types import MappingProxyType
 from uuid import uuid4
 
-from .panorama_models import canonical_panorama_url
+from .models import canonical_panorama_url
 
 PRODUCTION_EVIDENCE_ROOT = Path("/data/agent-platform/hr-intelligence/evidence")
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
@@ -199,6 +199,9 @@ def sanitized_response_headers(headers: Mapping[str, str]) -> Mapping[str, str]:
     )
 
 
+EvidenceStore = EvidenceArchive
+
+
 __all__ = [
     "PRODUCTION_EVIDENCE_ROOT",
     "EvidenceArchive",
@@ -206,5 +209,6 @@ __all__ = [
     "EvidenceError",
     "EvidencePayload",
     "EvidenceRecord",
+    "EvidenceStore",
     "sanitized_response_headers",
 ]

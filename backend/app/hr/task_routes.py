@@ -115,6 +115,8 @@ def _task(record: HrPositionTask) -> dict[str, object]:
             "version": reference.version,
             "selected_reason": reference.selected_reason,
             "freshness": reference.freshness,
+            **({"source_url": reference.source_url} if reference.source_url else {}),
+            **({"evidence_sha256": reference.evidence_sha256} if reference.evidence_sha256 else {}),
         } for reference in record.references],
     }
 

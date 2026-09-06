@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from app.hr.panorama_evidence import (
+from tools.hr_intelligence.evidence import (
     EvidenceArchive,
     EvidenceCorrupt,
     EvidencePayload,

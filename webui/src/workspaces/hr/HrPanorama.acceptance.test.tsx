@@ -20,6 +20,7 @@ const snapshotId = "55555555-5555-4555-8555-555555555555";
 const observationId = "66666666-6666-4666-8666-666666666666";
 const publication = {
   publication_id: publicationId, batch_id: batchId, insight_version_id: insightId,
+  bundle_id: publicationId, manifest_sha256: "b".repeat(64), generated_at: "2026-09-06T08:20:00Z",
   coverage_state: "partial", published_at: "2026-09-06T08:30:00Z",
   source_coverage: [{ source_id: sourceId, state: "succeeded", observed_at: "2026-09-06T08:00:00Z",
     source_urls: ["https://example.com/jobs", "https://example.com/campus"], job_count: 1,
@@ -48,6 +49,7 @@ const report = {
   evidence: [{ source_id: sourceId, source_url: "https://example.com/jobs", attempt_number: 1,
     state: "succeeded", error_code: null, sha256: "a".repeat(64), mime: "text/html", size_bytes: 2048,
     normalized_job_count: 1, observed_at: "2026-09-06T08:00:00Z" }],
+  analysis_usage: [{ provider: "openai", model: "gpt-5.6" }],
 };
 
 function json(value: unknown): Response {

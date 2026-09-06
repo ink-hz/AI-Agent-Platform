@@ -33,7 +33,7 @@ from app.execution_relay.content_crypto import ContentCodec
 from app.execution_relay.models import RelayEvent
 from app.execution_relay.repository import ExecutionRelayRepository
 from app.hr.models import BindPositionConversation, CreateManualPosition
-from app.hr.panorama_context import PanoramaContextFragment
+from app.hr.panorama_context import GroundedExcerpt, PanoramaContextFragment
 from app.hr.position_intelligence_models import (
     CreatePositionTaskRequest,
     HrPositionContextEnvelope,
@@ -90,48 +90,34 @@ def test_planning_prompt_includes_hr_contract_only_when_context_carries_one() ->
 
 def test_planning_prompt_includes_panorama_only_when_context_carries_fragment() -> None:
     card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
-    insight_id = uuid4()
+    bundle_id = uuid4()
+    observed_at = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
+    source_url = "https://example.com/jobs/1"
+    evidence_sha256 = "a" * 64
     fragment = PanoramaContextFragment(
-        insight_version_ids=(insight_id,),
-        publication_id=uuid4(),
-        query_sha256="a" * 64,
-        as_of=datetime(2026, 9, 5, 8, tzinfo=timezone.utc),
-        facts=(
-            {
-                "insight_version_id": str(insight_id),
-                "fact_id": "f1",
-                "text": "公开事实",
-                "source_url": "https://example.com/jobs/1",
-                "observed_at": "2026-09-05T08:00:00+00:00",
-                "truncated": False,
-            },
+        bundle_id=bundle_id,
+        insight_version_id=bundle_id,
+        observed_at=observed_at,
+        status="available",
+        source_facts=(
+            GroundedExcerpt(
+                "source_fact", "公开事实", source_url, evidence_sha256,
+                observed_at, bundle_id,
+            ),
         ),
-        inferences=(
-            {
-                "insight_version_id": str(insight_id),
-                "text": "AI 推断",
-                "basis_fact_ids": ("f1",),
-                "basis_sources": (
-                    {
-                        "source_url": "https://example.com/jobs/1",
-                        "observed_at": "2026-09-05T08:00:00+00:00",
-                    },
-                ),
-                "truncated": False,
-            },
+        aggregates=(
+            GroundedExcerpt(
+                "deterministic_aggregate", "确定性聚合", source_url,
+                evidence_sha256, observed_at, bundle_id,
+            ),
         ),
-        unknowns=(
-            {
-                "insight_version_id": str(insight_id),
-                "text": "未知项",
-                "source_urls": (),
-                "evidence_status": "unverified",
-                "as_of": "2026-09-05T08:00:00+00:00",
-                "truncated": False,
-            },
+        interpretations=(
+            GroundedExcerpt(
+                "ai_interpretation", "AI 推断", source_url, evidence_sha256,
+                observed_at, bundle_id,
+            ),
         ),
-        source_urls=("https://example.com/jobs/1",),
-        stale_age_days=None,
+        unknowns=("未知项",),
     )
     panorama_context = ConversationContext(
         summary=None,

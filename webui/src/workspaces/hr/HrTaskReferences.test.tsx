@@ -51,4 +51,23 @@ describe("HrTaskReferences", () => {
     await act(async () => root.render(<HrTaskReferences references={[]} />));
     expect(host.innerHTML).toBe("");
   });
+
+  it("shows Bundle version, cutoff, source link, and evidence hash without controls", async () => {
+    const bundleId = "22222222-2222-4222-8222-222222222222";
+    await act(async () => root.render(<HrTaskReferences references={[{
+      sourceType: "intelligence_bundle",
+      sourceId: bundleId,
+      displayLabel: "招聘情报 Bundle · 22222222",
+      version: bundleId,
+      selectedReason: "与本岗位方向相关的已发布招聘情报",
+      freshness: "2026-09-06",
+      sourceUrl: "https://example.com/jobs/structure",
+      evidenceSha256: "a".repeat(64),
+    }]} />));
+
+    expect(host.textContent).toContain("数据截至 2026-09-06");
+    expect(host.textContent).toContain("证据 aaaaaaaaaaaa");
+    expect(host.querySelector('a[href="https://example.com/jobs/structure"]')).not.toBeNull();
+    expect(host.querySelector("button")).toBeNull();
+  });
 });
