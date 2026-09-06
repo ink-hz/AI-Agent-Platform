@@ -10,12 +10,12 @@ def _sql() -> str:
     return " ".join(MIGRATION.read_text(encoding="utf-8").lower().split())
 
 
-def test_v85_is_the_next_contiguous_control_migration() -> None:
+def test_control_migrations_remain_contiguous_through_v87() -> None:
     versions = sorted(
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions == list(range(1, 87))
+    assert versions == list(range(1, 88))
 
 
 def test_v85_defines_immutable_bundle_jobs_and_current_publication() -> None:

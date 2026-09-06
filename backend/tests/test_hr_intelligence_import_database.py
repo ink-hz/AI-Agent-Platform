@@ -25,7 +25,7 @@ class Connection(Cursor):
         return False
 
 
-def test_database_repository_uses_only_v85_import_function() -> None:
+def test_database_repository_uses_only_v87_import_function() -> None:
     owner_id = uuid4()
     bundle_id = uuid4()
     row = {
@@ -51,12 +51,17 @@ def test_database_repository_uses_only_v85_import_function() -> None:
             "usage": (),
             "evidence_index": (),
             "bundle_locator": f"bundles/{bundle_id}",
+            "agent_chunk_index": ({"chunk_id": "chunk-1"},),
+            "agent_document_index": {"agent/index.md": {"sha256": "b" * 64}},
         },
     )()
 
     assert repository.import_verified_bundle(owner_id, bundle) == row
     assert len(connection.calls) == 1
     query, parameters = connection.calls[0]
-    assert "platform_hr.import_intelligence_bundle_v85" in query
+    assert "platform_hr.import_intelligence_bundle_v87" in query
+    assert "platform_hr.import_intelligence_bundle_v85" not in query
     assert parameters[0] == owner_id
     assert parameters[1] == bundle_id
+    assert parameters[-2].obj == [{"chunk_id": "chunk-1"}]
+    assert parameters[-1].obj == {"agent/index.md": {"sha256": "b" * 64}}

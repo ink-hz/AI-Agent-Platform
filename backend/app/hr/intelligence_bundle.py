@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 from uuid import UUID
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
-_REQUIRED_TOP_LEVEL = frozenset(
+_REQUIRED_V1_TOP_LEVEL = frozenset(
     {
         "manifest.json",
         "source-catalog.json",
@@ -25,6 +25,30 @@ _REQUIRED_TOP_LEVEL = frozenset(
         "report.xlsx",
         "checksums.sha256",
         "evidence",
+    }
+)
+_REQUIRED_V2_TOP_LEVEL = _REQUIRED_V1_TOP_LEVEL | {"agent"}
+_CHUNK_KEYS = frozenset(
+    {
+        "chunk_id",
+        "path",
+        "heading",
+        "byte_start",
+        "byte_end",
+        "sha256",
+        "scope",
+        "scope_key",
+        "companies",
+        "tracks",
+        "job_families",
+        "directions",
+        "secondary_directions",
+        "locations",
+        "seniority",
+        "skills",
+        "task_kinds",
+        "evidence_ids",
+        "priority",
     }
 )
 _COVERAGE_STATES = frozenset(
@@ -51,6 +75,9 @@ class VerifiedImportBundle:
     analysis: tuple[Mapping[str, object], ...]
     usage: tuple[Mapping[str, object], ...]
     evidence_index: tuple[Mapping[str, object], ...]
+    schema_version: int
+    agent_chunk_index: tuple[Mapping[str, object], ...]
+    agent_document_index: Mapping[str, Mapping[str, object]]
 
 
 def _json(path: Path, expected_type: type) -> object:
@@ -99,8 +126,19 @@ def verify_import_bundle(
     if raw_path.is_symlink() or not raw_path.is_dir():
         raise BundleVerificationError("bundle unavailable")
     root = raw_path.resolve()
+    if not (root / "manifest.json").is_file():
+        raise BundleVerificationError("bundle manifest invalid")
+    manifest = _json(root / "manifest.json", dict)
+    schema_version = manifest.get("schema_version")
+    if schema_version not in {1, 2}:
+        raise BundleVerificationError("bundle manifest invalid")
+    required = (
+        _REQUIRED_V1_TOP_LEVEL
+        if schema_version == 1
+        else _REQUIRED_V2_TOP_LEVEL
+    )
     top_level = {item.name for item in root.iterdir()}
-    if top_level != _REQUIRED_TOP_LEVEL:
+    if top_level != required:
         raise BundleVerificationError("bundle file set invalid")
     files = tuple(item for item in root.rglob("*") if item.is_file())
     if any(item.is_symlink() for item in root.rglob("*")):
@@ -121,7 +159,6 @@ def verify_import_bundle(
             raise BundleVerificationError("bundle file too large")
         if hashlib.sha256(file_path.read_bytes()).hexdigest() != expected:
             raise BundleVerificationError("bundle checksum mismatch")
-    manifest = _json(root / "manifest.json", dict)
     catalog = _json(root / "source-catalog.json", dict)
     coverage = _json(root / "source-coverage.json", dict)
     aggregates = _json(root / "aggregates.json", dict)
@@ -148,8 +185,7 @@ def verify_import_bundle(
     except (KeyError, TypeError, ValueError):
         raise BundleVerificationError("bundle manifest invalid") from None
     if (
-        manifest.get("schema_version") != 1
-        or generated_at.tzinfo is None
+        generated_at.tzinfo is None
         or not isinstance(document_index, Mapping)
         or manifest.get("company_count") != len(catalog.get("companies", []))
         or manifest.get("job_count") != len(jobs)
@@ -203,6 +239,85 @@ def verify_import_bundle(
             or record.get("size_bytes") != (root / name).stat().st_size
         ):
             raise BundleVerificationError("bundle document index invalid")
+    agent_document_index: Mapping[str, Mapping[str, object]] = {}
+    agent_chunk_index: tuple[Mapping[str, object], ...] = ()
+    if schema_version == 2:
+        raw_agent_index = manifest.get("agent_document_index")
+        if not isinstance(raw_agent_index, Mapping):
+            raise BundleVerificationError("bundle Agent document index invalid")
+        agent_files = {
+            item.relative_to(root).as_posix()
+            for item in (root / "agent").rglob("*")
+            if item.is_file()
+        }
+        if set(raw_agent_index) != agent_files:
+            raise BundleVerificationError("bundle Agent document index invalid")
+        verified_agent_index: dict[str, Mapping[str, object]] = {}
+        for raw_name, raw_record in raw_agent_index.items():
+            if not isinstance(raw_name, str) or not isinstance(raw_record, Mapping):
+                raise BundleVerificationError("bundle Agent document index invalid")
+            relative = PurePosixPath(raw_name)
+            if (
+                relative.is_absolute()
+                or not relative.parts
+                or relative.parts[0] != "agent"
+                or ".." in relative.parts
+            ):
+                raise BundleVerificationError("bundle Agent document path invalid")
+            body = root.joinpath(*relative.parts).read_bytes()
+            if (
+                raw_record.get("sha256") != hashlib.sha256(body).hexdigest()
+                or raw_record.get("size_bytes") != len(body)
+                or not isinstance(raw_record.get("mime"), str)
+            ):
+                raise BundleVerificationError("bundle Agent document index invalid")
+            verified_agent_index[raw_name] = raw_record
+        raw_chunks = _json(root / "agent/chunk-index.json", list)
+        agent_chunk_index = _mapping_tuple(raw_chunks, "Agent chunk index")
+        if (
+            not agent_chunk_index
+            or manifest.get("agent_chunk_count") != len(agent_chunk_index)
+        ):
+            raise BundleVerificationError("bundle Agent chunk index invalid")
+        chunk_ids: set[str] = set()
+        for chunk in agent_chunk_index:
+            if set(chunk) != _CHUNK_KEYS:
+                raise BundleVerificationError("bundle Agent chunk index invalid")
+            chunk_id = chunk.get("chunk_id")
+            path = chunk.get("path")
+            start = chunk.get("byte_start")
+            end = chunk.get("byte_end")
+            sha256 = chunk.get("sha256")
+            if (
+                not isinstance(chunk_id, str)
+                or not chunk_id
+                or chunk_id in chunk_ids
+                or not isinstance(path, str)
+                or not path.endswith(".md")
+                or path not in verified_agent_index
+                or isinstance(start, bool)
+                or not isinstance(start, int)
+                or isinstance(end, bool)
+                or not isinstance(end, int)
+                or start < 0
+                or end <= start
+                or end - start > 24 * 1024
+                or not isinstance(sha256, str)
+                or _SHA256.fullmatch(sha256) is None
+            ):
+                raise BundleVerificationError("bundle Agent chunk index invalid")
+            body = root.joinpath(*PurePosixPath(path).parts).read_bytes()
+            selected = body[start:end]
+            if end > len(body) or hashlib.sha256(selected).hexdigest() != sha256:
+                raise BundleVerificationError("bundle Agent chunk index invalid")
+            try:
+                selected.decode("utf-8")
+            except UnicodeDecodeError:
+                raise BundleVerificationError(
+                    "bundle Agent chunk index invalid"
+                ) from None
+            chunk_ids.add(chunk_id)
+        agent_document_index = verified_agent_index
     return VerifiedImportBundle(
         bundle_id=bundle_id,
         path=root,
@@ -219,6 +334,9 @@ def verify_import_bundle(
         analysis=analysis,
         usage=usage,
         evidence_index=evidence_index,
+        schema_version=schema_version,
+        agent_chunk_index=agent_chunk_index,
+        agent_document_index=agent_document_index,
     )
 
 

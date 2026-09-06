@@ -62,7 +62,10 @@ def _bundle(row: Mapping[str, Any]) -> dict[str, object]:
     }
     if not required.issubset(row):
         raise PanoramaUnavailable("published intelligence record invalid")
-    return {key: row[key] for key in required}
+    result = {key: row[key] for key in required}
+    result["agent_chunk_index"] = row.get("agent_chunk_index", [])
+    result["agent_document_index"] = row.get("agent_document_index", {})
+    return result
 
 
 class PanoramaRepository:
