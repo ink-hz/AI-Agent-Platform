@@ -100,6 +100,55 @@ class Model:
 
 
 @pytest.mark.asyncio
+async def test_analyzer_retries_only_the_current_model_step_after_transient_failure() -> None:
+    selected = snapshot()
+    delays = []
+
+    class FlakyModel(Model):
+        async def generate_json(self, stage: str, payload: dict[str, object]):
+            self.calls.append((stage, payload))
+            if len(self.calls) == 1:
+                raise RuntimeError("provider unavailable")
+            return self.response
+
+    async def backoff(delay: float) -> None:
+        delays.append(delay)
+
+    model = FlakyModel(analysis_for(selected))
+    analyzer = PanoramaAnalyzer(model, backoff=backoff)
+
+    result = await analyzer.analyze_company("测试公司", (selected,))
+
+    assert result.summary == analysis_for(selected)["summary"]
+    assert len(model.calls) == 2
+    assert delays == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_analyzer_stops_after_three_provider_attempts() -> None:
+    selected = snapshot()
+    delays = []
+
+    class UnavailableModel(Model):
+        async def generate_json(self, stage: str, payload: dict[str, object]):
+            self.calls.append((stage, payload))
+            raise RuntimeError("provider unavailable")
+
+    async def backoff(delay: float) -> None:
+        delays.append(delay)
+
+    model = UnavailableModel(analysis_for(selected))
+
+    with pytest.raises(PanoramaAnalysisError, match="model unavailable"):
+        await PanoramaAnalyzer(model, backoff=backoff).analyze_company(
+            "测试公司", (selected,)
+        )
+
+    assert len(model.calls) == 3
+    assert delays == [1.0, 4.0]
+
+
+@pytest.mark.asyncio
 async def test_analyzer_uses_complete_raw_jobs_and_records_model_identity() -> None:
     selected = snapshot()
     model = Model(analysis_for(selected))

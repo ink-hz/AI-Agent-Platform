@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -199,6 +200,49 @@ def test_cli_dispatches_commands_and_prints_machine_readable_status(
     assert runtime.calls[0][0] == expected
     output = json.loads(capsys.readouterr().out)
     assert isinstance(output, dict)
+
+
+def test_cli_closes_async_runtime_on_the_same_event_loop(monkeypatch, capsys) -> None:
+    class LoopBoundRuntime(Runtime):
+        def __init__(self) -> None:
+            super().__init__()
+            self.run_loop = None
+            self.closed = False
+
+        async def run(self, trigger):
+            self.run_loop = asyncio.get_running_loop()
+            return await super().run(trigger)
+
+        async def aclose(self) -> None:
+            assert asyncio.get_running_loop() is self.run_loop
+            self.closed = True
+
+    runtime = LoopBoundRuntime()
+    monkeypatch.setattr("app.hr.panorama_cli.build_runtime", lambda: runtime)
+
+    assert main(["run", "--trigger", "operator"]) == 0
+
+    assert runtime.closed is True
+    assert json.loads(capsys.readouterr().out)["coverage_state"] == "partial"
+
+
+def test_cli_cleanup_error_does_not_mask_the_analysis_error(monkeypatch) -> None:
+    class AnalysisFailure(RuntimeError):
+        pass
+
+    class FailingRuntime(Runtime):
+        async def run(self, trigger):
+            raise AnalysisFailure("analysis failed")
+
+        async def aclose(self) -> None:
+            raise RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(
+        "app.hr.panorama_cli.build_runtime", lambda: FailingRuntime()
+    )
+
+    with pytest.raises(AnalysisFailure, match="analysis failed"):
+        main(["run", "--trigger", "operator"])
 
 
 @pytest.mark.asyncio

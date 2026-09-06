@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
@@ -311,16 +311,23 @@ def _analysis_payload(value: PanoramaAnalysis) -> dict[str, object]:
 
 
 class PanoramaAnalyzer:
-    def __init__(self, model: PanoramaModelAdapter) -> None:
+    def __init__(
+        self,
+        model: PanoramaModelAdapter,
+        *,
+        backoff: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
         version = getattr(model, "version", None)
         if (
             not hasattr(model, "generate_json")
             or not isinstance(version, str)
             or not 1 <= len(version.strip()) <= 160
+            or not callable(backoff)
         ):
             raise ValueError("panorama model adapter invalid")
         self._model = model
         self.model_version = version.strip()
+        self._backoff = backoff
 
     async def analyze_company(
         self,
@@ -601,17 +608,22 @@ class PanoramaAnalyzer:
         _snapshot_index(snapshots)
         if _canonical_size(prompt) > _MAX_PROMPT_BYTES:
             raise PanoramaAnalysisError("analysis prompt too large")
-        try:
-            response = await self._model.generate_json(stage, prompt)
-        except PanoramaAnalysisError:
-            raise
-        except Exception:  # noqa: BLE001 - provider errors are sanitized at this boundary
-            raise PanoramaAnalysisError("analysis model unavailable") from None
-        return validate_analysis(
-            response,
-            snapshots=snapshots,
-            model_version=self.model_version,
-        )
+        for attempt in range(3):
+            try:
+                response = await self._model.generate_json(stage, prompt)
+                return validate_analysis(
+                    response,
+                    snapshots=snapshots,
+                    model_version=self.model_version,
+                )
+            except PanoramaAnalysisError:
+                if attempt == 2:
+                    raise
+            except Exception:  # noqa: BLE001 - provider errors are sanitized here
+                if attempt == 2:
+                    raise PanoramaAnalysisError("analysis model unavailable") from None
+            await self._backoff(float(4**attempt))
+        raise PanoramaAnalysisError("analysis model unavailable")  # pragma: no cover
 
 
 __all__ = [
