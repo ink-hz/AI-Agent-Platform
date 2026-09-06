@@ -24,8 +24,9 @@ from app.hr.candidate_repository import (
 
 BACKEND = Path(__file__).parents[1]
 WORKTREE = BACKEND.parent
-ROOT_REPOSITORY = WORKTREE.parents[1]
-POSITION_WORKTREE = WORKTREE.parent / "hr-r12-position"
+ROOT_REPOSITORY = WORKTREE if (WORKTREE / ".git").is_dir() else WORKTREE.parents[1]
+WORKTREE_ROOT = ROOT_REPOSITORY / ".worktrees"
+POSITION_WORKTREE = WORKTREE_ROOT / "hr-r12-position"
 
 
 @pytest.fixture(scope="module")
