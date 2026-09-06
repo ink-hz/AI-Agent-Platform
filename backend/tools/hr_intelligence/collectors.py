@@ -425,6 +425,7 @@ def _candidate_mappings(value: object) -> list[Mapping[str, object]]:
         "results",
         "job_post_list",
         "Data",
+        "career",
     ):
         nested = value.get(key)
         if isinstance(nested, list):
