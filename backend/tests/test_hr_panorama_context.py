@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+
+from app.hr.intelligence_markdown import VerifiedMarkdownChunk
 from app.hr.panorama_context import MAX_PANORAMA_CONTEXT_BYTES, PanoramaContextProvider
-from app.hr.panorama_repository import PanoramaConflict
+from app.hr.panorama_repository import PanoramaConflict, PanoramaUnavailable
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
 OWNER = uuid4()
 POSITION = uuid4()
 TURN = uuid4()
+CONVERSATION = uuid4()
 
 
 class BundleSource:
@@ -63,6 +68,125 @@ class BundleSource:
         if any(token in name for token in ("collect", "analy", "operator", "model", "run", "publish")):
             raise AssertionError(f"forbidden execution surface requested: {name}")
         raise AttributeError(name)
+
+
+def _chunk(chunk_id, path, text, **routing):
+    body = text.encode()
+    return {
+        "chunk_id": chunk_id,
+        "path": path,
+        "heading": routing.pop("heading", "情报"),
+        "byte_start": 0,
+        "byte_end": len(body),
+        "sha256": hashlib.sha256(body).hexdigest(),
+        "scope": routing.pop("scope", "topic"),
+        "scope_key": routing.pop("scope_key", "all"),
+        "companies": routing.pop("companies", []),
+        "tracks": routing.pop("tracks", []),
+        "job_families": routing.pop("job_families", []),
+        "directions": routing.pop("directions", []),
+        "secondary_directions": routing.pop("secondary_directions", []),
+        "locations": routing.pop("locations", []),
+        "seniority": routing.pop("seniority", []),
+        "skills": routing.pop("skills", []),
+        "task_kinds": routing.pop("task_kinds", []),
+        "evidence_ids": routing.pop("evidence_ids", ["a" * 64]),
+        "priority": routing.pop("priority", 100),
+        "_text": text,
+    }
+
+
+class MarkdownBundleSource(BundleSource):
+    def __init__(self, *, tampered=False):
+        super().__init__()
+        self.tampered = tampered
+        self.conversation_recorded = None
+        chunks = [
+            _chunk(
+                "usage-boundary",
+                "agent/index.md",
+                "## 使用边界\n\n公开岗位数不等于 HC。\n",
+                scope="index",
+                scope_key="usage-boundary",
+                evidence_ids=[],
+                priority=1000,
+            ),
+            _chunk(
+                "hesai-company",
+                "agent/companies/hesai.md",
+                "## 禾赛招聘情报\n\n禾赛公开招聘信号及产品路线证据。\n",
+                scope="company",
+                scope_key="hesai",
+                companies=["hesai"],
+                priority=200,
+            ),
+            _chunk(
+                "point-cloud",
+                "agent/directions/algorithm.md",
+                "## 算法方向\n\n算法/点云与算法/SLAM能力组合。\n",
+                scope="direction",
+                scope_key="algorithm",
+                directions=["算法"],
+                secondary_directions=["算法/点云", "算法/SLAM"],
+                locations=["深圳"],
+                priority=150,
+            ),
+            _chunk(
+                "interview-task",
+                "agent/tasks/interview.md",
+                "## 面试任务\n\n围绕点云工程化设计面试题。\n",
+                scope="task",
+                scope_key="interview",
+                task_kinds=["position_interview_plan", "candidate_interview_plan"],
+                priority=180,
+            ),
+            _chunk(
+                "dfm",
+                "agent/directions/manufacturing-process--dfm.md",
+                "## DFM 工艺方向\n\n制造工艺/DFM 的岗位证据。\n",
+                scope="secondary-direction",
+                scope_key="制造工艺/DFM",
+                directions=["制造工艺"],
+                secondary_directions=["制造工艺/DFM"],
+                priority=175,
+            ),
+        ]
+        self.text_by_id = {item["chunk_id"]: item.pop("_text") for item in chunks}
+        self.record.update({
+            "schema_version": 2,
+            "manifest_sha256": "f" * 64,
+            "agent_chunk_index": chunks,
+            "agent_document_index": {},
+        })
+
+    def conversation_bundle_reference_for_turn(
+        self, owner_id, conversation_id, turn_id
+    ):
+        self.calls.append((
+            "conversation_bundle_reference_for_turn",
+            owner_id,
+            conversation_id,
+            turn_id,
+        ))
+        return self.conversation_recorded
+
+    def record_conversation_bundle_reference(self, **values):
+        self.calls.append(("record_conversation_bundle_reference", values["bundle_id"]))
+        self.conversation_recorded = {"context_document": values["context_document"]}
+        return self.conversation_recorded
+
+
+class MarkdownStore:
+    def __init__(self, source):
+        self.source = source
+
+    def read_chunk(self, bundle_id, record):
+        if self.source.tampered:
+            raise PanoramaUnavailable("tampered")
+        text = self.source.text_by_id[record["chunk_id"]]
+        return VerifiedMarkdownChunk(
+            record["chunk_id"], record["path"], record["sha256"], text
+        )
 
 
 def test_position_task_gets_only_relevant_bundle_excerpts_with_provenance() -> None:
@@ -158,3 +282,277 @@ def test_concurrent_bundle_pin_replays_the_exact_committed_winner() -> None:
     assert source.calls[-1] == (
         "bundle_reference_for_turn", OWNER, POSITION, TURN,
     )
+
+
+@pytest.mark.parametrize("task_kind", [
+    "jd",
+    "jr",
+    "talent_profile",
+    "sourcing_strategy",
+    "candidate_match",
+    "position_interview_plan",
+    "candidate_interview_plan",
+])
+def test_all_core_hr_tasks_receive_relevant_markdown(task_kind) -> None:
+    source = MarkdownBundleSource()
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "处理当前岗位",
+        TURN,
+        task_kind=task_kind,
+        position_context={"title": "点云 SLAM 算法工程师", "location": "深圳"},
+    )
+
+    document = fragment.as_prompt_document()
+    assert document["schema_version"] == 3
+    assert "## 招聘情报上下文" in document["markdown_context"]
+    assert "算法/点云" in document["markdown_context"]
+    assert document["chunks"]
+    assert len(json.dumps(document, ensure_ascii=False).encode()) <= 32 * 1024
+
+
+def test_replay_uses_exact_pinned_markdown_after_current_bundle_changes() -> None:
+    source = MarkdownBundleSource()
+    provider = PanoramaContextProvider(source, markdown_store=MarkdownStore(source))
+    first = provider.for_turn(
+        OWNER,
+        POSITION,
+        "生成点云岗位面试方案",
+        TURN,
+        task_kind="position_interview_plan",
+        position_context={"title": "点云算法工程师", "location": "深圳"},
+    )
+    source.bundle_id = uuid4()
+    source.record["bundle_id"] = source.bundle_id
+
+    replay = provider.for_turn(
+        OWNER,
+        POSITION,
+        "生成点云岗位面试方案",
+        TURN,
+        task_kind="position_interview_plan",
+        position_context={"title": "点云算法工程师", "location": "深圳"},
+    )
+
+    assert replay.as_prompt_document() == first.as_prompt_document()
+
+
+def test_tampered_markdown_falls_back_without_running_any_producer() -> None:
+    source = MarkdownBundleSource(tampered=True)
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成结构岗位 JD",
+        TURN,
+        task_kind="jd",
+        position_context={"title": "高级结构工程师", "location": "深圳"},
+    )
+
+    document = fragment.as_prompt_document()
+    assert document["degraded_reason"] == "markdown_verification_failed"
+    assert document["source_facts"]
+    assert not any(
+        token in call[0]
+        for call in source.calls
+        for token in ("collect", "analy", "produce")
+    )
+
+
+def test_general_hr_chat_can_retrieve_named_company_intelligence() -> None:
+    source = MarkdownBundleSource()
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_conversation_turn(
+        OWNER,
+        CONVERSATION,
+        "分析禾赛当前招聘和产品路线",
+        TURN,
+    )
+
+    assert "禾赛" in fragment.markdown_context
+    assert fragment.bundle_id is not None
+
+
+def test_general_hr_chat_replays_pinned_markdown_without_a_current_bundle() -> None:
+    source = MarkdownBundleSource()
+    provider = PanoramaContextProvider(source, markdown_store=MarkdownStore(source))
+    first = provider.for_conversation_turn(
+        OWNER,
+        CONVERSATION,
+        "分析禾赛当前招聘和产品路线",
+        TURN,
+    )
+    source.current = False
+
+    replay = provider.for_conversation_turn(
+        OWNER,
+        CONVERSATION,
+        "这条消息内容不再触发情报检索",
+        TURN,
+    )
+
+    assert replay.as_prompt_document() == first.as_prompt_document()
+
+
+def test_company_in_position_context_and_indexed_secondary_route_are_retrieved() -> None:
+    source = MarkdownBundleSource()
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成人才画像",
+        TURN,
+        task_kind="talent_profile",
+        position_context={"title": "禾赛 DFM 工艺工程师"},
+    )
+
+    selected_ids = {item["chunk_id"] for item in fragment.chunks}
+    assert {"hesai-company", "dfm"} <= selected_ids
+
+
+def test_markdown_context_trims_low_ranked_chunks_by_final_document_size() -> None:
+    source = MarkdownBundleSource()
+    additions = [
+        _chunk(
+            f"large-{index}",
+            f"agent/directions/large-{index}.md",
+            f"## 算法扩展 {index}\n\n" + ("点云工程证据。" * 900),
+            directions=["算法"],
+            priority=120 - index,
+        )
+        for index in range(5)
+    ]
+    source.text_by_id.update(
+        {item["chunk_id"]: item.pop("_text") for item in additions}
+    )
+    source.record["agent_chunk_index"].extend(additions)
+
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成算法岗位 JD",
+        TURN,
+        task_kind="jd",
+        position_context={"title": "点云算法工程师"},
+    )
+
+    assert fragment.markdown_context
+    assert fragment.degraded_reason is None
+    assert len(
+        json.dumps(
+            fragment.as_prompt_document(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
+    ) <= MAX_PANORAMA_CONTEXT_BYTES
+
+
+def test_large_structured_fallback_is_bounded_instead_of_failing() -> None:
+    source = MarkdownBundleSource(tampered=True)
+    template = source.jobs[0]
+    source.jobs = tuple(
+        {
+            **template,
+            "job_id": str(uuid4()),
+            "public_job_key": f"structure-{index}",
+            "title": f"高级结构工程师 {index}",
+            "duty_excerpt": "结构量产验证" * 1000,
+            "requirement_excerpt": "复杂工程经验" * 1000,
+        }
+        for index in range(20)
+    )
+
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成结构岗位 JD",
+        TURN,
+        task_kind="jd",
+        position_context={"title": "高级结构工程师"},
+    )
+
+    assert fragment.degraded_reason == "markdown_verification_failed"
+    assert fragment.source_facts
+    assert len(
+        json.dumps(
+            fragment.as_prompt_document(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
+    ) <= MAX_PANORAMA_CONTEXT_BYTES
+
+
+def test_named_company_excludes_other_company_documents_with_shared_tags() -> None:
+    source = MarkdownBundleSource()
+    other = _chunk(
+        "agibot-algorithm",
+        "agent/companies/agibot.md",
+        "## 智元机器人\n\n算法招聘证据。\n",
+        scope="company",
+        scope_key="agibot",
+        companies=["agibot"],
+        directions=["算法"],
+    )
+    source.text_by_id[other["chunk_id"]] = other.pop("_text")
+    source.record["agent_chunk_index"].append(other)
+
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_conversation_turn(
+        OWNER,
+        CONVERSATION,
+        "分析禾赛点云算法招聘情报",
+        TURN,
+    )
+
+    selected_ids = {item["chunk_id"] for item in fragment.chunks}
+    assert "hesai-company" in selected_ids
+    assert "agibot-algorithm" not in selected_ids
+
+
+def test_task_playbook_is_pinned_before_broad_relevant_chunks() -> None:
+    source = MarkdownBundleSource()
+    task = _chunk(
+        "jd-task",
+        "agent/tasks/jd-jr.md",
+        "## JD 任务\n\nJD 生成方法。\n",
+        scope="task",
+        scope_key="jd-jr",
+        task_kinds=["jd", "jr"],
+    )
+    additions = [
+        _chunk(
+            f"broad-{index}",
+            f"agent/directions/broad-{index}.md",
+            f"## 算法材料 {index}\n\n" + ("算法岗位证据。" * 900),
+            directions=["算法"],
+            priority=500,
+        )
+        for index in range(6)
+    ]
+    for item in [task, *additions]:
+        source.text_by_id[item["chunk_id"]] = item.pop("_text")
+        source.record["agent_chunk_index"].append(item)
+
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_turn(
+        OWNER,
+        POSITION,
+        "生成算法岗位 JD",
+        TURN,
+        task_kind="jd",
+        position_context={"title": "算法工程师"},
+    )
+
+    assert "jd-task" in {item["chunk_id"] for item in fragment.chunks}

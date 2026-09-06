@@ -32,6 +32,7 @@ class NormalizedJob:
     evidence_sha256: str
     observed_at: datetime
     status: str = "open"
+    raw_location: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.job_id, UUID) or not isinstance(self.source_id, UUID):
@@ -69,6 +70,12 @@ class NormalizedJob:
             raise ValueError("normalized job observation invalid")
         if self.status not in {"open", "closed", "unknown"}:
             raise ValueError("normalized job status invalid")
+        raw_location = self.location if self.raw_location is None else self.raw_location
+        object.__setattr__(
+            self,
+            "raw_location",
+            _required_text(raw_location, 1000, "normalized raw location"),
+        )
 
     @property
     def snapshot_id(self) -> UUID:

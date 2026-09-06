@@ -62,6 +62,8 @@ def build_markdown(report: Mapping[str, object]) -> bytes:
     analyses = _rows(report.get("analysis"))
     usage = _rows(report.get("usage"))
     evidence = _rows(report.get("evidence"))
+    aggregates = report.get("aggregates")
+    aggregates = aggregates if isinstance(aggregates, Mapping) else {}
     lines = [
         "# HR 招聘全景情报",
         "",
@@ -73,19 +75,62 @@ def build_markdown(report: Mapping[str, object]) -> bytes:
         "",
     ]
     lines.extend(
-        f"- {_text(item.get('company_key'))}: {_text(item.get('state'))}"
+        f"- {_text(item.get('company_key'))}：{_text(item.get('state'))}"
+        + (
+            f"，{_text(item.get('job_count'))} 条岗位快照"
+            if item.get("job_count") is not None
+            else "，岗位数量未知"
+        )
         for item in coverage
     )
-    lines.extend(["", "## 确定性聚合", "", "```json"])
-    lines.append(
-        json.dumps(
-            report.get("aggregates", {}),
-            ensure_ascii=False,
-            sort_keys=True,
-            indent=2,
+    labels = {
+        "tracks": {
+            "social": "社招",
+            "campus": "校招",
+            "intern": "实习",
+            "unknown": "未分类",
+        },
+        "job_families": {
+            "research_development": "研发",
+            "quality": "质量",
+            "manufacturing": "制造",
+            "supply_chain": "供应链",
+            "product": "产品",
+            "sales_marketing": "销售与市场",
+            "operations": "运营与交付",
+            "corporate": "职能",
+            "other": "其他",
+        },
+        "directions": {},
+    }
+    lines.extend(["", "## 确定性概览", ""])
+    for key, title in (
+        ("tracks", "招聘类型"),
+        ("job_families", "岗位族"),
+        ("directions", "技术方向（多标签）"),
+    ):
+        values = aggregates.get(key)
+        if not isinstance(values, Mapping):
+            continue
+        names = labels[key]
+        readable = "、".join(
+            f"{names.get(str(name), str(name))}：{count}"
+            for name, count in sorted(
+                values.items(), key=lambda item: (-int(item[1]), str(item[0]))
+            )
+            if int(count) > 0
         )
+        if readable:
+            lines.append(f"- {title}：{readable}")
+    lines.extend(
+        [
+            "",
+            "> 技术方向为多标签口径，各方向数量不能直接相加为岗位总数。",
+            "",
+            "## AI 分析",
+            "",
+        ]
     )
-    lines.extend(["```", "", "## AI 分析", ""])
     if analyses:
         for item in analyses:
             response = item.get("response", item)
@@ -115,22 +160,32 @@ def build_markdown(report: Mapping[str, object]) -> bytes:
                 lines.append("")
     else:
         lines.extend(["尚无已接受的 AI 分析。", ""])
-    lines.extend(["## 原始岗位", ""])
-    for item in jobs:
-        lines.append(
-            "- "
-            f"{_text(item.get('company_key'))}｜{_text(item.get('title'))}｜"
-            f"{_text(item.get('location'))}｜[原始来源]({_text(item.get('source_url'))})｜"
-            f"`{_text(item.get('evidence_sha256'))}`"
-        )
+    lines.extend(
+        [
+            "## 数据下载",
+            "",
+            f"共 {len(jobs)} 条可追溯岗位快照。原始岗位明细请查看 report.xlsx。",
+            "",
+        ]
+    )
     lines.extend(["", "## 证据索引", ""])
     lines.extend(
         f"- `{_text(item.get('sha256'))}`｜{_text(item.get('source_url'))}"
         for item in evidence
     )
-    lines.extend(["", "## 成本记录", "", "```json"])
-    lines.append(json.dumps(usage, ensure_ascii=False, sort_keys=True, indent=2))
-    lines.extend(["```", ""])
+    lines.extend(["", "## 分析调用记录", ""])
+    if not usage:
+        lines.append("尚无分析调用记录。")
+    for item in usage:
+        lines.append(
+            "- "
+            f"{_text(item.get('provider')) or '未知 Provider'} / "
+            f"{_text(item.get('model')) or '未知模型'}："
+            f"输入 Token {_text(item.get('input_tokens')) or '不可用'}，"
+            f"输出 Token {_text(item.get('output_tokens')) or '不可用'}，"
+            f"费用 {_text(item.get('estimated_cost')) or '不可用'}"
+        )
+    lines.append("")
     return "\n".join(lines).encode("utf-8")
 
 

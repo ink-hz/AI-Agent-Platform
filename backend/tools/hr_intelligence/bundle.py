@@ -11,12 +11,14 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from uuid import UUID, uuid4
 
+from .agent_markdown import compile_agent_markdown
 from .analysis_units import AcceptedAnalysis
+from .chunk_index import MarkdownChunk, validate_chunk_index
 from .exports import build_markdown, build_pdf, build_xlsx
 from .models import NormalizedJob
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
-_REQUIRED_TOP_LEVEL = frozenset(
+_REQUIRED_V1_TOP_LEVEL = frozenset(
     {
         "manifest.json",
         "source-catalog.json",
@@ -31,6 +33,30 @@ _REQUIRED_TOP_LEVEL = frozenset(
         "report.xlsx",
         "checksums.sha256",
         "evidence",
+    }
+)
+_REQUIRED_V2_TOP_LEVEL = _REQUIRED_V1_TOP_LEVEL | {"agent"}
+_CHUNK_KEYS = frozenset(
+    {
+        "chunk_id",
+        "path",
+        "heading",
+        "byte_start",
+        "byte_end",
+        "sha256",
+        "scope",
+        "scope_key",
+        "companies",
+        "tracks",
+        "job_families",
+        "directions",
+        "secondary_directions",
+        "locations",
+        "seniority",
+        "skills",
+        "task_kinds",
+        "evidence_ids",
+        "priority",
     }
 )
 
@@ -64,6 +90,7 @@ def _job_dict(job: NormalizedJob) -> dict[str, object]:
         "public_job_key": job.public_job_key,
         "title": job.title,
         "location": job.location,
+        "raw_location": job.raw_location,
         "duty_excerpt": job.duty_excerpt,
         "requirement_excerpt": job.requirement_excerpt,
         "source_url": job.source_url,
@@ -119,38 +146,51 @@ class VerifiedBundle:
     manifest_sha256: str
     job_count: int
     document_index: Mapping[str, Mapping[str, object]]
+    schema_version: int
+    agent_document_index: Mapping[str, Mapping[str, object]]
 
 
 def _evidence_index(inputs: BundleInputs) -> list[dict[str, object]]:
     selected: dict[str, dict[str, object]] = {}
-    for job in inputs.jobs:
+    references = [
+        (job.evidence_sha256, job.source_url, job.observed_at.isoformat())
+        for job in inputs.jobs
+    ]
+    references.extend(
+        (
+            evidence.sha256,
+            evidence.source_url,
+            evidence.observed_at.isoformat(),
+        )
+        for analysis in inputs.analyses
+        for evidence in analysis.unit.evidence
+    )
+    for sha256, source_url, observed_at in references:
         path = (
             inputs.evidence_root
             / "sha256"
-            / job.evidence_sha256[:2]
-            / job.evidence_sha256
+            / sha256[:2]
+            / sha256
         )
         if not path.is_file():
             raise BundleVerificationError("bundle evidence missing")
         body = path.read_bytes()
-        if hashlib.sha256(body).hexdigest() != job.evidence_sha256:
+        if hashlib.sha256(body).hexdigest() != sha256:
             raise BundleVerificationError("bundle evidence checksum mismatch")
-        mime = _evidence_mime(path, job.evidence_sha256, len(body))
+        mime = _evidence_mime(path, sha256, len(body))
         current = selected.setdefault(
-            job.evidence_sha256,
+            sha256,
             {
-                "sha256": job.evidence_sha256,
-                "source_url": job.source_url,
-                "observed_at": job.observed_at.isoformat(),
+                "sha256": sha256,
+                "source_url": source_url,
+                "observed_at": observed_at,
                 "mime": mime,
                 "size_bytes": len(body),
-                "locator": (
-                    f"evidence/sha256/{job.evidence_sha256[:2]}/{job.evidence_sha256}"
-                ),
+                "locator": f"evidence/sha256/{sha256[:2]}/{sha256}",
             },
         )
-        if current["source_url"] != job.source_url:
-            current["source_url"] = min(str(current["source_url"]), job.source_url)
+        if current["source_url"] != source_url:
+            current["source_url"] = min(str(current["source_url"]), source_url)
     return [selected[key] for key in sorted(selected)]
 
 
@@ -196,6 +236,8 @@ def _input_fingerprint(
             "aggregates": inputs.aggregates,
             "analyses": analyses,
             "evidence": evidence,
+            "bundle_schema_version": 2,
+            "agent_markdown_version": 1,
         }
     ).encode("utf-8")
     return hashlib.sha256(body).hexdigest()
@@ -286,6 +328,18 @@ def build_bundle(inputs: BundleInputs, *, root: str | Path) -> Path:
             "aggregates": inputs.aggregates,
             "evidence": evidence,
         }
+        agent_package = compile_agent_markdown(
+            bundle_id=inputs.bundle_id,
+            generated_at=inputs.generated_at,
+            catalog=inputs.source_catalog,
+            coverage=inputs.source_coverage,
+            aggregates=inputs.aggregates,
+            analyses=tuple(analyses),
+        )
+        for relative, body in agent_package.files.items():
+            destination = staging.joinpath(*PurePosixPath(relative).parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(destination, body)
         reports = {
             "report.md": build_markdown(report_input),
             "report.pdf": build_pdf(report_input),
@@ -305,8 +359,20 @@ def build_bundle(inputs: BundleInputs, *, root: str | Path) -> Path:
             }
             for name, body in reports.items()
         }
+        agent_document_index = {
+            name: {
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "size_bytes": len(body),
+                "mime": (
+                    "application/json"
+                    if name.endswith(".json")
+                    else "text/markdown; charset=utf-8"
+                ),
+            }
+            for name, body in sorted(agent_package.files.items())
+        }
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "bundle_id": str(inputs.bundle_id),
             "generated_at": inputs.generated_at.isoformat(),
             "input_sha256": input_sha256,
@@ -315,6 +381,8 @@ def build_bundle(inputs: BundleInputs, *, root: str | Path) -> Path:
             "analysis_count": len(analyses),
             "evidence_count": len(evidence),
             "document_index": document_index,
+            "agent_document_index": agent_document_index,
+            "agent_chunk_count": len(agent_package.chunks),
         }
         _atomic_write(staging / "manifest.json", _json_bytes(manifest))
         _write_checksums(staging)
@@ -348,10 +416,22 @@ def verify_bundle(
     selected = Path(path).resolve()
     if not selected.is_dir():
         raise BundleVerificationError("bundle unavailable")
+    try:
+        manifest = json.loads((selected / "manifest.json").read_text("utf-8"))
+        schema_version = manifest["schema_version"]
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        raise BundleVerificationError("bundle manifest invalid") from None
+    if schema_version not in {1, 2}:
+        raise BundleVerificationError("bundle manifest invalid")
+    required = (
+        _REQUIRED_V1_TOP_LEVEL
+        if schema_version == 1
+        else _REQUIRED_V2_TOP_LEVEL
+    )
     top_level = {item.name for item in selected.iterdir()}
-    if not _REQUIRED_TOP_LEVEL.issubset(top_level):
+    if not required.issubset(top_level):
         raise BundleVerificationError("bundle incomplete")
-    if strict and top_level != _REQUIRED_TOP_LEVEL:
+    if strict and top_level != required:
         raise BundleVerificationError("bundle contains unexpected files")
     entries = _checksum_entries(selected)
     actual_files = {
@@ -366,13 +446,12 @@ def verify_bundle(
         if actual != expected:
             raise BundleVerificationError("bundle checksum mismatch")
     try:
-        manifest = json.loads((selected / "manifest.json").read_text("utf-8"))
         bundle_id = UUID(str(manifest["bundle_id"]))
         job_count = int(manifest["job_count"])
         document_index = manifest["document_index"]
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         raise BundleVerificationError("bundle manifest invalid") from None
-    if manifest.get("schema_version") != 1 or not isinstance(document_index, Mapping):
+    if not isinstance(document_index, Mapping):
         raise BundleVerificationError("bundle manifest invalid")
     if expected_bundle_id is not None and bundle_id != expected_bundle_id:
         raise BundleVerificationError("bundle identity mismatch")
@@ -387,6 +466,92 @@ def verify_bundle(
             != hashlib.sha256((selected / name).read_bytes()).hexdigest()
         ):
             raise BundleVerificationError("bundle document checksum mismatch")
+    agent_document_index: Mapping[str, Mapping[str, object]] = {}
+    if schema_version == 2:
+        raw_agent_index = manifest.get("agent_document_index")
+        if not isinstance(raw_agent_index, Mapping):
+            raise BundleVerificationError("bundle Agent document index invalid")
+        agent_files = {
+            item.relative_to(selected).as_posix()
+            for item in (selected / "agent").rglob("*")
+            if item.is_file()
+        }
+        if set(raw_agent_index) != agent_files:
+            raise BundleVerificationError("bundle Agent document index invalid")
+        for name, raw_record in raw_agent_index.items():
+            if not isinstance(name, str) or not isinstance(raw_record, Mapping):
+                raise BundleVerificationError("bundle Agent document index invalid")
+            relative = PurePosixPath(name)
+            if (
+                relative.is_absolute()
+                or not relative.parts
+                or relative.parts[0] != "agent"
+                or ".." in relative.parts
+            ):
+                raise BundleVerificationError("bundle Agent document path invalid")
+            body = selected.joinpath(*relative.parts).read_bytes()
+            if (
+                raw_record.get("sha256") != hashlib.sha256(body).hexdigest()
+                or raw_record.get("size_bytes") != len(body)
+            ):
+                raise BundleVerificationError("bundle Agent document checksum mismatch")
+        try:
+            raw_chunks = json.loads(
+                (selected / "agent/chunk-index.json").read_text("utf-8")
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            raise BundleVerificationError("bundle Agent chunk index invalid") from None
+        if (
+            not isinstance(raw_chunks, list)
+            or manifest.get("agent_chunk_count") != len(raw_chunks)
+            or not raw_chunks
+        ):
+            raise BundleVerificationError("bundle Agent chunk index invalid")
+        chunks = []
+        for item in raw_chunks:
+            if not isinstance(item, Mapping) or set(item) != _CHUNK_KEYS:
+                raise BundleVerificationError("bundle Agent chunk index invalid")
+            try:
+                chunks.append(
+                    MarkdownChunk(
+                        **{
+                            **item,
+                            **{
+                                key: tuple(item[key])
+                                for key in (
+                                    "companies",
+                                    "tracks",
+                                    "job_families",
+                                    "directions",
+                                    "secondary_directions",
+                                    "locations",
+                                    "seniority",
+                                    "skills",
+                                    "task_kinds",
+                                    "evidence_ids",
+                                )
+                            },
+                        }
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                raise BundleVerificationError(
+                    "bundle Agent chunk index invalid"
+                ) from None
+        markdown_files = {
+            name: selected.joinpath(*PurePosixPath(name).parts).read_bytes()
+            for name in agent_files
+            if name.endswith(".md")
+        }
+        try:
+            validate_chunk_index(markdown_files, tuple(chunks))
+        except ValueError:
+            raise BundleVerificationError("bundle Agent chunk index invalid") from None
+        agent_document_index = {
+            str(name): value
+            for name, value in raw_agent_index.items()
+            if isinstance(value, Mapping)
+        }
     return VerifiedBundle(
         bundle_id=bundle_id,
         path=selected,
@@ -395,6 +560,8 @@ def verify_bundle(
         ).hexdigest(),
         job_count=job_count,
         document_index=document_index,
+        schema_version=schema_version,
+        agent_document_index=agent_document_index,
     )
 
 

@@ -68,10 +68,12 @@ def test_remote_stage_prepares_only_the_scoped_persistent_data_directory() -> No
     assert "PLATFORM_HR_PANORAMA_OWNER_ID=%s" in stage
 
 
-def test_runbook_describes_local_bundle_and_owner_approved_import() -> None:
+def test_runbook_describes_local_bundle_and_direct_owner_release() -> None:
     runbook = (ROOT / "docs/runbooks/hr-intelligence-bundle.md").read_text("utf-8")
 
     assert "LOCAL_ONLY_COLLECTION=true" in runbook
-    assert "APPROVE_HR_BUNDLE_ID" in runbook
+    assert "Owner 明确发出上线指令即构成发布授权" in runbook
+    assert "APPROVE_RELEASE_SHA" not in runbook
+    assert "APPROVE_HR_BUNDLE_ID" not in runbook
     assert "deploy/cloud/import-hr-intelligence.sh" in runbook
     assert "app.hr.panorama_cli" not in runbook

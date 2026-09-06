@@ -168,6 +168,7 @@ from .hr.candidate_routes import build_candidate_router
 from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
 from .hr.intelligence_documents import IntelligenceDocumentStore
+from .hr.intelligence_markdown import IntelligenceMarkdownStore
 from .hr.panorama_context import PanoramaContextProvider
 from .hr.panorama_repository import PanoramaRepository
 from .hr.panorama_routes import build_panorama_router
@@ -1164,23 +1165,29 @@ def create_app(
     hr_model_version = None
     hr_model_version_checked = False
     panorama_repository = None
+    intelligence_document_store = None
     if identity_enabled and control_database_url is not None:
         if hr_panorama_service is None or hr_panorama_context_provider is None:
             panorama_repository = PanoramaRepository(control_database_url)
+        if hr_panorama_service is None or hr_panorama_context_provider is None:
+            intelligence_document_store = IntelligenceDocumentStore(
+                os.getenv(
+                    "PLATFORM_HR_INTELLIGENCE_ROOT",
+                    "/data/agent-platform/hr-intelligence",
+                ),
+                panorama_repository,
+            )
         if hr_panorama_service is None:
             hr_panorama_service = PanoramaService(
                 panorama_repository,
-                documents=IntelligenceDocumentStore(
-                    os.getenv(
-                        "PLATFORM_HR_INTELLIGENCE_ROOT",
-                        "/data/agent-platform/hr-intelligence",
-                    ),
-                    panorama_repository,
-                ),
+                documents=intelligence_document_store,
             )
         if hr_panorama_context_provider is None:
             hr_panorama_context_provider = PanoramaContextProvider(
-                panorama_repository
+                panorama_repository,
+                markdown_store=IntelligenceMarkdownStore(
+                    intelligence_document_store
+                ),
             )
         if (
             hr_position_intelligence_service is None

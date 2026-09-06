@@ -49,8 +49,17 @@ def test_create_app_constructs_panorama_from_the_shared_control_database() -> No
         keyword.arg: keyword.value for keyword in service_calls[0].keywords
     }
     assert set(service_keywords) == {"documents"}
-    assert isinstance(service_keywords["documents"], ast.Call)
-    assert ast.unparse(service_keywords["documents"].func) == "IntelligenceDocumentStore"
+    assert ast.unparse(service_keywords["documents"]) == "intelligence_document_store"
+
+    document_store_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "IntelligenceDocumentStore"
+    ]
+    assert len(document_store_calls) == 1
+    assert ast.unparse(document_store_calls[0].args[1]) == "panorama_repository"
 
 
 def test_create_app_does_not_run_panorama_collection_in_the_web_process() -> None:

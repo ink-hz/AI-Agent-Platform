@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from app.hr.panorama_models import PublicJobSnapshot
 
 from .models import NormalizedJob
+from .taxonomy import normalize_location, secondary_directions
 
 JobRecord = PublicJobSnapshot | NormalizedJob
 _JOB_TYPES = (PublicJobSnapshot, NormalizedJob)
@@ -129,6 +130,15 @@ _SKILLS = {
 }
 
 _DIRECTION_KEYS = tuple(_DIRECTIONS) + ("其他",)
+_SECONDARY_DIRECTION_KEYS = (
+    "光学/发射", "光学/接收", "光学/镜头", "光学/镀膜", "光学/杂散光", "光学/标定",
+    "硬件/电子", "硬件/嵌入式硬件", "硬件/PCB", "硬件/FPGA", "硬件/芯片", "硬件/器件", "硬件/电源",
+    "结构/机械", "结构/材料", "结构/模具", "结构/热设计", "结构/整机", "结构/自动化设备",
+    "软件/嵌入式", "软件/驱动", "软件/中间件", "软件/客户端", "软件/后端平台", "软件/AI基础设施", "软件/工具链",
+    "算法/点云", "算法/SLAM", "算法/感知", "算法/影像", "算法/具身智能", "算法/运动控制", "算法/3D生成", "算法/数据算法",
+    "制造工艺/SMT", "制造工艺/装配", "制造工艺/镀膜", "制造工艺/注塑", "制造工艺/机加工", "制造工艺/自动化", "制造工艺/DFM", "制造工艺/良率",
+    "质量/研发验证", "质量/软件测试", "质量/硬件测试", "质量/PQE", "质量/DQE", "质量/供应商质量", "质量/可靠性", "质量/失效分析",
+)
 _TRACK_KEYS = ("social", "campus", "intern", "unknown")
 _FAMILY_KEYS = tuple(key for key, _ in _FAMILIES) + ("other",)
 _SENIORITY_KEYS = ("senior", "mid", "junior", "graduate", "unspecified")
@@ -242,14 +252,34 @@ def _family(title: str, text: str) -> str:
 
 
 def _locations(value: str) -> tuple[str, ...]:
-    values = tuple(
-        dict.fromkeys(
-            part.strip()
-            for part in re.split(r"[、,/，；;|]", value)
-            if part.strip() and part.strip() != "未公开"
-        )
+    normalized = normalize_location(value)
+    if not normalized.valid:
+        return ()
+    return normalized.parts or (normalized.normalized,)
+
+
+def _secondary(item: JobRecord) -> tuple[str, ...]:
+    if isinstance(item, NormalizedJob):
+        return secondary_directions(item)
+    surrogate = NormalizedJob(
+        job_id=item.snapshot_id,
+        source_id=item.source_id,
+        company_key="legacy-source",
+        public_job_key=item.public_job_key,
+        title=item.title,
+        location=item.location,
+        duty_excerpt=item.duty_excerpt,
+        requirement_excerpt=item.requirement_excerpt,
+        source_url=item.source_url,
+        evidence_sha256=item.content_sha256,
+        observed_at=item.observed_at,
+        status=item.status,
     )
-    return values or ("未公开",)
+    return secondary_directions(surrogate)
+
+
+def _company_key(item: JobRecord) -> str:
+    return item.company_key if isinstance(item, NormalizedJob) else str(item.source_id)
 
 
 def _counts(keys: tuple[str, ...], selected: Counter[str]) -> dict[str, int]:
@@ -288,6 +318,7 @@ def compile_panorama_dimensions(
     )
     tracks: Counter[str] = Counter()
     directions: Counter[str] = Counter()
+    secondary: Counter[str] = Counter()
     families: Counter[str] = Counter()
     seniority: Counter[str] = Counter()
     education: Counter[str] = Counter()
@@ -295,17 +326,36 @@ def compile_panorama_dimensions(
     skills: Counter[str] = Counter()
     evidence: dict[str, dict[str, list[str]]] = {
         "directions": defaultdict(list),
+        "secondary_directions": defaultdict(list),
         "skills": defaultdict(list),
     }
     companies: dict[str, dict[str, object]] = {}
+    invalid_locations: Counter[str] = Counter()
     for item in jobs:
         text = _job_text(item)
         track = recruitment_track(item)
         selected_directions = technical_directions(item)
+        selected_secondary = _secondary(item)
         family = _family(item.title, text)
         level = _seniority(track, text)
         degree = _education(text)
-        selected_locations = _locations(item.location)
+        raw_location = (
+            str(item.raw_location)
+            if isinstance(item, NormalizedJob)
+            else item.location
+        )
+        normalized_location = normalize_location(raw_location)
+        selected_locations = (
+            normalized_location.parts
+            if normalized_location.valid and normalized_location.parts
+            else (
+                (normalized_location.normalized,)
+                if normalized_location.valid
+                else ()
+            )
+        )
+        if not normalized_location.valid:
+            invalid_locations[normalized_location.raw] += 1
         selected_skills = tuple(
             key for key, pattern in _SKILLS.items() if pattern.search(text)
         )
@@ -314,20 +364,27 @@ def compile_panorama_dimensions(
         seniority[level] += 1
         education[degree] += 1
         directions.update(selected_directions)
+        secondary.update(selected_secondary)
         locations.update(selected_locations)
         skills.update(selected_skills)
         for direction in selected_directions:
             if len(evidence["directions"][direction]) < 20:
                 evidence["directions"][direction].append(str(item.snapshot_id))
+        for direction in selected_secondary:
+            if len(evidence["secondary_directions"][direction]) < 20:
+                evidence["secondary_directions"][direction].append(
+                    str(item.snapshot_id)
+                )
         for skill in selected_skills:
             if len(evidence["skills"][skill]) < 20:
                 evidence["skills"][skill].append(str(item.snapshot_id))
         company = companies.setdefault(
-            str(item.source_id),
+            _company_key(item),
             {
                 "job_count": 0,
                 "tracks": Counter(),
                 "directions": Counter(),
+                "secondary_directions": Counter(),
                 "job_families": Counter(),
                 "seniority": Counter(),
                 "locations": Counter(),
@@ -338,6 +395,7 @@ def compile_panorama_dimensions(
         company["job_count"] += 1
         company["tracks"][track] += 1
         company["directions"].update(selected_directions)
+        company["secondary_directions"].update(selected_secondary)
         company["job_families"][family] += 1
         company["seniority"][level] += 1
         company["locations"].update(selected_locations)
@@ -350,14 +408,39 @@ def compile_panorama_dimensions(
             "job_count": value["job_count"],
             "tracks": _counts(_TRACK_KEYS, value["tracks"]),
             "directions": _counts(_DIRECTION_KEYS, value["directions"]),
+            "secondary_directions": _counts(
+                _SECONDARY_DIRECTION_KEYS, value["secondary_directions"]
+            ),
             "job_families": _counts(_FAMILY_KEYS, value["job_families"]),
             "seniority": _counts(_SENIORITY_KEYS, value["seniority"]),
             "locations": dict(value["locations"].most_common(20)),
             "skills": dict(value["skills"].most_common(20)),
             "sample_snapshot_ids": value["sample_snapshot_ids"],
         }
+    company_comparison = {
+        company_key: {
+            "absolute": {
+                "job_count": value["job_count"],
+                "directions": _counts(_DIRECTION_KEYS, value["directions"]),
+                "secondary_directions": _counts(
+                    _SECONDARY_DIRECTION_KEYS, value["secondary_directions"]
+                ),
+                "job_families": _counts(_FAMILY_KEYS, value["job_families"]),
+            },
+            "internal_share": {
+                direction: round(value["directions"].get(direction, 0) / value["job_count"], 4)
+                for direction in _DIRECTION_KEYS
+            },
+            "sample_confidence": (
+                "high" if value["job_count"] >= 100
+                else "medium" if value["job_count"] >= 30
+                else "low"
+            ),
+        }
+        for company_key, value in sorted(companies.items())
+    }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "scope": {
             "snapshot_count": len(snapshots),
             "unique_job_count": len(jobs),
@@ -368,6 +451,7 @@ def compile_panorama_dimensions(
         },
         "tracks": _counts(_TRACK_KEYS, tracks),
         "directions": _counts(_DIRECTION_KEYS, directions),
+        "secondary_directions": _counts(_SECONDARY_DIRECTION_KEYS, secondary),
         "job_families": _counts(_FAMILY_KEYS, families),
         "seniority": _counts(_SENIORITY_KEYS, seniority),
         "education": _counts(_EDUCATION_KEYS, education),
@@ -377,7 +461,11 @@ def compile_panorama_dimensions(
             for name, count in skills.most_common(100)
         ],
         "company_matrix": company_matrix,
+        "company_comparison": company_comparison,
         "evidence_samples": {layer: dict(values) for layer, values in evidence.items()},
+        "data_quality": {
+            "invalid_locations": dict(invalid_locations.most_common()),
+        },
         "trend": {
             "state": "baseline_only",
             "message": "基线版本：尚不能判断月度变化",

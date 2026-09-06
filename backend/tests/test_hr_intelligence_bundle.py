@@ -2,18 +2,25 @@ import hashlib
 import json
 from dataclasses import replace
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
+from tools.hr_intelligence.analysis_units import (
+    accept_unit_response,
+    prepare_company_unit,
+)
 from tools.hr_intelligence.bundle import (
     BundleInputs,
     BundleVerificationError,
     build_bundle,
     verify_bundle,
 )
+from tools.hr_intelligence.evidence import EvidenceArchive, EvidencePayload
 from tools.hr_intelligence.models import NormalizedJob
+from tools.hr_intelligence.public_documents import PublicIntelligenceDocument
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=timezone.utc)
 EVIDENCE_BODY = b"public source evidence"
@@ -32,6 +39,7 @@ REQUIRED = {
     "report.xlsx",
     "checksums.sha256",
     "evidence",
+    "agent",
 }
 
 
@@ -95,6 +103,74 @@ def test_verified_bundle_contains_every_required_file(tmp_path) -> None:
     assert {item.name for item in path.iterdir()} == REQUIRED
     assert verified.bundle_id == inputs.bundle_id
     assert verified.job_count == 1
+    assert verified.schema_version == 2
+    manifest = json.loads((path / "manifest.json").read_text("utf-8"))
+    chunks = json.loads((path / "agent/chunk-index.json").read_text("utf-8"))
+    assert manifest["agent_chunk_count"] == len(chunks) > 0
+    assert "agent/index.md" in manifest["agent_document_index"]
+
+
+def _write_v1_bundle(tmp_path: Path) -> Path:
+    bundle_id = uuid4()
+    root = tmp_path / str(bundle_id)
+    root.mkdir()
+    (root / "evidence").mkdir()
+    documents = {
+        "report.md": b"# legacy\n",
+        "report.pdf": b"%PDF-legacy",
+        "report.xlsx": b"legacy-xlsx",
+    }
+    for name, body in documents.items():
+        (root / name).write_bytes(body)
+    for name, value in {
+        "source-catalog.json": {"companies": []},
+        "source-coverage.json": {"companies": []},
+        "raw-evidence-index.json": [],
+        "aggregates.json": {},
+        "analysis.json": [],
+        "analysis-usage.json": [],
+    }.items():
+        (root / name).write_text(
+            json.dumps(value, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    (root / "normalized-jobs.jsonl").write_bytes(b"")
+    document_index = {
+        name: {
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "size_bytes": len(body),
+            "mime": "application/octet-stream",
+        }
+        for name, body in documents.items()
+    }
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "bundle_id": str(bundle_id),
+                "job_count": 0,
+                "document_index": document_index,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    entries = []
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        if path.name == "checksums.sha256":
+            continue
+        entries.append(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  "
+            f"{path.relative_to(root).as_posix()}"
+        )
+    (root / "checksums.sha256").write_text("\n".join(entries) + "\n", encoding="utf-8")
+    return root
+
+
+def test_completed_v1_bundle_remains_strictly_verifiable(tmp_path) -> None:
+    verified = verify_bundle(_write_v1_bundle(tmp_path), strict=True)
+
+    assert verified.schema_version == 1
 
 
 def test_bundle_evidence_index_preserves_archived_mime_type(tmp_path) -> None:
@@ -119,6 +195,81 @@ def test_bundle_evidence_index_preserves_archived_mime_type(tmp_path) -> None:
     index = json.loads((path / "raw-evidence-index.json").read_text("utf-8"))
 
     assert index[0]["mime"] == "application/json; charset=utf-8"
+
+
+def test_bundle_archives_public_document_evidence_referenced_by_analysis(
+    tmp_path,
+) -> None:
+    inputs = _inputs(tmp_path)
+    document_body = b"Hesai product portfolio"
+    record = EvidenceArchive(inputs.evidence_root).store(
+        EvidencePayload(
+            "https://www.hesaitech.com", "text/html", document_body
+        )
+    )
+    document = PublicIntelligenceDocument(
+        document_id=uuid4(),
+        company_key="hesai",
+        source_type="official_product",
+        source_url="https://www.hesaitech.com",
+        title="Hesai products",
+        text_excerpt="Hesai product portfolio",
+        evidence_sha256=record.sha256,
+        text_sha256=hashlib.sha256(b"Hesai product portfolio").hexdigest(),
+        observed_at=NOW,
+        trust_tier="primary",
+    )
+    job = inputs.jobs[0]
+    unit = prepare_company_unit(
+        inputs.bundle_id,
+        "hesai",
+        (job,),
+        inputs.aggregates,
+        public_documents=(document,),
+    )
+    accepted = accept_unit_response(
+        unit,
+        {
+            "schema_version": 2,
+            "facts": [{
+                "fact_id": "fact-1",
+                "text": "禾赛官网展示产品组合",
+                "evidence_sha256": document.evidence_sha256,
+                "source_url": document.source_url,
+                "observed_at": NOW.isoformat(),
+            }],
+            "inferences": [],
+            "alternatives": [],
+            "unknowns": ["实际产品销量未公开"],
+            "recommendations": [{
+                "recommendation_id": "recommendation-1",
+                "text": "持续跟踪产品能力对应人才",
+                "basis_fact_ids": ["fact-1"],
+                "target_tasks": ["talent_profile"],
+            }],
+            "summary": "官网产品证据摘要",
+            "confidence": "medium",
+        },
+        {
+            "unit_id": str(unit.unit_id),
+            "provider": "openai",
+            "model": "gpt-5.6-sol",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "estimated_cost": str(Decimal("0.01")),
+            "unavailable_reason": None,
+        },
+    )
+
+    path = build_bundle(
+        replace(inputs, analyses=(accepted,)), root=tmp_path / "bundles"
+    )
+    index = json.loads((path / "raw-evidence-index.json").read_text("utf-8"))
+
+    assert {item["sha256"] for item in index} == {
+        EVIDENCE_SHA256,
+        record.sha256,
+    }
 
 
 def test_verification_fails_after_tampering(tmp_path) -> None:

@@ -28,6 +28,10 @@ def _fixture(tmp_path: Path):
     evidence = b"archived-source"
     evidence_sha = hashlib.sha256(evidence).hexdigest()
     (bundle / "report.pdf").write_bytes(pdf)
+    markdown = b"# Company\n\n## Facts\n\nVerified fact.\n"
+    markdown_path = bundle / "agent/companies/hesai.md"
+    markdown_path.parent.mkdir(parents=True)
+    markdown_path.write_bytes(markdown)
     evidence_path = bundle / "evidence" / "sha256" / evidence_sha[:2] / evidence_sha
     evidence_path.parent.mkdir(parents=True)
     evidence_path.write_bytes(evidence)
@@ -35,6 +39,7 @@ def _fixture(tmp_path: Path):
         "bundle_id": bundle_id,
         "bundle_locator": f"bundles/{bundle_id}",
         "document_index": {"report.pdf": {"sha256": hashlib.sha256(pdf).hexdigest(), "size_bytes": len(pdf), "mime": "application/pdf"}},
+        "agent_document_index": {"agent/companies/hesai.md": {"sha256": hashlib.sha256(markdown).hexdigest(), "size_bytes": len(markdown), "mime": "text/markdown; charset=utf-8"}},
         "evidence_index": [{"sha256": evidence_sha, "locator": f"evidence/sha256/{evidence_sha[:2]}/{evidence_sha}", "mime": "text/html; charset=utf-8", "size_bytes": len(evidence)}],
     }
     return IntelligenceDocumentStore(root, Repository(record)), record, bundle
@@ -70,3 +75,29 @@ def test_rejects_bundle_locator_escape(tmp_path: Path) -> None:
     record["bundle_locator"] = "../outside"
     with pytest.raises(PanoramaUnavailable, match="locator"):
         store.read_document(record["bundle_id"], "report.pdf")
+
+
+def test_reads_only_hash_verified_indexed_agent_path(tmp_path: Path) -> None:
+    store, record, _bundle = _fixture(tmp_path)
+
+    selected = store.read_indexed_path(
+        record["bundle_id"],
+        "agent/companies/hesai.md",
+        expected_mime="text/markdown",
+    )
+
+    assert selected.name == "agent/companies/hesai.md"
+    assert selected.body.startswith(b"# Company")
+
+
+def test_rejects_unindexed_or_escaping_agent_path(tmp_path: Path) -> None:
+    store, record, _bundle = _fixture(tmp_path)
+
+    with pytest.raises(PanoramaNotFound):
+        store.read_indexed_path(
+            record["bundle_id"], "agent/missing.md", expected_mime="text/markdown"
+        )
+    with pytest.raises(PanoramaUnavailable):
+        store.read_indexed_path(
+            record["bundle_id"], "../outside.md", expected_mime="text/markdown"
+        )

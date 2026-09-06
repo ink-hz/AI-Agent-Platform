@@ -68,6 +68,35 @@ class IntelligenceDocumentStore:
             raise PanoramaUnavailable("intelligence evidence locator invalid")
         return self._read(bundle, expected_locator, record, expected_sha256=sha256)
 
+    def read_indexed_path(
+        self,
+        bundle_id: UUID,
+        relative_path: str,
+        *,
+        expected_mime: str,
+    ) -> VerifiedDocument:
+        if not isinstance(bundle_id, UUID) or not isinstance(relative_path, str):
+            raise TypeError("intelligence document identifier invalid")
+        relative = PurePosixPath(relative_path)
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or ".." in relative.parts
+            or relative.parts[0] != "agent"
+        ):
+            raise PanoramaUnavailable("intelligence document locator invalid")
+        if not isinstance(expected_mime, str) or _MIME.fullmatch(expected_mime) is None:
+            raise TypeError("intelligence document MIME invalid")
+        bundle = self._repository.bundle(bundle_id)
+        index = bundle.get("agent_document_index")
+        record = index.get(relative_path) if isinstance(index, Mapping) else None
+        if not isinstance(record, Mapping):
+            raise PanoramaNotFound("intelligence document not found")
+        selected = self._read(bundle, relative_path, record)
+        if selected.mime != expected_mime:
+            raise PanoramaUnavailable("intelligence document MIME mismatch")
+        return selected
+
     def _read(
         self,
         bundle: Mapping[str, object],
@@ -114,7 +143,7 @@ class IntelligenceDocumentStore:
             raise PanoramaUnavailable("intelligence document unavailable") from None
         if hashlib.sha256(body).hexdigest() != sha256:
             raise PanoramaUnavailable("intelligence document checksum mismatch")
-        return VerifiedDocument(relative.name, mime, sha256, body)
+        return VerifiedDocument(relative.as_posix(), mime, sha256, body)
 
 
 __all__ = ["DocumentName", "IntelligenceDocumentStore", "VerifiedDocument"]

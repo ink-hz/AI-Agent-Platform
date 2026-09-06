@@ -13,6 +13,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import httpx
 
+from .analysis_quality import validate_analysis_set
 from .analysis_units import (
     AnalysisContractError,
     AnalysisUnit,
@@ -30,6 +31,17 @@ from .evidence import EvidenceArchive
 from .models import NormalizedJob
 from .normalize import normalize_jobs
 from .paths import local_data_root
+from .public_documents import (
+    PublicDocumentCollectionError,
+    PublicDocumentTarget,
+    PublicIntelligenceDocument,
+    collect_public_document,
+)
+from .retrieval_eval import (
+    LocalBundleRetrievalProbe,
+    evaluate_retrieval,
+    load_cases,
+)
 
 _COVERAGE_STATES = frozenset(
     {"succeeded", "empty_confirmed", "partial", "failed", "not_observed"}
@@ -108,6 +120,7 @@ def _job_dict(job: NormalizedJob) -> dict[str, object]:
         "public_job_key": job.public_job_key,
         "title": job.title,
         "location": job.location,
+        "raw_location": job.raw_location,
         "duty_excerpt": job.duty_excerpt,
         "requirement_excerpt": job.requirement_excerpt,
         "source_url": job.source_url,
@@ -126,6 +139,7 @@ def _job_from_dict(value: Mapping[str, object]) -> NormalizedJob:
             public_job_key=str(value["public_job_key"]),
             title=str(value["title"]),
             location=str(value["location"]),
+            raw_location=str(value.get("raw_location", value["location"])),
             duty_excerpt=str(value["duty_excerpt"]),
             requirement_excerpt=str(value["requirement_excerpt"]),
             source_url=str(value["source_url"]),
@@ -162,9 +176,57 @@ def _read_jobs(path: Path) -> tuple[NormalizedJob, ...]:
         raise ValueError("normalized jobs invalid") from None
 
 
+def _public_document_from_dict(
+    value: Mapping[str, object],
+) -> PublicIntelligenceDocument:
+    try:
+        return PublicIntelligenceDocument(
+            document_id=UUID(str(value["document_id"])),
+            company_key=str(value["company_key"]),
+            source_type=str(value["source_type"]),  # type: ignore[arg-type]
+            source_url=str(value["source_url"]),
+            title=str(value["title"]),
+            text_excerpt=str(value["text_excerpt"]),
+            evidence_sha256=str(value["evidence_sha256"]),
+            text_sha256=str(value["text_sha256"]),
+            observed_at=datetime.fromisoformat(str(value["observed_at"])),
+            trust_tier=str(value["trust_tier"]),  # type: ignore[arg-type]
+        )
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("public document record invalid") from None
+
+
+def _write_public_documents(
+    path: Path, documents: tuple[PublicIntelligenceDocument, ...]
+) -> None:
+    body = b"".join(
+        (_canonical_json(document.as_dict()) + "\n").encode()
+        for document in sorted(documents, key=lambda item: str(item.document_id))
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staging = path.parent / f".{path.name}.{uuid4().hex}.part"
+    try:
+        staging.write_bytes(body)
+        os.replace(staging, path)
+    finally:
+        staging.unlink(missing_ok=True)
+
+
+def _read_public_documents(path: Path) -> tuple[PublicIntelligenceDocument, ...]:
+    try:
+        lines = path.read_text("utf-8").splitlines()
+        return tuple(
+            _public_document_from_dict(json.loads(line))
+            for line in lines
+            if line.strip()
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise ValueError("public documents invalid") from None
+
+
 def _empty_dimensions() -> dict[str, object]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "scope": {
             "snapshot_count": 0,
             "unique_job_count": 0,
@@ -175,13 +237,20 @@ def _empty_dimensions() -> dict[str, object]:
         },
         "tracks": {"social": 0, "campus": 0, "intern": 0, "unknown": 0},
         "directions": {},
+        "secondary_directions": {},
         "job_families": {},
         "seniority": {},
         "education": {},
         "locations": {},
         "skills": [],
         "company_matrix": {},
-        "evidence_samples": {"directions": {}, "skills": {}},
+        "company_comparison": {},
+        "evidence_samples": {
+            "directions": {},
+            "secondary_directions": {},
+            "skills": {},
+        },
+        "data_quality": {"invalid_locations": {}},
         "trend": {"state": "baseline_only", "message": "基线版本：尚不能判断月度变化"},
         "interpretation_limits": [
             "公开岗位数不等于HC、预算、产量或实际研发投入",
@@ -236,11 +305,15 @@ def _initialize(args: argparse.Namespace) -> int:
 
 def _resumable_collection(
     work: Path,
-) -> tuple[dict[str, Mapping[str, object]], dict[UUID, NormalizedJob]]:
+) -> tuple[
+    dict[str, Mapping[str, object]],
+    dict[UUID, NormalizedJob],
+    dict[UUID, PublicIntelligenceDocument],
+]:
     coverage_path = work / "source-coverage.json"
     jobs_path = work / "normalized-jobs.jsonl"
     if not coverage_path.is_file():
-        return {}, {}
+        return {}, {}, {}
     document = _require_mapping(_read_json(coverage_path), "source coverage")
     raw_companies = document.get("companies")
     if not isinstance(raw_companies, list):
@@ -257,7 +330,15 @@ def _resumable_collection(
         for item in companies.values()
     ):
         raise ValueError("resumable normalized jobs unavailable")
-    return companies, {job.job_id: job for job in jobs}
+    document_path = work / "public-documents.jsonl"
+    documents = (
+        _read_public_documents(document_path) if document_path.is_file() else ()
+    )
+    return (
+        companies,
+        {job.job_id: job for job in jobs},
+        {document.document_id: document for document in documents},
+    )
 
 
 async def _collect_async(bundle_id: UUID, *, resume: bool = False) -> int:
@@ -265,11 +346,14 @@ async def _collect_async(bundle_id: UUID, *, resume: bool = False) -> int:
     catalog = _read_json(work / "source-catalog.json")
     companies = _catalog_companies(catalog)
     archive = EvidenceArchive(work / "evidence")
-    previous_coverage, previous_jobs = (
-        _resumable_collection(work) if resume else ({}, {})
+    previous_coverage, previous_jobs, previous_documents = (
+        _resumable_collection(work) if resume else ({}, {}, {})
     )
     coverage: list[dict[str, object]] = []
     all_jobs: dict[UUID, NormalizedJob] = dict(previous_jobs)
+    all_documents: dict[UUID, PublicIntelligenceDocument] = dict(
+        previous_documents
+    )
     async with httpx.AsyncClient() as client:
         collector = PublicSourceCollector(client, archive)
         for company in companies:
@@ -297,6 +381,13 @@ async def _collect_async(bundle_id: UUID, *, resume: bool = False) -> int:
             )
             if not isinstance(previous_channels, list):
                 raise TypeError("resumable source channels invalid")
+            previous_document_channels = (
+                previous_company.get("document_channels", [])
+                if isinstance(previous_company, Mapping)
+                else []
+            )
+            if not isinstance(previous_document_channels, list):
+                raise TypeError("resumable document channels invalid")
             succeeded_channels: dict[tuple[int, str], dict[str, object]] = {}
             for raw_channel in previous_channels:
                 channel = _require_mapping(raw_channel, "source channel")
@@ -360,6 +451,88 @@ async def _collect_async(bundle_id: UUID, *, resume: bool = False) -> int:
                             "error_code": code,
                         }
                     )
+            document_channels: list[dict[str, object]] = []
+            successful_document_channels = {
+                (
+                    channel.get("ordinal"),
+                    channel.get("source_type"),
+                    channel.get("source_url"),
+                ): dict(channel)
+                for raw_channel in previous_document_channels
+                for channel in (_require_mapping(raw_channel, "document channel"),)
+                if channel.get("state") == "succeeded"
+            }
+            raw_document_targets = company.get("public_documents", [])
+            if not isinstance(raw_document_targets, list):
+                raise TypeError("public document targets invalid")
+            for ordinal, raw_document_target in enumerate(raw_document_targets):
+                configured = _require_mapping(
+                    raw_document_target, "public document target"
+                )
+                target = PublicDocumentTarget(
+                    company_key=company_key,
+                    source_type=str(configured.get("source_type")),  # type: ignore[arg-type]
+                    source_url=str(configured.get("source_url")),
+                    trust_tier=str(configured.get("trust_tier")),  # type: ignore[arg-type]
+                )
+                key = (ordinal, target.source_type, target.source_url)
+                preserved = successful_document_channels.get(key)
+                preserved_id = (
+                    str(preserved.get("document_id"))
+                    if preserved is not None
+                    else ""
+                )
+                if preserved is not None and any(
+                    str(document_id) == preserved_id
+                    for document_id in previous_documents
+                ):
+                    document_channels.append(preserved)
+                    continue
+                try:
+                    document = await collect_public_document(
+                        target, archive=archive, client=client
+                    )
+                    all_documents[document.document_id] = document
+                    document_channels.append(
+                        {
+                            "ordinal": ordinal,
+                            "source_type": target.source_type,
+                            "source_url": target.source_url,
+                            "trust_tier": target.trust_tier,
+                            "state": "succeeded",
+                            "observed_at": document.observed_at.isoformat(),
+                            "document_id": str(document.document_id),
+                            "evidence_sha256": document.evidence_sha256,
+                            "error_code": None,
+                        }
+                    )
+                except (
+                    PublicDocumentCollectionError,
+                    httpx.HTTPError,
+                    ValueError,
+                ) as error:
+                    document_channels.append(
+                        {
+                            "ordinal": ordinal,
+                            "source_type": target.source_type,
+                            "source_url": target.source_url,
+                            "trust_tier": target.trust_tier,
+                            "state": "failed",
+                            "observed_at": datetime.now(timezone.utc).isoformat(),
+                            "document_id": None,
+                            "evidence_sha256": (
+                                error.evidence.sha256
+                                if isinstance(error, PublicDocumentCollectionError)
+                                and error.evidence is not None
+                                else None
+                            ),
+                            "error_code": (
+                                error.code
+                                if isinstance(error, PublicDocumentCollectionError)
+                                else "source_unavailable"
+                            ),
+                        }
+                    )
             all_jobs.update(company_jobs)
             if successful == len(urls):
                 state = "succeeded" if company_jobs else "empty_confirmed"
@@ -378,18 +551,33 @@ async def _collect_async(bundle_id: UUID, *, resume: bool = False) -> int:
                     ),
                     "job_count": len(company_jobs) if successful else None,
                     "channels": channels,
+                    "document_channels": document_channels,
                     "limitations": (
                         []
                         if state in {"succeeded", "empty_confirmed"}
                         else ["一个或多个公开招聘渠道未能完成采集"]
                     ),
+                    "document_limitations": (
+                        []
+                        if all(
+                            item["state"] == "succeeded"
+                            for item in document_channels
+                        )
+                        else ["一个或多个公司公开材料渠道未能完成采集"]
+                    ),
                 }
             )
     jobs = tuple(all_jobs.values())
     _write_jobs(work / "normalized-jobs.jsonl", jobs)
+    _write_public_documents(
+        work / "public-documents.jsonl", tuple(all_documents.values())
+    )
     _write_json(
         work / "source-coverage.json",
-        {"schema_version": 1, "companies": coverage},
+        {
+            "schema_version": 2 if catalog.get("schema_version") == 2 else 1,
+            "companies": coverage,
+        },
     )
     _write_json(
         work / "aggregates.json",
@@ -424,6 +612,10 @@ def _validate_work(bundle_id: UUID, company_count: int, provenance: bool) -> int
     if not states.issubset(_COVERAGE_STATES):
         raise ValueError("source coverage state invalid")
     jobs = _read_jobs(work / "normalized-jobs.jsonl")
+    document_path = work / "public-documents.jsonl"
+    documents = (
+        _read_public_documents(document_path) if document_path.is_file() else ()
+    )
     if provenance:
 
         def require_evidence(sha256: object, error: str) -> None:
@@ -446,8 +638,24 @@ def _validate_work(bundle_id: UUID, company_count: int, provenance: bool) -> int
                 sha256 = channel.get("evidence_sha256")
                 if sha256 is not None:
                     require_evidence(sha256, "source coverage evidence invalid")
+            raw_document_channels = company.get("document_channels", [])
+            if not isinstance(raw_document_channels, list):
+                raise TypeError("source document channels invalid")
+            for raw_channel in raw_document_channels:
+                channel = _require_mapping(
+                    raw_channel, "source document coverage channel"
+                )
+                sha256 = channel.get("evidence_sha256")
+                if sha256 is not None:
+                    require_evidence(
+                        sha256, "source document evidence invalid"
+                    )
         for job in jobs:
             require_evidence(job.evidence_sha256, "normalized job evidence invalid")
+        for document in documents:
+            require_evidence(
+                document.evidence_sha256, "public document evidence invalid"
+            )
     print(
         _canonical_json(
             {
@@ -477,10 +685,21 @@ def _unit_from_document(value: object) -> AnalysisUnit:
     try:
         evidence = tuple(
             EvidenceReference(
-                UUID(str(item["job_id"])),
+                (
+                    UUID(str(item["job_id"]))
+                    if item.get("evidence_kind", "job") == "job"
+                    else None
+                ),
                 str(item["sha256"]),
                 str(item["source_url"]),
                 datetime.fromisoformat(str(item["observed_at"])),
+                str(item.get("evidence_kind", "job")),
+                UUID(str(item.get("evidence_id", item.get("job_id")))),
+                (
+                    str(item["trust_tier"])
+                    if item.get("trust_tier") is not None
+                    else None
+                ),
             )
             for item in (
                 _require_mapping(raw, "analysis evidence")
@@ -509,6 +728,10 @@ def _prepare_analysis(args: argparse.Namespace) -> int:
     bundle_id = _bundle_id(args.bundle_id)
     work = _work(bundle_id)
     jobs = _read_jobs(work / "normalized-jobs.jsonl")
+    document_path = work / "public-documents.jsonl"
+    public_documents = (
+        _read_public_documents(document_path) if document_path.is_file() else ()
+    )
     aggregates = _require_mapping(_read_json(work / "aggregates.json"), "aggregates")
     catalog = _read_json(work / "source-catalog.json")
     company_keys = tuple(
@@ -519,6 +742,7 @@ def _prepare_analysis(args: argparse.Namespace) -> int:
         bundle_id,
         jobs,
         aggregates,
+        public_documents=public_documents,
         kinds=kinds,
         company_keys=company_keys,
     )
@@ -545,6 +769,38 @@ def _analysis_status(args: argparse.Namespace) -> int:
     print(_canonical_json(status))
     if args.require_complete and completed != len(units):
         raise AnalysisContractError("analysis units incomplete")
+    return 0
+
+
+def _quality_check(args: argparse.Namespace) -> int:
+    bundle_id = _bundle_id(args.bundle_id)
+    work = _work(bundle_id)
+    units = tuple(
+        _unit_from_document(_read_json(path)) for path in _request_files(work)
+    )
+    if not units:
+        raise AnalysisContractError("analysis units unavailable")
+    completed = tuple(unit for unit in units if analysis_cache_hit(work, unit))
+    if args.strict and len(completed) != len(units):
+        raise AnalysisContractError("analysis units incomplete")
+    report = validate_analysis_set(
+        tuple(load_accepted(work, unit) for unit in completed)
+    )
+    print(
+        _canonical_json(
+            {
+                "bundle_id": str(bundle_id),
+                "unit_count": report.unit_count,
+                "factual_claim_count": report.factual_claim_count,
+                "inference_count": report.inference_count,
+                "recommendation_count": report.recommendation_count,
+                "generic_duplicate_pairs": [
+                    list(pair) for pair in report.duplicate_pairs
+                ],
+                "passed": report.passed,
+            }
+        )
+    )
     return 0
 
 
@@ -597,6 +853,7 @@ def _build(args: argparse.Namespace) -> int:
     if any(not analysis_cache_hit(work, unit) for unit in units):
         raise AnalysisContractError("analysis units incomplete")
     analyses = tuple(load_accepted(work, unit) for unit in units)
+    validate_analysis_set(analyses)
     state = _require_mapping(_read_json(work / "state.json"), "bundle state")
     generated_at = datetime.fromisoformat(str(state["created_at"]))
     inputs = BundleInputs(
@@ -645,6 +902,19 @@ def _summary(path: Path) -> int:
     return 0
 
 
+def _evaluate_retrieval(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    cases = Path(args.cases)
+    if not bundle.is_absolute() or not cases.is_absolute():
+        raise ValueError("retrieval evaluation paths must be absolute")
+    result = evaluate_retrieval(
+        LocalBundleRetrievalProbe(bundle.resolve()),
+        load_cases(cases.resolve()),
+    )
+    print(_canonical_json(result.as_dict()))
+    return 0 if result.accepted else 1
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hr-intelligence")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -661,11 +931,18 @@ def _parser() -> argparse.ArgumentParser:
     prepare = commands.add_parser("prepare-analysis")
     prepare.add_argument("--bundle-id", required=True)
     prepare.add_argument(
-        "--units", default="company,track,direction,comparison,executive-summary"
+        "--units",
+        default=(
+            "company,track,direction,secondary-direction,topic,task,comparison,"
+            "executive-summary"
+        ),
     )
     status = commands.add_parser("analysis-status")
     status.add_argument("--bundle-id", required=True)
     status.add_argument("--require-complete", action="store_true")
+    quality = commands.add_parser("quality-check")
+    quality.add_argument("--bundle-id", required=True)
+    quality.add_argument("--strict", action="store_true")
     accept = commands.add_parser("accept-analysis")
     accept.add_argument("--bundle-id", required=True)
     accept.add_argument("--unit")
@@ -677,6 +954,9 @@ def _parser() -> argparse.ArgumentParser:
     verify = commands.add_parser("verify")
     verify.add_argument("--bundle", required=True)
     verify.add_argument("--strict", action="store_true")
+    evaluate = commands.add_parser("evaluate-retrieval")
+    evaluate.add_argument("--bundle", required=True)
+    evaluate.add_argument("--cases", required=True)
     summary = commands.add_parser("summary")
     group = summary.add_mutually_exclusive_group(required=True)
     group.add_argument("--bundle-id")
@@ -702,6 +982,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _prepare_analysis(args)
     if args.command == "analysis-status":
         return _analysis_status(args)
+    if args.command == "quality-check":
+        return _quality_check(args)
     if args.command == "accept-analysis":
         if not args.all_ready and not all((args.unit, args.response, args.usage)):
             raise ValueError("unit, response and usage are required")
@@ -725,6 +1007,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "evaluate-retrieval":
+        return _evaluate_retrieval(args)
     if args.command == "summary":
         if args.bundle_id:
             bundle_id = _bundle_id(args.bundle_id)

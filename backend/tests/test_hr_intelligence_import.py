@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+
 from app.hr.intelligence_bundle import BundleVerificationError, verify_import_bundle
 from app.hr.intelligence_import import IntelligenceBundleImporter
 from tools.hr_intelligence.bundle import BundleInputs, build_bundle
@@ -116,6 +117,17 @@ def test_import_rejects_bundle_identity_mismatch(tmp_path) -> None:
             expected_bundle_id=uuid4(),
         )
     assert verify_import_bundle(path).bundle_id == inputs.bundle_id
+
+
+def test_import_verifies_v2_agent_documents_and_chunk_index(tmp_path) -> None:
+    _inputs, path = _bundle(tmp_path)
+
+    verified = verify_import_bundle(path)
+
+    assert verified.schema_version == 2
+    assert verified.agent_chunk_index
+    assert "agent/index.md" in verified.agent_document_index
+    assert len(verified.agent_chunk_index) == verified.manifest["agent_chunk_count"]
 
 
 def test_import_module_has_no_http_or_model_dependency() -> None:

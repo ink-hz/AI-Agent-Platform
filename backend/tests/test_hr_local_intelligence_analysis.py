@@ -1,3 +1,5 @@
+import hashlib
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -48,6 +50,7 @@ def _unit():
 def _response(unit):
     evidence = unit.evidence[0]
     return {
+        "schema_version": 2,
         "facts": [
             {
                 "fact_id": "fact-1",
@@ -59,12 +62,25 @@ def _response(unit):
         ],
         "inferences": [
             {
+                "inference_id": "inference-1",
+                "claim_type": "recruiting_signal",
                 "text": "点云算法是当前公开人才需求信号之一",
                 "basis_fact_ids": ["fact-1"],
             }
         ],
         "unknowns": ["实际 HC、预算与录用数量未公开"],
-        "alternatives": ["单个公开岗位也可能是常规补员"],
+        "alternatives": [{
+            "alternative_id": "alternative-1",
+            "text": "单个公开岗位也可能是常规补员",
+            "basis_fact_ids": ["fact-1"],
+            "challenged_inference_ids": ["inference-1"],
+        }],
+        "recommendations": [{
+            "recommendation_id": "recommendation-1",
+            "text": "建立点云算法人才池",
+            "basis_fact_ids": ["fact-1"],
+            "target_tasks": ["talent_profile", "sourcing_strategy"],
+        }],
         "summary": "当前公开信号集中于点云算法能力。",
         "confidence": "medium",
     }
@@ -192,3 +208,113 @@ def test_company_units_include_catalog_company_without_normalized_jobs() -> None
         ("hesai", 1),
         ("scantech", 0),
     ]
+
+
+def test_v2_analysis_requires_grounded_alternative_and_task_recommendation() -> None:
+    unit = _unit()
+
+    accepted = accept_unit_response(unit, _response(unit), _usage(unit))
+
+    assert accepted.response_sha256
+
+
+def test_default_analysis_layers_include_topics_and_five_task_playbooks() -> None:
+    selected = replace(
+        _job(),
+        source_url="https://example.com/social/jobs/algorithm-1",
+        duty_excerpt="负责激光雷达点云 SLAM 算法",
+    )
+
+    units = prepare_units(
+        uuid4(),
+        (selected,),
+        {"tracks": {"social": 1}, "directions": {"算法": 1}},
+    )
+
+    assert [(unit.kind, unit.scope_key) for unit in units] == [
+        ("company", "hesai"),
+        ("track", "social"),
+        ("direction", "算法"),
+        ("direction", "软件"),
+        ("secondary-direction", "算法/点云"),
+        ("secondary-direction", "算法/SLAM"),
+        ("topic", "product-routes"),
+        ("topic", "talent-competition"),
+        ("topic", "geography"),
+        ("topic", "trends"),
+        ("executive-summary", "all-companies"),
+        ("task", "jd-jr"),
+        ("task", "talent-profile"),
+        ("task", "sourcing"),
+        ("task", "resume-review"),
+        ("task", "interview"),
+    ]
+
+
+def test_v2_request_demands_company_specific_contrary_and_orbbec_analysis() -> None:
+    request = json.loads(_unit().request_json)
+
+    assert request["schema_version"] == 2
+    assert request["instructions"]["company_specific_signals"] is True
+    assert request["instructions"]["orbbec_implications"] is True
+    assert request["instructions"]["contrary_evidence_and_uncertainty"] is True
+
+
+def test_accepted_v1_analysis_remains_readable(tmp_path) -> None:
+    unit = _unit()
+    request = json.loads(unit.request_json)
+    request["schema_version"] = 1
+    request_json = json.dumps(
+        request,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    legacy_unit = replace(
+        unit,
+        request_json=request_json,
+        input_sha256=hashlib.sha256(request_json.encode("utf-8")).hexdigest(),
+    )
+    evidence = legacy_unit.evidence[0]
+    response = {
+        "facts": [{
+            "fact_id": "fact-1",
+            "text": "公开招聘高级点云算法工程师",
+            "evidence_sha256": evidence.sha256,
+            "source_url": evidence.source_url,
+            "observed_at": evidence.observed_at.isoformat(),
+        }],
+        "inferences": [{
+            "text": "点云算法是公开人才需求信号之一",
+            "basis_fact_ids": ["fact-1"],
+        }],
+        "unknowns": ["实际 HC 未公开"],
+        "alternatives": ["可能是常规补员"],
+        "summary": "历史 v1 分析",
+        "confidence": "medium",
+    }
+
+    accepted = accept_unit_response(legacy_unit, response, _usage(legacy_unit))
+    path = save_accepted(tmp_path, accepted)
+    saved = json.loads(path.read_text("utf-8"))
+    saved["evidence"] = [
+        {
+            "job_id": item["job_id"],
+            "sha256": item["sha256"],
+            "source_url": item["source_url"],
+            "observed_at": item["observed_at"],
+        }
+        for item in saved["evidence"]
+    ]
+    path.write_text(
+        json.dumps(
+            saved,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert load_accepted(tmp_path, legacy_unit).response_sha256

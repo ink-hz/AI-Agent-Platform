@@ -222,6 +222,69 @@ def test_unbound_hr_turn_does_not_call_position_provider(
 
 
 @pytest.mark.postgres
+def test_unbound_hr_intelligence_turn_uses_general_markdown_provider(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    started = repository.start(
+        owner_id,
+        uuid4(),
+        "分析禾赛当前招聘和产品路线",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+    bundle_id = uuid4()
+    panorama_fragment = PanoramaContextFragment(
+        bundle_id=bundle_id,
+        insight_version_id=bundle_id,
+        observed_at=datetime.now().astimezone(),
+        status="available",
+        source_facts=(),
+        aggregates=(),
+        interpretations=(),
+        unknowns=(),
+        markdown_context="## 招聘情报上下文\n\n禾赛公开招聘信号。",
+        chunks=({
+            "chunk_id": "hesai",
+            "path": "agent/companies/hesai.md",
+            "sha256": "a" * 64,
+            "heading": "核心判断",
+            "evidence_ids": ["b" * 64],
+        },),
+        retrieval_version="markdown-v1",
+        manifest_sha256="c" * 64,
+    )
+
+    class PanoramaProvider:
+        def __init__(self):
+            self.calls = []
+
+        def for_turn(self, *_args, **_kwargs):
+            raise AssertionError("unbound conversation must not use position retrieval")
+
+        def for_conversation_turn(
+            self, selected_owner, conversation_id, query, turn_id
+        ):
+            self.calls.append((selected_owner, conversation_id, query, turn_id))
+            return panorama_fragment
+
+    provider = PanoramaProvider()
+    context = ConversationContextBuilder(
+        repository,
+        panorama_context_provider=provider,
+    ).build(started.conversation.conversation_id, started.turn.turn_id)
+
+    assert context.hr_panorama_context is panorama_fragment
+    assert provider.calls == [(
+        owner_id,
+        started.conversation.conversation_id,
+        "分析禾赛当前招聘和产品路线",
+        started.turn.turn_id,
+    )]
+
+
+@pytest.mark.postgres
 @pytest.mark.parametrize(
     "failure",
     (

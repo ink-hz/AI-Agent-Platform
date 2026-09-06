@@ -5,12 +5,63 @@ from uuid import UUID
 
 import pytest
 
-from tools.hr_intelligence.cli import _company_source_id, main
+from tools.hr_intelligence.cli import (
+    _company_source_id,
+    _empty_dimensions,
+    _job_dict,
+    _job_from_dict,
+    _parser,
+    main,
+)
 from tools.hr_intelligence.collectors import (
     CollectionResult,
     NormalizedPublicJob,
 )
 from tools.hr_intelligence.evidence import EvidenceArchive, EvidencePayload
+from tools.hr_intelligence.models import NormalizedJob
+from tools.hr_intelligence.public_documents import PublicDocumentCollectionError
+
+
+def test_cli_job_serialization_preserves_raw_location() -> None:
+    job = NormalizedJob(
+        job_id=UUID("00000000-0000-4000-8000-000000000011"),
+        source_id=UUID("00000000-0000-4000-8000-000000000012"),
+        company_key="example",
+        public_job_key="job-1",
+        title="算法工程师",
+        location="深圳",
+        raw_location="广东省·深圳市",
+        duty_excerpt="负责算法开发",
+        requirement_excerpt="本科",
+        source_url="https://example.com/jobs/1",
+        evidence_sha256="a" * 64,
+        observed_at=datetime(2026, 9, 6, 8, tzinfo=UTC),
+    )
+
+    encoded = _job_dict(job)
+
+    assert encoded["raw_location"] == "广东省·深圳市"
+    assert _job_from_dict(encoded).raw_location == "广东省·深圳市"
+
+
+def test_cli_empty_dimensions_match_v3_shape() -> None:
+    dimensions = _empty_dimensions()
+
+    assert dimensions["schema_version"] == 3
+    assert dimensions["secondary_directions"] == {}
+    assert dimensions["company_comparison"] == {}
+    assert dimensions["data_quality"] == {"invalid_locations": {}}
+
+
+def test_prepare_analysis_defaults_to_complete_v2_unit_set() -> None:
+    args = _parser().parse_args(
+        ["prepare-analysis", "--bundle-id", "00000000-0000-4000-8000-000000000001"]
+    )
+
+    assert args.units == (
+        "company,track,direction,secondary-direction,topic,task,comparison,"
+        "executive-summary"
+    )
 
 
 def test_company_source_identity_is_stable_across_recruiting_channels() -> None:
@@ -149,6 +200,64 @@ def test_collect_resume_skips_successful_channels_and_retries_only_failures(
     ]
 
 
+def test_public_document_failure_does_not_change_successful_recruitment_state(
+    tmp_path, monkeypatch,
+) -> None:
+    bundle_id = UUID("00000000-0000-4000-8000-000000000004")
+    local_root = tmp_path / "factory"
+    monkeypatch.setenv("HR_INTELLIGENCE_LOCAL_ROOT", str(local_root))
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(json.dumps({
+        "schema_version": 2,
+        "companies": [{
+            "company_key": "hesai",
+            "canonical_name": "禾赛科技",
+            "approved_urls": ["https://example.com/jobs"],
+            "public_documents": [{
+                "source_type": "official_product",
+                "source_url": "https://www.hesaitech.com",
+                "trust_tier": "primary",
+            }],
+        }],
+    }), encoding="utf-8")
+    assert main([
+        "init", "--bundle-id", str(bundle_id), "--catalog", str(catalog),
+    ]) == 0
+
+    async def collect_job(self, target):
+        record = self._archive.store(EvidencePayload(
+            target.source_url, "application/json", b"job evidence",
+        ))
+        return CollectionResult(target, (NormalizedPublicJob(
+            "job-1", "点云算法工程师", "上海", "负责点云算法", "本科",
+            "https://example.com/jobs/1",
+        ),), record, datetime(2026, 9, 6, 9, tzinfo=UTC))
+
+    async def fail_document(*args, **kwargs):
+        raise PublicDocumentCollectionError("source_identity_mismatch")
+
+    monkeypatch.setattr(
+        "tools.hr_intelligence.cli.PublicSourceCollector.collect", collect_job,
+    )
+    monkeypatch.setattr(
+        "tools.hr_intelligence.cli.collect_public_document", fail_document,
+    )
+
+    assert main(["collect", "--bundle-id", str(bundle_id)]) == 0
+
+    work = local_root / "work" / str(bundle_id)
+    coverage = json.loads((work / "source-coverage.json").read_text("utf-8"))
+    assert coverage["schema_version"] == 2
+    company = coverage["companies"][0]
+    assert company["state"] == "succeeded"
+    assert company["job_count"] == 1
+    assert company["document_channels"][0]["state"] == "failed"
+    assert company["document_channels"][0]["error_code"] == (
+        "source_identity_mismatch"
+    )
+    assert (work / "public-documents.jsonl").read_text("utf-8") == ""
+
+
 def test_cli_prepares_accepts_builds_and_verifies_one_bundle(
     tmp_path,
     monkeypatch,
@@ -234,6 +343,7 @@ def test_cli_prepares_accepts_builds_and_verifies_one_bundle(
         unit_id = request["unit_id"]
         evidence_ref = request["evidence"][0]
         response = {
+            "schema_version": 2,
             "facts": [
                 {
                     "fact_id": "fact-1",
@@ -244,10 +354,30 @@ def test_cli_prepares_accepts_builds_and_verifies_one_bundle(
                 }
             ],
             "inferences": [
-                {"text": "存在点云算法人才需求信号", "basis_fact_ids": ["fact-1"]}
+                {
+                        "inference_id": "inference-1",
+                        "claim_type": "recruiting_signal",
+                        "text": "存在点云算法人才需求信号",
+                    "basis_fact_ids": ["fact-1"],
+                }
             ],
             "unknowns": ["实际 HC 未公开"],
-            "alternatives": ["可能是常规补员"],
+            "alternatives": [
+                {
+                    "alternative_id": "alternative-1",
+                    "text": "可能是常规补员",
+                    "basis_fact_ids": ["fact-1"],
+                    "challenged_inference_ids": ["inference-1"],
+                }
+            ],
+            "recommendations": [
+                {
+                    "recommendation_id": "recommendation-1",
+                    "text": "建立点云算法人才池",
+                    "basis_fact_ids": ["fact-1"],
+                    "target_tasks": ["talent_profile", "sourcing_strategy"],
+                }
+            ],
             "summary": "公开招聘信号指向点云算法能力。",
             "confidence": "medium",
         }
@@ -269,6 +399,10 @@ def test_cli_prepares_accepts_builds_and_verifies_one_bundle(
     assert main(["accept-analysis", "--bundle-id", str(bundle_id), "--all-ready"]) == 0
     assert (
         main(["analysis-status", "--bundle-id", str(bundle_id), "--require-complete"])
+        == 0
+    )
+    assert (
+        main(["quality-check", "--bundle-id", str(bundle_id), "--strict"])
         == 0
     )
     assert main(["build", "--bundle-id", str(bundle_id)]) == 0

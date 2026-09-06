@@ -83,8 +83,8 @@ class DatabaseIntelligenceImportRepository:
     ) -> Mapping[str, object]:
         with self._connection() as connection:
             row = connection.execute(
-                "select (platform_hr.import_intelligence_bundle_v85("
-                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)).*",
+                "select (platform_hr.import_intelligence_bundle_v87("
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)).*",
                 (
                     owner_id,
                     bundle.bundle_id,
@@ -99,6 +99,8 @@ class DatabaseIntelligenceImportRepository:
                     Jsonb(list(bundle.analysis)),
                     Jsonb(list(bundle.usage)),
                     Jsonb(list(bundle.evidence_index)),
+                    Jsonb(list(bundle.agent_chunk_index)),
+                    Jsonb(bundle.agent_document_index),
                 ),
             ).fetchone()
         if row is None:
