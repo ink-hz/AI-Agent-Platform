@@ -47,6 +47,7 @@ const report: HrPanoramaReport = {
     observedAt: insight.facts[0].observedAt, contentSha256: "a".repeat(64), status: "open",
     createdAt: "2026-09-05T08:01:00Z",
   }],
+  evidence: [{ sourceId: source.sourceId, sourceUrl: source.approvedUrls[0], attemptNumber: 1, state: "succeeded", errorCode: null, sha256: "a".repeat(64), mime: "text/html", sizeBytes: 1024, normalizedJobCount: 1, observedAt: insight.facts[0].observedAt }],
 };
 
 function fakeApi(overrides: Partial<HrPanoramaApi> = {}): HrPanoramaApi {

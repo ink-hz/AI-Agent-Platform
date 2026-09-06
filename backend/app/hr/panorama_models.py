@@ -1356,6 +1356,7 @@ class PanoramaReport:
     sources: tuple[TalentSource, ...]
     snapshots: tuple[PublicJobSnapshot, ...]
     publication: PublishedPanorama | None = None
+    evidence_attempts: tuple[SourceCollectionAttempt, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.insight, TalentInsightVersion):
@@ -1383,6 +1384,20 @@ class PanoramaReport:
             or self.publication.batch_id != self.insight.production_batch_id
         ):
             raise ValueError("panorama report publication invalid")
+        if (
+            not isinstance(self.evidence_attempts, tuple)
+            or any(
+                not isinstance(attempt, SourceCollectionAttempt)
+                for attempt in self.evidence_attempts
+            )
+            or any(
+                self.publication is None
+                or attempt.owner_id != self.publication.owner_id
+                or attempt.batch_id != self.publication.batch_id
+                for attempt in self.evidence_attempts
+            )
+        ):
+            raise ValueError("panorama report evidence invalid")
 
     @property
     def insight_version_id(self) -> UUID:

@@ -40,6 +40,10 @@ const report: Report = {
     { snapshotId: "66666666-6666-4666-8666-666666666666", runId: null, productionBatchId: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb", observationId: "88888888-8888-4888-8888-888888888888", sourceId: "11111111-1111-4111-8111-111111111111", publicJobKey: "job-1", title: "结构工程师", location: "中山", dutyExcerpt: "负责精密结构设计", requirementExcerpt: "五年以上光学行业经验", sourceUrl: "https://example.com/jobs/1", observedAt: "2026-09-05T08:00:00Z", contentSha256: "a".repeat(64), status: "open", createdAt: "2026-09-05T08:01:00Z" },
     { snapshotId: "77777777-7777-4777-8777-777777777777", runId: null, productionBatchId: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb", observationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sourceId: "22222222-2222-4222-8222-222222222222", publicJobKey: "job-2", title: "光学工程师", location: "宁波", dutyExcerpt: "负责光学系统设计", requirementExcerpt: "熟悉 Zemax", sourceUrl: "https://sunny.example/jobs/2", observedAt: "2026-09-05T08:05:00Z", contentSha256: "b".repeat(64), status: "open", createdAt: "2026-09-05T08:06:00Z" },
   ],
+  evidence: [
+    { sourceId: "11111111-1111-4111-8111-111111111111", sourceUrl: "https://example.com/jobs", attemptNumber: 1, state: "succeeded", errorCode: null, sha256: "a".repeat(64), mime: "text/html", sizeBytes: 1024, normalizedJobCount: 1, observedAt: "2026-09-05T08:00:00Z" },
+    { sourceId: "22222222-2222-4222-8222-222222222222", sourceUrl: "https://sunny.example/jobs", attemptNumber: 1, state: "succeeded", errorCode: null, sha256: "b".repeat(64), mime: "text/html", sizeBytes: 1024, normalizedJobCount: 1, observedAt: "2026-09-05T08:05:00Z" },
+  ],
 };
 const previousReport: Report = {
   ...report,

@@ -93,6 +93,7 @@ def test_planning_prompt_includes_panorama_only_when_context_carries_fragment() 
     insight_id = uuid4()
     fragment = PanoramaContextFragment(
         insight_version_ids=(insight_id,),
+        publication_id=uuid4(),
         query_sha256="a" * 64,
         as_of=datetime(2026, 9, 5, 8, tzinfo=timezone.utc),
         facts=(

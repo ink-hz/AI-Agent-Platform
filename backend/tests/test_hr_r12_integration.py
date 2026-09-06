@@ -45,7 +45,10 @@ def test_create_app_constructs_panorama_from_the_shared_control_database() -> No
     assert len(repository_calls) == len(service_calls) == 1
     assert ast.unparse(repository_calls[0].args[0]) == "control_database_url"
     assert ast.unparse(service_calls[0].args[0]) == "panorama_repository"
-    assert service_calls[0].keywords == []
+    assert {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in service_calls[0].keywords
+    } == {"evidence_archive": "EvidenceArchive(production=True)"}
 
 
 def test_create_app_does_not_run_panorama_collection_in_the_web_process() -> None:

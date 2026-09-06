@@ -6,11 +6,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from threading import Barrier
-from uuid import UUID, uuid4, uuid5
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from test_agent_brain_conversation_repository import _MissBarrierConnection
 from test_control_plane_migration import control_database  # noqa: F401
 
 from app.agent_brain.conversation_repository import (
@@ -21,10 +20,7 @@ from app.agent_brain.conversation_service import ConversationCommandService
 from app.agent_brain.repository import MissionRepository
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
-from app.hr.panorama_context import (
-    PanoramaContextProvider,
-    _postgres_jsonb_text_size,
-)
+from app.hr.panorama_context import PanoramaContextProvider
 from app.hr.panorama_models import (
     CreatePanoramaRun,
     CreatePublicJobSnapshot,
@@ -550,207 +546,11 @@ def test_coordinator_replay_creates_one_exact_conversation_turn(
     assert turns[-1] == first
 
 
-@pytest.mark.postgres
-def test_start_run_without_conversation_creates_one_shell_run_and_research_turn(
-    control_database,
-) -> None:
-    environment = control_database["environments"]["production"]
-    owner_id, request_id = uuid4(), uuid4()
-    with psycopg.connect(environment["admin"]) as admin:
-        admin.execute(
-            "insert into platform_control.internal_users "
-            "(internal_user_id,display_name,status) values (%s,%s,'active')",
-            (owner_id, "Panorama Generated Conversation Owner"),
-        )
-    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
-    source = repository.create_source(
-        CreateTalentSource(
-            uuid4(),
-            owner_id,
-            uuid4(),
-            f"generated-shell-{uuid4().hex}",
-            "自动建会话公司",
-            (),
-            ("https://example.com/jobs",),
-            True,
-        )
-    )
-    codec = _content_codec()
-    conversation_repository = ConversationRepository(
-        environment["urls"]["platform_control_app"],
-        content_codec=codec,
-        mission_repository=MissionRepository(
-            environment["urls"]["platform_control_app"],
-            content_codec=codec,
-        ),
-    )
-    commands = ConversationCommandService(conversation_repository, v2_enabled=False)
-    coordinator = PanoramaRunCoordinator(
-        repository,
-        commands,
-        resolver=lambda _host, _port: ("8.8.8.8", "2001:4860:4860::8888"),
-    )
-    service = PanoramaService(
-        repository,
-        coordinator=coordinator,
-        conversations=commands,
-    )
+def test_business_service_cannot_create_conversations_or_collection_runs() -> None:
+    service = PanoramaService
 
-    run = service.start_run(
-        owner_id=owner_id,
-        request_id=request_id,
-        source_ids=(source.source_id,),
-    )
-    replay = service.start_run(
-        owner_id=owner_id,
-        request_id=request_id,
-        source_ids=(source.source_id,),
-    )
-
-    shell_request_id = uuid5(run.run_id, "hr-panorama:conversation-shell:v1")
-    assert replay.run_id == run.run_id
-    assert replay.conversation_id == run.conversation_id
-    with psycopg.connect(environment["admin"]) as admin:
-        counts = admin.execute(
-            "select "
-            "(select count(*) from platform_control.conversations "
-            "where owner_internal_user_id=%s and started_by_client_request_id=%s),"
-            "(select count(*) from platform_hr.panorama_runs "
-            "where owner_internal_user_id=%s and client_request_id=%s),"
-            "(select count(*) from platform_control.conversation_turns "
-            "where conversation_id=%s),"
-            "(select count(*) from platform_control.conversation_messages "
-            "where conversation_id=%s and role='user'),"
-            "(select count(*) from platform_control.missions "
-            "where conversation_id=%s)",
-            (
-                owner_id,
-                shell_request_id,
-                owner_id,
-                request_id,
-                run.conversation_id,
-                run.conversation_id,
-                run.conversation_id,
-            ),
-        ).fetchone()
-        message = admin.execute(
-            "select content_ciphertext from platform_control.conversation_messages "
-            "where conversation_id=%s and role='user'",
-            (run.conversation_id,),
-        ).fetchone()
-    assert counts == (1, 1, 1, 1, 1)
-    assert message is not None
-    messages = conversation_repository.messages_after(
-        owner_id, run.conversation_id, after=0, limit=10
-    )
-    assert len(messages) == 1
-    assert messages[0].role == "user"
-    assert messages[0].content.startswith("你正在执行公开招聘全景研究。")
-
-
-@pytest.mark.postgres
-def test_concurrent_generated_conversation_run_replays_without_duplicates(
-    control_database,
-) -> None:
-    environment = control_database["environments"]["production"]
-    owner_id, request_id = uuid4(), uuid4()
-    with psycopg.connect(environment["admin"]) as admin:
-        admin.execute(
-            "insert into platform_control.internal_users "
-            "(internal_user_id,display_name,status) values (%s,%s,'active')",
-            (owner_id, "Panorama Concurrent Generated Owner"),
-        )
-    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
-    source = repository.create_source(
-        CreateTalentSource(
-            uuid4(),
-            owner_id,
-            uuid4(),
-            f"concurrent-shell-{uuid4().hex}",
-            "并发自动建会话公司",
-            (),
-            ("https://example.com/jobs",),
-            True,
-        )
-    )
-    codec = _content_codec()
-    gate = Barrier(2)
-
-    def connect(*args, **kwargs):
-        return _MissBarrierConnection(psycopg.connect(*args, **kwargs), gate)
-
-    conversation_repository = ConversationRepository(
-        environment["urls"]["platform_control_app"],
-        content_codec=codec,
-        mission_repository=MissionRepository(
-            environment["urls"]["platform_control_app"],
-            content_codec=codec,
-        ),
-        connect=connect,
-    )
-    replay_count = 0
-    replay_after_race = (
-        conversation_repository._replay_direct_conversation_shell_after_race
-    )
-
-    def recording_replay(*args, **kwargs):
-        nonlocal replay_count
-        replay_count += 1
-        return replay_after_race(*args, **kwargs)
-
-    conversation_repository._replay_direct_conversation_shell_after_race = (
-        recording_replay
-    )
-    commands = ConversationCommandService(
-        conversation_repository,
-        v2_enabled=False,
-    )
-    coordinator = PanoramaRunCoordinator(
-        repository,
-        commands,
-        resolver=lambda _host, _port: ("8.8.8.8", "2001:4860:4860::8888"),
-    )
-    service = PanoramaService(
-        repository,
-        coordinator=coordinator,
-        conversations=commands,
-    )
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        runs = tuple(
-            pool.map(
-                lambda _index: service.start_run(
-                    owner_id=owner_id,
-                    request_id=request_id,
-                    source_ids=(source.source_id,),
-                ),
-                range(2),
-            )
-        )
-
-    assert len({run.run_id for run in runs}) == 1
-    assert len({run.conversation_id for run in runs}) == 1
-    assert replay_count == 1
-    conversation_id = runs[0].conversation_id
-    with psycopg.connect(environment["admin"]) as admin:
-        counts = admin.execute(
-            "select "
-            "(select count(*) from platform_control.conversations "
-            "where conversation_id=%s),"
-            "(select count(*) from platform_hr.panorama_runs "
-            "where owner_internal_user_id=%s and client_request_id=%s),"
-            "(select count(*) from platform_control.conversation_turns "
-            "where conversation_id=%s),"
-            "(select count(*) from platform_control.conversation_messages "
-            "where conversation_id=%s) ",
-            (
-                conversation_id,
-                owner_id,
-                request_id,
-                conversation_id,
-                conversation_id,
-            ),
-        ).fetchone()
-    assert counts == (1, 1, 1, 1)
+    assert not hasattr(service, "start_run")
+    assert not hasattr(service, "add_company")
 
 
 @pytest.mark.postgres
@@ -865,41 +665,11 @@ def test_report_publication_rolls_back_every_write_when_terminal_transition_fail
     assert repository.run(scope["owner"], run.run_id) == running
 
 
-@pytest.mark.postgres
-def test_runtime_unavailable_rejects_before_any_run_insert(control_database) -> None:
-    from app.hr.panorama_repository import PanoramaUnavailable
+def test_business_service_has_no_runtime_dispatch_dependency() -> None:
+    parameters = PanoramaService.__init__.__annotations__
 
-    environment = control_database["environments"]["production"]
-    with psycopg.connect(environment["admin"]) as admin:
-        scope = _seed_owner_scope(admin, "Unavailable Panorama Runtime Owner")
-    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
-    source = repository.create_source(
-        CreateTalentSource(
-            uuid4(),
-            scope["owner"],
-            uuid4(),
-            f"unavailable-{uuid4().hex}",
-            "运行时不可用公司",
-            (),
-            ("https://example.com/jobs",),
-            True,
-        )
-    )
-
-    with pytest.raises(PanoramaUnavailable, match="runtime unavailable"):
-        PanoramaService(repository).start_run(
-            owner_id=scope["owner"],
-            request_id=uuid4(),
-            source_ids=(source.source_id,),
-            conversation_id=scope["conversation"],
-        )
-
-    with psycopg.connect(environment["admin"]) as admin:
-        assert admin.execute(
-            "select count(*) from platform_hr.panorama_runs "
-            "where owner_internal_user_id=%s",
-            (scope["owner"],),
-        ).fetchone() == (0,)
+    assert "coordinator" not in parameters
+    assert "conversations" not in parameters
 
 
 @pytest.mark.postgres
@@ -948,51 +718,9 @@ def test_dns_rejection_after_insert_persists_a_failed_run(control_database) -> N
     assert failed.started_at is not None and failed.finished_at is not None
 
 
-@pytest.mark.postgres
-def test_dns_preflight_rejects_before_run_insert(control_database) -> None:
-    environment = control_database["environments"]["production"]
-    with psycopg.connect(environment["admin"]) as admin:
-        scope = _seed_owner_scope(admin, "Panorama DNS Preflight Owner")
-    repository = PanoramaRepository(environment["urls"]["platform_control_app"])
-    source = repository.create_source(
-        CreateTalentSource(
-            uuid4(),
-            scope["owner"],
-            uuid4(),
-            f"preflight-{uuid4().hex}",
-            "预检拒绝公司",
-            (),
-            ("https://example.com/jobs",),
-            True,
-        )
-    )
-
-    class Commands:
-        def append_turn(self, *args):
-            pytest.fail("preflight rejection must not dispatch")
-
-    service = PanoramaService(
-        repository,
-        coordinator=PanoramaRunCoordinator(
-            repository,
-            Commands(),
-            resolver=lambda _host, _port: ("10.0.0.7",),
-        ),
-    )
-    with pytest.raises(ValueError, match="destination invalid"):
-        service.start_run(
-            owner_id=scope["owner"],
-            request_id=uuid4(),
-            source_ids=(source.source_id,),
-            conversation_id=scope["conversation"],
-        )
-
-    with psycopg.connect(environment["admin"]) as admin:
-        assert admin.execute(
-            "select count(*) from platform_hr.panorama_runs "
-            "where owner_internal_user_id=%s",
-            (scope["owner"],),
-        ).fetchone() == (0,)
+def test_business_service_rejects_legacy_runtime_constructor_arguments() -> None:
+    with pytest.raises(TypeError):
+        PanoramaService(object(), coordinator=object())
 
 
 @pytest.mark.postgres
@@ -2271,7 +1999,7 @@ def test_talent_source_keyset_page_reaches_the_101st_followed_company(
 
 
 @pytest.mark.postgres
-def test_context_budget_matches_postgres_jsonb_text_for_174_short_unknowns(
+def test_context_ignores_unpublished_legacy_insight_even_when_explicitly_requested(
     control_database,
 ) -> None:
     environment = control_database["environments"]["production"]
@@ -2317,27 +2045,15 @@ def test_context_budget_matches_postgres_jsonb_text_for_174_short_unknowns(
         scope["owner"], scope["position"], "参考全景分析", scope["turn"]
     )
 
-    assert fragment is not None
-    assert (
-        provider.for_turn(
-            scope["owner"], scope["position"], "参考全景分析", scope["turn"]
-        )
-        == fragment
-    )
+    assert fragment is None
     with psycopg.connect(environment["admin"]) as admin:
-        persisted_size = admin.execute(
-            "select octet_length(retrieved_excerpts::text) from "
+        retrieval_count = admin.execute(
+            "select count(*) from "
             "platform_hr.position_insight_retrievals where "
             "owner_internal_user_id=%s and position_id=%s and turn_id=%s",
             (scope["owner"], scope["position"], scope["turn"]),
         ).fetchone()[0]
-        estimated_size = _postgres_jsonb_text_size((fragment.as_prompt_document(),))
-        actual_size = admin.execute(
-            "select octet_length(%s::jsonb::text)",
-            (json.dumps((fragment.as_prompt_document(),), ensure_ascii=False),),
-        ).fetchone()[0]
-    assert estimated_size == actual_size == persisted_size
-    assert persisted_size <= 32768
+    assert retrieval_count == 0
 
 
 @pytest.mark.postgres

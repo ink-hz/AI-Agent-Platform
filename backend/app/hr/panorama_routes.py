@@ -19,6 +19,7 @@ from .panorama_models import (
     PanoramaReport,
     PublicJobSnapshot,
     PublishedPanorama,
+    SourceCollectionAttempt,
     TalentInsightVersion,
     TalentSource,
     thaw_json,
@@ -137,6 +138,21 @@ def _publication(record: PublishedPanorama) -> dict[str, object]:
     }
 
 
+def _evidence(record: SourceCollectionAttempt) -> dict[str, object]:
+    return {
+        "source_id": str(record.source_id),
+        "source_url": record.source_url,
+        "attempt_number": record.attempt_number,
+        "state": record.state,
+        "error_code": record.error_code,
+        "sha256": record.evidence_sha256,
+        "mime": record.evidence_mime,
+        "size_bytes": record.evidence_size_bytes,
+        "normalized_job_count": record.normalized_job_count,
+        "observed_at": record.observed_at.isoformat(),
+    }
+
+
 def _report(record: PanoramaReport) -> dict[str, object]:
     if record.publication is None:
         raise PanoramaUnavailable("published panorama metadata unavailable")
@@ -145,6 +161,11 @@ def _report(record: PanoramaReport) -> dict[str, object]:
         "insight": _insight(record.insight),
         "sources": [_source(value) for value in record.sources],
         "snapshots": [_snapshot(value) for value in record.snapshots],
+        "evidence": [
+            _evidence(value)
+            for value in record.evidence_attempts
+            if value.evidence_sha256 is not None
+        ],
     }
 
 
@@ -158,7 +179,7 @@ def _report_summary(record: PanoramaReport) -> dict[str, object]:
 
 
 def build_panorama_router(service, require_hr_access) -> APIRouter:
-    required = ("current_report", "list_reports", "report")
+    required = ("current_report", "list_reports", "report", "evidence_file")
     if any(not callable(getattr(service, name, None)) for name in required):
         raise ValueError("panorama service required")
     if not callable(require_hr_access):
@@ -182,7 +203,7 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
             raise HTTPException(409, "HR panorama conflict") from None
         except PanoramaUnavailable:
             raise HTTPException(503, "HR panorama unavailable") from None
-        except ValueError:
+        except (TypeError, ValueError):
             raise HTTPException(422, "HR panorama request invalid") from None
 
     @router.get("/api/hr/panorama/current")
@@ -273,6 +294,34 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
             content,
             media_type=media_type,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @router.get(
+        "/api/hr/panorama/reports/{publication_id}/evidence/{evidence_sha256}"
+    )
+    async def download_evidence(
+        request: Request,
+        publication_id: Annotated[UUID, Path()],
+        evidence_sha256: Annotated[str, Path(pattern=r"^[a-f0-9]{64}$")],
+    ):
+        await authorize(request)
+        selected = await call(
+            service.evidence_file, publication_id, evidence_sha256
+        )
+        extension = {
+            "application/json": "json",
+            "text/html": "html",
+            "text/plain": "txt",
+        }.get(selected.mime, "bin")
+        return Response(
+            selected.body,
+            media_type=selected.mime,
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="source-evidence-'
+                    f'{selected.sha256[:12]}.{extension}"'
+                )
+            },
         )
 
     return router

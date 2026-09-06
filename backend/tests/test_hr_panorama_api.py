@@ -15,6 +15,7 @@ from app.hr.panorama_models import (
     PanoramaReport,
     PublicJobSnapshot,
     PublishedPanorama,
+    SourceCollectionAttempt,
     TalentInsightVersion,
     TalentSource,
 )
@@ -24,6 +25,7 @@ from app.hr.panorama_repository import (
     PanoramaUnavailable,
 )
 from app.hr.panorama_routes import build_panorama_router
+from app.hr.panorama_service import PanoramaEvidenceFile
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=UTC)
 
@@ -120,12 +122,30 @@ class FakePanoramaService:
             ),
             NOW,
         )
+        attempt = SourceCollectionAttempt(
+            uuid4(),
+            batch_id,
+            owner_id,
+            source_id,
+            "https://example.com/jobs",
+            1,
+            "succeeded",
+            None,
+            "a" * 64,
+            "sha256/aa/" + "a" * 64,
+            "application/json",
+            len('{"jobs":[{"title":"高级结构工程师"}]}'.encode()),
+            1,
+            NOW,
+            NOW,
+        )
         self.report_value = PanoramaReport(
-            insight, (source,), (snapshot,), publication
+            insight, (source,), (snapshot,), publication, (attempt,)
         )
         self.calls: list[tuple] = []
         self.error: Exception | None = None
         self.empty = False
+        self.raw_evidence = '{"jobs":[{"title":"高级结构工程师"}]}'.encode()
 
     def _result(self, value):
         if self.error is not None:
@@ -145,6 +165,16 @@ class FakePanoramaService:
         if publication_id != self.report_value.publication.publication_id:
             raise PanoramaNotFound()
         return self._result(self.report_value)
+
+    def evidence_file(self, publication_id, sha256):
+        self.calls.append(("evidence", publication_id, sha256))
+        if publication_id != self.report_value.publication.publication_id:
+            raise PanoramaNotFound()
+        return PanoramaEvidenceFile(
+            sha256=sha256,
+            mime="application/json",
+            body=self.raw_evidence,
+        )
 
 
 def _client(*, entitled: bool = True, stale: bool = False):
@@ -199,6 +229,7 @@ def test_current_keeps_ai_analysis_raw_jobs_and_publication_coverage_separate() 
     assert body["insight"]["inferences"][0]["text"] == "结构研发投入明确"
     assert body["snapshots"][0]["title"] == "高级结构工程师"
     assert body["snapshots"][0]["content_sha256"] == "a" * 64
+    assert body["evidence"][0]["sha256"] == "a" * 64
     assert body["publication"]["coverage_state"] == "partial"
     assert body["publication"]["source_coverage"][0]["channel_failures"] == {
         "https://example.com/campus": "source_timeout"
@@ -242,9 +273,23 @@ def test_report_exports_preserve_ai_and_original_job_data() -> None:
     workbook = load_workbook(BytesIO(xlsx.content), read_only=True)
     assert "结构研发投入明确" in pdf_text
     assert "高级结构工程师" in pdf_text
-    assert {"岗位明细", "公开事实", "AI推断", "情报来源"} <= set(
+    assert {"原始岗位", "AI分析", "来源覆盖", "证据索引"} <= set(
         workbook.sheetnames
     )
+
+
+def test_archived_raw_source_response_can_be_downloaded_without_mutation() -> None:
+    client, service = _client()
+    publication_id = service.report_value.publication.publication_id
+
+    response = client.get(
+        f"/api/hr/panorama/reports/{publication_id}/evidence/{'a' * 64}"
+    )
+
+    assert response.status_code == 200
+    assert response.content == service.raw_evidence
+    assert response.headers["content-type"] == "application/json"
+    assert "attachment" in response.headers["content-disposition"]
 
 
 def test_excel_neutralizes_formula_cells_from_public_content() -> None:
@@ -255,6 +300,7 @@ def test_excel_neutralizes_formula_cells_from_public_content() -> None:
         service.report_value.sources,
         (snapshot,),
         service.report_value.publication,
+        service.report_value.evidence_attempts,
     )
     publication_id = service.report_value.publication.publication_id
 
@@ -263,7 +309,7 @@ def test_excel_neutralizes_formula_cells_from_public_content() -> None:
     )
     workbook = load_workbook(BytesIO(response.content), data_only=False)
 
-    assert workbook["岗位明细"]["B2"].value.startswith("'=")
+    assert workbook["原始岗位"]["B2"].value.startswith("'=")
 
 
 @pytest.mark.parametrize(
@@ -272,6 +318,7 @@ def test_excel_neutralizes_formula_cells_from_public_content() -> None:
         (PanoramaNotFound("secret"), 404, "HR panorama not found"),
         (PanoramaConflict("secret"), 409, "HR panorama conflict"),
         (PanoramaUnavailable("secret"), 503, "HR panorama unavailable"),
+        (TypeError("secret"), 422, "HR panorama request invalid"),
         (ValueError("secret"), 422, "HR panorama request invalid"),
     ),
 )

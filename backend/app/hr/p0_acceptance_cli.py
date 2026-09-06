@@ -48,7 +48,6 @@ _CREATED_ID_KEYS = {
     "candidate_document_ids",
 }
 _EXPECTED_KINDS = (
-    "panorama_report",
     "position_package",
     "panorama_retrieval",
     "position_package",
@@ -371,6 +370,34 @@ def _validate_evidence(config: AcceptanceConfig, value: object) -> None:
         raise AcceptanceFailure("BUSINESS_DELIVERY")
     if value.get("egress_evidence_sha256") != config.deployment_egress_evidence_sha256:
         raise AcceptanceFailure("EGRESS_EVIDENCE")
+    panorama = value.get("panorama_publication")
+    if not isinstance(panorama, Mapping):
+        raise AcceptanceFailure("PANORAMA_FAILED")
+    try:
+        publication_id = UUID(str(panorama.get("publication_id")))
+        batch_id = UUID(str(panorama.get("batch_id")))
+        insight_version_id = UUID(str(panorama.get("insight_version_id")))
+    except (TypeError, ValueError):
+        raise AcceptanceFailure("PANORAMA_FAILED") from None
+    if (
+        any(str(value) != str(raw) for value, raw in (
+            (publication_id, panorama.get("publication_id")),
+            (batch_id, panorama.get("batch_id")),
+            (insight_version_id, panorama.get("insight_version_id")),
+        ))
+        or type(panorama.get("raw_job_count")) is not int
+        or panorama["raw_job_count"] < 1
+        or type(panorama.get("raw_response_count")) is not int
+        or panorama["raw_response_count"] < 1
+        or not isinstance(panorama.get("model_version"), str)
+        or not panorama["model_version"].strip()
+        or not isinstance(panorama.get("source_urls"), list)
+        or not panorama["source_urls"]
+        or not all(
+            _approved_source(config, source) for source in panorama["source_urls"]
+        )
+    ):
+        raise AcceptanceFailure("PANORAMA_FAILED")
     turns = value.get("turns")
     if not isinstance(turns, list) or len(turns) != len(_EXPECTED_KINDS):
         raise AcceptanceFailure("TURN_EVIDENCE")
@@ -667,18 +694,6 @@ class PlatformP0AcceptanceGateway:
         if type(deliveries) is not int:
             raise AcceptanceFailure("BUSINESS_DELIVERY")
         return deliveries
-
-    def _wait_panorama(self, run_id: str, *, deadline: float) -> dict[str, object]:
-        while True:
-            run = self._json(
-                "GET", f"/api/hr/panorama/runs/{run_id}", deadline=deadline
-            )
-            state = run.get("state")
-            if state in {"completed", "partially_completed"}:
-                return run
-            if state == "failed":
-                raise AcceptanceFailure("PANORAMA_FAILED")
-            time.sleep(min(2.0, self._remaining(deadline)))
 
     def _wait_candidate_draft(
         self, draft_id: str, *, deadline: float
@@ -1029,115 +1044,48 @@ class PlatformP0AcceptanceGateway:
                 raise AcceptanceFailure("CSRF_UNAVAILABLE")
             self._csrf = csrf
 
-            listed_sources = self._json(
-                "GET", "/api/hr/panorama/sources", deadline=deadline
-            ).get("items")
-            if not isinstance(listed_sources, list):
-                raise AcceptanceFailure("API_CONTRACT")
-            sources: list[dict[str, object]] = []
+            report = self._json(
+                "GET", "/api/hr/panorama/current", deadline=deadline
+            )
+            publication = report.get("publication")
+            insight = report.get("insight")
+            sources = report.get("sources")
+            snapshots = report.get("snapshots")
+            evidence = report.get("evidence")
+            if (
+                not isinstance(publication, dict)
+                or not isinstance(insight, dict)
+                or not isinstance(sources, list)
+                or not isinstance(snapshots, list)
+                or not isinstance(evidence, list)
+            ):
+                raise AcceptanceFailure("PANORAMA_FAILED")
+            if (
+                not isinstance(publication.get("publication_id"), str)
+                or publication.get("insight_version_id")
+                != insight.get("insight_version_id")
+                or publication.get("batch_id") != insight.get("production_batch_id")
+            ):
+                raise AcceptanceFailure("PANORAMA_FAILED")
             for company in config.companies:
                 matches = [
                     item
-                    for item in listed_sources
+                    for item in sources
                     if isinstance(item, dict)
                     and item.get("canonical_name") == company.canonical_name
                 ]
-                if len(matches) > 1:
+                if len(matches) != 1:
                     raise AcceptanceFailure("SOURCE_SCOPE")
-                source = matches[0] if matches else None
-                if source is not None and (
+                source = matches[0]
+                if (
                     source.get("active") is not True
                     or source.get("aliases") != list(company.aliases)
                     or source.get("approved_urls") != list(company.approved_urls)
                 ):
                     raise AcceptanceFailure("SOURCE_SCOPE")
-                if source is None:
-                    source = self._json(
-                        "POST",
-                        "/api/hr/panorama/sources",
-                        deadline=deadline,
-                        idempotency_key=uuid5(
-                            run_id, f"source:{company.canonical_name}"
-                        ),
-                        json_body={
-                            "canonical_name": company.canonical_name,
-                            "aliases": list(company.aliases),
-                            "approved_urls": list(company.approved_urls),
-                        },
-                    )
                 if not isinstance(source.get("source_id"), str):
                     raise AcceptanceFailure("API_CONTRACT")
-                sources.append(source)
-            panorama = self._json(
-                "POST",
-                "/api/hr/panorama/runs",
-                deadline=deadline,
-                expected=(202,),
-                idempotency_key=uuid5(run_id, "panorama"),
-                json_body={"source_ids": [item["source_id"] for item in sources]},
-            )
-            panorama_run_id = str(panorama.get("run_id"))
-            panorama_conversation_id = panorama.get("conversation_id")
-            if not isinstance(panorama_conversation_id, str):
-                raise AcceptanceFailure("PANORAMA_FAILED")
-            UUID(panorama_conversation_id)
-            self.created_ids["conversation_ids"].append(panorama_conversation_id)
-            self._wait_panorama(panorama_run_id, deadline=deadline)
-            reports = self._json(
-                "GET", "/api/hr/panorama/reports", deadline=deadline
-            ).get("items")
-            report_summary = next(
-                (
-                    item
-                    for item in (reports if isinstance(reports, list) else [])
-                    if isinstance(item, dict) and item.get("run_id") == panorama_run_id
-                ),
-                None,
-            )
-            if not isinstance(report_summary, dict):
-                raise AcceptanceFailure("PANORAMA_FAILED")
-            report = self._json(
-                "GET",
-                f"/api/hr/panorama/reports/{report_summary['insight_version_id']}",
-                deadline=deadline,
-            )
-            insight = report.get("insight")
-            snapshots = report.get("snapshots")
-            if not isinstance(insight, dict) or not isinstance(snapshots, list):
-                raise AcceptanceFailure("PANORAMA_FAILED")
-            panorama_answer, _, _, progress = self._wait_conversation(
-                str(insight.get("source_conversation_id")),
-                str(insight.get("source_turn_id")),
-                deadline=deadline,
-            )
-            panorama_urls = [
-                item["source_url"]
-                for item in snapshots
-                if isinstance(item, dict) and isinstance(item.get("source_url"), str)
-            ]
-            turns.append(
-                {
-                    "completed": True,
-                    "assistant_answer": panorama_answer,
-                    "trace_answer": self._flywheel_answer(
-                        config,
-                        str(insight["source_conversation_id"]),
-                        str(insight["source_turn_id"]),
-                        panorama_answer,
-                        deadline=deadline,
-                    ),
-                    "envelope_kind": "panorama_report",
-                    "source_urls": panorama_urls,
-                    "progress_event_count": progress,
-                }
-            )
-            conversation_turns.append(
-                (
-                    str(insight["source_conversation_id"]),
-                    str(insight["source_turn_id"]),
-                )
-            )
-            if str(insight["source_conversation_id"]) != panorama_conversation_id:
+            if not snapshots or not evidence:
                 raise AcceptanceFailure("PANORAMA_FAILED")
 
             position_started = self._json(
@@ -1240,7 +1188,7 @@ class PlatformP0AcceptanceGateway:
             retrieval_answer, _, _, retrieval_progress = self._wait_conversation(
                 position_conversation, retrieval_turn, deadline=deadline
             )
-            insight_id = str(report_summary.get("insight_version_id"))
+            insight_id = str(insight.get("insight_version_id"))
             source_id = str(sources[0].get("source_id"))
             source_urls = {
                 snapshot["source_url"]
@@ -1693,6 +1641,20 @@ class PlatformP0AcceptanceGateway:
             "agent_id": "hr-bot",
             "business_delivery_calls": business_delivery_calls,
             "egress_evidence_sha256": config.deployment_egress_evidence_sha256,
+            "panorama_publication": {
+                "publication_id": publication["publication_id"],
+                "batch_id": publication["batch_id"],
+                "insight_version_id": insight["insight_version_id"],
+                "model_version": insight.get("model_version"),
+                "raw_job_count": len(snapshots),
+                "raw_response_count": len(evidence),
+                "source_urls": [
+                    item["source_url"]
+                    for item in snapshots
+                    if isinstance(item, dict)
+                    and isinstance(item.get("source_url"), str)
+                ],
+            },
             "turns": turns,
             "artifact": {
                 "state": "ready",

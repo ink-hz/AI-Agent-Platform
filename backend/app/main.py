@@ -168,6 +168,7 @@ from .hr.candidate_routes import build_candidate_router
 from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
 from .hr.panorama_context import PanoramaContextProvider
+from .hr.panorama_evidence import EvidenceArchive
 from .hr.panorama_repository import PanoramaRepository
 from .hr.panorama_routes import build_panorama_router
 from .hr.panorama_service import PanoramaService
@@ -1167,7 +1168,10 @@ def create_app(
         if hr_panorama_service is None or hr_panorama_context_provider is None:
             panorama_repository = PanoramaRepository(control_database_url)
         if hr_panorama_service is None:
-            hr_panorama_service = PanoramaService(panorama_repository)
+            hr_panorama_service = PanoramaService(
+                panorama_repository,
+                evidence_archive=EvidenceArchive(production=True),
+            )
         if hr_panorama_context_provider is None:
             hr_panorama_context_provider = PanoramaContextProvider(
                 panorama_repository

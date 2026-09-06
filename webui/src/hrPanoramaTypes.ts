@@ -83,6 +83,19 @@ export interface HrPanoramaSnapshot {
   createdAt: string;
 }
 
+export interface HrPanoramaEvidence {
+  sourceId: string;
+  sourceUrl: string;
+  attemptNumber: number;
+  state: "succeeded" | "failed";
+  errorCode: string | null;
+  sha256: string;
+  mime: string;
+  sizeBytes: number;
+  normalizedJobCount: number;
+  observedAt: string;
+}
+
 export interface HrPanoramaReportSummary {
   publication: HrPanoramaPublication;
   insight: HrPanoramaInsight;
@@ -91,4 +104,5 @@ export interface HrPanoramaReportSummary {
 export interface HrPanoramaReport extends HrPanoramaReportSummary {
   sources: HrPanoramaSource[];
   snapshots: HrPanoramaSnapshot[];
+  evidence: HrPanoramaEvidence[];
 }

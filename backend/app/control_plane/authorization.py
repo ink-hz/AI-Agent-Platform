@@ -180,6 +180,10 @@ _HR_POSITION_ROUTES = frozenset({
     ("GET", "/api/hr/panorama/reports"),
     ("GET", "/api/hr/panorama/reports/{publication_id}"),
     ("GET", "/api/hr/panorama/reports/{publication_id}/export"),
+    (
+        "GET",
+        "/api/hr/panorama/reports/{publication_id}/evidence/{evidence_sha256}",
+    ),
 })
 
 _HR_POSITION_MUTATION_ROUTES = frozenset(

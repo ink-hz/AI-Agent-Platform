@@ -67,6 +67,17 @@ function comparisonMessage(comparison: HrPanoramaComparison): string {
   return "首次分析，暂无变化基线";
 }
 
+function collectionFailureLabel(errorCode: string): string {
+  const labels: Record<string, string> = {
+    search_unavailable: "检索通道本轮未完成",
+    source_timeout: "来源响应超时",
+    source_rejected: "来源拒绝访问",
+    unsupported_schema: "来源结构暂未适配",
+    source_unavailable: "来源暂时不可访问",
+  };
+  return labels[errorCode] ?? "采集未完成";
+}
+
 function currentFailureIds(comparison: HrPanoramaComparison): string[] {
   return comparison.state === "available" || comparison.state === "none" ? Object.keys(comparison.currentSourceFailures) : [];
 }
@@ -356,7 +367,7 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
             const observed = items.map((item) => item.observedAt).sort();
             const latest = observed[observed.length - 1];
             const failureCode = coverage?.channelFailures?.[url];
-            return <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a><small>{failureCode ? `本轮失败 · ${failureCode}` : items.length ? `命中 ${items.length} 条` : "未形成岗位证据，待确认"}</small>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</li>;
+            return <li key={url}><span>{sourceChannel(url)}</span><a href={url} rel="noreferrer" target="_blank">{url} ↗</a><small>{failureCode ? `本轮失败 · ${collectionFailureLabel(failureCode)}` : items.length ? `命中 ${items.length} 条` : "未形成岗位证据，待确认"}</small>{latest && <time dateTime={latest}>最近观测 {time(latest)}</time>}</li>;
           })}</ul>
         </article>;
       })}</div>
@@ -388,6 +399,14 @@ export function HrPanoramaReport({ report, comparison = { state: "none", current
         <span>{sourceById.get(item.sourceId)?.canonicalName ?? "关注公司"}</span><h3>{item.title}</h3><p>{item.location} · {item.dutyExcerpt}</p>
         <footer><a href={item.sourceUrl} rel="noreferrer" target="_blank">打开岗位来源 ↗</a><time dateTime={item.observedAt}>{time(item.observedAt)}</time></footer>
       </article>)}</div> : <p className="hr-panorama-empty-copy">本版没有可展示的岗位快照。</p>}
+    </section>
+
+    <section className="hr-panorama-sources" data-evidence-kind="raw-responses" hidden={view !== "evidence"}>
+      <header><p>RAW SOURCE RESPONSES</p><h2>原始来源响应</h2><span>按内容哈希永久保留，与 AI 分析分开，可下载复核。</span></header>
+      {report.evidence.length ? <div>{report.evidence.map((item) => <article key={`${item.sourceId}:${item.sourceUrl}:${item.attemptNumber}`}>
+        <span>{sourceById.get(item.sourceId)?.canonicalName ?? "关注公司"} · 第 {item.attemptNumber} 次采集</span><h3>{item.mime} · {item.sizeBytes} bytes</h3><p>SHA-256: {item.sha256}</p>
+        <footer><a download href={platformPath(`/api/hr/panorama/reports/${encodeURIComponent(report.publication.publicationId)}/evidence/${item.sha256}`)}>下载原始响应</a><time dateTime={item.observedAt}>{time(item.observedAt)}</time></footer>
+      </article>)}</div> : <p className="hr-panorama-empty-copy">本版没有可下载的原始响应。</p>}
     </section>
 
     <details className="hr-panorama-diagnostics">

@@ -170,6 +170,10 @@ def _location(value: object) -> str:
     if isinstance(value, list):
         return " / ".join(dict.fromkeys(_location(item) for item in value))
     if isinstance(value, Mapping):
+        for key in ("name", "cn_name", "zh_name", "i18n_name"):
+            named = _plain(value.get(key), "")
+            if named:
+                return named
         address = value.get("address", value)
         if isinstance(address, Mapping):
             parts = [
@@ -183,23 +187,44 @@ def _location(value: object) -> str:
 def _job_from_mapping(
     item: Mapping[str, object], target: SourceTarget
 ) -> NormalizedPublicJob:
-    title = _plain(item.get("title") or item.get("name"), "")
+    title = _plain(
+        item.get("title") or item.get("name") or item.get("JobAdName"), ""
+    )
     if not title:
         raise ValueError("job title unavailable")
-    location = _location(item.get("jobLocation") or item.get("location"))
+    location = _location(
+        item.get("jobLocation")
+        or item.get("location")
+        or item.get("city_list")
+        or item.get("city_info")
+        or item.get("LocNames")
+    )
     raw_url = item.get("url")
     source_url = target.source_url
     if isinstance(raw_url, str) and raw_url.strip():
         candidate = canonical_panorama_url(urljoin(target.source_url, raw_url.strip()))
         if _approved(candidate, target.approved_urls):
             source_url = candidate
-    status_value = str(item.get("status", "open")).lower()
+    elif urlsplit(target.source_url).hostname.endswith(".jobs.feishu.cn"):
+        job_id = _plain(item.get("id"), "")
+        if job_id:
+            base = target.source_url.rstrip("/")
+            candidate = canonical_panorama_url(f"{base}/position/{job_id}/detail")
+            if _approved(candidate, target.approved_urls):
+                source_url = candidate
+    status_value = str(item.get("status", item.get("Status", "open"))).lower()
+    if "JobAdId" in item:
+        status_value = "open"
     status = (
         status_value if status_value in {"open", "closed", "unknown"} else "unknown"
     )
     return NormalizedPublicJob(
         public_job_key=_identifier(
-            item.get("identifier") or item.get("id") or item.get("jobId"),
+            item.get("identifier")
+            or item.get("id")
+            or item.get("jobId")
+            or item.get("JobAdId")
+            or item.get("Id"),
             title=title,
             location=location,
             source_url=source_url,
@@ -207,11 +232,16 @@ def _job_from_mapping(
         title=title,
         location=location,
         duty_excerpt=_plain(
-            item.get("description") or item.get("responsibilities") or item.get("duty")
+            item.get("description")
+            or item.get("responsibilities")
+            or item.get("duty")
+            or item.get("Duty")
         ),
         requirement_excerpt=_plain(
             item.get("qualifications")
             or item.get("requirements")
+            or item.get("requirement")
+            or item.get("Require")
             or item.get("experienceRequirements")
         ),
         source_url=source_url,
@@ -233,7 +263,15 @@ def _candidate_mappings(value: object) -> list[Mapping[str, object]]:
             for item in graph
             if isinstance(item, Mapping) and item.get("@type") == "JobPosting"
         ]
-    for key in ("jobs", "positions", "data", "items", "results"):
+    for key in (
+        "jobs",
+        "positions",
+        "data",
+        "items",
+        "results",
+        "job_post_list",
+        "Data",
+    ):
         nested = value.get(key)
         if isinstance(nested, list):
             return [item for item in nested if isinstance(item, Mapping)]
@@ -254,9 +292,45 @@ def parse_public_jobs(
     payloads: list[object] = []
     if "json" in mime.lower() or text.lstrip().startswith(("{", "[")):
         try:
-            payloads.append(json.loads(text))
+            decoded = json.loads(text)
         except json.JSONDecodeError:
             raise CollectionError("unsupported_schema") from None
+        if isinstance(decoded, Mapping):
+            data = decoded.get("data")
+            if isinstance(data, Mapping) and isinstance(
+                data.get("job_post_list"), list
+            ):
+                count = data.get("count")
+                returned = len(data["job_post_list"])
+                if decoded.get("code") not in {None, 0}:
+                    raise CollectionError("source_rejected")
+                if (
+                    isinstance(count, bool)
+                    or not isinstance(count, int)
+                    or count < returned
+                ):
+                    raise CollectionError("unsupported_schema")
+                if count > returned:
+                    raise CollectionError("response_truncated")
+                if count == 0:
+                    return ()
+            beisen_jobs = decoded.get("Data")
+            if isinstance(beisen_jobs, list):
+                count = decoded.get("Count")
+                returned = len(beisen_jobs)
+                if decoded.get("Code") not in {None, 0, 200}:
+                    raise CollectionError("source_rejected")
+                if (
+                    isinstance(count, bool)
+                    or not isinstance(count, int)
+                    or count < returned
+                ):
+                    raise CollectionError("unsupported_schema")
+                if count > returned:
+                    raise CollectionError("response_truncated")
+                if count == 0:
+                    return ()
+        payloads.append(decoded)
     else:
         parser = _JsonLdParser()
         parser.feed(text)
@@ -342,6 +416,11 @@ class PublicSourceCollector:
         )
 
     async def _fetch(self, target: SourceTarget) -> tuple[httpx.Response, str, bytes]:
+        hostname = urlsplit(target.source_url).hostname or ""
+        if hostname.endswith(".jobs.feishu.cn"):
+            return await self._fetch_feishu(target, hostname)
+        if hostname.endswith(".zhiye.com"):
+            return await self._fetch_beisen(target, hostname)
         current = target.source_url
         origin = urlsplit(current)
         for redirect_number in range(2):
@@ -380,6 +459,7 @@ class PublicSourceCollector:
                 content_length = response.headers.get("content-length")
                 if (
                     content_length
+                    and content_length.isdigit()
                     and int(content_length) > self._maximum_response_bytes
                 ):
                     raise CollectionError("response_too_large")
@@ -392,6 +472,159 @@ class PublicSourceCollector:
                     chunks.append(chunk)
                 return response, current, b"".join(chunks)
         raise CollectionError("redirect_not_approved")
+
+    async def _fetch_feishu(
+        self, target: SourceTarget, hostname: str
+    ) -> tuple[httpx.Response, str, bytes]:
+        path = urlsplit(target.source_url).path.strip("/").split("/", 1)[0]
+        website_path = path or "index"
+        endpoint = canonical_panorama_url(
+            self._destination_validator(
+                f"https://{hostname}/api/v1/search/job/posts"
+            )
+        )
+        parsed_endpoint = urlsplit(endpoint)
+        parsed_target = urlsplit(target.source_url)
+        if (
+            parsed_endpoint.scheme,
+            parsed_endpoint.hostname,
+            parsed_endpoint.port or 443,
+        ) != (
+            parsed_target.scheme,
+            parsed_target.hostname,
+            parsed_target.port or 443,
+        ):
+            raise CollectionError("destination_not_approved")
+        payload = {
+            "keyword": "",
+            "limit": 1000,
+            "offset": 0,
+            "portal_type": 2,
+            "job_category_id_list": [],
+            "location_code_list": [],
+            "subject_id_list": [],
+            "recruitment_id_list": [],
+            "job_function_id_list": [],
+        }
+        async with self._client.stream(
+            "POST",
+            endpoint,
+            follow_redirects=False,
+            timeout=httpx.Timeout(connect=5, read=30, write=5, pool=5),
+            headers={
+                "Accept": "application/json",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Content-Type": "application/json",
+                "Origin": f"https://{hostname}",
+                "Referer": target.source_url,
+                "Portal-Channel": "office",
+                "Portal-Platform": "pc",
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
+                ),
+                "website-path": website_path,
+            },
+            json=payload,
+        ) as response:
+            if 300 <= response.status_code < 400:
+                raise CollectionError("redirect_not_approved")
+            if response.status_code >= 500:
+                raise CollectionError("source_unavailable", retryable=True)
+            if response.status_code >= 400:
+                raise CollectionError("source_rejected")
+            content_length = response.headers.get("content-length")
+            if (
+                content_length
+                and content_length.isdigit()
+                and int(content_length) > self._maximum_response_bytes
+            ):
+                raise CollectionError("response_too_large")
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in response.aiter_bytes():
+                size += len(chunk)
+                if size > self._maximum_response_bytes:
+                    raise CollectionError("response_too_large")
+                chunks.append(chunk)
+            return response, endpoint, b"".join(chunks)
+
+    async def _fetch_beisen(
+        self, target: SourceTarget, hostname: str
+    ) -> tuple[httpx.Response, str, bytes]:
+        endpoint = canonical_panorama_url(
+            self._destination_validator(
+                f"https://{hostname}/api/Jobad/GetJobAdPageList"
+            )
+        )
+        parsed_endpoint = urlsplit(endpoint)
+        parsed_target = urlsplit(target.source_url)
+        if (
+            parsed_endpoint.scheme,
+            parsed_endpoint.hostname,
+            parsed_endpoint.port or 443,
+        ) != (
+            parsed_target.scheme,
+            parsed_target.hostname,
+            parsed_target.port or 443,
+        ):
+            raise CollectionError("destination_not_approved")
+        path = parsed_target.path.lower()
+        payload = {
+            "PageIndex": 0,
+            "PageSize": 1000,
+            "LocId": [],
+            "Category": ["2" if "campus" in path else "1"],
+            "KeyWords": "",
+            "SpecialType": 0,
+            "PortalId": "",
+            "DisplayFields": [
+                "Category",
+                "Kind",
+                "LocId",
+                "PostDate",
+                "Salary",
+            ],
+        }
+        async with self._client.stream(
+            "POST",
+            endpoint,
+            follow_redirects=False,
+            timeout=httpx.Timeout(connect=5, read=30, write=5, pool=5),
+            headers={
+                "Accept": "application/json",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Content-Type": "application/json",
+                "Origin": f"https://{hostname}",
+                "Referer": target.source_url,
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
+                ),
+            },
+            json=payload,
+        ) as response:
+            if 300 <= response.status_code < 400:
+                raise CollectionError("redirect_not_approved")
+            if response.status_code >= 500:
+                raise CollectionError("source_unavailable", retryable=True)
+            if response.status_code >= 400:
+                raise CollectionError("source_rejected")
+            content_length = response.headers.get("content-length")
+            if (
+                content_length
+                and content_length.isdigit()
+                and int(content_length) > self._maximum_response_bytes
+            ):
+                raise CollectionError("response_too_large")
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in response.aiter_bytes():
+                size += len(chunk)
+                if size > self._maximum_response_bytes:
+                    raise CollectionError("response_too_large")
+                chunks.append(chunk)
+            return response, endpoint, b"".join(chunks)
 
 
 __all__ = [

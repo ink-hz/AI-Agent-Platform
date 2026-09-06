@@ -1,6 +1,6 @@
 import { platformPath } from "./auth";
 import type {
-  HrPanoramaFact, HrPanoramaInference, HrPanoramaInsight, HrPanoramaPublication,
+  HrPanoramaEvidence, HrPanoramaFact, HrPanoramaInference, HrPanoramaInsight, HrPanoramaPublication,
   HrPanoramaReport, HrPanoramaReportSummary, HrPanoramaSnapshot, HrPanoramaSource,
   HrPanoramaSourceCoverage,
 } from "./hrPanoramaTypes";
@@ -17,6 +17,7 @@ const INSIGHT_KEYS = new Set(["insight_version_id", "run_id", "production_batch_
 const SNAPSHOT_KEYS = new Set(["snapshot_id", "run_id", "production_batch_id", "observation_id", "source_id", "public_job_key", "title", "location", "duty_excerpt", "requirement_excerpt", "source_url", "observed_at", "content_sha256", "status", "created_at"]);
 const PUBLICATION_KEYS = new Set(["publication_id", "batch_id", "insight_version_id", "coverage_state", "source_coverage", "published_at"]);
 const COVERAGE_KEYS = new Set(["source_id", "state", "observed_at", "source_urls", "job_count", "error_code", "channel_failures"]);
+const EVIDENCE_KEYS = new Set(["source_id", "source_url", "attempt_number", "state", "error_code", "sha256", "mime", "size_bytes", "normalized_job_count", "observed_at"]);
 
 export class HrPanoramaApiError extends Error {
   constructor(public readonly status: number) {
@@ -100,14 +101,22 @@ function publication(value: unknown): HrPanoramaPublication {
   return { publicationId: id(raw.publication_id), batchId: id(raw.batch_id), insightVersionId: id(raw.insight_version_id), coverageState: raw.coverage_state, sourceCoverage, publishedAt: timestamp(raw.published_at) };
 }
 
+function evidence(value: unknown): HrPanoramaEvidence {
+  const raw = object(value); exact(raw, EVIDENCE_KEYS); if (raw.state !== "succeeded" && raw.state !== "failed") invalid();
+  if (typeof raw.sha256 !== "string" || !SHA256.test(raw.sha256)) invalid();
+  const errorCode = raw.error_code === null ? null : text(raw.error_code, 64); if (errorCode && !ERROR_CODE.test(errorCode)) invalid();
+  return { sourceId: id(raw.source_id), sourceUrl: httpsUrl(raw.source_url), attemptNumber: positive(raw.attempt_number), state: raw.state, errorCode, sha256: raw.sha256, mime: text(raw.mime, 255), sizeBytes: nonnegative(raw.size_bytes), normalizedJobCount: nonnegative(raw.normalized_job_count), observedAt: timestamp(raw.observed_at) };
+}
+
 function summary(value: unknown): HrPanoramaReportSummary { const raw = object(value); exact(raw, new Set(["publication", "insight"])); const selectedPublication = publication(raw.publication); const insight = parseHrPanoramaInsight(raw.insight); if (selectedPublication.insightVersionId !== insight.insightVersionId || selectedPublication.batchId !== insight.productionBatchId) invalid(); return { publication: selectedPublication, insight }; }
 
 export function parseHrPanoramaReport(value: unknown): HrPanoramaReport {
-  const raw = object(value); exact(raw, new Set(["publication", "insight", "sources", "snapshots"])); if (!Array.isArray(raw.sources) || !Array.isArray(raw.snapshots) || raw.sources.length > 100 || raw.snapshots.length > 1000) invalid();
-  const base = summary({ publication: raw.publication, insight: raw.insight }); const sources = raw.sources.map(parseHrPanoramaSource); const snapshots = raw.snapshots.map(snapshot);
+  const raw = object(value); exact(raw, new Set(["publication", "insight", "sources", "snapshots", "evidence"])); if (!Array.isArray(raw.sources) || !Array.isArray(raw.snapshots) || !Array.isArray(raw.evidence) || raw.sources.length > 100 || raw.snapshots.length > 1000 || raw.evidence.length > 300) invalid();
+  const base = summary({ publication: raw.publication, insight: raw.insight }); const sources = raw.sources.map(parseHrPanoramaSource); const snapshots = raw.snapshots.map(snapshot); const evidenceRecords = raw.evidence.map(evidence);
   const sourceIds = new Set(sources.map((item) => item.sourceId)); const snapshotIds = new Set(snapshots.map((item) => item.snapshotId)); const snapshotById = new Map(snapshots.map((item) => [item.snapshotId, item]));
   if (sourceIds.size !== sources.length || sourceIds.size !== base.insight.selectedSourceIds.length || base.insight.selectedSourceIds.some((sourceId) => !sourceIds.has(sourceId)) || snapshots.some((item) => item.productionBatchId !== base.publication.batchId || !sourceIds.has(item.sourceId)) || snapshotIds.size !== snapshots.length || snapshotIds.size !== base.insight.snapshotIds.length || base.insight.snapshotIds.some((snapshotId) => !snapshotIds.has(snapshotId)) || base.insight.facts.some((item) => { const evidence = snapshotById.get(item.snapshotId); return !evidence || evidence.sourceUrl !== item.sourceUrl || evidence.observedAt !== item.observedAt || evidence.observationId !== item.observationId; })) invalid();
-  return { ...base, sources, snapshots };
+  if (evidenceRecords.some((item) => !sourceIds.has(item.sourceId))) invalid();
+  return { ...base, sources, snapshots, evidence: evidenceRecords };
 }
 
 async function request(path: string, signal?: AbortSignal): Promise<Response> { return fetch(platformPath(path), { cache: "no-store", credentials: "same-origin", signal, headers: { Accept: "application/json" } }); }

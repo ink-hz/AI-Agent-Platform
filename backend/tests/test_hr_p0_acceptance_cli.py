@@ -111,7 +111,6 @@ def _turn(
 
 
 def _evidence() -> dict[str, object]:
-    panorama = _fixture_result("panorama-result.json", "partial_panorama_report")
     position = _fixture_result("recruiting-results.json", "revised_position_package")
     strong_match = _fixture_result("recruiting-results.json", "strong_candidate_match")
     adjacent_match = _fixture_result(
@@ -124,15 +123,19 @@ def _evidence() -> dict[str, object]:
         "agent_id": "hr-bot",
         "business_delivery_calls": 0,
         "egress_evidence_sha256": "a" * 64,
+        "panorama_publication": {
+            "publication_id": "80000000-0000-4000-8000-000000000010",
+            "batch_id": "80000000-0000-4000-8000-000000000011",
+            "insight_version_id": "81000000-0000-4000-8000-000000000001",
+            "model_version": "configured-model-v1",
+            "raw_job_count": 2,
+            "raw_response_count": 2,
+            "source_urls": [
+                "https://example.com/company-alpha/jobs/structure-001",
+                "https://example.com/company-beta/jobs/process-002",
+            ],
+        },
         "turns": [
-            _turn(
-                "panorama_report",
-                panorama,
-                urls=[
-                    "https://example.com/company-alpha/jobs/structure-001",
-                    "https://example.com/company-beta/jobs/process-002",
-                ],
-            ),
             _turn("position_package", position),
             _turn(
                 "panorama_retrieval",
@@ -360,6 +363,62 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                     {
                         "internal_user_id": _config_dict()["owner_id"],
                         "csrf_token": "synthetic-acceptance-csrf",
+                    }
+                )
+            if method == "GET" and path == "/api/hr/panorama/current":
+                companies = _config_dict()["companies"]
+                source_ids = [uid("source:existing"), uid("source:1"), uid("source:2")]
+                publication_id = uid("panorama-publication")
+                batch_id = uid("panorama-batch")
+                insight_id = uid("insight")
+                return Response(
+                    {
+                        "publication": {
+                            "publication_id": publication_id,
+                            "batch_id": batch_id,
+                            "insight_version_id": insight_id,
+                        },
+                        "insight": {
+                            "insight_version_id": insight_id,
+                            "production_batch_id": batch_id,
+                            "model_version": "claude-opus-5",
+                            "source_conversation_id": None,
+                            "source_turn_id": None,
+                            "facts": [
+                                {
+                                    "source_url": "https://example.com/company-alpha/jobs/1",
+                                    "observed_at": "2026-09-05T00:00:00+00:00",
+                                },
+                                {
+                                    "source_url": "https://example.com/company-beta/jobs/2",
+                                    "observed_at": "2026-09-04T00:00:00+00:00",
+                                },
+                            ],
+                        },
+                        "sources": [
+                            {
+                                **company,
+                                "source_id": source_ids[index],
+                                "active": True,
+                            }
+                            for index, company in enumerate(companies)
+                        ],
+                        "snapshots": [
+                            {
+                                "source_id": source_ids[0],
+                                "source_url": "https://example.com/company-alpha/jobs/1",
+                                "observed_at": "2026-09-05T00:00:00+00:00",
+                            },
+                            {
+                                "source_id": source_ids[1],
+                                "source_url": "https://example.com/company-beta/jobs/2",
+                                "observed_at": "2026-09-04T00:00:00+00:00",
+                            },
+                        ],
+                        "evidence": [
+                            {"sha256": "a" * 64},
+                            {"sha256": "b" * 64},
+                        ],
                     }
                 )
             if method == "GET" and path == "/api/hr/panorama/sources":
@@ -894,7 +953,7 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
                 uuid_factory=lambda: RUN_ID,
             )
 
-    assert client.source_count == 2
+    assert client.source_count == 0
     assert client.upload_count == 3
     assert client.confirm_count == 2
     assert client.append_count == 2
@@ -913,18 +972,18 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
     assert (
         exact_trace_count
         == {
-            None: 7,
-            "match:0": 4,
-            "match:1": 5,
-            "interview": 6,
+            None: 6,
+            "match:0": 3,
+            "match:1": 4,
+            "interview": 5,
         }[failed_task]
     )
     expected_task_count = {None: 3, "match:0": 1, "match:1": 2, "interview": 3}
     expected_conversation_count = {
-        None: 5,
-        "match:0": 3,
-        "match:1": 4,
-        "interview": 5,
+        None: 4,
+        "match:0": 2,
+        "match:1": 3,
+        "interview": 4,
     }
     assert client.task_count == expected_task_count[failed_task]
     assert client.ticket_count == (2 if failed_task is None else 0)
@@ -968,7 +1027,7 @@ def test_concrete_gateway_drives_public_flow_and_writes_exact_cleanup_manifest(
         ),
         (lambda value: value["turns"][0].update(trace_answer=""), "EMPTY_TRACE"),
         (
-            lambda value: value["turns"][1].update(
+            lambda value: value["turns"][2].update(
                 assistant_answer="# visible\n<!-- platform-hr-v1:invalid -->"
             ),
             "INVALID_ENVELOPE",

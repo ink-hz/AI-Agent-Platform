@@ -3,10 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+
 from app.hr.panorama_models import (
     PanoramaReport,
     PublicJobSnapshot,
     PublishedPanorama,
+    SourceCollectionAttempt,
     TalentInsightVersion,
     TalentSource,
 )
@@ -107,6 +110,7 @@ class Repository:
         self.base_report = PanoramaReport(insight, (source,), (snapshot,))
         self.published = published
         self.calls: list[tuple] = []
+        self.attempts = ()
 
     def current_publication(self):
         self.calls.append(("current",))
@@ -123,6 +127,10 @@ class Repository:
     def report(self, owner_id, insight_version_id):
         self.calls.append(("report", owner_id, insight_version_id))
         return self.base_report
+
+    def source_attempts_for_production_batch(self, owner_id, batch_id):
+        self.calls.append(("attempts", owner_id, batch_id))
+        return self.attempts
 
 
 def test_service_returns_none_without_a_quality_gated_publication() -> None:
@@ -144,6 +152,11 @@ def test_service_attaches_publication_metadata_to_current_report() -> None:
             repository.publication_value.owner_id,
             repository.publication_value.insight_version_id,
         ),
+        (
+            "attempts",
+            repository.publication_value.owner_id,
+            repository.publication_value.batch_id,
+        ),
     ]
 
 
@@ -156,7 +169,7 @@ def test_service_history_and_detail_are_publication_scoped() -> None:
 
     assert history[0].publication == selected.publication
     assert repository.calls[0] == ("list", 20)
-    assert repository.calls[2] == (
+    assert repository.calls[3] == (
         "publication",
         repository.publication_value.publication_id,
     )
@@ -166,3 +179,48 @@ def test_service_has_no_collection_or_source_mutation_surface() -> None:
     service = PanoramaService(Repository())
     for forbidden in ("add_company", "start_run", "run_status", "list_companies"):
         assert not hasattr(service, forbidden)
+
+
+def test_service_downloads_only_evidence_bound_to_the_selected_publication() -> None:
+    repository = Repository()
+    body = b'{"jobs":[]}'
+    repository.attempts = (
+        SourceCollectionAttempt(
+            uuid4(),
+            repository.publication_value.batch_id,
+            repository.publication_value.owner_id,
+            repository.base_report.sources[0].source_id,
+            "https://example.com/jobs",
+            1,
+            "succeeded",
+            None,
+            "a" * 64,
+            "sha256/aa/" + "a" * 64,
+            "application/json; charset=utf-8",
+            len(body),
+            1,
+            NOW,
+            NOW,
+        ),
+    )
+
+    class Archive:
+        def read(self, sha256):
+            assert sha256 == "a" * 64
+            return body
+
+    selected = PanoramaService(
+        repository, evidence_archive=Archive()
+    ).evidence_file(repository.publication_value.publication_id, "a" * 64)
+
+    assert selected.body == body
+    assert selected.mime == "application/json"
+
+
+@pytest.mark.parametrize("sha256", (None, 7, "A" * 64, "a" * 63))
+def test_evidence_download_rejects_noncanonical_hashes(sha256) -> None:
+    repository = Repository()
+    service = PanoramaService(repository)
+
+    with pytest.raises(TypeError, match="evidence identifier invalid"):
+        service.evidence_file(repository.publication_value.publication_id, sha256)

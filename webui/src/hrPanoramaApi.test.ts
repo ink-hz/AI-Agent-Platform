@@ -41,7 +41,10 @@ const publication = {
     observed_at: "2026-09-05T08:00:00Z", source_urls: ["https://example.com/jobs"], job_count: 1 }],
   published_at: "2026-09-05T08:03:00Z",
 };
-const report = { publication, insight, sources: [source], snapshots: [snapshot] };
+const evidence = { source_id: IDS.source, source_url: "https://example.com/jobs", attempt_number: 1,
+  state: "succeeded", error_code: null, sha256: "a".repeat(64), mime: "application/json",
+  size_bytes: 512, normalized_job_count: 1, observed_at: "2026-09-05T08:00:00Z" };
+const report = { publication, insight, sources: [source], snapshots: [snapshot], evidence: [evidence] };
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
