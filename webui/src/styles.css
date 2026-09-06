@@ -2003,7 +2003,7 @@ body {
 .hr-panorama-header h1 { margin: 5px 0 4px; color: #17345c; font-size: clamp(29px,3vw,40px); line-height: 1.1; letter-spacing: -.04em; }
 .hr-panorama-header > div:first-child > span { color: #405b76; font-size: 14px; }
 .hr-panorama-as-of { display: grid; flex: 0 0 auto; gap: 2px; padding: 11px 14px; border: 1px solid #c4d7e8; border-radius: 12px; background: rgba(255,255,255,.86); }
-.hr-panorama-as-of span { color: #607797; font-size: 11px; font-weight: 760; letter-spacing: .05em; }
+.hr-panorama-as-of span { color: #607797; font-size: 12px; font-weight: 760; letter-spacing: .05em; }
 .hr-panorama-as-of strong { color: #173f6d; font-size: 14px; white-space: nowrap; }
 .hr-panorama-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; padding: 22px 26px; border: 1px solid #c9d9e9; border-radius: 20px; background: #fff; box-shadow: 0 12px 34px rgba(32,50,70,.07); }
 .hr-panorama-toolbar > div:first-child > span { color: #185fa9; font-size: 12px; font-weight: 850; letter-spacing: .11em; }

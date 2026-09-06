@@ -165,7 +165,8 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         == "127.0.0.1/32,172.31.0.1/32,172.31.0.8/32"
     )
     assert services["platform-api"]["volumes"] == [
-        "platform-api-secrets:/run/secrets:ro"
+        "platform-api-secrets:/run/secrets:ro",
+        "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
     ]
     assert services["platform-postgres"]["volumes"] == [
         "/data/orbbec-agent-platform/postgres:/var/lib/postgresql/data",

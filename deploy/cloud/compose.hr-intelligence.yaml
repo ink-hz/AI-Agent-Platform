@@ -1,0 +1,33 @@
+services:
+  platform-hr-intelligence:
+    image: ${PLATFORM_IMAGE}
+    profiles: ["hr-intelligence"]
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    command:
+      - python
+      - -m
+      - app.hr.panorama_cli
+      - status
+      - --current
+    environment:
+      PLATFORM_CONTROL_DATABASE_URL_FILE: /run/control-secrets/control-database-url
+      PLATFORM_HR_PANORAMA_OWNER_ID: "${PLATFORM_HR_PANORAMA_OWNER_ID:-}"
+      PLATFORM_HR_PANORAMA_SOURCE_CATALOG: /app/backend/app/hr/panorama_source_catalog.v1.json
+      PLATFORM_BRAIN_MODEL_MANIFEST: /app/brain-model.release.json
+      PLATFORM_BRAIN_PROVIDER_BASE_URL: "${PLATFORM_BRAIN_PROVIDER_BASE_URL:-https://cc.nexcor.ai}"
+      PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME: "${PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME:-bearer}"
+      PLATFORM_BRAIN_PROVIDER_API_KEY_FILE: /run/brain-secrets/brain-provider-api-key
+    volumes:
+      - platform-api-secrets:/run/control-secrets:ro
+      - platform-brain-secrets:/run/brain-secrets:ro
+      - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:rw
+    networks:
+      - platform-internal
+      - platform-edge

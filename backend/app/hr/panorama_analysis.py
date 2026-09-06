@@ -34,12 +34,13 @@ TECHNICAL_DIRECTIONS = frozenset(
     }
 )
 ANALYSIS_REQUIREMENTS = (
-    "按技术方向识别招聘资源集中度与变化",
-    "识别产品路线信号、业务方向和区域布局",
-    "区分社招与校招、岗位新增与消失、团队形态变化",
-    "比较公司间的共同点、差异和竞争性人才需求",
-    "给出与奥比中光岗位的启示，但不得把推断写成事实",
-    "明确未知项、数据覆盖缺口和不能从公开岗位推出的结论",
+    "量化公开岗位数并按光学、硬件、结构、软件、算法、制造工艺等技术方向识别招聘资源集中度；岗位数不得等同于HC、预算或实际研发投入",
+    "从岗位职责和要求提取可核验的技术栈、能力组合、资历层级、团队接口与量产阶段信号",
+    "识别产品路线信号、业务场景、客户行业和区域布局，并为每个路线判断给出事实链",
+    "区分社招、校招和实习；只有存在跨期证据时才判断岗位新增、消失或团队形态变化",
+    "横向比较各公司的共同技术主题、差异化能力、竞争性人才需求和潜在组织建设重点",
+    "给出与奥比中光岗位的启示，并转化为JD、JR、人才画像、搜寻策略和面试方案可直接使用的建议，但不得把建议写成事实",
+    "主动寻找反证和替代解释，明确未知项、来源覆盖缺口、样本偏差以及不能从公开岗位推出的结论",
 )
 _TOP_LEVEL_KEYS = {
     "facts",
@@ -48,6 +49,8 @@ _TOP_LEVEL_KEYS = {
     "direction_clusters",
     "summary",
 }
+_MAX_PROMPT_BYTES = 786_432
+_TARGET_PROMPT_BYTES = 589_824
 
 
 class PanoramaAnalysisError(RuntimeError):
@@ -70,8 +73,11 @@ class ConfiguredPanoramaModel:
 facts、inferences、unknowns、direction_clusters、summary。
 事实必须逐条原样引用输入中的 snapshot_id、observation_id、source_url、observed_at；
 推断必须引用一个或多个 fact_id。不得把推断冒充事实，不得补造岗位、公司或数字。
-需要深度比较技术方向、招聘资源集中度、产品和业务路线、区域布局、社招校招、岗位变化、
-竞争人才需求及对奥比中光的启示；证据不足的内容必须进入 unknowns。"""
+分析不是复述岗位清单：先做定量分布和能力结构，再建立“岗位事实→技术/产品信号→替代解释→
+对奥比中光招聘动作”的证据链。招聘帖数量只是公开需求信号，不代表HC、预算、产量或真实投入。
+需要深度比较技术方向、技术栈、资历层级、招聘资源集中度、产品和业务路线、区域布局、社招校招、
+跨期岗位变化、竞争人才需求及对奥比中光的启示；主动指出反证，证据不足的内容必须进入 unknowns。
+当输入是分块或多阶段分析时，必须综合所有分块，保留关键事实引用，不得只根据第一个分块作答。"""
 
     def __init__(self, adapter: object, manifest: BrainModelManifest) -> None:
         if not hasattr(adapter, "complete") or not isinstance(
@@ -322,14 +328,39 @@ class PanoramaAnalyzer:
     ) -> PanoramaAnalysis:
         if not isinstance(company_name, str) or not company_name.strip():
             raise ValueError("company name required")
-        return await self._analyze(
+        base = {
+            "company": company_name.strip(),
+            "analysis_requirements": list(ANALYSIS_REQUIREMENTS),
+            "output_contract": "facts/inferences/unknowns/direction_clusters/summary",
+        }
+        prompt = {**base, "jobs": [_job_payload(item) for item in snapshots]}
+        if _canonical_size(prompt) <= _MAX_PROMPT_BYTES:
+            return await self._analyze("company", prompt, snapshots)
+        chunks = self._snapshot_chunks(snapshots, base)
+        analyses = []
+        for index, chunk in enumerate(chunks, start=1):
+            analyses.append(
+                await self._analyze(
+                    "company",
+                    {
+                        **base,
+                        "phase": "evidence_chunk",
+                        "chunk_index": index,
+                        "chunk_count": len(chunks),
+                        "jobs": [_job_payload(item) for item in chunk],
+                    },
+                    chunk,
+                )
+            )
+        return await self._synthesize(
             "company",
             {
-                "company": company_name.strip(),
-                "jobs": [_job_payload(item) for item in snapshots],
-                "analysis_requirements": list(ANALYSIS_REQUIREMENTS),
-                "output_contract": "facts/inferences/unknowns/direction_clusters/summary",
+                **base,
+                "phase": "company_synthesis",
+                "total_job_count": len(snapshots),
             },
+            "chunk_analyses",
+            tuple(analyses),
             snapshots,
         )
 
@@ -341,17 +372,45 @@ class PanoramaAnalyzer:
     ) -> PanoramaAnalysis:
         if topic not in {"社会招聘", "校园招聘"}:
             raise ValueError("analysis topic invalid")
-        return await self._analyze(
+        base = {
+            "topic": topic,
+            "analysis_requirements": list(ANALYSIS_REQUIREMENTS),
+            "output_contract": "facts/inferences/unknowns/direction_clusters/summary",
+        }
+        prompt = {
+            **base,
+            "jobs": [_job_payload(item) for item in snapshots],
+            "company_analyses": [
+                _analysis_payload(value) for value in company_analyses
+            ],
+        }
+        if _canonical_size(prompt) <= _MAX_PROMPT_BYTES:
+            return await self._analyze("topic", prompt, snapshots)
+        chunks = self._snapshot_chunks(snapshots, base)
+        chunk_analyses = []
+        for index, chunk in enumerate(chunks, start=1):
+            chunk_analyses.append(
+                await self._analyze(
+                    "topic",
+                    {
+                        **base,
+                        "phase": "evidence_chunk",
+                        "chunk_index": index,
+                        "chunk_count": len(chunks),
+                        "jobs": [_job_payload(item) for item in chunk],
+                    },
+                    chunk,
+                )
+            )
+        return await self._synthesize(
             "topic",
             {
-                "topic": topic,
-                "jobs": [_job_payload(item) for item in snapshots],
-                "company_analyses": [
-                    _analysis_payload(value) for value in company_analyses
-                ],
-                "analysis_requirements": list(ANALYSIS_REQUIREMENTS),
-                "output_contract": "facts/inferences/unknowns/direction_clusters/summary",
+                **base,
+                "phase": "topic_synthesis",
+                "total_job_count": len(snapshots),
             },
+            "analysis_parts",
+            tuple(chunk_analyses),
             snapshots,
         )
 
@@ -362,22 +421,151 @@ class PanoramaAnalyzer:
         company_analyses: tuple[PanoramaAnalysis, ...],
         topic_analyses: tuple[PanoramaAnalysis, ...],
     ) -> PanoramaAnalysis:
-        return await self._analyze(
+        base = {
+            "phase": "cross_company_report",
+            "total_job_count": len(snapshots),
+            "company_count": len({item.source_id for item in snapshots}),
+            "analysis_requirements": list(ANALYSIS_REQUIREMENTS),
+            "output_contract": "facts/inferences/unknowns/direction_clusters/summary",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        analysis_parts = company_analyses + topic_analyses
+        direct_prompt = {
+            **base,
+            "jobs": [_job_payload(item) for item in snapshots],
+            "company_analyses": [
+                _analysis_payload(value) for value in company_analyses
+            ],
+            "topic_analyses": [
+                _analysis_payload(value) for value in topic_analyses
+            ],
+        }
+        if _canonical_size(direct_prompt) <= _MAX_PROMPT_BYTES:
+            return await self._analyze("report", direct_prompt, snapshots)
+        if analysis_parts:
+            return await self._synthesize(
+                "report",
+                base,
+                "analysis_parts",
+                analysis_parts,
+                snapshots,
+            )
+        chunks = self._snapshot_chunks(snapshots, base)
+        chunk_analyses = []
+        for index, chunk in enumerate(chunks, start=1):
+            chunk_analyses.append(
+                await self._analyze(
+                    "report",
+                    {
+                        **base,
+                        "phase": "evidence_chunk",
+                        "chunk_index": index,
+                        "chunk_count": len(chunks),
+                        "jobs": [_job_payload(item) for item in chunk],
+                    },
+                    chunk,
+                )
+            )
+        return await self._synthesize(
             "report",
-            {
-                "jobs": [_job_payload(item) for item in snapshots],
-                "company_analyses": [
-                    _analysis_payload(value) for value in company_analyses
-                ],
-                "topic_analyses": [
-                    _analysis_payload(value) for value in topic_analyses
-                ],
-                "analysis_requirements": list(ANALYSIS_REQUIREMENTS),
-                "output_contract": "facts/inferences/unknowns/direction_clusters/summary",
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-            },
+            base,
+            "analysis_parts",
+            tuple(chunk_analyses),
             snapshots,
         )
+
+    @staticmethod
+    def _snapshot_chunks(
+        snapshots: tuple[PublicJobSnapshot, ...], base: dict[str, object]
+    ) -> tuple[tuple[PublicJobSnapshot, ...], ...]:
+        chunks: list[tuple[PublicJobSnapshot, ...]] = []
+        current: list[PublicJobSnapshot] = []
+        for snapshot in snapshots:
+            candidate = [*current, snapshot]
+            prompt = {
+                **base,
+                "phase": "evidence_chunk",
+                "chunk_index": len(chunks) + 1,
+                "chunk_count": len(snapshots),
+                "jobs": [_job_payload(item) for item in candidate],
+            }
+            if current and _canonical_size(prompt) > _TARGET_PROMPT_BYTES:
+                chunks.append(tuple(current))
+                current = [snapshot]
+            else:
+                current = candidate
+            if _canonical_size(
+                {**base, "jobs": [_job_payload(item) for item in current]}
+            ) > _MAX_PROMPT_BYTES:
+                raise PanoramaAnalysisError("analysis evidence item too large")
+        if current:
+            chunks.append(tuple(current))
+        return tuple(chunks)
+
+    async def _synthesize(
+        self,
+        stage: str,
+        base: dict[str, object],
+        key: str,
+        analyses: tuple[PanoramaAnalysis, ...],
+        snapshots: tuple[PublicJobSnapshot, ...],
+    ) -> PanoramaAnalysis:
+        if not analyses:
+            raise PanoramaAnalysisError("analysis synthesis input invalid")
+        pending = analyses
+        level = 1
+        while True:
+            groups: list[tuple[PanoramaAnalysis, ...]] = []
+            current: list[PanoramaAnalysis] = []
+            for analysis in pending:
+                candidate = [*current, analysis]
+                prompt = {
+                    **base,
+                    "synthesis_level": level,
+                    key: [_analysis_payload(item) for item in candidate],
+                }
+                if current and _canonical_size(prompt) > _TARGET_PROMPT_BYTES:
+                    groups.append(tuple(current))
+                    current = [analysis]
+                else:
+                    current = candidate
+                if _canonical_size(
+                    {
+                        **base,
+                        "synthesis_level": level,
+                        key: [_analysis_payload(item) for item in current],
+                    }
+                ) > _MAX_PROMPT_BYTES:
+                    raise PanoramaAnalysisError("analysis synthesis item too large")
+            if current:
+                groups.append(tuple(current))
+            synthesized = []
+            for group in groups:
+                snapshot_ids = {
+                    snapshot_id
+                    for analysis in group
+                    for snapshot_id in analysis.snapshot_ids
+                }
+                selected = tuple(
+                    item for item in snapshots if item.snapshot_id in snapshot_ids
+                )
+                synthesized.append(
+                    await self._analyze(
+                        stage,
+                        {
+                            **base,
+                            "synthesis_level": level,
+                            key: [_analysis_payload(item) for item in group],
+                        },
+                        selected,
+                    )
+                )
+            if len(synthesized) == 1:
+                return synthesized[0]
+            pending = tuple(synthesized)
+            level += 1
+            if level > 16:
+                raise PanoramaAnalysisError("analysis synthesis did not converge")
 
     async def _analyze(
         self,
@@ -386,7 +574,7 @@ class PanoramaAnalyzer:
         snapshots: tuple[PublicJobSnapshot, ...],
     ) -> PanoramaAnalysis:
         _snapshot_index(snapshots)
-        if _canonical_size(prompt) > 786_432:
+        if _canonical_size(prompt) > _MAX_PROMPT_BYTES:
             raise PanoramaAnalysisError("analysis prompt too large")
         try:
             response = await self._model.generate_json(stage, prompt)

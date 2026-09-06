@@ -106,6 +106,7 @@ services:
       PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256: ""
     volumes:
       - platform-api-secrets:/run/secrets:ro
+      - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro
     networks:
       platform-internal:
         ipv4_address: 172.30.0.4

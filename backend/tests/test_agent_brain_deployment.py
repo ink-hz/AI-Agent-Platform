@@ -142,7 +142,10 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
         environment["PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE"]
         == "/run/secrets/content-encryption-keyring"
     )
-    assert api["volumes"] == ["platform-api-secrets:/run/secrets:ro"]
+    assert api["volumes"] == [
+        "platform-api-secrets:/run/secrets:ro",
+        "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
+    ]
     assert environment["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == (
         "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
     )

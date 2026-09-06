@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -133,6 +135,77 @@ async def test_analysis_can_be_regenerated_without_mutating_raw_snapshots() -> N
     assert first.summary != second.summary
     assert selected == original
     assert first.snapshot_ids == second.snapshot_ids == (selected.snapshot_id,)
+
+
+class HierarchicalModel:
+    version = "gpt-research-hierarchical-v1"
+
+    def __init__(self, snapshots: tuple[PublicJobSnapshot, ...]) -> None:
+        self.snapshots = {str(item.snapshot_id): item for item in snapshots}
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def _snapshot_id(self, value: object) -> str | None:
+        if isinstance(value, dict):
+            selected = value.get("snapshot_id")
+            if isinstance(selected, str) and selected in self.snapshots:
+                return selected
+            for nested in value.values():
+                found = self._snapshot_id(nested)
+                if found:
+                    return found
+        if isinstance(value, list):
+            for nested in value:
+                found = self._snapshot_id(nested)
+                if found:
+                    return found
+        return None
+
+    async def generate_json(self, stage: str, payload: dict[str, object]):
+        self.calls.append((stage, payload))
+        selected_id = self._snapshot_id(payload)
+        assert selected_id is not None
+        return analysis_for(self.snapshots[selected_id])
+
+
+@pytest.mark.asyncio
+async def test_large_company_analysis_is_hierarchical_and_never_drops_raw_jobs() -> None:
+    base = snapshot()
+    snapshots = tuple(
+        replace(
+            base,
+            snapshot_id=uuid4(),
+            origin_request_id=uuid4(),
+            public_job_key=f"job-{index}",
+            title=f"研发岗位 {index}",
+            duty_excerpt="完整岗位职责" * 3000,
+            requirement_excerpt="完整任职要求" * 3000,
+        )
+        for index in range(24)
+    )
+    model = HierarchicalModel(snapshots)
+
+    result = await PanoramaAnalyzer(model).analyze_company("大型研发公司", snapshots)
+
+    assert len(model.calls) >= 3
+    assert all(
+        len(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        )
+        <= 786_432
+        for _, payload in model.calls
+    )
+    raw_job_ids = {
+        job["snapshot_id"]
+        for _, payload in model.calls
+        for job in payload.get("jobs", [])
+    }
+    assert raw_job_ids == {str(item.snapshot_id) for item in snapshots}
+    assert result.snapshot_ids == tuple(item.snapshot_id for item in snapshots)
 
 
 class BrainAdapter:

@@ -59,6 +59,13 @@ def test_bundled_catalog_contains_priority_and_session_companies() -> None:
         "影石创新",
         "华为",
     } <= companies
+    insta360 = next(
+        item for item in document["companies"] if item["canonical_name"] == "影石创新"
+    )
+    assert {
+        "https://arashivision.jobs.feishu.cn/socialENG",
+        "https://arashivision.jobs.feishu.cn/campus",
+    } <= set(insta360["approved_urls"])
 
 
 @pytest.mark.parametrize(

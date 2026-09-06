@@ -20,10 +20,13 @@
 
 目录由代码评审和后台运维维护，不在 HR 页面开放编辑。所需配置通过 secret file 和环境变量注入，禁止把数据库口令、模型密钥或响应正文写入日志。
 
+先在 `/opt/orbbec-agent-platform/private/platform.env` 中配置一个真实、有效的内部用户 UUID 作为
+生产审计主体：`PLATFORM_HR_PANORAMA_OWNER_ID=<uuid>`。该身份只标识后台生产责任主体；报告仍是
+获授权 HR 成员共享读取，不按该用户隔离展示。
+
 ```bash
-cd /opt/agent-platform/current/backend
-.venv/bin/python -m app.hr.panorama_cli seed-sources \
-  --catalog /data/agent-platform/hr-intelligence/source-catalog.json
+cd /opt/orbbec-agent-platform/current
+sudo deploy/cloud/hr-panorama-producer.sh seed-sources
 ```
 
 ## 定时生产
@@ -31,9 +34,9 @@ cd /opt/agent-platform/current/backend
 调度器执行：
 
 ```bash
-cd /opt/agent-platform/current/backend
-.venv/bin/python -m app.hr.panorama_cli run --trigger schedule
-.venv/bin/python -m app.hr.panorama_cli status --current
+cd /opt/orbbec-agent-platform/current
+sudo deploy/cloud/hr-panorama-producer.sh run --trigger schedule
+sudo deploy/cloud/hr-panorama-producer.sh status --current
 ```
 
 建议按月完整生产；需要提高时效时可增加只读监控频率，但不要从业务页面触发。一个公司可以配置多个官方渠道，各渠道独立采集，单个渠道失败不取消其他公司。
@@ -51,8 +54,8 @@ cd /opt/agent-platform/current/backend
 查询批次状态后，只恢复 `queued`、`running` 或 `analyzing` 批次：
 
 ```bash
-cd /opt/agent-platform/current/backend
-.venv/bin/python -m app.hr.panorama_cli resume <batch_id>
+cd /opt/orbbec-agent-platform/current
+sudo deploy/cloud/hr-panorama-producer.sh resume <batch_id>
 ```
 
 `analyzing` 恢复直接读取已经固化的岗位快照，不重复抓取。采集和写入均使用确定性身份，重复执行不会覆盖原始证据。
