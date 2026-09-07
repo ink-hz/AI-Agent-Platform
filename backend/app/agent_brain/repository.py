@@ -18,7 +18,7 @@ from app.execution_relay.content_crypto import (
     ContentCryptoError,
     SealedContent,
 )
-from app.execution_relay.models import RelayEvent
+from app.execution_relay.models import RELAY_EVENT_TYPES, RelayEvent
 
 
 TERMINAL_MISSION_STATUSES = frozenset(
@@ -1985,15 +1985,6 @@ class MissionRepository:
             not isinstance(event, RelayEvent) for event in events
         ):
             raise ValueError("Relay events invalid")
-        allowed_types = {
-            "agent.state",
-            "agent.question",
-            "agent.file",
-            "agent.log",
-            "agent.complete",
-            "agent.result",
-            "agent.error",
-        }
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 mission = self._owned_mission_for_update(
@@ -2013,7 +2004,7 @@ class MissionRepository:
                     if (
                         event.run_id != run_id
                         or event.seq != expected
-                        or event.event_type not in allowed_types
+                        or event.event_type not in RELAY_EVENT_TYPES
                     ):
                         raise MissionRepositoryConflict()
                     expected += 1

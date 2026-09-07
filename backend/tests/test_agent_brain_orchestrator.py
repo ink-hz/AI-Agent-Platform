@@ -142,6 +142,31 @@ def test_planning_prompt_includes_panorama_only_when_context_carries_fragment() 
     assert "hr_panorama_context" not in ordinary_document
 
 
+@pytest.mark.postgres
+def test_direct_result_after_thinking_events_completes_once(brain_database, orchestrator):
+    _environment, owner_id = brain_database
+    service, missions, relay = orchestrator
+    mission = missions.create_mission(owner_id, uuid4(), "这个岗位怎么样",
+                                     mode="direct_agent", direct_agent_id="hr-bot")
+    service.advance_pending(limit=50)
+    run_id = next(iter(relay.payloads))
+    relay.terminal(run_id, "completed", "基于岗位资料的分析结果。")
+    result = relay.run_events[run_id][0].model_copy(update={"seq": 3})
+    relay.run_events[run_id] = tuple(
+        RelayEvent(run_id=run_id, seq=seq, event_type="agent.thinking_summary",
+                   created_at=datetime.now(timezone.utc), payload={"text": "private"})
+        for seq in (1, 2)
+    ) + (result,)
+
+    assert service.advance_pending(limit=50) == 1
+    assert service.advance_pending(limit=50) == 0
+    terminal = [event for event in missions.events_after(owner_id, mission.mission_id)
+                if event.event_type == "mission.completed"]
+    assert len(terminal) == 1
+    assert terminal[0].payload["text"] == "基于岗位资料的分析结果。"
+    assert missions.runs_for_owner(owner_id, mission.mission_id)[0].status == "completed"
+
+
 class ScriptedRelay:
     def __init__(self) -> None:
         self.payloads = {}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -18,6 +18,15 @@ from pydantic import (
 
 RelayJobKind = Literal["legacy_brain", "direct_agent", "metabot_local"]
 RelayResultMode = Literal["internal", "public_markdown"]
+CoreChatCallbackEventType = Literal[
+    "state", "question", "file", "log", "complete", "error",
+    "thinking_summary", "work_update", "agent_message", "artifact", "result",
+]
+# Intake is a transport contract, not permission to expose the event's payload.
+RELAY_EVENT_TYPES = frozenset(
+    f"agent.{'message' if kind == 'agent_message' else kind}"
+    for kind in get_args(CoreChatCallbackEventType)
+)
 CollaborationContract = Literal[
     "core_chat_collaboration_v3", "core_chat_collaboration_v4"
 ]

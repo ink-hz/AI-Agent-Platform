@@ -34,6 +34,7 @@ from .acceptance_hooks import WorkerAcceptanceHooks
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
 from .models import (
     CollaborationV4Result,
+    CoreChatCallbackEventType,
     OutputWriteGrantPayload,
     RelayEvent,
     RelayJobKind,
@@ -93,19 +94,7 @@ class _StrictCallbackEvent(BaseModel):
 
     runId: UUID
     seq: int = Field(gt=0)
-    type: Literal[
-        "state",
-        "question",
-        "file",
-        "log",
-        "complete",
-        "error",
-        "thinking_summary",
-        "work_update",
-        "agent_message",
-        "artifact",
-        "result",
-    ]
+    type: CoreChatCallbackEventType
     createdAt: AwareDatetime
     bridge: _CoreChatBridge
     payload: dict[str, object]

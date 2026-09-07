@@ -326,6 +326,48 @@ def test_unstructured_relay_events_never_advance_public_acceptance(
 
 
 @pytest.mark.postgres
+def test_collaboration_events_advance_intake_without_leaking_private_payloads(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "collaboration events")
+    run = _create_queued_professional(repository, owner_id, mission.mission_id)
+    events = tuple(
+        RelayEvent(
+            run_id=run.run_id, seq=seq, event_type=event_type,
+            created_at=datetime.now(timezone.utc),
+            payload={"text": "private marker", "thinking": "secret reasoning"},
+        )
+        for seq, event_type in enumerate(
+            ("agent.thinking_summary", "agent.work_update", "agent.message",
+             "agent.artifact", "agent.result"), 1
+        )
+    )
+
+    assert repository.apply_relay_events(owner_id, mission.mission_id, run.run_id, events) == 5
+    assert repository.apply_relay_events(owner_id, mission.mission_id, run.run_id, events) == 0
+    stored = repository.runs_for_owner(owner_id, mission.mission_id)[-1]
+    assert stored.relay_event_cursor == 5
+    assert "private marker" not in repr(repository.events_after(owner_id, mission.mission_id))
+    assert "secret reasoning" not in repr(repository.events_after(owner_id, mission.mission_id))
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("event_type,seq", [("agent.work_update", 2), ("unexpected.event", 1)])
+def test_collaboration_intake_still_rejects_gaps_and_invalid_events(
+    mission_database, repository, event_type, seq
+) -> None:
+    _environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "invalid events")
+    run = _create_queued_professional(repository, owner_id, mission.mission_id)
+    event = RelayEvent(run_id=run.run_id, seq=seq, event_type=event_type,
+                       created_at=datetime.now(timezone.utc), payload={})
+    with pytest.raises(MissionRepositoryConflict):
+        repository.apply_relay_events(owner_id, mission.mission_id, run.run_id, (event,))
+    assert repository.runs_for_owner(owner_id, mission.mission_id)[-1].relay_event_cursor == 0
+
+
+@pytest.mark.postgres
 def test_text_only_core_chat_state_accepts_once_without_raw_progress(
     mission_database, repository
 ) -> None:
