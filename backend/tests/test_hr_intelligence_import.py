@@ -126,6 +126,22 @@ def test_import_rejects_bundle_identity_mismatch(tmp_path) -> None:
     assert verify_import_bundle(path).bundle_id == inputs.bundle_id
 
 
+def test_import_accepts_a_mount_alias_only_with_the_exact_expected_id(tmp_path) -> None:
+    inputs, path = _bundle(tmp_path)
+    mounted_path = path.with_name("bundle")
+    path.rename(mounted_path)
+
+    with pytest.raises(BundleVerificationError, match="directory identity"):
+        verify_import_bundle(mounted_path)
+
+    verified = verify_import_bundle(
+        mounted_path,
+        expected_bundle_id=inputs.bundle_id,
+    )
+
+    assert verified.bundle_id == inputs.bundle_id
+
+
 def test_import_verifies_v2_agent_documents_and_chunk_index(tmp_path) -> None:
     _inputs, path = _bundle(tmp_path)
 

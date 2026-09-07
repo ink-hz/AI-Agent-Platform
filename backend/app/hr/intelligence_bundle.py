@@ -194,9 +194,10 @@ def verify_import_bundle(
         or manifest.get("evidence_count") != len(evidence_index)
     ):
         raise BundleVerificationError("bundle manifest invalid")
-    if root.name != str(bundle_id):
-        raise BundleVerificationError("bundle directory identity mismatch")
-    if expected_bundle_id is not None and bundle_id != expected_bundle_id:
+    if expected_bundle_id is None:
+        if root.name != str(bundle_id):
+            raise BundleVerificationError("bundle directory identity mismatch")
+    elif bundle_id != expected_bundle_id:
         raise BundleVerificationError("bundle identity mismatch")
     companies = catalog.get("companies")
     coverage_companies = coverage.get("companies")
