@@ -119,6 +119,8 @@ create/claim/finalize为短事务，不在锁内HTTP。新迁移包含FK、live�
 
 **P03b1 本地验收：** Platform `55dcfbf`、MetaBot `8cb4252`，加密冻结命令、Attempt/命令/序号元数据、旧 Relay 写路径隔离及真实启动代次接收回执已完成。主控固定提交扩展验证 731/286 项通过，独立规格/质量复审 Approved；保留既有警告，详见 [P03b1 执行记录](../../reviews/2026-09-07-hr-unified-execution-p03b1.md)。P01 哈希资产不变，未增加新的执行状态权威。绑定锁顺序进一步固定为 Conversation→Turn→Attempt→binding→job，并在最后加锁后复核数据库租约。当前仅文字/工具策略绑定入口；真实上下文/任务/附件、能力先于领取、稳定回调凭据、认证派发、取消调度、P04/M04b 和进程验收仍需后续完成，不能启用新流量。
 
+**P03b2a 本地验收：** Platform `22bb6d2`、MetaBot `91d55cc`，现有签名通道的显式授权交接、稳定加密回调凭据、真实 Bearer 接收/登记和持久原事件上行已完成。主控修后固定提交验证 765/287 项通过；真实 socket/部分回执丢失、传输子进程被杀后恢复、逆序回执和旧启动代次证据上行通过。首轮独立审查发现的轮询保存点累积锁问题已由真实 PG 回归修正，完整范围规格/质量复审 Approved。详见 [P03b2a 执行记录](../../reviews/2026-09-07-hr-unified-execution-p03b2a.md)，保留既有告警，不冒称整个 API/Worker 已做进程验收。派发保持默认关闭，P03b2b 实际独立 Worker/上下文/任务、能力先于领取、取消核对以及 P04/M04b/M05/O02/O03 继续实施；P03 整项未完成。
+
 **依赖：** P02；实际派发需M02/M03能力握手
 **文件（相对Platform仓库根）：** 新增 backend/app/agent_brain/direct_worker.py、direct_mission_adapter.py；修改 backend/app/main.py、agent_brain/repository.py、conversation_service.py、conversation_projection.py；新增 backend/tests/test_hr_direct_worker.py、test_hr_direct_worker_process.py；回归 test_agent_brain_conversation_summary.py、test_hr_task_result_projection_database.py、test_hr_candidate_analysis_artifact_migration.py、test_hr_position_package_database.py。
 **接口：** DirectWorker.tick()->int；DirectMissionAdapter.prepare(lease)->RelayJobPayload、reconcile(lease)->TerminalEvidence|None；执行记录由P02裁决。conversations.execution_owner与route_epoch从同一事务读取；不是另建HR任务状态机。
