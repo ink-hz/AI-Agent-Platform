@@ -85,10 +85,13 @@ REMOTE
   "$remote_staging" "$remote_bundle" "$bundle_id" "$remote_release" \
   "$remote_environment" "$PLATFORM_HR_PANORAMA_OWNER_ID" <<'REMOTE'
 set -euo pipefail
-staging="$1"; final="$2"; bundle_id="$3"; release="$4"; environment="$5"; owner_id="$6"
+staging="$1"; final="$2"; bundle_id="$3"; release_link="$4"; environment="$5"; owner_id="$6"
 [[ "$staging" =~ ^/data/staging/orbbec-agent-platform/hr-intelligence-[0-9a-f]{32}$ ]] || exit 1
 [[ "$final" == "/data/orbbec-agent-platform/hr-intelligence/bundles/$bundle_id" ]] || exit 1
-[[ -d "$staging" && ! -L "$staging" && -d "$release" && ! -L "$release" ]] || exit 1
+[[ "$release_link" == "/opt/orbbec-agent-platform/current" && -L "$release_link" ]] || exit 1
+release="$(/usr/bin/readlink -f "$release_link")"
+[[ "$release" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ && -d "$release" && ! -L "$release" ]] || exit 1
+[[ -d "$staging" && ! -L "$staging" ]] || exit 1
 [[ -f "$environment" && ! -L "$environment" ]] || exit 1
 (cd "$staging" && /usr/bin/sha256sum -c checksums.sha256)
 /usr/bin/chown -R 10001:10001 -- "$staging"
