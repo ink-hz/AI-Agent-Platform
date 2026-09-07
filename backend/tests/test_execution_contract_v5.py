@@ -15,6 +15,7 @@ from app.execution_relay.contracts_v5 import (
     CoreChatCommandV5,
     CoreChatEventV5,
     FeishuMessageIdentity,
+    V5ContractError,
     core_chat_command_hash,
     core_chat_command_replay_status,
     feishu_request_id,
@@ -265,6 +266,59 @@ def test_v5_command_rejects_tampered_permission_scope() -> None:
     command["permissionScope"] = scope
 
     with pytest.raises(ValueError, match="^v5 command invalid$"):
+        parse_v5_command(command)
+
+
+@pytest.mark.parametrize(
+    "expires_at",
+    (
+        "1788768900",
+        "1788768900.5",
+        "-1788768900",
+        1788768900,
+        1788768900.5,
+        -1788768900,
+    ),
+)
+def test_v5_command_rejects_numeric_expiry_coercion(expires_at: object) -> None:
+    command = _v5_command()
+    command["inputAttachmentGrants"][0]["expiresAt"] = expires_at
+
+    with pytest.raises(V5ContractError, match="^v5 command invalid$") as exc_info:
+        parse_v5_command(command)
+
+    assert exc_info.value.args == ("v5 command invalid",)
+    assert "candidate.pdf" not in repr(exc_info.value)
+    assert "C" * 43 not in repr(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "expires_at",
+    (
+        "2026-09-07T08:15:00Z",
+        "2026-09-07 08:15:00Z",
+        "2026-09-07t08:15:00z",
+        "2026-09-07T08:15:00+01:00",
+        "2026-09-07T08:15:00+0100",
+        "2026-09-07T08:15:00+23:59",
+        "2026-09-07T08:15:00.123456Z",
+    ),
+)
+def test_v5_command_preserves_supported_expiry_strings(expires_at: str) -> None:
+    command = _v5_command()
+    command["inputAttachmentGrants"][0]["expiresAt"] = expires_at
+
+    parsed = parse_v5_command(command)
+
+    assert parsed.command_hash == command["commandHash"]
+
+
+@pytest.mark.parametrize("expires_at", ("2026-02-30T08:15:00Z", "2026-09-07T08:15:00"))
+def test_v5_command_rejects_invalid_or_naive_expiry_strings(expires_at: str) -> None:
+    command = _v5_command()
+    command["inputAttachmentGrants"][0]["expiresAt"] = expires_at
+
+    with pytest.raises(V5ContractError, match="^v5 command invalid$"):
         parse_v5_command(command)
 
 

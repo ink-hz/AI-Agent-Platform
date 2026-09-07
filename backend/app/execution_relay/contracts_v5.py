@@ -27,6 +27,7 @@ _UUID_WIRE = re.compile(
 )
 _CALLBACK_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _MIME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+/[A-Za-z0-9!#$%&'*+.^_`|~-]+\Z")
+_NUMERIC_TIMESTAMP = re.compile(r"-?\d+(?:\.\d+)?\Z")
 
 
 def _bounded_identifier(value: str, *, maximum: int) -> str:
@@ -723,6 +724,11 @@ def parse_v5_command(value: dict[str, Any]) -> CoreChatCommandV5:
             or type(input_grants) is not list
             or any(
                 type(grant) is not dict or set(grant) != input_grant_fields
+                for grant in input_grants
+            )
+            or any(
+                type(expires_at := grant.get("expiresAt")) is not str
+                or _NUMERIC_TIMESTAMP.fullmatch(expires_at) is not None
                 for grant in input_grants
             )
             or (
