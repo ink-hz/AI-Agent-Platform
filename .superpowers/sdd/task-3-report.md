@@ -458,3 +458,22 @@ The full UI integration run exposed `HrP0Combined.acceptance.test.tsx` waiting f
 Adjacent HR acceptances passed individually with `--maxWorkers=1`: Recruiting Loop 1/1, Panorama 1/1, Position Spine 2/2, and R12 4/4. A single serial `src/workspaces/hr` invocation passed its first three files, including the corrected P0 test, then the Node 26 worker exhausted its approximately 4 GB heap. Since every adjacent acceptance terminates and passes in a fresh bounded worker, this is cumulative Vitest worker memory behavior rather than a remaining mock SSE loop in the corrected fixture.
 
 `git show 3227454:webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx` confirms the `currentTurn = null` fixture behavior predates this integration correction. Final bounded host verification passed 33/33 tests across `ConversationPage.test.tsx` and the corrected P0 acceptance with one worker. `npm run build` also passed with only the existing Vite large-chunk advisory. The unbounded/full HR-directory suite remains blocked by the documented Node 26 worker OOM; no passing claim is made for that invocation.
+
+## Null-turn lifecycle correction
+
+Independent review established that a null latest Turn is also a legitimate production idle state. After SSE EOF/error, the accepted state had `terminalReady === false` and `needsPolling === false`, but the stream loop still marked the connection offline and entered reconnect delay. With an immediately resolved mock delay this became a hot loop and caused the earlier Node 26 OOM.
+
+TDD RED: `npm test -- --run src/pages/ConversationPage.test.tsx -t "null-turn"`
+
+- Exit 1: 2 expected failures. Idle EOF invoked reconnect, and null-turn enrichment completion left the five-second timer issuing further reads.
+
+TDD GREEN: the same command exited 0 with 2/2 selected tests passing. The shared accepted-state handler now stops polling, snapshot resources, and SSE with live connection state whenever `needsPolling` is false, without invoking `onConversationSettled`. Terminal Turns missing a referenced answer still have `needsPolling === true` and continue recovery.
+
+Fresh verification:
+
+- `npm test -- --run src/pages/ConversationPage.test.tsx --maxWorkers=1`: 34/34 passed.
+- `npm test -- --run src/workspaces/hr --maxWorkers=1`: 24/24 files and 163/163 tests passed; the former OOM no longer occurs.
+- `npm test -- --run --maxWorkers=1`: 125/125 files and 1096/1096 tests passed in 43.39 seconds.
+- `npm run build`: passed; only the existing large-chunk advisory was emitted.
+
+This supersedes the earlier provisional conclusion that the HR-directory OOM was merely cumulative worker memory: the successful full bounded suite after this correction confirms the idle reconnect loop was the product defect.

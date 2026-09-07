@@ -325,6 +325,75 @@ describe("ConversationPage", () => {
     expect(container.textContent).not.toContain("连接暂时中断");
   });
 
+  it("stops an idle null-turn stream after EOF without reconnecting or settling", async () => {
+    const fetchConversation = vi.fn().mockResolvedValue({ conversation, current_turn: null });
+    const reconnect = deferred<void>();
+    const reconnectDelay = vi.fn().mockReturnValue(reconnect.promise);
+    const streamSignals: AbortSignal[] = [];
+    const onConversationSettled = vi.fn();
+    const pageClient = client({
+      fetchConversation,
+      reconnectDelay,
+      streamEvents: vi.fn().mockImplementation(async (_id, options) => {
+        streamSignals.push(options.signal);
+      }),
+    });
+
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      client={pageClient}
+      conversationId={conversationId}
+      onConversationSettled={onConversationSettled}
+    />));
+
+    expect(fetchConversation).toHaveBeenCalledTimes(2);
+    expect(reconnectDelay).not.toHaveBeenCalled();
+    expect(onConversationSettled).not.toHaveBeenCalled();
+    expect(streamSignals[0]?.aborted).toBe(true);
+    expect(container.textContent).not.toContain("连接暂时中断");
+  });
+
+  it("stops null-turn polling when pending enrichment completes", async () => {
+    vi.useFakeTimers();
+    const pendingMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "pending",
+    }];
+    const completedMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn().mockResolvedValue({ conversation, current_turn: null });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(pendingMessages)
+      .mockResolvedValue(completedMessages);
+    const reconnectDelay = vi.fn().mockResolvedValue(undefined);
+    const onConversationSettled = vi.fn();
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({
+          fetchConversation,
+          fetchMessages,
+          reconnectDelay,
+          streamEvents: vi.fn().mockReturnValue(stream.promise),
+        })}
+        conversationId={conversationId}
+        onConversationSettled={onConversationSettled}
+      />));
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).not.toContain("附件与引用正在整理");
+      expect(onConversationSettled).not.toHaveBeenCalled();
+      expect(reconnectDelay).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("polls a hung active stream to completion without repeating a write", async () => {
     vi.useFakeTimers();
     const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };

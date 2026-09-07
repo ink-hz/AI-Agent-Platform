@@ -378,6 +378,12 @@ export function ConversationPage({
     const terminalWasIncomplete = Boolean(detail.current_turn
       && TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status)
       && !terminalTurnHasReferencedMessage(detail, messagesRef.current));
+    const stopReading = () => {
+      setConnection("live");
+      stopPolling?.();
+      controller.abort();
+      streamController.abort();
+    };
     const settle = (result: {
       snapshot: ConversationDetail;
       needsPolling: boolean;
@@ -390,10 +396,7 @@ export function ConversationPage({
         onConversationSettled?.();
       }
       streamController.abort();
-      if (!result.needsPolling) {
-        stopPolling?.();
-        controller.abort();
-      }
+      if (!result.needsPolling) stopReading();
     };
     const initiallyNeedsPolling = activeTurnWasObserved || terminalWasIncomplete || messagesRef.current.some(
       (message) => message.result_delivery_status === "pending",
@@ -404,6 +407,7 @@ export function ConversationPage({
         void refreshSnapshot()
           .then((result) => {
             if (result?.terminalReady) settle(result);
+            else if (result && !result.needsPolling) stopReading();
           })
           .catch(() => undefined);
       }, 5_000);
@@ -433,6 +437,7 @@ export function ConversationPage({
           if (!result) return;
           setConnection("live");
           if (result.terminalReady) return settle(result);
+          if (!result.needsPolling) return stopReading();
           setConnection("offline");
         } catch {
           if (controller.signal.aborted || streamController.signal.aborted) return;
@@ -440,6 +445,7 @@ export function ConversationPage({
             const result = await refreshSnapshot();
             if (!result) return;
             if (result.terminalReady) return settle(result);
+            if (!result.needsPolling) return stopReading();
           } catch {
             if (controller.signal.aborted) return;
           }
