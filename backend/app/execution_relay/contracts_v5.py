@@ -28,7 +28,11 @@ _UUID_WIRE = re.compile(
 _CALLBACK_UUID_WIRE = re.compile(_UUID_WIRE.pattern, re.IGNORECASE)
 _CALLBACK_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _MIME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+/[A-Za-z0-9!#$%&'*+.^_`|~-]+\Z")
-_NUMERIC_TIMESTAMP = re.compile(r"-?\d+(?:\.\d+)?\Z")
+_V5_DATETIME_WIRE = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ]"
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?"
+    r"(?:[Zz]|[+-][0-9]{2}:?[0-9]{2})\Z"
+)
 
 
 def _bounded_identifier(value: str, *, maximum: int) -> str:
@@ -729,7 +733,7 @@ def parse_v5_command(value: dict[str, Any]) -> CoreChatCommandV5:
             )
             or any(
                 type(expires_at := grant.get("expiresAt")) is not str
-                or _NUMERIC_TIMESTAMP.fullmatch(expires_at) is not None
+                or _V5_DATETIME_WIRE.fullmatch(expires_at) is None
                 for grant in input_grants
             )
             or (
@@ -797,7 +801,7 @@ def parse_v5_event(value: dict[str, Any]) -> CoreChatEventV5:
         if value["type"] == "run_heartbeat":
             dates.append(value["payload"].get("observedAt"))
         if any(
-            type(date) is not str or _NUMERIC_TIMESTAMP.fullmatch(date) is not None
+            type(date) is not str or _V5_DATETIME_WIRE.fullmatch(date) is None
             for date in dates
         ):
             raise ValueError

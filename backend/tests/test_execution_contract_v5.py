@@ -210,6 +210,115 @@ def _v5_result_event() -> dict[str, object]:
     }
 
 
+def _v5_ingress_with_datetime(
+    field_path: str, value: object
+) -> tuple[dict[str, object], object]:
+    if field_path == "command.inputAttachmentGrants[0].expiresAt":
+        command = _v5_command()
+        command["inputAttachmentGrants"][0]["expiresAt"] = value
+        return command, CoreChatCommandV5
+
+    event = _v5_result_event()
+    if field_path == "callback.createdAt":
+        event["createdAt"] = value
+    else:
+        event["type"] = "run_heartbeat"
+        event["payload"] = {
+            "source": "executor",
+            "executorRef": "synthetic:executor",
+            "observedAt": value,
+            "visibility": "private",
+        }
+    return event, CoreChatEventV5
+
+
+def _parse_v5_ingress_datetime(field_path: str, value: dict[str, object]):
+    if field_path == "command.inputAttachmentGrants[0].expiresAt":
+        return parse_v5_command(value)
+    return parse_v5_event(value)
+
+
+def _parsed_v5_ingress_datetime(field_path: str, value):
+    if field_path == "command.inputAttachmentGrants[0].expiresAt":
+        return value.input_attachment_grants[0].expires_at
+    if field_path == "callback.createdAt":
+        return value.created_at
+    return value.payload.observed_at
+
+
+_V5_DATETIME_INGRESS_FIELDS = (
+    "callback.createdAt",
+    "callback.heartbeat.observedAt",
+    "command.inputAttachmentGrants[0].expiresAt",
+)
+
+
+@pytest.mark.parametrize("field_path", _V5_DATETIME_INGRESS_FIELDS)
+@pytest.mark.parametrize(
+    "spelling",
+    (
+        "+1788768000",
+        "1788768000.",
+        "1.788768e9",
+        "2026-09-07T08:00:00,123Z",
+        "2026-09-07T08:00Z",
+    ),
+)
+def test_v5_ingress_rejects_pydantic_datetime_tolerance(
+    field_path: str, spelling: str
+) -> None:
+    wire, model = _v5_ingress_with_datetime(field_path, spelling)
+
+    pydantic_value = model.model_validate_json(json.dumps(wire), strict=True)
+    assert _parsed_v5_ingress_datetime(field_path, pydantic_value).tzinfo is not None
+
+    expected_error = (
+        "^v5 command invalid$"
+        if field_path == "command.inputAttachmentGrants[0].expiresAt"
+        else "^v5 event invalid$"
+    )
+    with pytest.raises(V5ContractError, match=expected_error):
+        _parse_v5_ingress_datetime(field_path, wire)
+
+
+@pytest.mark.parametrize("field_path", _V5_DATETIME_INGRESS_FIELDS)
+@pytest.mark.parametrize(
+    "spelling",
+    (
+        "2026-09-07T08:00:00Z",
+        "2026-09-07t08:00:00.123z",
+        "2026-09-07T08:00:00+01:00",
+        "2026-09-07 08:00:00+0100",
+    ),
+)
+def test_v5_ingress_preserves_supported_datetime_spelling(
+    field_path: str, spelling: str
+) -> None:
+    wire, _model = _v5_ingress_with_datetime(field_path, spelling)
+
+    parsed = _parse_v5_ingress_datetime(field_path, wire)
+
+    assert _parsed_v5_ingress_datetime(field_path, parsed).tzinfo is not None
+
+
+@pytest.mark.parametrize("field_path", _V5_DATETIME_INGRESS_FIELDS)
+@pytest.mark.parametrize(
+    "spelling", ("2026-02-30T08:00:00Z", "2026-09-07T08:00:00")
+)
+def test_v5_ingress_rejects_invalid_calendar_or_naive_datetime(
+    field_path: str, spelling: str
+) -> None:
+    wire, _model = _v5_ingress_with_datetime(field_path, spelling)
+    expected_error = (
+        "^v5 command invalid$"
+        if field_path == "command.inputAttachmentGrants[0].expiresAt"
+        else "^v5 event invalid$"
+    )
+
+    with pytest.raises(V5ContractError, match=expected_error):
+        _parse_v5_ingress_datetime(field_path, wire)
+
+
 def _turn_intake() -> dict[str, object]:
     return {
         "operation": "turn-intake",
