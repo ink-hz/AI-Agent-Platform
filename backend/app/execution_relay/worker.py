@@ -1,26 +1,26 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
 import json
 import logging
 import os
-from pathlib import Path
 import random
 import re
 import secrets
 import signal
 import stat
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-import httpx
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -30,7 +30,9 @@ from pydantic import (
     model_validator,
 )
 
+from . import worker_v5_receiver
 from .acceptance_hooks import WorkerAcceptanceHooks
+from .contracts_v5 import CallbackAckV5
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
 from .models import (
     CollaborationV4Result,
@@ -46,7 +48,6 @@ from .models import (
 from .repository import RelayStopRequest
 from .worker_auth import WorkerRequestSigner
 from .worker_store import WorkerRunRecovery, WorkerStore
-
 
 _API_PREFIX = "/api/v1/execution-worker"
 _CALLBACK_BODY_LIMIT = 1_048_576
@@ -489,6 +490,7 @@ class WorkerRuntime:
         logger: logging.Logger = _LOG,
         acceptance_hooks: Any | None = None,
         max_concurrent_runs: int = 1,
+        enable_v5_callbacks: bool = False,
     ) -> None:
         if (
             not isinstance(worker_id, str)
@@ -503,6 +505,7 @@ class WorkerRuntime:
         ):
             raise WorkerRuntimeError()
         self.worker_id = worker_id
+        self.enable_v5_callbacks = enable_v5_callbacks
         # Each MetaBot Agent is a separate service on its own port, so running more
         # than one at a time is a configuration decision rather than a constraint.
         # The Brain schedules against the pool concurrency declared in the Catalog,
@@ -936,7 +939,7 @@ class WorkerRuntime:
 
     async def accept_callback(
         self, run_id: UUID, token: str, body: bytes
-    ) -> CallbackResult:
+    ) -> CallbackResult | CallbackAckV5:
         if not isinstance(body, bytes) or len(body) > _CALLBACK_BODY_LIMIT:
             return CallbackResult.TOO_LARGE
         if (
@@ -946,6 +949,11 @@ class WorkerRuntime:
         ):
             return CallbackResult.UNAUTHORIZED
         try:
+            if self.enable_v5_callbacks and await asyncio.to_thread(worker_v5_receiver.registered, self.store, run_id):
+                try:
+                    return await asyncio.to_thread(worker_v5_receiver.accept, self.store, self.worker_id, run_id, token, body)
+                except PermissionError:
+                    return CallbackResult.UNAUTHORIZED
             if not await self._store_call("callback_token_matches", run_id, token):
                 return CallbackResult.UNAUTHORIZED
             strict_event = _StrictCallbackEvent.model_validate_json(body, strict=True)
@@ -1097,8 +1105,18 @@ async def heartbeat_loop(runtime: WorkerRuntime) -> None:
 
 
 async def _send_callback_response(
-    writer: asyncio.StreamWriter, result: CallbackResult
+    writer: asyncio.StreamWriter, result: CallbackResult | CallbackAckV5
 ) -> None:
+    if isinstance(result, CallbackAckV5):
+        body = result.model_dump_json(by_alias=True).encode("utf-8")
+        code = 409 if result.status in {"gap", "conflict"} else 200
+        reason = "Conflict" if code == 409 else "OK"
+        writer.write(
+            (f"HTTP/1.1 {code} {reason}\r\nContent-Type: application/json\r\n"
+             f"Content-Length: {len(body)}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n").encode("ascii") + body
+        )
+        await writer.drain()
+        return
     reason = {
         204: "No Content",
         400: "Bad Request",

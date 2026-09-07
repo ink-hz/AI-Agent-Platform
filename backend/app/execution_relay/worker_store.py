@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime
 import hashlib
 import hmac
 import os
-from pathlib import Path
 import stat
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -16,7 +16,6 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .models import RelayEvent, RelayLease
-
 
 _CONFLICT = "worker store conflict"
 _CONFIGURATION_INVALID = "worker store configuration invalid"
@@ -110,6 +109,14 @@ def _read_owner_only_file(path: Path) -> str:
 
 
 class WorkerStore:
+    def register_v5_callback(self, command, binding) -> None:
+        from .worker_v5_receiver import register
+
+        try:
+            register(self, command, binding)
+        except (TypeError, ValueError, UnicodeError, psycopg.Error):
+            raise ValueError('v5 registration invalid') from None
+
     def __init__(
         self,
         database_url: str,
@@ -161,6 +168,13 @@ class WorkerStore:
             job_id = lease.job_id
             agent_id = lease.payload.agent_id
             with self._connection() as connection:
+                extension = connection.execute("SELECT to_regclass('execution_worker.v5_callback_runs') AS relation").fetchone()
+                if extension['relation'] is not None:
+                    connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (str(run_id),))
+                    if connection.execute(
+                        'SELECT 1 FROM execution_worker.v5_callback_runs WHERE run_id=%s', (run_id,),
+                    ).fetchone() is not None:
+                        raise ValueError
                 inserted = connection.execute(
                     "insert into execution_worker.local_runs "
                     "(run_id,job_id,agent_id,metabot_port,callback_token_hash,state,leased_at) "
