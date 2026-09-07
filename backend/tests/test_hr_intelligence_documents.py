@@ -90,6 +90,30 @@ def test_reads_only_hash_verified_indexed_agent_path(tmp_path: Path) -> None:
     assert selected.body.startswith(b"# Company")
 
 
+def test_indexed_agent_path_prefers_lightweight_document_metadata(
+    tmp_path: Path,
+) -> None:
+    _store, record, bundle = _fixture(tmp_path)
+
+    class ProjectedRepository:
+        def bundle(self, bundle_id):
+            raise AssertionError("full analysis bundle must not be loaded for a file")
+
+        def bundle_document_metadata(self, bundle_id):
+            assert bundle_id == record["bundle_id"]
+            return record
+
+    projected = IntelligenceDocumentStore(bundle.parents[1], ProjectedRepository())
+
+    selected = projected.read_indexed_path(
+        record["bundle_id"],
+        "agent/companies/hesai.md",
+        expected_mime="text/markdown",
+    )
+
+    assert selected.body.startswith(b"# Company")
+
+
 def test_rejects_unindexed_or_escaping_agent_path(tmp_path: Path) -> None:
     store, record, _bundle = _fixture(tmp_path)
 

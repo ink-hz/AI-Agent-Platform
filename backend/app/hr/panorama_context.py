@@ -347,6 +347,12 @@ class PanoramaContextProvider:
         self._source = source
         self._markdown_store = markdown_store
 
+    def _current_context_bundle(self) -> Mapping[str, object] | None:
+        projected = getattr(self._source, "current_context_bundle", None)
+        if callable(projected):
+            return projected()
+        return self._source.current_bundle()
+
     @staticmethod
     def _companies(
         record: Mapping[str, object], query: str
@@ -858,7 +864,7 @@ class PanoramaContextProvider:
             return PanoramaContextFragment.from_prompt_document(
                 existing.get("context_document")
             )
-        record = self._source.current_bundle()
+        record = self._current_context_bundle()
         if record is None:
             return PanoramaContextFragment(
                 None,
@@ -928,7 +934,7 @@ class PanoramaContextProvider:
             return PanoramaContextFragment.from_prompt_document(
                 existing.get("context_document")
             )
-        record = self._source.current_bundle()
+        record = self._current_context_bundle()
         if record is None:
             return None
         _companies, named = self._companies(record, query)
