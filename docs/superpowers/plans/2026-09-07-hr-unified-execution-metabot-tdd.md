@@ -188,6 +188,10 @@ await database.transaction(async tx => {
 
 ## M04：停止核验、重试预算和任务心跳
 
+**实施切片：** M04a 先完成本地注册执行身份、停止证明、占位释放、累计副作用/输出与私有心跳；M04b 再实现已有认证 Relay 路径中的后续证据查询和平台 Turn 级单次重试许可。后到证明不改写 M03 唯一终态；不为此改冻结合同哈希、新建直连云端路径或启用第二份本地预算。实际 PTY JSONL 不能证明工具覆盖完整时保持 unknown/不允许重跑，不能用恢复需求倒逼伪造完整性。
+
+**M04a 本地验收：** MetaBot `dafe139`，412 项回归、编译器/范围内 lint、编译产物原生进程核验通过；完整范围规格/质量独立复审 Approved。真实父进程死亡而子执行器存活、HTTP→PTY 身份落库后才发送输入、真实退出后保持原 Result 并释放的证据见 [M04a 执行记录](../../reviews/2026-09-07-hr-unified-execution-m04a.md)。本地重试接口仍仅拒绝；M04b、云端裁决和生产运行门槛未完成，M04 整项继续保持进行中。旧 Bot 生命周期和模型配置未改变。
+
 **依赖：** M02/M03；P02 reconciling/fencing
 **文件（相对metabot-dev）：** 新增 src/bridge/execution-recovery-ledger.ts、tests/execution-recovery-ledger.test.ts、tests/execution-recovery-process.test.ts；修改 src/bridge/message-bridge.ts、src/bridge/session-corruption-recovery.ts、src/engines/claude/stream-processor.ts、src/engines/claude/persistent-executor.ts；回归 tests/turn-replay-budget.test.ts、tests/persistent-executor-abort.test.ts、tests/message-bridge-session-corruption.test.ts。
 **接口：** RecoveryLedger.recordEffect(turnId,commandId,effect)；requestReplayPermit(turnId,evidence)->granted|denied；ExecutorStopVerifier.verify(executorIdentity)->stopped|unknown；RunHeartbeat(runId,attemptId,leaseEpoch)。principal归属、启动身份与工具证据持久化。
