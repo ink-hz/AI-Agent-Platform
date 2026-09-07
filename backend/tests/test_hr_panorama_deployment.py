@@ -52,6 +52,8 @@ def test_import_script_uses_exact_data_disk_staging_and_cleanup_trap() -> None:
     assert "python -m app.hr.intelligence_import" in script
     assert '--expected-bundle-id "$bundle_id" </dev/null' in script
     assert '/usr/bin/chown -R 10001:10001 -- "$staging"' in script
+    assert 'release="$(/usr/bin/readlink -f "$release_link")"' in script
+    assert '"$release" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$' in script
     assert script.index("sha256sum -c checksums.sha256") < script.index(
         '/usr/bin/chown -R 10001:10001 -- "$staging"'
     ) < script.index('mv "$staging" "$final"')
