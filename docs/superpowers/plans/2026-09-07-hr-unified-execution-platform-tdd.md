@@ -115,7 +115,9 @@ create/claim/finalize为短事务，不在锁内HTTP。新迁移包含FK、live�
 
 **实施切片：** 先做 P03a 固定 Turn 受理来源、原子 Attempt 受理、旧领取/写入/投影隔离和续租；再接同一权威下的加密命令/序号绑定、认证派发及调度。M04b 真实认证恢复依赖该归属绑定，不另建恢复派发器。来源字段固定后，旧在途 legacy Mission 不因当前会话改路由而被阻断。
 
-**P03a 本地验收：** `df57888`，155 项相关回归通过；控制器扩展网页/V2 接口后 187 项通过，编译和新增范围 Ruff 通过；完整范围规格/质量独立复审 Approved。详见 [P03a 执行记录](../../reviews/2026-09-07-hr-unified-execution-p03a.md)，其中明确保留 64 条既有 API cookie 弃用告警及 16 条既有 Ruff 诊断，不冒称全局无告警。后续多行事务采用实际受理兼容的 Conversation→Turn→Attempt 顺序；取消服务、能力握手、真实派发/序号、P04 与进程验收仍未完成，P03 整项继续进行中。
+**P03a 本地验收：** `df57888`，155 项相关回归通过；控制器扩展网页/V2 接口后 187 项通过，编译和新增范围 Ruff 通过；完整范围规格/质量独立复审 Approved。详见 [P03a 执行记录](../../reviews/2026-09-07-hr-unified-execution-p03a.md)，其中明确保留 64 条既有 API cookie 弃用告警及 16 条既有 Ruff 诊断，不冒称全局无告警。后续多行事务采用实际受理兼容的 Conversation→Turn→Attempt 顺序；后续绑定进展见 P03b1，P03 整项继续进行中。
+
+**P03b1 本地验收：** Platform `55dcfbf`、MetaBot `8cb4252`，加密冻结命令、Attempt/命令/序号元数据、旧 Relay 写路径隔离及真实启动代次接收回执已完成。主控固定提交扩展验证 731/286 项通过，独立规格/质量复审 Approved；保留既有警告，详见 [P03b1 执行记录](../../reviews/2026-09-07-hr-unified-execution-p03b1.md)。P01 哈希资产不变，未增加新的执行状态权威。绑定锁顺序进一步固定为 Conversation→Turn→Attempt→binding→job，并在最后加锁后复核数据库租约。当前仅文字/工具策略绑定入口；真实上下文/任务/附件、能力先于领取、稳定回调凭据、认证派发、取消调度、P04/M04b 和进程验收仍需后续完成，不能启用新流量。
 
 **依赖：** P02；实际派发需M02/M03能力握手
 **文件（相对Platform仓库根）：** 新增 backend/app/agent_brain/direct_worker.py、direct_mission_adapter.py；修改 backend/app/main.py、agent_brain/repository.py、conversation_service.py、conversation_projection.py；新增 backend/tests/test_hr_direct_worker.py、test_hr_direct_worker_process.py；回归 test_agent_brain_conversation_summary.py、test_hr_task_result_projection_database.py、test_hr_candidate_analysis_artifact_migration.py、test_hr_position_package_database.py。
