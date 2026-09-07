@@ -117,32 +117,45 @@ class DirectCommandBindingRepository:
         from app.execution_relay.frozen_command_v5 import hydrate_frozen_command
 
         with self.relay._connection() as connection:
-            candidates = connection.execute(
-                "select a.attempt_id from platform_control.direct_command_bindings b "
-                "join platform_control.turn_attempts a using(attempt_id) "
-                "join platform_control.execution_jobs j using(job_id) "
-                "where b.transport_worker_id=%s and b.retired_unsent_at is null "
-                "and a.status in ('running','reconciling') and a.cancel_requested_at is null "
-                "and a.lease_expires_at>clock_timestamp() order by j.updated_at,a.attempt_id",
-                (worker_id,),
-            ).fetchall()
+            # Finish discovery before opening candidate transactions. An implicit
+            # SELECT transaction here would turn those transactions into savepoints.
+            with connection.transaction():
+                candidates = connection.execute(
+                    "select a.attempt_id from platform_control.direct_command_bindings b "
+                    "join platform_control.turn_attempts a using(attempt_id) "
+                    "join platform_control.execution_jobs j using(job_id) "
+                    "where b.transport_worker_id=%s and b.retired_unsent_at is null "
+                    "and a.status in ('running','reconciling') and a.cancel_requested_at is null "
+                    "and a.lease_expires_at>clock_timestamp() order by j.updated_at,a.attempt_id limit 16",
+                    (worker_id,),
+                ).fetchall()
             for candidate in candidates:
                 try:
                     with connection.transaction():
-                        lease, row, transport = self._authorized(
-                            connection, worker_id, candidate["attempt_id"]
+                        try:
+                            lease, row, transport = self._authorized(
+                                connection, worker_id, candidate["attempt_id"]
+                            )
+                        except (BindingRejected, LeaseRejected):
+                            lease = None
+                        # Rotate every inspected candidate, including a stale or
+                        # ACKed instruction. This only changes v5 poll recency;
+                        # no dispatch/lease/business authority follows a rejection.
+                        connection.execute(
+                            "update platform_control.execution_jobs j set updated_at=clock_timestamp() "
+                            "where j.job_kind='worker_direct_v5' and j.status='queued' and exists ("
+                            "select 1 from platform_control.direct_command_bindings b "
+                            "where b.job_id=j.job_id and b.attempt_id=%s "
+                            "and b.transport_worker_id=%s and b.retired_unsent_at is null)",
+                            (candidate["attempt_id"], worker_id),
                         )
+                        if lease is None:
+                            continue
                         if transport["acknowledgedEpoch"] == lease.lease_epoch:
                             continue
                         binding = self._decode(row)
                         if not self.mark_offered(lease, connection=connection):
                             continue
-                        # Reuse the job's transport timestamp for fair pending polls.
-                        # Its status/legacy lease fields remain untouched.
-                        connection.execute(
-                            "update platform_control.execution_jobs set updated_at=clock_timestamp() where job_id=%s",
-                            (binding.job_id,),
-                        )
                         command = hydrate_frozen_command(
                             binding.frozen,
                             lease_epoch=lease.lease_epoch,

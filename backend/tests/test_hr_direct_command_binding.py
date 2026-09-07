@@ -377,6 +377,203 @@ def test_pending_handoff_does_not_starve_another_authorized_run(
     }
 
 
+def test_skipped_acknowledged_candidate_releases_locks_before_next_candidate(
+    bindings,
+    prepared,
+    attempt_repository,
+    transport_worker,
+    direct_database,
+    repository,
+    monkeypatch,
+):
+    lease_a, binding_a = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease_a, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    command = parse_v5_command(bindings.handoff(transport_worker)["command"])
+    bindings.acknowledge_transport(
+        transport_worker, binding_a.run_id, response(command)
+    )
+    environment, owner_id, _ = direct_database
+    conversation = repository.ensure_direct_conversation_shell(
+        owner_id, uuid4(), direct_agent_id="hr-bot", title="synthetic independent locks"
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.conversations set execution_owner='worker_direct',route_epoch=7 where conversation_id=%s",
+            (conversation.conversation_id,),
+        )
+    turn = repository.append_turn(
+        owner_id, conversation.conversation_id, uuid4(), "synthetic blocked transport"
+    )
+    lease_b = attempt_repository.claim_due(uuid4(), 60)
+    with attempt_repository.transaction() as connection:
+        binding_b = bindings.prepare(lease_b, frozen_input(turn), connection=connection)
+        bindings.authorize_transport(
+            lease_b, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    reached_b, renewed = Event(), Event()
+    poll_pid, renew_pid = [], []
+    original = bindings._lock
+
+    def capture(lease, connection):
+        if lease.attempt_id == lease_b.attempt_id:
+            poll_pid.append(connection.info.backend_pid)
+            reached_b.set()
+        return original(lease, connection)
+
+    monkeypatch.setattr(bindings, "_lock", capture)
+
+    def renew_a():
+        with attempt_repository.transaction() as connection:
+            renew_pid.append(connection.info.backend_pid)
+            attempt_repository.renew(lease_a, 60, connection=connection)
+        renewed.set()
+
+    with psycopg.connect(environment["admin"]) as blocker:
+        blocker.execute(
+            "select job_id from platform_control.execution_jobs where job_id=%s for update",
+            (binding_b.job_id,),
+        )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            poll = pool.submit(bindings.handoff, transport_worker)
+            assert reached_b.wait(3)
+            try:
+                deadline = monotonic() + 3
+                blocked = False
+                while monotonic() < deadline:
+                    blocked = blocker.execute(
+                        "select %s=any(pg_blocking_pids(%s))",
+                        (blocker.info.backend_pid, poll_pid[0]),
+                    ).fetchone()[0]
+                    if blocked:
+                        break
+                    sleep(0.01)
+                assert blocked, "poll must actually wait on candidate B's job lock"
+                renewal = pool.submit(renew_a)
+                completed_while_b_blocked = renewed.wait(1)
+                if not completed_while_b_blocked:
+                    assert blocker.execute(
+                        "select %s=any(pg_blocking_pids(%s))",
+                        (poll_pid[0], renew_pid[0]),
+                    ).fetchone()[0]
+                assert completed_while_b_blocked, (
+                    "ACKed candidate A must release its locks before blocked candidate B"
+                )
+            finally:
+                blocker.commit()
+            renewal.result(3)
+            assert poll.result(3)["command"]["runId"] == str(binding_b.run_id)
+
+
+@pytest.mark.parametrize("prefix_kind", ["acknowledged", "stale_authorization"])
+def test_sql_discovery_is_bounded_and_advances_beyond_skipped_prefix(
+    bindings,
+    prepared,
+    attempt_repository,
+    transport_worker,
+    direct_database,
+    repository,
+    monkeypatch,
+    prefix_kind,
+):
+    environment, owner_id, _ = direct_database
+    for index in range(17):
+        if index == 0:
+            lease, binding = prepared
+        else:
+            conversation = repository.ensure_direct_conversation_shell(
+                owner_id,
+                uuid4(),
+                direct_agent_id="hr-bot",
+                title="synthetic bounded discovery",
+            )
+            with psycopg.connect(environment["admin"]) as connection:
+                connection.execute(
+                    "update platform_control.conversations set execution_owner='worker_direct',route_epoch=7 where conversation_id=%s",
+                    (conversation.conversation_id,),
+                )
+            turn = repository.append_turn(
+                owner_id,
+                conversation.conversation_id,
+                uuid4(),
+                "synthetic bounded input",
+            )
+            lease = attempt_repository.claim_due(uuid4(), 60)
+            with attempt_repository.transaction() as connection:
+                binding = bindings.prepare(
+                    lease, frozen_input(turn), connection=connection
+                )
+        with attempt_repository.transaction() as connection:
+            transport = bindings.authorize_transport(
+                lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+            )
+            if index < 16 and prefix_kind == "acknowledged":
+                assert bindings.mark_offered(lease, connection=connection)
+        if index < 16 and prefix_kind == "acknowledged":
+            command = hydrate_frozen_command(
+                binding.frozen,
+                lease_epoch=lease.lease_epoch,
+                event_callback_url=f"http://127.0.0.1:19191/callbacks/{binding.run_id}/{transport['callbackToken']}",
+                input_attachment_grants=[],
+                output_write_grant=None,
+            )
+            assert bindings.acknowledge_transport(
+                transport_worker, binding.run_id, response(command)
+            )
+        elif index < 16:
+            with psycopg.connect(environment["admin"]) as connection:
+                connection.execute(
+                    "update platform_control.turn_attempts set lease_expires_at=clock_timestamp()-interval '1 second' where attempt_id=%s",
+                    (lease.attempt_id,),
+                )
+            current = attempt_repository.claim_due(uuid4(), 60)
+            assert current.attempt_id == lease.attempt_id and current.lease_epoch == 2
+    tail = binding
+    discoveries, processed = [], []
+
+    class ObservedCursor(psycopg.Cursor):
+        def execute(self, query, params=None, **kwargs):
+            self.discovery = isinstance(query, str) and query.startswith(
+                "select a.attempt_id from platform_control.direct_command_bindings b "
+            )
+            return super().execute(query, params, **kwargs)
+
+        def fetchall(self):
+            rows = super().fetchall()
+            if self.discovery:
+                discoveries.append(len(rows))
+            return rows
+
+    original_connect, original_authorized = (
+        bindings.relay._connect,
+        bindings._authorized,
+    )
+
+    def connect(*args, **kwargs):
+        return original_connect(*args, **kwargs, cursor_factory=ObservedCursor)
+
+    def authorize(connection, worker_id, attempt_id):
+        processed.append(attempt_id)
+        return original_authorized(connection, worker_id, attempt_id)
+
+    monkeypatch.setattr(bindings.relay, "_connect", connect)
+    monkeypatch.setattr(bindings, "_authorized", authorize)
+    first = bindings.handoff(transport_worker)
+    assert discoveries == [16], (
+        "SQL itself must return at most16 candidates, not fetchall then slice"
+    )
+    assert len(processed) == 16 and first is None
+    processed.clear()
+    second = bindings.handoff(transport_worker)
+    assert second is not None, (
+        "a skipped prefix must rotate out before the next bounded poll"
+    )
+    assert second["command"]["runId"] == str(tail.run_id)
+    assert discoveries == [16, 16] and len(processed) <= 16
+
+
 def test_concurrent_cloud_ack_keeps_valid_idempotent_receipt(
     bindings, prepared, attempt_repository, transport_worker, monkeypatch
 ):
