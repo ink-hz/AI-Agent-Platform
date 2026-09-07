@@ -86,8 +86,9 @@ REMOTE
   "$remote_environment" "$PLATFORM_HR_PANORAMA_OWNER_ID" <<'REMOTE'
 set -euo pipefail
 staging="$1"; final="$2"; bundle_id="$3"; release_link="$4"; environment="$5"; owner_id="$6"
+bundle_root=/data/orbbec-agent-platform/hr-intelligence/bundles
 [[ "$staging" =~ ^/data/staging/orbbec-agent-platform/hr-intelligence-[0-9a-f]{32}$ ]] || exit 1
-[[ "$final" == "/data/orbbec-agent-platform/hr-intelligence/bundles/$bundle_id" ]] || exit 1
+[[ "$final" == "$bundle_root/$bundle_id" ]] || exit 1
 [[ "$release_link" == "/opt/orbbec-agent-platform/current" && -L "$release_link" ]] || exit 1
 release="$(/usr/bin/readlink -f "$release_link")"
 [[ "$release" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ && -d "$release" && ! -L "$release" ]] || exit 1
@@ -95,6 +96,7 @@ release="$(/usr/bin/readlink -f "$release_link")"
 [[ -f "$environment" && ! -L "$environment" ]] || exit 1
 (cd "$staging" && /usr/bin/sha256sum -c checksums.sha256)
 /usr/bin/chown -R 10001:10001 -- "$staging"
+/usr/bin/install -d -o 10001 -g 10001 -m 0750 "$bundle_root"
 installed=0
 rollback_file() {
   status=$?
@@ -112,7 +114,6 @@ if [[ -e "$final" || -L "$final" ]]; then
   find "$staging" -depth -mindepth 1 -delete
   rmdir "$staging"
 else
-  install -d -m 0750 "$(dirname "$final")"
   mv "$staging" "$final"
   installed=1
 fi
