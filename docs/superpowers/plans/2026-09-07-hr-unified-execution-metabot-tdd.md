@@ -146,6 +146,8 @@ return store.insertCommandAndExecutionIntent(command);
 
 **M03a 本地验收：** MetaBot `672cc9f`、Platform `2592327` / `40ed7a9`；266 项 MetaBot 与 168 项 Platform 回归、编译器/lint 通过，真实自有子进程 COMMIT 前后 SIGKILL 验证通过，完整范围规格/质量独立复审 Approved。见 [M03a 执行记录](../../reviews/2026-09-07-hr-unified-execution-m03a.md)。三条日期入口的正向格式校验同时修正此前 expiry 黑名单未覆盖的数值别名；冻结 schema 不变。M03b/c 和 M04 的接收/恢复投递/观测/停止核验继续实施，不声明整个 M03 或业务完成。
 
+**M03b 本地验收：** MetaBot `5ac4d0b` / `8260853`、Platform `f0884b0` / `4499eab`；285 项 MetaBot 与 323 项 Platform 回归、编译器/范围内 lint 通过，完整范围规格/质量独立复审 Approved。真实接收器验证提交后丢 ACK、正文中途断线、PG 回滚与重传，保持原唯一终态；详见 [M03b 执行记录](../../reviews/2026-09-07-hr-unified-execution-m03b.md)。未应用生产迁移或启用路由；M03c 观测重建、M04 停止、M05 附件、P03 派发/投影与 O02/O03 门槛继续，不声明完整 M03 或业务已可用。
+
 **依赖：** M02/P01回调契约
 **文件（相对metabot-dev）：** 新增 src/api/routes/core-chat-event-outbox.ts、tests/core-chat-event-outbox.test.ts、tests/core-chat-event-outbox-process.test.ts；修改 core-chat-routes.ts 与v5 store；平台侧对应P01/P04及execution_relay/worker.py、worker_store.py。
 **接口：** CoreEventOutbox.append(commandId,event)->PersistedEvent；commitTerminal(commandId,outcome)->PersistedEvent；flushRun(runId,send)->Promise<Cursor>；send返回P01 CallbackAckV5。append/commitTerminal与command状态同一事务；终态后拒绝新业务终态。
