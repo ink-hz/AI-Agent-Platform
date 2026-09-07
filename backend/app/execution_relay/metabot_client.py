@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import stat
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
 from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
 
-from .models import RelayJobPayload
-
+from .models import CollaborationContract, RelayJobPayload
 
 _APPROVED_AGENT_IDS = frozenset(
     {
@@ -30,6 +29,9 @@ _APPROVED_AGENT_IDS = frozenset(
 _CONFIGURATION_INVALID = "metabot configuration invalid"
 _REQUEST_FAILED = "metabot request failed"
 _OWNER_FILE_LIMIT = 16_384
+_OUTBOUND_COLLABORATION_CONTRACTS: frozenset[CollaborationContract] = frozenset(
+    {"core_chat_collaboration_v3", "core_chat_collaboration_v4"}
+)
 _BRAIN_IDENTITY = {
     "name": "agent-brain-bot",
     "platform": "web",
@@ -260,6 +262,11 @@ class MetaBotClient:
                 not isinstance(payload, RelayJobPayload)
                 or not isinstance(event_callback_url, str)
                 or not self._callback_is_loopback(event_callback_url)
+                or (
+                    payload.collaboration_contract is not None
+                    and payload.collaboration_contract
+                    not in _OUTBOUND_COLLABORATION_CONTRACTS
+                )
             ):
                 raise ValueError
             port = self._runtime_map.port_for(payload.agent_id)

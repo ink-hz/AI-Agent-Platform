@@ -1,0 +1,435 @@
+{
+  "fixtureVersion": 1,
+  "requestIdVectors": [
+    {
+      "identity": {"tenantId": "t", "appId": "app", "botId": "hr-bot", "messageId": "om_123"},
+      "requestId": "678b10d4-f624-56e5-8282-9491551290a4"
+    },
+    {
+      "identity": {"tenantId": "租户", "appId": "app", "botId": "hr-bot", "messageId": "om_中文"},
+      "requestId": "f538a985-3e0c-5f3a-8487-7fbe53000d51"
+    },
+    {
+      "identity": {"tenantId": "a|b", "appId": "c", "botId": "hr-bot", "messageId": "om_123"},
+      "requestId": "53534b22-2e73-54a2-be22-33916a884172"
+    },
+    {
+      "identity": {"tenantId": "a", "appId": "b|c", "botId": "hr-bot", "messageId": "om_123"},
+      "requestId": "88eac4ac-d307-5bdc-ac56-68357ee3adb0"
+    }
+  ],
+  "commandHashRules": {
+    "algorithm": "sha256",
+    "encoding": "utf-8-json-sort-keys-no-space",
+    "includedTopLevel": [
+      "contractVersion", "runId", "commandId", "attemptId", "attemptNo", "turnId",
+      "turnSeq", "commandSeq", "conversationId", "triggerMessageId", "principalRef",
+      "targetBot", "prompt", "contextMode", "contextHash", "taskSessionId",
+      "resultMode", "permissionScope", "retryOf"
+    ],
+    "attachmentProjection": [
+      "index", "attachmentId", "displayName", "detectedMime", "sizeBytes", "sha256"
+    ],
+    "outputProjection": ["taskId", "agentId", "maxFiles", "maxTotalBytes"],
+    "excluded": [
+      "commandHash", "leaseEpoch", "eventCallbackUrl", "downloadUrl", "uploadUrl",
+      "bearerToken", "expiresAt"
+    ]
+  },
+  "intakeReplayCases": [
+    {
+      "existingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
+      "existingContentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "incomingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
+      "incomingContentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "expectedStatus": "duplicate"
+    },
+    {
+      "existingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
+      "existingContentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "incomingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
+      "incomingContentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "expectedStatus": "conflict"
+    },
+    {
+      "existingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
+      "existingContentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "incomingRequestId": "f538a985-3e0c-5f3a-8487-7fbe53000d51",
+      "incomingContentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "expectedStatus": "accepted"
+    }
+  ],
+  "command": {
+    "valid": {
+      "contractVersion": "core_chat_collaboration_v5",
+      "runId": "00000000-0000-4000-8000-000000000501",
+      "commandId": "00000000-0000-4000-8000-000000000502",
+      "attemptId": "00000000-0000-4000-8000-000000000503",
+      "attemptNo": 1,
+      "leaseEpoch": 1,
+      "turnId": "00000000-0000-4000-8000-000000000504",
+      "turnSeq": 7,
+      "commandSeq": 3,
+      "conversationId": "00000000-0000-4000-8000-000000000505",
+      "triggerMessageId": "00000000-0000-4000-8000-000000000506",
+      "principalRef": "principal:hr-user-001",
+      "targetBot": "hr-bot",
+      "prompt": "根据冻结上下文评估候选人。",
+      "contextMode": "frozen_prompt",
+      "contextHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "commandHash": "3ff15a1f835a674267c5ad20c3fe6a6d26139edd9233906742b4cd3e0d9424e9",
+      "eventCallbackUrl": "http://127.0.0.1:9120/callbacks/00000000-0000-4000-8000-000000000501/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "taskSessionId": "platform:00000000-0000-4000-8000-000000000505:hr-bot",
+      "resultMode": "public_markdown",
+      "permissionScope": {
+        "principalRef": "principal:hr-user-001",
+        "conversationId": "00000000-0000-4000-8000-000000000505",
+        "agentId": "hr-bot",
+        "toolPolicy": "default"
+      },
+      "inputAttachmentGrants": [
+        {
+          "attachmentId": "00000000-0000-4000-8000-000000000507",
+          "displayName": "candidate.pdf",
+          "detectedMime": "application/pdf",
+          "sizeBytes": 1024,
+          "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "downloadUrl": "/api/v1/execution-worker/attachments/00000000-0000-4000-8000-000000000507/content",
+          "bearerToken": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          "expiresAt": "2026-09-07T08:15:00Z"
+        },
+        {
+          "attachmentId": "00000000-0000-4000-8000-000000000508",
+          "displayName": "job-description.pdf",
+          "detectedMime": "application/pdf",
+          "sizeBytes": 2048,
+          "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "downloadUrl": "/api/v1/execution-worker/attachments/00000000-0000-4000-8000-000000000508/content",
+          "bearerToken": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+          "expiresAt": "2026-09-07T08:15:00Z"
+        }
+      ],
+      "outputWriteGrant": {
+        "taskId": "00000000-0000-4000-8000-000000000501",
+        "agentId": "hr-bot",
+        "uploadUrl": "/api/v1/execution-worker/tasks/00000000-0000-4000-8000-000000000501/artifacts",
+        "bearerToken": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+        "maxFiles": 8,
+        "maxTotalBytes": 52428800
+      },
+      "retryOf": null
+    },
+    "invalidMutations": [
+      {"reason": "unknown_version", "schemaRejects": true, "path": ["contractVersion"], "value": "core_chat_collaboration_v6"},
+      {"reason": "non_loopback_callback", "schemaRejects": true, "path": ["eventCallbackUrl"], "value": "http://192.0.2.10:9120/callbacks/00000000-0000-4000-8000-000000000501/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+      {"reason": "callback_query", "schemaRejects": true, "path": ["eventCallbackUrl"], "value": "http://127.0.0.1:9120/callbacks/00000000-0000-4000-8000-000000000501/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA?token=x"},
+      {"reason": "callback_userinfo", "schemaRejects": true, "path": ["eventCallbackUrl"], "value": "http://user:pass@127.0.0.1:9120/callbacks/00000000-0000-4000-8000-000000000501/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+      {"reason": "session_mismatch", "schemaRejects": false, "path": ["taskSessionId"], "value": "platform:other:hr-bot"},
+      {"reason": "scope_mismatch", "schemaRejects": false, "path": ["permissionScope", "principalRef"], "value": "principal:other-user"},
+      {"reason": "unsafe_integer", "schemaRejects": true, "path": ["commandSeq"], "value": 9007199254740992},
+      {"reason": "hash_mismatch", "schemaRejects": false, "path": ["commandHash"], "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
+    ]
+  },
+  "callback": {
+    "validEvents": [
+      {
+        "contractVersion": "core_chat_collaboration_v5",
+        "runId": "00000000-0000-4000-8000-000000000501",
+        "commandId": "00000000-0000-4000-8000-000000000502",
+        "attemptId": "00000000-0000-4000-8000-000000000503",
+        "leaseEpoch": 1,
+        "seq": 1,
+        "type": "run_heartbeat",
+        "createdAt": "2026-09-07T08:00:00Z",
+        "payload": {
+          "source": "executor",
+          "executorRef": "executor:worker-0001",
+          "observedAt": "2026-09-07T08:01:00Z",
+          "visibility": "private"
+        }
+      },
+      {
+        "contractVersion": "core_chat_collaboration_v5",
+        "runId": "00000000-0000-4000-8000-000000000501",
+        "commandId": "00000000-0000-4000-8000-000000000502",
+        "attemptId": "00000000-0000-4000-8000-000000000503",
+        "leaseEpoch": 1,
+        "seq": 12,
+        "type": "result",
+        "createdAt": "2026-09-07T08:00:00Z",
+        "payload": {
+          "source": "agent_runtime",
+          "sourceRef": "run:00000000-0000-4000-8000-000000000501",
+          "terminal": "completed",
+          "publicAnswerMarkdown": "候选人满足岗位的核心要求。",
+          "artifactIntents": [
+            {
+              "taskId": "00000000-0000-4000-8000-000000000501",
+              "principalRef": "principal:hr-user-001",
+              "conversationId": "00000000-0000-4000-8000-000000000505",
+              "index": 0,
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "mimeType": "application/pdf",
+              "sizeBytes": 4096,
+              "displayName": "候选人评估.pdf",
+              "opaqueSpoolRef": "spool:result-0001"
+            }
+          ],
+          "executionRecovery": {
+            "evidenceComplete": true,
+            "toolEffect": "read_only",
+            "hasOutput": true,
+            "executorStopped": true,
+            "executorStopProofRef": "executor-stop:worker-0001",
+            "replayUsed": false
+          }
+        }
+      },
+      {
+        "contractVersion": "core_chat_collaboration_v5",
+        "runId": "00000000-0000-4000-8000-000000000501",
+        "commandId": "00000000-0000-4000-8000-000000000502",
+        "attemptId": "00000000-0000-4000-8000-000000000503",
+        "leaseEpoch": 1,
+        "seq": 13,
+        "type": "error",
+        "createdAt": "2026-09-07T08:02:00Z",
+        "payload": {
+          "source": "agent_runtime",
+          "sourceRef": "run:00000000-0000-4000-8000-000000000501",
+          "terminal": "failed",
+          "errorCode": "provider_failed",
+          "message": "模型执行失败。"
+        }
+      },
+      {
+        "contractVersion": "core_chat_collaboration_v5",
+        "runId": "00000000-0000-4000-8000-000000000501",
+        "commandId": "00000000-0000-4000-8000-000000000502",
+        "attemptId": "00000000-0000-4000-8000-000000000503",
+        "leaseEpoch": 1,
+        "seq": 14,
+        "type": "cancelled",
+        "createdAt": "2026-09-07T08:03:00Z",
+        "payload": {
+          "source": "agent_runtime",
+          "sourceRef": "run:00000000-0000-4000-8000-000000000501",
+          "terminal": "cancelled",
+          "reasonCode": "user_requested"
+        }
+      },
+      {
+        "contractVersion": "core_chat_collaboration_v5",
+        "runId": "00000000-0000-4000-8000-000000000501",
+        "commandId": "00000000-0000-4000-8000-000000000502",
+        "attemptId": "00000000-0000-4000-8000-000000000503",
+        "leaseEpoch": 1,
+        "seq": 15,
+        "type": "interrupted",
+        "createdAt": "2026-09-07T08:04:00Z",
+        "payload": {
+          "source": "agent_runtime",
+          "sourceRef": "run:00000000-0000-4000-8000-000000000501",
+          "terminal": "interrupted",
+          "reasonCode": "executor_stopped",
+          "executionRecovery": {
+            "evidenceComplete": true,
+            "toolEffect": "read_only",
+            "hasOutput": true,
+            "executorStopped": true,
+            "executorStopProofRef": "executor-stop:worker-0001",
+            "replayUsed": false
+          }
+        }
+      },
+      {
+        "contractVersion": "core_chat_collaboration_v5",
+        "runId": "00000000-0000-4000-8000-000000000501",
+        "commandId": "00000000-0000-4000-8000-000000000502",
+        "attemptId": "00000000-0000-4000-8000-000000000503",
+        "leaseEpoch": 1,
+        "seq": 2,
+        "type": "raw_progress",
+        "createdAt": "2026-09-07T08:00:30Z",
+        "payload": {
+          "source": "agent_sdk",
+          "sourceRef": "sdk-event:42",
+          "visibility": "private",
+          "kind": "work_update",
+          "text": "正在核对候选人材料。"
+        }
+      }
+    ],
+    "validAcks": [
+      {"status": "accepted", "runId": "00000000-0000-4000-8000-000000000501", "acceptedThrough": 12, "expectedSeq": 13},
+      {"status": "duplicate", "runId": "00000000-0000-4000-8000-000000000501", "acceptedThrough": 12, "expectedSeq": 13},
+      {"status": "gap", "runId": "00000000-0000-4000-8000-000000000501", "acceptedThrough": 10, "expectedSeq": 11},
+      {"status": "conflict", "runId": "00000000-0000-4000-8000-000000000501", "acceptedThrough": 10, "expectedSeq": 11}
+    ],
+    "invalidEventMutations": [
+      {"reason": "unknown_version", "schemaRejects": true, "baseIndex": 1, "path": ["contractVersion"], "value": "core_chat_collaboration_v6"},
+      {"reason": "empty_result", "schemaRejects": true, "baseIndex": 1, "path": ["payload", "publicAnswerMarkdown"], "value": ""},
+      {"reason": "unsafe_sequence", "schemaRejects": true, "baseIndex": 1, "path": ["seq"], "value": 9007199254740992},
+      {"reason": "type_payload_mismatch", "schemaRejects": false, "baseIndex": 2, "path": ["type"], "value": "result"}
+    ],
+    "invalidAckMutations": [
+      {"reason": "cursor_gap", "schemaRejects": false, "baseIndex": 0, "path": ["expectedSeq"], "value": 14}
+    ]
+  },
+  "snapshot": {
+    "valid": [
+      {
+        "read_version": 0,
+        "event_cursor": 0,
+        "turn": null,
+        "attempt": null,
+        "outcome": null,
+        "answer": null,
+        "result_enrichment": {"status": "none", "pending_count": 0, "failed_count": 0},
+        "deliveries": [],
+        "context_manifest_ref": null
+      },
+      {
+        "read_version": 8,
+        "event_cursor": 21,
+        "turn": {"turn_id": "00000000-0000-4000-8000-000000000504", "turn_seq": 7, "status": "completed"},
+        "attempt": {"attempt_id": "00000000-0000-4000-8000-000000000503", "attempt_no": 1, "lease_epoch": 1, "status": "completed", "reason_code": null},
+        "outcome": {"terminal": true, "kind": "completed", "reason_code": null},
+        "answer": {"message_id": "00000000-0000-4000-8000-000000000510", "role": "assistant", "content": "候选人满足岗位要求。", "completed_at": "2026-09-07T08:05:00Z"},
+        "result_enrichment": {"status": "pending", "pending_count": 1, "failed_count": 0},
+        "deliveries": [{"channel": "feishu", "status": "pending", "receipt_ref": null}],
+        "context_manifest_ref": "context-manifest:00000000-0000-4000-8000-000000000504"
+      },
+      {
+        "read_version": 9,
+        "event_cursor": 22,
+        "turn": {"turn_id": "00000000-0000-4000-8000-000000000511", "turn_seq": 8, "status": "failed"},
+        "attempt": {"attempt_id": "00000000-0000-4000-8000-000000000512", "attempt_no": 1, "lease_epoch": 2, "status": "failed", "reason_code": "provider_failed"},
+        "outcome": {"terminal": true, "kind": "failed", "reason_code": "provider_failed"},
+        "answer": null,
+        "result_enrichment": {"status": "none", "pending_count": 0, "failed_count": 0},
+        "deliveries": [{"channel": "feishu", "status": "failed", "receipt_ref": "receipt:failed-001"}],
+        "context_manifest_ref": "context-manifest:00000000-0000-4000-8000-000000000511"
+      }
+    ],
+    "invalid": [
+      {"reason": "completed_requires_outcome", "baseIndex": 1, "path": ["outcome"], "value": null},
+      {"reason": "completed_requires_answer", "baseIndex": 1, "path": ["answer"], "value": null},
+      {"reason": "attempt_status_must_match", "baseIndex": 1, "path": ["attempt", "status"], "value": "running"},
+      {"reason": "idle_has_no_outcome", "baseIndex": 0, "path": ["outcome"], "value": {"terminal": true, "kind": "completed", "reason_code": null}},
+      {"reason": "terminal_kind_must_match", "baseIndex": 2, "path": ["outcome", "kind"], "value": "cancelled"}
+    ]
+  },
+  "channelBridge": {
+    "validRequests": [
+      {
+        "operation": "resolve-channel",
+        "requestId": "678b10d4-f624-56e5-8282-9491551290a4",
+        "identity": {"tenantId": "t", "appId": "app", "botId": "hr-bot", "messageId": "om_123"},
+        "senderIdentity": {"openId": "ou_hr_user_001", "unionId": "on_hr_user_001"},
+        "chatId": "oc_chat_001",
+        "threadKey": "",
+        "identityOperation": {"kind": "consume-binding-code", "bindingCode": "TEST-0001"}
+      },
+      {
+        "operation": "turn-intake",
+        "requestId": "678b10d4-f624-56e5-8282-9491551290a4",
+        "identity": {"tenantId": "t", "appId": "app", "botId": "hr-bot", "messageId": "om_123"},
+        "senderIdentity": {"openId": "ou_hr_user_001", "unionId": "on_hr_user_001"},
+        "chatId": "oc_chat_001",
+        "threadKey": "",
+        "conversationId": "00000000-0000-4000-8000-000000000505",
+        "principalRef": "principal:hr-user-001",
+        "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "text": "请评估候选人。",
+        "attachments": [{"attachmentId": "00000000-0000-4000-8000-000000000507", "index": 0, "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}]
+      },
+      {
+        "operation": "attachment-create",
+        "requestId": "00000000-0000-4000-8000-000000000601",
+        "uploadId": "00000000-0000-4000-8000-000000000602",
+        "conversationId": "00000000-0000-4000-8000-000000000505",
+        "attachmentId": "00000000-0000-4000-8000-000000000507",
+        "index": 0,
+        "displayName": "candidate.pdf",
+        "mimeType": "application/pdf",
+        "sizeBytes": 1024,
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "operation": "attachment-chunk",
+        "requestId": "00000000-0000-4000-8000-000000000603",
+        "uploadId": "00000000-0000-4000-8000-000000000602",
+        "offset": 0,
+        "sizeBytes": 1024,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+        "operation": "attachment-complete",
+        "requestId": "00000000-0000-4000-8000-000000000604",
+        "uploadId": "00000000-0000-4000-8000-000000000602",
+        "sizeBytes": 1024,
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "operation": "delivery-receipts",
+        "requestId": "00000000-0000-4000-8000-000000000605",
+        "receipts": [
+          {
+            "operationId": "00000000-0000-4000-8000-000000000606",
+            "deliveryId": "00000000-0000-4000-8000-000000000607",
+            "turnId": "00000000-0000-4000-8000-000000000504",
+            "contentHash": "3333333333333333333333333333333333333333333333333333333333333333",
+            "routeEpoch": 1,
+            "status": "delivered",
+            "messageId": "om_delivery_001",
+            "receiptRef": "receipt:feishu-001",
+            "reasonCode": null
+          }
+        ]
+      }
+    ],
+    "validResponses": [
+      {"status": "accepted", "requestId": "678b10d4-f624-56e5-8282-9491551290a4", "conversationId": "00000000-0000-4000-8000-000000000505", "turnId": "00000000-0000-4000-8000-000000000504"},
+      {"status": "duplicate", "requestId": "678b10d4-f624-56e5-8282-9491551290a4", "turnId": "00000000-0000-4000-8000-000000000504"},
+      {"status": "deferred", "requestId": "00000000-0000-4000-8000-000000000608", "blockingTurnId": "00000000-0000-4000-8000-000000000504", "retryAfterSeconds": 5},
+      {"status": "conflict", "requestId": "678b10d4-f624-56e5-8282-9491551290a4", "reasonCode": "idempotency_conflict"},
+      {"status": "bound", "requestId": "678b10d4-f624-56e5-8282-9491551290a4", "conversationId": "00000000-0000-4000-8000-000000000505", "principalRef": "principal:hr-user-001"},
+      {"status": "binding_required", "requestId": "00000000-0000-4000-8000-000000000609", "bindingChallengeRef": "binding-challenge:test-001", "expiresInSeconds": 600},
+      {"status": "upload_created", "requestId": "00000000-0000-4000-8000-000000000601", "uploadId": "00000000-0000-4000-8000-000000000602", "expectedOffset": 0},
+      {"status": "chunk_accepted", "requestId": "00000000-0000-4000-8000-000000000603", "uploadId": "00000000-0000-4000-8000-000000000602", "acceptedOffset": 0, "expectedOffset": 1024},
+      {"status": "attachment_completed", "requestId": "00000000-0000-4000-8000-000000000604", "uploadId": "00000000-0000-4000-8000-000000000602", "attachmentId": "00000000-0000-4000-8000-000000000507", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+      {"status": "receipts_accepted", "requestId": "00000000-0000-4000-8000-000000000605", "acceptedOperationIds": ["00000000-0000-4000-8000-000000000606"]}
+    ],
+    "invalidMutations": [
+      {"reason": "client_owner_injection", "collection": "validRequests", "baseIndex": 1, "path": ["internalUserId"], "value": "00000000-0000-4000-8000-000000000999"},
+      {"reason": "arbitrary_attachment_url", "collection": "validRequests", "baseIndex": 2, "path": ["sourceUrl"], "value": "https://example.invalid/private.pdf"},
+      {"reason": "boolean_chunk_offset", "collection": "validRequests", "baseIndex": 3, "path": ["offset"], "value": true},
+      {"reason": "deferred_retry_drift", "collection": "validResponses", "baseIndex": 2, "path": ["retryAfterSeconds"], "value": 6}
+    ]
+  },
+  "runtimeConfig": {
+    "valid": {
+      "schemaVersion": 2,
+      "botName": "hr-bot",
+      "executionRuntime": {
+        "databaseUrlFile": "/Users/agentops/AgentRuntime/instances/hr-bot/private/runtime-postgres-url",
+        "databaseSchema": "hr_runtime",
+        "relayBridgeUrl": "http://127.0.0.1:9120/hr-bridge/v1",
+        "relayBridgeCredentialFile": "/Users/agentops/AgentRuntime/instances/hr-bot/private/relay-bridge-token"
+      },
+      "capabilityGate": {
+        "requiredContract": "core_chat_collaboration_v5",
+        "reportedContract": "core_chat_collaboration_v4",
+        "reasonCode": "executor_capability_missing"
+      }
+    },
+    "invalidMutations": [
+      {"reason": "other_bot_scope", "path": ["botName"], "value": "marketing-inbound-bot"},
+      {"reason": "inline_value_not_path", "path": ["executionRuntime", "databaseUrlFile"], "value": "not-a-file-path"},
+      {"reason": "relative_credential_path", "path": ["executionRuntime", "relayBridgeCredentialFile"], "value": "relay-bridge-token"},
+      {"reason": "capability_is_not_missing", "path": ["capabilityGate", "reportedContract"], "value": "core_chat_collaboration_v5"},
+      {"reason": "missing_reason_drift", "path": ["capabilityGate", "reasonCode"], "value": "legacy_executor"}
+    ]
+  }
+}

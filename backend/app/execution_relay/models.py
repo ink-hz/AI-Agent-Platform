@@ -30,6 +30,12 @@ RELAY_EVENT_TYPES = frozenset(
 CollaborationContract = Literal[
     "core_chat_collaboration_v3", "core_chat_collaboration_v4"
 ]
+# Receive-side negotiation grows independently from legacy outbound dispatch.
+CoreChatCollaborationContract = Literal[
+    "core_chat_collaboration_v3",
+    "core_chat_collaboration_v4",
+    "core_chat_collaboration_v5",
+]
 
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")

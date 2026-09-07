@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/hr-execution/v5/channel-bridge.schema.json",
+  "title": "HR Loopback Channel Bridge v1",
+  "$comment": "The six request shapes are structural only. Authentication, idempotent durable decisions, owner resolution, upload grants, content ownership, and Delivery existence are enforced by downstream P07/P08 services.",
+  "oneOf": [
+    {"$ref": "#/$defs/resolveChannel"},
+    {"$ref": "#/$defs/turnIntake"},
+    {"$ref": "#/$defs/attachmentCreate"},
+    {"$ref": "#/$defs/attachmentChunk"},
+    {"$ref": "#/$defs/attachmentComplete"},
+    {"$ref": "#/$defs/deliveryReceipts"},
+    {"$ref": "#/$defs/accepted"},
+    {"$ref": "#/$defs/duplicate"},
+    {"$ref": "#/$defs/deferred"},
+    {"$ref": "#/$defs/conflict"},
+    {"$ref": "#/$defs/bound"},
+    {"$ref": "#/$defs/bindingRequired"},
+    {"$ref": "#/$defs/uploadCreated"},
+    {"$ref": "#/$defs/chunkAccepted"},
+    {"$ref": "#/$defs/attachmentCompleted"},
+    {"$ref": "#/$defs/receiptsAccepted"}
+  ],
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "feishuIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "appId", "botId", "messageId"],
+      "properties": {
+        "tenantId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "appId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "botId": {"const": "hr-bot"},
+        "messageId": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "verifiedSenderIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["openId", "unionId"],
+      "properties": {
+        "openId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "unionId": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 512},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "identityOperation": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "bindingCode"],
+          "properties": {
+            "kind": {"const": "consume-binding-code"},
+            "bindingCode": {"type": "string", "minLength": 4, "maxLength": 128}
+          }
+        }
+      ]
+    },
+    "attachmentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attachmentId", "index", "sha256"],
+      "properties": {
+        "attachmentId": {"$ref": "#/$defs/uuid"},
+        "index": {"type": "integer", "minimum": 0, "maximum": 31},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "resolveChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation", "requestId", "identity", "senderIdentity", "chatId",
+        "threadKey", "identityOperation"
+      ],
+      "properties": {
+        "operation": {"const": "resolve-channel"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "identity": {"$ref": "#/$defs/feishuIdentity"},
+        "senderIdentity": {"$ref": "#/$defs/verifiedSenderIdentity"},
+        "chatId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "threadKey": {"type": "string", "maxLength": 512},
+        "identityOperation": {"$ref": "#/$defs/identityOperation"}
+      }
+    },
+    "turnIntake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation", "requestId", "identity", "senderIdentity", "chatId",
+        "threadKey", "conversationId", "principalRef", "contentHash", "text",
+        "attachments"
+      ],
+      "properties": {
+        "operation": {"const": "turn-intake"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "identity": {"$ref": "#/$defs/feishuIdentity"},
+        "senderIdentity": {"$ref": "#/$defs/verifiedSenderIdentity"},
+        "chatId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "threadKey": {"type": "string", "maxLength": 512},
+        "conversationId": {"$ref": "#/$defs/uuid"},
+        "principalRef": {
+          "$comment": "Server-issued opaque reference to verify; never client authority to select an owner.",
+          "type": "string", "minLength": 1, "maxLength": 256
+        },
+        "contentHash": {"$ref": "#/$defs/sha256"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 131072},
+        "attachments": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/attachmentRef"}
+        }
+      }
+    },
+    "attachmentCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation", "requestId", "uploadId", "conversationId", "attachmentId",
+        "index", "displayName", "mimeType", "sizeBytes", "sha256"
+      ],
+      "properties": {
+        "operation": {"const": "attachment-create"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "uploadId": {"$ref": "#/$defs/uuid"},
+        "conversationId": {"$ref": "#/$defs/uuid"},
+        "attachmentId": {"$ref": "#/$defs/uuid"},
+        "index": {"type": "integer", "minimum": 0, "maximum": 31},
+        "displayName": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "mimeType": {"type": "string", "minLength": 3, "maxLength": 255},
+        "sizeBytes": {"type": "integer", "minimum": 1, "maximum": 52428800},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "attachmentChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "requestId", "uploadId", "offset", "sizeBytes", "sha256"],
+      "properties": {
+        "operation": {"const": "attachment-chunk"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "uploadId": {"$ref": "#/$defs/uuid"},
+        "offset": {"type": "integer", "minimum": 0, "maximum": 52428799},
+        "sizeBytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "attachmentComplete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "requestId", "uploadId", "sizeBytes", "sha256"],
+      "properties": {
+        "operation": {"const": "attachment-complete"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "uploadId": {"$ref": "#/$defs/uuid"},
+        "sizeBytes": {"type": "integer", "minimum": 1, "maximum": 52428800},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "deliveryReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId", "deliveryId", "turnId", "contentHash", "routeEpoch",
+        "status", "messageId", "receiptRef", "reasonCode"
+      ],
+      "properties": {
+        "operationId": {"$ref": "#/$defs/uuid"},
+        "deliveryId": {"$ref": "#/$defs/uuid"},
+        "turnId": {"$ref": "#/$defs/uuid"},
+        "contentHash": {"$ref": "#/$defs/sha256"},
+        "routeEpoch": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "status": {"enum": ["delivered", "failed", "receipt_unknown"]},
+        "messageId": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 512},
+            {"type": "null"}
+          ]
+        },
+        "receiptRef": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 256},
+            {"type": "null"}
+          ]
+        },
+        "reasonCode": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 128},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "deliveryReceipts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "requestId", "receipts"],
+      "properties": {
+        "operation": {"const": "delivery-receipts"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "receipts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {"$ref": "#/$defs/deliveryReceipt"}
+        }
+      }
+    },
+    "accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "conversationId", "turnId"],
+      "properties": {
+        "status": {"const": "accepted"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "conversationId": {"$ref": "#/$defs/uuid"},
+        "turnId": {"$ref": "#/$defs/uuid"}
+      }
+    },
+    "duplicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "turnId"],
+      "properties": {
+        "status": {"const": "duplicate"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "turnId": {"$ref": "#/$defs/uuid"}
+      }
+    },
+    "deferred": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "blockingTurnId", "retryAfterSeconds"],
+      "properties": {
+        "status": {"const": "deferred"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "blockingTurnId": {"$ref": "#/$defs/uuid"},
+        "retryAfterSeconds": {"const": 5}
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "reasonCode"],
+      "properties": {
+        "status": {"const": "conflict"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "reasonCode": {"const": "idempotency_conflict"}
+      }
+    },
+    "bound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "conversationId", "principalRef"],
+      "properties": {
+        "status": {"const": "bound"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "conversationId": {"$ref": "#/$defs/uuid"},
+        "principalRef": {"type": "string", "minLength": 1, "maxLength": 256}
+      }
+    },
+    "bindingRequired": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "bindingChallengeRef", "expiresInSeconds"],
+      "properties": {
+        "status": {"const": "binding_required"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "bindingChallengeRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "expiresInSeconds": {"const": 600}
+      }
+    },
+    "uploadCreated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "uploadId", "expectedOffset"],
+      "properties": {
+        "status": {"const": "upload_created"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "uploadId": {"$ref": "#/$defs/uuid"},
+        "expectedOffset": {"const": 0}
+      }
+    },
+    "chunkAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "uploadId", "acceptedOffset", "expectedOffset"],
+      "properties": {
+        "status": {"const": "chunk_accepted"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "uploadId": {"$ref": "#/$defs/uuid"},
+        "acceptedOffset": {"type": "integer", "minimum": 0, "maximum": 52428799},
+        "expectedOffset": {"type": "integer", "minimum": 1, "maximum": 52428800}
+      }
+    },
+    "attachmentCompleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "uploadId", "attachmentId", "sha256"],
+      "properties": {
+        "status": {"const": "attachment_completed"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "uploadId": {"$ref": "#/$defs/uuid"},
+        "attachmentId": {"$ref": "#/$defs/uuid"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "receiptsAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requestId", "acceptedOperationIds"],
+      "properties": {
+        "status": {"const": "receipts_accepted"},
+        "requestId": {"$ref": "#/$defs/uuid"},
+        "acceptedOperationIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {"$ref": "#/$defs/uuid"}
+        }
+      }
+    }
+  }
+}

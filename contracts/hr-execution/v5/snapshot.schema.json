@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/hr-execution/v5/snapshot.schema.json",
+  "title": "HR Turn Snapshot v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "read_version", "event_cursor", "turn", "attempt", "outcome", "answer",
+    "result_enrichment", "deliveries", "context_manifest_ref"
+  ],
+  "properties": {
+    "read_version": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "event_cursor": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "turn": {"oneOf": [{"$ref": "#/$defs/turn"}, {"type": "null"}]},
+    "attempt": {"oneOf": [{"$ref": "#/$defs/attempt"}, {"type": "null"}]},
+    "outcome": {"oneOf": [{"$ref": "#/$defs/outcome"}, {"type": "null"}]},
+    "answer": {"oneOf": [{"$ref": "#/$defs/answer"}, {"type": "null"}]},
+    "result_enrichment": {"$ref": "#/$defs/resultEnrichment"},
+    "deliveries": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"$ref": "#/$defs/delivery"}
+    },
+    "context_manifest_ref": {
+      "oneOf": [
+        {"type": "string", "pattern": "^context-manifest:[A-Za-z0-9._:-]+$", "maxLength": 256},
+        {"type": "null"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"turn": {"type": "null"}}, "required": ["turn"]},
+      "then": {
+        "properties": {
+          "attempt": {"type": "null"},
+          "outcome": {"type": "null"},
+          "answer": {"type": "null"},
+          "context_manifest_ref": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"turn": {"type": "object", "properties": {"status": {"const": "queued"}}, "required": ["status"]}},
+        "required": ["turn"]
+      },
+      "then": {
+        "properties": {
+          "attempt": {"type": "object", "properties": {"status": {"const": "queued"}}, "required": ["status"]},
+          "outcome": {"type": "null"},
+          "answer": {"type": "null"},
+          "context_manifest_ref": {"type": "string"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"turn": {"type": "object", "properties": {"status": {"const": "running"}}, "required": ["status"]}},
+        "required": ["turn"]
+      },
+      "then": {
+        "properties": {
+          "attempt": {"type": "object", "properties": {"status": {"const": "running"}}, "required": ["status"]},
+          "outcome": {"type": "null"},
+          "answer": {"type": "null"},
+          "context_manifest_ref": {"type": "string"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"turn": {"type": "object", "properties": {"status": {"const": "reconciling"}}, "required": ["status"]}},
+        "required": ["turn"]
+      },
+      "then": {
+        "properties": {
+          "attempt": {"type": "object", "properties": {"status": {"const": "reconciling"}}, "required": ["status"]},
+          "outcome": {"type": "null"},
+          "answer": {"type": "null"},
+          "context_manifest_ref": {"type": "string"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"turn": {"type": "object", "properties": {"status": {"const": "completed"}}, "required": ["status"]}},
+        "required": ["turn"]
+      },
+      "then": {
+        "properties": {
+          "attempt": {"type": "object", "properties": {"status": {"const": "completed"}}, "required": ["status"]},
+          "outcome": {"type": "object", "properties": {"kind": {"const": "completed"}}, "required": ["kind"]},
+          "answer": {"$ref": "#/$defs/answer"},
+          "context_manifest_ref": {"type": "string"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"turn": {"type": "object", "properties": {"status": {"const": "failed"}}, "required": ["status"]}},
+        "required": ["turn"]
+      },
+      "then": {
+        "properties": {
+          "attempt": {"type": "object", "properties": {"status": {"const": "failed"}}, "required": ["status"]},
+          "outcome": {"type": "object", "properties": {"kind": {"const": "failed"}}, "required": ["kind"]},
+          "context_manifest_ref": {"type": "string"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"turn": {"type": "object", "properties": {"status": {"const": "cancelled"}}, "required": ["status"]}},
+        "required": ["turn"]
+      },
+      "then": {
+        "properties": {
+          "attempt": {"type": "object", "properties": {"status": {"const": "cancelled"}}, "required": ["status"]},
+          "outcome": {"type": "object", "properties": {"kind": {"const": "cancelled"}}, "required": ["kind"]},
+          "context_manifest_ref": {"type": "string"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"turn": {"type": "object", "properties": {"status": {"const": "interrupted"}}, "required": ["status"]}},
+        "required": ["turn"]
+      },
+      "then": {
+        "properties": {
+          "attempt": {"type": "object", "properties": {"status": {"const": "interrupted"}}, "required": ["status"]},
+          "outcome": {"type": "object", "properties": {"kind": {"const": "interrupted"}}, "required": ["kind"]},
+          "context_manifest_ref": {"type": "string"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turn_id", "turn_seq", "status"],
+      "properties": {
+        "turn_id": {"type": "string", "format": "uuid"},
+        "turn_seq": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "status": {
+          "enum": ["queued", "running", "reconciling", "completed", "failed", "cancelled", "interrupted"]
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "attempt_no", "lease_epoch", "status", "reason_code"],
+      "properties": {
+        "attempt_id": {"type": "string", "format": "uuid"},
+        "attempt_no": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "lease_epoch": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "status": {
+          "enum": ["queued", "running", "reconciling", "completed", "failed", "cancelled", "interrupted"]
+        },
+        "reason_code": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 128},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terminal", "kind", "reason_code"],
+      "properties": {
+        "terminal": {"const": true},
+        "kind": {"enum": ["completed", "failed", "cancelled", "interrupted"]},
+        "reason_code": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 128},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message_id", "role", "content", "completed_at"],
+      "properties": {
+        "message_id": {"type": "string", "format": "uuid"},
+        "role": {"const": "assistant"},
+        "content": {"type": "string", "minLength": 1, "maxLength": 131072},
+        "completed_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "resultEnrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "pending_count", "failed_count"],
+      "properties": {
+        "status": {"enum": ["none", "pending", "ready", "partial", "failed"]},
+        "pending_count": {"type": "integer", "minimum": 0, "maximum": 20},
+        "failed_count": {"type": "integer", "minimum": 0, "maximum": 20}
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "status", "receipt_ref"],
+      "properties": {
+        "channel": {"const": "feishu"},
+        "status": {"enum": ["pending", "sending", "delivered", "failed", "receipt_unknown"]},
+        "receipt_ref": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 256},
+            {"type": "null"}
+          ]
+        }
+      }
+    }
+  }
+}
