@@ -42,6 +42,7 @@ from app.agent_brain.repository import (
     MissionRepository,
     MissionRepositoryError,
 )
+from app.agent_brain.turn_attempts import TurnAttemptRepository
 from app.attachments.conversation_repository import (
     ConversationAttachmentConflict,
     ConversationAttachmentQuotaExceeded,
@@ -867,6 +868,15 @@ class ConversationRepository:
         self._bind_submission_locked(
             cursor, conversation_row, message_id, turn_id, submission
         )
+        if conversation_row.get("execution_owner") == "worker_direct":
+            if (
+                turn_row.get("execution_owner") != "worker_direct"
+                or turn_row.get("origin_route_epoch") != conversation_row["route_epoch"]
+            ):
+                raise ConversationRepositoryError("worker intake schema unavailable")
+            TurnAttemptRepository(
+                self._control_database_url, self.content_codec
+            ).create_queued(turn_id, "worker_direct", connection=cursor.connection)
         common_payload = {
             "turn_id": str(turn_id),
             "mission_id": str(mission_id),
@@ -2591,6 +2601,7 @@ class ConversationRepository:
                     "and turn.turn_id=mission.turn_id "
                     "where mission.conversation_id=%s "
                     "and mission.owner_internal_user_id=%s "
+                    "and coalesce(to_jsonb(turn)->>'execution_owner','legacy_api_v1')='legacy_api_v1' "
                     "and event.event_type=any(%s) "
                     "and not exists (select 1 from "
                     "platform_control.conversation_events projected "

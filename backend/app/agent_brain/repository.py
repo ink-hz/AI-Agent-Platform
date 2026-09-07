@@ -806,6 +806,14 @@ class MissionRepository:
         ).fetchone()
         if row is None:
             raise MissionRepositoryNotFound()
+        # Claims and content reads release their locks before orchestration.
+        # Recheck immutable Turn provenance while holding the Mission write lock.
+        if cursor.execute(
+            "select 1 from platform_control.conversation_turns t "
+            "where t.mission_id=%s and to_jsonb(t)->>'execution_owner'='worker_direct'",
+            (mission_id,),
+        ).fetchone():
+            raise MissionRepositoryNotFound()
         return row
 
     def _mission_from_row(self, row: dict[str, Any]) -> MissionRecord:
@@ -1197,7 +1205,10 @@ class MissionRepository:
                     "message.encryption_key_version from platform_control.missions m "
                     "left join platform_control.mission_messages message "
                     "on message.mission_id=m.mission_id and message.seq=1 "
-                    "where m.mission_id=%s and m.owner_internal_user_id=%s",
+                    "where m.mission_id=%s and m.owner_internal_user_id=%s "
+                    "and not exists (select 1 from platform_control.conversation_turns t "
+                    "where t.turn_id=m.turn_id and t.mission_id=m.mission_id "
+                    "and to_jsonb(t)->>'execution_owner'='worker_direct')",
                     (mission_id, internal_user_id),
                 ).fetchone()
             if row is None:
@@ -1369,6 +1380,9 @@ class MissionRepository:
                     "from platform_control.missions m "
                     "where m.status not in "
                     "('completed','partially_completed','failed','cancelled','interrupted') "
+                    "and not exists (select 1 from platform_control.conversation_turns t "
+                    "where t.turn_id=m.turn_id and t.mission_id=m.mission_id "
+                    "and to_jsonb(t)->>'execution_owner'='worker_direct') "
                     + mode_predicate
                     + "order by m.updated_at,m.mission_id "
                     "for update of m skip locked limit %s",

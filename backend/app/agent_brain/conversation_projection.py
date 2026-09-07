@@ -643,6 +643,7 @@ class ConversationProjection:
                     "join platform_control.conversations conversation "
                     "on conversation.conversation_id=mission.conversation_id "
                     "where mission.mission_id=%s "
+                    "and coalesce(to_jsonb(turn)->>'execution_owner','legacy_api_v1')='legacy_api_v1' "
                     "for update of mission,turn,conversation",
                     (mission_id,),
                 ).fetchone()
@@ -772,6 +773,7 @@ class ConversationProjection:
                         "where mission.status in ("
                         "'completed','partially_completed','failed','cancelled','interrupted') "
                         "and turn.status in ('accepted','running') "
+                        "and coalesce(to_jsonb(turn)->>'execution_owner','legacy_api_v1')='legacy_api_v1' "
                         "and turn.assistant_message_id is null "
                         "order by mission.updated_at,mission.mission_id limit %s",
                         (limit,),

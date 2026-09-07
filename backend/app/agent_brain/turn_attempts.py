@@ -120,12 +120,22 @@ class TurnAttemptRepository:
         if connection.autocommit:
             raise ValueError("caller-owned transaction required")
         with connection.cursor(row_factory=dict_row) as cursor:
+            # Match intake/idempotency lock order: Conversation -> Turn -> Attempt.
+            # The first lookup supplies identity only; predicates are rechecked below.
+            cursor.execute(
+                "select conversation_id from platform_control.conversations "
+                "where conversation_id=(select conversation_id from "
+                "platform_control.conversation_turns where turn_id=%s) for update",
+                (turn_id,),
+            )
             turn = cursor.execute(
                 "select t.turn_id,c.owner_internal_user_id from "
                 "platform_control.conversation_turns t join platform_control.conversations c "
                 "using(conversation_id) where t.turn_id=%s and c.execution_owner=%s "
                 "and t.status in ('accepted','running') and c.status='active' "
-                "for update of t,c",
+                "and coalesce(to_jsonb(t)->>'execution_owner',c.execution_owner)=c.execution_owner "
+                "and coalesce((to_jsonb(t)->>'origin_route_epoch')::bigint,c.route_epoch)=c.route_epoch "
+                "for update of t",
                 (turn_id, executor_kind),
             ).fetchone()
             if turn is None:
@@ -217,6 +227,74 @@ class TurnAttemptRepository:
                 row["lease_expires_at"],
                 row["status"],
             )
+
+    def renew(
+        self,
+        lease: Lease,
+        lease_seconds: int,
+        *,
+        connection: psycopg.Connection | None = None,
+    ) -> Lease:
+        """Extend the current holder in a short Conversation -> Turn -> Attempt transaction.
+
+        Caller-owned transactions (including future Result publication) must acquire
+        these locks in the same order. Network work must occur after commit.
+        """
+        if type(lease_seconds) is not int or lease_seconds <= 0:
+            raise ValueError("positive integer lease seconds required")
+        if connection is None:
+            with self.transaction() as owned_connection:
+                return self.renew(lease, lease_seconds, connection=owned_connection)
+        if connection.autocommit:
+            raise ValueError("caller-owned transaction required")
+        conversation = connection.execute(
+            "select conversation_id from platform_control.conversations "
+            "where conversation_id=(select t.conversation_id from "
+            "platform_control.conversation_turns t join platform_control.turn_attempts a "
+            "using(turn_id) where a.attempt_id=%s) for update",
+            (lease.attempt_id,),
+        ).fetchone()
+        if conversation is None:
+            raise LeaseRejected("attempt lease rejected")
+        turn = connection.execute(
+            "select turn_id from platform_control.conversation_turns "
+            "where conversation_id=%s and turn_id=(select turn_id from "
+            "platform_control.turn_attempts where attempt_id=%s) for update",
+            (conversation["conversation_id"], lease.attempt_id),
+        ).fetchone()
+        if turn is None:
+            raise LeaseRejected("attempt lease rejected")
+        connection.execute(
+            "select attempt_id from platform_control.turn_attempts "
+            "where attempt_id=%s and turn_id=%s for update",
+            (lease.attempt_id, turn["turn_id"]),
+        )
+        # Check the clock only after every potentially blocking lock is held.
+        row = connection.execute(
+            "update platform_control.turn_attempts a set "
+            "lease_expires_at=clock_timestamp()+make_interval(secs => %s),"
+            "updated_at=clock_timestamp() from platform_control.conversation_turns t "
+            "join platform_control.conversations c using(conversation_id) "
+            "where a.attempt_id=%s and a.turn_id=t.turn_id and t.turn_id=%s "
+            "and c.conversation_id=%s and a.executor_kind=%s and a.executor_id=%s "
+            "and a.lease_epoch=%s and a.lease_expires_at>clock_timestamp() "
+            "and a.status in ('running','reconciling') and c.status='active' "
+            "and c.execution_owner=a.executor_kind "
+            "and coalesce(to_jsonb(t)->>'execution_owner',c.execution_owner)=a.executor_kind "
+            "and coalesce((to_jsonb(t)->>'origin_route_epoch')::bigint,c.route_epoch)=c.route_epoch "
+            "returning a.*",
+            (
+                lease_seconds, lease.attempt_id, turn["turn_id"],
+                conversation["conversation_id"], lease.executor_kind,
+                str(lease.executor_id), lease.lease_epoch,
+            ),
+        ).fetchone()
+        if row is None:
+            raise LeaseRejected("attempt lease rejected")
+        return Lease(
+            row["attempt_id"], row["executor_kind"], UUID(row["executor_id"]),
+            row["lease_epoch"], row["lease_expires_at"], row["status"],
+        )
 
     def record_terminal(
         self,
