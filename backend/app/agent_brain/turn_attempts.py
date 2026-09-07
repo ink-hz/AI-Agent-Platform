@@ -66,6 +66,9 @@ class Attempt:
     reason_code: str | None
     created_at: datetime
     updated_at: datetime
+    readiness_check_after: datetime | None = None
+    capability_missing_since: datetime | None = None
+    capability_alerted_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,7 @@ class Lease:
     lease_epoch: int
     expires_at: datetime
     status: str
+    admission: dict | None = None
 
 
 _SELECT = (
@@ -199,6 +203,10 @@ class TurnAttemptRepository:
             raise ValueError("positive integer lease seconds required")
         if not isinstance(executor_id, UUID):
             raise ValueError("executor process UUID required")  # noqa: TRY004 - repository convention
+        if executor_kind == "worker_direct":
+            from .direct_admission import claim_direct
+
+            return claim_direct(self, executor_id, lease_seconds)
         with self.transaction() as connection:
             row = connection.execute(
                 "with due as (select a.attempt_id from platform_control.turn_attempts a "

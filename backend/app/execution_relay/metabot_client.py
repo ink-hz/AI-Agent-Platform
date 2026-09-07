@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hmac
 import json
 import os
+import secrets
 import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -232,6 +234,38 @@ class MetaBotClient:
 
     def __repr__(self) -> str:
         return "MetaBotClient(runtime_map=<configured>, bearer_secret=<redacted>)"
+
+    def authenticates_v5_machine(self, authorization: str) -> bool:
+        return hmac.compare_digest(authorization, f"Bearer {self._bearer_secret}")
+
+    async def probe_v5_service(self):
+        from .readiness_v5 import parse_service
+
+        port, secret = self._runtime_map.port_for("hr-bot"), self._bearer_secret
+        async with (
+            httpx.AsyncClient(timeout=3, follow_redirects=False, trust_env=False) as client,
+            client.stream("GET", f"http://127.0.0.1:{port}/api/core-chat/v5/readiness",
+                          headers={"authorization": f"Bearer {secret}"}) as response,
+        ):
+            if response.status_code != 200:
+                raise MetaBotClientError(_REQUEST_FAILED)
+            body = b""
+            async for chunk in response.aiter_bytes():
+                body += chunk
+                if len(body) > 8192:
+                    raise MetaBotClientError(_REQUEST_FAILED)
+            return parse_service(json.loads(body))
+
+    async def probe_v5_receiver(self, origin):
+        from .readiness_v5 import callback_origin
+
+        callback_origin(origin)
+        challenge, secret = secrets.token_hex(16), self._bearer_secret
+        async with httpx.AsyncClient(timeout=3, follow_redirects=False, trust_env=False) as client:
+            response = await client.post(origin+"/v5/readiness", content=b"{}", headers={
+                "authorization": f"Bearer {secret}", "content-type": "application/json", "x-v5-challenge": challenge,
+            })
+            return response.status_code == 200 and len(response.content) < 128 and response.json() == {"challenge": challenge}
 
     def _client(self) -> httpx.Client:
         return httpx.Client(

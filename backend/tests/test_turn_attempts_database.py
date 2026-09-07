@@ -40,6 +40,16 @@ def attempt_repository(conversation_database):
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute("set local role platform_control_owner")
         connection.execute(DRAFT.read_text())
+        connection.execute(DRAFT.with_name("hr_v5_readiness.sql").read_text())
+    # Existing authority tests consume an actual validated persisted observation;
+    # readiness-specific tests explicitly remove it and exercise the live path.
+    from app.execution_relay.readiness_v5 import record_observation
+    from app.execution_relay.repository import ExecutionRelayRepository
+    from tests.helpers.v5_readiness import observation
+    worker_id = "readiness-fixture-" + uuid4().hex
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute("insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) values(%s,array['hr-bot'],'active')", (worker_id,))
+    record_observation(ExecutionRelayRepository(environment["urls"]["platform_control_app"], content_codec=_codec()), worker_id, observation())
     yield TurnAttemptRepository(environment["urls"]["platform_control_app"], _codec())
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
@@ -50,6 +60,8 @@ def attempt_repository(conversation_database):
             (owner_id,),
         )
         connection.execute("drop table platform_control.turn_attempts")
+        connection.execute("alter table platform_control.execution_workers drop column v5_observation")
+        connection.execute("delete from platform_control.execution_workers where worker_id=%s", (worker_id,))
         connection.execute(
             "alter table platform_control.conversations drop column execution_owner, "
             "drop column route_epoch, drop column snapshot_version"

@@ -513,6 +513,7 @@ class WorkerRuntime:
         acceptance_hooks: Any | None = None,
         max_concurrent_runs: int = 1,
         enable_v5_callbacks: bool = False,
+        enable_v5_transport: bool = False,
     ) -> None:
         if (
             not isinstance(worker_id, str)
@@ -528,6 +529,7 @@ class WorkerRuntime:
             raise WorkerRuntimeError()
         self.worker_id = worker_id
         self.enable_v5_callbacks = enable_v5_callbacks
+        self.enable_v5_transport = enable_v5_transport
         # Each MetaBot Agent is a separate service on its own port, so running more
         # than one at a time is a configuration decision rather than a constraint.
         # The Brain schedules against the pool concurrency declared in the Catalog,
@@ -1185,13 +1187,6 @@ async def _handle_callback_connection(
         target = request_line[1]
         if "?" in target or "#" in target:
             raise ValueError
-        parts = target.split("/")
-        if len(parts) != 4 or parts[1] != "callbacks":
-            raise ValueError
-        run_id = UUID(parts[2])
-        if str(run_id) != parts[2]:
-            raise ValueError
-        token = parts[3]
         headers: dict[str, str] = {}
         for raw_line in lines[1:]:
             name, separator, value = raw_line.partition(b":")
@@ -1210,6 +1205,20 @@ async def _handle_callback_connection(
         if raw_length is None or not raw_length.isdigit():
             raise ValueError
         length = int(raw_length)
+        if target == "/v5/readiness":
+            if length > 2:
+                raise ValueError
+            from .worker_readiness_v5 import challenge
+
+            await challenge(runtime, headers, await asyncio.wait_for(reader.readexactly(length), 3), writer)
+            return
+        parts = target.split("/")
+        if len(parts) != 4 or parts[1] != "callbacks":
+            raise ValueError
+        run_id = UUID(parts[2])
+        if str(run_id) != parts[2]:
+            raise ValueError
+        token = parts[3]
         if length > _CALLBACK_BODY_LIMIT:
             result = CallbackResult.TOO_LARGE
         else:
@@ -1255,6 +1264,7 @@ async def run_worker(runtime: WorkerRuntime) -> None:
     ready_task: asyncio.Task[bool] | None = None
     worker_tasks: set[asyncio.Task[None]] = set()
     shutdown_tasks: set[asyncio.Task[Any]] = set()
+    v5_service = None
 
     async def shutdown() -> None:
         if shutdown_started.is_set():
@@ -1287,6 +1297,11 @@ async def run_worker(runtime: WorkerRuntime) -> None:
         ready_task.cancel()
         await asyncio.gather(ready_task, return_exceptions=True)
         ready_task = None
+        if runtime.enable_v5_transport:
+            from .worker_readiness_v5 import V5WorkerService
+
+            v5_service = V5WorkerService(runtime)
+            v5_service.start()
         worker_tasks.update(
             {
                 asyncio.create_task(lease_loop(runtime)),
@@ -1296,6 +1311,8 @@ async def run_worker(runtime: WorkerRuntime) -> None:
         )
         await asyncio.shield(asyncio.gather(callback_task, *worker_tasks))
     finally:
+        if v5_service is not None:
+            await v5_service.close()
 
         async def cleanup() -> None:
             runtime.begin_shutdown()

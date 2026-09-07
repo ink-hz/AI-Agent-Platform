@@ -12,6 +12,7 @@ from app.agent_brain.direct_command_binding import BindingRejected
 from app.agent_brain.turn_attempts import LeaseRejected
 
 from .content_crypto import ContentCryptoError
+from .readiness_v5 import record_observation
 from .source_v5 import accept_source
 
 
@@ -36,6 +37,16 @@ def attach_v5_routes(router, authenticated, bindings):
             return _error(400, "v5 transport invalid")
         except (psycopg.Error, ContentCryptoError):
             return _error(503, "v5 transport unavailable")
+
+    @router.post("/v5/readiness")
+    async def readiness(request: Request):
+        def execute(worker_id, body):
+            if len(body) > 8192:
+                raise ValueError
+            applied = record_observation(bindings.relay, worker_id, json.loads(body))
+            return JSONResponse({"recorded": applied}, headers=_NO_STORE)
+
+        return await invoke(request, execute)
 
     @router.post("/v5/handoff")
     async def handoff(request: Request):

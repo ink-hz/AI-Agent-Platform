@@ -12,6 +12,7 @@ from app.execution_relay.acceptance_v5 import AcceptanceV5
 from app.execution_relay.content_crypto import SealedContent
 from app.execution_relay.frozen_command_v5 import FrozenCommandV5, parse_frozen_command
 
+from .direct_admission import conversation_is_held
 from .turn_attempts import Lease, LeaseRejected
 
 
@@ -283,6 +284,8 @@ class DirectCommandBindingRepository:
 
     def prepare(self, lease, frozen_input, *, connection):
         c, t, a = self._lock(lease, connection)
+        if conversation_is_held(connection, c["conversation_id"], lease.attempt_id, t["user_seq"]):
+            raise BindingRejected()
         if (
             c["owner_internal_user_id"] != frozen_input.owner_id
             or t["user_message_id"] != frozen_input.user_message_id
@@ -411,7 +414,7 @@ class DirectCommandBindingRepository:
         return True
 
     def mark_offered(self, lease, *, connection):
-        _, t, a = self._lock(lease, connection)
+        c, t, a = self._lock(lease, connection)
         row = self._transport_row(lease, connection)
         if (
             row is None
@@ -420,6 +423,7 @@ class DirectCommandBindingRepository:
             or row["cancel_requested"]
             or a["cancel_requested_at"] is not None
             or t["status"] not in {"accepted", "running"}
+            or conversation_is_held(connection, c["conversation_id"], lease.attempt_id, t["user_seq"])
         ):
             return False
         connection.execute(
