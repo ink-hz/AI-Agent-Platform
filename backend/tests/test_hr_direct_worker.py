@@ -48,6 +48,14 @@ def direct_database(attempt_repository, conversation_database):
 
 
 def _drop_direct_draft(connection):
+    connection.execute("drop table if exists platform_control.direct_command_bindings")
+    connection.execute("drop function if exists platform_control.preserve_direct_command_binding()")
+    connection.execute("delete from platform_control.execution_jobs where job_kind='worker_direct_v5'")
+    connection.execute("alter table platform_control.execution_jobs drop constraint execution_jobs_job_kind_v42")
+    connection.execute(
+        "alter table platform_control.execution_jobs add constraint execution_jobs_job_kind_v42 "
+        "check(job_kind in ('legacy_brain','direct_agent','metabot_local'))"
+    )
     connection.execute(
         "drop trigger if exists pin_turn_execution_origin "
         "on platform_control.conversation_turns"

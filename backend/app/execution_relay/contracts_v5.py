@@ -525,7 +525,7 @@ class CallbackAckV5(BaseModel):
         return self
 
 
-def core_chat_command_hash(command: CoreChatCommandV5) -> str:
+def core_chat_command_document(command: CoreChatCommandV5) -> dict[str, Any]:
     value = command.model_dump(mode="json", by_alias=True)
     attachments = [
         {
@@ -573,9 +573,18 @@ def core_chat_command_hash(command: CoreChatCommandV5) -> str:
     }
     document["inputAttachments"] = attachments
     document["outputScope"] = output_scope
-    encoded = json.dumps(
+    return document
+
+
+def canonical_command_bytes(document: dict[str, Any]) -> bytes:
+    """The P01 canonical byte encoding, also used by frozen internal templates."""
+    return json.dumps(
         document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
+
+
+def core_chat_command_hash(command: CoreChatCommandV5) -> str:
+    encoded = canonical_command_bytes(core_chat_command_document(command))
     return hashlib.sha256(encoded).hexdigest()
 
 
