@@ -98,6 +98,8 @@ queued_notice是本地接收卡片生命周期的独立幂等用途，正文固�
 
 **M02c 实施边界补充：** 源码核对发现 SDK 单次入口会改变既有 PTY 后端，旧 Bridge/Registry/Persistent 包装层另含自动恢复、LRU 或长期会话提示。M02c 仅为现有 `ptyQuery` 增加窄适配入口，保留 HR 已配置模型/工具策略/兼容与网关配置；不 resume、不复用旧历史、不自动重放。真实 HTTP + PG + 该适配器测试只替代最末端进程/网络边界。生命周期消费者必须显式提供，默认不在生产 index 启用。此切片暂只验证纯文字：带输入附件的新命令明确在接受前拒绝，不消耗序号、不忽略文件；既存命令重传仍可恢复读取。现有附件 transfer 与 M03 持久 stream/终态、M05 成果处理接齐后，才能完成 M02 全部业务覆盖并声明 v5 就绪。不是削减最终附件需求，也不能把接口测试挪用为完整业务验收。
 
+**M02c 本地验收：** `b5fae68` / `5506629`，185 项回归、编译器/lint 通过；完整范围规格/质量独立复审 Approved。见 [M02c 执行记录](../../reviews/2026-09-07-hr-unified-execution-m02c.md)。新增控制输入拒绝保留 LF/Unicode 与已存命令恢复，不修改 parser/hash；literal TAB/其他 C0/DEL 仍不支持。M03/M04 生命周期、附件与发送端序号/取消归属尚未接齐，M02 整项继续保持进行中。
+
 **依赖：** P01 schema/cases；保持v3/v4读取兼容
 **文件（相对metabot-dev）：** 新增 src/api/routes/core-chat-v5-contract.ts、core-chat-v5-store.ts、src/runtime/local-runtime-config.ts、local-runtime-store.ts、tests/helpers/local-runtime-database.ts、tests/local-runtime-config.test.ts、tests/core-chat-v5-contract.test.ts、tests/core-chat-v5-store.test.ts；修改 src/api/routes/core-chat-contract.ts、core-chat-session-store.ts、core-chat-routes.ts；回归 tests/core-chat-session-store.test.ts、tests/core-chat-routes.test.ts。
 **接口：** V5Command与P01共享JSON Schema字段一致；V5CommandStore.accept(command)->new|duplicate|conflict；endRun(commandId,outcome)；allocateCommandSeq(logicalSessionId,commandId)->number。命令业务hash排除callback/token，身份重传不新开Claude。
@@ -139,6 +141,8 @@ return store.insertCommandAndExecutionIntent(command);
 - [ ] 仅提交本任务精确文件，消息 `feat(hr-runtime): m02 v5命令身份与独立Session生命周期`；不升级依赖、不推送、不部署。
 
 ## M03：唯一终态与可恢复回调outbox
+
+**实施切片：** 按同一任务内依赖分别验收 M03a 回调契约与 PG 唯一终态/进程事务证据、M03b 实际 Relay receiver 与持久 drain/ACK/gap、M03c stream 消费与同源 Flywheel/Trace 重建。逐片复审，不增加业务任务，不以本地 outbox 库代替对端/观测集成。终态已持久不等于旧执行已停止；释放执行占位仍须 M04 停止证明。回调源端 createdAt/observedAt 数字字符串强制转换缺口随 M03a 用 TDD 修正，不更改共享 wire schema。
 
 **依赖：** M02/P01回调契约
 **文件（相对metabot-dev）：** 新增 src/api/routes/core-chat-event-outbox.ts、tests/core-chat-event-outbox.test.ts、tests/core-chat-event-outbox-process.test.ts；修改 core-chat-routes.ts 与v5 store；平台侧对应P01/P04及execution_relay/worker.py、worker_store.py。
