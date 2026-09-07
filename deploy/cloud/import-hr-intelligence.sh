@@ -121,7 +121,7 @@ export PLATFORM_HR_PANORAMA_OWNER_ID="$owner_id"
   -f "$release/deploy/cloud/compose.hr-intelligence-import.yaml" \
   --profile hr-intelligence-import run --rm --no-deps \
   platform-hr-intelligence-import \
-  python -m app.hr.intelligence_import --expected-bundle-id "$bundle_id"
+  python -m app.hr.intelligence_import --expected-bundle-id "$bundle_id" </dev/null
 installed=0
 trap - EXIT
 df -B1 / /data
