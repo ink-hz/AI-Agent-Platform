@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 from uuid import uuid4
 
 import psycopg
@@ -8,6 +9,7 @@ import pytest
 from app.agent_brain.conversation_projection import ConversationProjection
 from app.attachments.result_projection import ConversationResultProjection
 from app.attachments.conversation_repository import attachment_name_subject
+from app.attachments.artifact_service import ArtifactRepository, ArtifactUploadConflict
 from test_agent_brain_conversation_context import _complete_mission
 from test_agent_brain_conversation_repository import conversation_database, repository
 from test_control_plane_migration import control_database
@@ -16,25 +18,29 @@ from test_conversation_attachment_migration import (
 )
 
 
-def _complete_collaboration(repository, owner, text="文字回答不应丢失", artifact_factory=None):
-    started = repository.start(owner, uuid4(), "分析岗位", mode="direct_agent", direct_agent_id="hr-bot")
+def _complete_collaboration(repository, owner, text="文字回答不应丢失", artifact_factory=None,
+                            status="completed", agent_id="hr-bot"):
+    started = repository.start(owner, uuid4(), "分析岗位", mode="direct_agent", direct_agent_id=agent_id)
     run = repository._missions.create_run(
-        owner, started.mission.mission_id, phase="direct", agent_id="hr-bot",
+        owner, started.mission.mission_id, phase="direct", agent_id=agent_id,
         input_payload={"prompt": "分析岗位"}, objective="分析岗位",
-        event_type="task.dispatched", event_payload={"agent_id": "hr-bot"},
+        event_type="task.dispatched", event_payload={"agent_id": agent_id},
     )
     artifacts = artifact_factory(started, run) if artifact_factory is not None else []
-    repository._missions.complete_run(
-        owner, started.mission.mission_id, run.run_id, status="completed",
-        output_payload={"text": text, "collaboration": {
+    payload = {"text": text}
+    if status == "completed":
+        payload["collaboration"] = {
             "contract_version": "core_chat_collaboration_v4",
             "citations": [{"citationKey": "official", "title": "官网岗位",
                            "url": "https://example.com/jobs/1", "site": "example.com",
                            "retrievedAt": datetime.now(timezone.utc).isoformat(),
                            "supports": ["岗位职责"]}],
             "artifacts": artifacts, "completion": "completed", "recovery": None,
-        }}, event_type="mission.completed", event_payload={"text": text},
-        mission_status="completed",
+        }
+    repository._missions.complete_run(
+        owner, started.mission.mission_id, run.run_id, status=status,
+        output_payload=payload, event_type=f"mission.{status}", event_payload={"text": text},
+        mission_status=status,
     )
     return started
 
@@ -225,3 +231,75 @@ def test_concurrent_projectors_commit_one_enrichment(conversation_database, repo
     messages = repository.messages_after(owner, started.conversation.conversation_id)
     assert len(messages) == 2
     assert len(messages[-1].citations) == 1
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("claim_before_result", [True, False])
+@pytest.mark.parametrize("outcome", ["completed", "failed", "cancelled", "other_bot", "revoked"])
+def test_inflight_registered_upload_can_finish_after_hr_text_completes(
+    conversation_database, repository, claim_before_result, outcome,
+):
+    environment, owner, _ = conversation_database
+    app_url = environment["urls"]["platform_control_app"]
+    artifacts = ArtifactRepository(app_url, content_codec=repository.content_codec)
+    token_hash = hashlib.sha256(b"local-regression-output-token").digest()
+    digest = hashlib.sha256(b"local-regression-pdf").digest()
+    registered = {}
+    agent_id = "marketing-bot" if outcome == "other_bot" else "hr-bot"
+
+    def uploading(started, run):
+        grant_id = uuid4()
+        with psycopg.connect(app_url) as connection:
+            connection.execute(
+                "select platform_attachments.issue_task_grant_v64(%s,%s,%s,null,%s,'write_output',now()+interval '30 minutes',0,4096,2,2048)",
+                (grant_id, token_hash, run.task_id, agent_id),
+            )
+        values = dict(token_sha256=token_hash, task_id=run.task_id, agent_id=agent_id,
+                      artifact_key="interview", producer_version_id="v1", display_name="面试题.pdf",
+                      declared_mime="application/pdf", declared_size=128, expected_sha256=digest)
+        upload = artifacts.register(**values)
+        registered.update(upload=upload, values=values)
+        if claim_before_result:
+            registered["attempt"] = artifacts.claim_write(token_sha256=token_hash, upload_id=upload.upload_id)
+        if outcome == "revoked":
+            with psycopg.connect(app_url) as connection:
+                connection.execute("select platform_attachments.revoke_task_grant_v64(%s)", (grant_id,))
+        return [{"attachmentId": str(upload.attachment_id), "artifactKey": "interview",
+                 "producerVersionId": "v1", "displayName": "面试题.pdf", "status": "ready"}]
+
+    started = _complete_collaboration(repository, owner, artifact_factory=uploading,
+                                      status=outcome if outcome in {"failed", "cancelled"} else "completed",
+                                      agent_id=agent_id)
+    projector = ConversationProjection(repository)
+    projector.project_terminal(started.mission.mission_id)
+    upload = registered["upload"]
+    if outcome != "completed":
+        with psycopg.connect(environment["admin"]) as connection:
+            assert connection.execute("select revoked_at is not null from platform_attachments.task_grants where token_sha256=%s", (token_hash,)).fetchone() == (True,)
+        with pytest.raises(ArtifactUploadConflict):
+            if claim_before_result:
+                artifacts.finalize(token_sha256=token_hash, upload_id=upload.upload_id,
+                                   attempt_id=registered["attempt"].attempt_id, declared_mime="application/pdf",
+                                   size_bytes=128, sha256=digest)
+            else:
+                artifacts.claim_write(token_sha256=token_hash, upload_id=upload.upload_id)
+        return
+    assert repository.messages_after(owner, started.conversation.conversation_id)[-1].delivery_status == "completed"
+    attempt = registered.get("attempt") or artifacts.claim_write(token_sha256=token_hash, upload_id=upload.upload_id)
+    finalized = artifacts.finalize(token_sha256=token_hash, upload_id=upload.upload_id,
+                                   attempt_id=attempt.attempt_id, declared_mime="application/pdf",
+                                   size_bytes=128, sha256=digest)
+    assert finalized.state == "validating"
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute("select state from platform_attachments.processing_jobs where attachment_id=%s", (upload.attachment_id,)).fetchone() == ("queued",)
+        assert connection.execute("select expires_at<=now()+interval '15 minutes' from platform_attachments.task_grants where token_sha256=%s", (token_hash,)).fetchone() == (True,)
+    # Successful execution never reopens registration or unrelated uploads.
+    with pytest.raises(ArtifactUploadConflict):
+        artifacts.register(**{**registered["values"], "producer_version_id": "v2"})
+    with pytest.raises(ArtifactUploadConflict):
+        artifacts.claim_write(token_sha256=token_hash, upload_id=uuid4())
+    with psycopg.connect(app_url) as connection, pytest.raises(psycopg.errors.CheckViolation, match="active task"):
+        connection.execute(
+            "select platform_attachments.issue_task_grant_v64(%s,%s,%s,null,'hr-bot','write_output',now()+interval '15 minutes',0,4096,2,2048)",
+            (uuid4(), hashlib.sha256(b"new-grant-after-terminal").digest(), upload.task_id),
+        )
