@@ -31,7 +31,13 @@ CREATE TABLE execution_worker.v5_callback_runs (
   callback_origin text NOT NULL,
   token_hash bytea NOT NULL CHECK(octet_length(token_hash)=32),
   accepted_through bigint NOT NULL DEFAULT 0 CHECK(accepted_through BETWEEN 0 AND 9007199254740990),
-  terminal_seq bigint
+  terminal_seq bigint,
+  uploaded_through bigint NOT NULL DEFAULT 0 CHECK(uploaded_through BETWEEN 0 AND 9007199254740990),
+  upload_next_seq bigint NOT NULL DEFAULT 1 CHECK(upload_next_seq BETWEEN 1 AND 9007199254740991),
+  upload_revision bigint NOT NULL DEFAULT 0 CHECK(upload_revision>=0),
+  upload_next_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  upload_failures integer NOT NULL DEFAULT 0 CHECK(upload_failures>=0),
+  upload_isolation_code text CHECK(upload_isolation_code IN ('source_missing','ack_invalid','ack_conflict'))
 );
 CREATE TABLE execution_worker.v5_callback_events (
   run_id uuid NOT NULL REFERENCES execution_worker.v5_callback_runs(run_id),

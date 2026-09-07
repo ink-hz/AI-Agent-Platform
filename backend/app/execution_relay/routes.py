@@ -189,6 +189,7 @@ def build_execution_relay_router(
     lease_seconds: int,
     max_body_bytes: int,
     requests_per_window: int = 120,
+    v5_bindings=None,
 ) -> APIRouter:
     limiter = ExecutionWorkerRequestLimiter(limit=requests_per_window)
     router = APIRouter(prefix="/api/v1/execution-worker")
@@ -355,4 +356,8 @@ def build_execution_relay_router(
             return _repository_error(error)
         return JSONResponse({"status": "accepted"}, headers=_NO_STORE)
 
+    if v5_bindings is not None:
+        from .routes_v5 import attach_v5_routes
+
+        attach_v5_routes(router, authenticated, v5_bindings)
     return router

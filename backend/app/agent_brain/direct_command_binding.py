@@ -1,15 +1,18 @@
 """Internal command storage joined to the existing Attempt transaction."""
 
 import hashlib
+import re
+import secrets
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from app.execution_relay.acceptance_v5 import AcceptanceV5
 from app.execution_relay.content_crypto import SealedContent
 from app.execution_relay.frozen_command_v5 import FrozenCommandV5, parse_frozen_command
 
-from .turn_attempts import LeaseRejected
+from .turn_attempts import Lease, LeaseRejected
 
 
 @dataclass(frozen=True, repr=False)
@@ -51,6 +54,199 @@ class BindingRejected(RuntimeError):
 class DirectCommandBindingRepository:
     def __init__(self, relay):
         self.relay = relay
+
+    def authorize_transport(self, lease, worker_id, callback_origin, *, connection):
+        _, _, attempt = self._lock(lease, connection)
+        row = self._transport_row(lease, connection)
+        if (
+            row is None
+            or row["retired_unsent_at"] is not None
+            or row["status"] != "queued"
+            or row["cancel_requested"]
+            or attempt["cancel_requested_at"] is not None
+            or row["transport_worker_id"] not in {None, worker_id}
+            or connection.execute(
+                "select 1 from platform_control.execution_workers "
+                "where worker_id=%s and status='active' and 'hr-bot'=any(allowed_agent_ids)",
+                (worker_id,),
+            ).fetchone()
+            is None
+        ):
+            raise BindingRejected()
+        parsed = urlsplit(callback_origin)
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname != "127.0.0.1"
+            or parsed.port is None
+            or not 1 <= parsed.port <= 65535
+            or callback_origin != f"http://127.0.0.1:{parsed.port}"
+        ):
+            raise BindingRejected()
+        self._decode(row)
+        wrapper = self._wrapper(row)
+        transport = wrapper.get("transport")
+        if transport is None:
+            transport = {
+                "callbackToken": secrets.token_urlsafe(32),
+                "callbackOrigin": callback_origin,
+                "acknowledgedEpoch": 0,
+            }
+        elif transport["callbackOrigin"] != callback_origin:
+            raise BindingRejected()
+        transport = {
+            **transport,
+            "executorId": str(lease.executor_id),
+            "leaseEpoch": lease.lease_epoch,
+        }
+        wrapper.update(format="hr_frozen_command_v2", transport=transport)
+        sealed = self.relay.content_codec.seal_json(
+            f"execution-job:{row['job_id']}:{row['run_id']}", wrapper
+        )
+        connection.execute(
+            "update platform_control.execution_jobs set payload_ciphertext=%s,encryption_key_version=%s "
+            "where job_id=%s",
+            (sealed.ciphertext, sealed.key_version, row["job_id"]),
+        )
+        connection.execute(
+            "update platform_control.direct_command_bindings set transport_worker_id=%s where attempt_id=%s",
+            (worker_id, lease.attempt_id),
+        )
+        return transport
+
+    def handoff(self, worker_id):
+        from app.execution_relay.frozen_command_v5 import hydrate_frozen_command
+
+        with self.relay._connection() as connection:
+            candidates = connection.execute(
+                "select a.attempt_id from platform_control.direct_command_bindings b "
+                "join platform_control.turn_attempts a using(attempt_id) "
+                "join platform_control.execution_jobs j using(job_id) "
+                "where b.transport_worker_id=%s and b.retired_unsent_at is null "
+                "and a.status in ('running','reconciling') and a.cancel_requested_at is null "
+                "and a.lease_expires_at>clock_timestamp() order by j.updated_at,a.attempt_id",
+                (worker_id,),
+            ).fetchall()
+            for candidate in candidates:
+                try:
+                    with connection.transaction():
+                        lease, row, transport = self._authorized(
+                            connection, worker_id, candidate["attempt_id"]
+                        )
+                        if transport["acknowledgedEpoch"] == lease.lease_epoch:
+                            continue
+                        binding = self._decode(row)
+                        if not self.mark_offered(lease, connection=connection):
+                            continue
+                        # Reuse the job's transport timestamp for fair pending polls.
+                        # Its status/legacy lease fields remain untouched.
+                        connection.execute(
+                            "update platform_control.execution_jobs set updated_at=clock_timestamp() where job_id=%s",
+                            (binding.job_id,),
+                        )
+                        command = hydrate_frozen_command(
+                            binding.frozen,
+                            lease_epoch=lease.lease_epoch,
+                            event_callback_url=f"{transport['callbackOrigin']}/callbacks/{binding.run_id}/{transport['callbackToken']}",
+                            input_attachment_grants=[],
+                            output_write_grant=None,
+                        )
+                        return {
+                            "version": "hr_transport_handoff_v1",
+                            "jobId": str(binding.job_id),
+                            "workerId": worker_id,
+                            "callbackOrigin": transport["callbackOrigin"],
+                            "command": command.model_dump(mode="json", by_alias=True),
+                        }
+                except (BindingRejected, LeaseRejected):
+                    continue
+        return None
+
+    def acknowledge_transport(self, worker_id, run_id, value):
+        from app.execution_relay.acceptance_v5 import parse_v5_acceptance
+        from app.execution_relay.frozen_command_v5 import hydrate_frozen_command
+
+        with self.relay._connection() as connection:
+            candidate = connection.execute(
+                "select b.attempt_id from platform_control.direct_command_bindings b "
+                "join platform_control.execution_jobs j using(job_id) where j.run_id=%s",
+                (run_id,),
+            ).fetchone()
+            if candidate is None:
+                raise BindingRejected()
+            lease, row, transport = self._authorized(
+                connection, worker_id, candidate["attempt_id"]
+            )
+            command = hydrate_frozen_command(
+                self._decode(row).frozen,
+                lease_epoch=lease.lease_epoch,
+                event_callback_url=f"{transport['callbackOrigin']}/callbacks/{run_id}/{transport['callbackToken']}",
+                input_attachment_grants=[],
+                output_write_grant=None,
+            )
+            acceptance = parse_v5_acceptance(value, command)
+            self.record_acceptance(lease, acceptance, connection=connection)
+            if acceptance.launch_lease_epoch is None:
+                return False
+            wrapper = self._wrapper(row)
+            wrapper["transport"]["acknowledgedEpoch"] = lease.lease_epoch
+            sealed = self.relay.content_codec.seal_json(
+                f"execution-job:{row['job_id']}:{run_id}", wrapper
+            )
+            connection.execute(
+                "update platform_control.execution_jobs set payload_ciphertext=%s,encryption_key_version=%s where job_id=%s",
+                (sealed.ciphertext, sealed.key_version, row["job_id"]),
+            )
+            return True
+
+    def _authorized(self, connection, worker_id, attempt_id):
+        # This read only locates the persisted instruction. Authority is rechecked
+        # under the standard full lock order below, never from caller lease fields.
+        row = connection.execute(
+            "select j.*,b.* from platform_control.direct_command_bindings b "
+            "join platform_control.execution_jobs j using(job_id) where b.attempt_id=%s",
+            (attempt_id,),
+        ).fetchone()
+        if row is None or row["transport_worker_id"] != worker_id:
+            raise BindingRejected()
+        transport = self._wrapper(row).get("transport")
+        if transport is None:
+            raise BindingRejected()
+        lease = Lease(
+            attempt_id,
+            "worker_direct",
+            UUID(transport["executorId"]),
+            transport["leaseEpoch"],
+            None,
+            "running",
+        )
+        _, _, attempt = self._lock(lease, connection)
+        row = self._transport_row(lease, connection)
+        current = self._wrapper(row).get("transport")
+        if (
+            row["transport_worker_id"] != worker_id
+            or current is None
+            or any(
+                current[key] != transport[key]
+                for key in (
+                    "executorId",
+                    "leaseEpoch",
+                    "callbackToken",
+                    "callbackOrigin",
+                )
+            )
+            or row["retired_unsent_at"] is not None
+            or row["status"] != "queued"
+            or row["cancel_requested"]
+            or attempt["cancel_requested_at"] is not None
+            or connection.execute(
+                "select 1 from platform_control.execution_workers where worker_id=%s "
+                "and status='active' and 'hr-bot'=any(allowed_agent_ids)",
+                (worker_id,),
+            ).fetchone()
+            is None
+        ):
+            raise BindingRejected()
+        return lease, row, current
 
     def get_prepared(self, lease, *, connection):
         """Read the frozen command before any context rebuild; never infers absence as stop."""
@@ -276,19 +472,52 @@ class DirectCommandBindingRepository:
             raise LeaseRejected("attempt lease rejected")
         return {**job, **binding}
 
-    def _decode(self, row):
+    def _wrapper(self, row):
         wrapper = self.relay.content_codec.unseal_json(
             f"execution-job:{row['job_id']}:{row['run_id']}",
             SealedContent(
                 bytes(row["payload_ciphertext"]), row["encryption_key_version"]
             ),
         )
-        if (
-            type(wrapper) is not dict
-            or set(wrapper) != {"format", "commandHash", "command"}
-            or wrapper["format"] != "hr_frozen_command_v1"
+        if type(wrapper) is not dict or not (
+            (
+                set(wrapper) == {"format", "commandHash", "command"}
+                and wrapper["format"] == "hr_frozen_command_v1"
+            )
+            or (
+                set(wrapper) == {"format", "commandHash", "command", "transport"}
+                and wrapper["format"] == "hr_frozen_command_v2"
+            )
         ):
             raise BindingRejected()
+        if "transport" in wrapper:
+            transport = wrapper["transport"]
+            if (
+                type(transport) is not dict
+                or set(transport)
+                != {
+                    "callbackToken",
+                    "callbackOrigin",
+                    "executorId",
+                    "leaseEpoch",
+                    "acknowledgedEpoch",
+                }
+                or type(transport["callbackToken"]) is not str
+                or re.fullmatch(r"[A-Za-z0-9_-]{43}", transport["callbackToken"])
+                is None
+                or type(transport["leaseEpoch"]) is not int
+                or not 1 <= transport["leaseEpoch"] <= 9007199254740991
+                or type(transport["acknowledgedEpoch"]) is not int
+                or not 0 <= transport["acknowledgedEpoch"] <= transport["leaseEpoch"]
+                or type(transport["callbackOrigin"]) is not str
+                or type(transport["executorId"]) is not str
+                or str(UUID(transport["executorId"])) != transport["executorId"]
+            ):
+                raise BindingRejected()
+        return wrapper
+
+    def _decode(self, row):
+        wrapper = self._wrapper(row)
         frozen = parse_frozen_command(wrapper["command"])
         value = frozen.document
         if (

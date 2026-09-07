@@ -380,6 +380,27 @@ class SignedCloudClient:
         except (TypeError, ValueError, ValidationError):
             raise CloudRelayError() from None
 
+    async def post_v5_bytes(self, path: str, body: bytes) -> httpx.Response:
+        # No JSON re-encoding: signatures and transport cover the original bytes.
+        from app.control_plane.middleware import is_execution_worker_request
+
+        if (
+            type(body) is not bytes or not body or len(body) > 1_048_576
+            or not path.startswith(f"{_API_PREFIX}/v5/")
+            or not is_execution_worker_request("POST", path)
+        ):
+            raise CloudRelayError()
+        try:
+            response = await self._client.request(
+                "POST", self._base_url + path, content=body,
+                headers={**self._signer.sign("POST", path, body), "Content-Type": "application/json"},
+            )
+            if response.status_code not in {200, 204, 409}:
+                raise CloudRelayError()
+            return response
+        except (httpx.HTTPError, ValueError, TypeError, CloudRelayError):
+            raise CloudRelayError() from None
+
     async def heartbeat(self) -> tuple[RelayStopRequest, ...]:
         response = await self._post(f"{_API_PREFIX}/heartbeat", {})
         try:

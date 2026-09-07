@@ -1,3 +1,4 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from threading import Barrier, Event
@@ -8,6 +9,7 @@ import psycopg
 import pytest
 from test_agent_brain_conversation_repository import _codec
 from test_execution_acceptance_v5 import response
+from test_execution_worker_v5_receiver import event as source_event
 from test_hr_direct_worker import (  # actual P03 fixture chain
     attempt_repository as attempt_repository,  # noqa: PLC0414
 )
@@ -37,12 +39,14 @@ from app.agent_brain.direct_command_binding import (
 )
 from app.agent_brain.turn_attempts import LeaseRejected, TerminalEvidence
 from app.execution_relay.acceptance_v5 import parse_v5_acceptance
+from app.execution_relay.contracts_v5 import parse_v5_command
 from app.execution_relay.frozen_command_v5 import hydrate_frozen_command
 from app.execution_relay.repository import (
     ExecutionRelayConflict,
     ExecutionRelayNotFound,
     ExecutionRelayRepository,
 )
+from app.execution_relay.source_v5 import accept_source
 
 pytestmark = pytest.mark.postgres
 
@@ -110,6 +114,380 @@ def prepared(bindings, worker_turn, attempt_repository):
             lease, frozen_input(worker_turn), connection=connection
         )
     return lease, binding
+
+
+@pytest.fixture()
+def transport_worker(direct_database):
+    environment, _, _ = direct_database
+    worker_id = "v5-transport-" + uuid4().hex
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) "
+            "values(%s,array['hr-bot'],'active')",
+            (worker_id,),
+        )
+    return worker_id
+
+
+def test_authorization_pins_target_without_legacy_lease_and_recovers_one_real_token(
+    bindings, prepared, attempt_repository, transport_worker
+):
+    lease, binding = prepared
+    with attempt_repository.transaction() as connection:
+        first = bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+        assert first is not None
+    with attempt_repository.transaction() as connection:
+        second = bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+        assert second == first
+        assert len(first["callbackToken"]) == 43
+        assert bindings.get_prepared(lease, connection=connection) == binding
+        row = connection.execute(
+            "select b.transport_worker_id,j.status,j.lease_worker_id,j.lease_expires_at,j.payload_ciphertext "
+            "from platform_control.direct_command_bindings b join platform_control.execution_jobs j using(job_id) "
+            "where b.attempt_id=%s",
+            (lease.attempt_id,),
+        ).fetchone()
+        assert row["transport_worker_id"] == transport_worker
+        assert row["status"] == "queued"
+        assert row["lease_worker_id"] is row["lease_expires_at"] is None
+        assert first["callbackToken"].encode() not in bytes(row["payload_ciphertext"])
+
+
+def test_handoff_requires_explicit_current_authorization_and_marks_uncertainty(
+    bindings, prepared, attempt_repository, transport_worker, direct_database
+):
+    lease, binding = prepared
+    assert bindings.handoff(transport_worker) is None
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    first = bindings.handoff(transport_worker)
+    assert first is not None
+    assert first["command"]["commandHash"] == binding.frozen.command_hash
+    with attempt_repository.transaction() as connection:
+        assert not bindings.retire_unoffered(lease, connection=connection)
+    environment, _, _ = direct_database
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.turn_attempts set lease_expires_at=now()-interval '1 second' where attempt_id=%s",
+            (lease.attempt_id,),
+        )
+    takeover = attempt_repository.claim_due(uuid4(), 60)
+    assert takeover.status == "reconciling"
+    assert bindings.handoff(transport_worker) is None
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            takeover, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    current = bindings.handoff(transport_worker)
+    assert current["command"]["leaseEpoch"] == takeover.lease_epoch
+    assert (
+        current["command"]["eventCallbackUrl"] == first["command"]["eventCallbackUrl"]
+    )
+    assert current["command"]["commandHash"] == first["command"]["commandHash"]
+
+
+def test_authorized_but_never_offered_binding_can_retire(
+    bindings, prepared, attempt_repository, transport_worker
+):
+    lease, _ = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+        assert bindings.retire_unoffered(lease, connection=connection)
+    assert bindings.handoff(transport_worker) is None
+
+
+@pytest.mark.parametrize("change", ["origin", "worker", "cancel"])
+def test_transport_relocation_and_cancel_are_rejected(
+    bindings, prepared, attempt_repository, transport_worker, change
+):
+    lease, _ = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    with pytest.raises(BindingRejected), attempt_repository.transaction() as connection:
+        if change == "cancel":
+            connection.execute(
+                "update platform_control.turn_attempts set cancel_requested_at=now() where attempt_id=%s",
+                (lease.attempt_id,),
+            )
+        bindings.authorize_transport(
+            lease,
+            transport_worker if change != "worker" else "foreign-worker",
+            "http://127.0.0.1:19192"
+            if change == "origin"
+            else "http://127.0.0.1:19191",
+            connection=connection,
+        )
+
+
+def test_cloud_ack_suppresses_only_acknowledged_authorization_atomically(
+    bindings, prepared, attempt_repository, transport_worker, monkeypatch
+):
+    lease, binding = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    command = parse_v5_command(bindings.handoff(transport_worker)["command"])
+    pending = response(command, launch=None, state="pending")
+    bindings.acknowledge_transport(transport_worker, binding.run_id, pending)
+    assert bindings.handoff(transport_worker) is not None
+    ack = response(command)
+    assert bindings.acknowledge_transport(transport_worker, binding.run_id, ack)
+    assert bindings.handoff(transport_worker) is None
+    assert bindings.acknowledge_transport(transport_worker, binding.run_id, ack)
+    with attempt_repository.transaction() as connection:
+        repeated = bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+        assert repeated["acknowledgedEpoch"] == lease.lease_epoch
+
+
+def test_failed_cloud_acceptance_transaction_does_not_suppress_handoff(
+    bindings, prepared, attempt_repository, transport_worker, monkeypatch
+):
+    lease, binding = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    command = parse_v5_command(bindings.handoff(transport_worker)["command"])
+    original = bindings.record_acceptance
+
+    def fail_after_write(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("synthetic transaction failure")
+
+    monkeypatch.setattr(bindings, "record_acceptance", fail_after_write)
+    with pytest.raises(RuntimeError, match="synthetic transaction failure"):
+        bindings.acknowledge_transport(
+            transport_worker, binding.run_id, response(command)
+        )
+    assert bindings.handoff(transport_worker) is not None
+
+
+def test_cloud_source_preserves_raw_text_and_late_origin_without_business_writes(
+    bindings, prepared, attempt_repository, transport_worker, direct_database
+):
+    lease, binding = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    command = bindings.handoff(transport_worker)["command"]
+    bindings.acknowledge_transport(
+        transport_worker, binding.run_id, response(parse_v5_command(command))
+    )
+    raw = json.dumps(source_event(command, 1, "cancelled"), indent=2).encode()
+    accepted = accept_source(bindings, transport_worker, binding.run_id, raw)
+    assert accepted is not None
+    assert (accepted.status, accepted.accepted_through) == ("accepted", 1)
+    environment, _, _ = direct_database
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.turn_attempts set lease_expires_at=now()-interval '1 second' where attempt_id=%s",
+            (lease.attempt_id,),
+        )
+    duplicate = accept_source(bindings, transport_worker, binding.run_id, raw)
+    assert duplicate.status == "duplicate"
+    assert (
+        accept_source(
+            bindings,
+            transport_worker,
+            binding.run_id,
+            json.dumps(source_event(command, 2)).encode(),
+        ).status
+        == "conflict"
+    )
+    with attempt_repository.transaction() as connection:
+        assert (
+            connection.execute(
+                "select status from platform_control.turn_attempts where attempt_id=%s",
+                (lease.attempt_id,),
+            ).fetchone()["status"]
+            == "running"
+        )
+        row = connection.execute(
+            "select * from platform_control.v5_source_events where run_id=%s",
+            (binding.run_id,),
+        ).fetchone()
+        from app.execution_relay.content_crypto import SealedContent
+
+        stored = bindings.relay.content_codec.unseal_json(
+            f"execution-v5-source:{binding.run_id}:1",
+            SealedContent(
+                bytes(row["payload_ciphertext"]), row["encryption_key_version"]
+            ),
+        )
+        assert stored == {"raw": raw.decode()}
+
+
+def test_pending_handoff_does_not_starve_another_authorized_run(
+    bindings,
+    prepared,
+    attempt_repository,
+    transport_worker,
+    direct_database,
+    repository,
+):
+    lease, first = prepared
+    environment, owner_id, _ = direct_database
+    conversation = repository.ensure_direct_conversation_shell(
+        owner_id,
+        uuid4(),
+        direct_agent_id="hr-bot",
+        title="synthetic transport fairness",
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.conversations set execution_owner='worker_direct',route_epoch=7 where conversation_id=%s",
+            (conversation.conversation_id,),
+        )
+    turn = repository.append_turn(
+        owner_id, conversation.conversation_id, uuid4(), "synthetic second transport"
+    )
+    second_lease = attempt_repository.claim_due(uuid4(), 60)
+    with attempt_repository.transaction() as connection:
+        second = bindings.prepare(
+            second_lease, frozen_input(turn), connection=connection
+        )
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+        bindings.authorize_transport(
+            second_lease,
+            transport_worker,
+            "http://127.0.0.1:19191",
+            connection=connection,
+        )
+    one = bindings.handoff(transport_worker)
+    two = bindings.handoff(transport_worker)
+    assert {one["command"]["runId"], two["command"]["runId"]} == {
+        str(first.run_id),
+        str(second.run_id),
+    }
+
+
+def test_concurrent_cloud_ack_keeps_valid_idempotent_receipt(
+    bindings, prepared, attempt_repository, transport_worker, monkeypatch
+):
+    from threading import Lock
+
+    lease, binding = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    command = parse_v5_command(bindings.handoff(transport_worker)["command"])
+    original = bindings._wrapper
+    barrier, lock, reads = Barrier(2), Lock(), [0]
+
+    def simultaneous_instruction_read(row):
+        value = original(row)
+        with lock:
+            reads[0] += 1
+            first = reads[0] <= 2
+        if first:
+            barrier.wait(timeout=5)
+        return value
+
+    monkeypatch.setattr(bindings, "_wrapper", simultaneous_instruction_read)
+
+    def ack():
+        try:
+            return bindings.acknowledge_transport(
+                transport_worker, binding.run_id, response(command)
+            )
+        except BindingRejected:
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: ack(), range(2)))
+    assert results == [True, True]
+
+
+@pytest.mark.parametrize("operation", ["authorize", "handoff", "ack"])
+def test_transport_final_job_lock_wait_cannot_outlive_actual_lease(
+    bindings,
+    prepared,
+    attempt_repository,
+    transport_worker,
+    direct_database,
+    monkeypatch,
+    operation,
+):
+    lease, binding = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(
+            lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+        )
+    handoff = bindings.handoff(transport_worker) if operation == "ack" else None
+    ready, pid = Event(), []
+    original = bindings._lock
+
+    def capture(lease, connection):
+        pid.append(connection.info.backend_pid)
+        ready.set()
+        return original(lease, connection)
+
+    monkeypatch.setattr(bindings, "_lock", capture)
+
+    def act():
+        if operation == "handoff":
+            return bindings.handoff(transport_worker)
+        if operation == "ack":
+            return bindings.acknowledge_transport(
+                transport_worker,
+                binding.run_id,
+                response(parse_v5_command(handoff["command"])),
+            )
+        with attempt_repository.transaction() as connection:
+            return bindings.authorize_transport(
+                lease, transport_worker, "http://127.0.0.1:19191", connection=connection
+            )
+
+    environment, _, _ = direct_database
+    with psycopg.connect(environment["admin"]) as blocker:
+        blocker.execute(
+            "update platform_control.turn_attempts set lease_expires_at=clock_timestamp()+interval '1 second' where attempt_id=%s",
+            (lease.attempt_id,),
+        )
+        blocker.commit()
+        blocker.execute(
+            "select job_id from platform_control.execution_jobs where job_id=%s for update",
+            (binding.job_id,),
+        )
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(act)
+            assert ready.wait(3)
+            try:
+                deadline = monotonic() + 3
+                blocked = False
+                while monotonic() < deadline:
+                    blocked = blocker.execute(
+                        "select cardinality(pg_blocking_pids(%s))>0", (pid[0],)
+                    ).fetchone()[0]
+                    if blocked:
+                        break
+                    sleep(0.01)
+                assert blocked
+                blocker.execute("select pg_sleep(1.1)")
+            finally:
+                blocker.commit()
+            if operation == "handoff":
+                assert future.result(3) is None
+            else:
+                with pytest.raises(LeaseRejected):
+                    future.result(3)
 
 
 def test_only_unoffered_job_can_retire_its_reservation(

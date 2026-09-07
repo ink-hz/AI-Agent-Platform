@@ -359,6 +359,25 @@ class MetaBotClient:
         except Exception:
             raise MetaBotClientError(_REQUEST_FAILED) from None
 
+    def start_v5_run(self, command):
+        from .acceptance_v5 import parse_v5_acceptance
+        from .contracts_v5 import parse_v5_command
+
+        try:
+            parsed = parse_v5_command(command)
+            if parsed.target_bot != "hr-bot" or not self._bearer_secret:
+                raise ValueError
+            port = self._runtime_map.port_for("hr-bot")
+            with self._client() as client:
+                response = client.post(f"http://127.0.0.1:{port}/api/core-chat/runs", json=command)
+                if response.status_code != 202:
+                    raise ValueError
+                value = response.json()
+                parse_v5_acceptance(value, parsed)
+                return value
+        except (httpx.HTTPError, ValueError, TypeError, MetaBotClientError):
+            raise MetaBotClientError(_REQUEST_FAILED) from None
+
     @staticmethod
     def _assert_collaboration_contract(
         client: httpx.Client,

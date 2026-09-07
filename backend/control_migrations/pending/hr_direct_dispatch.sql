@@ -48,6 +48,7 @@ create table platform_control.direct_command_bindings (
   conversation_id uuid not null references platform_control.conversations(conversation_id),
   command_seq bigint not null check(command_seq between 1 and 9007199254740990),
   command_hash text not null check(command_hash ~ '^[0-9a-f]{64}$'),
+  transport_worker_id text references platform_control.execution_workers(worker_id),
   offered_at timestamptz,
   accepted_at timestamptz,
   launch_lease_epoch bigint check(launch_lease_epoch between 1 and 9007199254740991),
@@ -59,6 +60,9 @@ create table platform_control.direct_command_bindings (
 create unique index direct_command_sequence_reservation
   on platform_control.direct_command_bindings(conversation_id,command_seq)
   where retired_unsent_at is null;
+create index direct_command_transport_poll
+  on platform_control.direct_command_bindings(transport_worker_id,attempt_id)
+  where retired_unsent_at is null;
 create function platform_control.preserve_direct_command_binding()
 returns trigger language plpgsql set search_path=pg_catalog,platform_control
 as $function$
@@ -68,7 +72,8 @@ begin
      or (old.offered_at is not null and new.offered_at is distinct from old.offered_at)
      or (old.accepted_at is not null and new.accepted_at is distinct from old.accepted_at)
      or (old.launch_lease_epoch is not null and new.launch_lease_epoch is distinct from old.launch_lease_epoch)
-     or (old.retired_unsent_at is not null and new.retired_unsent_at is distinct from old.retired_unsent_at) then
+     or (old.retired_unsent_at is not null and new.retired_unsent_at is distinct from old.retired_unsent_at)
+     or (old.transport_worker_id is not null and new.transport_worker_id is distinct from old.transport_worker_id) then
     raise check_violation using message='direct command identity is immutable';
   end if;
   return new;
@@ -77,6 +82,19 @@ $function$;
 create trigger preserve_direct_command_binding before update on platform_control.direct_command_bindings
   for each row execute function platform_control.preserve_direct_command_binding();
 revoke all on platform_control.direct_command_bindings from public;
+-- Raw v5 envelopes cannot use the legacy integer/payload-only event contract.
+create table platform_control.v5_source_events (
+  run_id uuid not null references platform_control.execution_jobs(run_id),
+  seq bigint not null check(seq between 1 and 9007199254740990),
+  event_type text not null check(event_type in ('run_heartbeat','raw_progress','result','error','cancelled','interrupted')),
+  payload_ciphertext bytea not null,
+  encryption_key_version integer not null check(encryption_key_version>0),
+  received_at timestamptz not null default clock_timestamp(),
+  primary key(run_id,seq)
+);
+create unique index v5_source_one_terminal on platform_control.v5_source_events(run_id)
+  where event_type in ('result','error','cancelled','interrupted');
+revoke all on platform_control.v5_source_events from public;
 do $grants$
 declare selected_app name;
 begin
@@ -86,5 +104,6 @@ begin
     else raise insufficient_privilege using message='direct binding environment invalid';
   end case;
   execute format('grant select,insert,update on platform_control.direct_command_bindings to %I', selected_app);
+  execute format('grant select,insert on platform_control.v5_source_events to %I', selected_app);
 end
 $grants$;

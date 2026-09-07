@@ -48,6 +48,7 @@ def direct_database(attempt_repository, conversation_database):
 
 
 def _drop_direct_draft(connection):
+    connection.execute("drop table if exists platform_control.v5_source_events")
     connection.execute("drop table if exists platform_control.direct_command_bindings")
     connection.execute("drop function if exists platform_control.preserve_direct_command_binding()")
     connection.execute("delete from platform_control.execution_jobs where job_kind='worker_direct_v5'")
