@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**状态：** v0.3，2026-09-07 Owner 已指令开始阶段 0 / P01；其余任务待执行。示例是目标测试，不是已通过证据；实际结果见执行记录。
+**状态：** v0.3，2026-09-07 Owner 已授权无需逐项确认、连续本地实施。P01/P02 本地实现通过复审；M02 在隔离工作树内实施，尚未接入业务。示例是目标测试，不是已通过证据；实际结果见执行记录。
 **Goal:** 让MetaBot可靠接收、执行、保存结果并恢复投递，保留原生Agent能力。
 **Architecture:** v5按能力协商，先双读后切HR流量；本地PG inbox/outbox与云端账本通过既有Relay传输。core-chat新命令身份不污染旧v4日志。
 **Tech Stack:** TypeScript/Vitest、现有pg/PostgreSQL、node-sdk锁版本1.64.0。
@@ -10,7 +10,7 @@
 ## Global Constraints
 
 - 唯一冻结依据：../specs/2026-09-07-hr-unified-execution-contract-design.md（v0.3）；旧 hr-result-pipeline-refactor 计划停止执行。
-- 评审已通过，当前开始阶段0/P01本地契约与兼容测试；不应用生产迁移、不上线、不重放业务消息，不查询未授权生产数据。
+- 评审已通过，按依赖连续本地实施与验证；不应用生产迁移、不上线、不重放业务消息，不查询未授权生产数据。
 - 每个任务逐条 RED → 最小实现 → GREEN → 回归 → 独立 diff 审查；禁止先把整批模块实现完再补测试。
 - 已有修改和 backend/.venv 必须保留，不删除旧补丁、不提交环境；实施时重新确认工作树与三仓库 HEAD。
 - 不引入 Kafka、向量库、访客执行、ClamAV 或新的招聘审批；模型配置保持现状。
@@ -23,7 +23,7 @@
 
 ## 测试与存储准备
 
-实际仓库 /Users/neo/Developer/work/metabot-dev（本轮不写入）。P01共享fixture是接口输入；运行时校验器不从另一个仓库隐式读取源码，应把固定契约schema纳入对应发布构建并记录hash。
+实际仓库 /Users/neo/Developer/work/metabot-dev；本轮隔离工作树为 `.worktrees/hr-unified-execution`，分支 `feat/hr-unified-execution`，基线 `fe5ad87`，不修改主工作区。P01共享fixture是接口输入；运行时校验器不从另一个仓库隐式读取源码，应把固定契约schema纳入对应发布构建并记录hash。
 
 已有 tests/flywheel-integration.test.ts 使用专用 FLYWHEEL_TEST_* 连接与 pg_ctl 停库故障，但依赖外部测试环境，不能把 describe.skipIf 跳过算作新持久账本验证。参考 Team 的 flywheel/tests/testdb.sh 一次性PG启动方式，不执行其全量Flywheel迁移或照搬宽泛清理。
 
@@ -89,6 +89,10 @@ queued_notice是本地接收卡片生命周期的独立幂等用途，正文固�
 - [ ] 仅提交本任务精确文件，消息 `feat(hr-runtime): m01 持久飞书收件箱与ACK边界`；不升级依赖、不推送、不部署。
 
 ## M02：v5命令身份与独立Session生命周期
+
+**实施切片：** 为控制单次事务/协议修改范围，M02 内部按 M02a 配置/本地 PG 基础、M02b 命令校验与持久 Session、M02c 真实 HTTP 接线顺序实现并复审；不增加业务任务，不在 M02a 完成时标记整个 M02 完成。使用唯一未应用草稿 `runtime_migrations/pending/hr_runtime.sql`，存储 `schema_version=1` 与 wire v5 分离。四变量 loader 不另要求 Worker 专用的 `PLATFORM_METABOT_RUNTIME_CONTRACT`；Team 合同到生成环境的一致性仍由 O02 验证。M02b 前共享资产按 P01 代码 `62cdfce` 精确导出并记录 SHA，不能新增独立规范。
+
+**M02a 本地验收：** `c4a3d29` / `884f30c`，58 项回归、编译器/lint 通过；规格/质量独立复审 Approved，无遗留问题。见 [M02a 执行记录](../../reviews/2026-09-07-hr-unified-execution-m02a.md)。仅基础库完成；命令/会话、HTTP、终态 outbox 和生产配置尚未接入，不代表整个 M02 或业务已可用。
 
 **依赖：** P01 schema/cases；保持v3/v4读取兼容
 **文件（相对metabot-dev）：** 新增 src/api/routes/core-chat-v5-contract.ts、core-chat-v5-store.ts、src/runtime/local-runtime-config.ts、local-runtime-store.ts、tests/helpers/local-runtime-database.ts、tests/local-runtime-config.test.ts、tests/core-chat-v5-contract.test.ts、tests/core-chat-v5-store.test.ts；修改 src/api/routes/core-chat-contract.ts、core-chat-session-store.ts、core-chat-routes.ts；回归 tests/core-chat-session-store.test.ts、tests/core-chat-routes.test.ts。
