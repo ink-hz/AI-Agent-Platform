@@ -91,6 +91,7 @@ staging="$1"; final="$2"; bundle_id="$3"; release="$4"; environment="$5"; owner_
 [[ -d "$staging" && ! -L "$staging" && -d "$release" && ! -L "$release" ]] || exit 1
 [[ -f "$environment" && ! -L "$environment" ]] || exit 1
 (cd "$staging" && /usr/bin/sha256sum -c checksums.sha256)
+/usr/bin/chown -R 10001:10001 -- "$staging"
 installed=0
 rollback_file() {
   status=$?
