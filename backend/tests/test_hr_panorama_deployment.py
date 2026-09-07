@@ -50,6 +50,7 @@ def test_import_script_uses_exact_data_disk_staging_and_cleanup_trap() -> None:
     assert "/data/staging/orbbec-agent-platform/" in script
     assert "trap cleanup" in script
     assert "python -m app.hr.intelligence_import" in script
+    assert '--expected-bundle-id "$bundle_id" </dev/null' in script
     assert '/usr/bin/chown -R 10001:10001 -- "$staging"' in script
     assert script.index("sha256sum -c checksums.sha256") < script.index(
         '/usr/bin/chown -R 10001:10001 -- "$staging"'
