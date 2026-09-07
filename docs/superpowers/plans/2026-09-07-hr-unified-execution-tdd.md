@@ -2,7 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**状态：** v0.3，2026-09-07 P01 本地契约冻结完成（`62cdfce`，规格/质量复审 Approved）；其余 17 项待执行。未勾选示例仍是目标测试，不是已通过证据；实际结果见执行记录。
+**状态：** v0.3，2026-09-07 P01 契约冻结（`62cdfce`）和 P02 本地仓储实现（`d10727b`）均通过规格/质量独立复审；P02 生产迁移编号仍待核对，其余 16 项继续按依赖实施。未勾选示例仍是目标测试，不是已通过证据；实际结果见执行记录。
+**执行授权补充：** Owner 明确无需逐项确认；按已评审设计、依赖和TDD/独立复审连续推进本地开发，不等待逐条“继续”。只有设计边界变更、不能安全自行解决的阻塞或新增生产权限才需确认。生产统计、迁移应用、部署切流量及真实业务发送仍按原授权/验收纪律，不随本地自主执行自动放开。
 **Goal:** 将评审修订设计拆为可独立验收的跨仓库 TDD 任务，先交付可靠对话，再切飞书。
 **Architecture:** 共用版本化契约；平台、MetaBot 和部署验证分别实施。先具备双协议接收与恢复能力，再允许新 HR 流量，不以大批量一次上线替代迁移。
 **Tech Stack:** Python/pytest/PostgreSQL；TypeScript/Vitest；Node node:test；现有签名 Relay。
@@ -10,7 +11,7 @@
 ## Global Constraints
 
 - 唯一冻结依据：../specs/2026-09-07-hr-unified-execution-contract-design.md（v0.3）；旧 hr-result-pipeline-refactor 计划停止执行。
-- 评审已通过，当前开始阶段0/P01本地契约与兼容测试；不应用生产迁移、不上线、不重放业务消息，不查询未授权生产数据。
+- 评审已通过，P01完成后按依赖连续本地实施与验证；不应用生产迁移、不上线、不重放业务消息，不查询未授权生产数据。
 - 每个任务逐条 RED → 最小实现 → GREEN → 回归 → 独立 diff 审查；禁止先把整批模块实现完再补测试。
 - 已有修改和 backend/.venv 必须保留，不删除旧补丁、不提交环境；实施时重新确认工作树与三仓库 HEAD。
 - 不引入 Kafka、向量库、访客执行、ClamAV 或新的招聘审批；模型配置保持现状。
@@ -64,7 +65,7 @@
 | ID | 可验收成果 | 依赖 | 对应裁决 |
 |---|---|---|---|
 | P01 | ✓ v5/渠道/config共享样例、UUID映射、兼容解析（库层，未接运行路由） | 契约冻结 | R01/R03/R05/F01 |
-| P02 | Attempt领取、取消占位、fencing、事务提交 | P01 | R02/R06 |
+| P02 | ✓ 本地 Attempt仓储/真实PG验收；生产编号未定、运行集成另验 | P01 | R02/R06 |
 | P03 | 独立云端Worker、能力缺失可见、Mission兼容层 | P02；派发前需M02/M03 | R09 |
 | P04 | 文字、成果意图、按渠道区分投递原子收口 | P02+M03/M05契约 | R04/R07/F04 |
 | P05 | 一致Turn快照、最新页/向上分页、SSE纯读 | P02/P04 | R08 |

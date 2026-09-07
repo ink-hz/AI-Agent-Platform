@@ -10,7 +10,7 @@
 ## Global Constraints
 
 - 唯一冻结依据：../specs/2026-09-07-hr-unified-execution-contract-design.md（v0.3）；旧 hr-result-pipeline-refactor 计划停止执行。
-- 评审已通过，当前开始阶段0/P01本地契约与兼容测试；不应用生产迁移、不上线、不重放业务消息，不查询未授权生产数据。
+- 评审已通过，Owner明确无需逐项确认，P01完成后按依赖连续本地实施与验证；不应用生产迁移、不上线、不重放业务消息，不查询未授权生产数据。
 - 每个任务逐条 RED → 最小实现 → GREEN → 回归 → 独立 diff 审查；禁止先把整批模块实现完再补测试。
 - 已有修改和 backend/.venv 必须保留，不删除旧补丁、不提交环境；实施时重新确认工作树与三仓库 HEAD。
 - 不引入 Kafka、向量库、访客执行、ClamAV 或新的招聘审批；模型配置保持现状。
@@ -71,6 +71,10 @@ request_id = uuid5(NAMESPACE_URL, name)
 - [x] 仅提交本任务实际修改的精确文件；提交消息：`feat(hr-runtime): p01 共享v5样例、幂等身份与兼容解析`。不执行 `git add .`，不推送/发布。
 
 ## P02：真实数据库Attempt账本与租约排他
+
+**本地验收完成：** `557b25a` / `d10727b`，独立规格/质量 Approved；36 项新增测试，扩展回归 263 项通过。详见 [P02 执行记录](../../reviews/2026-09-07-hr-unified-execution-p02.md)。生产编号核对仍未完成；下列清单保留为原始验收步骤，不能误读为已部署。
+
+**执行补充（2026-09-07）：** Owner 已明确无需逐项确认，按依赖连续本地开发。当前master=`56af396`，最新编号087；本工作树088保留原样，未获目标已应用清单、不假设088状态。为不把缺少发布核对变为本地开发阻塞，唯一SQL草稿固定为 `backend/control_migrations/pending/hr_turn_attempts.sql`，仅一次性PG fixture显式加载；现有 `load_numbered_migrations` 仅扫描顶层三位编号文件，不会自动应用该草稿。不得复制第二份DDL、默认抢占089、调用生产迁移器或将编号检查勾为完成。发布前取得清单后再将同一文件移入最终编号路径并重验；P02的本地实现验收与发布编号验收分别记录。
 
 **依赖：** P01
 **文件（相对Platform仓库根）：** 新增 backend/app/agent_brain/turn_attempts.py；新增 backend/tests/test_turn_attempts_database.py；新增 backend/control_migrations 下的 hr_turn_attempts 迁移（完整编号文件名先按下一步确定）；回归 backend/tests/test_agent_brain_conversation_repository.py。
