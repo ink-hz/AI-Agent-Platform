@@ -65,7 +65,15 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         "8080",
         "--no-proxy-headers",
     ]
-    assert services["platform-loopback"]["volumes"] == []
+    assert services["platform-loopback"]["volumes"] == [
+        {
+            "type": "bind",
+            "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+            "target": "/run/office-recipient/platform-office-recipient-bearer",
+            "read_only": True,
+            "bind": {"create_host_path": False},
+        }
+    ]
     assert services["platform-loopback"]["read_only"] is True
     assert services["platform-loopback"]["cap_drop"] == ["ALL"]
     assert set(services["platform-loopback"]["networks"]) == {
@@ -167,6 +175,13 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert services["platform-api"]["volumes"] == [
         "platform-api-secrets:/run/secrets:ro",
         "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
+        {
+            "type": "bind",
+            "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+            "target": "/run/office-recipient/platform-office-recipient-bearer",
+            "read_only": True,
+            "bind": {"create_host_path": False},
+        },
     ]
     assert services["platform-postgres"]["volumes"] == [
         "/data/orbbec-agent-platform/postgres:/var/lib/postgresql/data",

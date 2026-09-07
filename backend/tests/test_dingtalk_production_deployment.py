@@ -594,8 +594,10 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert api["environment"]["PLATFORM_PUBLIC_BASE_URL"] == "https://agent.orbbec.com.cn"
     assert api["environment"]["PLATFORM_ROUTE_PREFIX"] == "/"
     assert api["environment"]["PLATFORM_COOKIE_NAME"] == "__Host-platform_session"
-    assert api["environment"]["PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"] == "0"
-    assert "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE" not in api["environment"]
+    assert api["environment"]["PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"] == "1"
+    assert api["environment"]["PLATFORM_OFFICE_RECIPIENT_BEARER_FILE"] == (
+        "/run/office-recipient/platform-office-recipient-bearer"
+    )
     assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
     assert set(api["networks"]) == {
         "platform-internal",
@@ -644,54 +646,69 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     for forbidden in ("clientSecret:", "dingtalk-app-secret:", "corp-id:"):
         assert forbidden not in serialized
     assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
+    office_recipient_mount = {
+        "type": "bind",
+        "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+        "target": "/run/office-recipient/platform-office-recipient-bearer",
+        "read_only": True,
+        "bind": {"create_host_path": False},
+    }
     assert api["volumes"] == [
         "platform-api-secrets:/run/secrets:ro",
         "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
+        office_recipient_mount,
     ]
-    assert services["platform-loopback"]["volumes"] == []
+    assert services["platform-loopback"]["volumes"] == [office_recipient_mount]
     assert services["platform-loopback"]["environment"] == {
         "PLATFORM_LOOPBACK_TARGET_BASE_URL": "http://172.30.0.4:8080",
         "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": (
             "127.0.0.1/32,172.31.0.1/32,172.31.0.8/32"
         ),
         "PLATFORM_LOOPBACK_SOURCE_ADDRESS": "172.30.0.3",
+        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
+        "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": (
+            "/run/office-recipient/platform-office-recipient-bearer"
+        ),
+        "PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS": "172.31.0.1/32",
     }
     for name, service in services.items():
         if name != "platform-loopback":
             assert "ports" not in service
 
 
-def test_office_recipient_directory_compose_override_is_explicit_and_private():
+def test_office_recipient_directory_is_a_mandatory_base_production_capability():
     override_path = CLOUD / "compose.office-recipient-directory.yaml"
-    assert override_path.is_file()
-    serialized = override_path.read_text(encoding="utf-8")
-    override = yaml.safe_load(serialized)
-    services = override["services"]
-    target = "/run/office-recipient/platform-office-recipient-bearer"
+    assert not override_path.exists()
 
-    assert services["platform-api"]["environment"] == {
-        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
-        "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": target,
-    }
-    assert services["platform-loopback"]["environment"] == {
-        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
-        "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": target,
-        "PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS": "172.31.0.1/32",
-    }
+    serialized = (CLOUD / "compose.yaml").read_text(encoding="utf-8")
+    services = yaml.safe_load(serialized)["services"]
+    target = "/run/office-recipient/platform-office-recipient-bearer"
+    source = "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer"
+
+    assert services["platform-api"]["environment"][
+        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"
+    ] == "1"
+    assert services["platform-api"]["environment"][
+        "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE"
+    ] == target
+    assert services["platform-loopback"]["environment"][
+        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"
+    ] == "1"
+    assert services["platform-loopback"]["environment"][
+        "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE"
+    ] == target
+    assert services["platform-loopback"]["environment"][
+        "PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS"
+    ] == "172.31.0.1/32"
     for name in ("platform-api", "platform-loopback"):
         service = services[name]
-        assert service["volumes"] == [
-            {
-                "type": "bind",
-                "source": "${PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE:?required}",
-                "target": target,
-                "read_only": True,
-            }
-        ]
-        assert "ports" not in service
-
-    assert "UID 10001" in serialized
-    assert "mode 0600" in serialized
+        assert {
+            "type": "bind",
+            "source": source,
+            "target": target,
+            "read_only": True,
+            "bind": {"create_host_path": False},
+        } in service["volumes"]
     assert "Bearer " not in serialized
 
 
@@ -705,8 +722,12 @@ def test_office_recipient_bearer_mountpoint_exists_in_read_only_runtime_image():
     ) in dockerfile
 
 
-def test_office_recipient_resolver_release_is_scoped_and_secret_safe():
+def test_office_recipient_resolver_is_enforced_by_every_production_release():
     deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
+    remote_stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+    rollback = (CLOUD / "rollback-dingtalk-production.sh").read_text(
+        encoding="utf-8"
+    )
     runbook = (ROOT / "docs/runbooks/cloud-platform.md").read_text(encoding="utf-8")
 
     for forbidden_environment in (
@@ -715,7 +736,32 @@ def test_office_recipient_resolver_release_is_scoped_and_secret_safe():
         "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED",
     ):
         assert f"${{{forbidden_environment}+x}}" in deploy
-    assert "compose.office-recipient-directory.yaml" in runbook
+    assert "compose.office-recipient-directory.yaml" not in runbook
+    assert (
+        'office_recipient_bearer="$private_path/platform-office-recipient-bearer"'
+        in remote_stage
+    )
+    assert 'stat.S_IMODE(metadata.st_mode) != 0o600' in remote_stage
+    assert 'metadata.st_uid != 10001 or metadata.st_gid != 10001' in remote_stage
+    assert 'metadata.st_size < 32' in remote_stage
+    assert remote_stage.index("metadata.st_size < 32") < remote_stage.index(
+        '"${previous_compose[@]}" stop'
+    )
+    assert "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED=1" in remote_stage
+    assert "/run/office-recipient/platform-office-recipient-bearer" in remote_stage
+    assert "172.31.0.1/32" in remote_stage
+    assert (
+        'previous_office_overlay="$previous_release/deploy/cloud/'
+        'compose.office-recipient-directory.yaml"' in remote_stage
+    )
+    assert 'previous_compose+=( -f "$previous_office_overlay" )' in remote_stage
+    assert '"${previous_compose[@]}" up -d --force-recreate' in remote_stage
+    assert 'previous_office_overlay="$PREVIOUS_RELEASE/deploy/cloud/' in rollback
+    assert 'previous_compose+=( -f "$previous_office_overlay" )' in rollback
+    assert "len(payload) > 16_384" in remote_stage
+    assert "payload.decode(\"utf-8\").strip()" in remote_stage
+    assert "value.isascii()" in remote_stage
+    assert "raise SystemExit(1) from None" in remote_stage
     assert "053_office_recipient_directory.sql" in runbook
     assert "054_office_recipient_directory_department_order.sql" in runbook
     assert "platform-api platform-loopback" in runbook
@@ -723,10 +769,25 @@ def test_office_recipient_resolver_release_is_scoped_and_secret_safe():
     assert "UID 10001" in runbook
     assert "install -o 10001 -g 10001 -m 600" in runbook
     assert "不得打印" in runbook
-    resolver_section = runbook.split("office_recipient_resolver_release", 1)[1]
-    assert "nginx" not in resolver_section.lower()
-    assert "platform-brain" not in resolver_section
-    assert "fae" not in resolver_section.lower()
+    assert "标准生产发布" in runbook
+    assert "发布成功但能力关闭" in runbook
+
+
+def test_standard_release_proves_ai_admin_processes_are_unchanged():
+    remote_stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    for unit in (
+        "ai-admin-agent.service",
+        "ai-admin-dingtalk-bot.service",
+        "ai-admin-job-worker.service",
+        "ai-admin-lodging-worker.service",
+        "ai-admin-office-notification-worker.service",
+        "ai-admin-shuttle-worker.service",
+    ):
+        assert unit in remote_stage
+    assert "ai_admin_process_digest" in remote_stage
+    assert "current_ai_admin_process_digest" in remote_stage
+    assert '[[ "$ai_admin_process_digest" == "$current_ai_admin_process_digest" ]]' in remote_stage
 
 
 def test_runtime_image_contains_control_migrations():

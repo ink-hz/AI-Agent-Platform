@@ -11,6 +11,8 @@ staging_root="/data/staging/orbbec-agent-platform"
 archive_releases="/data/archive/orbbec-agent-platform/releases"
 release_metadata_root="$data_path/release-metadata"
 environment_path="$private_path/platform.env"
+office_recipient_bearer="$private_path/platform-office-recipient-bearer"
+office_recipient_bearer_target="/run/office-recipient/platform-office-recipient-bearer"
 rotation_lock="$private_path/execution-worker-key-rotation.lock"
 rotation_state="$private_path/execution-worker-key-rotation-state.json"
 deploy_state="$private_path/execution-worker-keyring-deploy-state.json"
@@ -205,6 +207,39 @@ PY
 /usr/bin/install -d -m 700 "$private_path" "$releases_path" "$data_path" \
   "$staging_path" "$archive_releases" "$postgres_data" "$backup_data" \
   "$release_metadata_root" "$release_metadata_path" "$stage_path"
+/usr/bin/python3 - "$office_recipient_bearer" <<'PY' || fail
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+try:
+    metadata = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_uid != 10001 or metadata.st_gid != 10001
+        or metadata.st_size < 32
+        or metadata.st_size > 16_384
+    ):
+        raise SystemExit(1)
+    payload = os.read(descriptor, 16_385)
+finally:
+    os.close(descriptor)
+if len(payload) > 16_384:
+    raise SystemExit(1)
+try:
+    value = payload.decode("utf-8").strip()
+except UnicodeError:
+    raise SystemExit(1) from None
+if (
+    len(value.encode("utf-8")) < 32
+    or not value.isascii()
+    or any(ord(character) < 33 or ord(character) > 126 for character in value)
+):
+    raise SystemExit(1)
+PY
 staged_worker_keyring="$stage_path/execution-worker-public-keyring.json"
 [[ "${PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD:-}" =~ ^[0-9]+$ ]] || fail
 /usr/bin/python3 - "$rotation_lock" "$PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD" <<'PY' || fail
@@ -243,6 +278,29 @@ fae_curl_options=(
   --retry-delay 1
   --retry-max-time 45
 )
+ai_admin_units=(
+  ai-admin-agent.service
+  ai-admin-dingtalk-bot.service
+  ai-admin-job-worker.service
+  ai-admin-lodging-worker.service
+  ai-admin-office-notification-worker.service
+  ai-admin-shuttle-worker.service
+)
+capture_ai_admin_process_digest() {
+  local unit facts main_pid
+  for unit in "${ai_admin_units[@]}"; do
+    facts="$(/usr/bin/systemctl show --no-pager \
+      --property=LoadState,ActiveState,MainPID,ActiveEnterTimestampMonotonic \
+      "$unit")" || return 1
+    /usr/bin/grep -Fxq 'LoadState=loaded' <<<"$facts" || return 1
+    /usr/bin/grep -Fxq 'ActiveState=active' <<<"$facts" || return 1
+    main_pid="$(/usr/bin/sed -n 's/^MainPID=//p' <<<"$facts")"
+    [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || return 1
+    /usr/bin/printf '%s\n%s\n' "$unit" "$facts"
+  done | /usr/bin/sha256sum | /usr/bin/awk '{print $1}'
+}
+ai_admin_process_digest="$(capture_ai_admin_process_digest)" || fail
+[[ "$ai_admin_process_digest" =~ ^[0-9a-f]{64}$ ]] || fail
 fae_container_id="$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend 2>/dev/null || true)"
 fae_image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' ai-fae-backend 2>/dev/null || true)"
 fae_image_id="$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend 2>/dev/null || true)"
@@ -530,10 +588,10 @@ rollback() {
         /bin/cp -p "$previous_environment" "$environment_path"
         /bin/ln -sfn "$previous_release" "$root_path/current"
         if [[ "$loopback_port_released" -eq 1 && "${#previous_control_consumers[@]}" -gt 0 ]]; then
-          /usr/bin/docker compose --env-file "$environment_path" \
-            -f "$previous_release/deploy/cloud/compose.yaml" \
-            up -d --force-recreate "${previous_control_consumers[@]}" \
-            >/dev/null 2>&1 || true
+          if ! "${previous_compose[@]}" up -d --force-recreate "${previous_control_consumers[@]}" \
+            >/dev/null 2>&1; then
+            exit_status=1
+          fi
         elif [[ "$loopback_port_released" -eq 0 ]]; then
           exit_status=1
         fi
@@ -642,6 +700,11 @@ done
 
 if [[ -n "$previous_release" && -f "$environment_path" ]]; then
   previous_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml")
+  previous_office_overlay="$previous_release/deploy/cloud/compose.office-recipient-directory.yaml"
+  if [[ -f "$previous_office_overlay" && ! -L "$previous_office_overlay" ]]; then
+    export PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE="$office_recipient_bearer"
+    previous_compose+=( -f "$previous_office_overlay" )
+  fi
   previous_services="$("${previous_compose[@]}" config --services)"
   previous_control_consumers=()
   for service_name in "${control_secret_consumer_services[@]}" platform-loopback platform-loopback-preview platform-postgres; do
@@ -878,12 +941,74 @@ done
 [[ "$loopback_health_streak" -ge 3 ]] || fail
 api_container="$("${compose[@]}" ps -q platform-api)"
 [[ -n "$api_container" ]] || fail
+loopback_container="$("${compose[@]}" ps -q platform-loopback)"
+[[ -n "$loopback_container" ]] || fail
+verify_office_recipient_runtime() {
+  local container_id="$1" expected_peer="$2"
+  /usr/bin/docker inspect "$container_id" | /usr/bin/python3 -c '
+import json
+import sys
+
+source, target, expected_peer = sys.argv[1:]
+container = json.load(sys.stdin)[0]
+environment = dict(
+    item.split("=", 1)
+    for item in container["Config"].get("Env", [])
+    if "=" in item
+)
+if environment.get("PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED") != "1":
+    raise SystemExit(1)
+if environment.get("PLATFORM_OFFICE_RECIPIENT_BEARER_FILE") != target:
+    raise SystemExit(1)
+if expected_peer and environment.get("PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS") != expected_peer:
+    raise SystemExit(1)
+matches = [mount for mount in container.get("Mounts", []) if mount.get("Destination") == target]
+if len(matches) != 1 or matches[0].get("Source") != source or matches[0].get("RW") is not False:
+    raise SystemExit(1)
+' "$office_recipient_bearer" "$office_recipient_bearer_target" "$expected_peer" || fail
+}
+verify_office_recipient_runtime "$api_container" ""
+verify_office_recipient_runtime "$loopback_container" "172.31.0.1/32"
+/usr/bin/python3 - "$office_recipient_bearer" <<'PY' || fail
+import json
+import pathlib
+import sys
+import urllib.error
+import urllib.request
+
+def verify() -> None:
+    url = "http://127.0.0.1:8080/api/v1/internal/office/recipient-directory/departments"
+    try:
+        urllib.request.urlopen(url, timeout=5)
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise RuntimeError from None
+    else:
+        raise RuntimeError
+    bearer = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").strip()
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {bearer}"},
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        if response.status != 200 or response.headers.get("Cache-Control") != "no-store":
+            raise RuntimeError
+        payload = json.load(response)
+        if not isinstance(payload.get("departments"), list):
+            raise RuntimeError
+
+try:
+    verify()
+except Exception:
+    raise SystemExit(1) from None
+PY
 api_environment="$(/usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_container")"
 for required_runtime_value in \
   PLATFORM_DEPLOYMENT_MODE=cloud-replica \
   PLATFORM_CLOUD_AUTH_MODE=dingtalk \
   PLATFORM_IDENTITY_MODE=production \
   PLATFORM_EXECUTION_RELAY_ENABLED=1 \
+  PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED=1 \
   "PLATFORM_DIRECT_AGENT_ENABLED=$PLATFORM_DIRECT_AGENT_ENABLED" \
   "PLATFORM_AGENT_BRAIN_ENABLED=$PLATFORM_AGENT_BRAIN_ENABLED"; do
   /usr/bin/grep -Fxq "$required_runtime_value" <<<"$api_environment" || fail
@@ -931,6 +1056,8 @@ fi
 [[ "$fae_health_digest" == "$(/usr/bin/docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ai-fae-backend | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$fae_ip_digest" == "$(/usr/bin/curl "${fae_curl_options[@]}" http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$fae_domain_digest" == "$(/usr/bin/curl "${fae_curl_options[@]}" --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
+current_ai_admin_process_digest="$(capture_ai_admin_process_digest)" || fail
+[[ "$ai_admin_process_digest" == "$current_ai_admin_process_digest" ]] || fail
 [[ "$nginx_digest" == "$(/usr/sbin/nginx -T 2>&1 | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$public_listener_digest" == "$(/usr/bin/ss -H -lnt | /usr/bin/awk '$4 !~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | /usr/bin/sort -u | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Fq '127.0.0.1:8080' || fail

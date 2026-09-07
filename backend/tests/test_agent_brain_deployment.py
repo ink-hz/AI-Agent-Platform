@@ -145,6 +145,13 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     assert api["volumes"] == [
         "platform-api-secrets:/run/secrets:ro",
         "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
+        {
+            "type": "bind",
+            "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+            "target": "/run/office-recipient/platform-office-recipient-bearer",
+            "read_only": True,
+            "bind": {"create_host_path": False},
+        },
     ]
     assert environment["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == (
         "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
