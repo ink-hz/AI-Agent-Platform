@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**状态：** v0.3，2026-09-07 P01 本地契约冻结完成（`62cdfce`，规格/质量复审 Approved）；P02–P09 待执行。未勾选示例仍为目标测试；实际结果见执行记录。
+**状态：** v0.3，P01、P02 本地实现及 P03a 归属/续租切片已通过规格/质量独立复审；P03 后续集成与其他任务继续按依赖实施。未勾选原始示例不是通过证据，具体范围和实际结果见各执行记录。
 **Goal:** 先让HR网页拥有唯一执行归属和一致读取，再接入飞书命令与投递。
 **Architecture:** 在现有agent_brain/execution_relay包内新增小型契约、仓储和读取组件。保留Mission授权兼容数据，禁止新旧执行器同时推进；不为本轮物理去表。
 **Tech Stack:** Python3/pytest/psycopg/PostgreSQL；React/TypeScript/Vitest。
@@ -112,6 +112,10 @@ create/claim/finalize为短事务，不在锁内HTTP。新迁移包含FK、live�
 - [ ] 仅提交本任务实际修改的精确文件；提交消息：`feat(hr-runtime): p02 真实数据库Attempt账本与租约排他`。不执行 `git add .`，不推送/发布。
 
 ## P03：独立云端Worker与Mission兼容适配
+
+**实施切片：** 先做 P03a 固定 Turn 受理来源、原子 Attempt 受理、旧领取/写入/投影隔离和续租；再接同一权威下的加密命令/序号绑定、认证派发及调度。M04b 真实认证恢复依赖该归属绑定，不另建恢复派发器。来源字段固定后，旧在途 legacy Mission 不因当前会话改路由而被阻断。
+
+**P03a 本地验收：** `df57888`，155 项相关回归通过；控制器扩展网页/V2 接口后 187 项通过，编译和新增范围 Ruff 通过；完整范围规格/质量独立复审 Approved。详见 [P03a 执行记录](../../reviews/2026-09-07-hr-unified-execution-p03a.md)，其中明确保留 64 条既有 API cookie 弃用告警及 16 条既有 Ruff 诊断，不冒称全局无告警。后续多行事务采用实际受理兼容的 Conversation→Turn→Attempt 顺序；取消服务、能力握手、真实派发/序号、P04 与进程验收仍未完成，P03 整项继续进行中。
 
 **依赖：** P02；实际派发需M02/M03能力握手
 **文件（相对Platform仓库根）：** 新增 backend/app/agent_brain/direct_worker.py、direct_mission_adapter.py；修改 backend/app/main.py、agent_brain/repository.py、conversation_service.py、conversation_projection.py；新增 backend/tests/test_hr_direct_worker.py、test_hr_direct_worker_process.py；回归 test_agent_brain_conversation_summary.py、test_hr_task_result_projection_database.py、test_hr_candidate_analysis_artifact_migration.py、test_hr_position_package_database.py。
