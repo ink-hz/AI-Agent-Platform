@@ -443,3 +443,18 @@ Fresh verification:
 
 - Exit 0: 14 test files and 97/97 tests passed; TypeScript and Vite build passed.
 - Only the existing Vite large-chunk advisory was emitted.
+
+## Integration follow-up: HR P0 completion fixture
+
+The full UI integration run exposed `HrP0Combined.acceptance.test.tsx` waiting for `POSITION PACKAGE · V2`. A bounded reproduction was consistent:
+
+`npm test -- --run src/workspaces/hr/HrP0Combined.acceptance.test.tsx --maxWorkers=1`
+
+- RED: 1 failure; the terminal assistant text rendered, but the position package remained at V1.
+- Root cause: the fixture appended the assistant message and then set `currentTurn = null`. Production conversation detail uses `latest_turn_for_owner` and projects the latest terminal Turn, so the fixture omitted the immutable terminal Turn ID and its `assistant_message_id`. The browser correctly withheld `onConversationSettled` because no terminal Turn referenced the new answer.
+- The fixture now preserves the Turn and changes it to `completed` with the exact appended assistant message ID. No production invariant was weakened.
+- GREEN: exit 0, 1/1 test passed in 317 ms.
+
+Adjacent HR acceptances passed individually with `--maxWorkers=1`: Recruiting Loop 1/1, Panorama 1/1, Position Spine 2/2, and R12 4/4. A single serial `src/workspaces/hr` invocation passed its first three files, including the corrected P0 test, then the Node 26 worker exhausted its approximately 4 GB heap. Since every adjacent acceptance terminates and passes in a fresh bounded worker, this is cumulative Vitest worker memory behavior rather than a remaining mock SSE loop in the corrected fixture.
+
+`git show 3227454:webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx` confirms the `currentTurn = null` fixture behavior predates this integration correction. Final bounded host verification passed 33/33 tests across `ConversationPage.test.tsx` and the corrected P0 acceptance with one worker. `npm run build` also passed with only the existing Vite large-chunk advisory. The unbounded/full HR-directory suite remains blocked by the documented Node 26 worker OOM; no passing claim is made for that invocation.

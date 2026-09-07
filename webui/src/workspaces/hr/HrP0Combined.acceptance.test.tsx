@@ -556,7 +556,7 @@ async function follow(container: HTMLElement, label: string) {
 
 async function completeCurrentTurn(content: string) {
   expect(currentTurn).not.toBeNull();
-  messages = [...messages, {
+  const assistantMessage: ConversationMessage = {
     message_id: `message-assistant-${messages.length + 1}`,
     conversation_id: fixture.conversation,
     seq: messages.length + 1,
@@ -569,8 +569,14 @@ async function completeCurrentTurn(content: string) {
     input_attachments: [],
     output_attachments: [],
     active_attachment_ids: [],
-  }];
-  currentTurn = null;
+  };
+  messages = [...messages, assistantMessage];
+  currentTurn = {
+    ...currentTurn!,
+    assistant_message_id: assistantMessage.message_id,
+    status: "completed",
+    updated_at: now,
+  };
   await act(async () => streamResolvers.splice(0).forEach((resolve) => resolve()));
   await settle();
 }
