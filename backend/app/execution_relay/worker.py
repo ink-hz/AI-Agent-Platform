@@ -81,6 +81,7 @@ class CallbackResult(Enum):
     UNAUTHORIZED = 401
     CONFLICT = 409
     TOO_LARGE = 413
+    UNAVAILABLE = 503
 
 
 class _CoreChatBridge(BaseModel):
@@ -949,11 +950,19 @@ class WorkerRuntime:
         ):
             return CallbackResult.UNAUTHORIZED
         try:
-            if self.enable_v5_callbacks and await asyncio.to_thread(worker_v5_receiver.registered, self.store, run_id):
+            try:
+                v5_registered = self.enable_v5_callbacks and await asyncio.to_thread(
+                    worker_v5_receiver.registered, self.store, run_id
+                )
+            except worker_v5_receiver.V5ReceiverUnavailable:
+                return CallbackResult.UNAVAILABLE
+            if v5_registered:
                 try:
                     return await asyncio.to_thread(worker_v5_receiver.accept, self.store, self.worker_id, run_id, token, body)
                 except PermissionError:
                     return CallbackResult.UNAUTHORIZED
+                except worker_v5_receiver.V5ReceiverUnavailable:
+                    return CallbackResult.UNAVAILABLE
             if not await self._store_call("callback_token_matches", run_id, token):
                 return CallbackResult.UNAUTHORIZED
             strict_event = _StrictCallbackEvent.model_validate_json(body, strict=True)
@@ -1123,6 +1132,7 @@ async def _send_callback_response(
         401: "Unauthorized",
         409: "Conflict",
         413: "Content Too Large",
+        503: "Service Unavailable",
     }[result.value]
     writer.write(
         f"HTTP/1.1 {result.value} {reason}\r\n"

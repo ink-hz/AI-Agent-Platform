@@ -9,7 +9,16 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import psycopg
+
 from .contracts_v5 import CallbackAckV5, parse_v5_command, parse_v5_event
+
+
+class V5ReceiverUnavailable(RuntimeError):
+    """Stable storage-boundary failure without database or callback details."""
+
+    def __init__(self) -> None:
+        super().__init__("v5 receiver unavailable")
 
 
 @dataclass(frozen=True)
@@ -110,15 +119,18 @@ def register(store, command: dict, binding: TrustedV5CallbackBinding) -> None:
 
 
 def registered(store, run_id: UUID) -> bool:
-    with store._connection() as connection:
-        preflight(connection)
-        return (
-            connection.execute(
-                "SELECT 1 FROM execution_worker.v5_callback_runs WHERE run_id=%s",
-                (run_id,),
-            ).fetchone()
-            is not None
-        )
+    try:
+        with store._connection() as connection:
+            preflight(connection)
+            return (
+                connection.execute(
+                    "SELECT 1 FROM execution_worker.v5_callback_runs WHERE run_id=%s",
+                    (run_id,),
+                ).fetchone()
+                is not None
+            )
+    except (psycopg.Error, RuntimeError):
+        raise V5ReceiverUnavailable() from None
 
 
 def preflight(connection) -> None:
@@ -130,6 +142,15 @@ def preflight(connection) -> None:
 
 
 def accept(
+    store, worker_id: str, run_id: UUID, token: str, body: bytes
+) -> CallbackAckV5:
+    try:
+        return _accept(store, worker_id, run_id, token, body)
+    except psycopg.Error:
+        raise V5ReceiverUnavailable() from None
+
+
+def _accept(
     store, worker_id: str, run_id: UUID, token: str, body: bytes
 ) -> CallbackAckV5:
     candidate = hashlib.sha256(token.encode()).digest()

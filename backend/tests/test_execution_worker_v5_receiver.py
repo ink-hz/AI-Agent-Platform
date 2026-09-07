@@ -176,7 +176,7 @@ def test_receiver_rollback_reopen_and_raw_evidence(receiver):
         connection.execute(
             "ALTER TABLE execution_worker.v5_callback_runs ADD CONSTRAINT synthetic_reject CHECK(accepted_through=0)"
         )
-    assert send(runtime, c, raw) is CallbackResult.CONFLICT
+    assert send(runtime, c, raw) is CallbackResult.UNAVAILABLE
     with psycopg.connect(dsn) as connection:
         assert (
             connection.execute(
@@ -226,7 +226,7 @@ def test_disabled_missing_extension_and_wrong_machine_fail_closed(receiver):
     runtime.worker_id = "synthetic-worker"
     with psycopg.connect(dsn) as connection:
         connection.execute("DELETE FROM execution_worker.v5_callback_metadata")
-    assert send(runtime, c, event(c)) is CallbackResult.CONFLICT
+    assert send(runtime, c, event(c)) is CallbackResult.UNAVAILABLE
 
 
 def test_registration_missing_launch_or_wrong_origin_does_not_rotate(receiver):
