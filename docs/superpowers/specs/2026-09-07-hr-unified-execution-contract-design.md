@@ -1,7 +1,7 @@
 # HR 统一执行契约设计：AI-Agent-Platform 与 MetaBot 端到端
 
 **日期：** 2026-09-07
-**状态：** v0.3 复审修订通过，2026-09-07 Owner 指令“开始”；进入阶段 0 / P01 契约与兼容测试，不切流量、不发布、不查询未授权生产数据。其余阶段尚未实施。
+**状态：** v0.3 复审修订通过；2026-09-07 按 Owner“开始”指令完成阶段 0 的 P01 本地契约冻结与兼容测试（代码 `62cdfce`，双项复审 Approved）。不切流量、不发布、不查询未授权生产数据；O01 统计范围待授权，其余实施任务未完成。证据见[阶段0执行记录](../../reviews/2026-09-07-hr-unified-execution-stage-zero.md)。
 **本轮已确认：** 未绑定飞书用户仅引导绑定，不建立访客执行体系；已有业务用户切换前完成身份映射核对。
 **覆盖仓库：** `AI-Agent-Platform`（云端平台 + 本地 Relay Worker）、`metabot-dev`（MetaBot 运行时）、`Orbbec-Agent-Team`（Bot 配置、运行契约、部署脚本）
 **取代关系：** 本文经最终评审通过后取代 `2026-09-07-hr-runtime-refactor-design.md` 作为 HR 运行底座的最高设计约束；该草案及 `plans/2026-09-07-hr-result-pipeline-refactor.md` 保留为历史与待裁决材料，不再作为施工依据。与 `2026-09-06-hr-local-intelligence-factory-design.md`、`2026-09-06-hr-agent-markdown-intelligence-design.md` 不冲突的约束继续有效。
@@ -454,7 +454,7 @@ candidate_comparison 的 candidate_ids[] 属于现有业务能力补齐，另列
 
 | 阶段 | 最小交付 | 前置及允许切换 |
 |---|---|---|
-| S0 | 审定契约、统计方案、SDK事实、基线与TDD计划 | 文档阶段；不连接生产、不实现 |
+| S0 | 审定契约、统计方案、SDK事实、基线与P01可执行契约样例 | 仅本地schema/解析兼容测试；不接入生产运行时、不连接生产 |
 | S1a | 平台兼容读取 v5、Attempt/快照及只读投影基础 | 旧入口继续服务；不发送未支持的新协议 |
 | S1b | MetaBot v5 outbox/恢复/命令身份/文件拆分；Relay 双协议 | 与 S1a 按冻结 fixture 并行开发；不开 HR v5 流量 |
 | S2 | HR 网页灰度切到独立 Worker，替换前端恢复逻辑 | S1a+S1b及真实故障注入通过；无证据不自动重跑 |

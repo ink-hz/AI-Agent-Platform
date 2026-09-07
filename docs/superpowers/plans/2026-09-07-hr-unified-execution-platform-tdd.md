@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**状态：** v0.3，2026-09-07 Owner 已指令开始阶段 0 / P01；其余任务待执行。示例是目标测试，不是已通过证据；实际结果见执行记录。
+**状态：** v0.3，2026-09-07 P01 本地契约冻结完成（`62cdfce`，规格/质量复审 Approved）；P02–P09 待执行。未勾选示例仍为目标测试；实际结果见执行记录。
 **Goal:** 先让HR网页拥有唯一执行归属和一致读取，再接入飞书命令与投递。
 **Architecture:** 在现有agent_brain/execution_relay包内新增小型契约、仓储和读取组件。保留Mission授权兼容数据，禁止新旧执行器同时推进；不为本轮物理去表。
 **Tech Stack:** Python3/pytest/psycopg/PostgreSQL；React/TypeScript/Vitest。
@@ -31,13 +31,15 @@
 
 ## P01：共享v5样例、幂等身份与兼容解析
 
+**完成证据：** 代码 `8311f97..62cdfce`，新增34项/指定回归98项/扩展回归161项；四项复核问题及UUID边界修复后，双项独立复审通过。详见[阶段0执行记录](../../reviews/2026-09-07-hr-unified-execution-stage-zero.md)。仅库层与离线样例，不启用运行时v5路由或发送。
+
 **依赖：** 统一设计v0.3冻结；可与M01/M02共用同一fixture
-**文件（相对Platform仓库根）：** 新增 contracts/hr-execution/v5/{command.schema.json,callback.schema.json,snapshot.schema.json,channel-bridge.schema.json,runtime-config.schema.json,cases.json}；新增 backend/app/execution_relay/contracts_v5.py；修改 backend/app/execution_relay/models.py、metabot_client.py；新增 backend/tests/test_execution_contract_v5.py；回归 backend/tests/test_metabot_collaboration_v4.py。
-**接口：** FeishuMessageIdentity(tenant_id, app_id, bot_id, message_id)；feishu_request_id(identity)->UUID；CoreChatCommandV5、CoreChatEventV5、CallbackAckV5 为严格额外字段拒绝模型。parse_v5_command(dict)->CoreChatCommandV5；v4入口不变。共享schema/cases由本任务产出，M02不另发明版本。
+**文件（相对Platform仓库根）：** 新增 contracts/hr-execution/v5/{README.md,command.schema.json,callback.schema.json,snapshot.schema.json,channel-bridge.schema.json,runtime-config.schema.json,cases.json}；新增 backend/app/execution_relay/contracts_v5.py；修改 backend/app/execution_relay/models.py、metabot_client.py；新增 backend/tests/{test_execution_contract_v5.py,verify_execution_contract_v5.ts}；回归 backend/tests/test_metabot_collaboration_v4.py。
+**接口：** FeishuMessageIdentity(tenant_id, app_id, bot_id, message_id)；feishu_request_id(identity)->UUID；CoreChatCommandV5、CoreChatEventV5、CallbackAckV5 为严格额外字段拒绝模型。parse_v5_command(dict)->CoreChatCommandV5、parse_v5_event(dict)->CoreChatEventV5 为安全wire边界；turn_intake_content_hash(dict)->str、intake_replay_status(...) 固定纯函数裁决。真实入站存储/HTTP409由P07实施；v4入口不变。共享schema/cases由本任务产出，M02不另发明版本。
 
 channel-bridge样例固定设计3.1.1的六个操作、Accepted/Deferred/Conflict、Deferred.blocking_turn_id/retry_after_seconds、附件块offset/SHA与DeliveryReceipt。runtime-config样例固定3.4.1四字段、HR-only范围、仅v4能力缺失原因；只含合成凭据文件路径，不含密钥。如此M01/P07、M02/O02可依同一合同独立实现，不靠先上线一端猜接口。
 
-- [ ] RED：先为下列首个行为写目标测试；fixture用真实实现创建记录。每个剩余场景再单独循环。
+- [x] RED：先为下列首个行为写目标测试；fixture用真实实现创建记录。每个剩余场景再单独循环。
 ~~~python
 from uuid import UUID
 from app.execution_relay.contracts_v5 import FeishuMessageIdentity, feishu_request_id
@@ -49,12 +51,12 @@ def test_channel_key_is_stable_uuid_and_bot_scoped():
     assert feishu_request_id(key) == feishu_request_id(key)
     assert feishu_request_id(key) != feishu_request_id(other)
 ~~~
-- [ ] 运行并记录失败：在backend目录执行下列命令。首次缺接口可补无行为接口，但必须得到业务断言失败，不能把ImportError当回归复现。
+- [x] 运行并记录失败：在backend目录执行下列命令。首次缺接口可补无行为接口，但必须得到业务断言失败，不能把ImportError当回归复现。
 ~~~sh
 /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/test_execution_contract_v5.py tests/test_metabot_collaboration_v4.py tests/test_metabot_relay_client.py
 ~~~
-- [ ] 逐个补齐的失败场景：同message_id不同tenant/app/bot不碰撞；同键异载荷409；v4搜索recovery仍通过、executionRecovery只能走v5；旧v4 direct第二轮仍按旧规则拒绝；v5允许稳定逻辑session与独立command；非loopback回调及篡改权限scope拒绝。Python/TS验证同一cases.json。
-- [ ] 最小实现只覆盖上述行为，关键事务/算法边界如下：
+- [x] 逐个补齐的失败场景：同message_id不同tenant/app/bot不碰撞；同键异载荷conflict（持久HTTP409见P07）；v4搜索recovery仍通过、executionRecovery只能走v5；旧v4 direct第二轮仍按旧规则拒绝；v5允许稳定逻辑session与独立command；非loopback回调及篡改权限scope拒绝。Python/TS验证同一cases.json。
+- [x] 最小实现只覆盖上述行为，关键事务/算法边界如下：
 ~~~python
 name = json.dumps(
     ["hr-feishu-intake-v1", identity.tenant_id, identity.app_id,
@@ -64,9 +66,9 @@ name = json.dumps(
 request_id = uuid5(NAMESPACE_URL, name)
 ~~~
 用版本分支保留cd50c02接收/公开投影边界；executionRecovery独立于search recovery。先新增接收能力，禁止提前向旧MetaBot发送v5。限定每个envelope大小，错误记录schema原因而非完整payload。
-- [ ] GREEN：重跑同一命令，目标断言与列出的既有回归全部通过；发现其他失败不得删测试掩盖。
-- [ ] 验收与审查：跨语言case一致；未知版本明确拒绝；无模型调用；其他Bot v4 fixture不变。
-- [ ] 仅提交本任务实际修改的精确文件；提交消息：`feat(hr-runtime): p01 共享v5样例、幂等身份与兼容解析`。不执行 `git add .`，不推送/发布。
+- [x] GREEN：重跑同一命令，目标断言与列出的既有回归全部通过；发现其他失败不得删测试掩盖。
+- [x] 验收与审查：跨语言case一致；未知版本明确拒绝；无模型调用；其他Bot v4 fixture不变。
+- [x] 仅提交本任务实际修改的精确文件；提交消息：`feat(hr-runtime): p01 共享v5样例、幂等身份与兼容解析`。不执行 `git add .`，不推送/发布。
 
 ## P02：真实数据库Attempt账本与租约排他
 
