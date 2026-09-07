@@ -168,6 +168,7 @@ class ConversationMessageRecord:
     search_recovery: SearchRecoveryState | None = None
     citations: tuple[ConversationCitationProjection, ...] = ()
     artifact_versions: tuple[ConversationArtifactVersionProjection, ...] = ()
+    result_delivery_status: Literal["pending", "completed", "failed"] | None = None
 
 
 @dataclass(frozen=True)

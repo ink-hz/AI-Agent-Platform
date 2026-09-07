@@ -417,6 +417,7 @@ def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
         "content": record.content,
         "turn_id": str(record.turn_id) if record.turn_id else None,
         "delivery_status": record.delivery_status,
+        "result_delivery_status": record.result_delivery_status,
         "created_at": record.created_at.isoformat(),
         "completed_at": record.completed_at.isoformat() if record.completed_at else None,
         "input_attachments": [

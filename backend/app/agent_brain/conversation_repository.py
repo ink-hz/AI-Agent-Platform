@@ -483,6 +483,7 @@ class ConversationRepository:
             turn_id=row["turn_id"],
             mission_id=row["mission_id"],
             delivery_status=row["delivery_status"],
+            result_delivery_status=row.get("result_delivery_status"),
             created_at=row["created_at"],
             completed_at=row["completed_at"],
             content=value["text"],
@@ -2033,7 +2034,10 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 rows = cursor.execute(
-                    "select message.* from platform_control.conversation_messages message "
+                    "select message.*,result_delivery.status as result_delivery_status "
+                    "from platform_control.conversation_messages message "
+                    "left join platform_control.conversation_result_deliveries result_delivery "
+                    "on result_delivery.message_id=message.message_id "
                     "join platform_control.conversations conversation "
                     "on conversation.conversation_id=message.conversation_id "
                     "where message.conversation_id=%s "

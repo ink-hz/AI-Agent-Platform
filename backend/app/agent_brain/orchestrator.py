@@ -510,7 +510,8 @@ class MissionOrchestrator:
                         "to_regclass('platform_control.conversations') as conversations,"
                         "to_regclass('platform_control.conversation_messages') as messages,"
                         "to_regclass('platform_control.conversation_turns') as turns,"
-                        "to_regclass('platform_control.conversation_events') as events"
+                        "to_regclass('platform_control.conversation_events') as events,"
+                        "to_regclass('platform_control.conversation_result_deliveries') as result_deliveries"
                     ).fetchone()
                     if conversation_objects is None or any(
                         value is None for value in conversation_objects.values()
@@ -551,7 +552,13 @@ class MissionOrchestrator:
                         "has_table_privilege(current_user,"
                         "'platform_control.conversation_events','select') and "
                         "has_table_privilege(current_user,"
-                        "'platform_control.conversation_events','insert') as ready"
+                        "'platform_control.conversation_events','insert') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_result_deliveries','select') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_result_deliveries','insert') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_result_deliveries','update') as ready"
                     ).fetchone()
                     if (
                         conversation_ready is None
@@ -1341,31 +1348,8 @@ class MissionOrchestrator:
             except PublicAnswerContractError:
                 return self._complete_public_answer_invalid(mission, run)
             result = delivery.text
-            artifacts = (
-                tuple(delivery.collaboration.get("artifacts", ()))
-                if delivery.collaboration is not None
-                else ()
-            )
-            if artifacts:
-                try:
-                    artifact_state = (
-                        self._attachment_grants.classify_result_artifacts(
-                            run.task_id,
-                            run.agent_id,
-                            artifacts,
-                        )
-                        if self._attachment_grants is not None
-                        and run.task_id is not None
-                        else "invalid"
-                    )
-                except Exception:
-                    artifact_state = "invalid"
-                if artifact_state == "pending":
-                    return False
-                if artifact_state != "ready":
-                    return self._complete_artifact_registration_failed(
-                        mission, run
-                    )
+            # The strict result binder validates attachment scope/readiness in
+            # its own durable transaction after the text answer is committed.
             if not _is_visible_text(result):
                 return self._complete_output_too_large(
                     mission, run, partial=False
@@ -1391,26 +1375,6 @@ class MissionOrchestrator:
             )
             return True
         return self._complete_terminal(mission, run, state, events)
-
-    def _complete_artifact_registration_failed(
-        self, mission: MissionRecord, run: MissionRun
-    ) -> bool:
-        self.missions.complete_run(
-            mission.owner_internal_user_id,
-            mission.mission_id,
-            run.run_id,
-            status="failed",
-            output_payload={"reason_code": "result_file_registration_failed"},
-            event_type="mission.failed",
-            event_payload={
-                "text": "结果文件登记失败，请重试本轮。",
-                "reason_code": "result_file_registration_failed",
-            },
-            mission_status="failed",
-            expected_mission_status=mission.status,
-            expected_row_version=mission.row_version,
-        )
-        return True
 
     def _advance_professional(self, mission: MissionRecord, run: MissionRun) -> bool:
         state, events = self._run_state(mission, run)

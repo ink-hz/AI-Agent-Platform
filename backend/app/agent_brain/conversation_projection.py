@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import psycopg
@@ -13,11 +14,15 @@ from app.agent_brain.conversation_repository import (
     message_subject,
 )
 from app.agent_brain.repository import MissionRepositoryError
+from app.agent_brain.result_delivery import ConversationResultDelivery
+from app.attachments.result_projection import ConversationResultProjection
 from app.execution_relay.content_crypto import (
     ContentCryptoError,
     SealedContent,
 )
 
+
+logger = logging.getLogger(__name__)
 
 PUBLIC_BRAIN_EVENT_TYPES = frozenset(
     {
@@ -118,7 +123,10 @@ class ConversationProjection:
             raise ValueError("Conversation repository required")
         self.repository = repository
         self.missions = repository._missions
-        self._result_projection = result_projection
+        self._result_projection = (
+            result_projection if result_projection is not None
+            else ConversationResultProjection(content_codec=repository.content_codec)
+        )
 
     @staticmethod
     def project(event: PrivateBrainEvent) -> PublicBrainEvent:
@@ -692,17 +700,12 @@ class ConversationProjection:
                         event_type != "mission.completed"
                         or delivery.task_id is None
                         or delivery.agent_id is None
-                        or self._result_projection is None
                     ):
                         raise ConversationRepositoryError()
-                    self._result_projection.project_locked(
-                        cursor,
-                        owner_id=row["owner_internal_user_id"],
-                        conversation_id=conversation_id,
-                        message_id=message_id,
-                        task_id=delivery.task_id,
-                        agent_id=delivery.agent_id,
-                        collaboration=collaboration,
+                    cursor.execute(
+                        "insert into platform_control.conversation_result_deliveries "
+                        "(mission_id,message_id) values (%s,%s)",
+                        (mission_id, message_id),
                     )
                 cursor.execute(
                     "update platform_control.conversation_turns set "
@@ -774,7 +777,17 @@ class ConversationProjection:
                         (limit,),
                     ).fetchall()
                 ]
-            return sum(self.project_terminal(mission_id) for mission_id in mission_ids)
+            completed = 0
+            for mission_id in mission_ids:
+                try:
+                    completed += self.project_terminal(mission_id)
+                except Exception:
+                    logger.warning("Conversation terminal projection unavailable",
+                                   extra={"mission_id": str(mission_id)})
+            completed += ConversationResultDelivery(
+                self.repository, self._result_projection
+            ).project_pending(limit=limit)
+            return completed
         except ConversationRepositoryError:
             raise
         except psycopg.Error:
