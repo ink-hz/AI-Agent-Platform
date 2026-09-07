@@ -419,3 +419,27 @@ Fresh verification after the correction:
 - Vite emitted only the existing large-chunk advisory.
 
 One final self-review tightened the terminal-order test to start from terminal detail with its referenced answer absent, then return a stale active detail. RED showed the direct-Agent composer re-locking; after seeding terminal monotonicity from the initial accepted detail, the focused test and the fresh 94-test/build command above both passed.
+
+## Re-review follow-up: complete message merge state
+
+Three additional deferred-order regressions were added before implementation:
+
+`npm test -- --run src/pages/ConversationPage.test.tsx`
+
+- RED: exit 1 with 3 expected failures and 29 passes. An omitted result status cleared accepted `pending`, terminal enrichment froze mutable attachment projection, and an older deferred snapshot erased an accepted intervention message.
+- GREEN: exit 0 with 32/32 tests passing.
+
+Message reconciliation now treats fields independently:
+
+- Immutable completed text, delivery status, and completion time cannot regress.
+- Accepted `pending` result delivery survives omitted or null snapshots until an explicit `completed` or `failed`; terminal result status remains monotonic.
+- Mutable output attachments, artifact versions, citations, and other server projections continue to refresh even after result delivery becomes terminal.
+- A synchronized latest-message ref is updated on initial/reset loads, snapshot merges, submissions, retries, and interventions. Deferred snapshots merge against that ref, so locally accepted messages absent from an older read remain visible.
+- `needsPolling` is computed only from the fully accepted merged messages.
+
+Fresh verification:
+
+`npm test -- --run src/pages/ConversationPage.test.tsx src/conversationApi.test.ts src/components/conversation src/workspaces/hr/HrConversationOutcomePanel.test.tsx && npm run build`
+
+- Exit 0: 14 test files and 97/97 tests passed; TypeScript and Vite build passed.
+- Only the existing Vite large-chunk advisory was emitted.

@@ -98,9 +98,14 @@ function mergeMessages(current: ConversationMessage[], incoming: ConversationMes
   const deliveryRank = (status: ConversationMessage["delivery_status"]) => ({
     accepted: 0, streaming: 1, completed: 2, failed: 2,
   })[status];
-  const resultIsTerminal = (message: ConversationMessage) => (
-    message.result_delivery_status === "completed" || message.result_delivery_status === "failed"
-  );
+  const mergeResultStatus = (
+    accepted: ConversationMessage["result_delivery_status"],
+    next: ConversationMessage["result_delivery_status"],
+  ) => {
+    if (accepted === "completed" || accepted === "failed") return accepted;
+    if (accepted === "pending" && (next === undefined || next === null)) return accepted;
+    return next;
+  };
   const byId = new Map(current.map((message) => [message.message_id, message]));
   for (const message of incoming) {
     const accepted = byId.get(message.message_id);
@@ -108,18 +113,25 @@ function mergeMessages(current: ConversationMessage[], incoming: ConversationMes
       byId.set(message.message_id, message);
       continue;
     }
-    if (deliveryRank(message.delivery_status) < deliveryRank(accepted.delivery_status)
-      || resultIsTerminal(accepted)) continue;
+    if (deliveryRank(message.delivery_status) < deliveryRank(accepted.delivery_status)) continue;
     if (["completed", "failed"].includes(accepted.delivery_status)) {
       byId.set(message.message_id, {
         ...message,
         content: accepted.content,
         delivery_status: accepted.delivery_status,
         completed_at: accepted.completed_at,
+        result_delivery_status: mergeResultStatus(
+          accepted.result_delivery_status, message.result_delivery_status,
+        ),
       });
       continue;
     }
-    byId.set(message.message_id, message);
+    byId.set(message.message_id, {
+      ...message,
+      result_delivery_status: mergeResultStatus(
+        accepted.result_delivery_status, message.result_delivery_status,
+      ),
+    });
   }
   return [...byId.values()].sort((left, right) => left.seq - right.seq);
 }
@@ -193,6 +205,7 @@ export function ConversationPage({
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const messagesRef = useRef<ConversationMessage[]>([]);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -219,6 +232,13 @@ export function ConversationPage({
   const inFlight = useRef(false);
   const terminalTurnIds = useRef(new Set<string>());
   const settledTurnIds = useRef(new Set<string>());
+  const replaceMessages = (next: ConversationMessage[]) => {
+    messagesRef.current = next;
+    setMessages(next);
+  };
+  const mergeIntoMessages = (incoming: ConversationMessage[]) => {
+    replaceMessages(mergeMessages(messagesRef.current, incoming));
+  };
   const readOnly = account.hard_stale_read_only || detail?.conversation.status === "archived";
   const materialsDrawerOpen = materialsOpen ?? internalMaterialsOpen;
   const changeMaterialsOpen = useCallback((open: boolean) => {
@@ -243,7 +263,7 @@ export function ConversationPage({
 
   useEffect(() => {
     const controller = new AbortController();
-    setDetail(null); setMessages([]); setEvents([]); setLoading(true); setLoadFailure(false);
+    setDetail(null); replaceMessages([]); setEvents([]); setLoading(true); setLoadFailure(false);
     setText(""); setSendFailure(false); setCancelFailure(false); setCancelRequested(false);
     setFeedback({}); setAttachments([]); setActiveAttachmentIds([]); setNewAttachmentIds([]); setUploadQueue([]); setAttachmentError(null);
     retained.current = null; eventCursor.current = 0;
@@ -266,7 +286,7 @@ export function ConversationPage({
       const lastUser = [...loadedMessages].reverse().find((message) => message.role === "user");
       setAttachments([...materialMap.values()]); setActiveAttachmentIds(lastUser?.active_attachment_ids ?? []);
       if (attachmentResult.failed) setAttachmentError("会话材料暂时无法读取，请刷新页面重试。");
-      setDetail(snapshot); setMessages(loadedMessages); setLoading(false); setStreamEpoch((value) => value + 1);
+      setDetail(snapshot); replaceMessages(loadedMessages); setLoading(false); setStreamEpoch((value) => value + 1);
       onConversationUpdated?.(snapshot.conversation);
     }).catch(() => {
       if (!controller.signal.aborted) { setLoadFailure(true); setLoading(false); }
@@ -280,7 +300,6 @@ export function ConversationPage({
     const streamController = new AbortController();
     let stopPolling: (() => void) | undefined;
     let acceptedDetail = detail;
-    let acceptedMessages = messages;
     if (detail.current_turn && TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status)) {
       terminalTurnIds.current.add(detail.current_turn.turn_id);
     }
@@ -300,7 +319,8 @@ export function ConversationPage({
       if (!(incomingTurn && !incomingIsTerminal && terminalTurnIds.current.has(incomingTurn.turn_id))) {
         acceptedDetail = snapshot;
       }
-      acceptedMessages = mergeMessages(acceptedMessages, loadedMessages);
+      const acceptedMessages = mergeMessages(messagesRef.current, loadedMessages);
+      messagesRef.current = acceptedMessages;
       setDetail(acceptedDetail);
       setMessages(acceptedMessages);
       const terminal = Boolean(acceptedDetail.current_turn
@@ -357,7 +377,7 @@ export function ConversationPage({
     const activeTurnWasObserved = turnIsActive(detail);
     const terminalWasIncomplete = Boolean(detail.current_turn
       && TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status)
-      && !terminalTurnHasReferencedMessage(detail, messages));
+      && !terminalTurnHasReferencedMessage(detail, messagesRef.current));
     const settle = (result: {
       snapshot: ConversationDetail;
       needsPolling: boolean;
@@ -375,7 +395,7 @@ export function ConversationPage({
         controller.abort();
       }
     };
-    const initiallyNeedsPolling = activeTurnWasObserved || terminalWasIncomplete || messages.some(
+    const initiallyNeedsPolling = activeTurnWasObserved || terminalWasIncomplete || messagesRef.current.some(
       (message) => message.result_delivery_status === "pending",
     );
     if (initiallyNeedsPolling) {
@@ -470,7 +490,7 @@ export function ConversationPage({
       retained.current = null;
       setText("");
       setNewAttachmentIds([]); setUploadQueue([]);
-      setMessages((current) => mergeMessages(current, [result.message]));
+      mergeIntoMessages([result.message]);
       if ("conversation" in result) {
         setDetail({ conversation: result.conversation, current_turn: result.turn });
         onConversationUpdated?.(result.conversation);
@@ -503,7 +523,7 @@ export function ConversationPage({
         conversationId, turn.turn_id, account.csrf_token,
       ).send(controller.signal);
       if (controller.signal.aborted) return;
-      setMessages((current) => mergeMessages(current, [result.message]));
+      mergeIntoMessages([result.message]);
       setDetail({ conversation: result.conversation, current_turn: result.turn });
       setStreamEpoch((value) => value + 1);
     } catch {
@@ -527,7 +547,7 @@ export function ConversationPage({
         conversationId, message.turn_id, account.csrf_token,
       ).send(controller.signal);
       if (controller.signal.aborted) return;
-      setMessages((current) => mergeMessages(current, [result.message]));
+      mergeIntoMessages([result.message]);
       setDetail({ conversation: result.conversation, current_turn: result.turn });
       setStreamEpoch((value) => value + 1);
     } catch {

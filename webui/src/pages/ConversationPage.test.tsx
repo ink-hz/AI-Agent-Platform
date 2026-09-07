@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Account } from "../auth";
 import type {
   Conversation,
+  ConversationAttachment,
   ConversationDetail,
   ConversationEvent,
   ConversationMessage,
@@ -570,6 +571,133 @@ describe("ConversationPage", () => {
       await act(async () => vi.advanceTimersByTimeAsync(10_000));
       expect(fetchConversation).toHaveBeenCalledTimes(3);
       expect(pageClient.createMessageSubmission).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps pending result delivery across an omitted snapshot until explicit completion", async () => {
+    vi.useFakeTimers();
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const pendingMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "pending",
+    }];
+    const omittedMessages: ConversationMessage[] = [messages[0], { ...messages[1] }];
+    const completedMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockResolvedValue({ conversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValueOnce(pendingMessages)
+      .mockResolvedValueOnce(omittedMessages)
+      .mockResolvedValue(completedMessages);
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({ fetchConversation, fetchMessages, streamEvents: vi.fn().mockReturnValue(stream.promise) })}
+        conversationId={conversationId}
+      />));
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).toContain("附件与引用正在整理，文字回答已完成。");
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).toContain("附件与引用正在整理，文字回答已完成。");
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(4);
+      expect(container.textContent).not.toContain("附件与引用正在整理");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes mutable attachments on a terminal message during a new turn", async () => {
+    const attachment: ConversationAttachment = {
+      attachmentId: "result-file", conversationId, source: "agent", displayName: "候选人报告.pdf",
+      detectedMime: "application/pdf", sizeBytes: 1024, sha256: "a".repeat(64), state: "ready",
+      stateReason: null, createdAt: "2026-08-23T10:02:00Z", retainedUntil: "2027-08-23T10:02:00Z",
+      preview: { attachmentId: "result-file", detectedMime: "application/pdf" }, coverage: null,
+    };
+    const terminalMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const result = submissionResult("继续搜索");
+    const refreshedMessages: ConversationMessage[] = [terminalMessages[0], {
+      ...terminalMessages[1], output_attachments: [attachment],
+    }, result.message];
+    const initialStream = deferred<void>();
+    const activeStream = deferred<void>();
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(terminalMessages)
+      .mockResolvedValue(refreshedMessages);
+    const streamEvents = vi.fn()
+      .mockReturnValueOnce(initialStream.promise)
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockReturnValue(activeStream.promise);
+    const pageClient = client({
+      fetchConversation: vi.fn()
+        .mockResolvedValueOnce({ conversation, current_turn: completedTurn })
+        .mockResolvedValue({ conversation: result.conversation, current_turn: result.turn }),
+      fetchMessages,
+      streamEvents,
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={pageClient} conversationId={conversationId} />));
+    await setTextarea(container, "继续搜索");
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
+
+    expect(container.textContent).toContain("候选人报告.pdf");
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+  });
+
+  it("preserves an intervention accepted while an older snapshot is deferred", async () => {
+    vi.useFakeTimers();
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "waiting_agents" };
+    const snapshotDetail = deferred<ConversationDetail>();
+    const snapshotMessages = deferred<ConversationMessage[]>();
+    const stream = deferred<void>();
+    const intervention: ConversationInterventionResult = {
+      intervention: { status: "pending", message_id: "message-3" },
+      message: {
+        message_id: "message-3", conversation_id: conversationId, seq: 3, role: "user",
+        content: "保留这条补充", turn_id: "turn-1", delivery_status: "accepted",
+        created_at: "2026-08-23T10:02:00Z", completed_at: null,
+        input_attachments: [], output_attachments: [], active_attachment_ids: [],
+      },
+      turn: active,
+    };
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockReturnValue(snapshotDetail.promise);
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockReturnValue(snapshotMessages.promise);
+    const createMessageSubmission = vi.fn().mockReturnValue({
+      idempotencyKey: "intervention", send: vi.fn().mockResolvedValue(intervention),
+    });
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({ fetchConversation, fetchMessages, createMessageSubmission, streamEvents: vi.fn().mockReturnValue(stream.promise) })}
+        conversationId={conversationId}
+      />));
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      await setTextarea(container, "保留这条补充");
+      await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
+      expect(container.textContent).toContain("保留这条补充");
+
+      await act(async () => {
+        snapshotDetail.resolve({ conversation, current_turn: active });
+        snapshotMessages.resolve(messages.slice(0, 1));
+      });
+      expect(container.textContent).toContain("保留这条补充");
     } finally {
       vi.useRealTimers();
     }
