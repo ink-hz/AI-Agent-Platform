@@ -47,7 +47,7 @@ git diff --check
 
 ## 具体遗留与跨任务边界
 
-1. **P01 新发现的校验缺口：** Python `AwareDatetime` 接受数字字符串 `expiresAt="1788768900"`，冻结 schema 的 date-time 和实际已安装 Ajv+formats 拒绝。TS 保持 schema 与语义的交集；主会话已独立复现，安排窄范围 Python wire 校验修复。不能据本记录宣称所有输入的跨语言校验完全一致。当前 Python 环境的 jsonschema FormatChecker 未启用有效 date-time 校验，不能作为这项格式的证据。
+1. **P01 校验缺口已另行修复：** Python `AwareDatetime` 曾接受数字字符串 `expiresAt="1788768900"`，冻结 schema 与实际 Ajv+formats 拒绝。后续 `4ed7765` 在 v5 原始入口拒绝此类强制转换，113 项回归及独立规格/质量评审通过，见 [P01 后续记录](2026-09-07-hr-unified-execution-stage-zero.md)。冻结资产未改，不宣称已穷举所有格式的通用等价。当前 Python jsonschema.FormatChecker 未启用有效 date-time 校验，不能作为这项格式的证据。
 2. **M02c/P03：** 真实 HTTP 身份校验、可信 callback origin、合法传输更新与领取后的真实执行入口尚未接上。commandSeq 在 hash 内，发送端须明确鉴权序号协商；当前只有非消费型内部 lookup，不能声称 HTTP 协商端点已存在。
 3. **M03：** 真正的唯一终态、结果与 outbox 原子提交、ACK/gap 和进程级恢复尚未实现；本切片只验证其事务组合接口。
 4. **M04：** 旧执行器停止、累计副作用、持久重试许可尚未实现。未知 claimed 命令不恢复为 pending，重试领取继续 fail-closed。

@@ -137,3 +137,13 @@ test_channel_key_is_stable_uuid_and_bot_scoped
 ## 未执行
 
 生产事件统计、真实飞书 API 去重/重推、进程故障注入、数据库迁移、部署与业务流量切换均未执行。
+
+## M02b 联调发现的后续修复：expiresAt 原始输入校验
+
+后续提交 `4ed7765 fix(hr): reject numeric expiry coercion in v5 commands` 修复一个具体输入差异：Python 的共用 AwareDatetime 会把数字字符串当作 Unix 时间戳，但冻结 v5 schema 的 date-time 与实际 Ajv+formats 不接受这种输入。仅在 v5 原始 wire 入口增加非字符串/数字字符串拒绝；未修改共用 v4 模型、冻结 schema/cases、哈希、依赖或部署配置，因此 `62cdfce` 资产来源与 SHA 不变。
+
+真实 TDD：新增 15 个参数化场景，修改前 3 个数字字符串用例 `DID NOT RAISE`，其余 12 个通过；修改后 15 个全部通过。保留标准、空格分隔、小写 t/z、冒号/无冒号时区、+23:59、带小数秒输入；无时区和非法日期仍拒绝。实际数字 JSON 输入也拒绝，错误表面固定且不包含 grant/token。
+
+主会话在 `4ed7765` 重新执行 `test_execution_contract_v5.py`、`test_metabot_collaboration_v4.py`、`test_metabot_relay_client.py`：**113 passed，2.85s**；backend 目录 Ruff 和 diff-check 通过。另用固定样例独立复验 8 个时间边界值，全部符合预期。不能用未启用 date-time checker 的 Python jsonschema.FormatChecker 冒充格式校验；此次对照使用已安装的 Ajv2020+formats，未安装包。
+
+独立规格/质量评审范围 `35ad357..4ed7765`，两项 Approved，无 Critical/Important/Minor。测试执行证据由主会话当前提交复验闭环；这项窄修复不代表 M02c HTTP、M03/M04 恢复或生产已经完成。

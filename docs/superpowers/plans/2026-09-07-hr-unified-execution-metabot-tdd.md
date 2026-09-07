@@ -94,7 +94,7 @@ queued_notice是本地接收卡片生命周期的独立幂等用途，正文固�
 
 **M02a 本地验收：** `c4a3d29` / `884f30c`，58 项回归、编译器/lint 通过；规格/质量独立复审 Approved，无遗留问题。见 [M02a 执行记录](../../reviews/2026-09-07-hr-unified-execution-m02a.md)。仅基础库完成；命令/会话、HTTP、终态 outbox 和生产配置尚未接入，不代表整个 M02 或业务已可用。
 
-**M02b 本地验收：** `428b41f` / `9770c0d`，最终 135 项回归、编译器/lint 通过；规格/质量独立复审 Approved。见 [M02b 执行记录](../../reviews/2026-09-07-hr-unified-execution-m02b.md)。失败后下一轮、重启去重、事务与取消重试占位已在真实临时 PG 验证。M02c HTTP/执行入口仍未接入，Python 数字字符串 expiry 校验差异安排单独修复；不能将 M02 整项勾选或声明业务已可用。
+**M02b 本地验收：** `428b41f` / `9770c0d`，最终 135 项回归、编译器/lint 通过；规格/质量独立复审 Approved。见 [M02b 执行记录](../../reviews/2026-09-07-hr-unified-execution-m02b.md)。失败后下一轮、重启去重、事务与取消重试占位已在真实临时 PG 验证。Python 数字字符串 expiry 差异已由 `4ed7765` 单独修复并通过 113 项回归/复审；M02c HTTP/执行入口仍未接入，不能将 M02 整项勾选或声明业务已可用。
 
 **依赖：** P01 schema/cases；保持v3/v4读取兼容
 **文件（相对metabot-dev）：** 新增 src/api/routes/core-chat-v5-contract.ts、core-chat-v5-store.ts、src/runtime/local-runtime-config.ts、local-runtime-store.ts、tests/helpers/local-runtime-database.ts、tests/local-runtime-config.test.ts、tests/core-chat-v5-contract.test.ts、tests/core-chat-v5-store.test.ts；修改 src/api/routes/core-chat-contract.ts、core-chat-session-store.ts、core-chat-routes.ts；回归 tests/core-chat-session-store.test.ts、tests/core-chat-routes.test.ts。
