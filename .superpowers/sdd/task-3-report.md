@@ -394,3 +394,28 @@ Relevant regression and build: `npm test -- --run src/pages/ConversationPage.tes
 - The optional parser field accepts only `null`, `pending`, `completed`, or `failed`; absent fields remain backward compatible.
 - The UI has no enrichment retry button or POST. Existing event-driven `markRead` behavior is unchanged.
 - No backend or unrelated concurrent files were staged or changed by this task.
+
+## Review follow-up: deferred snapshot ordering
+
+The three Important review findings were reproduced with real deferred client promises before implementation:
+
+`npm test -- --run src/pages/ConversationPage.test.tsx`
+
+- RED: exit 1 with 4 expected failures and 25 passes. The tests proved premature settlement before the referenced answer, duplicate stream/timer refresh pairs, a sibling message read left live after detail-read failure, and stale replacement of completed answer/enrichment state.
+- GREEN: exit 0 with 29/29 tests passing.
+
+The correction now:
+
+- Treats a terminal Turn as ready to settle only after its referenced assistant/system message is present with terminal delivery. A completed Turn without its answer ID remains readable through the bounded poll, including when that ordering is observed on initial load.
+- Shares one refresh promise between stream EOF/error and timer callers. Each detail/messages pair gets a child abort controller; if either read fails, the sibling is aborted and both are awaited before refresh ownership is released.
+- Merges snapshots synchronously into accepted state before computing `needsPolling`. Completed message body and terminal result-delivery state cannot regress when a stale snapshot arrives.
+- Keeps text settlement separate from result enrichment: the stream aborts and the composer unlocks once the referenced text is terminal, while GET polling continues only if accepted merged messages still contain pending result delivery.
+
+Fresh verification after the correction:
+
+`npm test -- --run src/pages/ConversationPage.test.tsx src/conversationApi.test.ts src/components/conversation src/workspaces/hr/HrConversationOutcomePanel.test.tsx && npm run build`
+
+- Exit 0: 14 test files and 94/94 tests passed; `tsc -b` and Vite build passed.
+- Vite emitted only the existing large-chunk advisory.
+
+One final self-review tightened the terminal-order test to start from terminal detail with its referenced answer absent, then return a stale active detail. RED showed the direct-Agent composer re-locking; after seeding terminal monotonicity from the initial accepted detail, the focused test and the fresh 94-test/build command above both passed.

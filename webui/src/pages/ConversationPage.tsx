@@ -95,8 +95,33 @@ const DEFAULT_CLIENT: ConversationPageClient = {
 
 
 function mergeMessages(current: ConversationMessage[], incoming: ConversationMessage[]): ConversationMessage[] {
-  return [...new Map([...current, ...incoming].map((message) => [message.message_id, message])).values()]
-    .sort((left, right) => left.seq - right.seq);
+  const deliveryRank = (status: ConversationMessage["delivery_status"]) => ({
+    accepted: 0, streaming: 1, completed: 2, failed: 2,
+  })[status];
+  const resultIsTerminal = (message: ConversationMessage) => (
+    message.result_delivery_status === "completed" || message.result_delivery_status === "failed"
+  );
+  const byId = new Map(current.map((message) => [message.message_id, message]));
+  for (const message of incoming) {
+    const accepted = byId.get(message.message_id);
+    if (!accepted) {
+      byId.set(message.message_id, message);
+      continue;
+    }
+    if (deliveryRank(message.delivery_status) < deliveryRank(accepted.delivery_status)
+      || resultIsTerminal(accepted)) continue;
+    if (["completed", "failed"].includes(accepted.delivery_status)) {
+      byId.set(message.message_id, {
+        ...message,
+        content: accepted.content,
+        delivery_status: accepted.delivery_status,
+        completed_at: accepted.completed_at,
+      });
+      continue;
+    }
+    byId.set(message.message_id, message);
+  }
+  return [...byId.values()].sort((left, right) => left.seq - right.seq);
 }
 
 
@@ -109,6 +134,19 @@ function mergeEvent(current: ConversationEvent[], incoming: ConversationEvent): 
 
 function turnIsActive(detail: ConversationDetail | null): boolean {
   return Boolean(detail?.current_turn && !TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status));
+}
+
+
+function terminalTurnHasReferencedMessage(
+  detail: ConversationDetail,
+  acceptedMessages: ConversationMessage[],
+): boolean {
+  const turn = detail.current_turn;
+  if (!turn || !TERMINAL_CONVERSATION_TURN_STATUSES.has(turn.status)) return false;
+  if (!turn.assistant_message_id) return turn.status !== "completed";
+  const answer = acceptedMessages.find((message) => message.message_id === turn.assistant_message_id);
+  return Boolean(answer && ["assistant", "system"].includes(answer.role)
+    && ["completed", "failed"].includes(answer.delivery_status));
 }
 
 
@@ -241,63 +279,113 @@ export function ConversationPage({
     const controller = new AbortController();
     const streamController = new AbortController();
     let stopPolling: (() => void) | undefined;
-    let pollInFlight = false;
+    let acceptedDetail = detail;
+    let acceptedMessages = messages;
+    if (detail.current_turn && TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status)) {
+      terminalTurnIds.current.add(detail.current_turn.turn_id);
+    }
+    let refreshInFlight: Promise<{
+      snapshot: ConversationDetail;
+      terminal: boolean;
+      terminalReady: boolean;
+      resultDeliveryPending: boolean;
+      needsPolling: boolean;
+    } | null> | null = null;
     const rememberSnapshot = (snapshot: ConversationDetail, loadedMessages: ConversationMessage[]) => {
       const incomingTurn = snapshot.current_turn;
       const incomingIsTerminal = Boolean(
         incomingTurn && TERMINAL_CONVERSATION_TURN_STATUSES.has(incomingTurn.status),
       );
       if (incomingTurn && incomingIsTerminal) terminalTurnIds.current.add(incomingTurn.turn_id);
-      setDetail((current) => {
-        if (incomingTurn && !incomingIsTerminal && terminalTurnIds.current.has(incomingTurn.turn_id)) {
-          return current;
-        }
-        return snapshot;
-      });
-      setMessages((current) => mergeMessages(current, loadedMessages));
-      return incomingIsTerminal || Boolean(incomingTurn && terminalTurnIds.current.has(incomingTurn.turn_id));
-    };
-    const refreshSnapshot = async () => {
-      const [snapshot, loadedMessages] = await Promise.all([
-        client.fetchConversation(conversationId, controller.signal),
-        client.fetchMessages(conversationId, controller.signal),
-      ]);
-      if (controller.signal.aborted) return null;
+      if (!(incomingTurn && !incomingIsTerminal && terminalTurnIds.current.has(incomingTurn.turn_id))) {
+        acceptedDetail = snapshot;
+      }
+      acceptedMessages = mergeMessages(acceptedMessages, loadedMessages);
+      setDetail(acceptedDetail);
+      setMessages(acceptedMessages);
+      const terminal = Boolean(acceptedDetail.current_turn
+        && TERMINAL_CONVERSATION_TURN_STATUSES.has(acceptedDetail.current_turn.status));
+      const terminalReady = terminalTurnHasReferencedMessage(acceptedDetail, acceptedMessages);
+      const resultDeliveryPending = acceptedMessages.some(
+        (message) => message.result_delivery_status === "pending",
+      );
       return {
-        snapshot,
-        terminal: rememberSnapshot(snapshot, loadedMessages),
-        resultDeliveryPending: loadedMessages.some(
-          (message) => message.result_delivery_status === "pending",
-        ),
+        snapshot: acceptedDetail,
+        terminal,
+        terminalReady,
+        resultDeliveryPending,
+        needsPolling: turnIsActive(acceptedDetail)
+          || (terminal && !terminalReady)
+          || resultDeliveryPending,
       };
     };
+    const performRefresh = async () => {
+      const pairController = new AbortController();
+      const abortPair = () => pairController.abort();
+      controller.signal.addEventListener("abort", abortPair, { once: true });
+      if (controller.signal.aborted) pairController.abort();
+      const detailRead = client.fetchConversation(conversationId, pairController.signal);
+      const messageRead = client.fetchMessages(conversationId, pairController.signal);
+      try {
+        const [snapshot, loadedMessages] = await Promise.all([detailRead, messageRead]);
+        if (controller.signal.aborted) return null;
+        return rememberSnapshot(snapshot, loadedMessages);
+      } catch (error) {
+        pairController.abort();
+        await Promise.allSettled([detailRead, messageRead]);
+        throw error;
+      } finally {
+        controller.signal.removeEventListener("abort", abortPair);
+      }
+    };
+    const refreshSnapshot = () => {
+      if (refreshInFlight) return refreshInFlight;
+      const refresh = performRefresh();
+      const owned = refresh.then(
+        (result) => {
+          if (refreshInFlight === owned) refreshInFlight = null;
+          return result;
+        },
+        (error) => {
+          if (refreshInFlight === owned) refreshInFlight = null;
+          throw error;
+        },
+      );
+      refreshInFlight = owned;
+      return owned;
+    };
     const activeTurnWasObserved = turnIsActive(detail);
-    const resultDeliveryWasPending = messages.some(
-      (message) => message.result_delivery_status === "pending",
-    );
-    const settle = (snapshot: ConversationDetail, resultDeliveryPending: boolean) => {
+    const terminalWasIncomplete = Boolean(detail.current_turn
+      && TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status)
+      && !terminalTurnHasReferencedMessage(detail, messages));
+    const settle = (result: {
+      snapshot: ConversationDetail;
+      needsPolling: boolean;
+    }) => {
       setConnection("live");
-      const turnId = snapshot.current_turn?.turn_id;
-      if (activeTurnWasObserved && turnId && !settledTurnIds.current.has(turnId)) {
+      const turnId = result.snapshot.current_turn?.turn_id;
+      if ((activeTurnWasObserved || terminalWasIncomplete)
+        && turnId && !settledTurnIds.current.has(turnId)) {
         settledTurnIds.current.add(turnId);
         onConversationSettled?.();
       }
       streamController.abort();
-      if (!resultDeliveryPending) {
+      if (!result.needsPolling) {
         stopPolling?.();
         controller.abort();
       }
     };
-    if (activeTurnWasObserved || resultDeliveryWasPending) {
+    const initiallyNeedsPolling = activeTurnWasObserved || terminalWasIncomplete || messages.some(
+      (message) => message.result_delivery_status === "pending",
+    );
+    if (initiallyNeedsPolling) {
       stopPolling = scheduleSnapshotPolling(() => {
-        if (pollInFlight || controller.signal.aborted) return;
-        pollInFlight = true;
+        if (controller.signal.aborted) return;
         void refreshSnapshot()
           .then((result) => {
-            if (result?.terminal) settle(result.snapshot, result.resultDeliveryPending);
+            if (result?.terminalReady) settle(result);
           })
-          .catch(() => undefined)
-          .finally(() => { pollInFlight = false; });
+          .catch(() => undefined);
       }, 5_000);
     }
     const run = async () => {
@@ -324,14 +412,14 @@ export function ConversationPage({
           const result = await refreshSnapshot();
           if (!result) return;
           setConnection("live");
-          if (result.terminal) return settle(result.snapshot, result.resultDeliveryPending);
+          if (result.terminalReady) return settle(result);
           setConnection("offline");
         } catch {
           if (controller.signal.aborted || streamController.signal.aborted) return;
           try {
             const result = await refreshSnapshot();
             if (!result) return;
-            if (result.terminal) return settle(result.snapshot, result.resultDeliveryPending);
+            if (result.terminalReady) return settle(result);
           } catch {
             if (controller.signal.aborted) return;
           }

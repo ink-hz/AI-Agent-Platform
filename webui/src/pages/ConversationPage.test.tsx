@@ -371,6 +371,153 @@ describe("ConversationPage", () => {
     }
   });
 
+  it("keeps reading when terminal detail arrives before its referenced answer", async () => {
+    vi.useFakeTimers();
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: completedTurn })
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: active })
+      .mockResolvedValue({ conversation: directConversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValue(messages);
+    const streamSignals: AbortSignal[] = [];
+    const onConversationSettled = vi.fn();
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({
+          fetchConversation,
+          fetchMessages,
+          streamEvents: vi.fn().mockImplementation((_id, options) => {
+            streamSignals.push(options.signal);
+            return stream.promise;
+          }),
+        })}
+        conversationId={conversationId}
+        onConversationSettled={onConversationSettled}
+      />));
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(onConversationSettled).not.toHaveBeenCalled();
+      expect(streamSignals[0]?.aborted).toBe(false);
+      expect(container.textContent).not.toContain("建议从 GitHub 开始");
+      expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(false);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+      expect(streamSignals[0]?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shares one deferred refresh between stream completion and the poll timer", async () => {
+    vi.useFakeTimers();
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const nextDetail = deferred<ConversationDetail>();
+    const nextMessages = deferred<ConversationMessage[]>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockReturnValue(nextDetail.promise);
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockReturnValue(nextMessages.promise);
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({ fetchConversation, fetchMessages, streamEvents: vi.fn().mockReturnValue(stream.promise) })}
+        conversationId={conversationId}
+      />));
+
+      await act(async () => {
+        stream.resolve();
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(fetchConversation).toHaveBeenCalledTimes(2);
+      expect(fetchMessages).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        nextDetail.resolve({ conversation, current_turn: completedTurn });
+        nextMessages.resolve(messages);
+      });
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts a failed refresh pair before allowing a later poll", async () => {
+    vi.useFakeTimers();
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const pairSignals: AbortSignal[] = [];
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValue({ conversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockImplementationOnce((_id, signal) => new Promise<ConversationMessage[]>((_resolve, reject) => {
+        pairSignals.push(signal);
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      }))
+      .mockResolvedValue(messages);
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({
+          fetchConversation,
+          fetchMessages,
+          streamEvents: vi.fn()
+            .mockRejectedValueOnce(new TypeError("offline"))
+            .mockReturnValue(stream.promise),
+        })}
+        conversationId={conversationId}
+      />));
+      expect(pairSignals[0]?.aborted).toBe(true);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(3);
+      expect(fetchMessages).toHaveBeenCalledTimes(3);
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not let a stale snapshot replace completed message content or enrichment", async () => {
+    const stream = deferred<void>();
+    const completedMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const staleMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], content: "旧草稿", result_delivery_status: "pending",
+    }];
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(completedMessages)
+      .mockResolvedValue(staleMessages);
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      client={client({ fetchMessages, streamEvents: vi.fn().mockReturnValue(stream.promise) })}
+      conversationId={conversationId}
+    />));
+
+    await act(async () => stream.resolve());
+
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).not.toContain("旧草稿");
+    expect(container.textContent).not.toContain("附件与引用正在整理");
+  });
+
   it("unlocks terminal text while polling pending result delivery to completion", async () => {
     vi.useFakeTimers();
     const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
