@@ -349,3 +349,48 @@ npm run build
 ```
 
 Result: passed (`tsc -b && vite build`).
+
+---
+
+# Task 3 report: browser read resilience
+
+## Outcome
+
+- Added a five-second, single-flight snapshot poll while a Turn is active or a message has pending result delivery. It stops after both text and result delivery settle, or on cleanup, unmount, or conversation switch.
+- Stream refreshes and polls share terminal bookkeeping, so an active snapshot for a known-terminal Turn cannot replace terminal UI state.
+- A terminal snapshot aborts the hung stream, merges the saved answer, unlocks the composer, and invokes `onConversationSettled` once per Turn. Pending attachment/citation enrichment continues through bounded GET polling without re-locking text input.
+- Parsed the additive optional `result_delivery_status` projection and rendered explicit pending/failed informational copy. Neither state adds a re-run action.
+- Poll read failures do not kill later reads or clear rendered messages. Attachment-list rejection is isolated from required conversation/message loading and renders an actionable warning.
+- Added no read- or reconnect-triggered submission and changed no access rules.
+
+## TDD evidence
+
+Initial RED: `npm test -- --run src/pages/ConversationPage.test.tsx`
+
+- Exit 1: 2 expected failures, 21 passes. No timer-driven snapshot read occurred, and attachment-list rejection caused the fatal load state.
+
+Initial GREEN: `npm test -- --run src/pages/ConversationPage.test.tsx`
+
+- Exit 0: 23/23 tests passed.
+
+Result-delivery RED: `npm test -- --run src/conversationApi.test.ts src/pages/ConversationPage.test.tsx`
+
+- Exit 1: 3 expected failures. The strict parser rejected `result_delivery_status`, and pending/failed result-delivery notices did not render.
+
+Result-delivery GREEN: the same command exited 0 with 2 files and 50/50 tests passing.
+
+Relevant regression and build: `npm test -- --run src/pages/ConversationPage.test.tsx src/conversationApi.test.ts src/components/conversation src/workspaces/hr/HrConversationOutcomePanel.test.tsx && npm run build`
+
+- Exit 0: 14 test files and 90/90 tests passed; TypeScript and Vite build passed.
+- An earlier regression run found the existing `NoMockProgress` source guard because the timer primitive was in `ConversationPage.tsx`. The bounded scheduling primitive was extracted into `snapshotPolling.ts`, preserving that guard.
+- Vite emitted only its existing large-chunk advisory.
+
+## Self-review and concerns
+
+- The interval is fixed at 5,000 ms; no immediate extra poll is issued. The in-flight guard resets in `finally`, so failed reads allow later polls.
+- Text terminality and enrichment terminality are intentionally separate: SSE stops and the composer unlocks at text terminality; snapshot polling stops when no message remains `pending`.
+- Lifecycle cleanup clears the schedule and aborts both snapshot and stream signals. Terminal and callback IDs reset when conversation load identity changes.
+- Message refreshes merge by message ID and do not clear existing content.
+- The optional parser field accepts only `null`, `pending`, `completed`, or `failed`; absent fields remain backward compatible.
+- The UI has no enrichment retry button or POST. Existing event-driven `markRead` behavior is unchanged.
+- No backend or unrelated concurrent files were staged or changed by this task.

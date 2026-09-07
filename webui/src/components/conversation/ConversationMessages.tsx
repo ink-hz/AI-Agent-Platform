@@ -63,6 +63,8 @@ function AssistantMessage({ message, assistantLabel, feedbackState, citations, v
     <div ref={visible}><MessageMarkdown content={message.content} /></div>
     <ArtifactVersionList onDownloadAll={onDownloadAll} onOpen={onOpenAttachment} versions={versions} />
     <CitationList citations={citations} />
+    {message.result_delivery_status === "pending" && <p role="status">附件与引用正在整理，文字回答已完成。</p>}
+    {message.result_delivery_status === "failed" && <p role="status">文字回答已完成，附件或引用暂未整理成功。</p>}
     <SearchRecoveryNotice message={message} onRetry={onRetry} />
     {message.delivery_status === "completed" && <MessageActions
       copyText={() => visible.current?.innerText || visible.current?.textContent || message.content}

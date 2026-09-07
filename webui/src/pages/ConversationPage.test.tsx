@@ -324,6 +324,147 @@ describe("ConversationPage", () => {
     expect(container.textContent).not.toContain("连接暂时中断");
   });
 
+  it("polls a hung active stream to completion without repeating a write", async () => {
+    vi.useFakeTimers();
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: active })
+      .mockResolvedValue({ conversation: directConversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValue(messages);
+    const streamSignals: AbortSignal[] = [];
+    const streamEvents = vi.fn().mockImplementation((_id, options) => {
+      streamSignals.push(options.signal);
+      return stream.promise;
+    });
+    const onConversationSettled = vi.fn();
+    const pageClient = client({ fetchConversation, fetchMessages, streamEvents });
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        assistantLabel="HR Agent"
+        client={pageClient}
+        conversationId={conversationId}
+        onConversationSettled={onConversationSettled}
+      />));
+      expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(true);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+
+      expect(fetchConversation).toHaveBeenCalledTimes(2);
+      expect(fetchMessages).toHaveBeenCalledTimes(2);
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+      expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(false);
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+      expect(streamSignals[0]?.aborted).toBe(true);
+      expect(pageClient.createMessageSubmission).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTimeAsync(15_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(2);
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("unlocks terminal text while polling pending result delivery to completion", async () => {
+    vi.useFakeTimers();
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const pendingMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "pending",
+    }];
+    const deliveredMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: active })
+      .mockResolvedValue({ conversation: directConversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValueOnce(pendingMessages)
+      .mockResolvedValue(deliveredMessages);
+    const streamSignals: AbortSignal[] = [];
+    const onConversationSettled = vi.fn();
+    const pageClient = client({
+      fetchConversation,
+      fetchMessages,
+      streamEvents: vi.fn().mockImplementation((_id, options) => {
+        streamSignals.push(options.signal);
+        return stream.promise;
+      }),
+    });
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        assistantLabel="HR Agent"
+        client={pageClient}
+        conversationId={conversationId}
+        onConversationSettled={onConversationSettled}
+      />));
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).toContain("附件与引用正在整理，文字回答已完成。");
+      expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(false);
+      expect(streamSignals[0]?.aborted).toBe(true);
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(3);
+      expect(container.textContent).not.toContain("附件与引用正在整理");
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(3);
+      expect(pageClient.createMessageSubmission).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("explains a failed result delivery without hiding completed text", async () => {
+    const failedMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "failed",
+    }];
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      client={client({ fetchMessages: vi.fn().mockResolvedValue(failedMessages) })}
+      conversationId={conversationId}
+    />));
+
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).toContain("文字回答已完成，附件或引用暂未整理成功。");
+  });
+
+  it("keeps messages readable when the attachment list fails", async () => {
+    const limits = {
+      max_file_bytes: 50 * 1024 * 1024,
+      max_files_per_message: 5,
+      max_bytes_per_message: 50 * 1024 * 1024,
+      max_files_per_conversation: 50,
+      max_bytes_per_conversation: 500 * 1024 * 1024,
+    };
+    const listAttachments = vi.fn().mockRejectedValue(new TypeError("offline"));
+
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      attachmentLimits={limits}
+      client={client({ listAttachments })}
+      conversationId={conversationId}
+    />));
+
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).not.toContain("暂时无法读取对话");
+    expect(container.querySelector("[role='alert']")?.textContent)
+      .toContain("会话材料暂时无法读取，请刷新页面重试");
+  });
+
   it("is read-only when directory freshness is hard stale", async () => {
     const pageClient = client();
     await act(async () => root.render(<ConversationPage

@@ -50,6 +50,7 @@ import { MultiAgentWorkroom } from "../components/conversation/MultiAgentWorkroo
 import { PublicProgress } from "../components/conversation/PublicProgress";
 import { UserInputRequest } from "../components/conversation/UserInputRequest";
 import { projectWorkroom } from "../workroomProjection";
+import { scheduleSnapshotPolling } from "./snapshotPolling";
 
 
 export interface ConversationPageClient {
@@ -178,6 +179,8 @@ export function ConversationPage({
   const writeController = useRef<AbortController | null>(null);
   const eventCursor = useRef(0);
   const inFlight = useRef(false);
+  const terminalTurnIds = useRef(new Set<string>());
+  const settledTurnIds = useRef(new Set<string>());
   const readOnly = account.hard_stale_read_only || detail?.conversation.status === "archived";
   const materialsDrawerOpen = materialsOpen ?? internalMaterialsOpen;
   const changeMaterialsOpen = useCallback((open: boolean) => {
@@ -206,20 +209,25 @@ export function ConversationPage({
     setText(""); setSendFailure(false); setCancelFailure(false); setCancelRequested(false);
     setFeedback({}); setAttachments([]); setActiveAttachmentIds([]); setNewAttachmentIds([]); setUploadQueue([]); setAttachmentError(null);
     retained.current = null; eventCursor.current = 0;
+    terminalTurnIds.current.clear(); settledTurnIds.current.clear();
     void Promise.all([
       client.fetchConversation(conversationId, controller.signal),
       client.fetchMessages(conversationId, controller.signal),
-      attachmentLimits && client.listAttachments ? client.listAttachments(conversationId, controller.signal) : Promise.resolve([]),
-    ]).then(([snapshot, loadedMessages, loadedAttachments]) => {
+      attachmentLimits && client.listAttachments
+        ? client.listAttachments(conversationId, controller.signal)
+          .then((items) => ({ items, failed: false }), () => ({ items: [], failed: true }))
+        : Promise.resolve({ items: [], failed: false }),
+    ]).then(([snapshot, loadedMessages, attachmentResult]) => {
       if (controller.signal.aborted) return;
       if (expectedAgentId && (
         snapshot.conversation.mode !== "direct_agent"
         || snapshot.conversation.direct_agent_id !== expectedAgentId
       )) throw new Error("Conversation Agent scope mismatch");
       const projected = loadedMessages.flatMap((message) => [...message.input_attachments, ...message.output_attachments]);
-      const materialMap = new Map([...loadedAttachments, ...projected].map((item) => [item.attachmentId, item]));
+      const materialMap = new Map([...attachmentResult.items, ...projected].map((item) => [item.attachmentId, item]));
       const lastUser = [...loadedMessages].reverse().find((message) => message.role === "user");
       setAttachments([...materialMap.values()]); setActiveAttachmentIds(lastUser?.active_attachment_ids ?? []);
+      if (attachmentResult.failed) setAttachmentError("会话材料暂时无法读取，请刷新页面重试。");
       setDetail(snapshot); setMessages(loadedMessages); setLoading(false); setStreamEpoch((value) => value + 1);
       onConversationUpdated?.(snapshot.conversation);
     }).catch(() => {
@@ -231,25 +239,76 @@ export function ConversationPage({
   useEffect(() => {
     if (!streamEpoch || !detail) return;
     const controller = new AbortController();
+    const streamController = new AbortController();
+    let stopPolling: (() => void) | undefined;
+    let pollInFlight = false;
+    const rememberSnapshot = (snapshot: ConversationDetail, loadedMessages: ConversationMessage[]) => {
+      const incomingTurn = snapshot.current_turn;
+      const incomingIsTerminal = Boolean(
+        incomingTurn && TERMINAL_CONVERSATION_TURN_STATUSES.has(incomingTurn.status),
+      );
+      if (incomingTurn && incomingIsTerminal) terminalTurnIds.current.add(incomingTurn.turn_id);
+      setDetail((current) => {
+        if (incomingTurn && !incomingIsTerminal && terminalTurnIds.current.has(incomingTurn.turn_id)) {
+          return current;
+        }
+        return snapshot;
+      });
+      setMessages((current) => mergeMessages(current, loadedMessages));
+      return incomingIsTerminal || Boolean(incomingTurn && terminalTurnIds.current.has(incomingTurn.turn_id));
+    };
     const refreshSnapshot = async () => {
       const [snapshot, loadedMessages] = await Promise.all([
         client.fetchConversation(conversationId, controller.signal),
         client.fetchMessages(conversationId, controller.signal),
       ]);
       if (controller.signal.aborted) return null;
-      setDetail(snapshot); setMessages((current) => mergeMessages(current, loadedMessages));
-      return snapshot;
+      return {
+        snapshot,
+        terminal: rememberSnapshot(snapshot, loadedMessages),
+        resultDeliveryPending: loadedMessages.some(
+          (message) => message.result_delivery_status === "pending",
+        ),
+      };
     };
     const activeTurnWasObserved = turnIsActive(detail);
+    const resultDeliveryWasPending = messages.some(
+      (message) => message.result_delivery_status === "pending",
+    );
+    const settle = (snapshot: ConversationDetail, resultDeliveryPending: boolean) => {
+      setConnection("live");
+      const turnId = snapshot.current_turn?.turn_id;
+      if (activeTurnWasObserved && turnId && !settledTurnIds.current.has(turnId)) {
+        settledTurnIds.current.add(turnId);
+        onConversationSettled?.();
+      }
+      streamController.abort();
+      if (!resultDeliveryPending) {
+        stopPolling?.();
+        controller.abort();
+      }
+    };
+    if (activeTurnWasObserved || resultDeliveryWasPending) {
+      stopPolling = scheduleSnapshotPolling(() => {
+        if (pollInFlight || controller.signal.aborted) return;
+        pollInFlight = true;
+        void refreshSnapshot()
+          .then((result) => {
+            if (result?.terminal) settle(result.snapshot, result.resultDeliveryPending);
+          })
+          .catch(() => undefined)
+          .finally(() => { pollInFlight = false; });
+      }, 5_000);
+    }
     const run = async () => {
-      while (!controller.signal.aborted) {
+      while (!controller.signal.aborted && !streamController.signal.aborted) {
         setConnection(eventCursor.current === 0 ? "connecting" : "live");
         try {
           await client.streamEvents(conversationId, {
             after: eventCursor.current,
-            signal: controller.signal,
+            signal: streamController.signal,
             onEvent: (event) => {
-              if (controller.signal.aborted || event.conversation_id !== conversationId || event.seq <= eventCursor.current) return;
+              if (streamController.signal.aborted || event.conversation_id !== conversationId || event.seq <= eventCursor.current) return;
               eventCursor.current = event.seq;
               setEvents((current) => mergeEvent(current, event));
               setConnection("live");
@@ -257,39 +316,36 @@ export function ConversationPage({
                 "brain.answer_submitted", "brain.failed", "brain.user_input_requested",
               ].includes(event.event_type)) {
                 void client.markRead(
-                  conversationId, event.seq, account.csrf_token, controller.signal,
+                  conversationId, event.seq, account.csrf_token, streamController.signal,
                 ).catch(() => undefined);
               }
             },
           });
-          const snapshot = await refreshSnapshot();
-          if (!snapshot) return;
+          const result = await refreshSnapshot();
+          if (!result) return;
           setConnection("live");
-          if (!turnIsActive(snapshot)) {
-            if (activeTurnWasObserved) onConversationSettled?.();
-            return;
-          }
+          if (result.terminal) return settle(result.snapshot, result.resultDeliveryPending);
           setConnection("offline");
         } catch {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted || streamController.signal.aborted) return;
           try {
-            const snapshot = await refreshSnapshot();
-            if (!snapshot) return;
-            if (!turnIsActive(snapshot)) {
-              setConnection("live");
-              if (activeTurnWasObserved) onConversationSettled?.();
-              return;
-            }
+            const result = await refreshSnapshot();
+            if (!result) return;
+            if (result.terminal) return settle(result.snapshot, result.resultDeliveryPending);
           } catch {
             if (controller.signal.aborted) return;
           }
           setConnection("offline");
         }
-        await client.reconnectDelay(controller.signal);
+        await client.reconnectDelay(streamController.signal);
       }
     };
     void run();
-    return () => controller.abort();
+    return () => {
+      stopPolling?.();
+      controller.abort();
+      streamController.abort();
+    };
   // streamEpoch deliberately starts a fresh stream after a newly accepted Turn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account.csrf_token, account.hard_stale_read_only, client, conversationId, onConversationSettled, streamEpoch]);

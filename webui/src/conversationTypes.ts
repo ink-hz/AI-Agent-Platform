@@ -2,6 +2,7 @@ export type ConversationMode = "brain" | "direct_agent";
 export type ConversationStatus = "active" | "archived";
 export type ConversationMessageRole = "user" | "assistant" | "system";
 export type ConversationDeliveryStatus = "accepted" | "streaming" | "completed" | "failed";
+export type ConversationResultDeliveryStatus = "pending" | "completed" | "failed";
 export type AttachmentState = "uploading" | "validating" | "scanning" |
   "ready" | "quarantined" | "rejected" | "deleted";
 
@@ -97,6 +98,7 @@ export interface ConversationMessage {
   content: string;
   turn_id: string | null;
   delivery_status: ConversationDeliveryStatus;
+  result_delivery_status?: ConversationResultDeliveryStatus | null;
   created_at: string;
   completed_at: string | null;
   input_attachments: ConversationAttachment[];

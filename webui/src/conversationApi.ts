@@ -19,6 +19,7 @@ import type {
   ConversationInterventionResult,
   ConversationMessage,
   ConversationMessageRole,
+  ConversationResultDeliveryStatus,
   ConversationMode,
   ConversationPage,
   ConversationStatus,
@@ -40,7 +41,9 @@ const MESSAGE_KEYS = new Set([
   "delivery_status", "created_at", "completed_at", "input_attachments",
   "output_attachments", "active_attachment_ids",
 ]);
-const MESSAGE_OPTIONAL_FIELDS = new Set(["search_recovery", "citations", "artifact_versions"]);
+const MESSAGE_OPTIONAL_FIELDS = new Set([
+  "search_recovery", "citations", "artifact_versions", "result_delivery_status",
+]);
 const TURN_KEYS = new Set([
   "turn_id", "conversation_id", "user_message_id", "assistant_message_id",
   "retry_of_turn_id", "status", "created_at", "updated_at",
@@ -82,6 +85,9 @@ const CONVERSATION_STATUSES = new Set<ConversationStatus>(["active", "archived"]
 const MESSAGE_ROLES = new Set<ConversationMessageRole>(["user", "assistant", "system"]);
 const DELIVERY_STATUSES = new Set<ConversationDeliveryStatus>([
   "accepted", "streaming", "completed", "failed",
+]);
+const RESULT_DELIVERY_STATUSES = new Set<ConversationResultDeliveryStatus>([
+  "pending", "completed", "failed",
 ]);
 const TURN_STATUSES = new Set<ConversationTurnStatus>([
   "accepted", "running", "waiting_agents", "waiting_user", "waiting_confirmation", "completing",
@@ -210,6 +216,9 @@ function parseMessage(value: unknown): ConversationMessage {
     || typeof value.content !== "string"
     || !isNullableString(value.turn_id)
     || !DELIVERY_STATUSES.has(value.delivery_status as ConversationDeliveryStatus)
+    || (Object.prototype.hasOwnProperty.call(value, "result_delivery_status")
+      && value.result_delivery_status !== null
+      && !RESULT_DELIVERY_STATUSES.has(value.result_delivery_status as ConversationResultDeliveryStatus))
     || !isNonEmptyString(value.created_at)
     || !isNullableString(value.completed_at)
     || !Array.isArray(value.input_attachments)

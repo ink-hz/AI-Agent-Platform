@@ -396,6 +396,21 @@ describe("continuous Conversation API", () => {
     await expect(fetchConversationMessages(CONVERSATION_ID)).rejects.toThrow("Message response invalid");
   });
 
+  it("parses the optional result delivery status and rejects unknown values", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      items: [{ ...message, result_delivery_status: "pending" }],
+    })));
+
+    await expect(fetchConversationMessages(CONVERSATION_ID)).resolves.toEqual([
+      { ...message, result_delivery_status: "pending" },
+    ]);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      items: [{ ...message, result_delivery_status: "retrying" }],
+    })));
+    await expect(fetchConversationMessages(CONVERSATION_ID)).rejects.toThrow("Message response invalid");
+  });
+
   it("rejects empty or over-32-KiB input before writing", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
