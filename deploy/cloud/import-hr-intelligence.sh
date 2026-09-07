@@ -24,15 +24,19 @@ done
 [[ "$PLATFORM_HR_PANORAMA_OWNER_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || fail
 
 repository_root="$(cd "$(dirname "$0")/../.." && pwd)"
-local_python=/usr/bin/python3
-[[ -x "$local_python" ]] || fail
+backend_python="$repository_root/backend/.venv/bin/python"
+if [[ ! -x "$backend_python" ]]; then
+  common_git="$(git -C "$repository_root" rev-parse --path-format=absolute --git-common-dir)" || fail
+  backend_python="$(/usr/bin/dirname "$common_git")/backend/.venv/bin/python"
+fi
+[[ -x "$backend_python" ]] || fail
 bundle_id="$(/usr/bin/basename "$bundle_path")"
 [[ "$bundle_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || fail
-PYTHONPATH="$repository_root/backend" "$local_python" -c \
+PYTHONPATH="$repository_root/backend" "$backend_python" -c \
   'import pathlib,sys; from app.hr.intelligence_bundle import verify_import_bundle; verify_import_bundle(pathlib.Path(sys.argv[1]))' \
   "$bundle_path"
 
-deployment_id="$("$local_python" -c 'import secrets; print(secrets.token_hex(16))')"
+deployment_id="$("$backend_python" -c 'import secrets; print(secrets.token_hex(16))')"
 [[ "$deployment_id" =~ ^[0-9a-f]{32}$ ]] || fail
 remote_staging="/data/staging/orbbec-agent-platform/hr-intelligence-$deployment_id"
 remote_bundle="/data/orbbec-agent-platform/hr-intelligence/bundles/$bundle_id"

@@ -6,12 +6,19 @@ from uuid import uuid4
 
 import pytest
 
+from app.hr import intelligence_bundle
 from app.hr.intelligence_bundle import BundleVerificationError, verify_import_bundle
 from app.hr.intelligence_import import IntelligenceBundleImporter
 from tools.hr_intelligence.bundle import BundleInputs, build_bundle
 from tools.hr_intelligence.models import NormalizedJob
 
 NOW = datetime(2026, 9, 6, 8, tzinfo=timezone.utc)
+
+
+def test_import_capacity_preserves_large_auditable_analysis_snapshots() -> None:
+    assert getattr(intelligence_bundle, "MAX_BUNDLE_FILE_BYTES", None) == (
+        256 * 1024 * 1024
+    )
 
 
 def _bundle(tmp_path: Path):

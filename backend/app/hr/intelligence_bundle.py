@@ -54,6 +54,7 @@ _CHUNK_KEYS = frozenset(
 _COVERAGE_STATES = frozenset(
     {"succeeded", "empty_confirmed", "partial", "failed", "not_observed"}
 )
+MAX_BUNDLE_FILE_BYTES = 256 * 1024 * 1024
 
 
 class BundleVerificationError(ValueError):
@@ -81,7 +82,7 @@ class VerifiedImportBundle:
 
 
 def _json(path: Path, expected_type: type) -> object:
-    if path.stat().st_size > 64 * 1024 * 1024:
+    if path.stat().st_size > MAX_BUNDLE_FILE_BYTES:
         raise BundleVerificationError("bundle JSON too large")
     try:
         value = json.loads(path.read_text("utf-8"))
@@ -155,7 +156,7 @@ def verify_import_bundle(
         raise BundleVerificationError("bundle checksum coverage invalid")
     for relative, expected in entries.items():
         file_path = root / relative
-        if file_path.stat().st_size > 64 * 1024 * 1024:
+        if file_path.stat().st_size > MAX_BUNDLE_FILE_BYTES:
             raise BundleVerificationError("bundle file too large")
         if hashlib.sha256(file_path.read_bytes()).hexdigest() != expected:
             raise BundleVerificationError("bundle checksum mismatch")
@@ -340,4 +341,9 @@ def verify_import_bundle(
     )
 
 
-__all__ = ["BundleVerificationError", "VerifiedImportBundle", "verify_import_bundle"]
+__all__ = [
+    "MAX_BUNDLE_FILE_BYTES",
+    "BundleVerificationError",
+    "VerifiedImportBundle",
+    "verify_import_bundle",
+]

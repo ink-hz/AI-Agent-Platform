@@ -50,7 +50,9 @@ def test_import_script_uses_exact_data_disk_staging_and_cleanup_trap() -> None:
     assert "/data/staging/orbbec-agent-platform/" in script
     assert "trap cleanup" in script
     assert "python -m app.hr.intelligence_import" in script
-    assert ".venv" not in script
+    assert 'backend_python="$repository_root/backend/.venv/bin/python"' in script
+    assert "rev-parse --path-format=absolute --git-common-dir" in script
+    assert "local_python=/usr/bin/python3" not in script
     assert "/tmp" not in script
     assert "system prune" not in script
 
