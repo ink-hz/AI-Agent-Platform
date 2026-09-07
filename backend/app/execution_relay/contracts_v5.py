@@ -22,23 +22,38 @@ from .models import OutputWriteGrantPayload, TaskAttachmentGrantPayload
 _ENVELOPE_BYTES = 1024 * 1024
 _MAX_SAFE_INTEGER = 9_007_199_254_740_991
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_UUID_WIRE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z"
+)
 _CALLBACK_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _MIME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+/[A-Za-z0-9!#$%&'*+.^_`|~-]+\Z")
 
 
-def _bounded_text(value: str, *, maximum: int, multiline: bool = False) -> str:
-    allowed_controls = {"\n", "\t"} if multiline else set()
+def _bounded_identifier(value: str, *, maximum: int) -> str:
     if (
         type(value) is not str
         or not value
         or value != value.strip()
         or len(value.encode("utf-8")) > maximum
-        or any(
-            ord(character) < 32 and character not in allowed_controls
-            for character in value
-        )
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
     ):
         raise ValueError("v5 contract text invalid")
+    return value
+
+
+def _bounded_content(value: str, *, maximum: int) -> str:
+    if type(value) is not str or not value.strip():
+        raise ValueError("v5 contract content invalid")
+    if len(value.encode("utf-8")) > maximum:
+        raise ValueError("v5 contract content invalid")
+    for index, character in enumerate(value):
+        codepoint = ord(character)
+        if character in {"\n", "\t"}:
+            continue
+        if character == "\r" and index + 1 < len(value) and value[index + 1] == "\n":
+            continue
+        if codepoint < 32 or codepoint == 127:
+            raise ValueError("v5 contract content invalid")
     return value
 
 
@@ -61,9 +76,85 @@ class FeishuMessageIdentity:
                 (self.bot_id, 128),
                 (self.message_id, 512),
             ):
-                _bounded_text(value, maximum=maximum)
+                _bounded_identifier(value, maximum=maximum)
         except (TypeError, ValueError):
             raise V5ContractError("v5 intake identity invalid") from None
+
+
+class _TurnIntakeIdentityV5(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        populate_by_name=False,
+        hide_input_in_errors=True,
+    )
+
+    tenant_id: str = Field(alias="tenantId", min_length=1, max_length=256)
+    app_id: str = Field(alias="appId", min_length=1, max_length=256)
+    bot_id: Literal["hr-bot"] = Field(alias="botId")
+    message_id: str = Field(alias="messageId", min_length=1, max_length=512)
+
+
+class _TurnIntakeSenderV5(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        populate_by_name=False,
+        hide_input_in_errors=True,
+    )
+
+    open_id: str = Field(alias="openId", min_length=1, max_length=512)
+    union_id: str | None = Field(alias="unionId", min_length=1, max_length=512)
+
+
+class _TurnIntakeAttachmentV5(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        populate_by_name=False,
+        hide_input_in_errors=True,
+    )
+
+    attachment_id: UUID = Field(alias="attachmentId")
+    index: int = Field(ge=0, le=31)
+    sha256_hex: str = Field(alias="sha256", pattern=r"^[0-9a-f]{64}$")
+
+
+class _TurnIntakeEnvelopeV5(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        populate_by_name=False,
+        hide_input_in_errors=True,
+    )
+
+    operation: Literal["turn-intake"]
+    request_id: UUID = Field(alias="requestId")
+    identity: _TurnIntakeIdentityV5
+    sender_identity: _TurnIntakeSenderV5 = Field(alias="senderIdentity")
+    chat_id: str = Field(alias="chatId", min_length=1, max_length=512)
+    thread_key: str = Field(alias="threadKey", max_length=512)
+    conversation_id: UUID = Field(alias="conversationId")
+    principal_ref: str = Field(alias="principalRef", min_length=1, max_length=256)
+    content_hash: str = Field(alias="contentHash", pattern=r"^[0-9a-f]{64}$")
+    text: str = Field(min_length=1, max_length=131072)
+    attachments: tuple[_TurnIntakeAttachmentV5, ...] = Field(max_length=32)
+
+    @model_validator(mode="after")
+    def _valid_request_identity(self) -> _TurnIntakeEnvelopeV5:
+        identity = FeishuMessageIdentity(
+            self.identity.tenant_id,
+            self.identity.app_id,
+            self.identity.bot_id,
+            self.identity.message_id,
+        )
+        if self.request_id != feishu_request_id(identity):
+            raise ValueError("v5 turn intake invalid")
+        return self
 
 
 class PermissionScopeV5(BaseModel):
@@ -176,7 +267,7 @@ class ExecutionRecoveryV5(BaseModel):
         if self.executor_stopped != (self.executor_stop_proof_ref is not None):
             raise ValueError("v5 execution recovery invalid")
         if self.executor_stop_proof_ref is not None:
-            _bounded_text(self.executor_stop_proof_ref, maximum=256)
+            _bounded_identifier(self.executor_stop_proof_ref, maximum=256)
         return self
 
 
@@ -209,9 +300,9 @@ class FrozenArtifactIntentV5(BaseModel):
             or "\\" in self.opaque_spool_ref
         ):
             raise ValueError("v5 artifact intent invalid")
-        _bounded_text(self.principal_ref, maximum=256)
-        _bounded_text(self.display_name, maximum=1024)
-        _bounded_text(self.opaque_spool_ref, maximum=256)
+        _bounded_identifier(self.principal_ref, maximum=256)
+        _bounded_identifier(self.display_name, maximum=1024)
+        _bounded_identifier(self.opaque_spool_ref, maximum=256)
         return self
 
 
@@ -233,8 +324,8 @@ class ResultEventPayloadV5(BaseModel):
 
     @model_validator(mode="after")
     def _valid_result(self) -> ResultEventPayloadV5:
-        _bounded_text(self.source_ref, maximum=256)
-        _bounded_text(self.public_answer_markdown, maximum=131072, multiline=True)
+        _bounded_identifier(self.source_ref, maximum=256)
+        _bounded_content(self.public_answer_markdown, maximum=131072)
         indexes = tuple(intent.index for intent in self.artifact_intents)
         if (
             not self.execution_recovery.has_output
@@ -313,8 +404,8 @@ class RawProgressPayloadV5(BaseModel):
 
     @model_validator(mode="after")
     def _valid_private_progress(self) -> RawProgressPayloadV5:
-        _bounded_text(self.source_ref, maximum=256)
-        _bounded_text(self.text, maximum=16384, multiline=True)
+        _bounded_identifier(self.source_ref, maximum=256)
+        _bounded_content(self.text, maximum=16384)
         return self
 
 
@@ -359,6 +450,54 @@ class CoreChatEventV5(BaseModel):
         if len(self.model_dump_json(by_alias=True).encode("utf-8")) > _ENVELOPE_BYTES:
             raise ValueError("v5 event invalid")
         return self
+
+
+_EVENT_PAYLOAD_MODELS = {
+    "run_heartbeat": RunHeartbeatPayloadV5,
+    "result": ResultEventPayloadV5,
+    "error": ErrorEventPayloadV5,
+    "cancelled": CancelledEventPayloadV5,
+    "interrupted": InterruptedEventPayloadV5,
+    "raw_progress": RawProgressPayloadV5,
+}
+
+
+def _wire_fields(model: type[BaseModel]) -> set[str]:
+    return {field.alias or name for name, field in model.model_fields.items()}
+
+
+def _has_exact_event_wire_shape(value: dict[str, Any]) -> bool:
+    if set(value) != _wire_fields(CoreChatEventV5):
+        return False
+    event_type = value.get("type")
+    payload = value.get("payload")
+    payload_model = _EVENT_PAYLOAD_MODELS.get(event_type)
+    if type(payload) is not dict or payload_model is None:
+        return False
+    if set(payload) != _wire_fields(payload_model):
+        return False
+    if event_type == "result":
+        artifact_intents = payload.get("artifactIntents")
+        recovery = payload.get("executionRecovery")
+        if (
+            type(artifact_intents) is not list
+            or any(
+                type(intent) is not dict
+                or set(intent) != _wire_fields(FrozenArtifactIntentV5)
+                for intent in artifact_intents
+            )
+            or type(recovery) is not dict
+            or set(recovery) != _wire_fields(ExecutionRecoveryV5)
+        ):
+            return False
+    if event_type == "interrupted":
+        recovery = payload.get("executionRecovery")
+        if (
+            type(recovery) is not dict
+            or set(recovery) != _wire_fields(ExecutionRecoveryV5)
+        ):
+            return False
+    return True
 
 
 class CallbackAckV5(BaseModel):
@@ -466,6 +605,73 @@ def intake_replay_status(
     return "conflict"
 
 
+def turn_intake_content_hash(value: dict[str, Any]) -> str:
+    """Hash the frozen business projection of a strict turn-intake wire body."""
+
+    try:
+        if type(value) is not dict:
+            raise ValueError
+        identity = value.get("identity")
+        attachments = value.get("attachments")
+        if (
+            type(identity) is not dict
+            or type(attachments) is not list
+            or any(type(attachment) is not dict for attachment in attachments)
+            or any(
+                _UUID_WIRE.fullmatch(uuid_value) is None
+                for uuid_value in (
+                    value.get("requestId"),
+                    value.get("conversationId"),
+                    *(attachment.get("attachmentId") for attachment in attachments),
+                )
+                if type(uuid_value) is str
+            )
+            or any(
+                type(uuid_value) is not str
+                for uuid_value in (
+                    value.get("requestId"),
+                    value.get("conversationId"),
+                    *(attachment.get("attachmentId") for attachment in attachments),
+                )
+            )
+        ):
+            raise ValueError
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        if len(encoded) > _ENVELOPE_BYTES:
+            raise ValueError
+        envelope = _TurnIntakeEnvelopeV5.model_validate_json(encoded, strict=True)
+        wire = envelope.model_dump(mode="json", by_alias=True)
+        document = {
+            key: wire[key]
+            for key in (
+                "operation",
+                "identity",
+                "senderIdentity",
+                "chatId",
+                "threadKey",
+                "conversationId",
+                "principalRef",
+                "text",
+                "attachments",
+            )
+        }
+        canonical = json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+    except (TypeError, ValueError, ValidationError):
+        raise V5ContractError("v5 turn intake invalid") from None
+
+
 def feishu_request_id(identity: FeishuMessageIdentity) -> UUID:
     """Return the stable, fully scoped Feishu intake identity."""
 
@@ -526,6 +732,26 @@ def parse_v5_command(value: dict[str, Any]) -> CoreChatCommandV5:
                     or set(output_grant) != output_grant_fields
                 )
             )
+            or any(
+                type(uuid_value) is not str
+                or _UUID_WIRE.fullmatch(uuid_value) is None
+                for uuid_value in (
+                    value.get("runId"),
+                    value.get("commandId"),
+                    value.get("attemptId"),
+                    value.get("turnId"),
+                    value.get("conversationId"),
+                    value.get("triggerMessageId"),
+                    permission_scope.get("conversationId"),
+                    *(grant.get("attachmentId") for grant in input_grants),
+                    *(
+                        (output_grant.get("taskId"),)
+                        if output_grant is not None
+                        else ()
+                    ),
+                    *((value.get("retryOf"),) if value.get("retryOf") is not None else ()),
+                )
+            )
         ):
             raise ValueError
         encoded = json.dumps(
@@ -539,3 +765,22 @@ def parse_v5_command(value: dict[str, Any]) -> CoreChatCommandV5:
         return command
     except (TypeError, ValueError, ValidationError):
         raise V5ContractError("v5 command invalid") from None
+
+
+def parse_v5_event(value: dict[str, Any]) -> CoreChatEventV5:
+    """Parse an untrusted camelCase event without exposing rejected content."""
+
+    try:
+        if type(value) is not dict or not _has_exact_event_wire_shape(value):
+            raise ValueError
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        if len(encoded) > _ENVELOPE_BYTES:
+            raise ValueError
+        return CoreChatEventV5.model_validate_json(encoded, strict=True)
+    except (TypeError, ValueError, ValidationError):
+        raise V5ContractError("v5 event invalid") from None

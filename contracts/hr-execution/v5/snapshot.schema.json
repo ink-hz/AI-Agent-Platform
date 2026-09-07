@@ -89,7 +89,7 @@
       },
       "then": {
         "properties": {
-          "attempt": {"type": "object", "properties": {"status": {"const": "completed"}}, "required": ["status"]},
+          "attempt": {"type": "object", "properties": {"status": {"enum": ["completed", "reconciling"]}}, "required": ["status"]},
           "outcome": {"type": "object", "properties": {"kind": {"const": "completed"}}, "required": ["kind"]},
           "answer": {"$ref": "#/$defs/answer"},
           "context_manifest_ref": {"type": "string"}
@@ -103,7 +103,7 @@
       },
       "then": {
         "properties": {
-          "attempt": {"type": "object", "properties": {"status": {"const": "failed"}}, "required": ["status"]},
+          "attempt": {"type": "object", "properties": {"status": {"enum": ["failed", "reconciling"]}}, "required": ["status"]},
           "outcome": {"type": "object", "properties": {"kind": {"const": "failed"}}, "required": ["kind"]},
           "context_manifest_ref": {"type": "string"}
         }
@@ -116,7 +116,7 @@
       },
       "then": {
         "properties": {
-          "attempt": {"type": "object", "properties": {"status": {"const": "cancelled"}}, "required": ["status"]},
+          "attempt": {"type": "object", "properties": {"status": {"enum": ["cancelled", "reconciling"]}}, "required": ["status"]},
           "outcome": {"type": "object", "properties": {"kind": {"const": "cancelled"}}, "required": ["kind"]},
           "context_manifest_ref": {"type": "string"}
         }
@@ -129,7 +129,7 @@
       },
       "then": {
         "properties": {
-          "attempt": {"type": "object", "properties": {"status": {"const": "interrupted"}}, "required": ["status"]},
+          "attempt": {"type": "object", "properties": {"status": {"enum": ["interrupted", "reconciling"]}}, "required": ["status"]},
           "outcome": {"type": "object", "properties": {"kind": {"const": "interrupted"}}, "required": ["kind"]},
           "context_manifest_ref": {"type": "string"}
         }

@@ -20,6 +20,8 @@ from app.execution_relay.contracts_v5 import (
     feishu_request_id,
     intake_replay_status,
     parse_v5_command,
+    parse_v5_event,
+    turn_intake_content_hash,
 )
 from app.execution_relay.models import (
     CollaborationContract,
@@ -147,6 +149,44 @@ def _v5_result_event() -> dict[str, object]:
     }
 
 
+def _turn_intake() -> dict[str, object]:
+    return {
+        "operation": "turn-intake",
+        "requestId": "678b10d4-f624-56e5-8282-9491551290a4",
+        "identity": {
+            "tenantId": "t",
+            "appId": "app",
+            "botId": "hr-bot",
+            "messageId": "om_123",
+        },
+        "senderIdentity": {
+            "openId": "ou_hr_user_001",
+            "unionId": "on_hr_user_001",
+        },
+        "chatId": "oc_chat_001",
+        "threadKey": "",
+        "conversationId": CONVERSATION_ID,
+        "principalRef": PRINCIPAL_REF,
+        "contentHash": (
+            "ac3358e9f43b2ed82141897ac5554f49"
+            "a5998fdb819c884b81e66d71034cb042"
+        ),
+        "text": "请评估候选人。\n  保留缩进\t与空格。\n",
+        "attachments": [
+            {
+                "attachmentId": "00000000-0000-4000-8000-000000000507",
+                "index": 0,
+                "sha256": "d" * 64,
+            },
+            {
+                "attachmentId": "00000000-0000-4000-8000-000000000508",
+                "index": 1,
+                "sha256": "e" * 64,
+            },
+        ],
+    }
+
+
 def _apply_mutation(base: object, mutation: dict[str, object]) -> object:
     value = deepcopy(base)
     target = value
@@ -256,6 +296,54 @@ def test_v5_result_event_has_typed_artifact_and_execution_recovery() -> None:
         )
 
 
+def test_v5_content_preserves_markdown_indentation_and_line_endings() -> None:
+    markdown = "# Evaluation\n\nCandidate meets requirements.\n"
+    progress_text = "\tIndented progress\r\n\tcontinues.\r\n"
+    result = _v5_result_event()
+    result["payload"]["publicAnswerMarkdown"] = markdown
+    progress = {
+        **_v5_result_event(),
+        "type": "raw_progress",
+        "payload": {
+            "source": "agent_sdk",
+            "sourceRef": "sdk-event:42",
+            "visibility": "private",
+            "kind": "work_update",
+            "text": progress_text,
+        },
+    }
+
+    parsed_result = CoreChatEventV5.model_validate_json(
+        json.dumps(result, ensure_ascii=False), strict=True
+    )
+    parsed_progress = CoreChatEventV5.model_validate_json(
+        json.dumps(progress, ensure_ascii=False), strict=True
+    )
+
+    assert parsed_result.payload.public_answer_markdown == markdown
+    assert parsed_progress.payload.text == progress_text
+
+
+def test_v5_content_enforces_utf8_byte_limit_and_rejects_whitespace_only() -> None:
+    exact_limit = "界" * 43_690 + "ab"
+    assert len(exact_limit.encode("utf-8")) == 131_072
+    valid = _v5_result_event()
+    valid["payload"]["publicAnswerMarkdown"] = exact_limit
+
+    parsed = CoreChatEventV5.model_validate_json(
+        json.dumps(valid, ensure_ascii=False), strict=True
+    )
+
+    assert parsed.payload.public_answer_markdown == exact_limit
+    for rejected in (exact_limit + "x", " \t\r\n"):
+        invalid = _v5_result_event()
+        invalid["payload"]["publicAnswerMarkdown"] = rejected
+        with pytest.raises(ValidationError):
+            CoreChatEventV5.model_validate_json(
+                json.dumps(invalid, ensure_ascii=False), strict=True
+            )
+
+
 def test_v5_callback_ack_is_strict_and_cursor_is_contiguous() -> None:
     payload = {
         "status": "accepted",
@@ -339,6 +427,70 @@ def test_v5_callback_terminal_and_private_progress_payloads_are_disjoint() -> No
             parsed_types.append(None)
 
     assert parsed_types == list(payloads)
+
+
+def test_parse_v5_event_preserves_all_typed_event_shapes() -> None:
+    cases = json.loads((CONTRACT_DIR / "cases.json").read_text(encoding="utf-8"))
+
+    parsed = [parse_v5_event(value) for value in cases["callback"]["validEvents"]]
+
+    assert [getattr(value, "event_type", None) for value in parsed] == [
+        "run_heartbeat",
+        "result",
+        "error",
+        "cancelled",
+        "interrupted",
+        "raw_progress",
+    ]
+
+
+def test_parse_v5_event_rejects_aliases_and_missing_payload_fields_safely() -> None:
+    invalid_events = []
+
+    top_level_alias = _v5_result_event()
+    top_level_alias["created_at"] = top_level_alias.pop("createdAt")
+    invalid_events.append(top_level_alias)
+
+    payload_alias = _v5_result_event()
+    payload_alias["payload"]["source_ref"] = payload_alias["payload"].pop("sourceRef")
+    invalid_events.append(payload_alias)
+
+    recovery_alias = _v5_result_event()
+    recovery = recovery_alias["payload"]["executionRecovery"]
+    recovery["executor_stop_proof_ref"] = recovery.pop("executorStopProofRef")
+    invalid_events.append(recovery_alias)
+
+    missing_required = _v5_result_event()
+    missing_required["payload"].pop("publicAnswerMarkdown")
+    invalid_events.append(missing_required)
+
+    for value in invalid_events:
+        with pytest.raises(ValueError, match="^v5 event invalid$"):
+            parse_v5_event(value)
+
+
+def test_parse_v5_event_redacts_rejected_answer_and_private_progress() -> None:
+    answer_sentinel = "PRIVATE-ANSWER-SENTINEL"
+    progress_sentinel = "PRIVATE-PROGRESS-SENTINEL"
+    result = _v5_result_event()
+    result["payload"]["publicAnswerMarkdown"] = f"{answer_sentinel}\u0000"
+    progress = {
+        **_v5_result_event(),
+        "type": "raw_progress",
+        "payload": {
+            "source": "agent_sdk",
+            "sourceRef": "sdk-event:42",
+            "visibility": "private",
+            "kind": "work_update",
+            "text": f"{progress_sentinel}\u0000",
+        },
+    }
+
+    for value, sentinel in ((result, answer_sentinel), (progress, progress_sentinel)):
+        with pytest.raises(ValueError, match="^v5 event invalid$") as exc_info:
+            parse_v5_event(value)
+        assert sentinel not in str(exc_info.value)
+        assert sentinel not in repr(exc_info.value)
 
 
 def test_v5_is_receive_only_while_legacy_outbound_contracts_stay_frozen() -> None:
@@ -495,7 +647,7 @@ def test_shared_v5_cases_cover_each_complete_schema_category() -> None:
     assert cases["callback"]["validEvents"][1] == _v5_result_event()
     assert len(cases["callback"]["validEvents"]) == 6
     assert len(cases["channelBridge"]["validRequests"]) == 6
-    assert len(cases["snapshot"]["valid"]) == 3
+    assert len(cases["snapshot"]["valid"]) == 4
 
     validators["command"].validate(cases["command"]["valid"])
     for value in (
@@ -531,6 +683,99 @@ def test_same_channel_key_with_different_business_content_is_conflict() -> None:
         )
         == "accepted"
     )
+
+
+def test_turn_intake_content_hash_matches_fixed_golden_vector() -> None:
+    golden = "ac3358e9f43b2ed82141897ac5554f49a5998fdb819c884b81e66d71034cb042"
+    cases = json.loads((CONTRACT_DIR / "cases.json").read_text(encoding="utf-8"))
+    vector = cases["intakeHashVectors"][0]
+
+    assert cases["channelBridge"]["validRequests"][1] == _turn_intake()
+    assert vector == {"channelBridgeValidRequestIndex": 1, "contentHash": golden}
+    assert turn_intake_content_hash(_turn_intake()) == golden
+
+
+def test_turn_intake_hash_tracks_business_content_and_order() -> None:
+    baseline = _turn_intake()
+    baseline_hash = turn_intake_content_hash(baseline)
+    mutations = []
+    for path, value in (
+        (("text",), "请评估候选人。\n  保留缩进\t与空格。"),
+        (("senderIdentity", "openId"), "ou_other_user"),
+        (("principalRef",), "principal:hr-user-002"),
+        (("conversationId",), "00000000-0000-4000-8000-000000000599"),
+        (("attachments", 0, "attachmentId"), "00000000-0000-4000-8000-000000000599"),
+        (("attachments", 0, "sha256"), "f" * 64),
+        (("attachments", 0, "index"), 2),
+    ):
+        mutated = deepcopy(baseline)
+        target = mutated
+        for member in path[:-1]:
+            target = target[member]
+        target[path[-1]] = value
+        mutations.append(mutated)
+    reordered = deepcopy(baseline)
+    reordered["attachments"].reverse()
+    mutations.append(reordered)
+
+    mutated_hashes = [turn_intake_content_hash(value) for value in mutations]
+
+    assert all(value != baseline_hash for value in mutated_hashes)
+    request_id = UUID(str(baseline["requestId"]))
+    assert all(
+        intake_replay_status(request_id, baseline_hash, request_id, value)
+        == "conflict"
+        for value in mutated_hashes
+    )
+
+
+def test_turn_intake_hash_ignores_transport_wrapper_rotation() -> None:
+    first_transport = {
+        "authorization": "Bearer FIRST-ROTATING-SECRET",
+        "signature": "FIRST-SIGNATURE",
+        "retryAt": "2026-09-07T08:00:00Z",
+        "body": _turn_intake(),
+    }
+    retried_transport = {
+        "authorization": "Bearer SECOND-ROTATING-SECRET",
+        "signature": "SECOND-SIGNATURE",
+        "retryAt": "2026-09-07T08:00:05Z",
+        "body": deepcopy(_turn_intake()),
+    }
+
+    assert turn_intake_content_hash(first_transport["body"]) == turn_intake_content_hash(
+        retried_transport["body"]
+    )
+
+
+def test_turn_intake_hash_rejects_non_wire_fields_without_secret_diagnostics() -> None:
+    invalid = _turn_intake()
+    sentinel = "ROTATING-AUTH-SECRET-MUST-NOT-LEAK"
+    invalid["authorization"] = sentinel
+
+    with pytest.raises(ValueError, match="^v5 turn intake invalid$") as exc_info:
+        turn_intake_content_hash(invalid)
+
+    assert sentinel not in str(exc_info.value)
+    assert sentinel not in repr(exc_info.value)
+
+
+def test_hash_boundaries_reject_noncanonical_uppercase_uuid_wire_values() -> None:
+    command = _v5_command()
+    command["commandId"] = "ABCDEFAB-0000-4000-8000-000000000502"
+    normalized = CoreChatCommandV5.model_validate_json(
+        json.dumps(command), strict=True
+    )
+    command["commandHash"] = core_chat_command_hash(normalized)
+    intake = _turn_intake()
+    intake["attachments"][0]["attachmentId"] = (
+        "ABCDEFAB-0000-4000-8000-000000000507"
+    )
+
+    with pytest.raises(ValueError, match="^v5 command invalid$"):
+        parse_v5_command(command)
+    with pytest.raises(ValueError, match="^v5 turn intake invalid$"):
+        turn_intake_content_hash(intake)
 
 
 def test_shared_invalid_command_mutations_fail_at_the_strict_parser() -> None:
@@ -615,6 +860,20 @@ def test_snapshot_cases_reject_terminal_and_attempt_state_contradictions() -> No
         assert not validator.is_valid(value), invalid["reason"]
 
 
+def test_snapshot_allows_terminal_turn_while_attempt_reconciles() -> None:
+    cases = json.loads((CONTRACT_DIR / "cases.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        (CONTRACT_DIR / "snapshot.schema.json").read_text(encoding="utf-8")
+    )
+    validator = Draft202012Validator(
+        schema, format_checker=Draft202012Validator.FORMAT_CHECKER
+    )
+    snapshot = deepcopy(cases["snapshot"]["valid"][1])
+    snapshot["attempt"]["status"] = "reconciling"
+
+    assert validator.is_valid(snapshot)
+
+
 def test_shared_invalid_corpus_distinguishes_schema_and_semantic_checks() -> None:
     cases = json.loads((CONTRACT_DIR / "cases.json").read_text(encoding="utf-8"))
     validators = {}
@@ -637,8 +896,8 @@ def test_shared_invalid_corpus_distinguishes_schema_and_semantic_checks() -> Non
             cases["callback"]["validEvents"][mutation["baseIndex"]], mutation
         )
         assert validators["callback"].is_valid(value) is not mutation["schemaRejects"]
-        with pytest.raises(ValidationError):
-            CoreChatEventV5.model_validate_json(json.dumps(value), strict=True)
+        with pytest.raises(ValueError, match="^v5 event invalid$"):
+            parse_v5_event(value)
 
     for mutation in cases["callback"]["invalidAckMutations"]:
         value = _apply_mutation(

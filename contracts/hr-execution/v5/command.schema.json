@@ -15,16 +15,16 @@
   ],
   "properties": {
     "contractVersion": {"const": "core_chat_collaboration_v5"},
-    "runId": {"type": "string", "format": "uuid"},
-    "commandId": {"type": "string", "format": "uuid"},
-    "attemptId": {"type": "string", "format": "uuid"},
+    "runId": {"$ref": "#/$defs/uuid"},
+    "commandId": {"$ref": "#/$defs/uuid"},
+    "attemptId": {"$ref": "#/$defs/uuid"},
     "attemptNo": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
     "leaseEpoch": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
-    "turnId": {"type": "string", "format": "uuid"},
+    "turnId": {"$ref": "#/$defs/uuid"},
     "turnSeq": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
     "commandSeq": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
-    "conversationId": {"type": "string", "format": "uuid"},
-    "triggerMessageId": {"type": "string", "format": "uuid"},
+    "conversationId": {"$ref": "#/$defs/uuid"},
+    "triggerMessageId": {"$ref": "#/$defs/uuid"},
     "principalRef": {"type": "string", "minLength": 1, "maxLength": 256},
     "targetBot": {"const": "hr-bot"},
     "prompt": {"type": "string", "minLength": 1, "maxLength": 131072},
@@ -53,12 +53,17 @@
     },
     "retryOf": {
       "oneOf": [
-        {"type": "string", "format": "uuid"},
+        {"$ref": "#/$defs/uuid"},
         {"type": "null"}
       ]
     }
   },
   "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "permissionScope": {
       "type": "object",
@@ -66,7 +71,7 @@
       "required": ["principalRef", "conversationId", "agentId", "toolPolicy"],
       "properties": {
         "principalRef": {"type": "string", "minLength": 1, "maxLength": 256},
-        "conversationId": {"type": "string", "format": "uuid"},
+        "conversationId": {"$ref": "#/$defs/uuid"},
         "agentId": {"const": "hr-bot"},
         "toolPolicy": {"enum": ["default", "none"]}
       }
@@ -79,7 +84,7 @@
         "downloadUrl", "bearerToken", "expiresAt"
       ],
       "properties": {
-        "attachmentId": {"type": "string", "format": "uuid"},
+        "attachmentId": {"$ref": "#/$defs/uuid"},
         "displayName": {"type": "string", "minLength": 1, "maxLength": 1024},
         "detectedMime": {"type": "string", "minLength": 3, "maxLength": 255},
         "sizeBytes": {"type": "integer", "minimum": 1, "maximum": 52428800},
@@ -100,7 +105,7 @@
         "maxTotalBytes"
       ],
       "properties": {
-        "taskId": {"type": "string", "format": "uuid"},
+        "taskId": {"$ref": "#/$defs/uuid"},
         "agentId": {"const": "hr-bot"},
         "uploadUrl": {
           "type": "string",

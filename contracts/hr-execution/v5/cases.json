@@ -21,6 +21,7 @@
   "commandHashRules": {
     "algorithm": "sha256",
     "encoding": "utf-8-json-sort-keys-no-space",
+    "uuidEncoding": "lowercase canonical 8-4-4-4-12; reject other spellings before hashing",
     "includedTopLevel": [
       "contractVersion", "runId", "commandId", "attemptId", "attemptNo", "turnId",
       "turnSeq", "commandSeq", "conversationId", "triggerMessageId", "principalRef",
@@ -36,26 +37,51 @@
       "bearerToken", "expiresAt"
     ]
   },
+  "intakeHashRules": {
+    "algorithm": "sha256",
+    "encoding": "utf-8-json-sort-keys-no-space",
+    "unicodeNormalization": "none",
+    "uuidEncoding": "lowercase canonical 8-4-4-4-12; reject other spellings before hashing",
+    "includedTopLevel": [
+      "operation", "identity", "senderIdentity", "chatId", "threadKey",
+      "conversationId", "principalRef", "text", "attachments"
+    ],
+    "identityProjection": ["tenantId", "appId", "botId", "messageId"],
+    "senderProjection": ["openId", "unionId"],
+    "attachmentProjection": ["attachmentId", "index", "sha256"],
+    "excludedWireFields": ["requestId", "contentHash"],
+    "excludedTransportFields": [
+      "retryAt", "receivedAt", "authorization", "signature", "uploadToken"
+    ],
+    "transportBoundary": "excluded fields belong to the authenticated local transport wrapper and are forbidden in the strict turn-intake body",
+    "attachmentMetadataAuthority": "display name, MIME type and size remain authoritative in the platform attachment record bound by attachmentId and sha256; they are not turn-intake wire fields"
+  },
+  "intakeHashVectors": [
+    {
+      "channelBridgeValidRequestIndex": 1,
+      "contentHash": "ac3358e9f43b2ed82141897ac5554f49a5998fdb819c884b81e66d71034cb042"
+    }
+  ],
   "intakeReplayCases": [
     {
       "existingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
-      "existingContentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "existingContentHash": "ac3358e9f43b2ed82141897ac5554f49a5998fdb819c884b81e66d71034cb042",
       "incomingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
-      "incomingContentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "incomingContentHash": "ac3358e9f43b2ed82141897ac5554f49a5998fdb819c884b81e66d71034cb042",
       "expectedStatus": "duplicate"
     },
     {
       "existingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
-      "existingContentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "existingContentHash": "ac3358e9f43b2ed82141897ac5554f49a5998fdb819c884b81e66d71034cb042",
       "incomingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
-      "incomingContentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "incomingContentHash": "91bd9e1bfb89c38ac6656e3068a1ab4abd09e2c60589a6e5c9d291afcb2eb8db",
       "expectedStatus": "conflict"
     },
     {
       "existingRequestId": "678b10d4-f624-56e5-8282-9491551290a4",
-      "existingContentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "existingContentHash": "ac3358e9f43b2ed82141897ac5554f49a5998fdb819c884b81e66d71034cb042",
       "incomingRequestId": "f538a985-3e0c-5f3a-8487-7fbe53000d51",
-      "incomingContentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "incomingContentHash": "91bd9e1bfb89c38ac6656e3068a1ab4abd09e2c60589a6e5c9d291afcb2eb8db",
       "expectedStatus": "accepted"
     }
   ],
@@ -127,6 +153,7 @@
       {"reason": "session_mismatch", "schemaRejects": false, "path": ["taskSessionId"], "value": "platform:other:hr-bot"},
       {"reason": "scope_mismatch", "schemaRejects": false, "path": ["permissionScope", "principalRef"], "value": "principal:other-user"},
       {"reason": "unsafe_integer", "schemaRejects": true, "path": ["commandSeq"], "value": 9007199254740992},
+      {"reason": "uppercase_uuid_not_canonical", "schemaRejects": true, "path": ["commandId"], "value": "ABCDEFAB-0000-4000-8000-000000000502"},
       {"reason": "hash_mismatch", "schemaRejects": false, "path": ["commandHash"], "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
     ]
   },
@@ -270,6 +297,9 @@
       {"reason": "unknown_version", "schemaRejects": true, "baseIndex": 1, "path": ["contractVersion"], "value": "core_chat_collaboration_v6"},
       {"reason": "empty_result", "schemaRejects": true, "baseIndex": 1, "path": ["payload", "publicAnswerMarkdown"], "value": ""},
       {"reason": "unsafe_sequence", "schemaRejects": true, "baseIndex": 1, "path": ["seq"], "value": 9007199254740992},
+      {"reason": "top_level_snake_case_alias", "schemaRejects": true, "baseIndex": 1, "path": ["created_at"], "value": "2026-09-07T08:00:00Z"},
+      {"reason": "payload_snake_case_alias", "schemaRejects": true, "baseIndex": 1, "path": ["payload", "source_ref"], "value": "run:00000000-0000-4000-8000-000000000501"},
+      {"reason": "recovery_snake_case_alias", "schemaRejects": true, "baseIndex": 1, "path": ["payload", "executionRecovery", "executor_stop_proof_ref"], "value": "executor-stop:worker-0001"},
       {"reason": "type_payload_mismatch", "schemaRejects": false, "baseIndex": 2, "path": ["type"], "value": "result"}
     ],
     "invalidAckMutations": [
@@ -310,6 +340,17 @@
         "result_enrichment": {"status": "none", "pending_count": 0, "failed_count": 0},
         "deliveries": [{"channel": "feishu", "status": "failed", "receipt_ref": "receipt:failed-001"}],
         "context_manifest_ref": "context-manifest:00000000-0000-4000-8000-000000000511"
+      },
+      {
+        "read_version": 10,
+        "event_cursor": 23,
+        "turn": {"turn_id": "00000000-0000-4000-8000-000000000513", "turn_seq": 9, "status": "completed"},
+        "attempt": {"attempt_id": "00000000-0000-4000-8000-000000000514", "attempt_no": 1, "lease_epoch": 3, "status": "reconciling", "reason_code": "executor_stop_unconfirmed"},
+        "outcome": {"terminal": true, "kind": "completed", "reason_code": null},
+        "answer": {"message_id": "00000000-0000-4000-8000-000000000515", "role": "assistant", "content": "候选人满足岗位要求，旧执行仍在核对。", "completed_at": "2026-09-07T08:06:00Z"},
+        "result_enrichment": {"status": "none", "pending_count": 0, "failed_count": 0},
+        "deliveries": [{"channel": "feishu", "status": "pending", "receipt_ref": null}],
+        "context_manifest_ref": "context-manifest:00000000-0000-4000-8000-000000000513"
       }
     ],
     "invalid": [
@@ -317,7 +358,10 @@
       {"reason": "completed_requires_answer", "baseIndex": 1, "path": ["answer"], "value": null},
       {"reason": "attempt_status_must_match", "baseIndex": 1, "path": ["attempt", "status"], "value": "running"},
       {"reason": "idle_has_no_outcome", "baseIndex": 0, "path": ["outcome"], "value": {"terminal": true, "kind": "completed", "reason_code": null}},
-      {"reason": "terminal_kind_must_match", "baseIndex": 2, "path": ["outcome", "kind"], "value": "cancelled"}
+      {"reason": "terminal_kind_must_match", "baseIndex": 2, "path": ["outcome", "kind"], "value": "cancelled"},
+      {"reason": "reconciling_attempt_does_not_relax_terminal_kind", "baseIndex": 3, "path": ["outcome", "kind"], "value": "failed"},
+      {"reason": "reconciling_attempt_does_not_relax_completed_answer", "baseIndex": 3, "path": ["answer"], "value": null},
+      {"reason": "terminal_attempt_cannot_still_run", "baseIndex": 3, "path": ["attempt", "status"], "value": "running"}
     ]
   },
   "channelBridge": {
@@ -340,9 +384,12 @@
         "threadKey": "",
         "conversationId": "00000000-0000-4000-8000-000000000505",
         "principalRef": "principal:hr-user-001",
-        "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
-        "text": "请评估候选人。",
-        "attachments": [{"attachmentId": "00000000-0000-4000-8000-000000000507", "index": 0, "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}]
+        "contentHash": "ac3358e9f43b2ed82141897ac5554f49a5998fdb819c884b81e66d71034cb042",
+        "text": "请评估候选人。\n  保留缩进\t与空格。\n",
+        "attachments": [
+          {"attachmentId": "00000000-0000-4000-8000-000000000507", "index": 0, "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+          {"attachmentId": "00000000-0000-4000-8000-000000000508", "index": 1, "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
+        ]
       },
       {
         "operation": "attachment-create",
@@ -403,6 +450,7 @@
     ],
     "invalidMutations": [
       {"reason": "client_owner_injection", "collection": "validRequests", "baseIndex": 1, "path": ["internalUserId"], "value": "00000000-0000-4000-8000-000000000999"},
+      {"reason": "uppercase_uuid_not_canonical", "collection": "validRequests", "baseIndex": 1, "path": ["attachments", 0, "attachmentId"], "value": "ABCDEFAB-0000-4000-8000-000000000507"},
       {"reason": "arbitrary_attachment_url", "collection": "validRequests", "baseIndex": 2, "path": ["sourceUrl"], "value": "https://example.invalid/private.pdf"},
       {"reason": "boolean_chunk_offset", "collection": "validRequests", "baseIndex": 3, "path": ["offset"], "value": true},
       {"reason": "deferred_retry_drift", "collection": "validResponses", "baseIndex": 2, "path": ["retryAfterSeconds"], "value": 6}
