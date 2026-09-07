@@ -117,6 +117,19 @@ class PanoramaRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "current bundle")
 
+    def current_context_bundle(self) -> Mapping[str, object] | None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select bundle_id,owner_internal_user_id,manifest_sha256,"
+                    "bundle_locator,schema_version,generated_at,source_catalog,"
+                    "source_coverage,agent_chunk_index,agent_document_index "
+                    "from platform_hr.read_current_intelligence_bundle_v85()"
+                ).fetchone()
+            return row
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "current context bundle")
+
     def list_bundles(self, *, limit: int = 100) -> tuple[Mapping[str, object], ...]:
         selected_limit = _limit(limit)
         try:
@@ -144,6 +157,24 @@ class PanoramaRepository:
             raise
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "bundle")
+
+    def bundle_document_metadata(self, bundle_id: UUID) -> Mapping[str, object]:
+        _identifier(bundle_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select bundle_id,bundle_locator,document_index,evidence_index,"
+                    "agent_document_index from "
+                    "platform_hr.read_intelligence_bundle_v85(%s)",
+                    (bundle_id,),
+                ).fetchone()
+            if row is None:
+                raise PanoramaNotFound("panorama bundle not found")
+            return row
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "bundle document metadata")
 
     def bundle_jobs(self, bundle_id: UUID) -> tuple[Mapping[str, object], ...]:
         _identifier(bundle_id)

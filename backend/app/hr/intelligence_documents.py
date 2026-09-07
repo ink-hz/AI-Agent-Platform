@@ -40,10 +40,16 @@ class IntelligenceDocumentStore:
         self._root = selected.resolve()
         self._repository = repository
 
+    def _bundle(self, bundle_id: UUID) -> Mapping[str, object]:
+        projected = getattr(self._repository, "bundle_document_metadata", None)
+        if callable(projected):
+            return projected(bundle_id)
+        return self._repository.bundle(bundle_id)
+
     def read_document(self, bundle_id: UUID, name: DocumentName) -> VerifiedDocument:
         if not isinstance(bundle_id, UUID) or name not in _DOCUMENTS:
             raise TypeError("intelligence document identifier invalid")
-        bundle = self._repository.bundle(bundle_id)
+        bundle = self._bundle(bundle_id)
         index = bundle.get("document_index")
         record = index.get(name) if isinstance(index, Mapping) else None
         if not isinstance(record, Mapping):
@@ -53,7 +59,7 @@ class IntelligenceDocumentStore:
     def read_evidence(self, bundle_id: UUID, sha256: str) -> VerifiedDocument:
         if not isinstance(bundle_id, UUID) or not isinstance(sha256, str) or _SHA256.fullmatch(sha256) is None:
             raise TypeError("intelligence evidence identifier invalid")
-        bundle = self._repository.bundle(bundle_id)
+        bundle = self._bundle(bundle_id)
         index = bundle.get("evidence_index")
         if not isinstance(index, (list, tuple)):
             raise PanoramaUnavailable("intelligence evidence index invalid")
@@ -87,7 +93,7 @@ class IntelligenceDocumentStore:
             raise PanoramaUnavailable("intelligence document locator invalid")
         if not isinstance(expected_mime, str) or _MIME.fullmatch(expected_mime) is None:
             raise TypeError("intelligence document MIME invalid")
-        bundle = self._repository.bundle(bundle_id)
+        bundle = self._bundle(bundle_id)
         index = bundle.get("agent_document_index")
         record = index.get(relative_path) if isinstance(index, Mapping) else None
         if not isinstance(record, Mapping):

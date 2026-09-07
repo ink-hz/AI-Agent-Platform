@@ -378,6 +378,29 @@ def test_general_hr_chat_can_retrieve_named_company_intelligence() -> None:
     assert fragment.bundle_id is not None
 
 
+def test_markdown_context_prefers_the_lightweight_current_bundle_projection() -> None:
+    class ProjectedSource(MarkdownBundleSource):
+        def current_bundle(self):
+            raise AssertionError("full analysis bundle must not be loaded for context")
+
+        def current_context_bundle(self):
+            self.calls.append(("current_context_bundle",))
+            return self.record
+
+    source = ProjectedSource()
+    fragment = PanoramaContextProvider(
+        source, markdown_store=MarkdownStore(source)
+    ).for_conversation_turn(
+        OWNER,
+        CONVERSATION,
+        "分析禾赛当前招聘和产品路线",
+        TURN,
+    )
+
+    assert fragment.retrieval_version == "markdown-v1"
+    assert ("current_context_bundle",) in source.calls
+
+
 def test_general_hr_chat_replays_pinned_markdown_without_a_current_bundle() -> None:
     source = MarkdownBundleSource()
     provider = PanoramaContextProvider(source, markdown_store=MarkdownStore(source))
