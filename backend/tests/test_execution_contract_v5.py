@@ -42,6 +42,66 @@ PRINCIPAL_REF = "principal:hr-user-001"
 CONTRACT_DIR = Path(__file__).parents[2] / "contracts" / "hr-execution" / "v5"
 
 
+@pytest.mark.parametrize("field", ["createdAt", "observedAt"])
+@pytest.mark.parametrize("value", ["1788768000", "1788768000.5", "-1788768000"])
+def test_callback_dates_reject_numeric_timestamp_strings(field, value):
+    event = _v5_result_event()
+    if field == "createdAt":
+        event[field] = value
+    else:
+        event["type"] = "run_heartbeat"
+        event["payload"] = {
+            "source": "executor",
+            "executorRef": "synthetic:executor",
+            "observedAt": value,
+            "visibility": "private",
+        }
+    with pytest.raises(V5ContractError, match="^v5 event invalid$"):
+        parse_v5_event(event)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("runId",),
+        ("commandId",),
+        ("attemptId",),
+        ("payload", "artifactIntents", 0, "taskId"),
+        ("payload", "artifactIntents", 0, "conversationId"),
+    ],
+)
+@pytest.mark.parametrize("spelling", ["compact", "braces", "urn"])
+def test_callback_uuid_requires_plain_hyphenated_wire_form(path, spelling):
+    event = _v5_result_event()
+    target = event
+    for key in path[:-1]:
+        target = target[key]
+    original = target[path[-1]]
+    target[path[-1]] = {
+        "compact": original.replace("-", ""),
+        "braces": "{" + original + "}",
+        "urn": "urn:uuid:" + original,
+    }[spelling]
+    with pytest.raises(V5ContractError, match="^v5 event invalid$"):
+        parse_v5_event(event)
+
+
+def test_callback_preserves_uppercase_uuid_and_supported_datetime_strings():
+    event = _v5_result_event()
+    event["runId"] = "ABCDEFAB-0000-4000-8000-000000000501"
+    event["payload"]["artifactIntents"][0]["taskId"] = event["runId"]
+    event["createdAt"] = "2026-09-07 08:00:00+0100"
+    assert str(parse_v5_event(event).run_id) == event["runId"].lower()
+    event["type"] = "run_heartbeat"
+    event["payload"] = {
+        "source": "executor",
+        "executorRef": "synthetic:executor",
+        "observedAt": "2026-09-07t08:00:00.123z",
+        "visibility": "private",
+    }
+    assert parse_v5_event(event).payload.observed_at.tzinfo is not None
+
+
 def _v5_command() -> dict[str, object]:
     return {
         "contractVersion": "core_chat_collaboration_v5",

@@ -25,6 +25,7 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _UUID_WIRE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z"
 )
+_CALLBACK_UUID_WIRE = re.compile(_UUID_WIRE.pattern, re.IGNORECASE)
 _CALLBACK_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _MIME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+/[A-Za-z0-9!#$%&'*+.^_`|~-]+\Z")
 _NUMERIC_TIMESTAMP = re.compile(r"-?\d+(?:\.\d+)?\Z")
@@ -778,6 +779,27 @@ def parse_v5_event(value: dict[str, Any]) -> CoreChatEventV5:
 
     try:
         if type(value) is not dict or not _has_exact_event_wire_shape(value):
+            raise ValueError
+        uuid_values = [value.get(key) for key in ("runId", "commandId", "attemptId")]
+        if value["type"] == "result":
+            uuid_values.extend(
+                intent.get(key)
+                for intent in value["payload"]["artifactIntents"]
+                for key in ("taskId", "conversationId")
+            )
+        if any(
+            type(uuid_value) is not str
+            or _CALLBACK_UUID_WIRE.fullmatch(uuid_value) is None
+            for uuid_value in uuid_values
+        ):
+            raise ValueError
+        dates = [value.get("createdAt")]
+        if value["type"] == "run_heartbeat":
+            dates.append(value["payload"].get("observedAt"))
+        if any(
+            type(date) is not str or _NUMERIC_TIMESTAMP.fullmatch(date) is not None
+            for date in dates
+        ):
             raise ValueError
         encoded = json.dumps(
             value,
