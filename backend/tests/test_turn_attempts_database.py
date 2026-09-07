@@ -8,16 +8,6 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from app.agent_brain.conversation_repository import event_subject, message_subject
-from app.agent_brain.conversation_service import ConversationCommandService
-from app.agent_brain.turn_attempts import (
-    ActiveAttemptConflict,
-    AttemptNotFound,
-    LeaseRejected,
-    TerminalEvidence,
-    TurnAttemptRepository,
-)
-from app.control_plane.migrate import load_numbered_migrations
 from test_agent_brain_conversation_repository import (
     _codec,
 )
@@ -28,6 +18,17 @@ from test_agent_brain_conversation_repository import (
     repository as repository,  # noqa: PLC0414 - pytest fixture export
 )
 from test_control_plane_migration import control_database  # noqa: F401
+
+from app.agent_brain.conversation_repository import event_subject, message_subject
+from app.agent_brain.conversation_service import ConversationCommandService
+from app.agent_brain.turn_attempts import (
+    ActiveAttemptConflict,
+    AttemptNotFound,
+    LeaseRejected,
+    TerminalEvidence,
+    TurnAttemptRepository,
+)
+from app.control_plane.migrate import load_numbered_migrations
 
 DRAFT = Path(__file__).parents[1] / "control_migrations/pending/hr_turn_attempts.sql"
 pytestmark = pytest.mark.postgres
