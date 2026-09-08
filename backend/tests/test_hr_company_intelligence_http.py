@@ -70,6 +70,9 @@ def _actual_app(web_loop, monkeypatch, tmp_path, root):
     database_file = tmp_path / "database-url"
     database_file.write_text(database_url)
     database_file.chmod(0o600)
+    audit_file = tmp_path / "audit-database-url"
+    audit_file.write_text(web_loop.environment["urls"]["platform_audit_append"])
+    audit_file.chmod(0o600)
     keyring = tmp_path / "content-keyring.json"
     keyring.write_text(
         json.dumps(
@@ -112,7 +115,9 @@ def _actual_app(web_loop, monkeypatch, tmp_path, root):
         control_plane=replace(
             config.control_plane,
             control_database_url_file=str(database_file),
-            audit_database_url_file="",
+            # Production enables central route authorization with this config.
+            # Omitting it bypasses that layer even with a persisted login.
+            audit_database_url_file=str(audit_file),
         ),
     )
     monkeypatch.setattr(app_main, "load_config", lambda: config)
@@ -383,15 +388,18 @@ def test_real_bundle_company_reading_and_selected_input(
                     "delete from platform_control.agent_use_grants where agent_id='hr-bot' and target_internal_user_id=%s",
                     (web_loop.owner_id,),
                 )
-            denied = client.get(base)
-            assert denied.status_code == 403, denied.text
+            for path in (base, f"{base}/{key}", f"{base}/{key}/jobs"):
+                denied = client.get(path)
+                assert denied.status_code == 403, denied.text
+                assert denied.json()["detail"] == "HR Agent use denied"
             with psycopg.connect(web_loop.environment["admin"]) as connection:
                 connection.execute(
                     "insert into platform_control.agent_use_grants(agent_use_grant_id,agent_id,target_kind,target_internal_user_id,created_by) values(%s,'hr-bot','user',%s,%s)",
                     (uuid4(), web_loop.owner_id, web_loop.owner_id),
                 )
             with httpx.Client(base_url=origin) as anonymous:
-                assert anonymous.get(base).status_code in (401, 403)
+                for path in (base, f"{base}/{key}", f"{base}/{key}/jobs"):
+                    assert anonymous.get(path).status_code == 401
             evidence["real_permission_denial"] = True
             if output := os.environ.get("HR_COMPANY_TEST_OUTPUT"):
                 destination = Path(output)

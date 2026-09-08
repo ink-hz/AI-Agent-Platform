@@ -65,6 +65,12 @@ FAE_SHELL_ROUTES = (
 )
 
 HR_POSITION_ROUTES = (
+    ("GET", "/api/hr/panorama/companies"),
+    ("GET", "/api/hr/panorama/companies/{company_key}"),
+    ("GET", "/api/hr/panorama/companies/{company_key}/jobs"),
+    ("GET", "/api/hr/panorama/reports/{bundle_id}"),
+    ("GET", "/api/hr/panorama/reports/{bundle_id}/export"),
+    ("GET", "/api/hr/panorama/reports/{bundle_id}/evidence/{evidence_sha256}"),
     ("GET", "/api/hr/positions"),
     ("GET", "/api/hr/positions/{position_id}"),
     ("GET", "/api/hr/position-drafts"),

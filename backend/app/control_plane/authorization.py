@@ -178,12 +178,15 @@ _HR_POSITION_ROUTES = frozenset({
     ("GET", "/api/hr/positions/{position_id}/tasks"),
     ("GET", "/api/hr/positions/{position_id}/tasks/{task_id}"),
     ("GET", "/api/hr/panorama/current"),
+    ("GET", "/api/hr/panorama/companies"),
+    ("GET", "/api/hr/panorama/companies/{company_key}"),
+    ("GET", "/api/hr/panorama/companies/{company_key}/jobs"),
     ("GET", "/api/hr/panorama/reports"),
-    ("GET", "/api/hr/panorama/reports/{publication_id}"),
-    ("GET", "/api/hr/panorama/reports/{publication_id}/export"),
+    ("GET", "/api/hr/panorama/reports/{bundle_id}"),
+    ("GET", "/api/hr/panorama/reports/{bundle_id}/export"),
     (
         "GET",
-        "/api/hr/panorama/reports/{publication_id}/evidence/{evidence_sha256}",
+        "/api/hr/panorama/reports/{bundle_id}/evidence/{evidence_sha256}",
     ),
 })
 
