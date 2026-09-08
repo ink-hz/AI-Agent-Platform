@@ -118,6 +118,89 @@ async function setTextarea(container: HTMLElement, value: string): Promise<void>
   });
 }
 
+describe("HR conversation scroll following", () => {
+  let viewport: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+  let contentHeight: number;
+  let viewportHeight: number;
+  const resizeCallbacks = new Set<() => void>();
+  const api = () => client({ fetchConversation: vi.fn().mockResolvedValue({
+    conversation: { ...conversation, mode: "direct_agent", direct_agent_id: "hr-bot" },
+    current_turn: completedTurn,
+  }) });
+  const resize = async () => { await act(async () => resizeCallbacks.forEach(callback => callback())); };
+  const scroll = async (top: number) => {
+    await act(async () => { viewport.scrollTop = top; viewport.dispatchEvent(new Event("scroll")); });
+  };
+
+  beforeEach(() => {
+    contentHeight = 1200; viewportHeight = 600;
+    viewport = document.createElement("div"); viewport.className = "brain-workspace-main";
+    Object.defineProperties(viewport, {
+      scrollHeight: { get: () => contentHeight }, clientHeight: { get: () => viewportHeight },
+    });
+    document.body.append(viewport); root = createRoot(viewport);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private callback: () => void) {}
+      observe() { resizeCallbacks.add(this.callback); }
+      disconnect() { resizeCallbacks.delete(this.callback); }
+    });
+  });
+  afterEach(async () => {
+    await act(async () => root.unmount()); viewport.remove();
+    expect(resizeCallbacks.size).toBe(0);
+    vi.unstubAllGlobals(); vi.restoreAllMocks();
+  });
+
+  it("opens at the latest answer and follows answer, attachment and viewport height changes", async () => {
+    await act(async () => root.render(<ConversationPage account={account} client={api()} conversationId={conversationId} expectedAgentId="hr-bot" />));
+    expect(viewport.scrollTop).toBe(600);
+    contentHeight = 1800; await resize();
+    expect(viewport.scrollTop).toBe(1200);
+    viewportHeight = 450; await resize();
+    expect(viewport.scrollTop).toBe(1350);
+  });
+
+  it("leaves history reading in place, then resumes following from the latest button", async () => {
+    await act(async () => root.render(<ConversationPage account={account} client={api()} conversationId={conversationId} expectedAgentId="hr-bot" />));
+    await scroll(200);
+    contentHeight = 1800; await resize();
+    expect(viewport.scrollTop).toBe(200);
+    const latest = [...viewport.querySelectorAll("button")].find(button => button.textContent?.includes("回到最新"));
+    expect(latest).toBeDefined();
+    await act(async () => latest!.click());
+    expect(viewport.scrollTop).toBe(1200);
+    contentHeight = 2000; await resize();
+    expect(viewport.scrollTop).toBe(1400);
+    expect(viewport.textContent).not.toContain("回到最新");
+  });
+
+  it("resumes when manually scrolled to the bottom and survives hiding the HR panel", async () => {
+    await act(async () => root.render(<ConversationPage account={account} client={api()} conversationId={conversationId} expectedAgentId="hr-bot" />));
+    await scroll(100); await scroll(600);
+    viewportHeight = 0; await resize();
+    expect(viewport.scrollTop).toBe(600);
+    contentHeight = 1600; viewportHeight = 600; await resize();
+    expect(viewport.scrollTop).toBe(1000);
+  });
+
+  it("follows again after the user submits a new message while reading history", async () => {
+    await act(async () => root.render(<ConversationPage account={account} client={api()} conversationId={conversationId} expectedAgentId="hr-bot" />));
+    await scroll(100);
+    await setTextarea(viewport, "继续分析");
+    await act(async () => viewport.querySelector<HTMLButtonElement>(".conversation-send")!.click());
+    contentHeight = 1800; await resize();
+    expect(viewport.scrollTop).toBe(1200);
+  });
+
+  it("does not change scrolling for other workspaces", async () => {
+    await act(async () => root.render(<ConversationPage account={account} client={client()} conversationId={conversationId} />));
+    expect(viewport.scrollTop).toBe(0);
+    expect(resizeCallbacks.size).toBe(0);
+  });
+});
+
 
 describe("ConversationPage", () => {
   let container: HTMLDivElement;

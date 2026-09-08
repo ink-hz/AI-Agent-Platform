@@ -45,6 +45,7 @@ import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
 import type { WorkroomAction } from "../workroomTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
+import { useConversationScroll } from "../components/conversation/useConversationScroll";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
 import { MessageMarkdown } from "../components/MessageMarkdown";
 import type { MessageActionsPresentation } from "../components/conversation/MessageActions";
@@ -238,6 +239,9 @@ export function ConversationPage({
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [internalMaterialsOpen, setInternalMaterialsOpen] = useState(false);
+  const { pageRef, following, jumpToLatest } = useConversationScroll(
+    conversationId, expectedAgentId === "hr-bot" && !loading && !loadFailure && Boolean(detail),
+  );
   const retained = useRef<{
     text: string;
     submission: ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
@@ -572,6 +576,7 @@ export function ConversationPage({
     try {
       const result = await selected.submission.send(controller.signal);
       if (controller.signal.aborted) return;
+      if (expectedAgentId === "hr-bot") jumpToLatest();
       retained.current = null;
       setText("");
       setNewAttachmentIds([]); setUploadQueue([]);
@@ -757,7 +762,7 @@ export function ConversationPage({
   messageGroups.push({ key: "remaining", messages: remainingMessages, answer: null });
   const workerFailure = workerOwned && workerSnapshot?.outcome
     && ["failed", "interrupted"].includes(workerSnapshot.outcome.kind) ? workerSnapshot.outcome.kind : null;
-  const conversationContent = <div className="conversation-page">
+  const conversationContent = <div className="conversation-page" ref={pageRef}>
     <header className="conversation-header">
       <div>
         <h1>{assistantLabel}</h1>
@@ -827,6 +832,10 @@ export function ConversationPage({
     {!workerOwned && detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
       && <button className="conversation-turn-retry" disabled={pending || readOnly} onClick={() => void retryTurn()} type="button">重试本轮</button>}
     <ConversationComposer
+      compact={expectedAgentId === "hr-bot"}
+      navigation={expectedAgentId === "hr-bot" && !following
+        ? <button className="conversation-latest" onClick={jumpToLatest} type="button">↓ 回到最新</button>
+        : undefined}
       attachmentControls={attachmentLimits ? <AttachmentUploader
         conversationId={conversationId} csrfToken={account.csrf_token}
         compact={expectedAgentId === "hr-bot"}
