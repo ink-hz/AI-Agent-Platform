@@ -126,6 +126,8 @@ def claim_direct(repository, executor_id, lease_seconds):
                             "executor_capability_missing",
                             extra={"attempt_id": str(a["attempt_id"])},
                         )
+                    if a["reason_code"] != "executor_capability_missing":
+                        connection.execute("update platform_control.conversations set snapshot_version=snapshot_version+1 where conversation_id=%s", (c["conversation_id"],))
                     continue
                 admission = {
                     "workerId": worker["worker_id"],
@@ -151,6 +153,7 @@ def claim_direct(repository, executor_id, lease_seconds):
             ).fetchone()
             if row is None:
                 continue
+            connection.execute("update platform_control.conversations set snapshot_version=snapshot_version+1 where conversation_id=%s", (c["conversation_id"],))
             return Lease(
                 row["attempt_id"],
                 "worker_direct",

@@ -9,6 +9,8 @@ export interface PublicProgressProps {
   active: boolean;
   assistantLabel: string;
   stopButton: ReactNode;
+  workerOwned?: boolean;
+  reconciling?: boolean;
 }
 
 const DIRECT_PROGRESS_EVENTS = new Set([
@@ -49,16 +51,19 @@ export function PublicProgress({
   active,
   assistantLabel,
   stopButton,
+  workerOwned = false,
+  reconciling = false,
 }: PublicProgressProps) {
   if (mode === "direct_agent") {
     if (!active) return null;
-    const updates = directUpdates(events, assistantLabel);
+    const updates = directUpdates(workerOwned
+      ? events.filter((event) => event.event_type !== "agent.thinking_summary") : events, assistantLabel).slice(-6);
     return <section className="conversation-running conversation-running-direct" aria-live="polite" role="status">
       <div>
-        <strong>{assistantLabel} 正在处理</strong>
+        <strong>{reconciling ? "正在确认原执行已停止，不会自动重跑" : `${assistantLabel} 正在处理`}</strong>
         {updates.length > 0
           ? <ol>{updates.map((update) => <li key={update}>{update}</li>)}</ol>
-          : <p>已进入队列</p>}
+          : <p>{reconciling ? "已保存的回答不会被覆盖。" : workerOwned && events.length ? "正在处理你的问题。" : "已进入队列"}</p>}
       </div>
       {stopButton}
     </section>;

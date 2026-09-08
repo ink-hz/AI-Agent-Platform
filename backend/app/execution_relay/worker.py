@@ -9,6 +9,8 @@ import re
 import secrets
 import signal
 import stat
+import time
+from collections import deque
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -66,6 +68,10 @@ class CloudRelayError(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__("cloud relay request failed")
+
+
+class V5BudgetDeferred(CloudRelayError):
+    """No HTTP request was sent; retain durable work and retry a later tick."""
 
 
 class WorkerRuntimeError(RuntimeError):
@@ -313,12 +319,34 @@ class SignedCloudClient:
         self._base_url = base_url.rstrip("/")
         self._signer = signer
         self._accepted_job_kinds = accepted_job_kinds
+        self._v5_budget_enabled = False
+        self._sent_requests = deque(maxlen=1024)
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(10.0),
             follow_redirects=False,
             trust_env=False,
         )
+
+    def enable_v5_budget(self):
+        self._v5_budget_enabled = True
+
+    def _v5_can_send(self, lane):
+        now = time.monotonic()
+        while self._sent_requests and self._sent_requests[0][0] <= now - 60:
+            self._sent_requests.popleft()
+        if not self._v5_budget_enabled:
+            return True
+        lanes = [item[1] for item in self._sent_requests]
+        v5_count = sum(item != "legacy" for item in lanes)
+        # 64/min normal legacy idle traffic is unchanged. Leave headroom under
+        # the server's shared 120/min and reserve readiness/control capacity.
+        return (len(lanes) < 114 and v5_count < 50
+            and (lane == "readiness" or sum(item not in {"legacy", "readiness"} for item in lanes) < 42)
+            and (lane != "source" or lanes.count("source") < 20))
+
+    def can_upload_v5(self):
+        return self._v5_can_send("source")
 
     @staticmethod
     def _body(value: Mapping[str, object]) -> bytes:
@@ -338,6 +366,8 @@ class SignedCloudClient:
     ) -> httpx.Response:
         body = self._body(value)
         try:
+            # Legacy is observed, never throttled or rescheduled by the opt-in.
+            self._sent_requests.append((time.monotonic(), "legacy"))
             headers = self._signer.sign("POST", path, body)
             response = await self._client.request(
                 "POST",
@@ -390,6 +420,11 @@ class SignedCloudClient:
             or not is_execution_worker_request("POST", path)
         ):
             raise CloudRelayError()
+        lane = ("source" if path.endswith(("/events", "/event-batches")) else
+            "readiness" if path.endswith("/readiness") else "control")
+        if not self._v5_can_send(lane):
+            raise V5BudgetDeferred()
+        self._sent_requests.append((time.monotonic(), lane))
         try:
             response = await self._client.request(
                 "POST", self._base_url + path, content=body,

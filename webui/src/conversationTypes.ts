@@ -77,6 +77,7 @@ export type ConversationTurnStatus =
   | "interrupted";
 
 export interface Conversation {
+  execution_owner?: "worker_direct";
   conversation_id: string;
   mode: ConversationMode;
   direct_agent_id: string | null;
@@ -88,6 +89,19 @@ export interface Conversation {
   archived_at: string | null;
   activity_status?: ConversationTurnStatus;
   unread?: boolean;
+}
+
+export type WorkerTurnStatus = "queued" | "running" | "reconciling" | "completed" | "failed" | "cancelled" | "interrupted";
+export interface TurnSnapshot {
+  read_version: number;
+  event_cursor: number;
+  turn: { turn_id: string; turn_seq: number; status: WorkerTurnStatus } | null;
+  attempt: { attempt_id: string; attempt_no: number; lease_epoch: number; status: WorkerTurnStatus; reason_code: string | null } | null;
+  outcome: { terminal: true; kind: "completed" | "failed" | "cancelled" | "interrupted"; reason_code: string | null } | null;
+  answer: { message_id: string; role: "assistant"; content: string; completed_at: string } | null;
+  result_enrichment: { status: "none" | "pending" | "ready" | "partial" | "failed"; pending_count: number; failed_count: number };
+  deliveries: never[];
+  context_manifest_ref: string | null;
 }
 
 export interface ConversationMessage {

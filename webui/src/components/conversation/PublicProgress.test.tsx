@@ -69,16 +69,18 @@ describe("PublicProgress", () => {
     expect(container.textContent).not.toContain("50%");
   });
 
-  it("shows real direct Agent updates in event order without duplicate summaries", async () => {
+  it.each([false, true])("shows real direct Agent updates in event order without duplicate summaries (worker=%s)", async (workerOwned) => {
     await act(async () => root.render(<PublicProgress
       active
       assistantLabel="HR Agent"
+      workerOwned={workerOwned}
       events={[
         event(4, "agent.work_update", { summary: "正在整理岗位要求" }),
         event(1, "agent.task_dispatched", { summary: "任务已进入执行队列" }),
         event(3, "agent.task_progress", { summary: "正在读取附件" }),
         { ...event(5, "agent.task_progress", { summary: "正在读取附件" }), event_id: "event-5" },
         event(2, "agent.task_accepted", { text: "HR Agent 已开始执行" }),
+        ...(workerOwned ? [event(6, "agent.thinking_summary", { summary: "PRIVATE_THINKING" })] : []),
       ]}
       mode="direct_agent"
       stopButton={<button type="button">停止</button>}

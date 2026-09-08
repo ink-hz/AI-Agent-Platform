@@ -157,6 +157,8 @@ class TurnAttemptRepository:
                 "from platform_control.turn_attempts where turn_id=%s returning *",
                 (uuid4(), turn_id, executor_kind, turn_id),
             ).fetchone()
+            if executor_kind == "worker_direct":
+                cursor.execute("update platform_control.conversations set snapshot_version=snapshot_version+1 where conversation_id=(select conversation_id from platform_control.conversation_turns where turn_id=%s)", (turn_id,))
             return Attempt(**row, owner_id=turn["owner_internal_user_id"])
 
     def get_for_owner(self, owner_id: UUID, attempt_id: UUID) -> Attempt:
@@ -379,3 +381,13 @@ class TurnAttemptRepository:
                 raise LeaseRejected("attempt lease rejected")
             return Outcome(lease.attempt_id, evidence.status, False)
         return Outcome(lease.attempt_id, evidence.status, True)
+
+    @staticmethod
+    def assert_current(lease, *, connection):
+        """Final DB-clock fence after caller-owned writes and their possible waits."""
+        if connection.autocommit or connection.execute(
+            "select 1 from platform_control.turn_attempts where attempt_id=%s and executor_kind=%s "
+            "and executor_id=%s and lease_epoch=%s and lease_expires_at>clock_timestamp()",
+            (lease.attempt_id, lease.executor_kind, str(lease.executor_id), lease.lease_epoch),
+        ).fetchone() is None:
+            raise LeaseRejected("attempt lease rejected")

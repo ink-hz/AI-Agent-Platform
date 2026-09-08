@@ -405,6 +405,8 @@ def _conversation_payload(record: ConversationRecord) -> dict[str, object]:
     if record.activity_status is not None:
         payload["activity_status"] = record.activity_status
         payload["unread"] = record.unread
+    if record.execution_owner == "worker_direct":
+        payload["execution_owner"] = "worker_direct"
     return payload
 
 
@@ -626,13 +628,15 @@ async def conversation_event_stream(
             if await is_disconnected() or not await access_is_live():
                 return
             try:
-                if isinstance(repository, ConversationRepository):
+                conversation = await asyncio.to_thread(repository.conversation_for_owner, owner, conversation_id)
+                worker_owned = getattr(conversation, "execution_owner", "legacy_api_v1") == "worker_direct"
+                if isinstance(repository, ConversationRepository) and not worker_owned:
                     await asyncio.to_thread(
                         ConversationProjection(repository).project_brain_pending,
                         conversation_id,
                         limit=100,
                     )
-                projected = await asyncio.to_thread(
+                projected = 0 if worker_owned else await asyncio.to_thread(
                     repository.sync_mission_events,
                     owner,
                     conversation_id,
@@ -713,6 +717,7 @@ def build_conversation_router(
     max_streams_per_conversation: int = 2,
     max_streams_global: int = 200,
     hr_position_scope=None,
+    snapshot_reader=None,
 ) -> APIRouter:
     if type(brain_enabled) is not bool:
         raise ValueError("Conversation Brain flag invalid")
@@ -726,6 +731,18 @@ def build_conversation_router(
     commands = command_service or ConversationCommandService(
         repository, v2_enabled=False
     )
+
+    @router.get("/api/v1/conversations/{conversation_id}/snapshot")
+    async def turn_snapshot(conversation_id: UUID, request: Request, response: Response, turn_id: UUID | None = None):
+        context = _auth_context(request)
+        if snapshot_reader is None:
+            raise HTTPException(503, "Worker conversation unavailable", headers=_NO_STORE)
+        try:
+            value = await asyncio.to_thread(snapshot_reader.get, context.internal_user_id, conversation_id, turn_id)
+        except ConversationRepositoryError as error:
+            raise _repository_http_error(error) from None
+        response.headers.update(_NO_STORE)
+        return value
     limiter = MissionStreamLimiter(
         max_per_owner=max_streams_per_owner,
         max_per_mission=max_streams_per_conversation,
@@ -958,6 +975,7 @@ def build_conversation_router(
         response: Response,
         after: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=200)] = 100,
+        turn_id: UUID | None = None,
     ):
         context = _auth_context(request)
         try:
@@ -967,6 +985,7 @@ def build_conversation_router(
                 conversation_id,
                 after=after,
                 limit=limit,
+                **({"turn_id": turn_id} if turn_id is not None else {}),
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None

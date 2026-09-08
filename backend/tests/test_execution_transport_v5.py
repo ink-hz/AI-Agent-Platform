@@ -130,6 +130,30 @@ def test_only_exact_v5_paths_enter_signed_middleware_lane():
     assert not is_execution_worker_request("POST", PREFIX + "/anything")
 
 
+def test_signed_event_batch_recovers_lost_ack_without_replacing_raw_source(
+    signed_api, bindings, prepared, attempt_repository, transport_worker,
+):
+    from app.execution_relay.content_crypto import SealedContent
+    client, signer, _ = signed_api
+    lease, binding = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(lease, transport_worker, "http://127.0.0.1:19191", connection=connection)
+    command = post(client, signer, PREFIX + "/handoff", b"{}").json()["command"]
+    bindings.acknowledge_transport(transport_worker, binding.run_id, response(parse_v5_command(command)))
+    originals = [json.dumps(event(command, seq), indent=2) for seq in (1, 2)]
+    originals.append(json.dumps(event(command, 3, "result"), indent=2))
+    path = f"{PREFIX}/runs/{binding.run_id}/event-batches"
+    body = json.dumps({"events": originals}, separators=(",", ":")).encode()
+    assert client.post(path, content=body).status_code == 401
+    first = post(client, signer, path, body)
+    assert first.status_code == 200
+    assert first.json()["acceptedThrough"] == 3
+    assert post(client, signer, path, body).json()["status"] == "duplicate"
+    with bindings.relay._connection() as connection:
+        rows = connection.execute("select * from platform_control.v5_source_events where run_id=%s order by seq", (binding.run_id,)).fetchall()
+    assert [bindings.relay.content_codec.unseal_json(f"execution-v5-source:{binding.run_id}:{row['seq']}", SealedContent(bytes(row["payload_ciphertext"]), row["encryption_key_version"]))["raw"] for row in rows] == originals
+
+
 def test_raw_cloud_client_signs_original_one_mib_event_bytes(
     signed_api, bindings, prepared, attempt_repository, transport_worker
 ):
@@ -157,6 +181,34 @@ def test_raw_cloud_client_signs_original_one_mib_event_bytes(
             assert result.json()["acceptedThrough"] == 1
 
     asyncio.run(send_raw())
+
+
+@pytest.mark.parametrize("fault", ["malformed", "gap_in_batch", "wrong_run", "too_many", "oversize"])
+def test_signed_batch_rejects_whole_invalid_envelope_before_first_source(
+    signed_api, bindings, prepared, attempt_repository, transport_worker, fault,
+):
+    from uuid import uuid4
+    client, signer, _ = signed_api
+    lease, binding = prepared
+    with attempt_repository.transaction() as connection:
+        bindings.authorize_transport(lease, transport_worker, "http://127.0.0.1:19191", connection=connection)
+    command = post(client, signer, PREFIX + "/handoff", b"{}").json()["command"]
+    bindings.acknowledge_transport(transport_worker, binding.run_id, response(parse_v5_command(command)))
+    first, second = event(command, 1), event(command, 2)
+    if fault == "gap_in_batch":
+        second["seq"] = 3
+    if fault == "wrong_run":
+        second["runId"] = str(uuid4())
+    originals = [json.dumps(first), "{" if fault == "malformed" else json.dumps(second)]
+    if fault == "too_many":
+        originals = [json.dumps(event(command, seq)) for seq in range(1, 102)]
+    body = json.dumps({"events": originals}).encode()
+    if fault == "oversize":
+        body += b" " * (1_048_577 - len(body))
+    result = post(client, signer, f"{PREFIX}/runs/{binding.run_id}/event-batches", body)
+    assert result.status_code == (413 if fault == "oversize" else 400)
+    with bindings.relay._connection() as connection:
+        assert connection.execute("select count(*) as n from platform_control.v5_source_events where run_id=%s", (binding.run_id,)).fetchone()["n"] == 0
 
 
 def test_sender_commits_trusted_registration_before_cloud_ack():

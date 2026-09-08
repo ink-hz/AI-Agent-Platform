@@ -104,6 +104,7 @@ class Config:
     partner_callback_method: Literal["GET", "POST"]
     partner_callback_path: str
     control_plane: ControlPlaneConfig
+    hr_web_worker_enabled: bool = False
 
 
 def _enabled(name: str, default: str = "0") -> bool:
@@ -1011,10 +1012,13 @@ def load_config() -> Config:
         partner_callback_method=partner_callback_method,
         partner_callback_path=partner_callback_path,
         control_plane=_load_control_plane_config(),
+        hr_web_worker_enabled=_strict_flag("PLATFORM_HR_WEB_WORKER_ENABLED", "hr_web_worker_flag_invalid"),
     )
     _validate_cloud_config(config)
     _validate_attachment_config(config)
     _validate_execution_relay_config(config)
+    if config.hr_web_worker_enabled and not (config.execution_relay_enabled and config.direct_agent_enabled):
+        raise RuntimeError("HR web worker requires direct Agent and Relay configuration")
     _validate_agent_brain_config(config)
     _validate_brain_model_config(config)
     _validate_office_recipient_directory_config(config)

@@ -384,6 +384,7 @@ class DirectCommandBindingRepository:
             "update platform_control.turn_attempts set transport_run_id=%s where attempt_id=%s",
             (run_id, lease.attempt_id),
         )
+        connection.execute("update platform_control.conversations set snapshot_version=snapshot_version+1 where conversation_id=%s", (c["conversation_id"],))
         return CommandBinding(
             lease.attempt_id, command_id, run_id, job_id, sequence, frozen
         )

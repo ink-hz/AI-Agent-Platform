@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -199,7 +199,7 @@ class ConversationContextBuilder:
         self._candidate_parser_input_provider = candidate_parser_input_provider
 
     def _load(
-        self, conversation_id: UUID, turn_id: UUID
+        self, conversation_id: UUID, turn_id: UUID, *, direct_limit: int | None = None
     ) -> tuple[ConversationContext, int, tuple[tuple[int, ContextMessage], ...]]:
         if not isinstance(conversation_id, UUID) or not isinstance(turn_id, UUID):
             raise ValueError("Conversation context identifiers invalid")
@@ -227,13 +227,15 @@ class ConversationContextBuilder:
             message_rows = cursor.execute(
                 "select * from platform_control.conversation_messages "
                 "where conversation_id=%s and seq>%s and seq<=%s "
-                "order by seq",
+                + ("order by seq desc limit %s" if direct_limit else "order by seq"),
                 (
                     conversation_id,
                     conversation.summary_through_seq,
                     row["user_seq"],
-                ),
+                ) + ((direct_limit,) if direct_limit else ()),
             ).fetchall()
+            if direct_limit:
+                message_rows.reverse()
             active_rows = cursor.execute(
                 "select attachment.attachment_id,attachment.state,"
                 "attachment.retained_until,attachment.immutable_locator,"
@@ -403,6 +405,23 @@ class ConversationContextBuilder:
             psycopg.Error,
         ):
             raise ConversationContextError() from None
+
+    def build_direct(self, conversation_id: UUID, turn_id: UUID) -> ConversationContext:
+        """No compaction model: real summary plus bounded recent persisted history.
+
+        Reuse the existing provider/attachment authority; only old history is
+        bounded. Current input, workflow, summary and selected materials remain.
+        """
+        context, _, _ = self._load(conversation_id, turn_id, direct_limit=64)
+        messages = context.messages
+        size = context.estimated_utf8_bytes
+        while size > MAX_CONTEXT_BYTES and len(messages) > 1:
+            messages = messages[1:]
+            size = _context_size(context.summary, messages, context.hr_position_context,
+                context.hr_panorama_context, context.hr_workflow_contract)
+        if size > MAX_CONTEXT_BYTES:
+            raise ConversationContextTooLarge()
+        return replace(context, messages=messages, estimated_utf8_bytes=size)
 
     def compaction_candidate(
         self, conversation_id: UUID, turn_id: UUID

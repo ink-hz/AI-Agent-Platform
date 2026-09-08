@@ -15,6 +15,7 @@ import type {
   ConversationSubmissionResult,
   ConversationTaskDetail,
   ConversationTurn,
+  TurnSnapshot,
 } from "../conversationTypes";
 import { ConversationPage, type ConversationPageClient } from "./ConversationPage";
 
@@ -127,6 +128,129 @@ describe("ConversationPage", () => {
   });
   afterEach(async () => {
     await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks();
+  });
+
+  it("renders the worker snapshot answer when history is unavailable without inventing message metadata", async () => {
+    const snapshot = { read_version: 2, event_cursor: 8,
+      turn: { turn_id: "worker-turn", turn_seq: 61, status: "completed" as const },
+      attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 2, status: "reconciling" as const, reason_code: "executor_stop_unknown" },
+      outcome: { terminal: true as const, kind: "completed" as const, reason_code: null },
+      answer: { message_id: "last-answer", role: "assistant" as const, content: "刷新后仍是这一份答案", completed_at: "2026-09-08T00:00:00Z" },
+      result_enrichment: { status: "none" as const, pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: "context-manifest:intake:worker-turn" };
+    const api = client({ fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, mode: "direct_agent", direct_agent_id: "hr-bot", execution_owner: "worker_direct" }, current_turn: null }),
+      fetchMessages: vi.fn().mockRejectedValue(new Error("history offline")), fetchSnapshot: vi.fn().mockResolvedValue(snapshot) });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.textContent).toContain("刷新后仍是这一份答案");
+    expect(container.textContent).toContain("正在确认原执行已停止");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(api.createMessageSubmission).not.toHaveBeenCalled();
+    expect(container.querySelector(".conversation-turn-retry")).toBeNull();
+  });
+
+  it("loads actual worker turn messages for actions and retains the prior answer on the next turn", async () => {
+    const workerConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot", execution_owner: "worker_direct" as const };
+    let submitted = false;
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: workerConversation, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockResolvedValue([]),
+      fetchTurnMessages: vi.fn().mockResolvedValue(messages),
+      fetchSnapshot: vi.fn().mockImplementation(async () => ({
+        read_version: submitted ? 3 : 2, event_cursor: submitted ? 9 : 8,
+        turn: { turn_id: submitted ? "turn-2" : "turn-1", turn_seq: submitted ? 2 : 1, status: submitted ? "queued" : "completed" },
+        attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: submitted ? "queued" : "completed", reason_code: null },
+        outcome: submitted ? null : { terminal: true, kind: "completed", reason_code: null },
+        answer: submitted ? null : { message_id: "message-2", role: "assistant", content: messages[1].content, completed_at: messages[1].completed_at },
+        result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: "context-manifest:command:owned",
+      })),
+      streamEvents: vi.fn().mockImplementation(async (_id, options) => new Promise<void>(resolve => options.signal.addEventListener("abort", () => resolve()))),
+      createMessageSubmission: vi.fn().mockImplementation((_id, text) => ({ idempotencyKey: "owned-next", send: async () => {
+        submitted = true;
+        return { ...submissionResult(text), conversation: workerConversation };
+      } })),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.querySelector('.conversation-assistant[data-message-id="message-2"]')).not.toBeNull();
+    expect([...container.querySelectorAll("button")].some(button => button.textContent === "复制")).toBe(true);
+    await setTextarea(container, "继续分析");
+    await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(submitted).toBe(true);
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).toContain("继续分析");
+    expect(container.querySelector<HTMLButtonElement>(".conversation-send")?.disabled).toBe(true);
+  });
+
+  it.each((["failed", "interrupted"] as const).flatMap(status => [
+    { status, attemptStatus: "reconciling" as const }, { status, attemptStatus: status },
+  ]))("shows a safe worker $status notice with $attemptStatus execution without authorizing replay", async ({ status, attemptStatus }) => {
+    const snapshot: TurnSnapshot = {
+      read_version: 2, event_cursor: 8,
+      turn: { turn_id: "turn-1", turn_seq: 1, status },
+      attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: attemptStatus, reason_code: attemptStatus === "reconciling" ? "executor_stop_unknown" : null },
+      outcome: { terminal: true, kind: status, reason_code: "private-provider-error" }, answer: null,
+      result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: null,
+    };
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, mode: "direct_agent", execution_owner: "worker_direct" }, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockResolvedValue([]), fetchTurnMessages: vi.fn().mockResolvedValue([]),
+      fetchSnapshot: vi.fn().mockResolvedValue(snapshot),
+      streamEvents: vi.fn().mockImplementation((_id, options) => new Promise<void>(resolve => options.signal.addEventListener("abort", () => resolve()))),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.querySelector('[role="alert"]')?.textContent ?? "").toContain(status === "failed" ? "本轮处理失败" : "本轮处理已中断");
+    if (attemptStatus === "reconciling") expect(container.textContent).toContain("正在确认原执行已停止");
+    else expect(container.textContent).not.toContain("正在确认原执行已停止");
+    expect(container.textContent).not.toContain("private-provider-error");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(attemptStatus === "reconciling");
+    expect(container.querySelector(".conversation-turn-retry")).toBeNull();
+    expect(api.retryTurn).not.toHaveBeenCalled();
+    expect(api.createMessageSubmission).not.toHaveBeenCalled();
+  });
+
+  it("retains a worker answer across next-turn acceptance when exact-turn metadata fails", async () => {
+    const workerConversation = { ...conversation, mode: "direct_agent" as const, execution_owner: "worker_direct" as const };
+    const history = deferred<ConversationMessage[]>();
+    let submitted = false;
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: workerConversation, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockReturnValue(history.promise),
+      fetchTurnMessages: vi.fn().mockRejectedValue(new Error("metadata unavailable")),
+      fetchSnapshot: vi.fn().mockImplementation(async (): Promise<TurnSnapshot> => ({
+        read_version: submitted ? 3 : 2, event_cursor: submitted ? 9 : 8,
+        turn: { turn_id: submitted ? "turn-2" : "turn-1", turn_seq: submitted ? 2 : 1, status: submitted ? "queued" : "completed" },
+        attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: submitted ? "queued" : "completed", reason_code: null },
+        outcome: submitted ? null : { terminal: true, kind: "completed", reason_code: null },
+        answer: submitted ? null : { message_id: "message-2", role: "assistant", content: messages[1].content, completed_at: messages[1].completed_at! },
+        result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: null,
+      })),
+      streamEvents: vi.fn().mockImplementation((_id, options) => new Promise<void>(resolve => options.signal.addEventListener("abort", () => resolve()))),
+      createMessageSubmission: vi.fn().mockImplementation((_id, text) => ({ idempotencyKey: "owned-next", send: async () => {
+        submitted = true;
+        return { ...submissionResult(text), conversation: workerConversation };
+      } })),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    await setTextarea(container, "继续分析");
+    await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(submitted).toBe(true);
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).toContain("继续分析");
+    expect(container.querySelector('[data-message-id="message-3"]')).not.toBeNull();
+    expect(container.textContent!.indexOf("建议从 GitHub 开始")).toBeLessThan(container.textContent!.indexOf("继续分析"));
+    expect(container.querySelector('button[aria-label="这个回答有帮助"]')).toBeNull();
+    expect(api.submitFeedback).not.toHaveBeenCalled();
+    // When real metadata finally arrives, it replaces the text-only view once.
+    await act(async () => history.resolve(messages));
+    expect(container.querySelectorAll('[data-message-id="message-2"]')).toHaveLength(1);
+    expect(container.textContent?.match(/建议从 GitHub 开始/g)).toHaveLength(1);
+    expect(container.querySelector('button[aria-label="这个回答有帮助"]')).not.toBeNull();
+    // Retained fallback text is scoped to this Conversation, never the next one.
+    const nextApi = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, conversation_id: "another-conversation" }, current_turn: null }),
+      fetchMessages: vi.fn().mockResolvedValue([]),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={nextApi} conversationId="another-conversation" />));
+    expect(container.textContent).not.toContain("建议从 GitHub 开始");
   });
 
   it("rejects a same-owner Session that belongs to a different professional Agent", async () => {

@@ -107,6 +107,31 @@ def test_new_worker_turn_pins_current_routing(worker_turn, attempt_repository):
     assert turn == {"execution_owner": "worker_direct", "origin_route_epoch": "7"}
 
 
+def test_real_direct_worker_prepares_existing_turn_without_model_call(worker_turn, attempt_repository, repository, direct_database):
+    from app.agent_brain.direct_command_binding import DirectCommandBindingRepository
+    from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
+    from app.agent_brain.direct_worker import DirectWorker
+    from app.agent_brain.turn_result_projection import TurnResultProjector
+    from app.execution_relay.repository import ExecutionRelayRepository
+    environment, _, _ = direct_database
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute("set local role platform_control_owner")
+        connection.execute(DRAFT.with_name("hr_web_result_recovery.sql").read_text())
+    bindings = DirectCommandBindingRepository(ExecutionRelayRepository(environment["urls"]["platform_control_app"], content_codec=repository.content_codec))
+    adapter = DirectMissionAdapter(attempt_repository, bindings, ConversationContextBuilder(repository), TurnResultProjector(attempt_repository, bindings))
+    worker = DirectWorker(attempt_repository, adapter)
+    from tests.helpers.hr_web_loop import WebLoop
+    identity = WebLoop(environment, worker_turn.conversation.owner_internal_user_id, worker_turn.conversation.conversation_id)
+    try:
+        assert worker.tick() == 1
+    finally:
+        worker.close()
+        identity.close()
+    with attempt_repository.transaction() as connection:
+        row = connection.execute("select j.run_id,mt.task_id,mr.run_id as compatibility_run from platform_control.direct_command_bindings b join platform_control.execution_jobs j using(job_id) join platform_control.mission_tasks mt on mt.task_id=j.run_id join platform_control.mission_runs mr on mr.run_id=j.run_id where b.attempt_id=(select attempt_id from platform_control.turn_attempts where turn_id=%s)", (worker_turn.turn.turn_id,)).fetchone()
+    assert row and row["run_id"] == row["task_id"] == row["compatibility_run"]
+
+
 def test_legacy_claim_excludes_worker_owned_turn(repository, worker_turn):
     claimed = repository._missions.claim_pending(limit=50)
 

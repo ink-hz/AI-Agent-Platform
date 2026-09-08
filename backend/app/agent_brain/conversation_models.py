@@ -141,6 +141,7 @@ class ConversationRecord:
     summary_key_version: int | None = field(repr=False)
     activity_status: str | None = None
     unread: bool = False
+    execution_owner: str = "legacy_api_v1"
 
 
 @dataclass(frozen=True, slots=True)

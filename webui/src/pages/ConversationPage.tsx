@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Account } from "../auth";
 import {
@@ -12,7 +12,9 @@ import {
   confirmConversationAction,
   createConversationMessageSubmission,
   fetchConversation,
+  fetchConversationSnapshot,
   fetchConversationMessages,
+  fetchConversationTurnMessages,
   fetchConversationTaskDetail,
   markConversationRead,
   rejectConversationAction,
@@ -37,12 +39,14 @@ import type {
   ConversationTaskDetail,
   ConversationAttachment,
   TurnSubmission,
+  TurnSnapshot,
 } from "../conversationTypes";
 import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
 import type { WorkroomAction } from "../workroomTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
+import { MessageMarkdown } from "../components/MessageMarkdown";
 import type { MessageActionsPresentation } from "../components/conversation/MessageActions";
 import { AttachmentUploader, type UploadQueueItem } from "../components/conversation/AttachmentUploader";
 import { SessionMaterialsDrawer } from "../components/conversation/SessionMaterialsDrawer";
@@ -54,6 +58,8 @@ import { scheduleSnapshotPolling } from "./snapshotPolling";
 
 
 export interface ConversationPageClient {
+  fetchSnapshot?(conversationId: string, signal?: AbortSignal): Promise<TurnSnapshot>;
+  fetchTurnMessages?(conversationId: string, turnId: string, signal?: AbortSignal): Promise<ConversationMessage[]>;
   fetchConversation(conversationId: string, signal?: AbortSignal): Promise<ConversationDetail>;
   fetchMessages(conversationId: string, signal?: AbortSignal): Promise<ConversationMessage[]>;
   createMessageSubmission(conversationId: string, input: string | TurnSubmission, csrfToken: string): ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
@@ -74,6 +80,8 @@ export interface ConversationPageClient {
 }
 
 const DEFAULT_CLIENT: ConversationPageClient = {
+  fetchSnapshot: fetchConversationSnapshot,
+  fetchTurnMessages: fetchConversationTurnMessages,
   fetchConversation,
   fetchMessages: fetchConversationMessages,
   createMessageSubmission: createConversationMessageSubmission,
@@ -204,6 +212,13 @@ export function ConversationPage({
   messageActionsPresentation?: MessageActionsPresentation;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
+  const [workerSnapshot, setWorkerSnapshot] = useState<TurnSnapshot | null>(null);
+  const [retainedWorkerAnswers, setRetainedWorkerAnswers] = useState<{
+    answer: NonNullable<TurnSnapshot["answer"]>;
+    beforeMessageSeq: number;
+  }[]>([]);
+  const workerOwned = detail?.conversation.execution_owner === "worker_direct";
+  const workerActive = workerOwned && (!workerSnapshot || Boolean(workerSnapshot.attempt && ["queued", "running", "reconciling"].includes(workerSnapshot.attempt.status)));
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const messagesRef = useRef<ConversationMessage[]>([]);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
@@ -263,13 +278,25 @@ export function ConversationPage({
 
   useEffect(() => {
     const controller = new AbortController();
+    setWorkerSnapshot(null);
+    setRetainedWorkerAnswers([]);
     setDetail(null); replaceMessages([]); setEvents([]); setLoading(true); setLoadFailure(false);
     setText(""); setSendFailure(false); setCancelFailure(false); setCancelRequested(false);
     setFeedback({}); setAttachments([]); setActiveAttachmentIds([]); setNewAttachmentIds([]); setUploadQueue([]); setAttachmentError(null);
     retained.current = null; eventCursor.current = 0;
     terminalTurnIds.current.clear(); settledTurnIds.current.clear();
+    const detailRead = client.fetchConversation(conversationId, controller.signal);
+    let workerInitialized = false;
+    // History/materials are independent views, not the worker's Result checkpoint.
+    void detailRead.then((snapshot) => {
+      if (controller.signal.aborted || snapshot.conversation.execution_owner !== "worker_direct") return;
+      if (expectedAgentId && snapshot.conversation.direct_agent_id !== expectedAgentId) throw new Error("Conversation Agent scope mismatch");
+      workerInitialized = true;
+      setDetail(snapshot); setLoading(false); setStreamEpoch((value) => value + 1);
+      onConversationUpdated?.(snapshot.conversation);
+    }).catch(() => undefined);
     void Promise.all([
-      client.fetchConversation(conversationId, controller.signal),
+      detailRead,
       client.fetchMessages(conversationId, controller.signal),
       attachmentLimits && client.listAttachments
         ? client.listAttachments(conversationId, controller.signal)
@@ -286,16 +313,58 @@ export function ConversationPage({
       const lastUser = [...loadedMessages].reverse().find((message) => message.role === "user");
       setAttachments([...materialMap.values()]); setActiveAttachmentIds(lastUser?.active_attachment_ids ?? []);
       if (attachmentResult.failed) setAttachmentError("会话材料暂时无法读取，请刷新页面重试。");
-      setDetail(snapshot); replaceMessages(loadedMessages); setLoading(false); setStreamEpoch((value) => value + 1);
-      onConversationUpdated?.(snapshot.conversation);
+      if (workerInitialized) mergeIntoMessages(loadedMessages);
+      else {
+        setDetail(snapshot); replaceMessages(loadedMessages); setLoading(false);
+        setStreamEpoch((value) => value + 1);
+        onConversationUpdated?.(snapshot.conversation);
+      }
     }).catch(() => {
-      if (!controller.signal.aborted) { setLoadFailure(true); setLoading(false); }
+      if (!controller.signal.aborted && !workerInitialized) { setLoadFailure(true); setLoading(false); }
     });
     return () => { controller.abort(); writeController.current?.abort(); };
   }, [attachmentLimits, client, conversationId, expectedAgentId, onConversationUpdated]);
 
   useEffect(() => {
     if (!streamEpoch || !detail) return;
+    if (detail.conversation.execution_owner === "worker_direct") {
+      const controller = new AbortController();
+      let inFlight = false;
+      const loadingTurns = new Set<string>();
+      const refresh = async () => {
+        if (inFlight || controller.signal.aborted) return;
+        inFlight = true;
+        try {
+          const value = await (client.fetchSnapshot ?? fetchConversationSnapshot)(conversationId, controller.signal);
+          if (controller.signal.aborted) return;
+          setWorkerSnapshot((previous) => previous && previous.read_version > value.read_version ? previous : value);
+          const turnId = value.turn?.turn_id;
+          if (turnId && !loadingTurns.has(turnId) && (!messagesRef.current.some(message => message.turn_id === turnId)
+            || (value.answer && !messagesRef.current.some(message => message.message_id === value.answer?.message_id)))) {
+            loadingTurns.add(turnId);
+            // Independent rendering/enrichment read. Its failure cannot withhold
+            // the authoritative answer or block the next snapshot refresh.
+            void (client.fetchTurnMessages ?? fetchConversationTurnMessages)(conversationId, turnId, controller.signal)
+              .then(items => { if (!controller.signal.aborted) mergeIntoMessages(items); })
+              .catch(() => undefined).finally(() => loadingTurns.delete(turnId));
+          }
+          eventCursor.current = Math.max(eventCursor.current, value.event_cursor);
+          setConnection("live");
+          if (value.outcome && value.turn && !settledTurnIds.current.has(value.turn.turn_id)) {
+            settledTurnIds.current.add(value.turn.turn_id); onConversationSettled?.();
+          }
+        } catch { if (!controller.signal.aborted) setConnection("offline"); }
+        finally { inFlight = false; }
+      };
+      void refresh();
+      const stop = scheduleSnapshotPolling(() => void refresh(), 2_000);
+      // The stream is a read-only wake-up/progress view; Result comes from snapshot.
+      void client.streamEvents(conversationId, { after: eventCursor.current, signal: controller.signal,
+        onEvent: (event) => { if (!controller.signal.aborted && event.conversation_id === conversationId) {
+          setEvents((current) => mergeEvent(current, event)); void refresh();
+        } } }).then(() => void refresh(), () => void refresh());
+      return () => { stop(); controller.abort(); };
+    }
     const controller = new AbortController();
     const streamController = new AbortController();
     let stopPolling: (() => void) | undefined;
@@ -468,7 +537,7 @@ export function ConversationPage({
     const normalized = value.trim();
     const waitingUser = detail?.current_turn?.status === "waiting_user";
     if ((!normalized && newAttachmentIds.length === 0) || inFlight.current || readOnly
-      || (turnIsActive(detail) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
+      || ((workerOwned ? workerActive : turnIsActive(detail)) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
     const submissionInput: TurnSubmission = {
       text: normalized,
       attachmentIds: [...newAttachmentIds],
@@ -498,6 +567,12 @@ export function ConversationPage({
       setNewAttachmentIds([]); setUploadQueue([]);
       mergeIntoMessages([result.message]);
       if ("conversation" in result) {
+        if (result.conversation.execution_owner === "worker_direct") {
+          const answer = workerSnapshot?.answer;
+          if (answer) setRetainedWorkerAnswers((current) => current.some(item => item.answer.message_id === answer.message_id)
+            ? current : [...current, { answer, beforeMessageSeq: result.message.seq }]);
+          setWorkerSnapshot(null);
+        }
         setDetail({ conversation: result.conversation, current_turn: result.turn });
         onConversationUpdated?.(result.conversation);
         setStreamEpoch((value) => value + 1);
@@ -633,7 +708,7 @@ export function ConversationPage({
 
   if (loading) return <section className="conversation-load-state" aria-live="polite"><h1>正在打开对话</h1><p>正在读取已保存的消息与执行记录。</p></section>;
   if (loadFailure || !detail) return <section className="conversation-load-state" role="alert"><h1>暂时无法读取对话</h1><p>对话仍安全保存在平台，请稍后刷新。</p></section>;
-  const active = turnIsActive(detail);
+  const active = workerOwned ? workerActive : turnIsActive(detail);
   const waitingUser = detail.current_turn?.status === "waiting_user";
   const waitingUserEvent = [...events].reverse().find(
     (event) => event.event_type === "brain.user_input_requested",
@@ -658,6 +733,20 @@ export function ConversationPage({
     }));
   })();
   const uploadPending = uploadQueue.some((item) => item.state === "queued" || item.state === "uploading" || item.state === "processing");
+  // A snapshot answer is not a ConversationMessage: its message seq and other
+  // metadata are unknown. Anchor it before the actual next accepted message,
+  // then prefer real metadata whenever that independent read recovers.
+  const messageGroups: { key: string; messages: ConversationMessage[]; answer: TurnSnapshot["answer"] }[] = [];
+  let remainingMessages = messages;
+  for (const item of retainedWorkerAnswers) {
+    if (messages.some(message => message.message_id === item.answer.message_id)) continue;
+    messageGroups.push({ key: item.answer.message_id,
+      messages: remainingMessages.filter(message => message.seq < item.beforeMessageSeq), answer: item.answer });
+    remainingMessages = remainingMessages.filter(message => message.seq >= item.beforeMessageSeq);
+  }
+  messageGroups.push({ key: "remaining", messages: remainingMessages, answer: null });
+  const workerFailure = workerOwned && workerSnapshot?.outcome
+    && ["failed", "interrupted"].includes(workerSnapshot.outcome.kind) ? workerSnapshot.outcome.kind : null;
   const conversationContent = <div className="conversation-page">
     <header className="conversation-header">
       <div>
@@ -673,9 +762,9 @@ export function ConversationPage({
     </header>
     {connection === "offline" && <aside className="conversation-connection is-offline" role="status"><strong>连接暂时中断</strong><span>正在从上次进度继续连接，不会重复提交请求。</span></aside>}
     {connection === "connecting" && <aside className="conversation-connection" role="status">正在连接对话…</aside>}
-    <ConversationMessages
+    {messageGroups.map(group => <Fragment key={group.key}><ConversationMessages
       assistantLabel={assistantLabel}
-      messages={messages}
+      messages={group.messages}
       feedback={feedback}
       messageActionsPresentation={messageActionsPresentation}
       onDownloadAll={() => void downloadAllArtifacts()}
@@ -696,13 +785,27 @@ export function ConversationPage({
         /> : null;
       }}
     />
+    {group.answer && <article className="conversation-message conversation-message-assistant" aria-label={`${assistantLabel} 回答`}>
+      <MessageMarkdown content={group.answer.content} />
+    </article>}
+    </Fragment>)}
+    {workerSnapshot?.answer && !messages.some((message) => message.message_id === workerSnapshot.answer?.message_id) && <article className="conversation-message conversation-message-assistant" aria-label={`${assistantLabel} 回答`}>
+      <MessageMarkdown content={workerSnapshot.answer.content} />
+    </article>}
+    {workerFailure && <p className="conversation-action-error" role="alert">
+      {workerFailure === "failed" ? "本轮处理失败。" : "本轮处理已中断。"}
+      {workerSnapshot?.answer ? "已保存的回答仍可查看。" : "本轮未生成完整回答。"}
+      不会自动重新执行。
+    </p>}
     {threadSupplement}
     <PublicProgress
       active={active && !waitingUser}
       assistantLabel={assistantLabel}
-      events={events.filter((event) => event.turn_id === detail.current_turn?.turn_id)}
+      events={events.filter((event) => event.turn_id === (workerOwned ? workerSnapshot?.turn?.turn_id : detail.current_turn?.turn_id))}
       mode={detail.conversation.mode}
       stopButton={stopButton}
+      workerOwned={workerOwned}
+      reconciling={workerSnapshot?.attempt?.status === "reconciling"}
     />
     {cancelFailure && <p className="conversation-action-error" role="alert">停止请求暂未送达，请稍后重试。</p>}
     {waitingUser && typeof waitingQuestion === "string" && <UserInputRequest
@@ -711,7 +814,7 @@ export function ConversationPage({
       pending={pending}
       question={waitingQuestion}
     />}
-    {detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
+    {!workerOwned && detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
       && <button className="conversation-turn-retry" disabled={pending || readOnly} onClick={() => void retryTurn()} type="button">重试本轮</button>}
     <ConversationComposer
       attachmentControls={attachmentLimits ? <AttachmentUploader

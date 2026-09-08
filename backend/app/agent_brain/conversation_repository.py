@@ -182,6 +182,7 @@ class ConversationRepository:
         mission_repository: MissionRepository | None = None,
         attachment_repository: ConversationAttachmentRepository | None = None,
         agent_capability_cards: tuple[AgentCapabilityCard, ...] | None = None,
+        worker_direct_enabled: bool = False,
         connect: Callable[..., Any] = psycopg.connect,
     ) -> None:
         parsed = validate_control_dsn(control_database_url, purpose="app")
@@ -203,6 +204,9 @@ class ConversationRepository:
         self._connect = connect
         self.content_codec = content_codec
         self._missions = selected_missions
+        if type(worker_direct_enabled) is not bool:
+            raise ValueError("Worker conversation flag invalid")
+        self.worker_direct_enabled = worker_direct_enabled
         selected_attachments = attachment_repository or ConversationAttachmentRepository(
             control_database_url,
             content_codec=content_codec,
@@ -270,6 +274,7 @@ class ConversationRepository:
             summary_key_version=key_version,
             activity_status=row.get("activity_status"),
             unread=bool(row.get("unread", False)),
+            execution_owner=row.get("execution_owner", "legacy_api_v1"),
         )
 
     def _attachment_projection_from_row(
@@ -499,6 +504,15 @@ class ConversationRepository:
     def _search_recovery_locked(
         self, cursor: Any, message_row: dict[str, Any]
     ) -> SearchRecoveryState | None:
+        # Worker-owned answers are published from the authenticated v5 source,
+        # not a legacy Mission terminal envelope (whose text limit is smaller).
+        origin = cursor.execute(
+            "select to_jsonb(t)->>'execution_owner' as execution_owner "
+            "from platform_control.conversation_turns t where turn_id=%s",
+            (message_row["turn_id"],),
+        ).fetchone()
+        if origin and origin["execution_owner"] == "worker_direct":
+            return None
         try:
             delivery = self._missions.terminal_delivery_for_projection(
                 cursor, message_row["mission_id"]
@@ -1009,11 +1023,14 @@ class ConversationRepository:
                     created = False
                     mission = None
                 else:
+                    worker_intake = self.worker_direct_enabled and mode == "direct_agent" and direct_agent_id == "hr-bot"
+                    owner_columns = ",execution_owner,route_epoch" if worker_intake else ""
+                    owner_values = ",'worker_direct',1" if worker_intake else ""
                     conversation_row = cursor.execute(
                         "insert into platform_control.conversations "
                         "(conversation_id,owner_internal_user_id,"
-                        "started_by_client_request_id,mode,direct_agent_id,title,status) "
-                        "values (%s,%s,%s,%s,%s,%s,'active') returning *",
+                        f"started_by_client_request_id,mode,direct_agent_id,title,status{owner_columns}) "
+                        f"values (%s,%s,%s,%s,%s,%s,'active'{owner_values}) returning *",
                         (
                             conversation_id,
                             internal_user_id,
@@ -1124,11 +1141,14 @@ class ConversationRepository:
                     (internal_user_id, client_request_id),
                 ).fetchone()
                 if existing is None:
+                    worker_intake = self.worker_direct_enabled and selected_agent_id == "hr-bot"
+                    owner_columns = ",execution_owner,route_epoch" if worker_intake else ""
+                    owner_values = ",'worker_direct',1" if worker_intake else ""
                     existing = cursor.execute(
                         "insert into platform_control.conversations "
                         "(conversation_id,owner_internal_user_id,"
-                        "started_by_client_request_id,mode,direct_agent_id,title,status) "
-                        "values (%s,%s,%s,'direct_agent',%s,%s,'active') returning *",
+                        f"started_by_client_request_id,mode,direct_agent_id,title,status{owner_columns}) "
+                        f"values (%s,%s,%s,'direct_agent',%s,%s,'active'{owner_values}) returning *",
                         (
                             conversation_id,
                             internal_user_id,
@@ -2029,9 +2049,12 @@ class ConversationRepository:
         *,
         after: int = 0,
         limit: int = 200,
+        turn_id: UUID | None = None,
     ) -> tuple[ConversationMessageRecord, ...]:
         _require_uuid(internal_user_id)
         _require_uuid(conversation_id)
+        if turn_id is not None:
+            _require_uuid(turn_id)
         if (
             isinstance(after, bool)
             or not isinstance(after, int)
@@ -2052,8 +2075,9 @@ class ConversationRepository:
                     "on conversation.conversation_id=message.conversation_id "
                     "where message.conversation_id=%s "
                     "and conversation.owner_internal_user_id=%s and message.seq>%s "
+                    "and (%s::uuid is null or message.turn_id=%s) "
                     "order by message.seq limit %s",
-                    (conversation_id, internal_user_id, after, limit),
+                    (conversation_id, internal_user_id, after, turn_id, turn_id, limit),
                 ).fetchall()
                 if not rows and cursor.execute(
                     "select 1 from platform_control.conversations "

@@ -21,6 +21,8 @@
 
 ## 当前基线与任务纪律
 
+2026-09-08 用户再次明确测试策略：**接口优先，页面最后验收**，持续遵守项目 `AGENTS.md`。核心业务直接通过真实 HTTP/API、数据库结果与必要的进程故障注入验证；仅在接口链路通过后做一次必要的页面交互验收，不通过反复操作页面调试后端。
+
 Platform 工作树 `/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-position-core-availability`；MetaBot 工作树 `/Users/neo/Developer/work/metabot-dev/.worktrees/hr-unified-execution`。已有就绪候选 bf1e29b / bda5aa1 正在独立复审，先收口其实际问题；不重做已关闭的 P01/P02/M02/M03/M04a/P03a/b1/b2a。
 
 旧 18 项计划的精确合同与测试仍可引用，但以下三个业务任务是当前执行队列。内部函数/表/配置步骤不再各自成为一轮设计审批；同一个业务任务内先 RED 再实现，最终做一次完整任务范围独立复审。若需超出本文件事实权威或生产权限才升级决策。

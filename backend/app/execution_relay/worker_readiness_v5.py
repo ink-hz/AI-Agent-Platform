@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 import httpx
 import psycopg
 
+from .recovery_v5 import V5RecoveryAdapter
 from .transport_v5 import V5TransportAdapter
 from .upload_v5 import drain_once
+from .worker import SignedCloudClient
 from .worker_v5_receiver import preflight
 
 _FAILURES = (OSError, ValueError, RuntimeError, httpx.HTTPError, psycopg.Error)
@@ -81,6 +83,8 @@ class V5WorkerService:
     def start(self):
         if self.tasks or self._closed:
             raise ValueError("v5 service unavailable")
+        if isinstance(self.runtime.cloud, SignedCloudClient):
+            self.runtime.cloud.enable_v5_budget()
         adapter = V5TransportAdapter(self.runtime)
         self.tasks["handoff"] = asyncio.create_task(
             self._loop("handoff", adapter.poll_once)
@@ -94,6 +98,7 @@ class V5WorkerService:
             )
         )
         self.tasks["readiness"] = asyncio.create_task(self._reports())
+        self.tasks["recovery"] = asyncio.create_task(self._loop("recovery", V5RecoveryAdapter(self.runtime).poll_once))
 
     async def _loop(self, name, operation):
         while not self._closed and not self.runtime.shutdown_event.is_set():
@@ -103,7 +108,7 @@ class V5WorkerService:
                 self._last[name] = asyncio.get_running_loop().time()
             except _FAILURES:
                 self._last.pop(name, None)
-            await asyncio.sleep(1)
+            await self.runtime.pause(1 if name == "upload" else 10)
 
     async def sample(self):
         runtime, metabot = self.runtime, self.runtime.metabot
@@ -175,7 +180,7 @@ class V5WorkerService:
                 await self.publish_once()
             except _FAILURES:
                 self.runtime.logger.warning("v5 readiness publication unavailable")
-            await asyncio.sleep(max(0, next_sample - asyncio.get_running_loop().time()))
+            await self.runtime.pause(max(0, next_sample - asyncio.get_running_loop().time()))
 
     async def close(self):
         self._closed = True

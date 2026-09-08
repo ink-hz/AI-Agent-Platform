@@ -8,10 +8,14 @@ from uuid import uuid4
 import psycopg
 import pytest
 from test_agent_brain_conversation_repository import (
-    conversation_database,
-    repository,
+    conversation_database as conversation_database,  # noqa: PLC0414 - pytest fixture export
 )
-from test_control_plane_migration import control_database
+from test_agent_brain_conversation_repository import (
+    repository as repository,  # noqa: PLC0414 - pytest fixture export
+)
+from test_control_plane_migration import (
+    control_database as control_database,  # noqa: PLC0414 - pytest fixture export
+)
 
 from app.agent_brain.conversation_context import (
     MAX_CONTEXT_BYTES,
@@ -25,6 +29,24 @@ from app.hr.position_intelligence_models import HrPositionContextEnvelope
 from app.hr.repository import HrPositionRepository
 from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
 from app.hr.task_context import canonical_hash
+
+
+@pytest.mark.postgres
+def test_direct_context_bounds_120_persisted_messages_without_losing_current_input(conversation_database, repository):
+    from app.agent_brain.conversation_repository import message_subject
+    environment, owner, _ = conversation_database
+    started = repository.start(owner, uuid4(), "当前问题", mode="direct_agent", direct_agent_id="hr-bot")
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute("update platform_control.conversation_messages set seq=121 where message_id=%s", (started.message.message_id,))
+        for seq in range(1, 121):
+            message_id = uuid4()
+            sealed = repository.content_codec.seal_json(message_subject(started.conversation.conversation_id, message_id), {"text": f"历史 {seq} " + "中" * 1024})
+            connection.execute("insert into platform_control.conversation_messages(message_id,conversation_id,seq,role,content_ciphertext,encryption_key_version,delivery_status,completed_at) values(%s,%s,%s,'system',%s,%s,'completed',now())", (message_id, started.conversation.conversation_id, seq, sealed.ciphertext, sealed.key_version))
+    context = ConversationContextBuilder(repository).build_direct(started.conversation.conversation_id, started.turn.turn_id)
+    assert 1 < len(context.messages) <= 64
+    assert context.messages[-1].content == "当前问题"
+    assert context.hr_workflow_contract == HR_WORKFLOW_CONTRACT_V1
+    assert context.estimated_utf8_bytes <= MAX_CONTEXT_BYTES
 
 
 @pytest.mark.postgres

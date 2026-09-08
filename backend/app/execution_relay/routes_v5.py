@@ -12,7 +12,9 @@ from app.agent_brain.direct_command_binding import BindingRejected
 from app.agent_brain.turn_attempts import LeaseRejected
 
 from .content_crypto import ContentCryptoError
+from .contracts_v5 import parse_v5_event
 from .readiness_v5 import record_observation
+from .recovery_v5 import record_recovery, recovery_work
 from .source_v5 import accept_source
 
 
@@ -62,6 +64,22 @@ def attach_v5_routes(router, authenticated, bindings):
 
         return await invoke(request, execute)
 
+    @router.post("/v5/recovery")
+    async def recovery(request: Request):
+        def execute(worker_id, body):
+            if json.loads(body) != {}:
+                raise ValueError
+            value = recovery_work(bindings, worker_id)
+            return Response(status_code=204, headers=_NO_STORE) if value is None else JSONResponse(value, headers=_NO_STORE)
+        return await invoke(request, execute)
+
+    @router.post("/v5/runs/{run_id}/recovery")
+    async def recovered(run_id: UUID, request: Request):
+        def execute(worker_id, body):
+            recorded = record_recovery(bindings, worker_id, run_id, json.loads(body))
+            return JSONResponse({"recorded": recorded}, headers=_NO_STORE)
+        return await invoke(request, execute)
+
     @router.post("/v5/runs/{run_id}/acceptance")
     async def acceptance(run_id: UUID, request: Request):
         def execute(worker_id, body):
@@ -81,5 +99,29 @@ def attach_v5_routes(router, authenticated, bindings):
                 status_code=409 if ack.status in {"gap", "conflict"} else 200,
                 headers=_NO_STORE,
             )
+
+        return await invoke(request, execute)
+
+    @router.post("/v5/runs/{run_id}/event-batches")
+    async def event_batch(run_id: UUID, request: Request):
+        def execute(worker_id, body):
+            value = json.loads(body)
+            if (type(value) is not dict or set(value) != {"events"}
+                or type(value["events"]) is not list or not 1 <= len(value["events"]) <= 100
+                or any(type(item) is not str for item in value["events"])):
+                raise ValueError("v5 event batch invalid")
+            # Validate the entire envelope first. Commit each original source with
+            # the existing identity/sequence checks; a lost partial ACK is replayed
+            # safely from its original bytes, never by regenerating an event.
+            parsed = [parse_v5_event(json.loads(item)) for item in value["events"]]
+            if any(item.run_id != run_id or item.seq != parsed[0].seq + index
+                for index, item in enumerate(parsed)):
+                raise ValueError("v5 event batch invalid")
+            for raw in value["events"]:
+                ack = accept_source(bindings, worker_id, run_id, raw.encode("utf-8"))
+                if ack.status in {"gap", "conflict"}:
+                    break
+            return JSONResponse(ack.model_dump(mode="json", by_alias=True),
+                status_code=409 if ack.status in {"gap", "conflict"} else 200, headers=_NO_STORE)
 
         return await invoke(request, execute)

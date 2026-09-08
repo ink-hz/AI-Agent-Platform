@@ -3,6 +3,7 @@ import json
 import os
 
 import pytest
+
 from app.config import load_config
 from app.control_plane.models import IdentityMode
 
@@ -598,6 +599,34 @@ def test_direct_agent_execution_fails_closed_without_relay(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="Direct Agent requires production identity and relay"):
         load_config()
+
+
+def test_hr_web_worker_is_opt_in_and_rejects_ambiguous_flag(monkeypatch):
+    monkeypatch.delenv("PLATFORM_HR_WEB_WORKER_ENABLED", raising=False)
+    assert load_config().hr_web_worker_enabled is False
+    monkeypatch.setenv("PLATFORM_HR_WEB_WORKER_ENABLED", "tru")
+    with pytest.raises(ValueError, match="hr_web_worker_flag"):
+        load_config()
+
+
+def test_hr_web_worker_requires_direct_and_relay(monkeypatch):
+    monkeypatch.setenv("PLATFORM_HR_WEB_WORKER_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_DIRECT_AGENT_ENABLED", "0")
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "0")
+    with pytest.raises(RuntimeError, match="requires direct Agent and Relay"):
+        load_config()
+
+
+def test_hr_web_worker_enables_without_brain_or_other_execution_changes(monkeypatch, tmp_path):
+    _enable_production_identity(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", _content_keyring(tmp_path / "content-keyring.json"))
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_DIRECT_AGENT_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "0")
+    monkeypatch.setenv("PLATFORM_HR_WEB_WORKER_ENABLED", "1")
+    config = load_config()
+    assert config.hr_web_worker_enabled and config.direct_agent_enabled and config.execution_relay_enabled
+    assert not config.agent_brain_enabled
 
 
 def test_execution_relay_enabled_requires_production_identity(monkeypatch, tmp_path):

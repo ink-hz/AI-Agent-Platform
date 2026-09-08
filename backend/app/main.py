@@ -24,9 +24,15 @@ from .agent_brain.conversation_routes import (
     build_conversation_router,
 )
 from .agent_brain.conversation_service import ConversationCommandService
+from .agent_brain.direct_command_binding import DirectCommandBindingRepository
+from .agent_brain.direct_mission_adapter import DirectMissionAdapter
+from .agent_brain.direct_worker import DirectWorker
 from .agent_brain.orchestrator import MissionOrchestrator
 from .agent_brain.repository import MissionRepository
 from .agent_brain.routes import MissionCursorCodec, build_agent_brain_router
+from .agent_brain.turn_attempts import TurnAttemptRepository
+from .agent_brain.turn_result_projection import TurnResultProjector
+from .agent_brain.turn_snapshot import TurnSnapshotReader
 from .agent_catalog.routes import build_agent_catalog_router
 from .ai_notes.repository import AiNotesContentError, AiNotesRepository
 from .ai_notes.routes import (
@@ -910,6 +916,7 @@ def create_app(
             WorkerRequestVerifier(control_database_url),
             lease_seconds=config.execution_relay_lease_seconds,
             max_body_bytes=config.execution_relay_max_body_bytes,
+            v5_bindings=DirectCommandBindingRepository(execution_relay_repository) if config.hr_web_worker_enabled else None,
         )
     if config.direct_agent_enabled or config.agent_brain_enabled:
         if (
@@ -925,6 +932,7 @@ def create_app(
             control_database_url,
             content_codec=content_codec,
             mission_repository=mission_repository,
+            worker_direct_enabled=config.hr_web_worker_enabled,
         )
         conversation_command_service = ConversationCommandService(
             conversation_repository,
@@ -1520,6 +1528,16 @@ def create_app(
         hr_candidate_parser_input_provider
     )
     app.state.hr_task_result_reconciler = hr_task_result_reconciler
+    def direct_worker_factory():
+        if not config.hr_web_worker_enabled or conversation_repository is None:
+            raise RuntimeError("HR web worker is disabled")
+        attempts = TurnAttemptRepository(control_database_url, content_codec)
+        bindings = DirectCommandBindingRepository(execution_relay_repository)
+        context = ConversationContextBuilder(conversation_repository,
+            hr_task_context_provider=hr_task_context_provider, panorama_context_provider=hr_panorama_context_provider,
+            candidate_parser_input_provider=hr_candidate_parser_input_provider)
+        return DirectWorker(attempts, DirectMissionAdapter(attempts, bindings, context, TurnResultProjector(attempts, bindings)))
+    app.state.direct_worker_factory = direct_worker_factory
     app.state.hr_position_package_projector = hr_position_package_projector
     app.state.fae_access = None
     app.state.voc_access = None
@@ -1683,6 +1701,7 @@ def create_app(
                 session_cookie_name=identity_auth.cookie_name,
                 brain_enabled=config.agent_brain_enabled,
                 hr_position_scope=hr_position_scope,
+                snapshot_reader=TurnSnapshotReader(conversation_repository) if config.hr_web_worker_enabled else None,
             )
         )
     if (
