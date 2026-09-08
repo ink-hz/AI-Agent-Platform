@@ -67,3 +67,25 @@ Focused GREEN command:
 npm test -- --run src/workspaces/hr/hrIntelligenceReference.test.ts src/workspaces/hr/HrWorkspacePage.test.tsx
 2 files passed; 27 tests passed.
 ```
+
+## Company reading continuity follow-up
+
+The host previously unmounted `HrPanoramaWorkspace` as soon as selection navigated back to chat. That discarded the child workspace's search, evidence expansion, job filters/page, pinned bundle, and reading position.
+
+`HrWorkspacePage` now retains the visited panorama child for the current `internal_user_id`, hides it from layout and the accessibility tree while another HR surface is active, and reuses the same keyed child on return. An account change unmounts the prior child and starts a fresh account-scoped host, so no company content or pinned reading bundle crosses accounts. Fresh application entry still mounts a new workspace and therefore reads the latest publication.
+
+Visible panorama scroll is captured by scoped `scroll` and `platform:navigate` listeners. Return restoration uses two animation frames so it runs after the router's scheduled `scrollTo(0, 0)`; effect cleanup cancels either pending frame. The chat host and its own draft/scroll behavior are unchanged, and retention never invokes submission.
+
+Focused RED:
+
+```text
+npm test -- --run src/workspaces/hr/HrWorkspacePage.test.tsx
+3 expected failures: panorama child unmounted, account change reused child state, and no restoration frame was scheduled.
+```
+
+Focused GREEN:
+
+```text
+npm test -- --run src/workspaces/hr/HrWorkspacePage.test.tsx
+1 file passed; 26 tests passed.
+```

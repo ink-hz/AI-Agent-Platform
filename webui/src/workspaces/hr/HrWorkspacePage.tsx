@@ -75,6 +75,10 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const lastChatTargets = useRef(new Map<string, { conversationId: string; positionId?: string }>());
   const freeChatDraftSnapshots = useRef(new Map<string, DirectAgentDraftSnapshot>());
   const intelligenceReferencesByOwner = useRef(new Map<string, HrIntelligenceReference[]>());
+  const panoramaPanelRef = useRef<HTMLDivElement | null>(null);
+  const panoramaRetention = useRef<{ ownerId: string; visited: boolean; scrollY: number | null }>({
+    ownerId: props.account.internal_user_id, visited: false, scrollY: null,
+  });
   const [, setIntelligenceReferenceRevision] = useState(0);
   const [intelligenceReferenceFailure, setIntelligenceReferenceFailure] = useState<string | null>(null);
   const [confirmedPosition, setConfirmedPosition] = useState<{
@@ -97,6 +101,12 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const [conversationRevision, setConversationRevision] = useState(0);
   const [selectedChatPosition, setSelectedChatPosition] = useState<HrPosition | null>(null);
   const draftOwnerId = props.account.internal_user_id;
+  if (panoramaRetention.current.ownerId !== draftOwnerId) {
+    panoramaRetention.current = { ownerId: draftOwnerId, visited: panoramaActive, scrollY: null };
+  } else if (panoramaActive) {
+    panoramaRetention.current.visited = true;
+  }
+  const keepPanoramaHost = panoramaRetention.current.visited;
   const lastChatTarget = lastChatTargets.current.get(draftOwnerId);
   const retainFreeChatDraft = useCallback((snapshot: DirectAgentDraftSnapshot) => {
     freeChatDraftSnapshots.current.set(draftOwnerId, snapshot);
@@ -104,6 +114,35 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const handleConversationSettled = useCallback(() => {
     setConversationRevision((value) => value + 1);
   }, []);
+
+  useEffect(() => {
+    if (!panoramaActive || !panoramaPanelRef.current) return;
+    const retainScroll = () => {
+      if (panoramaPanelRef.current && !panoramaPanelRef.current.hidden) {
+        panoramaRetention.current.scrollY = window.scrollY;
+      }
+    };
+    window.addEventListener("scroll", retainScroll, { passive: true });
+    window.addEventListener("platform:navigate", retainScroll);
+    return () => {
+      window.removeEventListener("scroll", retainScroll);
+      window.removeEventListener("platform:navigate", retainScroll);
+    };
+  }, [draftOwnerId, panoramaActive]);
+
+  useEffect(() => {
+    const retainedScrollY = panoramaRetention.current.ownerId === draftOwnerId
+      ? panoramaRetention.current.scrollY : null;
+    if (!panoramaActive || retainedScrollY === null) return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => window.scrollTo(0, retainedScrollY));
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [draftOwnerId, panoramaActive]);
 
   if (!positionsActive && !panoramaActive && props.conversationId) {
     lastChatTargets.current.set(draftOwnerId, { conversationId: props.conversationId });
@@ -345,7 +384,13 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
       </WorkspaceErrorBoundary>
     </div>}
 
-    {panoramaActive && <div className="hr-workspace-panorama-panel">
+    {keepPanoramaHost && <div
+      aria-hidden={!panoramaActive ? "true" : undefined}
+      className="hr-workspace-panorama-panel"
+      hidden={!panoramaActive}
+      key={draftOwnerId}
+      ref={panoramaPanelRef}
+    >
       <WorkspaceErrorBoundary title="全景分析">
         <HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligenceReference} />
         {intelligenceReferenceFailure && <p className="mission-input-error" role="alert">{intelligenceReferenceFailure}</p>}

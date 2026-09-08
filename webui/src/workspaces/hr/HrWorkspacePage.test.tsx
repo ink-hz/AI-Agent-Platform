@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -48,8 +48,11 @@ vi.mock("./HrPositionWorkspace", async (importOriginal) => ({
 }));
 
 vi.mock("./HrPanoramaWorkspace", () => ({
-  HrPanoramaWorkspace: ({ onSelectReference }: { onSelectReference?: (reference: HrIntelligenceReference) => void }) => <div data-panorama-workspace>
+  HrPanoramaWorkspace: ({ onSelectReference }: { onSelectReference?: (reference: HrIntelligenceReference) => void }) => {
+    const [search, setSearch] = useState("");
+    return <div data-panorama-workspace>
     全景报告
+    <input aria-label="模拟公司搜索" onChange={(event) => setSearch(event.target.value)} value={search} />
     <button onClick={() => onSelectReference?.({
       key: "fact:bundle-7:unit-2:fact-9", bundleId: "bundle-7", companyKey: "acme",
       companyName: "Acme Robotics", label: "海外岗位增长", generatedAt: "2026-09-08T06:00:00Z",
@@ -62,7 +65,8 @@ vi.mock("./HrPanoramaWorkspace", () => ({
       excerpt: "发送期间新增的选择。", sourceUrls: ["https://example.com/jobs/10"],
       unitId: "unit-2", claimType: "fact", localId: "fact-10",
     })} type="button">带入第二条</button>
-  </div>,
+  </div>;
+  },
 }));
 
 vi.mock("../../attachmentApi", async (importOriginal) => {
@@ -270,6 +274,71 @@ describe("HrWorkspacePage", () => {
     expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(workspace);
     expect(container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")?.value).toBe("不应丢失的草稿");
     expect(container.textContent).toContain("待发送简历.pdf");
+  });
+
+  it("keeps the visited company workspace mounted and inaccessible while chat is active", async () => {
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    const panel = container.querySelector<HTMLElement>(".hr-workspace-panorama-panel")!;
+    const search = container.querySelector<HTMLInputElement>("[aria-label='模拟公司搜索']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "Acme");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    expect(container.querySelector(".hr-workspace-panorama-panel")).toBe(panel);
+    expect(panel.hidden).toBe(true);
+    expect(panel.getAttribute("aria-hidden")).toBe("true");
+    expect(search.value).toBe("Acme");
+
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    expect(container.querySelector(".hr-workspace-panorama-panel")).toBe(panel);
+    expect(search.value).toBe("Acme");
+  });
+
+  it("unmounts retained company reading state when the account changes", async () => {
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    const first = container.querySelector<HTMLElement>("[data-panorama-workspace]")!;
+    const search = container.querySelector<HTMLInputElement>("[aria-label='模拟公司搜索']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "Acme");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => root.render(<HrWorkspacePage
+      account={{ ...account, internal_user_id: "other-user" }} panorama
+    />));
+    expect(container.querySelector("[data-panorama-workspace]")).not.toBe(first);
+    expect(container.querySelector<HTMLInputElement>("[aria-label='模拟公司搜索']")?.value).toBe("");
+    expect(container.querySelectorAll("[data-panorama-workspace]")).toHaveLength(1);
+  });
+
+  it("restores company document scroll after navigation reset and cancels scheduled restoration on cleanup", async () => {
+    const frames: FrameRequestCallback[] = [];
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const cancelFrame = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 720 });
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    await act(async () => window.dispatchEvent(new Event("scroll")));
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+
+    const firstRestoreFrame = frames.shift()!;
+    await act(async () => firstRestoreFrame(0));
+    expect(scrollTo).not.toHaveBeenCalledWith(0, 720);
+    const secondRestoreFrame = frames.shift()!;
+    await act(async () => secondRestoreFrame(0));
+    expect(scrollTo).toHaveBeenCalledWith(0, 720);
+
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    await act(async () => root.render(<HrWorkspacePage account={{ ...account, internal_user_id: "other-user" }} />));
+    expect(cancelFrame).toHaveBeenCalled();
+    requestFrame.mockRestore();
   });
 
   it("mounts only the position conversation workspace on a position detail route", async () => {
