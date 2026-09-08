@@ -70,6 +70,23 @@ export function HrPanoramaWorkspace({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailRetry, setDetailRetry] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const requests = useRef(new Set<AbortController>());
+  const clearDeniedContent = (error: unknown) => {
+    if (
+      !(error instanceof HrCompanyIntelligenceApiError) ||
+      ![401, 403].includes(error.status)
+    )
+      return;
+    for (const request of requests.current) request.abort();
+    requests.current.clear();
+    detailCache.current.clear();
+    setDirectory(null);
+    setDetail(null);
+    setLoading(false);
+    setDetailLoading(false);
+    setAccessDenied(true);
+  };
   useEffect(() => {
     let controller: AbortController | null = null;
     const refresh = () => {
@@ -82,20 +99,26 @@ export function HrPanoramaWorkspace({
       controller?.abort();
       const request = new AbortController();
       controller = request;
+      requests.current.add(request);
       setLoading(true);
       setFailure(null);
       api
         .companies(request.signal)
         .then((value) => {
-          if (!request.signal.aborted) setDirectory(value);
+          if (!request.signal.aborted) {
+            setDirectory(value);
+            setAccessDenied(false);
+          }
         })
         .catch((error) => {
           if (!request.signal.aborted) {
             setDirectory(null);
             setFailure(failureText(error));
+            clearDeniedContent(error);
           }
         })
         .finally(() => {
+          requests.current.delete(request);
           if (!request.signal.aborted) setLoading(false);
         });
     };
@@ -202,7 +225,12 @@ export function HrPanoramaWorkspace({
       ),
   );
   useEffect(() => {
-    if (!selectedCompanyKey || !requestedBundleId || companyMissing) {
+    if (
+      !selectedCompanyKey ||
+      !requestedBundleId ||
+      companyMissing ||
+      accessDenied
+    ) {
       setDetailLoading(false);
       if (companyMissing) setFailure("当前情报不包含这家公司。");
       return;
@@ -215,6 +243,7 @@ export function HrPanoramaWorkspace({
       return;
     }
     const controller = new AbortController();
+    requests.current.add(controller);
     setDetailLoading(true);
     setFailure(null);
     api
@@ -230,13 +259,25 @@ export function HrPanoramaWorkspace({
         if (!controller.signal.aborted) {
           setDetail(null);
           setFailure(failureText(error));
+          clearDeniedContent(error);
         }
       })
       .finally(() => {
+        requests.current.delete(controller);
         if (!controller.signal.aborted) setDetailLoading(false);
       });
-    return () => controller.abort();
-  }, [api, requestedBundleId, selectedCompanyKey, companyMissing, detailRetry]);
+    return () => {
+      controller.abort();
+      requests.current.delete(controller);
+    };
+  }, [
+    api,
+    requestedBundleId,
+    selectedCompanyKey,
+    companyMissing,
+    detailRetry,
+    accessDenied,
+  ]);
   const filtered =
     directory?.items.filter((company) =>
       `${company.canonicalName} ${company.aliases.join(" ")}`

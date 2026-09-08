@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account } from "../../auth";
 import { platformPath } from "../../auth";
 import { HrCompanyIntelligenceApiError } from "../../hrCompanyIntelligenceApi";
@@ -73,6 +73,24 @@ function TopicWorkspaceContent({
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
+  const denialLatched = useRef(false);
+  const requests = useRef(new Set<AbortController>());
+  const deny = (error: unknown) => {
+    denialLatched.current = true;
+    for (const request of requests.current) request.abort();
+    requests.current.clear();
+    setDenied(true);
+    setDirectory(null);
+    setDetail(null);
+    setLoading(false);
+    setDetailLoading(false);
+    setDirectoryError(failureText(error));
+  };
+  const retry = () => {
+    denialLatched.current = false;
+    setDenied(false);
+    setRefresh((value) => value + 1);
+  };
   useEffect(() => {
     const sync = () => {
       if (!/\/hr\/panorama(?:\/|$)/.test(location.pathname)) return;
@@ -87,7 +105,9 @@ function TopicWorkspaceContent({
     };
   }, []);
   useEffect(() => {
+    if (denialLatched.current) return;
     const controller = new AbortController();
+    requests.current.add(controller);
     setLoading(true);
     setDirectoryError(null);
     api
@@ -95,23 +115,22 @@ function TopicWorkspaceContent({
       .then((value) => {
         if (!controller.signal.aborted) {
           setDirectory(value);
-          setDenied(false);
         }
       })
       .catch((error) => {
         if (!controller.signal.aborted) {
           setDirectory(null);
           setDirectoryError(failureText(error));
-          if (authError(error)) {
-            setDenied(true);
-            setDetail(null);
-          }
+          if (authError(error)) deny(error);
         }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      requests.current.delete(controller);
+    };
   }, [api, refresh]);
   const bundleId =
     selection.bundleId ??
@@ -130,6 +149,7 @@ function TopicWorkspaceContent({
       return;
     }
     const controller = new AbortController();
+    requests.current.add(controller);
     setDetailLoading(true);
     api
       .topic(selection.topicId, bundleId, controller.signal)
@@ -157,17 +177,16 @@ function TopicWorkspaceContent({
       .catch((error) => {
         if (!controller.signal.aborted) {
           setDetailError(failureText(error));
-          if (authError(error)) {
-            setDenied(true);
-            setDirectory(null);
-            setDirectoryError(failureText(error));
-          }
+          if (authError(error)) deny(error);
         }
       })
       .finally(() => {
         if (!controller.signal.aborted) setDetailLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      requests.current.delete(controller);
+    };
   }, [api, selection.topicId, bundleId, denied, topicMissing, detailRetry]);
   const navigate = (topicId: string | null) => {
     if (topicId && !directory) return;
@@ -210,7 +229,7 @@ function TopicWorkspaceContent({
         {directoryError && (
           <p role="alert">
             {directoryError}
-            <button type="button" onClick={() => setRefresh((v) => v + 1)}>
+            <button type="button" onClick={retry}>
               重试
             </button>
           </p>
@@ -582,7 +601,7 @@ function HrTopicDetail({
                 key={id}
                 href={`#topic-claim-${relation.unitId}-${id}`}
               >
-                定位结论 {id}
+                查看对应结论
               </a>
             ))}
           </article>

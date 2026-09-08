@@ -75,14 +75,12 @@ const detail: TopicDetail = {
 const fakeApi = (
   overrides: Partial<HrTopicIntelligenceApi> = {},
 ): HrTopicIntelligenceApi => ({
-  topics: vi
-    .fn()
-    .mockResolvedValue({
-      bundleId: detail.bundleId,
-      generatedAt: detail.generatedAt,
-      state: "available",
-      items: [detail.topic],
-    }),
+  topics: vi.fn().mockResolvedValue({
+    bundleId: detail.bundleId,
+    generatedAt: detail.generatedAt,
+    state: "available",
+    items: [detail.topic],
+  }),
   topic: vi.fn().mockResolvedValue(detail),
   ...overrides,
 });
@@ -189,14 +187,12 @@ describe("topic workspace", () => {
         <HrTopicWorkspace
           account={account}
           api={fakeApi({
-            topics: vi
-              .fn()
-              .mockResolvedValue({
-                bundleId: detail.bundleId,
-                generatedAt: detail.generatedAt,
-                state: "metadata_missing",
-                items: [],
-              }),
+            topics: vi.fn().mockResolvedValue({
+              bundleId: detail.bundleId,
+              generatedAt: detail.generatedAt,
+              state: "metadata_missing",
+              items: [],
+            }),
           })}
         />,
       ),
@@ -285,6 +281,55 @@ describe("topic workspace", () => {
       expect.any(AbortSignal),
     );
   });
+  it("latches a pinned detail denial against a later directory success until explicit retry", async () => {
+    history.replaceState(
+      {},
+      "",
+      `/hr/panorama?view=topics&topic=research&bundle_id=${detail.bundleId}`,
+    );
+    const directory = {
+      bundleId: detail.bundleId,
+      generatedAt: detail.generatedAt,
+      state: "available" as const,
+      items: [detail.topic],
+    };
+    let resolveDirectory!: (value: typeof directory) => void;
+    const topics = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveDirectory = resolve;
+          }),
+      )
+      .mockResolvedValue(directory);
+    const topic = vi
+      .fn()
+      .mockRejectedValueOnce(new HrCompanyIntelligenceApiError(403))
+      .mockResolvedValue(detail);
+    await act(async () =>
+      root.render(
+        <HrTopicWorkspace account={account} api={fakeApi({ topics, topic })} />,
+      ),
+    );
+    expect(container.textContent).toContain("当前账号无法查看");
+    await act(async () => resolveDirectory(directory));
+    await settle();
+    expect(container.textContent).toContain("当前账号无法查看");
+    expect(container.textContent).not.toContain("人才布局");
+    expect(topic).toHaveBeenCalledTimes(1);
+    await act(async () => window.dispatchEvent(new Event("platform:navigate")));
+    expect(container.textContent).not.toContain("人才布局");
+    expect(topic).toHaveBeenCalledTimes(1);
+    await click("重试");
+    expect(container.querySelector(".hr-topic-detail h2")?.textContent).toBe(
+      "人才布局",
+    );
+    expect(topic).toHaveBeenCalledTimes(2);
+    expect(container.querySelector(".hr-topic-claim-link")?.textContent).toBe(
+      "查看对应结论",
+    );
+  });
   it.each([401, 403])(
     "clears previously visible private content after auth failure %s",
     async (status) => {
@@ -325,12 +370,10 @@ describe("topic workspace", () => {
         <HrTopicWorkspace
           account={account}
           api={fakeApi({
-            topic: vi
-              .fn()
-              .mockResolvedValue({
-                ...detail,
-                topic: { ...detail.topic, summary: "招".repeat(5000) },
-              }),
+            topic: vi.fn().mockResolvedValue({
+              ...detail,
+              topic: { ...detail.topic, summary: "招".repeat(5000) },
+            }),
           })}
           onSelectReference={select}
         />,

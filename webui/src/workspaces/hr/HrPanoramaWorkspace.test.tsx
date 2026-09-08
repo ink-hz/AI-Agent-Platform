@@ -9,6 +9,7 @@ import type {
   HrCompanyIntelligenceApi,
 } from "../../hrCompanyIntelligenceTypes";
 import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
+import { HrCompanyIntelligenceApiError } from "../../hrCompanyIntelligenceApi";
 
 const account: Account = {
   internal_user_id: "member",
@@ -255,14 +256,12 @@ describe("HrPanoramaWorkspace", () => {
           account={account}
           api={fakeApi()}
           topicApi={{
-            topics: vi
-              .fn()
-              .mockResolvedValue({
-                bundleId,
-                generatedAt: detail.generatedAt,
-                state: "metadata_missing",
-                items: [],
-              }),
+            topics: vi.fn().mockResolvedValue({
+              bundleId,
+              generatedAt: detail.generatedAt,
+              state: "metadata_missing",
+              items: [],
+            }),
             topic: vi.fn(),
           }}
         />,
@@ -296,36 +295,30 @@ describe("HrPanoramaWorkspace", () => {
       limitations: ["样本有限"],
       summary: "专题正文摘要",
     };
-    const company = vi
-      .fn()
-      .mockResolvedValue({
-        ...detail,
-        relatedTopics: [
-          { topicId: "study", title: "人才布局", summary: "专题正文摘要" },
-        ],
-      });
+    const company = vi.fn().mockResolvedValue({
+      ...detail,
+      relatedTopics: [
+        { topicId: "study", title: "人才布局", summary: "专题正文摘要" },
+      ],
+    });
     const topicApi = {
-      topics: vi
-        .fn()
-        .mockResolvedValue({
-          bundleId,
-          generatedAt: detail.generatedAt,
-          state: "available" as const,
-          items: [topic],
-        }),
-      topic: vi
-        .fn()
-        .mockResolvedValue({
-          bundleId,
-          generatedAt: detail.generatedAt,
-          topic,
-          units: detail.units.map((unit) => ({
-            ...unit,
-            kind: "topic",
-            scopeKey: "study",
-          })),
-          companies: [{ companyKey: "acme", canonicalName: "艾克米" }],
-        }),
+      topics: vi.fn().mockResolvedValue({
+        bundleId,
+        generatedAt: detail.generatedAt,
+        state: "available" as const,
+        items: [topic],
+      }),
+      topic: vi.fn().mockResolvedValue({
+        bundleId,
+        generatedAt: detail.generatedAt,
+        topic,
+        units: detail.units.map((unit) => ({
+          ...unit,
+          kind: "topic",
+          scopeKey: "study",
+        })),
+        companies: [{ companyKey: "acme", canonicalName: "艾克米" }],
+      }),
     };
     await act(async () =>
       root.render(
@@ -906,6 +899,86 @@ describe("HrPanoramaWorkspace", () => {
       expect(container.textContent).toContain("选择一家公司开始阅读");
     },
   );
+  it("clears company reading and cached content after access is revoked", async () => {
+    const companies = vi
+      .fn()
+      .mockResolvedValueOnce({
+        bundleId,
+        generatedAt: detail.generatedAt,
+        items: [summary],
+        topics: { state: "available" },
+      })
+      .mockRejectedValue(new HrCompanyIntelligenceApiError(403));
+    const company = vi.fn().mockResolvedValue(detail);
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace
+          account={account}
+          api={fakeApi({ companies, company })}
+        />,
+      ),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click(),
+    );
+    expect(container.textContent).toContain("研发能力可能继续扩张");
+    await act(async () => window.dispatchEvent(new Event("platform:navigate")));
+    expect(container.querySelector(".hr-company-detail")).toBeNull();
+    expect(container.textContent).toContain("当前账号无法查看");
+    await act(async () => {
+      history.replaceState({}, "", "/hr/panorama");
+      window.dispatchEvent(new Event("popstate"));
+    });
+    await act(async () => {
+      history.replaceState(
+        {},
+        "",
+        `/hr/panorama?company=acme&bundle_id=${bundleId}`,
+      );
+      window.dispatchEvent(new Event("popstate"));
+    });
+    expect(container.querySelector(".hr-company-detail")).toBeNull();
+    expect(company).toHaveBeenCalledTimes(1);
+  });
+  it("invalidates a pending company directory when pinned detail denies access", async () => {
+    history.replaceState(
+      {},
+      "",
+      `/hr/panorama?company=acme&bundle_id=${bundleId}`,
+    );
+    const directory = {
+      bundleId,
+      generatedAt: detail.generatedAt,
+      items: [summary],
+      topics: { state: "available" },
+    };
+    let resolveDirectory!: (value: typeof directory) => void;
+    const companies = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDirectory = resolve;
+        }),
+    );
+    const company = vi
+      .fn()
+      .mockRejectedValue(new HrCompanyIntelligenceApiError(403));
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace
+          account={account}
+          api={fakeApi({ companies, company })}
+        />,
+      ),
+    );
+    expect(companies.mock.calls[0][0].aborted).toBe(true);
+    await act(async () => resolveDirectory(directory));
+    expect(container.querySelector(".hr-company-detail")).toBeNull();
+    expect(container.querySelector('[data-company-key="acme"]')).toBeNull();
+    expect(container.textContent).toContain("当前账号无法查看");
+    expect(company).toHaveBeenCalledTimes(1);
+  });
   it("retries a failed company detail when its directory entry is clicked again", async () => {
     const company = vi
       .fn()
