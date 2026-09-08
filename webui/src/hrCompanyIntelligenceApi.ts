@@ -167,13 +167,16 @@ function parseMetrics(value: unknown): CompanyMetrics | null {
 
 export function parseCompanyDetail(value: unknown): CompanyDetail {
   const item = record(value);
-  return {
+  const parsed = {
     bundleId: uuid(item.bundle_id),
     generatedAt: date(item.generated_at),
     company: parseSummary(item.company),
     units: array(item.units, parseUnit),
     metrics: parseMetrics(item.metrics),
   };
+  if (parsed.units.some((unit) => unit.scopeKey !== parsed.company.companyKey))
+    invalid();
+  return parsed;
 }
 
 function parseJob(value: unknown): CompanyJob {
@@ -194,7 +197,7 @@ function parseJob(value: unknown): CompanyJob {
 
 export function parseCompanyJobs(value: unknown): CompanyJobsPage {
   const item = record(value);
-  return {
+  const parsed = {
     bundleId: uuid(item.bundle_id),
     companyKey: string(item.company_key),
     items: array(item.items, parseJob),
@@ -202,6 +205,9 @@ export function parseCompanyJobs(value: unknown): CompanyJobsPage {
     offset: number(item.offset),
     limit: number(item.limit),
   };
+  if (parsed.items.some((job) => job.companyKey !== parsed.companyKey))
+    invalid();
+  return parsed;
 }
 
 export class HrCompanyIntelligenceApiError extends Error {
@@ -249,7 +255,13 @@ export function createHrCompanyIntelligenceApi(
       );
       if (!response.ok)
         throw new HrCompanyIntelligenceApiError(response.status);
-      return parseCompanyDetail(await response.json());
+      const parsed = parseCompanyDetail(await response.json());
+      if (
+        parsed.company.companyKey !== companyKey ||
+        (bundleId && parsed.bundleId !== bundleId)
+      )
+        invalid();
+      return parsed;
     },
     async jobs(companyKey, bundleId, filters = {}, signal) {
       const params = new URLSearchParams({
@@ -266,7 +278,10 @@ export function createHrCompanyIntelligenceApi(
       );
       if (!response.ok)
         throw new HrCompanyIntelligenceApiError(response.status);
-      return parseCompanyJobs(await response.json());
+      const parsed = parseCompanyJobs(await response.json());
+      if (parsed.companyKey !== companyKey || parsed.bundleId !== bundleId)
+        invalid();
+      return parsed;
     },
     parseCompanyDetail,
   };

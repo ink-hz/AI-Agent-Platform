@@ -181,6 +181,37 @@
 .hr-company-jobs h3 {
   margin: 0;
 }
+.hr-company-metrics > summary {
+  cursor: pointer;
+  color: #264f63;
+}
+.hr-company-metrics > summary span {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.hr-company-metrics > summary strong {
+  font-size: 18px;
+}
+.hr-company-metrics > summary small {
+  color: #657b8d;
+  font-weight: 500;
+}
+.hr-company-metric-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.hr-company-metric-groups > section {
+  padding: 12px;
+  border-radius: 10px;
+  background: #f7f9fa;
+}
+.hr-company-metric-groups h4 {
+  margin: 0;
+  color: #385369;
+}
 .hr-company-metrics > p,
 .hr-company-jobs header p {
   margin: 5px 0;

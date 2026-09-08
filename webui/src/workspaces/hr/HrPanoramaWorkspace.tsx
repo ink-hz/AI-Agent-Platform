@@ -22,6 +22,14 @@ function failureText(error: unknown) {
     return "当前账号无法查看 HR 情报。";
   return "HR 情报暂时无法读取，请稍后重试。";
 }
+const coverageLabel = (state: string) =>
+  ({
+    succeeded: "已覆盖",
+    partial: "部分覆盖",
+    failed: "暂不可用",
+    not_observed: "尚未观察",
+    empty_confirmed: "已核验，未发现",
+  })[state] ?? state;
 export function HrPanoramaWorkspace({
   account,
   api: injectedApi,
@@ -181,7 +189,7 @@ export function HrPanoramaWorkspace({
                     {company.summary && <span>{company.summary}</span>}
                     {company.coverage && (
                       <small>
-                        {company.coverage.state}
+                        {coverageLabel(company.coverage.state)}
                         {company.coverage.observedAt
                           ? ` · ${new Date(company.coverage.observedAt).toLocaleDateString("zh-CN")}`
                           : ""}
@@ -210,6 +218,7 @@ export function HrPanoramaWorkspace({
                   返回公司目录
                 </button>
                 <HrCompanyDetail
+                  key={`${detail.bundleId}:${detail.company.companyKey}`}
                   detail={detail}
                   api={api}
                   onSelectReference={onSelectReference}

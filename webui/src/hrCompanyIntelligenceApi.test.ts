@@ -53,6 +53,7 @@ describe("HR company intelligence parser", () => {
     ).toBe(true);
     expect(parsedMissing.metrics).toBeNull();
     expect(parsedJobs.items).toHaveLength(jobsFixture.items.length);
+    expect(parsedJobs.items[0].requirementExcerpt).toBe(jobsFixture.items[0].requirement_excerpt);
   });
   it("parses the independent company directory without inventing missing counts", () => {
     const parsed = parseCompanyDirectory(directory);
@@ -100,6 +101,18 @@ describe("HR company intelligence parser", () => {
     const invalidMetrics = structuredClone(detailFixture) as any;
     invalidMetrics.metrics.directions = { 算法: "很多" };
     expect(() => parseCompanyDetail(invalidMetrics)).toThrow(
+      "invalid company intelligence response",
+    );
+  });
+  it("rejects units and jobs belonging to another company", () => {
+    const wrongUnit = structuredClone(detailFixture) as any;
+    wrongUnit.units[0].scope_key = "another-company";
+    expect(() => parseCompanyDetail(wrongUnit)).toThrow(
+      "invalid company intelligence response",
+    );
+    const wrongJob = structuredClone(jobsFixture) as any;
+    wrongJob.items[0].company_key = "another-company";
+    expect(() => parseCompanyJobs(wrongJob)).toThrow(
       "invalid company intelligence response",
     );
   });
@@ -165,5 +178,16 @@ describe("HR company intelligence API", () => {
       `/api/hr/panorama/companies/acme?bundle_id=${bundleId}`,
       `/api/hr/panorama/companies/acme/jobs?bundle_id=${bundleId}&offset=25&limit=25&location=%E4%B8%8A%E6%B5%B7&status=open`,
     ]);
+  });
+  it("rejects a response that does not match the requested bundle", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json(detailFixture),
+    );
+    await expect(
+      createHrCompanyIntelligenceApi("csrf").company(
+        detailFixture.company.company_key,
+        "22222222-2222-4222-8222-222222222222",
+      ),
+    ).rejects.toThrow("invalid company intelligence response");
   });
 });

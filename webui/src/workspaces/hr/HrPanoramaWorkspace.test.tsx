@@ -235,7 +235,7 @@ describe("HrPanoramaWorkspace", () => {
       expect.objectContaining({ offset: 0, limit: 25 }),
       expect.any(AbortSignal),
     );
-    expect(container.textContent).toContain("研发投入保持活跃");
+    expect(container.textContent).toContain("研发能力可能继续扩张");
     expect(container.textContent).toContain("岗位暂时无法读取");
     expect(container.textContent).toContain("重试");
   });
@@ -299,20 +299,16 @@ describe("HrPanoramaWorkspace", () => {
       companyKey: "other",
       canonicalName: "另一家公司",
     };
-    const companies = vi
-      .fn()
-      .mockResolvedValue({
-        bundleId,
-        generatedAt: detail.generatedAt,
-        items: [summary, other],
-        topics: { state: "blocked" },
-      });
-    const company = vi
-      .fn()
-      .mockImplementation(async (key: string) => ({
-        ...detail,
-        company: key === "other" ? other : summary,
-      }));
+    const companies = vi.fn().mockResolvedValue({
+      bundleId,
+      generatedAt: detail.generatedAt,
+      items: [summary, other],
+      topics: { state: "blocked" },
+    });
+    const company = vi.fn().mockImplementation(async (key: string) => ({
+      ...detail,
+      company: key === "other" ? other : summary,
+    }));
     await act(async () =>
       root.render(
         <HrPanoramaWorkspace
@@ -337,5 +333,127 @@ describe("HrPanoramaWorkspace", () => {
     expect(container.querySelector(".hr-company-detail h2")?.textContent).toBe(
       "艾克米",
     );
+  });
+  it("places analysis before collapsed localized statistics", async () => {
+    const withMetrics = {
+      ...detail,
+      metrics: {
+        jobCount: 2,
+        directions: { 算法: 2 },
+        secondaryDirections: { "算法/SLAM": 1 },
+        locations: { 上海: 2 },
+        tracks: { campus: 1, social: 1 },
+        seniority: { graduate: 1, senior: 1 },
+        jobFamilies: { research_development: 2 },
+        skills: { Python: 2 },
+        sampleSnapshotIds: [],
+      },
+    };
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace
+          account={account}
+          api={fakeApi({ company: vi.fn().mockResolvedValue(withMetrics) })}
+        />,
+      ),
+    );
+    await settle();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click(),
+    );
+    await settle();
+    const text = container.textContent ?? "";
+    expect(text.indexOf("核心研判")).toBeLessThan(text.indexOf("招聘结构"));
+    const metrics = container.querySelector<HTMLDetailsElement>(
+      ".hr-company-metrics",
+    )!;
+    expect(metrics.open).toBe(false);
+    expect(metrics.textContent).toContain("校招");
+    expect(metrics.textContent).toContain("研发");
+    expect(metrics.textContent).not.toContain("research_development");
+    expect(container.querySelector(".hr-company-unit h3")?.textContent).toBe(
+      "核心研判",
+    );
+  });
+  it("shows missing coverage and rejects an oversized reference before callback", async () => {
+    const onSelectReference = vi.fn();
+    const oversized = {
+      ...detail,
+      company: { ...summary, coverage: null, summary: "长".repeat(13000) },
+    };
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace
+          account={account}
+          api={fakeApi({ company: vi.fn().mockResolvedValue(oversized) })}
+          onSelectReference={onSelectReference}
+        />,
+      ),
+    );
+    await settle();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click(),
+    );
+    await settle();
+    expect(container.textContent).toContain("资料覆盖情况未提供");
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "带入公司情报")!
+        .click(),
+    );
+    expect(onSelectReference).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("所选材料过长");
+  });
+  it("keeps job duties and requirements reachable without flooding the reading flow", async () => {
+    const jobs = vi.fn().mockResolvedValue({
+      bundleId,
+      companyKey: "acme",
+      items: [
+        {
+          jobId: "job-1",
+          companyKey: "acme",
+          title: "算法工程师",
+          location: "上海",
+          status: "open",
+          dutyExcerpt: "负责算法开发",
+          requirementExcerpt: "熟悉 Python",
+          sourceUrl: "https://example.com/job",
+          observedAt: detail.generatedAt,
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    });
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace account={account} api={fakeApi({ jobs })} />,
+      ),
+    );
+    await settle();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click(),
+    );
+    await settle();
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "查看公开岗位")!
+        .click(),
+    );
+    await settle();
+    const content = [
+      ...container.querySelectorAll<HTMLDetailsElement>("details"),
+    ].find((item) => item.textContent?.includes("任职要求"))!;
+    expect(content.open).toBe(false);
+    expect(content.textContent).toContain("岗位职责：负责算法开发");
+    expect(content.textContent).toContain("任职要求：熟悉 Python");
+    expect(container.textContent).toContain("开放");
+    expect(container.textContent).not.toContain(" · open");
   });
 });
