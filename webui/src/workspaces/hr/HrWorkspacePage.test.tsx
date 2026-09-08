@@ -396,6 +396,19 @@ describe("HrWorkspacePage", () => {
     expect(container.textContent).not.toContain("海外岗位增长");
   });
 
+  it("does not route a second account to the first account's retained chat when selecting intelligence", async () => {
+    window.history.replaceState({}, "", "/hr/conversations/c-7");
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    await act(async () => root.render(<HrWorkspacePage
+      account={{ ...account, internal_user_id: "other-user" }} panorama
+    />));
+    window.history.replaceState({}, "", "/hr/panorama");
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "带入对话")?.click());
+
+    expect(window.location.pathname).toBe("/hr/");
+  });
+
   it("serializes selected intelligence into one frozen new-conversation request and clears it on success", async () => {
     const send = vi.fn().mockRejectedValueOnce(new TypeError("offline")).mockResolvedValueOnce({
       conversation: {
@@ -423,7 +436,7 @@ describe("HrWorkspacePage", () => {
     expect(send).toHaveBeenCalledTimes(2);
     const input = vi.mocked(startConversation).mock.calls[0]?.[0];
     expect(input).toEqual(expect.stringContaining("请分析\n\n---\n"));
-    expect(input).toEqual(expect.stringContaining("bundle_id: bundle-7"));
+    expect(input).toEqual(expect.stringContaining('bundle_id: "bundle-7"'));
     expect(container.textContent).not.toContain("海外岗位增长");
   });
 

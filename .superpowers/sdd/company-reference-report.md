@@ -44,3 +44,26 @@ The jsdom suite prints its existing `scrollTo` and localStorage environment warn
 - Confirmed formatter output contains bundle/company/unit/local identities where supplied and encodes source URLs as data under an explicit non-instruction preamble.
 - Confirmed no Task 2 reading component, API/parser, backend, migration, runtime, or production path was edited for this task.
 - Browser acceptance and production acceptance were not performed here. The parent integration task owns real HTTP persistence/readback validation; this task's evidence is frontend component integration and production build only.
+
+## Independent review follow-up
+
+Two reviewer findings were reproduced with focused failing tests:
+
+1. Switching from account A's conversation to account B while the panorama was open allowed B's explicit selection to reuse A's `lastChatTarget`.
+2. Scalar identity fields other than `reference_key` could inject line delimiters into the serialized reference record.
+
+The host now keeps last chat targets in an `internal_user_id` keyed map, matching reference and draft ownership. The formatter now applies `JSON.stringify` to every scalar string, including bundle, company, generation time, unit, claim type, and local identity. The aggregate 12 KiB budget is still measured from the final encoded reference material.
+
+Focused RED command:
+
+```text
+npm test -- --run src/workspaces/hr/hrIntelligenceReference.test.ts src/workspaces/hr/HrWorkspacePage.test.tsx
+2 expected failures: raw delimiter injection and cross-account retained-chat routing.
+```
+
+Focused GREEN command:
+
+```text
+npm test -- --run src/workspaces/hr/hrIntelligenceReference.test.ts src/workspaces/hr/HrWorkspacePage.test.tsx
+2 files passed; 27 tests passed.
+```

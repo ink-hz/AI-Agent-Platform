@@ -502,7 +502,7 @@ describe("ConversationPage", () => {
     expect(send).toHaveBeenCalledTimes(2);
     const submitted = createMessageSubmission.mock.calls[0]?.[1] as string;
     expect(submitted).toContain("请继续分析\n\n---\n");
-    expect(submitted).toContain("bundle_id: bundle-7");
+    expect(submitted).toContain('bundle_id: "bundle-7"');
     expect(onSubmitted).toHaveBeenCalledWith([reference.key]);
 
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
