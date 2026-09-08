@@ -116,4 +116,19 @@ describe("PublicProgress", () => {
     expect(container.textContent).not.toContain("正在分析需求");
     expect(container.textContent).not.toContain("completed");
   });
+
+  it.each([false, true])("limits progress history only for worker-owned turns (worker=%s)", async (workerOwned) => {
+    const summaries = Array.from({ length: 9 }, (_, index) => `公开进度 ${index + 1}`);
+    await act(async () => root.render(<PublicProgress
+      active
+      assistantLabel="HR Agent"
+      workerOwned={workerOwned}
+      events={summaries.map((summary, index) => event(index + 1, "agent.work_update", { summary }))}
+      mode="direct_agent"
+      stopButton={null}
+    />));
+
+    expect([...container.querySelectorAll("li")].map(node => node.textContent))
+      .toEqual(workerOwned ? summaries.slice(-6) : summaries);
+  });
 });

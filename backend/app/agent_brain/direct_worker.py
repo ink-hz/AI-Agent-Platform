@@ -5,7 +5,12 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID, uuid4
 
-from .conversation_context import ConversationContextError
+import psycopg
+
+from .conversation_context import (
+    ConversationContextError,
+    ConversationContextStorageUnavailable,
+)
 from .direct_command_binding import BindingRejected
 from .turn_attempts import Lease, LeaseRejected
 
@@ -25,40 +30,72 @@ class DirectWorker:
         )
 
     def _prepare(self, lease):
-        try:
-            self.adapter.prepare(lease)
-            return
-        except ConversationContextError as error:
-            reason = (
-                "material_execution_unavailable"
-                if str(error) == "material_execution_unavailable"
-                else "context_unavailable"
-            )
-        except BindingRejected:
-            reason = "context_changed_before_dispatch"
-        except LeaseRejected:
-            return
+        for retry in range(3):
+            try:
+                self.adapter.prepare(lease)
+                return None
+            except ConversationContextStorageUnavailable:
+                # Only the classified read phase may be retried. This wait owns
+                # one bounded preparation slot, never the renewal thread.
+                if retry < 2:
+                    threading.Event().wait(0.25 * (2 ** retry))
+                    continue
+                return "context_storage_unavailable"
+            except ConversationContextError as error:
+                return (
+                    "material_execution_unavailable"
+                    if str(error) == "material_execution_unavailable"
+                    else "context_unavailable"
+                )
+            except BindingRejected:
+                return "context_changed_before_dispatch"
+            except LeaseRejected:
+                return None
+            except psycopg.Error:
+                # An uncertain command write must not repeat prepare. The
+                # existing unoffered fence decides whether failure is safe.
+                return "context_storage_unavailable"
+
+    def _finish_failed_prepare(self, lease, reason):
         try:
             # Only an unoffered command can be closed here. An expired writer or
             # an uncertain dispatch must instead follow durable reconciliation.
             self.adapter.failed_prepare(lease, reason)
+        except psycopg.Error:
+            # Keep the decision in its existing Future until storage recovers;
+            # never report a terminal state that did not durably commit.
+            return reason
         except (LeaseRejected, BindingRejected):
             pass
+        return None
 
     def tick(self) -> int:
         processed = 0
+        failures = {}
         for attempt_id, pending in tuple(self._preparations.items()):
             if pending.done():
-                del self._preparations[attempt_id]
-                pending.result()
+                reason = pending.result()
+                if reason is None:
+                    del self._preparations[attempt_id]
+                else:
+                    failures[attempt_id] = reason
         # Renewal and recovery have independent bounded work before new dispatch.
         with self.attempts.transaction() as connection:
             rows = connection.execute(
-                "select * from platform_control.turn_attempts where executor_kind='worker_direct' and executor_id=%s and status in ('running','reconciling') order by updated_at,attempt_id limit %s",
+                "select *,lease_expires_at>clock_timestamp() as lease_live from platform_control.turn_attempts where executor_kind='worker_direct' and executor_id=%s and status in ('running','reconciling') order by updated_at,attempt_id limit %s",
                 (str(self.executor_id), self.limit),
             ).fetchall()
         leases = []
+        rejected_ids = set()
         for row in rows:
+            if (
+                row["status"] == "running" and row["transport_run_id"] is None
+                and row["attempt_id"] not in self._preparations and row["lease_live"]
+            ):
+                # A lost claim response has no preparation Future/admission.
+                # Do not adopt it or renew forever: existing expiry recovery
+                # will decide whether it was ever offered.
+                continue
             try:
                 leases.append(
                     self.attempts.renew(
@@ -74,15 +111,28 @@ class DirectWorker:
                     )
                 )
             except LeaseRejected:
+                rejected_ids.add(row["attempt_id"])
+                continue
+            except psycopg.Error:
                 continue
         for lease in leases:
             try:
+                if lease.attempt_id in failures:
+                    self._preparations[lease.attempt_id] = self._pool.submit(
+                        self._finish_failed_prepare, lease, failures[lease.attempt_id]
+                    )
+                    continue
                 self.adapter.reconcile(lease)
                 processed += 1
-            except (LeaseRejected, BindingRejected):
+            except (LeaseRejected, BindingRejected, psycopg.Error):
                 continue
+        # A cancelled/replaced lease must not leave a completed local decision
+        # occupying capacity after its durable owner has gone away.
+        owned_ids = {row["attempt_id"] for row in rows} - rejected_ids
+        for attempt_id in failures.keys() - owned_ids:
+            del self._preparations[attempt_id]
         # Active leases AND still-running preparations consume bounded capacity.
-        occupied = {row["attempt_id"] for row in rows} | self._preparations.keys()
+        occupied = owned_ids | self._preparations.keys()
         for _ in range(max(0, self.limit - len(occupied))):
             lease = self.attempts.claim_due(self.executor_id, self.lease_seconds)
             if lease is None:
@@ -105,7 +155,12 @@ class DirectWorker:
     def run(self, stopping):
         try:
             while not stopping.is_set():
-                self.tick()
+                try:
+                    self.tick()
+                except psycopg.Error:
+                    # Storage loss is not evidence that an executor stopped.
+                    # Keep local decisions and retry the next bounded cycle.
+                    pass
                 stopping.wait(0.25)
         finally:
             self.close()

@@ -56,8 +56,9 @@ export function PublicProgress({
 }: PublicProgressProps) {
   if (mode === "direct_agent") {
     if (!active) return null;
-    const updates = directUpdates(workerOwned
-      ? events.filter((event) => event.event_type !== "agent.thinking_summary") : events, assistantLabel).slice(-6);
+    const allUpdates = directUpdates(workerOwned
+      ? events.filter((event) => event.event_type !== "agent.thinking_summary") : events, assistantLabel);
+    const updates = workerOwned ? allUpdates.slice(-6) : allUpdates;
     return <section className="conversation-running conversation-running-direct" aria-live="polite" role="status">
       <div>
         <strong>{reconciling ? "正在确认原执行已停止，不会自动重跑" : `${assistantLabel} 正在处理`}</strong>

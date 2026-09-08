@@ -77,6 +77,13 @@ class ConversationContextTooLarge(ConversationContextError):
         super().__init__("conversation context exceeds limit")
 
 
+class ConversationContextStorageUnavailable(ConversationContextError):
+    """A failed context read, before command preparation or model dispatch."""
+
+    def __init__(self) -> None:
+        super().__init__("conversation context storage unavailable")
+
+
 class ConversationSummaryProtocolError(ConversationContextError):
     def __init__(self) -> None:
         super().__init__("conversation summary protocol invalid")
@@ -412,7 +419,17 @@ class ConversationContextBuilder:
         Reuse the existing provider/attachment authority; only old history is
         bounded. Current input, workflow, summary and selected materials remain.
         """
-        context, _, _ = self._load(conversation_id, turn_id, direct_limit=64)
+        try:
+            context, _, _ = self._load(conversation_id, turn_id, direct_limit=64)
+        except (psycopg.OperationalError, psycopg.InterfaceError):
+            raise ConversationContextStorageUnavailable() from None
+        except ConversationContextError:
+            raise
+        except (
+            ConversationRepositoryError, ContentCryptoError, KeyError, TypeError,
+            UnicodeError, ValueError, psycopg.Error,
+        ):
+            raise ConversationContextError() from None
         messages = context.messages
         size = context.estimated_utf8_bytes
         while size > MAX_CONTEXT_BYTES and len(messages) > 1:
