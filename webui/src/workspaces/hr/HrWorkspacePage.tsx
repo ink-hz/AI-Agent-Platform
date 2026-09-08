@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Account } from "../../auth";
 import { PlatformLink } from "../../components/PlatformLink";
-import type { Conversation, ConversationPage } from "../../conversationTypes";
+import type { Conversation, ConversationPage, HrKnowledgeSelection } from "../../conversationTypes";
 import { createHrApi } from "../../hrApi";
 import { createHrR12Api } from "../../hrR12Api";
 import type { HrContextVersion, HrPositionSection } from "../../hrR12Types";
@@ -17,6 +17,7 @@ import { HrConversationOutcomePanel } from "./HrConversationOutcomePanel";
 import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
 import { HrPositionDetailsDrawer } from "./HrPositionDetailsDrawer";
 import { HrPositionHeader } from "./HrPositionHeader";
+import { HrKnowledgePanel } from "./HrKnowledgePanel";
 import { HrPositionIndex } from "./HrPositionIndex";
 import { HrPositionWorkspace, loadPositionConversations } from "./HrPositionWorkspace";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
@@ -87,7 +88,12 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const [revealedRouteKey, setRevealedRouteKey] = useState<string | null>(null);
   const [positionDetailsOpen, setPositionDetailsOpen] = useState(false);
   const [conversationRevision, setConversationRevision] = useState(0);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const knowledgeSelections = useRef(new Map<string, HrKnowledgeSelection[]>());
+  const [, setKnowledgeRevision] = useState(0);
   const draftOwnerId = props.account.internal_user_id;
+  const knowledgeOwner = `${draftOwnerId}:${props.conversationId ?? props.positionId ?? "new"}`;
+  const selectedKnowledge = knowledgeSelections.current.get(knowledgeOwner) ?? [];
   const retainFreeChatDraft = useCallback((snapshot: DirectAgentDraftSnapshot) => {
     freeChatDraftSnapshots.current.set(draftOwnerId, snapshot);
   }, [draftOwnerId]);
@@ -191,7 +197,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   ) : null;
   const drawerDetail = continuedPositionDetail ?? degradedDetail;
 
-  return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={panoramaActive ? "panorama" : positionsActive ? "positions" : "chat"}>
+  return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={panoramaActive ? "panorama" : positionsActive ? "positions" : "chat"} onOpenKnowledge={() => setKnowledgeOpen(true)}>
     {keepChatHost && <div
       className={`hr-workspace-chat-panel${positionConversationRoute ? " is-position-conversation" : ""}`}
       hidden={panoramaActive || (positionsActive && !positionThreadVisible)}
@@ -233,6 +239,14 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           </section>}
           onDraftSnapshotChange={retainFreeChatDraft}
           onConversationSettled={handleConversationSettled}
+          selectedKnowledgeResources={selectedKnowledge}
+          onKnowledgeResourcesSubmitted={() => {
+            knowledgeSelections.current.delete(knowledgeOwner); setKnowledgeRevision((value) => value + 1);
+          }}
+          onRemoveKnowledgeResource={(id) => {
+            knowledgeSelections.current.set(knowledgeOwner, selectedKnowledge.filter((item) => item.id !== id));
+            setKnowledgeRevision((value) => value + 1);
+          }}
           showTaskStarters={false}
           showWorkspaceBackLink={false}
           threadSupplement={chatConversationId ? <HrConversationOutcomePanel
@@ -296,5 +310,10 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
       readOnly={props.account.hard_stale_read_only}
       taskConversationId={positionRouteValidated ? props.conversationId : undefined}
     />}
+    {knowledgeOpen && <HrKnowledgePanel onClose={() => setKnowledgeOpen(false)} onSelect={(selection) => {
+      knowledgeSelections.current.set(knowledgeOwner, [selection]);
+      setKnowledgeRevision((value) => value + 1);
+      setKnowledgeOpen(false);
+    }} />}
   </HrWorkspaceShell>;
 }

@@ -19,7 +19,7 @@ import {
   type ConversationStartScope,
   type ConversationSubmission,
 } from "../../conversationApi";
-import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmission } from "../../conversationTypes";
+import type { Conversation, ConversationAttachment, ConversationPage, HrKnowledgeSelection, TurnSubmission } from "../../conversationTypes";
 import { ConversationPage as ConversationThread, type ConversationPageClient } from "../../pages/ConversationPage";
 import { workspaceLaunchPath } from "../../platform/workspaces";
 import { navigate } from "../../router";
@@ -51,6 +51,9 @@ export interface DirectAgentWorkspaceProps {
   initialDraftSnapshot?: DirectAgentDraftSnapshot;
   onDraftSnapshotChange?: (snapshot: DirectAgentDraftSnapshot) => void;
   onConversationSettled?: () => void;
+  selectedKnowledgeResources?: HrKnowledgeSelection[];
+  onRemoveKnowledgeResource?: (id: string) => void;
+  onKnowledgeResourcesSubmitted?: () => void;
 }
 
 export interface DirectAgentDraftSnapshot {
@@ -109,6 +112,9 @@ export function DirectAgentWorkspace({
   initialDraftSnapshot,
   onDraftSnapshotChange,
   onConversationSettled,
+  selectedKnowledgeResources = [],
+  onRemoveKnowledgeResource,
+  onKnowledgeResourcesSubmitted,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
   historyClient = DEFAULT_HISTORY_CLIENT,
@@ -233,8 +239,9 @@ export function DirectAgentWorkspace({
     const readyIds = attachments.filter((item) => item.state === "ready").map((item) => item.attachmentId);
     const uploadPending = uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state));
     if (!card || (!normalized && readyIds.length === 0) || uploadPending || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
-    const input: string | TurnSubmission = card.attachment_limits ? {
+    const input: string | TurnSubmission = card.attachment_limits || selectedKnowledgeResources.length ? {
       text: normalized, attachmentIds: readyIds, activeAttachmentIds: readyIds,
+      ...(selectedKnowledgeResources.length ? { userSelectedResources: selectedKnowledgeResources } : {}),
     } : normalized;
     const requestKey = typeof input === "string" ? input : JSON.stringify(input);
     let selected = retained.current;
@@ -250,6 +257,7 @@ export function DirectAgentWorkspace({
     try {
       const result = await selected.submission.send(controller.signal);
       retained.current = null; upsertConversation(result.conversation);
+      if (selectedKnowledgeResources.length) onKnowledgeResourcesSubmitted?.();
       onOpenConversation(conversationPath(result.conversation.conversation_id));
     } catch {
       if (!controller.signal.aborted) setFailure(true);
@@ -319,6 +327,9 @@ export function DirectAgentWorkspace({
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
           composerTools={composerTools}
+          selectedKnowledgeResources={selectedKnowledgeResources}
+          onRemoveKnowledgeResource={onRemoveKnowledgeResource}
+          onKnowledgeResourcesSubmitted={onKnowledgeResourcesSubmitted}
           messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
           materialsPresentation={agentId === "hr-bot" ? "drawer" : layout === "focused" ? "hidden" : "sidebar"}
@@ -357,6 +368,10 @@ export function DirectAgentWorkspace({
                 uploaderRef.current?.addFiles(files);
               }
             }}>
+            {selectedKnowledgeResources.length > 0 && <div className="hr-knowledge-selection" aria-label="本轮指定方法">
+              {selectedKnowledgeResources.map((item) => <span key={`${item.sourceCommit}:${item.id}`}><strong>{item.id}</strong><small>版本 {item.revision}</small>
+                <button aria-label={`移除方法 ${item.id}`} onClick={() => onRemoveKnowledgeResource?.(item.id)} type="button">×</button></span>)}
+            </div>}
             <ComposerTextarea autoSize={agentId === "hr-bot"} aria-label={`交给 ${card.display_name}`} autoFocus={autoFocusComposer} id="direct-agent-request" rows={agentId === "hr-bot" ? 3 : 8} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
               placeholder="描述招聘任务、粘贴岗位说明或候选人资料……"
               onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }}

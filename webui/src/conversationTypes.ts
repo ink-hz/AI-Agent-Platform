@@ -63,6 +63,14 @@ export interface TurnSubmission {
   text: string;
   attachmentIds: string[];
   activeAttachmentIds: string[];
+  userSelectedResources?: HrKnowledgeSelection[];
+}
+
+export interface HrKnowledgeSelection {
+  sourceCommit: string;
+  id: string;
+  revision: string;
+  sha256: string;
 }
 export type ConversationTurnStatus =
   | "accepted"
@@ -121,6 +129,7 @@ export interface ConversationMessage {
   search_recovery?: SearchRecovery;
   citations?: ConversationCitation[];
   artifact_versions?: ArtifactVersion[];
+  userSelectedResources?: HrKnowledgeSelection[];
 }
 
 export interface ConversationTurn {

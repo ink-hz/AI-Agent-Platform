@@ -2544,6 +2544,28 @@ body {
 .hr-r12-panel button:hover:not(:disabled),.hr-r12-panel button:focus-visible { border-color: #6ea18e; background: #eef6f2; outline: none; }
 .hr-r12-panel button:disabled { cursor: not-allowed; opacity: .5; }
 .hr-drawer-backdrop { position: fixed; z-index: 39; inset: 0; border: 0; background: rgba(15,35,28,.32); cursor: default; }
+.hr-workspace-nav > button { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.hr-knowledge-panel { position: fixed; z-index: 50; top: 0; right: 0; bottom: 0; width: min(820px, calc(100vw - 32px)); box-sizing: border-box; overflow: auto; border-left: 1px solid #c8d9d1; background: #fff; box-shadow: -18px 0 52px rgba(31,74,58,.2); }
+.hr-knowledge-panel > header { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #d8e2dd; background: rgba(255,255,255,.97); }
+.hr-knowledge-panel > header h2 { margin: 2px 0 0; font-size: 20px; }
+.hr-knowledge-panel > header span { color: #347f69; font-size: 11px; font-weight: 800; letter-spacing: .1em; }
+.hr-knowledge-note { margin: 0; padding: 10px 20px; border-bottom: 1px solid #e0e8e4; background: #f7faf8; color: #587066; font-size: 12px; }
+.hr-knowledge-panel button { font: inherit; cursor: pointer; }
+.hr-knowledge-layout { display: grid; grid-template-columns: 240px minmax(0,1fr); min-height: calc(100% - 72px); }
+.hr-knowledge-layout > nav { padding: 16px; border-right: 1px solid #e0e8e4; background: #f7faf8; }
+.hr-knowledge-layout > nav > button { margin: 0 6px 8px 0; padding: 5px 8px; border: 1px solid #c8d9d1; border-radius: 999px; background: #fff; color: #315f50; }
+.hr-knowledge-layout > nav > button[aria-pressed="true"] { background: #dcece5; }
+.hr-knowledge-layout ul { margin: 10px 0 0; padding: 0; list-style: none; }
+.hr-knowledge-layout li button { width: 100%; margin-bottom: 7px; padding: 10px; border: 1px solid #d8e2dd; border-radius: 9px; background: #fff; text-align: left; }
+.hr-knowledge-layout li small { display: block; margin-top: 4px; color: #657a70; }
+.hr-knowledge-layout > main { padding: 22px; overflow: hidden; }
+.hr-knowledge-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #587066; font-size: 12px; }
+.hr-knowledge-discuss { position: sticky; bottom: 16px; padding: 10px 16px; border: 0; border-radius: 9px; background: #176b53; color: #fff; font-weight: 750; }
+.hr-knowledge-selection { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.hr-knowledge-selection > span { display: inline-flex; align-items: center; gap: 7px; padding: 6px 8px; border: 1px solid #afd0c1; border-radius: 8px; background: #eef7f3; color: #245c4b; }
+.hr-knowledge-selection small { color: #587066; }
+.hr-knowledge-selection button { border: 0; background: transparent; color: inherit; font-size: 17px; cursor: pointer; }
+.hr-knowledge-message-selection { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 5px 0 8px; color: #39705e; font-size: 12px; }
 .hr-position-workspace > .hr-drawer-backdrop { position: absolute; }
 .hr-mobile-drawer { position: fixed; z-index: 40; top: 0; right: 0; bottom: 0; width: min(390px,calc(100vw - 32px)); box-sizing: border-box; overflow-y: auto; padding: 18px; border: 0; border-left: 1px solid #c8d9d1; background: #fff; box-shadow: -16px 0 42px rgba(31,74,58,.16); }
 .hr-mobile-drawer > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
