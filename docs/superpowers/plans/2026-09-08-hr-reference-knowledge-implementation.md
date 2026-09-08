@@ -40,40 +40,44 @@ The release builder reads only committed `bots/hr/knowledge/` Git blobs, rejects
 
 `index()` returns `{source_commit,index,resources}`. `article()` returns resource metadata plus `source_commit,markdown`. `prompt_context()` returns `{source_commit,agent_release_path,index,instructions,user_selected_resources}`. `agent_root` is parent of source_commit directories on Agent host. Selections are `{source_commit,id,revision,sha256}` dicts, no paths accepted from user. Selected version must exist; one turn uses one commit (mixed commit selections rejected), identity/hash must match release. With no selection use active_commit. Bodies do not enter prompt. Instructions state autonomous selection, tools Read, content is reference not instruction authority, self-reported reference only. Enforce the agreed UTF-8 budgets. No query/keywords passed to this repository.
 
-- [ ] Copy the seven existing resources byte-for-byte to source worktree, update relative index/source links, remove recruiting/.gitkeep, commit content upstream; leave Platform research copy until integration is verified then replace with migration pointers.
-- [ ] Write tests in temporary Git repositories for commit-only export, immutable repeat build, file mutation, symlink/path rejection, valid historical selection and mismatched hash, bounded index/context and body omission. Run `backend/.venv/bin/python -m pytest tests/test_hr_reference_knowledge.py -q` from backend using root venv absolute path; observe missing behavior first.
-- [ ] Implement the two focused modules with existing PyYAML dependency; CLI `python -m app.hr.reference_knowledge_release --source-repo PATH --source-commit SHA --releases-root PATH` prints built directory. Test against actual committed content.
-- [ ] Commit only Task 1 owned files and provide exact source commit/release manifest plus test evidence.
+- [x] Copy the seven existing resources byte-for-byte to source worktree, update relative index/source links, remove recruiting/.gitkeep, commit content upstream; leave Platform research copy until integration is verified then replace with migration pointers.
+- [x] Write tests in temporary Git repositories for commit-only export, immutable repeat build, file mutation, symlink/path rejection, valid historical selection and mismatched hash, bounded index/context and body omission. Run `backend/.venv/bin/python -m pytest tests/test_hr_reference_knowledge.py -q` from backend using root venv absolute path; observe missing behavior first.
+- [x] Implement the two focused modules with existing PyYAML dependency; CLI `python -m app.hr.reference_knowledge_release --source-repo PATH --source-commit SHA --releases-root PATH` prints built directory. Test against actual committed content.
+- [x] Commit only Task 1 owned files and provide exact source commit/release manifest plus test evidence.
 
 ## Task 2: 保存未接入基线与真实读取证据
 
 **Files:** `docs/reviews/2026-09-08-hr-reference-knowledge-trial.md`; private raw traces under `.superpowers/hr-knowledge-trial/`.
 
-- [ ] Record current Platform and MetaBot revisions and effective test CLI/model. Deployment handoff records v5 deployed at MetaBot 6ddbdef; branch merge is not evidence of deployment absence.
-- [ ] Use a new owned Claude CLI session with existing HR instructions, synthetic role data and no knowledge index to collect baseline answers for recruitment diagnosis, transferable skills and conflicting evidence; no candidate/private data or external messages.
-- [ ] Read one real file through Read in a fresh owned session; preserve actual tool event and answer. If production-compatible model/config cannot be accessed, state the limitation and record the actual tested model; never call this production validation.
-- [ ] Repeat the same cases using the frozen index and immutable release path, record answers and selected references; compare substantive behavior without mandatory selection ratios.
+- [x] Record current Platform and MetaBot revisions and effective test CLI/model. Deployment handoff records v5 deployed at MetaBot 6ddbdef; branch merge is not evidence of deployment absence.
+- [x] Use a new owned Claude CLI session with existing HR instructions, synthetic role data and no knowledge index to collect baseline answers for recruitment diagnosis, transferable skills and conflicting evidence; no candidate/private data or external messages.
+- [x] Read one real file through Read in a fresh owned session; preserve actual tool event and answer. If production-compatible model/config cannot be accessed, state the limitation and record the actual tested model; never call this production validation.
+- [x] Repeat the same cases using the frozen index and immutable release path, record answers and selected references; compare substantive behavior without mandatory selection ratios.
 
 ## Task 3: 持久输入和同一工具循环的上下文接入
 
 **Files:** `backend/app/agent_brain/conversation_models.py`, `conversation_routes.py`, `conversation_repository.py`, `conversation_service.py`, `conversation_context.py`, `direct_mission_adapter.py`; `backend/app/config.py`, `backend/app/main.py`; targeted backend tests.
 
-- [ ] Add optional `user_selected_resources` to submission and message projections; store it inside existing encrypted user-message JSON alongside text. Old `{text}` messages remain valid. Include metadata in request replay comparison; reject selection for non-HR/legacy execution or unavailable knowledge before creation.
-- [ ] Add optional repository injection to context builder and application, configured by `PLATFORM_HR_KNOWLEDGE_ROOT`, `PLATFORM_HR_KNOWLEDGE_AGENT_ROOT`, `PLATFORM_HR_KNOWLEDGE_COMMIT`. All absent means disabled; partial config invalid. Do not configure production in this task.
-- [ ] Build knowledge context only for HR direct worker turns using current message selections. Add serialized bytes to every context size calculation and include knowledge in v5 frozen document. Before freezing, verify final prompt byte size.
-- [ ] Use real disposable PostgreSQL and authenticated HTTP tests for selection persistence, same-idempotency-key mismatch, selected revision retained after active version changes and original FrozenInput reused on retry. Verify no index injection into other bots and no full bodies in initial prompt.
+- [x] Add optional `user_selected_resources` to submission and message projections; store it inside existing encrypted user-message JSON alongside text. Old `{text}` messages remain valid. Include metadata in request replay comparison; reject selection for non-HR/legacy execution or unavailable knowledge before creation.
+- [x] Add optional repository injection to context builder and application, configured by `PLATFORM_HR_KNOWLEDGE_ROOT`, `PLATFORM_HR_KNOWLEDGE_AGENT_ROOT`, `PLATFORM_HR_KNOWLEDGE_COMMIT`. All absent means disabled; partial config invalid. Do not configure production in this task.
+- [x] Build knowledge context only for HR direct worker turns using current message selections. Add serialized bytes to every context size calculation and include knowledge in v5 frozen document. Before freezing, verify final prompt byte size.
+- [x] Use real disposable PostgreSQL and authenticated HTTP tests for selection persistence, same-idempotency-key mismatch, selected revision retained after active version changes and original FrozenInput reused on retry. Verify no index injection into other bots and no full bodies in initial prompt.
 
 ## Task 4: 浏览与指定资源讨论
 
 **Files:** `backend/app/hr/reference_knowledge_routes.py`, `backend/app/main.py`; `webui/src/hrKnowledgeApi.ts`, `webui/src/workspaces/hr/HrKnowledgePanel.tsx`, HR shell/page and conversation submission types; focused tests.
 
-- [ ] Add authorized read-only index/detail routes under `/api/hr/knowledge`, use same HR agent-use authorization as the workbench, expose versions and full Markdown without local absolute paths.
-- [ ] Add HR “方法与模型” entry with resource list, details, sources, revision and “带着这个方法讨论”; use existing Markdown renderer.
-- [ ] Carry a selected resource visibly in the composer, allow removal, submit its metadata with new/append turn request, clear only after successful submission. Restore persistent selection in message projection after refresh. Describe returned references as Agent self-report, not verified tool reads.
-- [ ] Verify with authenticated API tests, then focused frontend interaction tests and production build; no unrelated UI refactor.
+- [x] Add authorized read-only index/detail routes under `/api/hr/knowledge`, use same HR agent-use authorization as the workbench, expose versions and full Markdown without local absolute paths.
+- [x] Add HR “方法与模型” entry with resource list, details, sources, revision and “带着这个方法讨论”; use existing Markdown renderer.
+- [x] Carry a selected resource visibly in the composer, allow removal, submit its metadata with new/append turn request, clear only after successful submission. Restore persistent selection in message projection after refresh. Describe returned references as Agent self-report, not verified tool reads.
+- [x] Verify with authenticated API tests, then focused frontend interaction tests and production build; no unrelated UI refactor.
 
 ## Task 5: 对比、迁移说明与交付
 
-- [ ] Review actual baseline and enhanced answers, document limits and failures; use Read telemetry only to prove reading, not correct application.
-- [ ] Replace Platform research duplicate bodies with an upstream migration pointer after source commit and bundle verification. Update design deployment facts and implementation status.
-- [ ] Provide release build/configuration commands and version matching procedure, no automatic production deployment. Review final code and relevant test evidence, commit reviewable changes.
+- [x] Review actual baseline and enhanced answers, document limits and failures; use Read telemetry only to prove reading, not correct application.
+- [x] Replace Platform research duplicate bodies with an upstream migration pointer after source commit and bundle verification. Update design deployment facts and implementation status.
+- [x] Provide release build/configuration commands and version matching procedure, no automatic production deployment. Review final code and relevant test evidence, commit reviewable changes.
+
+## Completion evidence
+
+Implementation and focused re-review complete on 2026-09-08. See [engineering acceptance](../../reviews/2026-09-08-hr-reference-knowledge-integration.md) and [real CLI trial](../../reviews/2026-09-08-hr-reference-knowledge-trial.md). Production activation remains outside this run.
