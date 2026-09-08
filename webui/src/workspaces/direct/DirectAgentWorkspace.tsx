@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ComposerTextarea } from "../../components/conversation/ComposerTextarea";
 
 import type { Account } from "../../auth";
 import { fetchAgentCatalog } from "../../brainApi";
@@ -274,9 +275,9 @@ export function DirectAgentWorkspace({
     <ConversationSidebar
       archivedConversations={archivedConversations}
       conversationHref={conversationPath}
-      title={card.display_name}
-      label={workspaceLabel}
-      mark={workspaceMark}
+      title={agentId === "hr-bot" ? "最近对话" : card.display_name}
+      label={agentId === "hr-bot" ? undefined : workspaceLabel}
+      mark={agentId === "hr-bot" ? undefined : workspaceMark}
       conversations={conversations}
       selectedConversationId={conversationId}
       loading={historyLoading}
@@ -301,6 +302,7 @@ export function DirectAgentWorkspace({
       {header}
       {conversationId
         ? <ConversationThread
+          key={agentId === "hr-bot" ? conversationId : undefined}
           account={account}
           assistantLabel={card.display_name}
           client={conversationClient}
@@ -321,7 +323,7 @@ export function DirectAgentWorkspace({
           threadSupplement={threadSupplement}
           materialsPresentation={agentId === "hr-bot" ? "drawer" : layout === "focused" ? "hidden" : "sidebar"}
         />
-        : <div className="agent-use-page">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}
+        : <div className="agent-use-page"><div className="agent-direct-introduction">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}
           {newConversationHeader ?? <section className="agent-use-profile is-compact"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
             {card.persona_subtitle && <p className="agent-persona-subtitle">{card.persona_subtitle}</p>}
             <p>{card.mission}</p>
@@ -334,6 +336,7 @@ export function DirectAgentWorkspace({
               type="button"
             >{example}</button>)}
           </section>}
+          </div>
           <form className="agent-direct-composer" onSubmit={submit}
             onDragOver={(event) => {
               if (Array.from(event.dataTransfer.types).includes("Files")) event.preventDefault();
@@ -354,7 +357,7 @@ export function DirectAgentWorkspace({
                 uploaderRef.current?.addFiles(files);
               }
             }}>
-            <textarea aria-label={`交给 ${card.display_name}`} autoFocus={autoFocusComposer} id="direct-agent-request" rows={8} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
+            <ComposerTextarea autoSize={agentId === "hr-bot"} aria-label={`交给 ${card.display_name}`} autoFocus={autoFocusComposer} id="direct-agent-request" rows={agentId === "hr-bot" ? 3 : 8} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
               placeholder="描述招聘任务、粘贴岗位说明或候选人资料……"
               onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }}
               onKeyDown={(event) => {

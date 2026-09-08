@@ -1,6 +1,7 @@
 import type { FormEvent, ReactNode } from "react";
 
 import { conversationInputTooLarge } from "../../conversationApi";
+import { ComposerTextarea } from "./ComposerTextarea";
 
 
 export function ConversationComposer({
@@ -16,6 +17,8 @@ export function ConversationComposer({
   hasReadyAttachment = false,
   attachmentPending = false,
   tools,
+  compact = false,
+  navigation,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -29,6 +32,8 @@ export function ConversationComposer({
   hasReadyAttachment?: boolean;
   attachmentPending?: boolean;
   tools?: ReactNode;
+  compact?: boolean;
+  navigation?: ReactNode;
 }) {
   const inputTooLarge = conversationInputTooLarge(value.trim());
   const submitDisabled = disabled || pending || attachmentPending
@@ -37,9 +42,11 @@ export function ConversationComposer({
     event.preventDefault();
     onSubmit();
   };
-  return <form className="conversation-composer" onSubmit={submit}>
+  return <form className={`conversation-composer${compact ? " is-compact" : ""}`} onSubmit={submit}>
+    {navigation}
     <label htmlFor="conversation-message">{label}</label>
-    <textarea
+    <ComposerTextarea
+      autoSize={compact}
       aria-label={label}
       disabled={disabled}
       id="conversation-message"
@@ -53,7 +60,7 @@ export function ConversationComposer({
         onSubmit();
       }}
       placeholder={placeholder}
-      rows={4}
+      rows={compact ? 3 : 4}
       value={value}
     />
     {attachmentControls && <div className="conversation-composer-attachments">
@@ -61,7 +68,7 @@ export function ConversationComposer({
     </div>}
     <div className="conversation-composer-actions">
       {tools && <div className="conversation-composer-tools">{tools}</div>}
-      <span>{disabledMessage ?? (disabled
+      <span hidden={compact}>{disabledMessage ?? (disabled
         ? "当前暂不可发送。"
         : "Enter 发送；Shift+Enter 换行。")}</span>
       <button
@@ -70,6 +77,7 @@ export function ConversationComposer({
         type="submit"
       >{pending ? "正在发送…" : attachmentPending ? "等待文件处理" : "✨ 发送"}</button>
     </div>
+    {compact && (disabledMessage || disabled) && <p className="conversation-composer-status" role="status">{disabledMessage ?? "当前暂不可发送。"}</p>}
     {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再发送。</p>}
   </form>;
 }

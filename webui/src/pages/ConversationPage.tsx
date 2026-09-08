@@ -45,6 +45,7 @@ import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
 import type { WorkroomAction } from "../workroomTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
+import { useConversationScroll } from "../components/conversation/useConversationScroll";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
 import { MessageMarkdown } from "../components/MessageMarkdown";
 import type { MessageActionsPresentation } from "../components/conversation/MessageActions";
@@ -238,6 +239,9 @@ export function ConversationPage({
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [internalMaterialsOpen, setInternalMaterialsOpen] = useState(false);
+  const { pageRef, following, jumpToLatest } = useConversationScroll(
+    conversationId, expectedAgentId === "hr-bot" && !loading && !loadFailure && Boolean(detail),
+  );
   const retained = useRef<{
     text: string;
     submission: ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
@@ -572,6 +576,7 @@ export function ConversationPage({
     try {
       const result = await selected.submission.send(controller.signal);
       if (controller.signal.aborted) return;
+      if (expectedAgentId === "hr-bot") jumpToLatest();
       retained.current = null;
       setText("");
       setNewAttachmentIds([]); setUploadQueue([]);
@@ -757,19 +762,20 @@ export function ConversationPage({
   messageGroups.push({ key: "remaining", messages: remainingMessages, answer: null });
   const workerFailure = workerOwned && workerSnapshot?.outcome
     && ["failed", "interrupted"].includes(workerSnapshot.outcome.kind) ? workerSnapshot.outcome.kind : null;
+  const materialsTrigger = attachmentLimits && materialsPresentation === "drawer" && showMaterialsTrigger
+    ? <button aria-expanded={materialsDrawerOpen} className="conversation-materials-trigger"
+      onClick={() => changeMaterialsOpen(true)} type="button">会话材料</button>
+    : null;
   const conversationContent = <div className="conversation-page">
-    <header className="conversation-header">
+    {expectedAgentId !== "hr-bot" && <header className="conversation-header">
       <div>
         <h1>{assistantLabel}</h1>
         {personaSubtitle && <p>{personaSubtitle}</p>}
       </div>
-      {attachmentLimits && materialsPresentation === "drawer" && showMaterialsTrigger && <button
-        aria-expanded={materialsDrawerOpen}
-        className="conversation-materials-trigger"
-        onClick={() => changeMaterialsOpen(true)}
-        type="button"
-      >会话材料</button>}
-    </header>
+      {materialsTrigger}
+    </header>}
+    <div className={expectedAgentId === "hr-bot" ? "conversation-scroll-region" : "conversation-flow"}>
+    <div className={expectedAgentId === "hr-bot" ? "conversation-scroll-content" : "conversation-flow"} ref={pageRef}>
     {connection === "offline" && <aside className="conversation-connection is-offline" role="status"><strong>连接暂时中断</strong><span>正在从上次进度继续连接，不会重复提交请求。</span></aside>}
     {connection === "connecting" && <aside className="conversation-connection" role="status">正在连接对话…</aside>}
     {messageGroups.map(group => <Fragment key={group.key}><ConversationMessages
@@ -826,7 +832,13 @@ export function ConversationPage({
     />}
     {!workerOwned && detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
       && <button className="conversation-turn-retry" disabled={pending || readOnly} onClick={() => void retryTurn()} type="button">重试本轮</button>}
+    </div>
+    </div>
     <ConversationComposer
+      compact={expectedAgentId === "hr-bot"}
+      navigation={expectedAgentId === "hr-bot" && !following
+        ? <button className="conversation-latest" onClick={jumpToLatest} type="button">↓ 回到最新</button>
+        : undefined}
       attachmentControls={attachmentLimits ? <AttachmentUploader
         conversationId={conversationId} csrfToken={account.csrf_token}
         compact={expectedAgentId === "hr-bot"}
@@ -858,7 +870,7 @@ export function ConversationPage({
         ? "补充范围、修改优先级，或给正在协作的 Agent 新指令…"
         : undefined}
       value={text}
-      tools={composerTools}
+      tools={expectedAgentId === "hr-bot" ? <>{composerTools}{materialsTrigger}</> : composerTools}
     />
     {readOnly && <p className="conversation-read-only" role="status">当前为只读状态，已有对话仍可查看。</p>}
     {sendFailure && <div className="conversation-action-error" role="alert"><span>消息暂未发送成功，可以使用同一次请求安全重试。</span><button className="conversation-retry" disabled={pending} onClick={() => void send()} type="button">重新发送</button></div>}
@@ -877,7 +889,7 @@ export function ConversationPage({
       />
     </aside>
     : null;
-  return <div className={showMaterials ? "conversation-workspace-grid" : "conversation-workspace-content"}>
+  return <div className={`${showMaterials ? "conversation-workspace-grid" : "conversation-workspace-content"}${expectedAgentId === "hr-bot" ? " is-hr-conversation" : ""}`}>
     {conversationContent}
     {showMaterials && attachmentLimits && <SessionMaterialsDrawer
       activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}

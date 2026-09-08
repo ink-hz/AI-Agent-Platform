@@ -60,6 +60,27 @@ describe("HR workspace core acceptance", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
+  it("grows the compact input with its draft, caps long text and shrinks after sending", async () => {
+    let measuredHeight = 25;
+    const height = vi.spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get").mockImplementation(() => measuredHeight);
+    const render = async (value: string) => act(async () => root.render(<ConversationComposer
+      compact disabled={false} onChange={vi.fn()} onSubmit={vi.fn()} pending={false} value={value}
+    />));
+    try {
+      await render("");
+      const input = container.querySelector("textarea")!;
+      expect(input.rows).toBe(3);
+      expect(input.style.height).toBe("96px");
+      measuredHeight = 130; await render("多行岗位需求");
+      expect(input.style.height).toBe("130px");
+      measuredHeight = 350; await render("更长的岗位需求");
+      expect(input.style.height).toBe("220px");
+      measuredHeight = 25; await render("");
+      expect(input.style.height).toBe("96px");
+      expect(container.querySelector("textarea")).toBe(input);
+    } finally { height.mockRestore(); }
+  });
+
   it("keeps attachment controls below the message field and explains why sending is disabled", async () => {
     await act(async () => root.render(<ConversationComposer
       attachmentControls={<button type="button">添加文件或图片</button>}
