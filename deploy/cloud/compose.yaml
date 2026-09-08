@@ -46,7 +46,7 @@ services:
         test -n "$$PLATFORM_DINGTALK_CORP_ID"
         export PLATFORM_DINGTALK_APP_KEY PLATFORM_DINGTALK_AGENT_ID PLATFORM_DINGTALK_CORP_ID
         exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8080 --no-proxy-headers --no-access-log
-    environment:
+    environment: &platform-api-environment
       PLATFORM_DEPLOYMENT_MODE: cloud-replica
       PLATFORM_CLOUD_AUTH_MODE: dingtalk
       PLATFORM_HOST: 127.0.0.1
@@ -79,6 +79,7 @@ services:
       PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE: /run/secrets/rate-limit-hmac-keyring
       PLATFORM_EXECUTION_RELAY_ENABLED: "1"
       PLATFORM_DIRECT_AGENT_ENABLED: "${PLATFORM_DIRECT_AGENT_ENABLED:-0}"
+      PLATFORM_HR_WEB_WORKER_ENABLED: "${PLATFORM_HR_WEB_WORKER_ENABLED:-0}"
       PLATFORM_AGENT_BRAIN_ENABLED: "${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
       PLATFORM_AGENT_BRAIN_V2_ENABLED: "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
       PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/secrets/content-encryption-keyring
@@ -105,7 +106,7 @@ services:
       PLATFORM_PARTNER_PROVIDER_KIND: ""
       PLATFORM_PARTNER_PROVIDER_RELEASE_FILE: ""
       PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256: ""
-    volumes:
+    volumes: &platform-api-volumes
       - platform-api-secrets:/run/secrets:ro
       - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro
       - type: bind
@@ -133,6 +134,40 @@ services:
       timeout: 3s
       retries: 12
       start_period: 15s
+
+  platform-hr-web-worker:
+    image: ${PLATFORM_IMAGE}
+    profiles: ["hr-web"]
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        PLATFORM_DINGTALK_APP_KEY="$(/bin/cat /run/secrets/dingtalk-app-key)"
+        PLATFORM_DINGTALK_AGENT_ID="$(/bin/cat /run/secrets/dingtalk-agent-id)"
+        PLATFORM_DINGTALK_CORP_ID="$(/bin/cat /run/secrets/dingtalk-corp-id)"
+        test -n "$$PLATFORM_DINGTALK_APP_KEY"
+        test -n "$$PLATFORM_DINGTALK_AGENT_ID"
+        test -n "$$PLATFORM_DINGTALK_CORP_ID"
+        export PLATFORM_DINGTALK_APP_KEY PLATFORM_DINGTALK_AGENT_ID PLATFORM_DINGTALK_CORP_ID
+        exec python -m app.agent_brain.direct_worker
+    environment: *platform-api-environment
+    volumes: *platform-api-volumes
+    networks:
+      platform-internal: {}
+      platform-edge:
+        gw_priority: 1
+    # No HTTP server: process exit is supervised by Docker; durable readiness
+    # and progress are checked through the existing execution ledgers.
+    healthcheck:
+      disable: true
 
   platform-minio:
     image: ${PLATFORM_MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z}
