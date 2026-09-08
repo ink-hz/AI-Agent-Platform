@@ -460,8 +460,10 @@ class ConversationRepository:
                 row["encryption_key_version"],
             ),
         )
-        if set(value) != {"text"} or not isinstance(value["text"], str):
+        if set(value) not in ({"text"}, {"text", "user_selected_resources"}) or not isinstance(value["text"], str):
             raise ConversationRepositoryError()
+        from .conversation_models import normalize_knowledge_selections
+        selections = normalize_knowledge_selections(value.get("user_selected_resources", ()))
         inputs, outputs, active = (
             self._message_attachment_records_locked(cursor, row)
             if cursor is not None
@@ -493,6 +495,7 @@ class ConversationRepository:
             created_at=row["created_at"],
             completed_at=row["completed_at"],
             content=value["text"],
+            user_selected_resources=selections,
             input_attachments=inputs,
             output_attachments=outputs,
             active_attachment_ids=active,
@@ -598,7 +601,8 @@ class ConversationRepository:
             raise ConversationRepositoryError()
         message_record = self._message_from_row(message, cursor)
         if (
-            message_record.content != submission.text
+            message_record.user_selected_resources != submission.user_selected_resources
+            or message_record.content != submission.text
             or tuple(item.attachment_id for item in message_record.input_attachments)
             != submission.attachment_ids
             or message_record.active_attachment_ids
@@ -746,7 +750,8 @@ class ConversationRepository:
         message_id = uuid4()
         turn_id = uuid4()
         sealed = self.content_codec.seal_json(
-            message_subject(conversation_id, message_id), {"text": text}
+            message_subject(conversation_id, message_id),
+            {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {})}
         )
         message_row = cursor.execute(
             "insert into platform_control.conversation_messages "
@@ -848,7 +853,8 @@ class ConversationRepository:
         mission_message_id = uuid4()
         mission_event_id = uuid4()
         sealed = self.content_codec.seal_json(
-            message_subject(conversation_id, message_id), {"text": text}
+            message_subject(conversation_id, message_id),
+            {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {})}
         )
         message_row = cursor.execute(
             "insert into platform_control.conversation_messages "
@@ -1435,6 +1441,13 @@ class ConversationRepository:
                 if source_message is None:
                     raise ConversationRepositoryError()
                 source_record = self._message_from_row(source_message, cursor)
+                scope_options = {}
+                if conversation_row["direct_agent_id"] == "hr-bot":
+                    from app.hr.turn_scope import load_authorized_turn_scope
+                    original_scope = load_authorized_turn_scope(
+                        internal_user_id, conversation_id, source_turn_id, connection=cursor)
+                    scope_options = {"hr_scope": original_scope.scope,
+                                     "method_selection": original_scope.method_selection}
                 submission = ConversationTurnSubmission(
                     source_record.content,
                     tuple(
@@ -1442,6 +1455,8 @@ class ConversationRepository:
                         for item in source_record.input_attachments
                     ),
                     source_record.active_attachment_ids,
+                    user_selected_resources=source_record.user_selected_resources,
+                    **scope_options,
                 )
                 existing = cursor.execute(
                     "select 1 from platform_control.conversation_turns "
@@ -2789,7 +2804,8 @@ class ConversationRepository:
                     return None
                 message = self._message_from_row(row, cursor)
                 if (
-                    message.content != submission.text
+                    message.user_selected_resources != submission.user_selected_resources
+                    or message.content != submission.text
                     or tuple(
                         item.attachment_id for item in message.input_attachments
                     )

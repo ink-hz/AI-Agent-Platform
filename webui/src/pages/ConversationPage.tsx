@@ -38,6 +38,7 @@ import type {
   ConversationSubmissionResult,
   ConversationTaskDetail,
   ConversationAttachment,
+  HrKnowledgeSelection,
   TurnSubmission,
   TurnSnapshot,
 } from "../conversationTypes";
@@ -191,6 +192,9 @@ export function ConversationPage({
   onMaterialsOpenChange,
   showMaterialsTrigger = true,
   messageActionsPresentation = "legacy",
+  selectedKnowledgeResources = [],
+  onRemoveKnowledgeResource,
+  onKnowledgeResourcesSubmitted,
 }: {
   conversationId: string;
   account: Account;
@@ -211,6 +215,9 @@ export function ConversationPage({
   onMaterialsOpenChange?: (open: boolean) => void;
   showMaterialsTrigger?: boolean;
   messageActionsPresentation?: MessageActionsPresentation;
+  selectedKnowledgeResources?: HrKnowledgeSelection[];
+  onRemoveKnowledgeResource?: (id: string) => void;
+  onKnowledgeResourcesSubmitted?: () => void;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [workerSnapshot, setWorkerSnapshot] = useState<TurnSnapshot | null>(null);
@@ -556,6 +563,7 @@ export function ConversationPage({
       text: normalized,
       attachmentIds: [...newAttachmentIds],
       activeAttachmentIds: [...activeAttachmentIds],
+      ...(selectedKnowledgeResources.length ? { userSelectedResources: selectedKnowledgeResources } : {}),
     };
     const submissionKey = JSON.stringify(submissionInput);
     let selected = retained.current;
@@ -564,7 +572,7 @@ export function ConversationPage({
         text: submissionKey,
         submission: client.createMessageSubmission(
           conversationId,
-          attachmentLimits || newAttachmentIds.length > 0 || activeAttachmentIds.length > 0 ? submissionInput : normalized,
+          attachmentLimits || newAttachmentIds.length > 0 || activeAttachmentIds.length > 0 || selectedKnowledgeResources.length > 0 ? submissionInput : normalized,
           account.csrf_token,
         ),
       };
@@ -579,6 +587,7 @@ export function ConversationPage({
       if (expectedAgentId === "hr-bot") jumpToLatest();
       retained.current = null;
       setText("");
+      if (selectedKnowledgeResources.length) onKnowledgeResourcesSubmitted?.();
       setNewAttachmentIds([]); setUploadQueue([]);
       mergeIntoMessages([result.message]);
       if ("conversation" in result) {
@@ -847,6 +856,10 @@ export function ConversationPage({
         conversationFileCount={attachments.filter((item) => item.source === "user").length} onError={setAttachmentError}
         onQueueChange={setUploadQueue} onReady={addReadyAttachment}
       /> : undefined}
+      context={selectedKnowledgeResources.length > 0 ? <div className="hr-knowledge-selection" aria-label="本轮指定方法">
+        {selectedKnowledgeResources.map((item) => <span key={`${item.sourceCommit}:${item.id}`}><strong>{item.id}</strong><small>版本 {item.revision}</small>
+          <button aria-label={`移除方法 ${item.id}`} onClick={() => onRemoveKnowledgeResource?.(item.id)} type="button">×</button></span>)}
+      </div> : undefined}
       attachmentPending={uploadPending}
       disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || readOnly}
       disabledMessage={account.hard_stale_read_only

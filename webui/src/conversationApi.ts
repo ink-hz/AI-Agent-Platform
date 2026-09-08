@@ -29,6 +29,7 @@ import type {
   ConversationTurnStatus,
   TurnSubmission,
   TurnSnapshot,
+  HrKnowledgeSelection,
 } from "./conversationTypes";
 
 
@@ -44,6 +45,7 @@ const MESSAGE_KEYS = new Set([
 ]);
 const MESSAGE_OPTIONAL_FIELDS = new Set([
   "search_recovery", "citations", "artifact_versions", "result_delivery_status",
+  "user_selected_resources",
 ]);
 const TURN_KEYS = new Set([
   "turn_id", "conversation_id", "user_message_id", "assistant_message_id",
@@ -134,6 +136,17 @@ function isNullableString(value: unknown): value is string | null {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
+}
+
+function parseKnowledgeSelections(value: unknown): HrKnowledgeSelection[] {
+  if (!Array.isArray(value)) throw new Error("Message response invalid");
+  return value.map((item) => {
+    if (!isObject(item) || !hasExactKeys(item, new Set(["source_commit", "id", "revision", "sha256"]))
+      || !isNonEmptyString(item.source_commit) || !isNonEmptyString(item.id)
+      || !isPositiveInteger(item.revision) || typeof item.sha256 !== "string"
+      || !/^[0-9a-f]{64}$/.test(item.sha256)) throw new Error("Message response invalid");
+    return { sourceCommit: item.source_commit, id: item.id, revision: item.revision, sha256: item.sha256 };
+  });
 }
 
 
@@ -285,14 +298,19 @@ function parseMessage(value: unknown): ConversationMessage {
     || (Object.prototype.hasOwnProperty.call(value, "artifact_versions") && artifactVersions === undefined)) {
     throw new Error("Message response invalid");
   }
+  const userSelectedResources = Object.prototype.hasOwnProperty.call(value, "user_selected_resources")
+    ? parseKnowledgeSelections(value.user_selected_resources) : undefined;
+  const { user_selected_resources: _serverKnowledgeSelections, ...messageValue } = value;
+  void _serverKnowledgeSelections;
   return {
-    ...value,
+    ...messageValue,
     input_attachments: inputAttachments,
     output_attachments: outputAttachments,
     active_attachment_ids: [...value.active_attachment_ids],
     ...(recovery === undefined ? {} : { search_recovery: recovery }),
     ...(citations === undefined ? {} : { citations }),
     ...(artifactVersions === undefined ? {} : { artifact_versions: artifactVersions }),
+    ...(userSelectedResources === undefined ? {} : { userSelectedResources }),
   } as ConversationMessage;
 }
 
@@ -535,7 +553,8 @@ function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
     return { text: normalizedInput(value), attachmentIds: [], activeAttachmentIds: [] };
   }
   if (!isObject(value)
-    || !hasExactKeys(value, new Set(["text", "attachmentIds", "activeAttachmentIds"]))
+    || !["text", "attachmentIds", "activeAttachmentIds"].every((key) => Object.prototype.hasOwnProperty.call(value, key))
+    || Object.keys(value).some((key) => !new Set(["text", "attachmentIds", "activeAttachmentIds", "userSelectedResources"]).has(key))
     || typeof value.text !== "string"
     || !stringArray(value.attachmentIds)
     || !stringArray(value.activeAttachmentIds)
@@ -547,10 +566,19 @@ function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
     throw new Error("Conversation submission invalid");
   }
   const text = normalizedInput(value.text, value.attachmentIds.length > 0);
+  const userSelectedResources = value.userSelectedResources === undefined ? undefined
+    : value.userSelectedResources.map((item) => {
+      if (!isObject(item) || !hasExactKeys(item, new Set(["sourceCommit", "id", "revision", "sha256"]))
+        || !isNonEmptyString(item.sourceCommit) || !isNonEmptyString(item.id)
+        || !isPositiveInteger(item.revision) || typeof item.sha256 !== "string"
+        || !/^[0-9a-f]{64}$/.test(item.sha256)) throw new Error("Conversation submission invalid");
+      return { ...item };
+    });
   return {
     text,
     attachmentIds: [...value.attachmentIds],
     activeAttachmentIds: [...value.activeAttachmentIds],
+    ...(userSelectedResources === undefined ? {} : { userSelectedResources }),
   };
 }
 
@@ -566,6 +594,9 @@ function submissionBody(value: TurnSubmission, scope?: ConversationStartScope): 
     text: value.text,
     attachment_ids: value.attachmentIds,
     active_attachment_ids: value.activeAttachmentIds,
+    ...(value.userSelectedResources ? { user_selected_resources: value.userSelectedResources.map((item) => ({
+      source_commit: item.sourceCommit, id: item.id, revision: item.revision, sha256: item.sha256,
+    })) } : {}),
     ...(scope?.positionId ? { position_id: scope.positionId } : {}),
     ...(scope?.positionDraftId ? { position_draft_id: scope.positionDraftId } : {}),
   });

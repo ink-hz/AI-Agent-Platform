@@ -118,6 +118,9 @@ export function ConversationMessages({
         versions={artifactVersions[message.message_id] ?? message.artifact_versions ?? projectedVersions(message)}
       /> : <article className={`conversation-message conversation-${message.role}`} data-message-id={message.message_id}>
         <header><strong>{message.role === "user" ? "你" : "系统"}</strong><time dateTime={message.created_at}>{timeLabel(message.created_at)}</time></header>
+        {message.role === "user" && message.userSelectedResources?.length ? <div className="hr-knowledge-message-selection" aria-label="本轮指定方法">
+          <span>用户指定参考</span>{message.userSelectedResources.map((item) => <strong key={`${item.sourceCommit}:${item.id}`}>{item.id} · {item.revision}</strong>)}
+        </div> : null}
         <p className="conversation-user-copy">{message.content}</p>
       </article>}
       {message.role === "user" && message.turn_id && renderAfterUserTurn?.(message.turn_id)}

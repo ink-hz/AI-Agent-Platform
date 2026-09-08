@@ -104,6 +104,7 @@ class ConversationContext:
     hr_position_context: HrPositionContextEnvelope | None = None
     hr_panorama_context: PanoramaContextFragment | None = None
     hr_workflow_contract: str | None = None
+    hr_reference_knowledge: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,7 @@ def _context_size(
     hr_position_context: HrPositionContextEnvelope | None = None,
     hr_panorama_context: PanoramaContextFragment | None = None,
     hr_workflow_contract: str | None = None,
+    hr_reference_knowledge: dict[str, object] | None = None,
 ) -> int:
     total = 0
     if summary is not None:
@@ -174,6 +176,8 @@ def _context_size(
         ) + 32
     if hr_workflow_contract is not None:
         total += len(hr_workflow_contract.encode("utf-8")) + 32
+    if hr_reference_knowledge is not None:
+        total += len(json.dumps(hr_reference_knowledge, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + 32
     return total
 
 
@@ -185,6 +189,7 @@ class ConversationContextBuilder:
         hr_task_context_provider: object | None = None,
         panorama_context_provider: object | None = None,
         candidate_parser_input_provider: object | None = None,
+        hr_knowledge_repository=None,
     ) -> None:
         if not isinstance(repository, ConversationRepository):
             raise ValueError("Conversation repository required")
@@ -201,6 +206,7 @@ class ConversationContextBuilder:
         ):
             raise ValueError("Panorama context provider invalid")
         self.repository = repository
+        self._hr_knowledge_repository = hr_knowledge_repository
         self._hr_task_context_provider = hr_task_context_provider
         self._panorama_context_provider = panorama_context_provider
         self._candidate_parser_input_provider = candidate_parser_input_provider
@@ -284,6 +290,7 @@ class ConversationContextBuilder:
             for record in records
         )
         messages = tuple(message for _seq, message in sequenced)
+        hr_reference_knowledge = None
         hr_position_context = None
         hr_panorama_context = None
         is_hr_agent = (
@@ -291,6 +298,10 @@ class ConversationContextBuilder:
             and row["direct_agent_id"] == "hr-bot"
         )
         hr_workflow_contract = HR_WORKFLOW_CONTRACT_V1 if is_hr_agent and not is_hr_v6 else None
+        if is_hr_agent and row.get("execution_owner") == "worker_direct" and self._hr_knowledge_repository is not None:
+            hr_reference_knowledge = self._hr_knowledge_repository.prompt_context(records[-1].user_selected_resources)
+        elif records[-1].user_selected_resources:
+            raise ConversationContextError("HR knowledge unavailable for selected resources")
         is_hr_position = is_hr_agent and row["verified_hr_position"] is True
         if is_hr_position and not is_hr_v6:
             if self._hr_task_context_provider is None:
@@ -389,11 +400,13 @@ class ConversationContextBuilder:
                     hr_position_context,
                     hr_panorama_context,
                     hr_workflow_contract,
+                    hr_reference_knowledge,
                 ),
                 active_attachment_ids=tuple(dict.fromkeys(active_attachment_ids)),
                 hr_position_context=hr_position_context,
                 hr_panorama_context=hr_panorama_context,
                 hr_workflow_contract=hr_workflow_contract,
+                hr_reference_knowledge=hr_reference_knowledge,
             ),
             row["user_seq"],
             sequenced,
@@ -442,7 +455,7 @@ class ConversationContextBuilder:
         while size > MAX_CONTEXT_BYTES and len(messages) > 1:
             messages = messages[1:]
             size = _context_size(context.summary, messages, context.hr_position_context,
-                context.hr_panorama_context, context.hr_workflow_contract)
+                context.hr_panorama_context, context.hr_workflow_contract, context.hr_reference_knowledge)
         if size > MAX_CONTEXT_BYTES:
             raise ConversationContextTooLarge()
         return replace(context, messages=messages, estimated_utf8_bytes=size)
