@@ -8,6 +8,13 @@
 
 **Tech Stack:** Python/pytest/psycopg/PostgreSQL；MetaBot TypeScript/Vitest；现有 React/TypeScript 工作台。
 
+**2026-09-08 执行状态：** Task 1、Task 2 与 Task 3 的本地工程验收已完成并复审。
+Platform 代码至 `8c90344`；MetaBot 至 `c78f697`。以下原始逐项清单保留需求来源，
+实际测试文件、执行结果与明确未验证边界以
+`docs/reviews/2026-09-08-hr-minimum-reliable-web.md` 为准。
+尚未进行生产发布、目标机迁移分配/磁盘及镜像验收、真实模型质量验收；
+不把本地通过写成整项生产可用，也不继续重开已完成的本地任务。
+
 ## Global Constraints
 
 - 普通咨询无需岗位。已发布招聘情报按需读取，不在生产采集/分析。

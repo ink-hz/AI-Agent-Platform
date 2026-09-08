@@ -3,9 +3,11 @@
 2026-09-08. Current scope: the approved three-task minimum WEB plan, not the old
 18-task migration. Task 1 is locally closed at Platform `324bd80` / MetaBot
 `a8b053e`. Task 2 is implemented, locally verified and independently approved.
-Task 3 local process and snapshot-UI checks are recorded below; actual MetaBot
-startup shutdown review is being finalized. **No production deployment or
-real-model quality acceptance.**
+Task 3 local engineering checks and scoped reviews are complete. Platform code
+is committed through `8c90344` (app/UI evidence `7fd92fe`); MetaBot through
+`c78f697` (output retention `7f38269`). **No production deployment or real-model
+quality acceptance.** Production activation and target-specific release checks
+remain separate, explicitly unperformed boundaries below.
 
 ## Business evidence
 
@@ -83,6 +85,21 @@ Backend cwd `backend`; Python is
   not relabeled clean.
 
 ## Task 3 local engineering evidence
+
+- Actual MetaBot `src/index.ts` now installs the v5 service behind an explicit
+  default-off gate. A real child-process entrypoint with disposable PostgreSQL
+  returned authenticated readiness. Invalid flags fail closed. Disabled shutdown
+  preserves old non-waiting behavior; enabled HTTP/service drain and startup
+  failure cleanup are bounded without asserting native stopped proof.
+- Final startup suites: **7 passed, 1.33s**; immediately preceding startup/HTTP/
+  lifecycle run **59 passed, 1 opt-in skipped, 3.63s**. TypeScript no-emit and
+  scoped ESLint exit 0. Platform full `test_execution_worker_runtime.py` plus
+  actual app startup: **102 passed, 3.30s**. One strict Relay flag enables both
+  callbacks and transport; ordinary startup leaves both disabled.
+- Independent scope verdicts: Platform startup/factory Approved;
+  MetaBot startup and its cross-task minimum-WEB integration Approved. The single
+  blocking shutdown finding was fixed and retested before commit. No remaining
+  Critical/Important findings in these reviewed scopes.
 
 - MetaBot `7f38269`: exact complete/late-begin acknowledgement plus the original
   native stop proof permits deletion of matching redundant file bytes. Retained
@@ -173,9 +190,7 @@ or performed. No shared Nginx, Office, Feishu, Team or other Bot was changed.
 
 ## Remaining activation boundaries
 
-1. Finish the bounded startup-shutdown candidate review recorded at the top;
-   this is the remaining local code checkpoint, not another architecture task.
-2. Authorized activation must explicitly provision the independent DirectWorker
+1. Authorized activation must explicitly provision the independent DirectWorker
    and enable both cloud `PLATFORM_HR_WEB_WORKER_ENABLED=1` and local signed
    Relay `PLATFORM_WORKER_V5_ENABLED=1`. MetaBot's separate opt-in is
    `METABOT_HR_WEB_V5_ENABLED=1`, with `METABOT_HR_WEB_V5_CALLBACK_ORIGIN`,
@@ -184,14 +199,14 @@ or performed. No shared Nginx, Office, Feishu, Team or other Bot was changed.
    Existing runtime PG/bridge credential files, HR model and Feishu configuration
    remain authoritative. Team's environment allowlist needs its own authorized
    configuration update; these names must not silently activate another Bot.
-3. Input/native files without verifiable original ownership or stop evidence
+2. Input/native files without verifiable original ownership or stop evidence
    remain preserved. No arbitrary age-based erasure or guessed orphan deletion;
    record their disk usage under the application's `/data` inventory at activation.
-4. Actual target migration allocation, HR-only release composition, compatible
+3. Actual target migration allocation, HR-only release composition, compatible
    rollback versions and disk/image budgets remain a separate authorized release
    check. Pending SQL is unapplied and unnumbered; no production claim is implied
    by the local ordering and static script inspection above.
-5. Real-model/production acceptance requires separately bounded authority. No
+4. Real-model/production acceptance requires separately bounded authority. No
    push, merge, deploy, business sending or production migration was performed.
    Original two dirty 09-07 documents and dependency/runtime directories remain
    outside the task commits.
