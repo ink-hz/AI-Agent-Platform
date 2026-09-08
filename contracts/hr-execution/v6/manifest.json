@@ -1,0 +1,9 @@
+{
+  "contractVersion": "core_chat_collaboration_v6",
+  "authority": "AI-Agent-Platform",
+  "files": {
+    "command.schema.json": "727575ee215d3ebe86796edfce6f5669169c0bf15928c8d729aeed6ca2ab0b98",
+    "callback.schema.json": "2cb12e521b0170cc0214c2a66cad3b3c1dc63b50706b619c616ea180489dbb64",
+    "business-tools.schema.json": "805c0d4ec03ef20985f82ea55dd222e1870c8d34c1ee8fa6b5984f00a9ac3514"
+  }
+}

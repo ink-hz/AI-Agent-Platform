@@ -1,0 +1,526 @@
+{
+  "$defs": {
+    "HrBusinessToolGrant": {
+      "additionalProperties": false,
+      "properties": {
+        "grantId": {
+          "format": "uuid",
+          "title": "Grantid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "bearerToken": {
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "title": "Bearertoken",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "grantId",
+        "bearerToken",
+        "expiresAt"
+      ],
+      "title": "HrBusinessToolGrant",
+      "type": "object"
+    },
+    "HrMethodSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "scenarioId": {
+          "anyOf": [
+            {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Scenarioid"
+        },
+        "methodIds": {
+          "items": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Methodids",
+          "type": "array"
+        },
+        "catalogRelease": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Catalogrelease",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scenarioId",
+        "methodIds",
+        "catalogRelease"
+      ],
+      "title": "HrMethodSelection",
+      "type": "object"
+    },
+    "HrRolePackageRef": {
+      "additionalProperties": false,
+      "properties": {
+        "teamCommit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Teamcommit",
+          "type": "string"
+        },
+        "catalogRelease": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Catalogrelease",
+          "type": "string"
+        },
+        "manifestSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Manifestsha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "teamCommit",
+        "catalogRelease",
+        "manifestSha256"
+      ],
+      "title": "HrRolePackageRef",
+      "type": "object"
+    },
+    "HrTurnScope": {
+      "additionalProperties": false,
+      "properties": {
+        "positionId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string",
+              "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Positionid"
+        },
+        "positionCandidateIds": {
+          "items": {
+            "format": "uuid",
+            "type": "string",
+            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "maxItems": 10,
+          "title": "Positioncandidateids",
+          "type": "array"
+        },
+        "attachmentIds": {
+          "items": {
+            "format": "uuid",
+            "type": "string",
+            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "maxItems": 32,
+          "title": "Attachmentids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "positionId",
+        "positionCandidateIds",
+        "attachmentIds"
+      ],
+      "title": "HrTurnScope",
+      "type": "object"
+    },
+    "OutputWriteGrantPayload": {
+      "additionalProperties": false,
+      "description": "Task-bound write capability for registering Platform-owned artifacts.",
+      "properties": {
+        "taskId": {
+          "format": "uuid",
+          "title": "Taskid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "agentId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Agentid",
+          "type": "string"
+        },
+        "uploadUrl": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Uploadurl",
+          "type": "string"
+        },
+        "bearerToken": {
+          "maxLength": 43,
+          "minLength": 43,
+          "title": "Bearertoken",
+          "type": "string"
+        },
+        "maxFiles": {
+          "exclusiveMinimum": 0,
+          "maximum": 20,
+          "title": "Maxfiles",
+          "type": "integer"
+        },
+        "maxTotalBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 262144000,
+          "title": "Maxtotalbytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "taskId",
+        "agentId",
+        "uploadUrl",
+        "bearerToken",
+        "maxFiles",
+        "maxTotalBytes"
+      ],
+      "title": "OutputWriteGrantPayload",
+      "type": "object"
+    },
+    "PermissionScopeV5": {
+      "additionalProperties": false,
+      "properties": {
+        "principalRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Principalref",
+          "type": "string"
+        },
+        "conversationId": {
+          "format": "uuid",
+          "title": "Conversationid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "agentId": {
+          "const": "hr-bot",
+          "title": "Agentid",
+          "type": "string"
+        },
+        "toolPolicy": {
+          "enum": [
+            "default",
+            "none"
+          ],
+          "title": "Toolpolicy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "principalRef",
+        "conversationId",
+        "agentId",
+        "toolPolicy"
+      ],
+      "title": "PermissionScopeV5",
+      "type": "object"
+    },
+    "TaskAttachmentGrantPayload": {
+      "additionalProperties": false,
+      "description": "Task-bound, short-lived read capability sent only through relay ciphertext.",
+      "properties": {
+        "attachmentId": {
+          "format": "uuid",
+          "title": "Attachmentid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "displayName": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Displayname",
+          "type": "string"
+        },
+        "detectedMime": {
+          "maxLength": 255,
+          "minLength": 3,
+          "title": "Detectedmime",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 52428800,
+          "title": "Sizebytes",
+          "type": "integer"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "title": "Sha256",
+          "type": "string"
+        },
+        "downloadUrl": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Downloadurl",
+          "type": "string"
+        },
+        "bearerToken": {
+          "maxLength": 43,
+          "minLength": 43,
+          "title": "Bearertoken",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "displayName",
+        "detectedMime",
+        "sizeBytes",
+        "sha256",
+        "downloadUrl",
+        "bearerToken",
+        "expiresAt"
+      ],
+      "title": "TaskAttachmentGrantPayload",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "core_chat_collaboration_v6",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "runId": {
+      "format": "uuid",
+      "title": "Runid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "commandId": {
+      "format": "uuid",
+      "title": "Commandid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "attemptId": {
+      "format": "uuid",
+      "title": "Attemptid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "attemptNo": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Attemptno",
+      "type": "integer"
+    },
+    "leaseEpoch": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Leaseepoch",
+      "type": "integer"
+    },
+    "turnId": {
+      "format": "uuid",
+      "title": "Turnid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "turnSeq": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Turnseq",
+      "type": "integer"
+    },
+    "commandSeq": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Commandseq",
+      "type": "integer"
+    },
+    "conversationId": {
+      "format": "uuid",
+      "title": "Conversationid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "triggerMessageId": {
+      "format": "uuid",
+      "title": "Triggermessageid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "principalRef": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Principalref",
+      "type": "string"
+    },
+    "targetBot": {
+      "const": "hr-bot",
+      "title": "Targetbot",
+      "type": "string"
+    },
+    "prompt": {
+      "maxLength": 131072,
+      "minLength": 1,
+      "title": "Prompt",
+      "type": "string"
+    },
+    "contextMode": {
+      "const": "frozen_intent_with_tools",
+      "title": "Contextmode",
+      "type": "string"
+    },
+    "contextHash": {
+      "maxLength": 64,
+      "minLength": 64,
+      "title": "Contexthash",
+      "type": "string"
+    },
+    "commandHash": {
+      "maxLength": 64,
+      "minLength": 64,
+      "title": "Commandhash",
+      "type": "string"
+    },
+    "eventCallbackUrl": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Eventcallbackurl",
+      "type": "string"
+    },
+    "taskSessionId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Tasksessionid",
+      "type": "string"
+    },
+    "resultMode": {
+      "const": "public_markdown",
+      "title": "Resultmode",
+      "type": "string"
+    },
+    "permissionScope": {
+      "$ref": "#/$defs/PermissionScopeV5"
+    },
+    "inputAttachmentGrants": {
+      "items": {
+        "$ref": "#/$defs/TaskAttachmentGrantPayload"
+      },
+      "maxItems": 32,
+      "title": "Inputattachmentgrants",
+      "type": "array"
+    },
+    "outputWriteGrant": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OutputWriteGrantPayload"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "retryOf": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Retryof"
+    },
+    "scope": {
+      "$ref": "#/$defs/HrTurnScope"
+    },
+    "rolePackage": {
+      "$ref": "#/$defs/HrRolePackageRef"
+    },
+    "methodSelection": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HrMethodSelection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "toolCapabilities": {
+      "items": {
+        "enum": [
+          "hr.read_context",
+          "hr.submit_result",
+          "hr.confirm_standard"
+        ],
+        "type": "string"
+      },
+      "maxItems": 3,
+      "title": "Toolcapabilities",
+      "type": "array"
+    },
+    "businessToolGrant": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HrBusinessToolGrant"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contractVersion",
+    "runId",
+    "commandId",
+    "attemptId",
+    "attemptNo",
+    "leaseEpoch",
+    "turnId",
+    "turnSeq",
+    "commandSeq",
+    "conversationId",
+    "triggerMessageId",
+    "principalRef",
+    "targetBot",
+    "prompt",
+    "contextMode",
+    "contextHash",
+    "commandHash",
+    "eventCallbackUrl",
+    "taskSessionId",
+    "resultMode",
+    "permissionScope",
+    "inputAttachmentGrants",
+    "outputWriteGrant",
+    "retryOf",
+    "scope",
+    "rolePackage",
+    "methodSelection",
+    "toolCapabilities",
+    "businessToolGrant"
+  ],
+  "title": "CoreChatCommandV6",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/hr-execution/v6/command.schema.json",
+  "$comment": "Generated from contracts_v6.py. Runtime also checks cross-field identity, scope, canonical hashes and UTF-8 limits."
+}

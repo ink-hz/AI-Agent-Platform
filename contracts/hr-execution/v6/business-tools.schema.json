@@ -1,0 +1,757 @@
+{
+  "$defs": {
+    "HrAnalysisResult": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaId": {
+          "const": "hr.analysis.v1",
+          "title": "Schemaid",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "markdown": {
+          "maxLength": 131072,
+          "minLength": 1,
+          "title": "Markdown",
+          "type": "string"
+        },
+        "sourceRefs": {
+          "items": {
+            "$ref": "#/$defs/HrSourceRef"
+          },
+          "maxItems": 100,
+          "title": "Sourcerefs",
+          "type": "array"
+        },
+        "methodSteps": {
+          "items": {
+            "$ref": "#/$defs/HrMethodStep"
+          },
+          "maxItems": 100,
+          "title": "Methodsteps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaId",
+        "title",
+        "markdown",
+        "sourceRefs",
+        "methodSteps"
+      ],
+      "title": "HrAnalysisResult",
+      "type": "object"
+    },
+    "HrCandidateAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaId": {
+          "const": "hr.candidate-analysis.v1",
+          "title": "Schemaid",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "contextVersionId": {
+          "format": "uuid",
+          "title": "Contextversionid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "positionCandidateIds": {
+          "items": {
+            "format": "uuid",
+            "type": "string",
+            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "title": "Positioncandidateids",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/HrCandidateEvidence"
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "markdown": {
+          "maxLength": 131072,
+          "minLength": 1,
+          "title": "Markdown",
+          "type": "string"
+        },
+        "sourceRefs": {
+          "items": {
+            "$ref": "#/$defs/HrSourceRef"
+          },
+          "maxItems": 100,
+          "title": "Sourcerefs",
+          "type": "array"
+        },
+        "methodSteps": {
+          "items": {
+            "$ref": "#/$defs/HrMethodStep"
+          },
+          "maxItems": 100,
+          "title": "Methodsteps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaId",
+        "title",
+        "contextVersionId",
+        "positionCandidateIds",
+        "evidence",
+        "markdown",
+        "sourceRefs",
+        "methodSteps"
+      ],
+      "title": "HrCandidateAnalysis",
+      "type": "object"
+    },
+    "HrCandidateEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "positionCandidateId": {
+          "format": "uuid",
+          "title": "Positioncandidateid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "dimension": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Dimension",
+          "type": "string"
+        },
+        "evidence": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "assessment": {
+          "enum": [
+            "supported",
+            "uncertain",
+            "contradicted"
+          ],
+          "title": "Assessment",
+          "type": "string"
+        },
+        "verification": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Verification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "positionCandidateId",
+        "dimension",
+        "evidence",
+        "assessment",
+        "verification"
+      ],
+      "title": "HrCandidateEvidence",
+      "type": "object"
+    },
+    "HrConfirmStandardRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "const": "hr.confirm_standard",
+          "title": "Tool",
+          "type": "string"
+        },
+        "operationId": {
+          "format": "uuid",
+          "title": "Operationid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "proposalResultId": {
+          "format": "uuid",
+          "title": "Proposalresultid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "proposalContentSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Proposalcontentsha256",
+          "type": "string"
+        },
+        "confirmationMessageId": {
+          "format": "uuid",
+          "title": "Confirmationmessageid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "expectedContextVersionId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string",
+              "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expectedcontextversionid"
+        },
+        "selectedChangeIds": {
+          "items": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Selectedchangeids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tool",
+        "operationId",
+        "proposalResultId",
+        "proposalContentSha256",
+        "confirmationMessageId",
+        "expectedContextVersionId",
+        "selectedChangeIds"
+      ],
+      "title": "HrConfirmStandardRequest",
+      "type": "object"
+    },
+    "HrMethodStep": {
+      "additionalProperties": false,
+      "properties": {
+        "methodId": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Methodid",
+          "type": "string"
+        },
+        "stepId": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Stepid",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "skipped",
+            "blocked",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "evidence": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "methodId",
+        "stepId",
+        "status",
+        "evidence"
+      ],
+      "title": "HrMethodStep",
+      "type": "object"
+    },
+    "HrReadContextRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "const": "hr.read_context",
+          "title": "Tool",
+          "type": "string"
+        },
+        "operationId": {
+          "format": "uuid",
+          "title": "Operationid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "resourceKind": {
+          "enum": [
+            "official_position",
+            "confirmed_standard",
+            "material",
+            "intelligence"
+          ],
+          "title": "Resourcekind",
+          "type": "string"
+        },
+        "resourceId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string",
+              "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Resourceid"
+        },
+        "readMode": {
+          "enum": [
+            "recorded",
+            "reverify"
+          ],
+          "title": "Readmode",
+          "type": "string"
+        },
+        "versionRef": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Versionref"
+        }
+      },
+      "required": [
+        "tool",
+        "operationId",
+        "resourceKind",
+        "resourceId",
+        "readMode",
+        "versionRef"
+      ],
+      "title": "HrReadContextRequest",
+      "type": "object"
+    },
+    "HrSourceRef": {
+      "additionalProperties": false,
+      "description": "A recorded read, not an arbitrary unverified model-provided URL.",
+      "properties": {
+        "readId": {
+          "format": "uuid",
+          "title": "Readid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "contentSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Contentsha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "readId",
+        "contentSha256"
+      ],
+      "title": "HrSourceRef",
+      "type": "object"
+    },
+    "HrStandardChange": {
+      "additionalProperties": false,
+      "properties": {
+        "changeId": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Changeid",
+          "type": "string"
+        },
+        "module": {
+          "enum": [
+            "mission",
+            "jd",
+            "jr",
+            "competencies",
+            "talent_profile",
+            "sourcing_strategy",
+            "interview_standard",
+            "unknowns"
+          ],
+          "title": "Module",
+          "type": "string"
+        },
+        "markdown": {
+          "maxLength": 32768,
+          "minLength": 1,
+          "title": "Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "changeId",
+        "module",
+        "markdown"
+      ],
+      "title": "HrStandardChange",
+      "type": "object"
+    },
+    "HrStandardProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaId": {
+          "const": "hr.standard-proposal.v1",
+          "title": "Schemaid",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "baseContextVersionId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string",
+              "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Basecontextversionid"
+        },
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/HrStandardChange"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Changes",
+          "type": "array"
+        },
+        "sourceRefs": {
+          "items": {
+            "$ref": "#/$defs/HrSourceRef"
+          },
+          "maxItems": 100,
+          "title": "Sourcerefs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaId",
+        "title",
+        "baseContextVersionId",
+        "changes",
+        "sourceRefs"
+      ],
+      "title": "HrStandardProposal",
+      "type": "object"
+    },
+    "HrSubmitResultRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "const": "hr.submit_result",
+          "title": "Tool",
+          "type": "string"
+        },
+        "operationId": {
+          "format": "uuid",
+          "title": "Operationid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "result": {
+          "discriminator": {
+            "mapping": {
+              "hr.analysis.v1": "#/$defs/HrAnalysisResult",
+              "hr.candidate-analysis.v1": "#/$defs/HrCandidateAnalysis",
+              "hr.standard-proposal.v1": "#/$defs/HrStandardProposal"
+            },
+            "propertyName": "schemaId"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/HrAnalysisResult"
+            },
+            {
+              "$ref": "#/$defs/HrStandardProposal"
+            },
+            {
+              "$ref": "#/$defs/HrCandidateAnalysis"
+            }
+          ],
+          "title": "Result"
+        }
+      },
+      "required": [
+        "tool",
+        "operationId",
+        "result"
+      ],
+      "title": "HrSubmitResultRequest",
+      "type": "object"
+    },
+    "HrToolFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "error",
+          "title": "Status",
+          "type": "string"
+        },
+        "code": {
+          "enum": [
+            "permission_expired",
+            "scope_mismatch",
+            "version_conflict",
+            "idempotency_conflict",
+            "source_unavailable",
+            "result_unregistered",
+            "confirmation_required"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "message": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "code",
+        "retryable",
+        "message"
+      ],
+      "title": "HrToolFailure",
+      "type": "object"
+    },
+    "HrReadContextReply": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "ok",
+          "title": "Status",
+          "type": "string"
+        },
+        "tool": {
+          "const": "hr.read_context",
+          "title": "Tool",
+          "type": "string"
+        },
+        "readId": {
+          "format": "uuid",
+          "title": "Readid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "resourceKind": {
+          "enum": [
+            "official_position",
+            "confirmed_standard",
+            "material",
+            "intelligence"
+          ],
+          "title": "Resourcekind",
+          "type": "string"
+        },
+        "resourceId": {
+          "format": "uuid",
+          "title": "Resourceid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "versionRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Versionref",
+          "type": "string"
+        },
+        "contentSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Contentsha256",
+          "type": "string"
+        },
+        "verification": {
+          "enum": [
+            "current",
+            "recorded",
+            "degraded"
+          ],
+          "title": "Verification",
+          "type": "string"
+        },
+        "contentText": {
+          "maxLength": 262144,
+          "minLength": 1,
+          "title": "Contenttext",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "tool",
+        "readId",
+        "resourceKind",
+        "resourceId",
+        "versionRef",
+        "contentSha256",
+        "verification",
+        "contentText"
+      ],
+      "title": "HrReadContextReply",
+      "type": "object"
+    },
+    "HrResultRef": {
+      "additionalProperties": false,
+      "properties": {
+        "resultId": {
+          "format": "uuid",
+          "title": "Resultid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "schemaId": {
+          "enum": [
+            "hr.analysis.v1",
+            "hr.standard-proposal.v1",
+            "hr.candidate-analysis.v1"
+          ],
+          "title": "Schemaid",
+          "type": "string"
+        },
+        "contentSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Contentsha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resultId",
+        "schemaId",
+        "contentSha256"
+      ],
+      "title": "HrResultRef",
+      "type": "object"
+    },
+    "HrSubmitResultReply": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "ok",
+          "title": "Status",
+          "type": "string"
+        },
+        "tool": {
+          "const": "hr.submit_result",
+          "title": "Tool",
+          "type": "string"
+        },
+        "resultRef": {
+          "$ref": "#/$defs/HrResultRef"
+        }
+      },
+      "required": [
+        "status",
+        "tool",
+        "resultRef"
+      ],
+      "title": "HrSubmitResultReply",
+      "type": "object"
+    },
+    "HrConfirmStandardReply": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "ok",
+          "title": "Status",
+          "type": "string"
+        },
+        "tool": {
+          "const": "hr.confirm_standard",
+          "title": "Tool",
+          "type": "string"
+        },
+        "contextVersionId": {
+          "format": "uuid",
+          "title": "Contextversionid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "confirmedBy": {
+          "format": "uuid",
+          "title": "Confirmedby",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "confirmedAt": {
+          "format": "date-time",
+          "title": "Confirmedat",
+          "type": "string"
+        },
+        "selectedChangeIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Selectedchangeids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "tool",
+        "contextVersionId",
+        "confirmedBy",
+        "confirmedAt",
+        "selectedChangeIds"
+      ],
+      "title": "HrConfirmStandardReply",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "hr.confirm_standard": "#/$defs/HrConfirmStandardRequest",
+      "hr.read_context": "#/$defs/HrReadContextRequest",
+      "hr.submit_result": "#/$defs/HrSubmitResultRequest"
+    },
+    "propertyName": "tool"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/HrReadContextRequest"
+    },
+    {
+      "$ref": "#/$defs/HrSubmitResultRequest"
+    },
+    {
+      "$ref": "#/$defs/HrConfirmStandardRequest"
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/hr-execution/v6/business-tools.schema.json",
+  "$comment": "Generated from contracts_v6.py. Runtime also checks cross-field identity, scope, canonical hashes and UTF-8 limits."
+}
