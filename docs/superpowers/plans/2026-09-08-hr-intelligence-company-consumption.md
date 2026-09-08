@@ -119,11 +119,11 @@ type HrIntelligenceReference = {
 - [x] Capture endpoint payload bytes and local request timings as local evidence, not production speed claims; ensure first list excludes jobs/evidence blobs and detail excludes job bulk.
 - [x] Run relevant backend/API/repository regression and frontend tests, then build. Audit new API outputs with frontend parser using real response artifacts.
 - [x] Perform one final browser pass for company selection, reading, evidence, pagination, return and reference composer states, if browser capability is available. Record any unverified state precisely.
-- [ ] Task-specific review then final combined review, fix important findings and rerun affected tests; record commit/test evidence and outstanding upstream/runtime limitations. Keep branch for user review, no deployment or merge.
+- [x] Task-specific review then final combined review, fix important findings and rerun affected tests; record commit/test evidence and outstanding upstream/runtime limitations. Keep branch for user review, no deployment or merge.
 
 ## Progress
 
 - Baseline backend: panorama API/service 18 passed. Frontend dependency install needed in this worktree; no application failure observed before install.
 - Plan reviewed against approved design: company implementation is independently scoped; full topic and ordinary Agent discovery remain distinct dependencies and must not be declared complete by selection transport.
 
-- 公司 API、UI、显式选材分项复审通过；真实 HTTP 与浏览器验收通过，证据见 docs/reviews/2026-09-08-hr-company-intelligence-implementation.md。最终联合复审待完成。
+- 公司 API、UI、显式选材分项复审通过；真实 HTTP 与浏览器验收通过，证据见 docs/reviews/2026-09-08-hr-company-intelligence-implementation.md。最终联合复审通过，最后运行代码 c279cdb；真实页面重复点击回归及 HTTP 复验通过。
