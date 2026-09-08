@@ -511,6 +511,27 @@ describe("ConversationPage", () => {
     expect(onRemove).toHaveBeenCalledWith(reference.key);
   });
 
+  it("submits a selected intelligence reference without typed text", async () => {
+    const reference: HrIntelligenceReference = { key: "ref-only", bundleId: "bundle-7", companyKey: "acme", companyName: "Acme", label: "公司判断", generatedAt: "2026-09-08T06:00:00Z", excerpt: "研发岗位增加。", sourceUrls: ["https://example.com/source"] };
+    const send = vi.fn().mockResolvedValue(submissionResult("参考材料"));
+    const createMessageSubmission = vi.fn().mockReturnValue({ idempotencyKey: "reference-only", send });
+    await act(async () => root.render(<ConversationPage account={account} client={client({ createMessageSubmission })} conversationId={conversationId} intelligenceReferences={[reference]} />));
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")!.click());
+    expect(createMessageSubmission).toHaveBeenCalledTimes(1);
+    expect(createMessageSubmission.mock.calls[0]?.[1]).toEqual(expect.stringContaining('reference_key: "ref-only"'));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects reference plus text exceeding the serialized 32 KiB limit", async () => {
+    const reference: HrIntelligenceReference = { key: "ref-size", bundleId: "bundle-7", companyKey: "acme", companyName: "Acme", label: "公司判断", generatedAt: "2026-09-08T06:00:00Z", excerpt: "材料".repeat(1000), sourceUrls: [] };
+    const createMessageSubmission = vi.fn();
+    await act(async () => root.render(<ConversationPage account={account} client={client({ createMessageSubmission })} conversationId={conversationId} intelligenceReferences={[reference]} />));
+    await setTextarea(container, "a".repeat(30 * 1024));
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")!.click());
+    expect(createMessageSubmission).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("正文与所选情报合计超过 32 KiB");
+  });
+
   it("stops the current turn without hiding the conversation", async () => {
     const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
     const stream = deferred<void>();
