@@ -275,9 +275,9 @@ export function DirectAgentWorkspace({
     <ConversationSidebar
       archivedConversations={archivedConversations}
       conversationHref={conversationPath}
-      title={card.display_name}
-      label={workspaceLabel}
-      mark={workspaceMark}
+      title={agentId === "hr-bot" ? "最近对话" : card.display_name}
+      label={agentId === "hr-bot" ? undefined : workspaceLabel}
+      mark={agentId === "hr-bot" ? undefined : workspaceMark}
       conversations={conversations}
       selectedConversationId={conversationId}
       loading={historyLoading}
