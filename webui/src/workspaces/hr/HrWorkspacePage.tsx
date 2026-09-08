@@ -21,6 +21,9 @@ import { HrPositionIndex } from "./HrPositionIndex";
 import { HrPositionWorkspace, loadPositionConversations } from "./HrPositionWorkspace";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
 import { useHrChatPosition } from "./useHrChatPosition";
+import {
+  formatHrIntelligenceReferences, type HrIntelligenceReference,
+} from "./hrIntelligenceReference";
 
 
 function hrConversationPath(conversationId: string): string {
@@ -71,6 +74,9 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const positionConversationRoute = Boolean(props.positionId && props.conversationId);
   const lastChatTarget = useRef<{ conversationId: string; positionId?: string } | undefined>(undefined);
   const freeChatDraftSnapshots = useRef(new Map<string, DirectAgentDraftSnapshot>());
+  const intelligenceReferencesByOwner = useRef(new Map<string, HrIntelligenceReference[]>());
+  const [, setIntelligenceReferenceRevision] = useState(0);
+  const [intelligenceReferenceFailure, setIntelligenceReferenceFailure] = useState<string | null>(null);
   const [confirmedPosition, setConfirmedPosition] = useState<{
     ownerId: string; confirmed: HrConfirmedPositionPackage; positionPackage: HrPositionPackage;
   } | null>(null);
@@ -116,6 +122,34 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const chatHref = chatTarget?.positionId
     ? `/hr/positions/${encodeURIComponent(chatTarget.positionId)}/conversations/${encodeURIComponent(chatTarget.conversationId)}`
     : chatConversationId ? hrConversationPath(chatConversationId) : "/hr/";
+  const intelligenceReferences = intelligenceReferencesByOwner.current.get(draftOwnerId) ?? [];
+  const changeIntelligenceReferences = useCallback((next: HrIntelligenceReference[]) => {
+    intelligenceReferencesByOwner.current.set(draftOwnerId, next);
+    setIntelligenceReferenceRevision((value) => value + 1);
+  }, [draftOwnerId]);
+  const selectIntelligenceReference = useCallback((reference: HrIntelligenceReference) => {
+    const current = intelligenceReferencesByOwner.current.get(draftOwnerId) ?? [];
+    const next = current.some((item) => item.key === reference.key) ? current : [...current, reference];
+    try {
+      formatHrIntelligenceReferences(next);
+    } catch {
+      setIntelligenceReferenceFailure("所选情报超过 12 KiB，请先移除部分引用。");
+      return;
+    }
+    changeIntelligenceReferences(next);
+    setIntelligenceReferenceFailure(null);
+    navigate(chatHref);
+  }, [changeIntelligenceReferences, chatHref, draftOwnerId]);
+  const removeIntelligenceReference = useCallback((key: string) => {
+    const current = intelligenceReferencesByOwner.current.get(draftOwnerId) ?? [];
+    changeIntelligenceReferences(current.filter((item) => item.key !== key));
+    setIntelligenceReferenceFailure(null);
+  }, [changeIntelligenceReferences, draftOwnerId]);
+  const clearSubmittedIntelligenceReferences = useCallback((keys: readonly string[]) => {
+    const submitted = new Set(keys);
+    const current = intelligenceReferencesByOwner.current.get(draftOwnerId) ?? [];
+    changeIntelligenceReferences(current.filter((item) => !submitted.has(item.key)));
+  }, [changeIntelligenceReferences, draftOwnerId]);
   const keepChatHost = !positionDetailActive || Boolean(positionConversationRoute && (retainedPositionHost || positionRouteValidated));
   const positionConversationPath = (conversationId: string) => props.positionId
     ? `/hr/positions/${encodeURIComponent(props.positionId)}/conversations/${encodeURIComponent(conversationId)}`
@@ -254,6 +288,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           />{chatPosition.menu(pending)}</>}
           historyClient={positionRouteValidated ? historyClient : undefined}
           initialDraftSnapshot={freeChatDraftSnapshots.current.get(draftOwnerId)}
+          intelligenceReferences={intelligenceReferences}
           key={`hr-chat:${draftOwnerId}`}
           layout={positionRouteReady ? "focused" : "standard"}
           newConversationScope={positionRouteReady && props.positionId ? { positionId: props.positionId } : selectedChatPosition ? { positionId: selectedChatPosition.positionId } : undefined}
@@ -263,6 +298,8 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
             <p>{selectedChatPosition ? "已选择岗位，直接发送需求或上传材料，开始招聘协作。" : "直接聊，或在输入框旁搜索选择岗位，再一起推进招聘工作。"}</p>
           </section>}
           onDraftSnapshotChange={retainFreeChatDraft}
+          onRemoveIntelligenceReference={removeIntelligenceReference}
+          onIntelligenceReferencesSubmitted={clearSubmittedIntelligenceReferences}
           onConversationSettled={handleConversationSettled}
           showTaskStarters={false}
           showWorkspaceBackLink={false}
@@ -309,7 +346,8 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
 
     {panoramaActive && <div className="hr-workspace-panorama-panel">
       <WorkspaceErrorBoundary title="全景分析">
-        <HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} />
+        <HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligenceReference} />
+        {intelligenceReferenceFailure && <p className="mission-input-error" role="alert">{intelligenceReferenceFailure}</p>}
       </WorkspaceErrorBoundary>
     </div>}
 

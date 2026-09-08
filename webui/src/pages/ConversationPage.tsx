@@ -9,6 +9,7 @@ import {
 } from "../attachmentApi";
 import {
   cancelCurrentTurn,
+  conversationInputTooLarge,
   confirmConversationAction,
   createConversationMessageSubmission,
   fetchConversation,
@@ -56,6 +57,10 @@ import { PublicProgress } from "../components/conversation/PublicProgress";
 import { UserInputRequest } from "../components/conversation/UserInputRequest";
 import { projectWorkroom } from "../workroomProjection";
 import { scheduleSnapshotPolling } from "./snapshotPolling";
+import {
+  serializeHrConversationText, type HrIntelligenceReference,
+} from "../workspaces/hr/hrIntelligenceReference";
+import { PlatformLink } from "../components/PlatformLink";
 
 
 export interface ConversationPageClient {
@@ -191,6 +196,9 @@ export function ConversationPage({
   onMaterialsOpenChange,
   showMaterialsTrigger = true,
   messageActionsPresentation = "legacy",
+  intelligenceReferences = [],
+  onRemoveIntelligenceReference,
+  onIntelligenceReferencesSubmitted,
 }: {
   conversationId: string;
   account: Account;
@@ -211,6 +219,9 @@ export function ConversationPage({
   onMaterialsOpenChange?: (open: boolean) => void;
   showMaterialsTrigger?: boolean;
   messageActionsPresentation?: MessageActionsPresentation;
+  intelligenceReferences?: readonly HrIntelligenceReference[];
+  onRemoveIntelligenceReference?: (key: string) => void;
+  onIntelligenceReferencesSubmitted?: (keys: readonly string[]) => void;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [workerSnapshot, setWorkerSnapshot] = useState<TurnSnapshot | null>(null);
@@ -244,6 +255,7 @@ export function ConversationPage({
   );
   const retained = useRef<{
     text: string;
+    referenceKeys: string[];
     submission: ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
   } | null>(null);
   const writeController = useRef<AbortController | null>(null);
@@ -548,7 +560,19 @@ export function ConversationPage({
   }, [account.csrf_token, account.hard_stale_read_only, client, conversationId, onConversationSettled, streamEpoch]);
 
   const sendValue = async (value: string) => {
-    const normalized = value.trim();
+    let normalized: string;
+    try {
+      normalized = serializeHrConversationText(value, intelligenceReferences);
+    } catch {
+      setSendFailure(false);
+      setAttachmentError("所选情报超过 12 KiB，请移除部分引用后再发送。");
+      return;
+    }
+    if (conversationInputTooLarge(normalized)) {
+      setSendFailure(false);
+      setAttachmentError("正文与所选情报合计超过 32 KiB，请精简后再发送。");
+      return;
+    }
     const waitingUser = detail?.current_turn?.status === "waiting_user";
     if ((!normalized && newAttachmentIds.length === 0) || inFlight.current || readOnly
       || ((workerOwned ? workerActive : turnIsActive(detail)) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
@@ -562,6 +586,7 @@ export function ConversationPage({
     if (!selected || selected.text !== submissionKey) {
       selected = {
         text: submissionKey,
+        referenceKeys: intelligenceReferences.map((item) => item.key),
         submission: client.createMessageSubmission(
           conversationId,
           attachmentLimits || newAttachmentIds.length > 0 || activeAttachmentIds.length > 0 ? submissionInput : normalized,
@@ -578,6 +603,7 @@ export function ConversationPage({
       if (controller.signal.aborted) return;
       if (expectedAgentId === "hr-bot") jumpToLatest();
       retained.current = null;
+      onIntelligenceReferencesSubmitted?.(selected.referenceKeys);
       setText("");
       setNewAttachmentIds([]); setUploadQueue([]);
       mergeIntoMessages([result.message]);
@@ -872,6 +898,15 @@ export function ConversationPage({
       value={text}
       tools={expectedAgentId === "hr-bot" ? <>{composerTools}{materialsTrigger}</> : composerTools}
     />
+    {intelligenceReferences.length > 0 && <section className="hr-intelligence-reference-selection" aria-label="已选公司情报">
+      <header><strong>已选公司情报</strong><PlatformLink href={`/hr/panorama?company=${encodeURIComponent(intelligenceReferences[0].companyKey)}`}>返回公司情报</PlatformLink></header>
+      {intelligenceReferences.map((reference) => <details key={reference.key}>
+        <summary>{reference.companyName} · {reference.label}</summary>
+        <p>{reference.excerpt}</p>
+        {reference.sourceUrls.map((url) => <a href={url} key={url} rel="noreferrer" target="_blank">查看来源</a>)}
+        {onRemoveIntelligenceReference && <button disabled={pending || readOnly} onClick={() => { retained.current = null; onRemoveIntelligenceReference(reference.key); }} type="button">移除</button>}
+      </details>)}
+    </section>}
     {readOnly && <p className="conversation-read-only" role="status">当前为只读状态，已有对话仍可查看。</p>}
     {sendFailure && <div className="conversation-action-error" role="alert"><span>消息暂未发送成功，可以使用同一次请求安全重试。</span><button className="conversation-retry" disabled={pending} onClick={() => void send()} type="button">重新发送</button></div>}
     {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}

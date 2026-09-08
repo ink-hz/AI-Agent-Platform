@@ -15,6 +15,7 @@ import {
 import { createHrApi } from "../../hrApi";
 import { createHrR12Api } from "../../hrR12Api";
 import { HrWorkspacePage } from "./HrWorkspacePage";
+import type { HrIntelligenceReference } from "./hrIntelligenceReference";
 
 
 vi.mock("../../brainApi", async (importOriginal) => ({
@@ -47,7 +48,21 @@ vi.mock("./HrPositionWorkspace", async (importOriginal) => ({
 }));
 
 vi.mock("./HrPanoramaWorkspace", () => ({
-  HrPanoramaWorkspace: () => <div data-panorama-workspace>全景报告</div>,
+  HrPanoramaWorkspace: ({ onSelectReference }: { onSelectReference?: (reference: HrIntelligenceReference) => void }) => <div data-panorama-workspace>
+    全景报告
+    <button onClick={() => onSelectReference?.({
+      key: "fact:bundle-7:unit-2:fact-9", bundleId: "bundle-7", companyKey: "acme",
+      companyName: "Acme Robotics", label: "海外岗位增长", generatedAt: "2026-09-08T06:00:00Z",
+      excerpt: "招聘岗位主要分布于深圳。", sourceUrls: ["https://example.com/jobs/9"],
+      unitId: "unit-2", claimType: "fact", localId: "fact-9",
+    })} type="button">带入对话</button>
+    <button onClick={() => onSelectReference?.({
+      key: "fact:bundle-7:unit-2:fact-10", bundleId: "bundle-7", companyKey: "acme",
+      companyName: "Acme Robotics", label: "新增情报", generatedAt: "2026-09-08T06:00:00Z",
+      excerpt: "发送期间新增的选择。", sourceUrls: ["https://example.com/jobs/10"],
+      unitId: "unit-2", claimType: "fact", localId: "fact-10",
+    })} type="button">带入第二条</button>
+  </div>,
 }));
 
 vi.mock("../../attachmentApi", async (importOriginal) => {
@@ -346,6 +361,102 @@ describe("HrWorkspacePage", () => {
     expect(container.querySelector<HTMLAnchorElement>(
       '.hr-workspace-nav a[href="/hr/conversations/c-7"]',
     )?.textContent).toBe("对话");
+  });
+
+  it("selects explicitly without sending or replacing the draft, then returns to the known chat", async () => {
+    window.history.replaceState({}, "", "/hr/conversations/c-7");
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    const textarea = container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "保留我的草稿");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "带入对话")?.click());
+
+    expect(startConversation).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/hr/conversations/c-7");
+    expect(textarea.value).toBe("保留我的草稿");
+    expect(container.textContent).toContain("海外岗位增长");
+    expect(container.textContent).toContain("Acme Robotics");
+  });
+
+  it("scopes selected intelligence to the account and uses the free-chat draft when no chat is known", async () => {
+    window.history.replaceState({}, "", "/hr/panorama");
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "带入对话")?.click());
+
+    expect(window.location.pathname).toBe("/hr/");
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    expect(container.textContent).toContain("海外岗位增长");
+
+    await act(async () => root.render(<HrWorkspacePage account={{ ...account, internal_user_id: "other-user" }} />));
+    expect(container.textContent).not.toContain("海外岗位增长");
+  });
+
+  it("serializes selected intelligence into one frozen new-conversation request and clears it on success", async () => {
+    const send = vi.fn().mockRejectedValueOnce(new TypeError("offline")).mockResolvedValueOnce({
+      conversation: {
+        conversation_id: "c-new", mode: "direct_agent", direct_agent_id: "hr-bot", title: "招聘对话",
+        status: "active", summary_through_seq: 0, created_at: "2026-09-08T06:00:00Z",
+        updated_at: "2026-09-08T06:00:00Z", archived_at: null, execution_owner: "platform",
+      },
+      turn: { turn_id: "turn-new" }, message: { message_id: "message-new" },
+    });
+    vi.mocked(startConversation).mockReturnValue({ idempotencyKey: "same", send } as never);
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "带入对话")?.click());
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    const textarea = container.querySelector<HTMLTextAreaElement>("#direct-agent-request")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "请分析");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(".agent-direct-submit")?.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "重新提交")?.click());
+
+    expect(startConversation).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    const input = vi.mocked(startConversation).mock.calls[0]?.[0];
+    expect(input).toEqual(expect.stringContaining("请分析\n\n---\n"));
+    expect(input).toEqual(expect.stringContaining("bundle_id: bundle-7"));
+    expect(container.textContent).not.toContain("海外岗位增长");
+  });
+
+  it("clears only the references captured by a successful pending submission", async () => {
+    let finish!: (value: unknown) => void;
+    const pendingResult = new Promise((resolve) => { finish = resolve; });
+    vi.mocked(startConversation).mockReturnValue({
+      idempotencyKey: "pending-reference", send: vi.fn().mockReturnValue(pendingResult),
+    } as never);
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "带入对话")?.click());
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    const textarea = container.querySelector<HTMLTextAreaElement>("#direct-agent-request")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "请分析");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      container.querySelector<HTMLButtonElement>(".agent-direct-submit")?.click();
+    });
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "带入第二条")?.click());
+    await act(async () => finish({
+      conversation: {
+        conversation_id: "c-new", mode: "direct_agent", direct_agent_id: "hr-bot", title: "招聘对话",
+        status: "active", summary_through_seq: 0, created_at: "2026-09-08T06:00:00Z",
+        updated_at: "2026-09-08T06:00:00Z", archived_at: null, execution_owner: "platform",
+      }, turn: { turn_id: "turn-new" }, message: { message_id: "message-new" },
+    }));
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+
+    expect(container.textContent).not.toContain("海外岗位增长");
+    expect(container.textContent).toContain("新增情报");
   });
 
   it("opens a new HR conversation at the canonical workspace root with a trailing slash", async () => {

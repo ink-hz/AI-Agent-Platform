@@ -18,6 +18,7 @@ import type {
   TurnSnapshot,
 } from "../conversationTypes";
 import { ConversationPage, type ConversationPageClient } from "./ConversationPage";
+import type { HrIntelligenceReference } from "../workspaces/hr/hrIntelligenceReference";
 
 
 const conversationId = "8c13c965-1b60-472e-b275-199987d1d109";
@@ -473,6 +474,40 @@ describe("ConversationPage", () => {
 
     expect(createMessageSubmission).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows removable selected intelligence and freezes its serialized text across a failed retry", async () => {
+    const reference: HrIntelligenceReference = {
+      key: "fact:bundle-7:unit-2:fact-9", bundleId: "bundle-7", companyKey: "acme",
+      companyName: "Acme Robotics", label: "海外岗位增长", generatedAt: "2026-09-08T06:00:00Z",
+      excerpt: "招聘岗位主要分布于深圳。", sourceUrls: ["https://example.com/jobs/9"],
+      unitId: "unit-2", claimType: "fact", localId: "fact-9",
+    };
+    const send = vi.fn().mockRejectedValueOnce(new TypeError("offline")).mockResolvedValueOnce(submissionResult("继续"));
+    const createMessageSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
+    const onRemove = vi.fn();
+    const onSubmitted = vi.fn();
+    await act(async () => root.render(<ConversationPage
+      account={account} client={client({ createMessageSubmission })} conversationId={conversationId}
+      intelligenceReferences={[reference]} onRemoveIntelligenceReference={onRemove}
+      onIntelligenceReferencesSubmitted={onSubmitted}
+    />));
+
+    expect(container.textContent).toContain("Acme Robotics · 海外岗位增长");
+    await setTextarea(container, "请继续分析");
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-retry")?.click());
+
+    expect(createMessageSubmission).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    const submitted = createMessageSubmission.mock.calls[0]?.[1] as string;
+    expect(submitted).toContain("请继续分析\n\n---\n");
+    expect(submitted).toContain("bundle_id: bundle-7");
+    expect(onSubmitted).toHaveBeenCalledWith([reference.key]);
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "移除")?.click());
+    expect(onRemove).toHaveBeenCalledWith(reference.key);
   });
 
   it("stops the current turn without hiding the conversation", async () => {
