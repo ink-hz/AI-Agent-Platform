@@ -1,0 +1,365 @@
+.hr-company-workspace {
+  width: min(1440px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 24px 0 72px;
+  color: #19324d;
+}
+.hr-company-hero {
+  padding: 28px 32px;
+  border: 1px solid #d9e2ea;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #fff, #f3f7fa);
+}
+.hr-company-hero p,
+.hr-company-detail-header p {
+  margin: 0;
+  color: #2a6d88;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.hr-company-hero h1 {
+  margin: 6px 0;
+  font-size: 36px;
+}
+.hr-company-hero span {
+  color: #587086;
+}
+.hr-company-roots {
+  display: flex;
+  gap: 4px;
+  margin: 18px 0;
+  padding: 4px;
+  border-bottom: 1px solid #dbe3e9;
+}
+.hr-company-roots button {
+  padding: 10px 22px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #52697d;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+.hr-company-roots button[aria-current="page"] {
+  background: #e9f2f5;
+  color: #15556d;
+}
+.hr-company-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 30px;
+  align-items: start;
+}
+.hr-company-index {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.hr-company-index label {
+  display: grid;
+  gap: 7px;
+  color: #52697d;
+  font-size: 13px;
+}
+.hr-company-index input,
+.hr-company-job-filters input,
+.hr-company-job-filters select {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #cbd8df;
+  border-radius: 9px;
+  background: #fff;
+  font: inherit;
+}
+.hr-company-index nav {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+}
+.hr-company-index nav button {
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+  text-align: left;
+  border: 1px solid #d8e2e8;
+  border-radius: 11px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+.hr-company-index nav button[aria-current="page"] {
+  border-color: #4385a0;
+  background: #eff7f8;
+}
+.hr-company-index nav span {
+  color: #60768a;
+  font-size: 12px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.hr-company-state,
+.hr-company-topic-state {
+  display: grid;
+  gap: 8px;
+  padding: 36px;
+  border: 1px solid #dbe4ea;
+  border-radius: 16px;
+  background: #fff;
+  color: #587086;
+}
+.hr-company-state.is-error {
+  color: #9a432f;
+  background: #fff8f4;
+}
+.hr-company-back {
+  margin-bottom: 14px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: #23627a;
+  font: inherit;
+  cursor: pointer;
+}
+.hr-company-index-time {
+  color: #657b8d;
+  font-size: 12px;
+}
+.hr-company-index nav small {
+  color: #738697;
+  font-size: 11px;
+}
+.hr-company-detail {
+  display: grid;
+  gap: 22px;
+}
+.hr-company-detail-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: end;
+}
+.hr-company-detail-header h2 {
+  margin: 4px 0;
+  font-size: 32px;
+}
+.hr-company-detail-header span,
+.hr-company-detail-header time {
+  color: #64798b;
+  font-size: 13px;
+}
+.hr-company-lead {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.65;
+}
+.hr-company-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 13px 16px;
+  border-left: 3px solid #c29135;
+  background: #fff9eb;
+  color: #715b2b;
+  font-size: 13px;
+}
+.hr-company-metrics,
+.hr-company-unit,
+.hr-company-jobs {
+  padding: 24px;
+  border: 1px solid #d9e3e9;
+  border-radius: 16px;
+  background: #fff;
+}
+.hr-company-metrics h3,
+.hr-company-unit h3,
+.hr-company-jobs h3 {
+  margin: 0;
+}
+.hr-company-metrics > p,
+.hr-company-jobs header p {
+  margin: 5px 0;
+  color: #657b8d;
+  font-size: 13px;
+}
+.hr-company-metrics dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 16px 0 0;
+}
+.hr-company-metrics dl div {
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: #f1f6f7;
+}
+.hr-company-metrics dt {
+  font-size: 12px;
+  color: #617788;
+}
+.hr-company-metrics dd {
+  margin: 3px 0 0;
+  font-weight: 800;
+}
+.hr-company-missing {
+  color: #7a6b52;
+  font-size: 13px;
+}
+.hr-company-unit > header,
+.hr-company-jobs > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e4eaee;
+}
+.hr-company-unit > header span {
+  color: #617789;
+  font-size: 12px;
+}
+.hr-company-unit h4 {
+  margin: 22px 0 8px;
+  color: #385369;
+}
+.hr-company-unit ul {
+  line-height: 1.7;
+}
+.hr-company-claim {
+  position: relative;
+  padding: 14px 118px 14px 15px;
+  border-left: 3px solid #4385a0;
+  background: #f6f9fa;
+}
+.hr-company-claim + .hr-company-claim {
+  margin-top: 9px;
+}
+.hr-company-claim > p {
+  margin: 0;
+  line-height: 1.65;
+}
+.hr-company-reference {
+  position: absolute;
+  right: 13px;
+  top: 12px;
+  padding: 6px 9px;
+  border: 1px solid #9dbac5;
+  border-radius: 7px;
+  background: #fff;
+  color: #23627a;
+  cursor: pointer;
+}
+.hr-company-reference:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.hr-company-reference.is-static {
+  position: static;
+  display: block;
+  width: fit-content;
+  margin-top: 10px;
+}
+.hr-company-claim details {
+  margin-top: 10px;
+}
+.hr-company-claim summary {
+  color: #286a82;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hr-company-fact {
+  margin-top: 9px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fff;
+}
+.hr-company-fact p {
+  margin: 0;
+}
+.hr-company-fact footer {
+  display: flex;
+  gap: 16px;
+  margin-top: 7px;
+  font-size: 12px;
+}
+.hr-company-fact a,
+.hr-company-job-list a {
+  color: #176783;
+}
+.hr-company-jobs header button,
+.hr-company-pagination button,
+.hr-company-job-error button {
+  padding: 8px 12px;
+  border: 1px solid #9db9c5;
+  border-radius: 8px;
+  background: #fff;
+  color: #23627a;
+  cursor: pointer;
+}
+.hr-company-job-filters {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0;
+}
+.hr-company-job-filters label {
+  display: grid;
+  gap: 5px;
+  color: #607589;
+  font-size: 12px;
+}
+.hr-company-job-list {
+  display: grid;
+  gap: 10px;
+}
+.hr-company-job-list article {
+  padding: 14px;
+  border-radius: 10px;
+  background: #f5f8f9;
+}
+.hr-company-job-list h4,
+.hr-company-job-list p {
+  margin: 0 0 6px;
+}
+.hr-company-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+.hr-company-job-error {
+  color: #9a432f;
+}
+.hr-company-topic-state {
+  max-width: 760px;
+}
+.hr-company-topic-state h2,
+.hr-company-topic-state p {
+  margin: 0;
+}
+@media (max-width: 850px) {
+  .hr-company-workspace {
+    width: calc(100% - 20px);
+  }
+  .hr-company-layout {
+    grid-template-columns: 1fr;
+  }
+  .hr-company-index {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .hr-company-detail-header {
+    align-items: start;
+    flex-direction: column;
+  }
+  .hr-company-claim {
+    padding-right: 14px;
+    padding-top: 52px;
+  }
+}
