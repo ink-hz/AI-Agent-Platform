@@ -9,6 +9,7 @@ import {
   confirmConversationAction,
   createConversationMessageSubmission,
   fetchConversation,
+  fetchConversationSnapshot,
   fetchConversationMessages,
   fetchConversationTaskDetail,
   listConversationActions,
@@ -84,6 +85,21 @@ afterEach(() => {
 
 
 describe("continuous Conversation API", () => {
+  it("reads a complete worker answer directly from its versioned snapshot", async () => {
+    const value = { read_version: 3, event_cursor: 8,
+      turn: { turn_id: TURN_ID, turn_seq: 1, status: "completed" },
+      attempt: { attempt_id: MISSION_ID, attempt_no: 1, lease_epoch: 2, status: "reconciling", reason_code: "executor_stop_unknown" },
+      outcome: { terminal: true, kind: "completed", reason_code: null },
+      answer: { message_id: MESSAGE_ID, role: "assistant", content: "原始完整回答", completed_at: "2026-09-08T00:00:00Z" },
+      result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [],
+      context_manifest_ref: `context-manifest:intake:${TURN_ID}` };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(value));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchConversationSnapshot(CONVERSATION_ID)).toEqual(value);
+    expect(fetchMock.mock.calls[0][0]).toContain(`/conversations/${CONVERSATION_ID}/snapshot`);
+    fetchMock.mockResolvedValue(jsonResponse({ ...value, answer: null }));
+    await expect(fetchConversationSnapshot(CONVERSATION_ID)).rejects.toThrow("snapshot");
+  });
   it("persists the last visible terminal event for unread state", async () => {
     const payload = {
       conversation_id: CONVERSATION_ID,
@@ -392,6 +408,21 @@ describe("continuous Conversation API", () => {
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
       items: [{ ...message, mission_id: MISSION_ID }],
+    })));
+    await expect(fetchConversationMessages(CONVERSATION_ID)).rejects.toThrow("Message response invalid");
+  });
+
+  it("parses the optional result delivery status and rejects unknown values", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      items: [{ ...message, result_delivery_status: "pending" }],
+    })));
+
+    await expect(fetchConversationMessages(CONVERSATION_ID)).resolves.toEqual([
+      { ...message, result_delivery_status: "pending" },
+    ]);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      items: [{ ...message, result_delivery_status: "retrying" }],
     })));
     await expect(fetchConversationMessages(CONVERSATION_ID)).rejects.toThrow("Message response invalid");
   });

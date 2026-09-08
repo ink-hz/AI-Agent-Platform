@@ -26,6 +26,7 @@ _DEFAULT_TASKS = frozenset(
 )
 _EXPLICIT_TRIGGERS = ("竞品", "招聘情报", "全景分析", "外部岗位", "关注公司")
 _GENERAL_TRIGGERS = _EXPLICIT_TRIGGERS + ("招聘", "产品路线", "人才竞争", "友商")
+_MARKDOWN_UNKNOWN = "部分已发布招聘情报片段暂不可读取，无法据此判断是否在招聘或实际招聘人数。"
 _SIGNALS = (
     "光学", "硬件", "结构", "软件", "算法", "制造", "工艺", "质量", "测试",
     "产品", "供应链", "机械", "电子", "嵌入式", "标定", "点云", "深圳", "中山",
@@ -488,6 +489,8 @@ class PanoramaContextProvider:
         query: str,
         position_context: Mapping[str, object] | None,
         task_kind: str,
+        *,
+        allow_partial: bool = False,
     ) -> PanoramaContextFragment:
         if self._markdown_store is None:
             raise PanoramaUnavailable("intelligence Markdown store unavailable")
@@ -575,8 +578,15 @@ class PanoramaContextProvider:
         selected_chunks: list[Mapping[str, object]] = []
         seen_text: set[str] = set()
         current_bytes = len("\n".join(header).encode())
+        chunk_failed = False
         for chunk in candidates:
-            selected = self._markdown_store.read_chunk(bundle_id, chunk)
+            try:
+                selected = self._markdown_store.read_chunk(bundle_id, chunk)
+            except (PanoramaContextError, PanoramaUnavailable, ValueError):
+                if not allow_partial:
+                    raise
+                chunk_failed = True
+                continue
             text = selected.text.strip()
             if not text or text in seen_text:
                 continue
@@ -606,7 +616,7 @@ class PanoramaContextProvider:
             }
         status = (
             "partial"
-            if states & {"partial", "failed", "not_observed"}
+            if chunk_failed or states & {"partial", "failed", "not_observed"}
             else "available"
         )
         while selected_chunks:
@@ -622,11 +632,12 @@ class PanoramaContextProvider:
                     (),
                     (),
                     (),
-                    (),
+                    (_MARKDOWN_UNKNOWN,) if chunk_failed else (),
                     markdown,
                     tuple(selected_chunks),
                     "markdown-v1",
                     manifest_sha256,
+                    "markdown_verification_failed" if chunk_failed else None,
                 )
             except ValueError as error:
                 if str(error) != "intelligence context too large":
@@ -825,19 +836,35 @@ class PanoramaContextProvider:
         position_context: Mapping[str, object] | None,
         task_kind: str,
     ) -> PanoramaContextFragment:
+        lightweight = callable(getattr(self._source, "current_context_bundle", None))
+        degraded_reason = "markdown_unavailable"
         if record.get("schema_version") == 2 and record.get("agent_chunk_index"):
             try:
                 return self._markdown_fragment(
-                    record, query, position_context, task_kind
+                    record, query, position_context, task_kind,
+                    allow_partial=lightweight,
                 )
             except (PanoramaContextError, PanoramaUnavailable, ValueError):
-                return self._structured_fragment(
-                    record,
-                    query,
-                    position_context,
-                    degraded_reason="markdown_verification_failed",
-                )
-        return self._structured_fragment(record, query, position_context)
+                degraded_reason = "markdown_verification_failed"
+        if lightweight:
+            # This projection intentionally omits full analysis and jobs. Missing
+            # Markdown is not permission to expand the read to the legacy bundle.
+            bundle_id = _uuid(record.get("bundle_id"))
+            manifest_sha256 = record.get("manifest_sha256")
+            return PanoramaContextFragment(
+                bundle_id, bundle_id, _time(record.get("generated_at")),
+                "unavailable", (), (), (), (_MARKDOWN_UNKNOWN,),
+                manifest_sha256=(
+                    manifest_sha256
+                    if isinstance(manifest_sha256, str)
+                    and _SHA256.fullmatch(manifest_sha256) is not None else None
+                ),
+                degraded_reason=degraded_reason,
+            )
+        return self._structured_fragment(
+            record, query, position_context,
+            degraded_reason=(degraded_reason if degraded_reason == "markdown_verification_failed" else None),
+        )
 
     def for_turn(
         self,

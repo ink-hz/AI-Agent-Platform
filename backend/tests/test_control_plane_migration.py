@@ -185,6 +185,7 @@ TABLES = {
     "conversation_turns",
     "conversation_events",
     "conversation_feedback",
+    "conversation_result_deliveries",
     "content_key_canaries",
     "agent_launch_codes",
     "agent_identity_bindings",
@@ -239,7 +240,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
-    assert max(versions) == 87
+    assert max(versions) == 88
 
 
 def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:

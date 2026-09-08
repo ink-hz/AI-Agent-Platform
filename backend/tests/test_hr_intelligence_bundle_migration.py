@@ -15,7 +15,7 @@ def test_control_migrations_remain_contiguous_through_v87() -> None:
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions == list(range(1, 88))
+    assert versions[:87] == list(range(1, 88))
 
 
 def test_v85_defines_immutable_bundle_jobs_and_current_publication() -> None:

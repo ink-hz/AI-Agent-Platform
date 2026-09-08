@@ -82,8 +82,11 @@ class AttachmentProcessingRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select (platform_attachments."
-                    "claim_attachment_processing_job_v64(%s)).*",
+                    # FROM evaluates the volatile claim once. Composite field
+                    # expansion in SELECT can invoke it once per column and
+                    # return an ID from one claim with null/unrelated metadata.
+                    "select * from platform_attachments."
+                    "claim_attachment_processing_job_v64(%s)",
                     (worker_id,),
                 ).fetchone()
                 if row is None or row["processing_job_id"] is None:

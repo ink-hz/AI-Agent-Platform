@@ -1,26 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
 import json
 import logging
 import os
-from pathlib import Path
 import random
 import re
 import secrets
 import signal
 import stat
+import time
+from collections import deque
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-import httpx
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -30,10 +32,13 @@ from pydantic import (
     model_validator,
 )
 
+from . import worker_v5_receiver
 from .acceptance_hooks import WorkerAcceptanceHooks
+from .contracts_v5 import CallbackAckV5
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
 from .models import (
     CollaborationV4Result,
+    CoreChatCallbackEventType,
     OutputWriteGrantPayload,
     RelayEvent,
     RelayJobKind,
@@ -45,7 +50,6 @@ from .models import (
 from .repository import RelayStopRequest
 from .worker_auth import WorkerRequestSigner
 from .worker_store import WorkerRunRecovery, WorkerStore
-
 
 _API_PREFIX = "/api/v1/execution-worker"
 _CALLBACK_BODY_LIMIT = 1_048_576
@@ -66,6 +70,10 @@ class CloudRelayError(RuntimeError):
         super().__init__("cloud relay request failed")
 
 
+class V5BudgetDeferred(CloudRelayError):
+    """No HTTP request was sent; retain durable work and retry a later tick."""
+
+
 class WorkerRuntimeError(RuntimeError):
     """Stable runtime failure without job or event content."""
 
@@ -79,6 +87,7 @@ class CallbackResult(Enum):
     UNAUTHORIZED = 401
     CONFLICT = 409
     TOO_LARGE = 413
+    UNAVAILABLE = 503
 
 
 class _CoreChatBridge(BaseModel):
@@ -93,19 +102,7 @@ class _StrictCallbackEvent(BaseModel):
 
     runId: UUID
     seq: int = Field(gt=0)
-    type: Literal[
-        "state",
-        "question",
-        "file",
-        "log",
-        "complete",
-        "error",
-        "thinking_summary",
-        "work_update",
-        "agent_message",
-        "artifact",
-        "result",
-    ]
+    type: CoreChatCallbackEventType
     createdAt: AwareDatetime
     bridge: _CoreChatBridge
     payload: dict[str, object]
@@ -322,12 +319,34 @@ class SignedCloudClient:
         self._base_url = base_url.rstrip("/")
         self._signer = signer
         self._accepted_job_kinds = accepted_job_kinds
+        self._v5_budget_enabled = False
+        self._sent_requests = deque(maxlen=1024)
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(10.0),
             follow_redirects=False,
             trust_env=False,
         )
+
+    def enable_v5_budget(self):
+        self._v5_budget_enabled = True
+
+    def _v5_can_send(self, lane):
+        now = time.monotonic()
+        while self._sent_requests and self._sent_requests[0][0] <= now - 60:
+            self._sent_requests.popleft()
+        if not self._v5_budget_enabled:
+            return True
+        lanes = [item[1] for item in self._sent_requests]
+        v5_count = sum(item != "legacy" for item in lanes)
+        # 64/min normal legacy idle traffic is unchanged. Leave headroom under
+        # the server's shared 120/min and reserve readiness/control capacity.
+        return (len(lanes) < 114 and v5_count < 50
+            and (lane == "readiness" or sum(item not in {"legacy", "readiness"} for item in lanes) < 42)
+            and (lane != "source" or lanes.count("source") < 20))
+
+    def can_upload_v5(self):
+        return self._v5_can_send("source")
 
     @staticmethod
     def _body(value: Mapping[str, object]) -> bytes:
@@ -347,6 +366,8 @@ class SignedCloudClient:
     ) -> httpx.Response:
         body = self._body(value)
         try:
+            # Legacy is observed, never throttled or rescheduled by the opt-in.
+            self._sent_requests.append((time.monotonic(), "legacy"))
             headers = self._signer.sign("POST", path, body)
             response = await self._client.request(
                 "POST",
@@ -387,6 +408,32 @@ class SignedCloudClient:
             )
             return RelayLease.model_validate(value)
         except (TypeError, ValueError, ValidationError):
+            raise CloudRelayError() from None
+
+    async def post_v5_bytes(self, path: str, body: bytes) -> httpx.Response:
+        # No JSON re-encoding: signatures and transport cover the original bytes.
+        from app.control_plane.middleware import is_execution_worker_request
+
+        if (
+            type(body) is not bytes or not body or len(body) > 1_048_576
+            or not path.startswith(f"{_API_PREFIX}/v5/")
+            or not is_execution_worker_request("POST", path)
+        ):
+            raise CloudRelayError()
+        lane = ("source" if path.endswith(("/events", "/event-batches")) else
+            "readiness" if path.endswith("/readiness") else "control")
+        if not self._v5_can_send(lane):
+            raise V5BudgetDeferred()
+        self._sent_requests.append((time.monotonic(), lane))
+        try:
+            response = await self._client.request(
+                "POST", self._base_url + path, content=body,
+                headers={**self._signer.sign("POST", path, body), "Content-Type": "application/json"},
+            )
+            if response.status_code not in {200, 204, 409}:
+                raise CloudRelayError()
+            return response
+        except (httpx.HTTPError, ValueError, TypeError, CloudRelayError):
             raise CloudRelayError() from None
 
     async def heartbeat(self) -> tuple[RelayStopRequest, ...]:
@@ -500,6 +547,8 @@ class WorkerRuntime:
         logger: logging.Logger = _LOG,
         acceptance_hooks: Any | None = None,
         max_concurrent_runs: int = 1,
+        enable_v5_callbacks: bool = False,
+        enable_v5_transport: bool = False,
     ) -> None:
         if (
             not isinstance(worker_id, str)
@@ -514,6 +563,8 @@ class WorkerRuntime:
         ):
             raise WorkerRuntimeError()
         self.worker_id = worker_id
+        self.enable_v5_callbacks = enable_v5_callbacks
+        self.enable_v5_transport = enable_v5_transport
         # Each MetaBot Agent is a separate service on its own port, so running more
         # than one at a time is a configuration decision rather than a constraint.
         # The Brain schedules against the pool concurrency declared in the Catalog,
@@ -947,7 +998,7 @@ class WorkerRuntime:
 
     async def accept_callback(
         self, run_id: UUID, token: str, body: bytes
-    ) -> CallbackResult:
+    ) -> CallbackResult | CallbackAckV5:
         if not isinstance(body, bytes) or len(body) > _CALLBACK_BODY_LIMIT:
             return CallbackResult.TOO_LARGE
         if (
@@ -957,6 +1008,19 @@ class WorkerRuntime:
         ):
             return CallbackResult.UNAUTHORIZED
         try:
+            try:
+                v5_registered = self.enable_v5_callbacks and await asyncio.to_thread(
+                    worker_v5_receiver.registered, self.store, run_id
+                )
+            except worker_v5_receiver.V5ReceiverUnavailable:
+                return CallbackResult.UNAVAILABLE
+            if v5_registered:
+                try:
+                    return await asyncio.to_thread(worker_v5_receiver.accept, self.store, self.worker_id, run_id, token, body)
+                except PermissionError:
+                    return CallbackResult.UNAUTHORIZED
+                except worker_v5_receiver.V5ReceiverUnavailable:
+                    return CallbackResult.UNAVAILABLE
             if not await self._store_call("callback_token_matches", run_id, token):
                 return CallbackResult.UNAUTHORIZED
             strict_event = _StrictCallbackEvent.model_validate_json(body, strict=True)
@@ -1108,14 +1172,25 @@ async def heartbeat_loop(runtime: WorkerRuntime) -> None:
 
 
 async def _send_callback_response(
-    writer: asyncio.StreamWriter, result: CallbackResult
+    writer: asyncio.StreamWriter, result: CallbackResult | CallbackAckV5
 ) -> None:
+    if isinstance(result, CallbackAckV5):
+        body = result.model_dump_json(by_alias=True).encode("utf-8")
+        code = 409 if result.status in {"gap", "conflict"} else 200
+        reason = "Conflict" if code == 409 else "OK"
+        writer.write(
+            (f"HTTP/1.1 {code} {reason}\r\nContent-Type: application/json\r\n"
+             f"Content-Length: {len(body)}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n").encode("ascii") + body
+        )
+        await writer.drain()
+        return
     reason = {
         204: "No Content",
         400: "Bad Request",
         401: "Unauthorized",
         409: "Conflict",
         413: "Content Too Large",
+        503: "Service Unavailable",
     }[result.value]
     writer.write(
         f"HTTP/1.1 {result.value} {reason}\r\n"
@@ -1147,13 +1222,6 @@ async def _handle_callback_connection(
         target = request_line[1]
         if "?" in target or "#" in target:
             raise ValueError
-        parts = target.split("/")
-        if len(parts) != 4 or parts[1] != "callbacks":
-            raise ValueError
-        run_id = UUID(parts[2])
-        if str(run_id) != parts[2]:
-            raise ValueError
-        token = parts[3]
         headers: dict[str, str] = {}
         for raw_line in lines[1:]:
             name, separator, value = raw_line.partition(b":")
@@ -1172,6 +1240,20 @@ async def _handle_callback_connection(
         if raw_length is None or not raw_length.isdigit():
             raise ValueError
         length = int(raw_length)
+        if target == "/v5/readiness":
+            if length > 2:
+                raise ValueError
+            from .worker_readiness_v5 import challenge
+
+            await challenge(runtime, headers, await asyncio.wait_for(reader.readexactly(length), 3), writer)
+            return
+        parts = target.split("/")
+        if len(parts) != 4 or parts[1] != "callbacks":
+            raise ValueError
+        run_id = UUID(parts[2])
+        if str(run_id) != parts[2]:
+            raise ValueError
+        token = parts[3]
         if length > _CALLBACK_BODY_LIMIT:
             result = CallbackResult.TOO_LARGE
         else:
@@ -1217,6 +1299,7 @@ async def run_worker(runtime: WorkerRuntime) -> None:
     ready_task: asyncio.Task[bool] | None = None
     worker_tasks: set[asyncio.Task[None]] = set()
     shutdown_tasks: set[asyncio.Task[Any]] = set()
+    v5_service = None
 
     async def shutdown() -> None:
         if shutdown_started.is_set():
@@ -1249,6 +1332,11 @@ async def run_worker(runtime: WorkerRuntime) -> None:
         ready_task.cancel()
         await asyncio.gather(ready_task, return_exceptions=True)
         ready_task = None
+        if runtime.enable_v5_transport:
+            from .worker_readiness_v5 import V5WorkerService
+
+            v5_service = V5WorkerService(runtime)
+            v5_service.start()
         worker_tasks.update(
             {
                 asyncio.create_task(lease_loop(runtime)),
@@ -1258,6 +1346,8 @@ async def run_worker(runtime: WorkerRuntime) -> None:
         )
         await asyncio.shield(asyncio.gather(callback_task, *worker_tasks))
     finally:
+        if v5_service is not None:
+            await v5_service.close()
 
         async def cleanup() -> None:
             runtime.begin_shutdown()
@@ -1384,8 +1474,16 @@ def _required_environment(name: str) -> str:
     return value
 
 
+def _v5_enabled_from_environment() -> bool:
+    value = os.environ.get("PLATFORM_WORKER_V5_ENABLED", "0")
+    if value not in {"0", "1"}:
+        raise WorkerRuntimeError()
+    return value == "1"
+
+
 def build_runtime_from_environment() -> WorkerRuntime:
     try:
+        enable_v5 = _v5_enabled_from_environment()
         worker_id = _required_environment("PLATFORM_WORKER_ID")
         key_id = _required_environment("PLATFORM_WORKER_KEY_ID")
         private_key = _owner_private_key(
@@ -1423,6 +1521,8 @@ def build_runtime_from_environment() -> WorkerRuntime:
             metabot=metabot,
             callback_port=callback_port,
             acceptance_hooks=WorkerAcceptanceHooks.from_environment(),
+            enable_v5_callbacks=enable_v5,
+            enable_v5_transport=enable_v5,
         )
     except WorkerRuntimeError:
         raise

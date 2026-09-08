@@ -163,8 +163,12 @@ def is_execution_worker_request(method: str, path: str) -> bool:
         path in {
             "/api/v1/execution-worker/lease",
             "/api/v1/execution-worker/heartbeat",
+            "/api/v1/execution-worker/v5/handoff",
+            "/api/v1/execution-worker/v5/readiness",
+            "/api/v1/execution-worker/v5/recovery",
         }
         or _WORKER_RUN_ROUTE.fullmatch(path) is not None
+        or re.fullmatch(r"/api/v1/execution-worker/v5/runs/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(?:acceptance|events|event-batches|recovery)", path) is not None
         or _WORKER_TASK_ARTIFACT_ROUTE.fullmatch(path) is not None
     ):
         return True

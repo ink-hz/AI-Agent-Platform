@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hmac
 import json
 import os
-from pathlib import Path
+import secrets
 import stat
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
 from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
 
-from .models import RelayJobPayload
-
+from .models import CollaborationContract, RelayJobPayload
 
 _APPROVED_AGENT_IDS = frozenset(
     {
@@ -30,6 +31,9 @@ _APPROVED_AGENT_IDS = frozenset(
 _CONFIGURATION_INVALID = "metabot configuration invalid"
 _REQUEST_FAILED = "metabot request failed"
 _OWNER_FILE_LIMIT = 16_384
+_OUTBOUND_COLLABORATION_CONTRACTS: frozenset[CollaborationContract] = frozenset(
+    {"core_chat_collaboration_v3", "core_chat_collaboration_v4"}
+)
 _BRAIN_IDENTITY = {
     "name": "agent-brain-bot",
     "platform": "web",
@@ -231,6 +235,38 @@ class MetaBotClient:
     def __repr__(self) -> str:
         return "MetaBotClient(runtime_map=<configured>, bearer_secret=<redacted>)"
 
+    def authenticates_v5_machine(self, authorization: str) -> bool:
+        return hmac.compare_digest(authorization, f"Bearer {self._bearer_secret}")
+
+    async def probe_v5_service(self):
+        from .readiness_v5 import parse_service
+
+        port, secret = self._runtime_map.port_for("hr-bot"), self._bearer_secret
+        async with (
+            httpx.AsyncClient(timeout=3, follow_redirects=False, trust_env=False) as client,
+            client.stream("GET", f"http://127.0.0.1:{port}/api/core-chat/v5/readiness",
+                          headers={"authorization": f"Bearer {secret}"}) as response,
+        ):
+            if response.status_code != 200:
+                raise MetaBotClientError(_REQUEST_FAILED)
+            body = b""
+            async for chunk in response.aiter_bytes():
+                body += chunk
+                if len(body) > 8192:
+                    raise MetaBotClientError(_REQUEST_FAILED)
+            return parse_service(json.loads(body))
+
+    async def probe_v5_receiver(self, origin):
+        from .readiness_v5 import callback_origin
+
+        callback_origin(origin)
+        challenge, secret = secrets.token_hex(16), self._bearer_secret
+        async with httpx.AsyncClient(timeout=3, follow_redirects=False, trust_env=False) as client:
+            response = await client.post(origin+"/v5/readiness", content=b"{}", headers={
+                "authorization": f"Bearer {secret}", "content-type": "application/json", "x-v5-challenge": challenge,
+            })
+            return response.status_code == 200 and len(response.content) < 128 and response.json() == {"challenge": challenge}
+
     def _client(self) -> httpx.Client:
         return httpx.Client(
             timeout=httpx.Timeout(10.0),
@@ -260,6 +296,11 @@ class MetaBotClient:
                 not isinstance(payload, RelayJobPayload)
                 or not isinstance(event_callback_url, str)
                 or not self._callback_is_loopback(event_callback_url)
+                or (
+                    payload.collaboration_contract is not None
+                    and payload.collaboration_contract
+                    not in _OUTBOUND_COLLABORATION_CONTRACTS
+                )
             ):
                 raise ValueError
             port = self._runtime_map.port_for(payload.agent_id)
@@ -350,6 +391,43 @@ class MetaBotClient:
             ):
                 raise ValueError
         except Exception:
+            raise MetaBotClientError(_REQUEST_FAILED) from None
+
+    def start_v5_run(self, command):
+        from .acceptance_v5 import parse_v5_acceptance
+        from .contracts_v5 import parse_v5_command
+
+        try:
+            parsed = parse_v5_command(command)
+            if parsed.target_bot != "hr-bot" or not self._bearer_secret:
+                raise ValueError
+            port = self._runtime_map.port_for("hr-bot")
+            with self._client() as client:
+                response = client.post(f"http://127.0.0.1:{port}/api/core-chat/runs", json=command)
+                if response.status_code != 202:
+                    raise ValueError
+                value = response.json()
+                parse_v5_acceptance(value, parsed)
+                return value
+        except (httpx.HTTPError, ValueError, TypeError, MetaBotClientError):
+            raise MetaBotClientError(_REQUEST_FAILED) from None
+
+    def recover_v5_run(self, command, stop):
+        from .contracts_v5 import parse_v5_command
+        from .recovery_v5 import parse_observation
+        try:
+            parsed = parse_v5_command(command)
+            if parsed.target_bot != "hr-bot" or not self._bearer_secret or type(stop) is not bool:
+                raise ValueError
+            port = self._runtime_map.port_for("hr-bot")
+            with self._client() as client:
+                response = client.post(f"http://127.0.0.1:{port}/api/core-chat/v5/recovery", json={"command": command, "stop": stop})
+                if response.status_code != 200:
+                    raise ValueError
+                value = response.json()
+                parse_observation(value, parsed)
+                return value
+        except (httpx.HTTPError, ValueError, TypeError, MetaBotClientError):
             raise MetaBotClientError(_REQUEST_FAILED) from None
 
     @staticmethod

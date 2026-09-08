@@ -138,7 +138,7 @@ class ExecutionRelayRepository:
         return cursor.execute(
             "select job_id,run_id,status,lease_worker_id,cancel_requested,"
             "stop_requested_status,stop_acknowledged_at "
-            "from platform_control.execution_jobs where run_id=%s for update",
+            "from platform_control.execution_jobs where run_id=%s and job_kind<>'worker_direct_v5' for update",
             (run_id,),
         ).fetchone()
 
@@ -217,6 +217,27 @@ class ExecutionRelayRepository:
             raise ExecutionRelayConflict() from None
         except psycopg.Error:
             raise ExecutionRelayError("execution relay unavailable") from None
+
+    def enqueue_v5_template(self, frozen, *, connection) -> UUID:
+        """Join the caller's fenced Attempt transaction; never creates its own commit."""
+        from .frozen_command_v5 import parse_frozen_command
+
+        if connection.autocommit or self._dsn_purpose != "app":
+            raise ExecutionRelayConflict()
+        frozen = parse_frozen_command(frozen.document)
+        value = frozen.document
+        job_id = uuid4()
+        sealed = self.content_codec.seal_json(
+            f"execution-job:{job_id}:{value['runId']}",
+            {"format": "hr_frozen_command_v1", "commandHash": frozen.command_hash, "command": value},
+        )
+        connection.execute(
+            "insert into platform_control.execution_jobs "
+            "(job_id,run_id,agent_id,payload_ciphertext,encryption_key_version,status,job_kind) "
+            "values (%s,%s,'hr-bot',%s,%s,'queued','worker_direct_v5')",
+            (job_id, value["runId"], sealed.ciphertext, sealed.key_version),
+        )
+        return job_id
 
     def lease(
         self,
@@ -318,7 +339,7 @@ class ExecutionRelayRepository:
                     "select job_id,run_id,agent_id,payload_ciphertext,"
                     "encryption_key_version,cancel_requested,status "
                     "from platform_control.execution_jobs "
-                    "where run_id=%s for update",
+                    "where run_id=%s and job_kind<>'worker_direct_v5' for update",
                     (run_id,),
                 ).fetchone()
                 if (
@@ -522,7 +543,7 @@ class ExecutionRelayRepository:
                     return bool(row and row["accepted"])
                 current = cursor.execute(
                     "select status from platform_control.execution_jobs "
-                    "where run_id=%s for update",
+                    "where run_id=%s and job_kind<>'worker_direct_v5' for update",
                     (run_id,),
                 ).fetchone()
                 if current is None or current["status"] in TERMINAL_STATUSES:
@@ -557,7 +578,7 @@ class ExecutionRelayRepository:
             with self._connection() as connection, connection.cursor() as cursor:
                 current = cursor.execute(
                     "select status from platform_control.execution_jobs "
-                    "where run_id=%s for update",
+                    "where run_id=%s and job_kind<>'worker_direct_v5' for update",
                     (run_id,),
                 ).fetchone()
                 if current is None:
@@ -617,7 +638,7 @@ class ExecutionRelayRepository:
                         "lease_expires_at,terminal_at,stop_requested_status,"
                         "job_kind,"
                         "now() as database_now "
-                        "from platform_control.execution_jobs where run_id=%s for update",
+                        "from platform_control.execution_jobs where run_id=%s and job_kind<>'worker_direct_v5' for update",
                         (run_id,),
                     ).fetchone()
                 if row is None:
@@ -879,13 +900,13 @@ class ExecutionRelayRepository:
                 cursor.execute(
                     "update platform_control.execution_jobs set "
                     "lease_expires_at=now()+(%s * interval '1 second') "
-                    "where lease_worker_id=%s and status=any(%s)",
+                    "where lease_worker_id=%s and status=any(%s) and job_kind<>'worker_direct_v5'",
                     (lease_seconds, worker_id, ["leased", "dispatched", "running"]),
                 )
                 rows = cursor.execute(
                     "select run_id,stop_requested_status as stop_status "
                     "from platform_control.execution_jobs "
-                    "where lease_worker_id=%s "
+                    "where lease_worker_id=%s and job_kind<>'worker_direct_v5' "
                     "and stop_requested_status is not null "
                     "and stop_acknowledged_at is null "
                     "order by run_id limit 100",

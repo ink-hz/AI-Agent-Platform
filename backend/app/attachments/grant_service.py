@@ -6,6 +6,7 @@ import secrets
 import shutil
 import tempfile
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -111,6 +112,16 @@ class TaskGrantRepository:
             row_factory=dict_row,
         )
 
+    @contextmanager
+    def _write_connection(self, connection):
+        if connection is not None:
+            if connection.autocommit:
+                raise TaskGrantUnavailable()
+            yield connection
+        else:
+            with self._connection() as owned, owned.transaction():
+                yield owned
+
     def _unseal(self, subject: str, ciphertext: object, key_version: object) -> dict:
         try:
             return self._codec.unseal_json(
@@ -178,10 +189,11 @@ class TaskGrantRepository:
         agent_id: str,
         expires_at: datetime,
         max_reads: int,
+        connection=None,
     ) -> DownloadAsset:
         try:
-            with self._connection() as connection, connection.transaction():
-                row = connection.execute(
+            with self._write_connection(connection) as transaction:
+                row = transaction.execute(
                     self._asset_query()
                     + "where attachment.attachment_id=%s and attachment.state='ready'",
                     (attachment_id,),
@@ -189,7 +201,7 @@ class TaskGrantRepository:
                 if row is None:
                     raise TaskGrantUnavailable()
                 asset = self._asset_from_row(row)
-                connection.execute(
+                transaction.execute(
                     "select platform_attachments.issue_task_grant_v64("
                     "%s,%s,%s,%s,%s,'read',%s,%s,%s)",
                     (
@@ -220,10 +232,11 @@ class TaskGrantRepository:
         max_files: int,
         max_total_bytes: int,
         max_file_bytes: int,
+        connection=None,
     ) -> None:
         try:
-            with self._connection() as connection:
-                connection.execute(
+            with self._write_connection(connection) as transaction:
+                transaction.execute(
                     "select platform_attachments.issue_task_grant_v64("
                     "%s,%s,%s,null,%s,'write_output',%s,0,%s,%s,%s)",
                     (
@@ -394,6 +407,7 @@ class AttachmentGrantService:
         agent_id: str,
         *,
         expires_at: datetime | None = None,
+        connection=None,
     ) -> TaskAttachmentGrant:
         self._identity(task_id, agent_id)
         if not isinstance(attachment_id, UUID):
@@ -408,6 +422,7 @@ class AttachmentGrantService:
             agent_id=agent_id,
             expires_at=selected_expiry,
             max_reads=self._max_reads,
+            **({"connection": connection} if connection is not None else {}),
         )
         return TaskAttachmentGrant(
             attachment_id=asset.attachment_id,
@@ -431,6 +446,7 @@ class AttachmentGrantService:
         max_files: int = MAX_TASK_OUTPUT_FILES,
         max_total_bytes: int = MAX_TASK_OUTPUT_BYTES,
         max_file_bytes: int = 50 * 1024 * 1024,
+        connection=None,
     ) -> OutputWriteGrant:
         self._identity(task_id, agent_id)
         if (
@@ -457,6 +473,7 @@ class AttachmentGrantService:
             max_files=max_files,
             max_total_bytes=max_total_bytes,
             max_file_bytes=max_file_bytes,
+            **({"connection": connection} if connection is not None else {}),
         )
         return OutputWriteGrant(
             task_id=task_id,

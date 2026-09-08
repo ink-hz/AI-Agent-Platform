@@ -53,6 +53,7 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/conversations/{conversation_id}"),
     ("PATCH", "/api/v1/conversations/{conversation_id}"),
     ("GET", "/api/v1/conversations/{conversation_id}/messages"),
+    ("GET", "/api/v1/conversations/{conversation_id}/snapshot"),
     ("POST", "/api/v1/conversations/{conversation_id}/read-state"),
     ("POST", "/api/v1/conversations/{conversation_id}/messages"),
     ("GET", "/api/v1/conversations/{conversation_id}/events"),

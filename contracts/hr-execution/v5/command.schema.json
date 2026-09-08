@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/hr-execution/v5/command.schema.json",
+  "title": "HR Core Chat Command v5",
+  "$comment": "JSON Schema proves wire structure. contracts_v5.py additionally enforces the 1 MiB envelope limit, callback/run binding, taskSessionId binding, permission-scope equality, grant ownership, and canonical commandHash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion", "runId", "commandId", "attemptId", "attemptNo",
+    "leaseEpoch", "turnId", "turnSeq", "commandSeq", "conversationId",
+    "triggerMessageId", "principalRef", "targetBot", "prompt", "contextMode",
+    "contextHash", "commandHash", "eventCallbackUrl", "taskSessionId",
+    "resultMode", "permissionScope", "inputAttachmentGrants",
+    "outputWriteGrant", "retryOf"
+  ],
+  "properties": {
+    "contractVersion": {"const": "core_chat_collaboration_v5"},
+    "runId": {"$ref": "#/$defs/uuid"},
+    "commandId": {"$ref": "#/$defs/uuid"},
+    "attemptId": {"$ref": "#/$defs/uuid"},
+    "attemptNo": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "leaseEpoch": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "turnId": {"$ref": "#/$defs/uuid"},
+    "turnSeq": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "commandSeq": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "conversationId": {"$ref": "#/$defs/uuid"},
+    "triggerMessageId": {"$ref": "#/$defs/uuid"},
+    "principalRef": {"type": "string", "minLength": 1, "maxLength": 256},
+    "targetBot": {"const": "hr-bot"},
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 131072},
+    "contextMode": {"const": "frozen_prompt"},
+    "contextHash": {"$ref": "#/$defs/sha256"},
+    "commandHash": {"$ref": "#/$defs/sha256"},
+    "eventCallbackUrl": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^http://127\\.0\\.0\\.1:[0-9]+/callbacks/[0-9a-f-]{36}/[A-Za-z0-9_-]{43}$"
+    },
+    "taskSessionId": {"type": "string", "minLength": 1, "maxLength": 256},
+    "resultMode": {"const": "public_markdown"},
+    "permissionScope": {"$ref": "#/$defs/permissionScope"},
+    "inputAttachmentGrants": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/inputAttachmentGrant"}
+    },
+    "outputWriteGrant": {
+      "oneOf": [
+        {"$ref": "#/$defs/outputWriteGrant"},
+        {"type": "null"}
+      ]
+    },
+    "retryOf": {
+      "oneOf": [
+        {"$ref": "#/$defs/uuid"},
+        {"type": "null"}
+      ]
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "permissionScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principalRef", "conversationId", "agentId", "toolPolicy"],
+      "properties": {
+        "principalRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "conversationId": {"$ref": "#/$defs/uuid"},
+        "agentId": {"const": "hr-bot"},
+        "toolPolicy": {"enum": ["default", "none"]}
+      }
+    },
+    "inputAttachmentGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attachmentId", "displayName", "detectedMime", "sizeBytes", "sha256",
+        "downloadUrl", "bearerToken", "expiresAt"
+      ],
+      "properties": {
+        "attachmentId": {"$ref": "#/$defs/uuid"},
+        "displayName": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "detectedMime": {"type": "string", "minLength": 3, "maxLength": 255},
+        "sizeBytes": {"type": "integer", "minimum": 1, "maximum": 52428800},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "downloadUrl": {
+          "type": "string",
+          "pattern": "^/api/v1/execution-worker/attachments/[0-9a-f-]{36}/content$"
+        },
+        "bearerToken": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"},
+        "expiresAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "outputWriteGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId", "agentId", "uploadUrl", "bearerToken", "maxFiles",
+        "maxTotalBytes"
+      ],
+      "properties": {
+        "taskId": {"$ref": "#/$defs/uuid"},
+        "agentId": {"const": "hr-bot"},
+        "uploadUrl": {
+          "type": "string",
+          "pattern": "^/api/v1/execution-worker/tasks/[0-9a-f-]{36}/artifacts$"
+        },
+        "bearerToken": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"},
+        "maxFiles": {"type": "integer", "minimum": 1, "maximum": 20},
+        "maxTotalBytes": {"type": "integer", "minimum": 1, "maximum": 262144000}
+      }
+    }
+  }
+}

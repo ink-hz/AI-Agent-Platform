@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Account } from "../auth";
 import type {
   Conversation,
+  ConversationAttachment,
   ConversationDetail,
   ConversationEvent,
   ConversationMessage,
@@ -14,6 +15,7 @@ import type {
   ConversationSubmissionResult,
   ConversationTaskDetail,
   ConversationTurn,
+  TurnSnapshot,
 } from "../conversationTypes";
 import { ConversationPage, type ConversationPageClient } from "./ConversationPage";
 
@@ -126,6 +128,186 @@ describe("ConversationPage", () => {
   });
   afterEach(async () => {
     await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks();
+  });
+
+  it("renders the worker snapshot answer when history is unavailable without inventing message metadata", async () => {
+    const snapshot = { read_version: 2, event_cursor: 8,
+      turn: { turn_id: "worker-turn", turn_seq: 61, status: "completed" as const },
+      attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 2, status: "reconciling" as const, reason_code: "executor_stop_unknown" },
+      outcome: { terminal: true as const, kind: "completed" as const, reason_code: null },
+      answer: { message_id: "last-answer", role: "assistant" as const, content: "刷新后仍是这一份答案", completed_at: "2026-09-08T00:00:00Z" },
+      result_enrichment: { status: "none" as const, pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: "context-manifest:intake:worker-turn" };
+    const api = client({ fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, mode: "direct_agent", direct_agent_id: "hr-bot", execution_owner: "worker_direct" }, current_turn: null }),
+      fetchMessages: vi.fn().mockRejectedValue(new Error("history offline")), fetchSnapshot: vi.fn().mockResolvedValue(snapshot) });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.textContent).toContain("刷新后仍是这一份答案");
+    expect(container.textContent).toContain("正在确认原执行已停止");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(api.createMessageSubmission).not.toHaveBeenCalled();
+    expect(container.querySelector(".conversation-turn-retry")).toBeNull();
+  });
+
+  it.each([false, true])("loads a late worker PDF without resubmission (next turn: %s)", async nextTurn => {
+    vi.useFakeTimers();
+    let ready = false;
+    const attachment: ConversationAttachment = {
+      attachmentId: "result-file", conversationId, source: "agent", displayName: "面试方案.pdf",
+      detectedMime: "application/pdf", sizeBytes: 1024, sha256: "a".repeat(64), state: "ready",
+      stateReason: null, createdAt: "2026-08-23T10:02:00Z", retainedUntil: "2027-08-23T10:02:00Z",
+      preview: { attachmentId: "result-file", detectedMime: "application/pdf" }, coverage: null,
+    };
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, mode: "direct_agent", direct_agent_id: "hr-bot", execution_owner: "worker_direct" }, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockResolvedValue([messages[0], { ...messages[1], result_delivery_status: "pending" }]),
+      fetchTurnMessages: vi.fn().mockImplementation(async (_id, turnId) => turnId === "turn-2" ? [] : [messages[0], { ...messages[1], result_delivery_status: ready ? "completed" : "pending", output_attachments: ready ? [attachment] : [] }]),
+      fetchSnapshot: vi.fn().mockImplementation(async () => ({
+        read_version: ready ? 3 : 2, event_cursor: 8,
+        turn: { turn_id: nextTurn && ready ? "turn-2" : "turn-1", turn_seq: nextTurn && ready ? 2 : 1, status: nextTurn && ready ? "queued" : "completed" },
+        attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: "completed", reason_code: null },
+        outcome: nextTurn && ready ? null : { terminal: true, kind: "completed", reason_code: null },
+        answer: nextTurn && ready ? null : { message_id: "message-2", role: "assistant", content: messages[1].content, completed_at: messages[1].completed_at },
+        result_enrichment: { status: ready ? "ready" : "pending", pending_count: ready ? 0 : 1, failed_count: 0 }, deliveries: [], context_manifest_ref: "context-manifest:command:owned",
+      })),
+    });
+    try {
+      await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+      ready = true;
+      await act(async () => vi.advanceTimersByTimeAsync(2_000));
+      expect(container.textContent).toContain("面试方案.pdf");
+      expect(api.fetchMessages).toHaveBeenCalledTimes(1);
+      expect(api.createMessageSubmission).not.toHaveBeenCalled();
+      expect(api.retryTurn).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("renders the durable file warning from the worker turn messages after refresh", async () => {
+    const warning = { ...messages[1], message_id: "file-warning", seq: 2, role: "system" as const,
+      content: "文字回答已完成，但生成文件未能整理成功，当前没有可下载附件。" };
+    const answer = { ...messages[1], seq: 3 };
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, mode: "direct_agent", direct_agent_id: "hr-bot", execution_owner: "worker_direct" }, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockResolvedValue([]),
+      fetchTurnMessages: vi.fn().mockResolvedValue([messages[0], warning, answer]),
+      fetchSnapshot: vi.fn().mockResolvedValue({
+        read_version: 2, event_cursor: 8, turn: { turn_id: "turn-1", turn_seq: 1, status: "completed" },
+        attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: "completed", reason_code: null },
+        outcome: { terminal: true, kind: "completed", reason_code: null },
+        answer: { message_id: answer.message_id, role: "assistant", content: answer.content, completed_at: answer.completed_at },
+        result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: null,
+      }),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.querySelectorAll('[data-message-id="file-warning"]')).toHaveLength(1);
+    expect(container.textContent).toContain(warning.content);
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(api.createMessageSubmission).not.toHaveBeenCalled();
+  });
+
+  it("loads actual worker turn messages for actions and retains the prior answer on the next turn", async () => {
+    const workerConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot", execution_owner: "worker_direct" as const };
+    let submitted = false;
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: workerConversation, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockResolvedValue([]),
+      fetchTurnMessages: vi.fn().mockResolvedValue(messages),
+      fetchSnapshot: vi.fn().mockImplementation(async () => ({
+        read_version: submitted ? 3 : 2, event_cursor: submitted ? 9 : 8,
+        turn: { turn_id: submitted ? "turn-2" : "turn-1", turn_seq: submitted ? 2 : 1, status: submitted ? "queued" : "completed" },
+        attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: submitted ? "queued" : "completed", reason_code: null },
+        outcome: submitted ? null : { terminal: true, kind: "completed", reason_code: null },
+        answer: submitted ? null : { message_id: "message-2", role: "assistant", content: messages[1].content, completed_at: messages[1].completed_at },
+        result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: "context-manifest:command:owned",
+      })),
+      streamEvents: vi.fn().mockImplementation(async (_id, options) => new Promise<void>(resolve => options.signal.addEventListener("abort", () => resolve()))),
+      createMessageSubmission: vi.fn().mockImplementation((_id, text) => ({ idempotencyKey: "owned-next", send: async () => {
+        submitted = true;
+        return { ...submissionResult(text), conversation: workerConversation };
+      } })),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.querySelector('.conversation-assistant[data-message-id="message-2"]')).not.toBeNull();
+    expect([...container.querySelectorAll("button")].some(button => button.textContent === "复制")).toBe(true);
+    await setTextarea(container, "继续分析");
+    await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(submitted).toBe(true);
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).toContain("继续分析");
+    expect(container.querySelector<HTMLButtonElement>(".conversation-send")?.disabled).toBe(true);
+  });
+
+  it.each((["failed", "interrupted"] as const).flatMap(status => [
+    { status, attemptStatus: "reconciling" as const }, { status, attemptStatus: status },
+  ]))("shows a safe worker $status notice with $attemptStatus execution without authorizing replay", async ({ status, attemptStatus }) => {
+    const snapshot: TurnSnapshot = {
+      read_version: 2, event_cursor: 8,
+      turn: { turn_id: "turn-1", turn_seq: 1, status },
+      attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: attemptStatus, reason_code: attemptStatus === "reconciling" ? "executor_stop_unknown" : null },
+      outcome: { terminal: true, kind: status, reason_code: "private-provider-error" }, answer: null,
+      result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: null,
+    };
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, mode: "direct_agent", execution_owner: "worker_direct" }, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockResolvedValue([]), fetchTurnMessages: vi.fn().mockResolvedValue([]),
+      fetchSnapshot: vi.fn().mockResolvedValue(snapshot),
+      streamEvents: vi.fn().mockImplementation((_id, options) => new Promise<void>(resolve => options.signal.addEventListener("abort", () => resolve()))),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.querySelector('[role="alert"]')?.textContent ?? "").toContain(status === "failed" ? "本轮处理失败" : "本轮处理已中断");
+    if (attemptStatus === "reconciling") expect(container.textContent).toContain("正在确认原执行已停止");
+    else expect(container.textContent).not.toContain("正在确认原执行已停止");
+    expect(container.textContent).not.toContain("private-provider-error");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(attemptStatus === "reconciling");
+    expect(container.querySelector(".conversation-turn-retry")).toBeNull();
+    expect(api.retryTurn).not.toHaveBeenCalled();
+    expect(api.createMessageSubmission).not.toHaveBeenCalled();
+  });
+
+  it("retains a worker answer across next-turn acceptance when exact-turn metadata fails", async () => {
+    const workerConversation = { ...conversation, mode: "direct_agent" as const, execution_owner: "worker_direct" as const };
+    const history = deferred<ConversationMessage[]>();
+    let submitted = false;
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: workerConversation, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockReturnValue(history.promise),
+      fetchTurnMessages: vi.fn().mockRejectedValue(new Error("metadata unavailable")),
+      fetchSnapshot: vi.fn().mockImplementation(async (): Promise<TurnSnapshot> => ({
+        read_version: submitted ? 3 : 2, event_cursor: submitted ? 9 : 8,
+        turn: { turn_id: submitted ? "turn-2" : "turn-1", turn_seq: submitted ? 2 : 1, status: submitted ? "queued" : "completed" },
+        attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: submitted ? "queued" : "completed", reason_code: null },
+        outcome: submitted ? null : { terminal: true, kind: "completed", reason_code: null },
+        answer: submitted ? null : { message_id: "message-2", role: "assistant", content: messages[1].content, completed_at: messages[1].completed_at! },
+        result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: null,
+      })),
+      streamEvents: vi.fn().mockImplementation((_id, options) => new Promise<void>(resolve => options.signal.addEventListener("abort", () => resolve()))),
+      createMessageSubmission: vi.fn().mockImplementation((_id, text) => ({ idempotencyKey: "owned-next", send: async () => {
+        submitted = true;
+        return { ...submissionResult(text), conversation: workerConversation };
+      } })),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    await setTextarea(container, "继续分析");
+    await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(submitted).toBe(true);
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).toContain("继续分析");
+    expect(container.querySelector('[data-message-id="message-3"]')).not.toBeNull();
+    expect(container.textContent!.indexOf("建议从 GitHub 开始")).toBeLessThan(container.textContent!.indexOf("继续分析"));
+    expect(container.querySelector('button[aria-label="这个回答有帮助"]')).toBeNull();
+    expect(api.submitFeedback).not.toHaveBeenCalled();
+    // When real metadata finally arrives, it replaces the text-only view once.
+    await act(async () => history.resolve(messages));
+    expect(container.querySelectorAll('[data-message-id="message-2"]')).toHaveLength(1);
+    expect(container.textContent?.match(/建议从 GitHub 开始/g)).toHaveLength(1);
+    expect(container.querySelector('button[aria-label="这个回答有帮助"]')).not.toBeNull();
+    // Retained fallback text is scoped to this Conversation, never the next one.
+    const nextApi = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, conversation_id: "another-conversation" }, current_turn: null }),
+      fetchMessages: vi.fn().mockResolvedValue([]),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={nextApi} conversationId="another-conversation" />));
+    expect(container.textContent).not.toContain("建议从 GitHub 开始");
   });
 
   it("rejects a same-owner Session that belongs to a different professional Agent", async () => {
@@ -322,6 +504,490 @@ describe("ConversationPage", () => {
     expect(reconnectDelay).not.toHaveBeenCalled();
     expect(container.textContent).toContain("建议从 GitHub 开始");
     expect(container.textContent).not.toContain("连接暂时中断");
+  });
+
+  it("stops an idle null-turn stream after EOF without reconnecting or settling", async () => {
+    const fetchConversation = vi.fn().mockResolvedValue({ conversation, current_turn: null });
+    const reconnect = deferred<void>();
+    const reconnectDelay = vi.fn().mockReturnValue(reconnect.promise);
+    const streamSignals: AbortSignal[] = [];
+    const onConversationSettled = vi.fn();
+    const pageClient = client({
+      fetchConversation,
+      reconnectDelay,
+      streamEvents: vi.fn().mockImplementation(async (_id, options) => {
+        streamSignals.push(options.signal);
+      }),
+    });
+
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      client={pageClient}
+      conversationId={conversationId}
+      onConversationSettled={onConversationSettled}
+    />));
+
+    expect(fetchConversation).toHaveBeenCalledTimes(2);
+    expect(reconnectDelay).not.toHaveBeenCalled();
+    expect(onConversationSettled).not.toHaveBeenCalled();
+    expect(streamSignals[0]?.aborted).toBe(true);
+    expect(container.textContent).not.toContain("连接暂时中断");
+  });
+
+  it("stops null-turn polling when pending enrichment completes", async () => {
+    vi.useFakeTimers();
+    const pendingMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "pending",
+    }];
+    const completedMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn().mockResolvedValue({ conversation, current_turn: null });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(pendingMessages)
+      .mockResolvedValue(completedMessages);
+    const reconnectDelay = vi.fn().mockResolvedValue(undefined);
+    const onConversationSettled = vi.fn();
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({
+          fetchConversation,
+          fetchMessages,
+          reconnectDelay,
+          streamEvents: vi.fn().mockReturnValue(stream.promise),
+        })}
+        conversationId={conversationId}
+        onConversationSettled={onConversationSettled}
+      />));
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).not.toContain("附件与引用正在整理");
+      expect(onConversationSettled).not.toHaveBeenCalled();
+      expect(reconnectDelay).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("polls a hung active stream to completion without repeating a write", async () => {
+    vi.useFakeTimers();
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: active })
+      .mockResolvedValue({ conversation: directConversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValue(messages);
+    const streamSignals: AbortSignal[] = [];
+    const streamEvents = vi.fn().mockImplementation((_id, options) => {
+      streamSignals.push(options.signal);
+      return stream.promise;
+    });
+    const onConversationSettled = vi.fn();
+    const pageClient = client({ fetchConversation, fetchMessages, streamEvents });
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        assistantLabel="HR Agent"
+        client={pageClient}
+        conversationId={conversationId}
+        onConversationSettled={onConversationSettled}
+      />));
+      expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(true);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+
+      expect(fetchConversation).toHaveBeenCalledTimes(2);
+      expect(fetchMessages).toHaveBeenCalledTimes(2);
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+      expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(false);
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+      expect(streamSignals[0]?.aborted).toBe(true);
+      expect(pageClient.createMessageSubmission).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTimeAsync(15_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(2);
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps reading when terminal detail arrives before its referenced answer", async () => {
+    vi.useFakeTimers();
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: completedTurn })
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: active })
+      .mockResolvedValue({ conversation: directConversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValue(messages);
+    const streamSignals: AbortSignal[] = [];
+    const onConversationSettled = vi.fn();
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({
+          fetchConversation,
+          fetchMessages,
+          streamEvents: vi.fn().mockImplementation((_id, options) => {
+            streamSignals.push(options.signal);
+            return stream.promise;
+          }),
+        })}
+        conversationId={conversationId}
+        onConversationSettled={onConversationSettled}
+      />));
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(onConversationSettled).not.toHaveBeenCalled();
+      expect(streamSignals[0]?.aborted).toBe(false);
+      expect(container.textContent).not.toContain("建议从 GitHub 开始");
+      expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(false);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+      expect(streamSignals[0]?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shares one deferred refresh between stream completion and the poll timer", async () => {
+    vi.useFakeTimers();
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const nextDetail = deferred<ConversationDetail>();
+    const nextMessages = deferred<ConversationMessage[]>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockReturnValue(nextDetail.promise);
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockReturnValue(nextMessages.promise);
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({ fetchConversation, fetchMessages, streamEvents: vi.fn().mockReturnValue(stream.promise) })}
+        conversationId={conversationId}
+      />));
+
+      await act(async () => {
+        stream.resolve();
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(fetchConversation).toHaveBeenCalledTimes(2);
+      expect(fetchMessages).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        nextDetail.resolve({ conversation, current_turn: completedTurn });
+        nextMessages.resolve(messages);
+      });
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts a failed refresh pair before allowing a later poll", async () => {
+    vi.useFakeTimers();
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    const pairSignals: AbortSignal[] = [];
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValue({ conversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockImplementationOnce((_id, signal) => new Promise<ConversationMessage[]>((_resolve, reject) => {
+        pairSignals.push(signal);
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      }))
+      .mockResolvedValue(messages);
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({
+          fetchConversation,
+          fetchMessages,
+          streamEvents: vi.fn()
+            .mockRejectedValueOnce(new TypeError("offline"))
+            .mockReturnValue(stream.promise),
+        })}
+        conversationId={conversationId}
+      />));
+      expect(pairSignals[0]?.aborted).toBe(true);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(3);
+      expect(fetchMessages).toHaveBeenCalledTimes(3);
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not let a stale snapshot replace completed message content or enrichment", async () => {
+    const stream = deferred<void>();
+    const completedMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const staleMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], content: "旧草稿", result_delivery_status: "pending",
+    }];
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(completedMessages)
+      .mockResolvedValue(staleMessages);
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      client={client({ fetchMessages, streamEvents: vi.fn().mockReturnValue(stream.promise) })}
+      conversationId={conversationId}
+    />));
+
+    await act(async () => stream.resolve());
+
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).not.toContain("旧草稿");
+    expect(container.textContent).not.toContain("附件与引用正在整理");
+  });
+
+  it("unlocks terminal text while polling pending result delivery to completion", async () => {
+    vi.useFakeTimers();
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const pendingMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "pending",
+    }];
+    const deliveredMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: active })
+      .mockResolvedValue({ conversation: directConversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValueOnce(pendingMessages)
+      .mockResolvedValue(deliveredMessages);
+    const streamSignals: AbortSignal[] = [];
+    const onConversationSettled = vi.fn();
+    const pageClient = client({
+      fetchConversation,
+      fetchMessages,
+      streamEvents: vi.fn().mockImplementation((_id, options) => {
+        streamSignals.push(options.signal);
+        return stream.promise;
+      }),
+    });
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        assistantLabel="HR Agent"
+        client={pageClient}
+        conversationId={conversationId}
+        onConversationSettled={onConversationSettled}
+      />));
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).toContain("附件与引用正在整理，文字回答已完成。");
+      expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(false);
+      expect(streamSignals[0]?.aborted).toBe(true);
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(3);
+      expect(container.textContent).not.toContain("附件与引用正在整理");
+      expect(onConversationSettled).toHaveBeenCalledTimes(1);
+
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(3);
+      expect(pageClient.createMessageSubmission).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps pending result delivery across an omitted snapshot until explicit completion", async () => {
+    vi.useFakeTimers();
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const pendingMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "pending",
+    }];
+    const omittedMessages: ConversationMessage[] = [messages[0], { ...messages[1] }];
+    const completedMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const stream = deferred<void>();
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockResolvedValue({ conversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValueOnce(pendingMessages)
+      .mockResolvedValueOnce(omittedMessages)
+      .mockResolvedValue(completedMessages);
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({ fetchConversation, fetchMessages, streamEvents: vi.fn().mockReturnValue(stream.promise) })}
+        conversationId={conversationId}
+      />));
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).toContain("附件与引用正在整理，文字回答已完成。");
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(container.textContent).toContain("附件与引用正在整理，文字回答已完成。");
+
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(fetchConversation).toHaveBeenCalledTimes(4);
+      expect(container.textContent).not.toContain("附件与引用正在整理");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes mutable attachments on a terminal message during a new turn", async () => {
+    const attachment: ConversationAttachment = {
+      attachmentId: "result-file", conversationId, source: "agent", displayName: "候选人报告.pdf",
+      detectedMime: "application/pdf", sizeBytes: 1024, sha256: "a".repeat(64), state: "ready",
+      stateReason: null, createdAt: "2026-08-23T10:02:00Z", retainedUntil: "2027-08-23T10:02:00Z",
+      preview: { attachmentId: "result-file", detectedMime: "application/pdf" }, coverage: null,
+    };
+    const terminalMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "completed",
+    }];
+    const result = submissionResult("继续搜索");
+    const refreshedMessages: ConversationMessage[] = [terminalMessages[0], {
+      ...terminalMessages[1], output_attachments: [attachment],
+    }, result.message];
+    const initialStream = deferred<void>();
+    const activeStream = deferred<void>();
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(terminalMessages)
+      .mockResolvedValue(refreshedMessages);
+    const streamEvents = vi.fn()
+      .mockReturnValueOnce(initialStream.promise)
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockReturnValue(activeStream.promise);
+    const pageClient = client({
+      fetchConversation: vi.fn()
+        .mockResolvedValueOnce({ conversation, current_turn: completedTurn })
+        .mockResolvedValue({ conversation: result.conversation, current_turn: result.turn }),
+      fetchMessages,
+      streamEvents,
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={pageClient} conversationId={conversationId} />));
+    await setTextarea(container, "继续搜索");
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
+
+    expect(container.textContent).toContain("候选人报告.pdf");
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+  });
+
+  it("preserves an intervention accepted while an older snapshot is deferred", async () => {
+    vi.useFakeTimers();
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "waiting_agents" };
+    const snapshotDetail = deferred<ConversationDetail>();
+    const snapshotMessages = deferred<ConversationMessage[]>();
+    const stream = deferred<void>();
+    const intervention: ConversationInterventionResult = {
+      intervention: { status: "pending", message_id: "message-3" },
+      message: {
+        message_id: "message-3", conversation_id: conversationId, seq: 3, role: "user",
+        content: "保留这条补充", turn_id: "turn-1", delivery_status: "accepted",
+        created_at: "2026-08-23T10:02:00Z", completed_at: null,
+        input_attachments: [], output_attachments: [], active_attachment_ids: [],
+      },
+      turn: active,
+    };
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockReturnValue(snapshotDetail.promise);
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockReturnValue(snapshotMessages.promise);
+    const createMessageSubmission = vi.fn().mockReturnValue({
+      idempotencyKey: "intervention", send: vi.fn().mockResolvedValue(intervention),
+    });
+
+    try {
+      await act(async () => root.render(<ConversationPage
+        account={account}
+        client={client({ fetchConversation, fetchMessages, createMessageSubmission, streamEvents: vi.fn().mockReturnValue(stream.promise) })}
+        conversationId={conversationId}
+      />));
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      await setTextarea(container, "保留这条补充");
+      await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
+      expect(container.textContent).toContain("保留这条补充");
+
+      await act(async () => {
+        snapshotDetail.resolve({ conversation, current_turn: active });
+        snapshotMessages.resolve(messages.slice(0, 1));
+      });
+      expect(container.textContent).toContain("保留这条补充");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("explains a failed result delivery without hiding completed text", async () => {
+    const failedMessages: ConversationMessage[] = [messages[0], {
+      ...messages[1], result_delivery_status: "failed",
+    }];
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      client={client({ fetchMessages: vi.fn().mockResolvedValue(failedMessages) })}
+      conversationId={conversationId}
+    />));
+
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).toContain("文字回答已完成，附件或引用暂未整理成功。");
+  });
+
+  it("keeps messages readable when the attachment list fails", async () => {
+    const limits = {
+      max_file_bytes: 50 * 1024 * 1024,
+      max_files_per_message: 5,
+      max_bytes_per_message: 50 * 1024 * 1024,
+      max_files_per_conversation: 50,
+      max_bytes_per_conversation: 500 * 1024 * 1024,
+    };
+    const listAttachments = vi.fn().mockRejectedValue(new TypeError("offline"));
+
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      attachmentLimits={limits}
+      client={client({ listAttachments })}
+      conversationId={conversationId}
+    />));
+
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).not.toContain("暂时无法读取对话");
+    expect(container.querySelector("[role='alert']")?.textContent)
+      .toContain("会话材料暂时无法读取，请刷新页面重试");
   });
 
   it("is read-only when directory freshness is hard stale", async () => {

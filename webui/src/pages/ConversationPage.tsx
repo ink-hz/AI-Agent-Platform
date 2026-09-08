@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Account } from "../auth";
 import {
@@ -12,7 +12,9 @@ import {
   confirmConversationAction,
   createConversationMessageSubmission,
   fetchConversation,
+  fetchConversationSnapshot,
   fetchConversationMessages,
+  fetchConversationTurnMessages,
   fetchConversationTaskDetail,
   markConversationRead,
   rejectConversationAction,
@@ -37,12 +39,14 @@ import type {
   ConversationTaskDetail,
   ConversationAttachment,
   TurnSubmission,
+  TurnSnapshot,
 } from "../conversationTypes";
 import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
 import type { WorkroomAction } from "../workroomTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
+import { MessageMarkdown } from "../components/MessageMarkdown";
 import type { MessageActionsPresentation } from "../components/conversation/MessageActions";
 import { AttachmentUploader, type UploadQueueItem } from "../components/conversation/AttachmentUploader";
 import { SessionMaterialsDrawer } from "../components/conversation/SessionMaterialsDrawer";
@@ -50,9 +54,12 @@ import { MultiAgentWorkroom } from "../components/conversation/MultiAgentWorkroo
 import { PublicProgress } from "../components/conversation/PublicProgress";
 import { UserInputRequest } from "../components/conversation/UserInputRequest";
 import { projectWorkroom } from "../workroomProjection";
+import { scheduleSnapshotPolling } from "./snapshotPolling";
 
 
 export interface ConversationPageClient {
+  fetchSnapshot?(conversationId: string, signal?: AbortSignal): Promise<TurnSnapshot>;
+  fetchTurnMessages?(conversationId: string, turnId: string, signal?: AbortSignal): Promise<ConversationMessage[]>;
   fetchConversation(conversationId: string, signal?: AbortSignal): Promise<ConversationDetail>;
   fetchMessages(conversationId: string, signal?: AbortSignal): Promise<ConversationMessage[]>;
   createMessageSubmission(conversationId: string, input: string | TurnSubmission, csrfToken: string): ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
@@ -73,6 +80,8 @@ export interface ConversationPageClient {
 }
 
 const DEFAULT_CLIENT: ConversationPageClient = {
+  fetchSnapshot: fetchConversationSnapshot,
+  fetchTurnMessages: fetchConversationTurnMessages,
   fetchConversation,
   fetchMessages: fetchConversationMessages,
   createMessageSubmission: createConversationMessageSubmission,
@@ -94,8 +103,45 @@ const DEFAULT_CLIENT: ConversationPageClient = {
 
 
 function mergeMessages(current: ConversationMessage[], incoming: ConversationMessage[]): ConversationMessage[] {
-  return [...new Map([...current, ...incoming].map((message) => [message.message_id, message])).values()]
-    .sort((left, right) => left.seq - right.seq);
+  const deliveryRank = (status: ConversationMessage["delivery_status"]) => ({
+    accepted: 0, streaming: 1, completed: 2, failed: 2,
+  })[status];
+  const mergeResultStatus = (
+    accepted: ConversationMessage["result_delivery_status"],
+    next: ConversationMessage["result_delivery_status"],
+  ) => {
+    if (accepted === "completed" || accepted === "failed") return accepted;
+    if (accepted === "pending" && (next === undefined || next === null)) return accepted;
+    return next;
+  };
+  const byId = new Map(current.map((message) => [message.message_id, message]));
+  for (const message of incoming) {
+    const accepted = byId.get(message.message_id);
+    if (!accepted) {
+      byId.set(message.message_id, message);
+      continue;
+    }
+    if (deliveryRank(message.delivery_status) < deliveryRank(accepted.delivery_status)) continue;
+    if (["completed", "failed"].includes(accepted.delivery_status)) {
+      byId.set(message.message_id, {
+        ...message,
+        content: accepted.content,
+        delivery_status: accepted.delivery_status,
+        completed_at: accepted.completed_at,
+        result_delivery_status: mergeResultStatus(
+          accepted.result_delivery_status, message.result_delivery_status,
+        ),
+      });
+      continue;
+    }
+    byId.set(message.message_id, {
+      ...message,
+      result_delivery_status: mergeResultStatus(
+        accepted.result_delivery_status, message.result_delivery_status,
+      ),
+    });
+  }
+  return [...byId.values()].sort((left, right) => left.seq - right.seq);
 }
 
 
@@ -108,6 +154,19 @@ function mergeEvent(current: ConversationEvent[], incoming: ConversationEvent): 
 
 function turnIsActive(detail: ConversationDetail | null): boolean {
   return Boolean(detail?.current_turn && !TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status));
+}
+
+
+function terminalTurnHasReferencedMessage(
+  detail: ConversationDetail,
+  acceptedMessages: ConversationMessage[],
+): boolean {
+  const turn = detail.current_turn;
+  if (!turn || !TERMINAL_CONVERSATION_TURN_STATUSES.has(turn.status)) return false;
+  if (!turn.assistant_message_id) return turn.status !== "completed";
+  const answer = acceptedMessages.find((message) => message.message_id === turn.assistant_message_id);
+  return Boolean(answer && ["assistant", "system"].includes(answer.role)
+    && ["completed", "failed"].includes(answer.delivery_status));
 }
 
 
@@ -153,7 +212,15 @@ export function ConversationPage({
   messageActionsPresentation?: MessageActionsPresentation;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
+  const [workerSnapshot, setWorkerSnapshot] = useState<TurnSnapshot | null>(null);
+  const [retainedWorkerAnswers, setRetainedWorkerAnswers] = useState<{
+    answer: NonNullable<TurnSnapshot["answer"]>;
+    beforeMessageSeq: number;
+  }[]>([]);
+  const workerOwned = detail?.conversation.execution_owner === "worker_direct";
+  const workerActive = workerOwned && (!workerSnapshot || Boolean(workerSnapshot.attempt && ["queued", "running", "reconciling"].includes(workerSnapshot.attempt.status)));
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const messagesRef = useRef<ConversationMessage[]>([]);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -178,6 +245,15 @@ export function ConversationPage({
   const writeController = useRef<AbortController | null>(null);
   const eventCursor = useRef(0);
   const inFlight = useRef(false);
+  const terminalTurnIds = useRef(new Set<string>());
+  const settledTurnIds = useRef(new Set<string>());
+  const replaceMessages = (next: ConversationMessage[]) => {
+    messagesRef.current = next;
+    setMessages(next);
+  };
+  const mergeIntoMessages = (incoming: ConversationMessage[]) => {
+    replaceMessages(mergeMessages(messagesRef.current, incoming));
+  };
   const readOnly = account.hard_stale_read_only || detail?.conversation.status === "archived";
   const materialsDrawerOpen = materialsOpen ?? internalMaterialsOpen;
   const changeMaterialsOpen = useCallback((open: boolean) => {
@@ -202,54 +278,228 @@ export function ConversationPage({
 
   useEffect(() => {
     const controller = new AbortController();
-    setDetail(null); setMessages([]); setEvents([]); setLoading(true); setLoadFailure(false);
+    setWorkerSnapshot(null);
+    setRetainedWorkerAnswers([]);
+    setDetail(null); replaceMessages([]); setEvents([]); setLoading(true); setLoadFailure(false);
     setText(""); setSendFailure(false); setCancelFailure(false); setCancelRequested(false);
     setFeedback({}); setAttachments([]); setActiveAttachmentIds([]); setNewAttachmentIds([]); setUploadQueue([]); setAttachmentError(null);
     retained.current = null; eventCursor.current = 0;
+    terminalTurnIds.current.clear(); settledTurnIds.current.clear();
+    const detailRead = client.fetchConversation(conversationId, controller.signal);
+    let workerInitialized = false;
+    // History/materials are independent views, not the worker's Result checkpoint.
+    void detailRead.then((snapshot) => {
+      if (controller.signal.aborted || snapshot.conversation.execution_owner !== "worker_direct") return;
+      if (expectedAgentId && snapshot.conversation.direct_agent_id !== expectedAgentId) throw new Error("Conversation Agent scope mismatch");
+      workerInitialized = true;
+      setDetail(snapshot); setLoading(false); setStreamEpoch((value) => value + 1);
+      onConversationUpdated?.(snapshot.conversation);
+    }).catch(() => undefined);
     void Promise.all([
-      client.fetchConversation(conversationId, controller.signal),
+      detailRead,
       client.fetchMessages(conversationId, controller.signal),
-      attachmentLimits && client.listAttachments ? client.listAttachments(conversationId, controller.signal) : Promise.resolve([]),
-    ]).then(([snapshot, loadedMessages, loadedAttachments]) => {
+      attachmentLimits && client.listAttachments
+        ? client.listAttachments(conversationId, controller.signal)
+          .then((items) => ({ items, failed: false }), () => ({ items: [], failed: true }))
+        : Promise.resolve({ items: [], failed: false }),
+    ]).then(([snapshot, loadedMessages, attachmentResult]) => {
       if (controller.signal.aborted) return;
       if (expectedAgentId && (
         snapshot.conversation.mode !== "direct_agent"
         || snapshot.conversation.direct_agent_id !== expectedAgentId
       )) throw new Error("Conversation Agent scope mismatch");
       const projected = loadedMessages.flatMap((message) => [...message.input_attachments, ...message.output_attachments]);
-      const materialMap = new Map([...loadedAttachments, ...projected].map((item) => [item.attachmentId, item]));
+      const materialMap = new Map([...attachmentResult.items, ...projected].map((item) => [item.attachmentId, item]));
       const lastUser = [...loadedMessages].reverse().find((message) => message.role === "user");
       setAttachments([...materialMap.values()]); setActiveAttachmentIds(lastUser?.active_attachment_ids ?? []);
-      setDetail(snapshot); setMessages(loadedMessages); setLoading(false); setStreamEpoch((value) => value + 1);
-      onConversationUpdated?.(snapshot.conversation);
+      if (attachmentResult.failed) setAttachmentError("会话材料暂时无法读取，请刷新页面重试。");
+      if (workerInitialized) mergeIntoMessages(loadedMessages);
+      else {
+        setDetail(snapshot); replaceMessages(loadedMessages); setLoading(false);
+        setStreamEpoch((value) => value + 1);
+        onConversationUpdated?.(snapshot.conversation);
+      }
     }).catch(() => {
-      if (!controller.signal.aborted) { setLoadFailure(true); setLoading(false); }
+      if (!controller.signal.aborted && !workerInitialized) { setLoadFailure(true); setLoading(false); }
     });
     return () => { controller.abort(); writeController.current?.abort(); };
   }, [attachmentLimits, client, conversationId, expectedAgentId, onConversationUpdated]);
 
   useEffect(() => {
     if (!streamEpoch || !detail) return;
+    if (detail.conversation.execution_owner === "worker_direct") {
+      const controller = new AbortController();
+      let inFlight = false;
+      const loadingTurns = new Set<string>();
+      const enrichmentVersions = new Map<string, number>();
+      const refresh = async () => {
+        if (inFlight || controller.signal.aborted) return;
+        inFlight = true;
+        try {
+          const value = await (client.fetchSnapshot ?? fetchConversationSnapshot)(conversationId, controller.signal);
+          if (controller.signal.aborted) return;
+          setWorkerSnapshot((previous) => previous && previous.read_version > value.read_version ? previous : value);
+          const turnId = value.turn?.turn_id;
+          const pendingTurns = messagesRef.current.filter(message => message.result_delivery_status === "pending").map(message => message.turn_id).filter((id): id is string => Boolean(id));
+          for (const candidateId of new Set([...(turnId ? [turnId] : []), ...pendingTurns])) {
+            const current = candidateId === turnId;
+            const missing = current && (!messagesRef.current.some(message => message.turn_id === candidateId)
+              || Boolean(value.answer && !messagesRef.current.some(message => message.message_id === value.answer?.message_id)));
+            const enrichmentChanged = (pendingTurns.includes(candidateId) || (current && value.result_enrichment.status !== "none"))
+              && enrichmentVersions.get(candidateId) !== value.read_version;
+            if (loadingTurns.has(candidateId) || (!missing && !enrichmentChanged)) continue;
+            loadingTurns.add(candidateId);
+            // Independent rendering/enrichment read. Its failure cannot withhold
+            // the authoritative answer or block the next snapshot refresh.
+            void (client.fetchTurnMessages ?? fetchConversationTurnMessages)(conversationId, candidateId, controller.signal)
+              .then(items => { if (!controller.signal.aborted) {
+                mergeIntoMessages(items); enrichmentVersions.set(candidateId, value.read_version);
+                setAttachments(previous => [...new Map([...previous, ...items.flatMap(message => message.output_attachments)].map(item => [item.attachmentId, item])).values()]);
+              } })
+              .catch(() => undefined).finally(() => loadingTurns.delete(candidateId));
+          }
+          eventCursor.current = Math.max(eventCursor.current, value.event_cursor);
+          setConnection("live");
+          if (value.outcome && value.turn && !settledTurnIds.current.has(value.turn.turn_id)) {
+            settledTurnIds.current.add(value.turn.turn_id); onConversationSettled?.();
+          }
+        } catch { if (!controller.signal.aborted) setConnection("offline"); }
+        finally { inFlight = false; }
+      };
+      void refresh();
+      const stop = scheduleSnapshotPolling(() => void refresh(), 2_000);
+      // The stream is a read-only wake-up/progress view; Result comes from snapshot.
+      void client.streamEvents(conversationId, { after: eventCursor.current, signal: controller.signal,
+        onEvent: (event) => { if (!controller.signal.aborted && event.conversation_id === conversationId) {
+          setEvents((current) => mergeEvent(current, event)); void refresh();
+        } } }).then(() => void refresh(), () => void refresh());
+      return () => { stop(); controller.abort(); };
+    }
     const controller = new AbortController();
-    const refreshSnapshot = async () => {
-      const [snapshot, loadedMessages] = await Promise.all([
-        client.fetchConversation(conversationId, controller.signal),
-        client.fetchMessages(conversationId, controller.signal),
-      ]);
-      if (controller.signal.aborted) return null;
-      setDetail(snapshot); setMessages((current) => mergeMessages(current, loadedMessages));
-      return snapshot;
+    const streamController = new AbortController();
+    let stopPolling: (() => void) | undefined;
+    let acceptedDetail = detail;
+    if (detail.current_turn && TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status)) {
+      terminalTurnIds.current.add(detail.current_turn.turn_id);
+    }
+    let refreshInFlight: Promise<{
+      snapshot: ConversationDetail;
+      terminal: boolean;
+      terminalReady: boolean;
+      resultDeliveryPending: boolean;
+      needsPolling: boolean;
+    } | null> | null = null;
+    const rememberSnapshot = (snapshot: ConversationDetail, loadedMessages: ConversationMessage[]) => {
+      const incomingTurn = snapshot.current_turn;
+      const incomingIsTerminal = Boolean(
+        incomingTurn && TERMINAL_CONVERSATION_TURN_STATUSES.has(incomingTurn.status),
+      );
+      if (incomingTurn && incomingIsTerminal) terminalTurnIds.current.add(incomingTurn.turn_id);
+      if (!(incomingTurn && !incomingIsTerminal && terminalTurnIds.current.has(incomingTurn.turn_id))) {
+        acceptedDetail = snapshot;
+      }
+      const acceptedMessages = mergeMessages(messagesRef.current, loadedMessages);
+      messagesRef.current = acceptedMessages;
+      setDetail(acceptedDetail);
+      setMessages(acceptedMessages);
+      const terminal = Boolean(acceptedDetail.current_turn
+        && TERMINAL_CONVERSATION_TURN_STATUSES.has(acceptedDetail.current_turn.status));
+      const terminalReady = terminalTurnHasReferencedMessage(acceptedDetail, acceptedMessages);
+      const resultDeliveryPending = acceptedMessages.some(
+        (message) => message.result_delivery_status === "pending",
+      );
+      return {
+        snapshot: acceptedDetail,
+        terminal,
+        terminalReady,
+        resultDeliveryPending,
+        needsPolling: turnIsActive(acceptedDetail)
+          || (terminal && !terminalReady)
+          || resultDeliveryPending,
+      };
+    };
+    const performRefresh = async () => {
+      const pairController = new AbortController();
+      const abortPair = () => pairController.abort();
+      controller.signal.addEventListener("abort", abortPair, { once: true });
+      if (controller.signal.aborted) pairController.abort();
+      const detailRead = client.fetchConversation(conversationId, pairController.signal);
+      const messageRead = client.fetchMessages(conversationId, pairController.signal);
+      try {
+        const [snapshot, loadedMessages] = await Promise.all([detailRead, messageRead]);
+        if (controller.signal.aborted) return null;
+        return rememberSnapshot(snapshot, loadedMessages);
+      } catch (error) {
+        pairController.abort();
+        await Promise.allSettled([detailRead, messageRead]);
+        throw error;
+      } finally {
+        controller.signal.removeEventListener("abort", abortPair);
+      }
+    };
+    const refreshSnapshot = () => {
+      if (refreshInFlight) return refreshInFlight;
+      const refresh = performRefresh();
+      const owned = refresh.then(
+        (result) => {
+          if (refreshInFlight === owned) refreshInFlight = null;
+          return result;
+        },
+        (error) => {
+          if (refreshInFlight === owned) refreshInFlight = null;
+          throw error;
+        },
+      );
+      refreshInFlight = owned;
+      return owned;
     };
     const activeTurnWasObserved = turnIsActive(detail);
+    const terminalWasIncomplete = Boolean(detail.current_turn
+      && TERMINAL_CONVERSATION_TURN_STATUSES.has(detail.current_turn.status)
+      && !terminalTurnHasReferencedMessage(detail, messagesRef.current));
+    const stopReading = () => {
+      setConnection("live");
+      stopPolling?.();
+      controller.abort();
+      streamController.abort();
+    };
+    const settle = (result: {
+      snapshot: ConversationDetail;
+      needsPolling: boolean;
+    }) => {
+      setConnection("live");
+      const turnId = result.snapshot.current_turn?.turn_id;
+      if ((activeTurnWasObserved || terminalWasIncomplete)
+        && turnId && !settledTurnIds.current.has(turnId)) {
+        settledTurnIds.current.add(turnId);
+        onConversationSettled?.();
+      }
+      streamController.abort();
+      if (!result.needsPolling) stopReading();
+    };
+    const initiallyNeedsPolling = activeTurnWasObserved || terminalWasIncomplete || messagesRef.current.some(
+      (message) => message.result_delivery_status === "pending",
+    );
+    if (initiallyNeedsPolling) {
+      stopPolling = scheduleSnapshotPolling(() => {
+        if (controller.signal.aborted) return;
+        void refreshSnapshot()
+          .then((result) => {
+            if (result?.terminalReady) settle(result);
+            else if (result && !result.needsPolling) stopReading();
+          })
+          .catch(() => undefined);
+      }, 5_000);
+    }
     const run = async () => {
-      while (!controller.signal.aborted) {
+      while (!controller.signal.aborted && !streamController.signal.aborted) {
         setConnection(eventCursor.current === 0 ? "connecting" : "live");
         try {
           await client.streamEvents(conversationId, {
             after: eventCursor.current,
-            signal: controller.signal,
+            signal: streamController.signal,
             onEvent: (event) => {
-              if (controller.signal.aborted || event.conversation_id !== conversationId || event.seq <= eventCursor.current) return;
+              if (streamController.signal.aborted || event.conversation_id !== conversationId || event.seq <= eventCursor.current) return;
               eventCursor.current = event.seq;
               setEvents((current) => mergeEvent(current, event));
               setConnection("live");
@@ -257,39 +507,38 @@ export function ConversationPage({
                 "brain.answer_submitted", "brain.failed", "brain.user_input_requested",
               ].includes(event.event_type)) {
                 void client.markRead(
-                  conversationId, event.seq, account.csrf_token, controller.signal,
+                  conversationId, event.seq, account.csrf_token, streamController.signal,
                 ).catch(() => undefined);
               }
             },
           });
-          const snapshot = await refreshSnapshot();
-          if (!snapshot) return;
+          const result = await refreshSnapshot();
+          if (!result) return;
           setConnection("live");
-          if (!turnIsActive(snapshot)) {
-            if (activeTurnWasObserved) onConversationSettled?.();
-            return;
-          }
+          if (result.terminalReady) return settle(result);
+          if (!result.needsPolling) return stopReading();
           setConnection("offline");
         } catch {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted || streamController.signal.aborted) return;
           try {
-            const snapshot = await refreshSnapshot();
-            if (!snapshot) return;
-            if (!turnIsActive(snapshot)) {
-              setConnection("live");
-              if (activeTurnWasObserved) onConversationSettled?.();
-              return;
-            }
+            const result = await refreshSnapshot();
+            if (!result) return;
+            if (result.terminalReady) return settle(result);
+            if (!result.needsPolling) return stopReading();
           } catch {
             if (controller.signal.aborted) return;
           }
           setConnection("offline");
         }
-        await client.reconnectDelay(controller.signal);
+        await client.reconnectDelay(streamController.signal);
       }
     };
     void run();
-    return () => controller.abort();
+    return () => {
+      stopPolling?.();
+      controller.abort();
+      streamController.abort();
+    };
   // streamEpoch deliberately starts a fresh stream after a newly accepted Turn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account.csrf_token, account.hard_stale_read_only, client, conversationId, onConversationSettled, streamEpoch]);
@@ -298,7 +547,7 @@ export function ConversationPage({
     const normalized = value.trim();
     const waitingUser = detail?.current_turn?.status === "waiting_user";
     if ((!normalized && newAttachmentIds.length === 0) || inFlight.current || readOnly
-      || (turnIsActive(detail) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
+      || ((workerOwned ? workerActive : turnIsActive(detail)) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
     const submissionInput: TurnSubmission = {
       text: normalized,
       attachmentIds: [...newAttachmentIds],
@@ -326,8 +575,14 @@ export function ConversationPage({
       retained.current = null;
       setText("");
       setNewAttachmentIds([]); setUploadQueue([]);
-      setMessages((current) => mergeMessages(current, [result.message]));
+      mergeIntoMessages([result.message]);
       if ("conversation" in result) {
+        if (result.conversation.execution_owner === "worker_direct") {
+          const answer = workerSnapshot?.answer;
+          if (answer) setRetainedWorkerAnswers((current) => current.some(item => item.answer.message_id === answer.message_id)
+            ? current : [...current, { answer, beforeMessageSeq: result.message.seq }]);
+          setWorkerSnapshot(null);
+        }
         setDetail({ conversation: result.conversation, current_turn: result.turn });
         onConversationUpdated?.(result.conversation);
         setStreamEpoch((value) => value + 1);
@@ -359,7 +614,7 @@ export function ConversationPage({
         conversationId, turn.turn_id, account.csrf_token,
       ).send(controller.signal);
       if (controller.signal.aborted) return;
-      setMessages((current) => mergeMessages(current, [result.message]));
+      mergeIntoMessages([result.message]);
       setDetail({ conversation: result.conversation, current_turn: result.turn });
       setStreamEpoch((value) => value + 1);
     } catch {
@@ -383,7 +638,7 @@ export function ConversationPage({
         conversationId, message.turn_id, account.csrf_token,
       ).send(controller.signal);
       if (controller.signal.aborted) return;
-      setMessages((current) => mergeMessages(current, [result.message]));
+      mergeIntoMessages([result.message]);
       setDetail({ conversation: result.conversation, current_turn: result.turn });
       setStreamEpoch((value) => value + 1);
     } catch {
@@ -463,7 +718,7 @@ export function ConversationPage({
 
   if (loading) return <section className="conversation-load-state" aria-live="polite"><h1>正在打开对话</h1><p>正在读取已保存的消息与执行记录。</p></section>;
   if (loadFailure || !detail) return <section className="conversation-load-state" role="alert"><h1>暂时无法读取对话</h1><p>对话仍安全保存在平台，请稍后刷新。</p></section>;
-  const active = turnIsActive(detail);
+  const active = workerOwned ? workerActive : turnIsActive(detail);
   const waitingUser = detail.current_turn?.status === "waiting_user";
   const waitingUserEvent = [...events].reverse().find(
     (event) => event.event_type === "brain.user_input_requested",
@@ -488,6 +743,20 @@ export function ConversationPage({
     }));
   })();
   const uploadPending = uploadQueue.some((item) => item.state === "queued" || item.state === "uploading" || item.state === "processing");
+  // A snapshot answer is not a ConversationMessage: its message seq and other
+  // metadata are unknown. Anchor it before the actual next accepted message,
+  // then prefer real metadata whenever that independent read recovers.
+  const messageGroups: { key: string; messages: ConversationMessage[]; answer: TurnSnapshot["answer"] }[] = [];
+  let remainingMessages = messages;
+  for (const item of retainedWorkerAnswers) {
+    if (messages.some(message => message.message_id === item.answer.message_id)) continue;
+    messageGroups.push({ key: item.answer.message_id,
+      messages: remainingMessages.filter(message => message.seq < item.beforeMessageSeq), answer: item.answer });
+    remainingMessages = remainingMessages.filter(message => message.seq >= item.beforeMessageSeq);
+  }
+  messageGroups.push({ key: "remaining", messages: remainingMessages, answer: null });
+  const workerFailure = workerOwned && workerSnapshot?.outcome
+    && ["failed", "interrupted"].includes(workerSnapshot.outcome.kind) ? workerSnapshot.outcome.kind : null;
   const conversationContent = <div className="conversation-page">
     <header className="conversation-header">
       <div>
@@ -503,9 +772,9 @@ export function ConversationPage({
     </header>
     {connection === "offline" && <aside className="conversation-connection is-offline" role="status"><strong>连接暂时中断</strong><span>正在从上次进度继续连接，不会重复提交请求。</span></aside>}
     {connection === "connecting" && <aside className="conversation-connection" role="status">正在连接对话…</aside>}
-    <ConversationMessages
+    {messageGroups.map(group => <Fragment key={group.key}><ConversationMessages
       assistantLabel={assistantLabel}
-      messages={messages}
+      messages={group.messages}
       feedback={feedback}
       messageActionsPresentation={messageActionsPresentation}
       onDownloadAll={() => void downloadAllArtifacts()}
@@ -526,13 +795,27 @@ export function ConversationPage({
         /> : null;
       }}
     />
+    {group.answer && <article className="conversation-message conversation-message-assistant" aria-label={`${assistantLabel} 回答`}>
+      <MessageMarkdown content={group.answer.content} />
+    </article>}
+    </Fragment>)}
+    {workerSnapshot?.answer && !messages.some((message) => message.message_id === workerSnapshot.answer?.message_id) && <article className="conversation-message conversation-message-assistant" aria-label={`${assistantLabel} 回答`}>
+      <MessageMarkdown content={workerSnapshot.answer.content} />
+    </article>}
+    {workerFailure && <p className="conversation-action-error" role="alert">
+      {workerFailure === "failed" ? "本轮处理失败。" : "本轮处理已中断。"}
+      {workerSnapshot?.answer ? "已保存的回答仍可查看。" : "本轮未生成完整回答。"}
+      不会自动重新执行。
+    </p>}
     {threadSupplement}
     <PublicProgress
       active={active && !waitingUser}
       assistantLabel={assistantLabel}
-      events={events.filter((event) => event.turn_id === detail.current_turn?.turn_id)}
+      events={events.filter((event) => event.turn_id === (workerOwned ? workerSnapshot?.turn?.turn_id : detail.current_turn?.turn_id))}
       mode={detail.conversation.mode}
       stopButton={stopButton}
+      workerOwned={workerOwned}
+      reconciling={workerSnapshot?.attempt?.status === "reconciling"}
     />
     {cancelFailure && <p className="conversation-action-error" role="alert">停止请求暂未送达，请稍后重试。</p>}
     {waitingUser && typeof waitingQuestion === "string" && <UserInputRequest
@@ -541,7 +824,7 @@ export function ConversationPage({
       pending={pending}
       question={waitingQuestion}
     />}
-    {detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
+    {!workerOwned && detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
       && <button className="conversation-turn-retry" disabled={pending || readOnly} onClick={() => void retryTurn()} type="button">重试本轮</button>}
     <ConversationComposer
       attachmentControls={attachmentLimits ? <AttachmentUploader

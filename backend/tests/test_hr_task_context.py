@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import psycopg
@@ -488,16 +489,31 @@ def test_recovery_returns_the_recorded_envelope_without_rereading_newer_context(
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("with_selected_resume", [False, True])
 def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
     conversation_database,  # noqa: F811
     repository,  # noqa: F811
     request,
+    with_selected_resume,
 ) -> None:
     environment, owner_id, _ = conversation_database
+    migrations = Path(__file__).parents[1] / "control_migrations"
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute((migrations / "pending/hr_turn_input_context.sql").read_text())
+
+    def restore_function():
+        source = (migrations / "069_hr_position_intelligence.sql").read_text()
+        start = source.index("create function platform_hr.create_position_task_record_v69(")
+        end = source.index("$function$;", start) + len("$function$;")
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(source[start:end].replace("create function", "create or replace function", 1))
+
+    request.addfinalizer(restore_function)
     positions = HrPositionRepository(environment["urls"]["platform_control_app"])
     position = positions.create_manual(
         CreateManualPosition(owner_id, uuid4(), uuid4(), "结构工程师")
     )
+    resume_ids = (uuid4(), uuid4()) if with_selected_resume else ()
 
     def cleanup():
         with psycopg.connect(environment["admin"]) as connection:
@@ -520,6 +536,14 @@ def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
                 "delete from platform_hr.positions where owner_internal_user_id=%s",
                 (owner_id,),
             )
+            connection.execute(
+                "delete from platform_attachments.bindings where attachment_id=any(%s::uuid[])",
+                (list(resume_ids),),
+            )
+            connection.execute(
+                "delete from platform_attachments.attachments where attachment_id=any(%s::uuid[])",
+                (list(resume_ids),),
+            )
 
     request.addfinalizer(cleanup)
     turn_request_id = uuid4()
@@ -539,6 +563,26 @@ def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
             "created_in_position",
         )
     )
+    if with_selected_resume:
+        with psycopg.connect(environment["admin"]) as connection:
+            for attachment_id in resume_ids:
+                connection.execute(
+                    "insert into platform_attachments.attachments("
+                    "attachment_id,owner_internal_user_id,conversation_id,source_kind,"
+                    "original_name_ciphertext,original_name_key_version,object_ref_ciphertext,"
+                    "object_ref_key_version,immutable_locator,size_bytes,sha256,retained_until,"
+                    "state,ready_at) values (%s,%s,%s,'user_input',%s,1,%s,1,'version:v1',1,%s,"
+                    "now()+interval '1 day','ready',now())",
+                    (attachment_id, owner_id, started.conversation.conversation_id,
+                     b"x" * 29, b"y" * 29, b"z" * 32),
+                )
+            connection.execute(
+                "insert into platform_attachments.bindings("
+                "binding_id,attachment_id,owner_internal_user_id,kind,conversation_id,turn_id) "
+                "values (%s,%s,%s,'turn_input',%s,%s)",
+                (uuid4(), resume_ids[0], owner_id,
+                 started.conversation.conversation_id, started.turn.turn_id),
+            )
     source = PostgresHrTaskContextSource(
         environment["urls"]["platform_control_app"],
         execution_model_version="hr-runtime-v1",
@@ -555,6 +599,7 @@ def test_postgres_source_verifies_position_binding_and_persists_one_task_record(
     assert replay == first
     assert first.position_id == position.position_id
     assert first.task_kind == "freeform"
+    assert first.material_attachment_ids == resume_ids[:1]
     assert "结构工程师" in first.prompt_context
     with psycopg.connect(environment["admin"]) as connection:
         stored = connection.execute(

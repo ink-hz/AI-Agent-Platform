@@ -51,6 +51,7 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         "platform-directory",
         "platform-dingtalk-stream",
         "platform-brain",
+        "platform-hr-web-worker",
     }
     assert "ports" not in services["platform-postgres"]
     assert "ports" not in services["platform-api"]

@@ -184,6 +184,28 @@ class ConversationResultProjection:
                 ),
             )
 
+    def bind_ready_artifact_locked(
+        self,
+        cursor,
+        *,
+        owner_id,
+        conversation_id,
+        message_id,
+        task_id,
+        agent_id,
+        artifact,
+    ):
+        """v5 fixed-Result consumer; same attachment authority, no v4 envelope."""
+        self._bind_artifacts(
+            cursor,
+            owner_id=owner_id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            task_id=task_id,
+            agent_id=agent_id,
+            values=[artifact],
+        )
+
     def project_locked(
         self,
         cursor,

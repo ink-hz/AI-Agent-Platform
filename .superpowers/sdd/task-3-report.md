@@ -349,3 +349,131 @@ npm run build
 ```
 
 Result: passed (`tsc -b && vite build`).
+
+---
+
+# Task 3 report: browser read resilience
+
+## Outcome
+
+- Added a five-second, single-flight snapshot poll while a Turn is active or a message has pending result delivery. It stops after both text and result delivery settle, or on cleanup, unmount, or conversation switch.
+- Stream refreshes and polls share terminal bookkeeping, so an active snapshot for a known-terminal Turn cannot replace terminal UI state.
+- A terminal snapshot aborts the hung stream, merges the saved answer, unlocks the composer, and invokes `onConversationSettled` once per Turn. Pending attachment/citation enrichment continues through bounded GET polling without re-locking text input.
+- Parsed the additive optional `result_delivery_status` projection and rendered explicit pending/failed informational copy. Neither state adds a re-run action.
+- Poll read failures do not kill later reads or clear rendered messages. Attachment-list rejection is isolated from required conversation/message loading and renders an actionable warning.
+- Added no read- or reconnect-triggered submission and changed no access rules.
+
+## TDD evidence
+
+Initial RED: `npm test -- --run src/pages/ConversationPage.test.tsx`
+
+- Exit 1: 2 expected failures, 21 passes. No timer-driven snapshot read occurred, and attachment-list rejection caused the fatal load state.
+
+Initial GREEN: `npm test -- --run src/pages/ConversationPage.test.tsx`
+
+- Exit 0: 23/23 tests passed.
+
+Result-delivery RED: `npm test -- --run src/conversationApi.test.ts src/pages/ConversationPage.test.tsx`
+
+- Exit 1: 3 expected failures. The strict parser rejected `result_delivery_status`, and pending/failed result-delivery notices did not render.
+
+Result-delivery GREEN: the same command exited 0 with 2 files and 50/50 tests passing.
+
+Relevant regression and build: `npm test -- --run src/pages/ConversationPage.test.tsx src/conversationApi.test.ts src/components/conversation src/workspaces/hr/HrConversationOutcomePanel.test.tsx && npm run build`
+
+- Exit 0: 14 test files and 90/90 tests passed; TypeScript and Vite build passed.
+- An earlier regression run found the existing `NoMockProgress` source guard because the timer primitive was in `ConversationPage.tsx`. The bounded scheduling primitive was extracted into `snapshotPolling.ts`, preserving that guard.
+- Vite emitted only its existing large-chunk advisory.
+
+## Self-review and concerns
+
+- The interval is fixed at 5,000 ms; no immediate extra poll is issued. The in-flight guard resets in `finally`, so failed reads allow later polls.
+- Text terminality and enrichment terminality are intentionally separate: SSE stops and the composer unlocks at text terminality; snapshot polling stops when no message remains `pending`.
+- Lifecycle cleanup clears the schedule and aborts both snapshot and stream signals. Terminal and callback IDs reset when conversation load identity changes.
+- Message refreshes merge by message ID and do not clear existing content.
+- The optional parser field accepts only `null`, `pending`, `completed`, or `failed`; absent fields remain backward compatible.
+- The UI has no enrichment retry button or POST. Existing event-driven `markRead` behavior is unchanged.
+- No backend or unrelated concurrent files were staged or changed by this task.
+
+## Review follow-up: deferred snapshot ordering
+
+The three Important review findings were reproduced with real deferred client promises before implementation:
+
+`npm test -- --run src/pages/ConversationPage.test.tsx`
+
+- RED: exit 1 with 4 expected failures and 25 passes. The tests proved premature settlement before the referenced answer, duplicate stream/timer refresh pairs, a sibling message read left live after detail-read failure, and stale replacement of completed answer/enrichment state.
+- GREEN: exit 0 with 29/29 tests passing.
+
+The correction now:
+
+- Treats a terminal Turn as ready to settle only after its referenced assistant/system message is present with terminal delivery. A completed Turn without its answer ID remains readable through the bounded poll, including when that ordering is observed on initial load.
+- Shares one refresh promise between stream EOF/error and timer callers. Each detail/messages pair gets a child abort controller; if either read fails, the sibling is aborted and both are awaited before refresh ownership is released.
+- Merges snapshots synchronously into accepted state before computing `needsPolling`. Completed message body and terminal result-delivery state cannot regress when a stale snapshot arrives.
+- Keeps text settlement separate from result enrichment: the stream aborts and the composer unlocks once the referenced text is terminal, while GET polling continues only if accepted merged messages still contain pending result delivery.
+
+Fresh verification after the correction:
+
+`npm test -- --run src/pages/ConversationPage.test.tsx src/conversationApi.test.ts src/components/conversation src/workspaces/hr/HrConversationOutcomePanel.test.tsx && npm run build`
+
+- Exit 0: 14 test files and 94/94 tests passed; `tsc -b` and Vite build passed.
+- Vite emitted only the existing large-chunk advisory.
+
+One final self-review tightened the terminal-order test to start from terminal detail with its referenced answer absent, then return a stale active detail. RED showed the direct-Agent composer re-locking; after seeding terminal monotonicity from the initial accepted detail, the focused test and the fresh 94-test/build command above both passed.
+
+## Re-review follow-up: complete message merge state
+
+Three additional deferred-order regressions were added before implementation:
+
+`npm test -- --run src/pages/ConversationPage.test.tsx`
+
+- RED: exit 1 with 3 expected failures and 29 passes. An omitted result status cleared accepted `pending`, terminal enrichment froze mutable attachment projection, and an older deferred snapshot erased an accepted intervention message.
+- GREEN: exit 0 with 32/32 tests passing.
+
+Message reconciliation now treats fields independently:
+
+- Immutable completed text, delivery status, and completion time cannot regress.
+- Accepted `pending` result delivery survives omitted or null snapshots until an explicit `completed` or `failed`; terminal result status remains monotonic.
+- Mutable output attachments, artifact versions, citations, and other server projections continue to refresh even after result delivery becomes terminal.
+- A synchronized latest-message ref is updated on initial/reset loads, snapshot merges, submissions, retries, and interventions. Deferred snapshots merge against that ref, so locally accepted messages absent from an older read remain visible.
+- `needsPolling` is computed only from the fully accepted merged messages.
+
+Fresh verification:
+
+`npm test -- --run src/pages/ConversationPage.test.tsx src/conversationApi.test.ts src/components/conversation src/workspaces/hr/HrConversationOutcomePanel.test.tsx && npm run build`
+
+- Exit 0: 14 test files and 97/97 tests passed; TypeScript and Vite build passed.
+- Only the existing Vite large-chunk advisory was emitted.
+
+## Integration follow-up: HR P0 completion fixture
+
+The full UI integration run exposed `HrP0Combined.acceptance.test.tsx` waiting for `POSITION PACKAGE · V2`. A bounded reproduction was consistent:
+
+`npm test -- --run src/workspaces/hr/HrP0Combined.acceptance.test.tsx --maxWorkers=1`
+
+- RED: 1 failure; the terminal assistant text rendered, but the position package remained at V1.
+- Root cause: the fixture appended the assistant message and then set `currentTurn = null`. Production conversation detail uses `latest_turn_for_owner` and projects the latest terminal Turn, so the fixture omitted the immutable terminal Turn ID and its `assistant_message_id`. The browser correctly withheld `onConversationSettled` because no terminal Turn referenced the new answer.
+- The fixture now preserves the Turn and changes it to `completed` with the exact appended assistant message ID. No production invariant was weakened.
+- GREEN: exit 0, 1/1 test passed in 317 ms.
+
+Adjacent HR acceptances passed individually with `--maxWorkers=1`: Recruiting Loop 1/1, Panorama 1/1, Position Spine 2/2, and R12 4/4. A single serial `src/workspaces/hr` invocation passed its first three files, including the corrected P0 test, then the Node 26 worker exhausted its approximately 4 GB heap. Since every adjacent acceptance terminates and passes in a fresh bounded worker, this is cumulative Vitest worker memory behavior rather than a remaining mock SSE loop in the corrected fixture.
+
+`git show 3227454:webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx` confirms the `currentTurn = null` fixture behavior predates this integration correction. Final bounded host verification passed 33/33 tests across `ConversationPage.test.tsx` and the corrected P0 acceptance with one worker. `npm run build` also passed with only the existing Vite large-chunk advisory. The unbounded/full HR-directory suite remains blocked by the documented Node 26 worker OOM; no passing claim is made for that invocation.
+
+## Null-turn lifecycle correction
+
+Independent review established that a null latest Turn is also a legitimate production idle state. After SSE EOF/error, the accepted state had `terminalReady === false` and `needsPolling === false`, but the stream loop still marked the connection offline and entered reconnect delay. With an immediately resolved mock delay this became a hot loop and caused the earlier Node 26 OOM.
+
+TDD RED: `npm test -- --run src/pages/ConversationPage.test.tsx -t "null-turn"`
+
+- Exit 1: 2 expected failures. Idle EOF invoked reconnect, and null-turn enrichment completion left the five-second timer issuing further reads.
+
+TDD GREEN: the same command exited 0 with 2/2 selected tests passing. The shared accepted-state handler now stops polling, snapshot resources, and SSE with live connection state whenever `needsPolling` is false, without invoking `onConversationSettled`. Terminal Turns missing a referenced answer still have `needsPolling === true` and continue recovery.
+
+Fresh verification:
+
+- `npm test -- --run src/pages/ConversationPage.test.tsx --maxWorkers=1`: 34/34 passed.
+- `npm test -- --run src/workspaces/hr --maxWorkers=1`: 24/24 files and 163/163 tests passed; the former OOM no longer occurs.
+- `npm test -- --run --maxWorkers=1`: 125/125 files and 1096/1096 tests passed in 43.39 seconds.
+- `npm run build`: passed; only the existing large-chunk advisory was emitted.
+
+This supersedes the earlier provisional conclusion that the HR-directory OOM was merely cumulative worker memory: the successful full bounded suite after this correction confirms the idle reconnect loop was the product defect.

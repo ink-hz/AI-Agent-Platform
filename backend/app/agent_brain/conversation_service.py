@@ -189,6 +189,14 @@ class ConversationCommandService:
         conversation = self._repository.conversation_for_owner(
             owner, conversation_id
         )
+        if getattr(conversation, "execution_owner", "legacy_api_v1") == "worker_direct":
+            from .conversation_repository import ConversationRepositoryNotFound
+            from .turn_attempts import TurnAttemptRepository
+            turn = self._repository.latest_turn_for_owner(owner, conversation_id)
+            if turn is None:
+                raise ConversationRepositoryNotFound()
+            accepted = TurnAttemptRepository(self._repository._control_database_url, self._repository.content_codec).request_cancel(owner, turn.turn_id)
+            return ConversationCancelResult(conversation_id, turn.turn_id, turn.mission_id, accepted == "accepted")
         if not self.v2_enabled or conversation.mode == "direct_agent":
             mission = self._repository.request_cancel(owner, conversation_id)
             return ConversationCancelResult(

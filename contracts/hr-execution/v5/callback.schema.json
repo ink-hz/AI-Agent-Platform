@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/hr-execution/v5/callback.schema.json",
+  "title": "HR Core Chat Callback v5",
+  "$comment": "The schema proves structural payload separation. contracts_v5.py also couples type to payload class, enforces byte bounds, contiguous ACK cursors, artifact order, and executor-stop proof consistency.",
+  "oneOf": [
+    {"$ref": "#/$defs/event"},
+    {"$ref": "#/$defs/ack"}
+  ],
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "executionRecovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceComplete", "toolEffect", "hasOutput", "executorStopped",
+        "executorStopProofRef", "replayUsed"
+      ],
+      "properties": {
+        "evidenceComplete": {"type": "boolean"},
+        "toolEffect": {"enum": ["unknown", "read_only", "write"]},
+        "hasOutput": {"type": "boolean"},
+        "executorStopped": {"type": "boolean"},
+        "executorStopProofRef": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 256},
+            {"type": "null"}
+          ]
+        },
+        "replayUsed": {"type": "boolean"}
+      }
+    },
+    "artifactIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId", "principalRef", "conversationId", "index", "sha256",
+        "mimeType", "sizeBytes", "displayName", "opaqueSpoolRef"
+      ],
+      "properties": {
+        "taskId": {"$ref": "#/$defs/uuid"},
+        "principalRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "conversationId": {"$ref": "#/$defs/uuid"},
+        "index": {"type": "integer", "minimum": 0, "maximum": 19},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "mimeType": {"type": "string", "minLength": 3, "maxLength": 255},
+        "sizeBytes": {"type": "integer", "minimum": 1, "maximum": 262144000},
+        "displayName": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "opaqueSpoolRef": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 256,
+          "pattern": "^spool:[A-Za-z0-9._:-]+$"
+        }
+      }
+    },
+    "heartbeatPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "executorRef", "observedAt", "visibility"],
+      "properties": {
+        "source": {"const": "executor"},
+        "executorRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "visibility": {"const": "private"}
+      }
+    },
+    "resultPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source", "sourceRef", "terminal", "publicAnswerMarkdown",
+        "artifactIntents", "executionRecovery"
+      ],
+      "properties": {
+        "source": {"const": "agent_runtime"},
+        "sourceRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "terminal": {"const": "completed"},
+        "publicAnswerMarkdown": {"type": "string", "minLength": 1, "maxLength": 131072},
+        "artifactIntents": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {"$ref": "#/$defs/artifactIntent"}
+        },
+        "executionRecovery": {"$ref": "#/$defs/executionRecovery"}
+      }
+    },
+    "errorPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "sourceRef", "terminal", "errorCode", "message"],
+      "properties": {
+        "source": {"const": "agent_runtime"},
+        "sourceRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "terminal": {"const": "failed"},
+        "errorCode": {"type": "string", "minLength": 1, "maxLength": 128},
+        "message": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "cancelledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "sourceRef", "terminal", "reasonCode"],
+      "properties": {
+        "source": {"const": "agent_runtime"},
+        "sourceRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "terminal": {"const": "cancelled"},
+        "reasonCode": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    },
+    "interruptedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source", "sourceRef", "terminal", "reasonCode", "executionRecovery"
+      ],
+      "properties": {
+        "source": {"const": "agent_runtime"},
+        "sourceRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "terminal": {"const": "interrupted"},
+        "reasonCode": {"type": "string", "minLength": 1, "maxLength": 128},
+        "executionRecovery": {"$ref": "#/$defs/executionRecovery"}
+      }
+    },
+    "rawProgressPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "sourceRef", "visibility", "kind", "text"],
+      "properties": {
+        "source": {"enum": ["provider", "agent_sdk", "agent_runtime"]},
+        "sourceRef": {"type": "string", "minLength": 1, "maxLength": 256},
+        "visibility": {"const": "private"},
+        "kind": {
+          "enum": [
+            "state", "question", "file", "log", "thinking_summary",
+            "work_update", "agent_message", "artifact"
+          ]
+        },
+        "text": {"type": "string", "minLength": 1, "maxLength": 16384}
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion", "runId", "commandId", "attemptId", "leaseEpoch",
+        "seq", "type", "createdAt", "payload"
+      ],
+      "properties": {
+        "contractVersion": {"const": "core_chat_collaboration_v5"},
+        "runId": {"$ref": "#/$defs/uuid"},
+        "commandId": {"$ref": "#/$defs/uuid"},
+        "attemptId": {"$ref": "#/$defs/uuid"},
+        "leaseEpoch": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "seq": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "type": {
+          "enum": [
+            "run_heartbeat", "result", "error", "cancelled", "interrupted",
+            "raw_progress"
+          ]
+        },
+        "createdAt": {"type": "string", "format": "date-time"},
+        "payload": {
+          "oneOf": [
+            {"$ref": "#/$defs/heartbeatPayload"},
+            {"$ref": "#/$defs/resultPayload"},
+            {"$ref": "#/$defs/errorPayload"},
+            {"$ref": "#/$defs/cancelledPayload"},
+            {"$ref": "#/$defs/interruptedPayload"},
+            {"$ref": "#/$defs/rawProgressPayload"}
+          ]
+        }
+      }
+    },
+    "ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "runId", "acceptedThrough", "expectedSeq"],
+      "properties": {
+        "status": {"enum": ["accepted", "duplicate", "gap", "conflict"]},
+        "runId": {"$ref": "#/$defs/uuid"},
+        "acceptedThrough": {
+          "type": "integer", "minimum": 0, "maximum": 9007199254740990
+        },
+        "expectedSeq": {
+          "type": "integer", "minimum": 1, "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

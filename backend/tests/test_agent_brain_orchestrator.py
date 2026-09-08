@@ -142,6 +142,31 @@ def test_planning_prompt_includes_panorama_only_when_context_carries_fragment() 
     assert "hr_panorama_context" not in ordinary_document
 
 
+@pytest.mark.postgres
+def test_direct_result_after_thinking_events_completes_once(brain_database, orchestrator):
+    _environment, owner_id = brain_database
+    service, missions, relay = orchestrator
+    mission = missions.create_mission(owner_id, uuid4(), "这个岗位怎么样",
+                                     mode="direct_agent", direct_agent_id="hr-bot")
+    service.advance_pending(limit=50)
+    run_id = next(iter(relay.payloads))
+    relay.terminal(run_id, "completed", "基于岗位资料的分析结果。")
+    result = relay.run_events[run_id][0].model_copy(update={"seq": 3})
+    relay.run_events[run_id] = tuple(
+        RelayEvent(run_id=run_id, seq=seq, event_type="agent.thinking_summary",
+                   created_at=datetime.now(timezone.utc), payload={"text": "private"})
+        for seq in (1, 2)
+    ) + (result,)
+
+    assert service.advance_pending(limit=50) == 1
+    assert service.advance_pending(limit=50) == 0
+    terminal = [event for event in missions.events_after(owner_id, mission.mission_id)
+                if event.event_type == "mission.completed"]
+    assert len(terminal) == 1
+    assert terminal[0].payload["text"] == "基于岗位资料的分析结果。"
+    assert missions.runs_for_owner(owner_id, mission.mission_id)[0].status == "completed"
+
+
 class ScriptedRelay:
     def __init__(self) -> None:
         self.payloads = {}
@@ -674,9 +699,8 @@ def test_direct_agent_persists_v4_answer_citations_and_artifacts_separately(
 
     run = missions.runs_for_owner(owner_id, mission.mission_id)[0]
     assert run.status == "completed"
-    assert checked_artifacts[0][0] == run.task_id
-    assert checked_artifacts[0][1] == "hr-bot"
-    assert checked_artifacts[0][2][0]["attachmentId"] == str(attachment_id)
+    # Artifact readiness belongs to durable result enrichment, not execution.
+    assert checked_artifacts == []
     assert run.output_payload == {
         "text": "候选人具备视觉算法经验。",
         "collaboration": {
@@ -718,14 +742,14 @@ def test_direct_agent_persists_v4_answer_citations_and_artifacts_separately(
 
 @pytest.mark.postgres
 @pytest.mark.parametrize(
-    ("artifact_state", "expected_status", "reason_code"),
+    "artifact_state",
     (
-        ("pending", "queued", None),
-        ("invalid", "failed", "result_file_registration_failed"),
+        "pending",
+        "invalid",
     ),
 )
-def test_direct_agent_waits_for_or_rejects_unverified_v4_artifacts(
-    brain_database, orchestrator, artifact_state, expected_status, reason_code
+def test_direct_agent_completes_text_independently_of_unverified_v4_artifacts(
+    brain_database, orchestrator, artifact_state
 ):
     _environment, owner_id = brain_database
     service, missions, relay = orchestrator
@@ -778,12 +802,10 @@ def test_direct_agent_waits_for_or_rejects_unverified_v4_artifacts(
     service.advance_pending(limit=50)
 
     run = missions.runs_for_owner(owner_id, mission.mission_id)[0]
-    assert run.status == expected_status
-    if reason_code is not None:
-        terminal = missions.events_after(owner_id, mission.mission_id)[-1]
-        assert terminal.event_type == "mission.failed"
-        assert terminal.payload["reason_code"] == reason_code
-        assert terminal.payload["text"] == "结果文件登记失败，请重试本轮。"
+    assert run.status == "completed"
+    terminal = missions.events_after(owner_id, mission.mission_id)[-1]
+    assert terminal.event_type == "mission.completed"
+    assert terminal.payload["text"] == "报告已生成。"
 
 
 @pytest.mark.postgres
@@ -2019,8 +2041,9 @@ def test_startup_schema_and_least_privilege_probe_accepts_real_app_role(
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("table", ["conversations", "conversation_result_deliveries"])
 def test_conversation_runtime_readiness_fails_closed_without_table_access(
-    brain_database,
+    brain_database, table,
 ) -> None:
     environment, _owner_id = brain_database
     codec = _codec()
@@ -2041,7 +2064,7 @@ def test_conversation_runtime_readiness_fails_closed_without_table_access(
     )
     with psycopg.connect(environment["admin"], autocommit=True) as connection:
         connection.execute(
-            "revoke select on platform_control.conversations "
+            f"revoke select on platform_control.{table} "
             "from platform_control_app"
         )
     try:
@@ -2050,7 +2073,7 @@ def test_conversation_runtime_readiness_fails_closed_without_table_access(
     finally:
         with psycopg.connect(environment["admin"], autocommit=True) as connection:
             connection.execute(
-                "grant select on platform_control.conversations "
+                f"grant select on platform_control.{table} "
                 "to platform_control_app"
             )
 

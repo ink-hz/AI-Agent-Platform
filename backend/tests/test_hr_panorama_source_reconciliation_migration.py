@@ -14,8 +14,8 @@ def test_v84_is_the_contiguous_source_reconciliation_migration() -> None:
         int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")
     )
 
-    assert versions[-1] == 87
-    assert versions == list(range(1, 88))
+    assert versions[86] == 87
+    assert versions[:87] == list(range(1, 88))
 
 
 def test_v84_reconciles_only_the_same_catalog_source_identity() -> None:

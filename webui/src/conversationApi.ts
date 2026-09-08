@@ -19,6 +19,7 @@ import type {
   ConversationInterventionResult,
   ConversationMessage,
   ConversationMessageRole,
+  ConversationResultDeliveryStatus,
   ConversationMode,
   ConversationPage,
   ConversationStatus,
@@ -27,6 +28,7 @@ import type {
   ConversationTurn,
   ConversationTurnStatus,
   TurnSubmission,
+  TurnSnapshot,
 } from "./conversationTypes";
 
 
@@ -34,13 +36,15 @@ const CONVERSATION_KEYS = new Set([
   "conversation_id", "mode", "direct_agent_id", "title", "status",
   "summary_through_seq", "created_at", "updated_at", "archived_at",
 ]);
-const CONVERSATION_OPTIONAL_FIELDS = new Set(["activity_status", "unread"]);
+const CONVERSATION_OPTIONAL_FIELDS = new Set(["activity_status", "unread", "execution_owner"]);
 const MESSAGE_KEYS = new Set([
   "message_id", "conversation_id", "seq", "role", "content", "turn_id",
   "delivery_status", "created_at", "completed_at", "input_attachments",
   "output_attachments", "active_attachment_ids",
 ]);
-const MESSAGE_OPTIONAL_FIELDS = new Set(["search_recovery", "citations", "artifact_versions"]);
+const MESSAGE_OPTIONAL_FIELDS = new Set([
+  "search_recovery", "citations", "artifact_versions", "result_delivery_status",
+]);
 const TURN_KEYS = new Set([
   "turn_id", "conversation_id", "user_message_id", "assistant_message_id",
   "retry_of_turn_id", "status", "created_at", "updated_at",
@@ -82,6 +86,9 @@ const CONVERSATION_STATUSES = new Set<ConversationStatus>(["active", "archived"]
 const MESSAGE_ROLES = new Set<ConversationMessageRole>(["user", "assistant", "system"]);
 const DELIVERY_STATUSES = new Set<ConversationDeliveryStatus>([
   "accepted", "streaming", "completed", "failed",
+]);
+const RESULT_DELIVERY_STATUSES = new Set<ConversationResultDeliveryStatus>([
+  "pending", "completed", "failed",
 ]);
 const TURN_STATUSES = new Set<ConversationTurnStatus>([
   "accepted", "running", "waiting_agents", "waiting_user", "waiting_confirmation", "completing",
@@ -167,10 +174,51 @@ function parseConversation(value: unknown): Conversation {
     || (Object.prototype.hasOwnProperty.call(value, "activity_status")
       && !TURN_STATUSES.has(value.activity_status as ConversationTurnStatus))
     || (Object.prototype.hasOwnProperty.call(value, "unread") && typeof value.unread !== "boolean")
+    || (value.execution_owner !== undefined && (value.execution_owner !== "worker_direct" || value.direct_agent_id !== "hr-bot" || value.mode !== "direct_agent"))
     || (Object.prototype.hasOwnProperty.call(value, "activity_status")
       !== Object.prototype.hasOwnProperty.call(value, "unread"))
   ) throw new Error("Conversation response invalid");
   return value as unknown as Conversation;
+}
+
+export async function fetchConversationSnapshot(conversationId: string, signal?: AbortSignal): Promise<TurnSnapshot> {
+  const response = await checked(await fetch(platformPath(`/api/v1/conversations/${encodeURIComponent(conversationId)}/snapshot`),
+    { credentials: "include", signal, headers: { Accept: "application/json" } }));
+  const value: unknown = await response.json();
+  const exact = (item: unknown, keys: string[]): item is Record<string, unknown> => isObject(item) && hasExactKeys(item, new Set(keys));
+  const id = (item: unknown) => typeof item === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(item);
+  const reason = (item: unknown) => item === null || (typeof item === "string" && item.length > 0 && item.length <= 128);
+  const states = new Set(["queued", "running", "reconciling", "completed", "failed", "cancelled", "interrupted"]);
+  const terminals = new Set(["completed", "failed", "cancelled", "interrupted"]);
+  const invalid = () => { throw new Error("Conversation snapshot invalid"); };
+  if (!exact(value, ["read_version", "event_cursor", "turn", "attempt", "outcome", "answer", "result_enrichment", "deliveries", "context_manifest_ref"])
+    || !isNonNegativeInteger(value.read_version) || !isNonNegativeInteger(value.event_cursor)
+    || !Array.isArray(value.deliveries) || value.deliveries.length !== 0
+    || !exact(value.result_enrichment, ["status", "pending_count", "failed_count"])) return invalid();
+  const enrichment = value.result_enrichment;
+  if (!new Set(["none", "pending", "ready", "partial", "failed"]).has(String(enrichment.status))
+    || !isNonNegativeInteger(enrichment.pending_count) || Number(enrichment.pending_count) > 20
+    || !isNonNegativeInteger(enrichment.failed_count) || Number(enrichment.failed_count) > 20) return invalid();
+  if (value.turn === null) {
+    if (value.attempt !== null || value.answer !== null || value.outcome !== null || value.context_manifest_ref !== null) return invalid();
+    return value as unknown as TurnSnapshot;
+  }
+  if (!exact(value.turn, ["turn_id", "turn_seq", "status"]) || !id(value.turn.turn_id) || !isPositiveInteger(value.turn.turn_seq) || !states.has(String(value.turn.status))
+    || !exact(value.attempt, ["attempt_id", "attempt_no", "lease_epoch", "status", "reason_code"])
+    || !id(value.attempt.attempt_id) || !isPositiveInteger(value.attempt.attempt_no) || !isNonNegativeInteger(value.attempt.lease_epoch)
+    || !states.has(String(value.attempt.status)) || !reason(value.attempt.reason_code)
+    || typeof value.context_manifest_ref !== "string" || value.context_manifest_ref.length > 256 || !/^context-manifest:[A-Za-z0-9._:-]+$/.test(value.context_manifest_ref)) return invalid();
+  if (terminals.has(String(value.turn.status))) {
+    if (!exact(value.outcome, ["terminal", "kind", "reason_code"]) || value.outcome.terminal !== true
+      || value.outcome.kind !== value.turn.status || !reason(value.outcome.reason_code)
+      || (value.attempt.status !== value.turn.status && value.attempt.status !== "reconciling")) return invalid();
+  } else if (value.outcome !== null || value.answer !== null || value.attempt.status !== value.turn.status) return invalid();
+  if (value.turn.status === "completed") {
+    if (!exact(value.answer, ["message_id", "role", "content", "completed_at"]) || !id(value.answer.message_id)
+      || value.answer.role !== "assistant" || !isNonEmptyString(value.answer.content) || new TextEncoder().encode(value.answer.content).length > 131072
+      || typeof value.answer.completed_at !== "string" || !Number.isFinite(Date.parse(value.answer.completed_at))) return invalid();
+  } else if (value.answer !== null) return invalid();
+  return value as unknown as TurnSnapshot;
 }
 
 export async function markConversationRead(
@@ -210,6 +258,9 @@ function parseMessage(value: unknown): ConversationMessage {
     || typeof value.content !== "string"
     || !isNullableString(value.turn_id)
     || !DELIVERY_STATUSES.has(value.delivery_status as ConversationDeliveryStatus)
+    || (Object.prototype.hasOwnProperty.call(value, "result_delivery_status")
+      && value.result_delivery_status !== null
+      && !RESULT_DELIVERY_STATUSES.has(value.result_delivery_status as ConversationResultDeliveryStatus))
     || !isNonEmptyString(value.created_at)
     || !isNullableString(value.completed_at)
     || !Array.isArray(value.input_attachments)
@@ -743,6 +794,19 @@ export async function fetchConversationMessages(
   const messages = parseMessages(await response.json());
   if (messages.some((item) => item.conversation_id !== conversationId)) {
     throw new Error("Conversation messages response invalid");
+  }
+  return messages;
+}
+
+export async function fetchConversationTurnMessages(
+  conversationId: string, turnId: string, signal?: AbortSignal,
+): Promise<ConversationMessage[]> {
+  const response = await checked(await fetch(platformPath(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages?turn_id=${encodeURIComponent(turnId)}`), {
+    credentials: "include", headers: { Accept: "application/json" }, signal,
+  }));
+  const messages = parseMessages(await response.json());
+  if (messages.some((item) => item.conversation_id !== conversationId || item.turn_id !== turnId)) {
+    throw new Error("Conversation turn messages response invalid");
   }
   return messages;
 }

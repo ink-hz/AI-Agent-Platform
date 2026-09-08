@@ -69,16 +69,18 @@ describe("PublicProgress", () => {
     expect(container.textContent).not.toContain("50%");
   });
 
-  it("shows real direct Agent updates in event order without duplicate summaries", async () => {
+  it.each([false, true])("shows real direct Agent updates in event order without duplicate summaries (worker=%s)", async (workerOwned) => {
     await act(async () => root.render(<PublicProgress
       active
       assistantLabel="HR Agent"
+      workerOwned={workerOwned}
       events={[
         event(4, "agent.work_update", { summary: "正在整理岗位要求" }),
         event(1, "agent.task_dispatched", { summary: "任务已进入执行队列" }),
         event(3, "agent.task_progress", { summary: "正在读取附件" }),
         { ...event(5, "agent.task_progress", { summary: "正在读取附件" }), event_id: "event-5" },
         event(2, "agent.task_accepted", { text: "HR Agent 已开始执行" }),
+        ...(workerOwned ? [event(6, "agent.thinking_summary", { summary: "PRIVATE_THINKING" })] : []),
       ]}
       mode="direct_agent"
       stopButton={<button type="button">停止</button>}
@@ -113,5 +115,20 @@ describe("PublicProgress", () => {
     expect(container.textContent).not.toContain("正在整合结果");
     expect(container.textContent).not.toContain("正在分析需求");
     expect(container.textContent).not.toContain("completed");
+  });
+
+  it.each([false, true])("limits progress history only for worker-owned turns (worker=%s)", async (workerOwned) => {
+    const summaries = Array.from({ length: 9 }, (_, index) => `公开进度 ${index + 1}`);
+    await act(async () => root.render(<PublicProgress
+      active
+      assistantLabel="HR Agent"
+      workerOwned={workerOwned}
+      events={summaries.map((summary, index) => event(index + 1, "agent.work_update", { summary }))}
+      mode="direct_agent"
+      stopButton={null}
+    />));
+
+    expect([...container.querySelectorAll("li")].map(node => node.textContent))
+      .toEqual(workerOwned ? summaries.slice(-6) : summaries);
   });
 });

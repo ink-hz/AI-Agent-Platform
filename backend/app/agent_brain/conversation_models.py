@@ -141,6 +141,7 @@ class ConversationRecord:
     summary_key_version: int | None = field(repr=False)
     activity_status: str | None = None
     unread: bool = False
+    execution_owner: str = "legacy_api_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +169,7 @@ class ConversationMessageRecord:
     search_recovery: SearchRecoveryState | None = None
     citations: tuple[ConversationCitationProjection, ...] = ()
     artifact_versions: tuple[ConversationArtifactVersionProjection, ...] = ()
+    result_delivery_status: Literal["pending", "completed", "failed"] | None = None
 
 
 @dataclass(frozen=True)
