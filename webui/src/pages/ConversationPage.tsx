@@ -891,7 +891,7 @@ export function ConversationPage({
       }}
       onSubmit={() => void send()}
       pending={pending}
-      hasReadyAttachment={newAttachmentIds.length > 0}
+      hasReadyAttachment={newAttachmentIds.length > 0 || intelligenceReferences.length > 0}
       placeholder={active && detail.conversation.mode === "brain"
         ? "补充范围、修改优先级，或给正在协作的 Agent 新指令…"
         : undefined}

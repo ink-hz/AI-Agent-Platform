@@ -494,6 +494,7 @@ describe("ConversationPage", () => {
     />));
 
     expect(container.textContent).toContain("Acme Robotics · 海外岗位增长");
+    expect(container.querySelector<HTMLButtonElement>(".conversation-send")?.disabled).toBe(false);
     await setTextarea(container, "请继续分析");
     await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
     await act(async () => container.querySelector<HTMLButtonElement>(".conversation-retry")?.click());

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { platformPath } from "../../auth";
 import type {
   CompanyDetail,
   CompanyJobsPage,
@@ -304,6 +305,7 @@ export function HrCompanyDetail({
                     ),
                   )}
                   <Evidence
+                    bundleId={detail.bundleId}
                     unitId={unit.unitId}
                     basis={claim.basisFactIds}
                     facts={facts}
@@ -332,6 +334,7 @@ export function HrCompanyDetail({
                     ),
                   )}
                   <Evidence
+                    bundleId={detail.bundleId}
                     unitId={unit.unitId}
                     basis={claim.basisFactIds}
                     facts={facts}
@@ -357,6 +360,7 @@ export function HrCompanyDetail({
                     ),
                   )}
                   <Evidence
+                    bundleId={detail.bundleId}
                     unitId={unit.unitId}
                     basis={claim.basisFactIds}
                     facts={facts}
@@ -399,6 +403,14 @@ export function HrCompanyDetail({
                     <a href={fact.sourceUrl} target="_blank" rel="noreferrer">
                       {fact.text}
                     </a>
+                    {" · "}
+                    <a
+                      href={platformPath(
+                        `/api/hr/panorama/reports/${encodeURIComponent(detail.bundleId)}/evidence/${fact.evidenceSha256}`,
+                      )}
+                    >
+                      查看原始证据
+                    </a>
                   </p>
                 ))}
             </section>
@@ -424,6 +436,7 @@ export function HrCompanyDetail({
                 <input
                   value={location}
                   onChange={(event) => {
+                    setJobs(null);
                     setOffset(0);
                     setLocation(event.target.value);
                   }}
@@ -434,6 +447,7 @@ export function HrCompanyDetail({
                 <select
                   value={status}
                   onChange={(event) => {
+                    setJobs(null);
                     setOffset(0);
                     setStatus(event.target.value);
                   }}
@@ -499,7 +513,10 @@ export function HrCompanyDetail({
                   <button
                     type="button"
                     disabled={offset === 0}
-                    onClick={() => setOffset(Math.max(0, offset - limit))}
+                    onClick={() => {
+                      setJobs(null);
+                      setOffset(Math.max(0, offset - limit));
+                    }}
                   >
                     上一页
                   </button>
@@ -511,7 +528,10 @@ export function HrCompanyDetail({
                   <button
                     type="button"
                     disabled={offset + limit >= jobs.total}
-                    onClick={() => setOffset(offset + limit)}
+                    onClick={() => {
+                      setJobs(null);
+                      setOffset(offset + limit);
+                    }}
                   >
                     下一页
                   </button>
@@ -613,15 +633,23 @@ function Metrics({ metrics }: { metrics: CompanyMetrics | null }) {
 }
 
 function Evidence({
+  bundleId,
   unitId,
   basis,
   facts,
 }: {
+  bundleId: string;
   unitId: string;
   basis: string[];
   facts: Map<
     string,
-    { factId: string; text: string; sourceUrl: string; observedAt: string }
+    {
+      factId: string;
+      text: string;
+      sourceUrl: string;
+      observedAt: string;
+      evidenceSha256: string;
+    }
   >;
 }) {
   const related = basis
@@ -636,6 +664,13 @@ function Evidence({
           <footer>
             <a href={fact.sourceUrl} target="_blank" rel="noreferrer">
               打开来源
+            </a>
+            <a
+              href={platformPath(
+                `/api/hr/panorama/reports/${encodeURIComponent(bundleId)}/evidence/${fact.evidenceSha256}`,
+              )}
+            >
+              查看原始证据
             </a>
             <time dateTime={fact.observedAt}>
               {new Date(fact.observedAt).toLocaleDateString("zh-CN")}

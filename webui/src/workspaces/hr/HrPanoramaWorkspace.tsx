@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account } from "../../auth";
 import {
   createHrCompanyIntelligenceApi,
@@ -49,6 +49,8 @@ export function HrPanoramaWorkspace({
   const [root, setRoot] = useState<"companies" | "topics">("companies");
   const [directory, setDirectory] = useState<CompanyDirectory | null>(null);
   const [detail, setDetail] = useState<CompanyDetail | null>(null);
+  const detailCache = useRef(new Map<string, CompanyDetail>());
+  const [detailBundleId, setDetailBundleId] = useState<string | null>(null);
   const [selectedCompanyKey, setSelectedCompanyKey] = useState(() =>
     new URLSearchParams(location.search).get("company"),
   );
@@ -57,26 +59,42 @@ export function HrPanoramaWorkspace({
   const [detailLoading, setDetailLoading] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setFailure(null);
-    api
-      .companies(controller.signal)
-      .then((value) => {
-        if (!controller.signal.aborted) setDirectory(value);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) setFailure(failureText(error));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+    let controller: AbortController | null = null;
+    const refresh = () => {
+      if (!/\/hr\/panorama(?:\/|$)/.test(location.pathname)) return;
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
+      setLoading(true);
+      setFailure(null);
+      api
+        .companies(request.signal)
+        .then((value) => {
+          if (!request.signal.aborted) setDirectory(value);
+        })
+        .catch((error) => {
+          if (!request.signal.aborted) setFailure(failureText(error));
+        })
+        .finally(() => {
+          if (!request.signal.aborted) setLoading(false);
+        });
+    };
+    refresh();
+    window.addEventListener("platform:navigate", refresh);
+    window.addEventListener("popstate", refresh);
+    return () => {
+      controller?.abort();
+      window.removeEventListener("platform:navigate", refresh);
+      window.removeEventListener("popstate", refresh);
+    };
   }, [api]);
   const openCompany = (companyKey: string) => {
+    if (!directory) return;
     const url = new URL(window.location.href);
     url.searchParams.set("company", companyKey);
     history.pushState({}, "", `${url.pathname}${url.search}`);
+    setDetail(null);
+    setDetailBundleId(directory.bundleId);
     setSelectedCompanyKey(companyKey);
   };
   const closeCompany = () => {
@@ -86,25 +104,54 @@ export function HrPanoramaWorkspace({
     setSelectedCompanyKey(null);
     setDetail(null);
     setFailure(null);
+    window.dispatchEvent(new Event("platform:navigate"));
   };
   useEffect(() => {
     const syncLocation = () => {
+      if (!/\/hr\/panorama(?:\/|$)/.test(location.pathname)) return;
       const companyKey = new URLSearchParams(location.search).get("company");
       setSelectedCompanyKey(companyKey);
-      if (!companyKey) setDetail(null);
+      if (!companyKey) {
+        setDetail(null);
+        setDetailBundleId(null);
+      } else {
+        const cached = detailCache.current.get(companyKey);
+        if (cached) {
+          setDetail(cached);
+          setDetailBundleId(cached.bundleId);
+        } else {
+          setDetail(null);
+          setDetailBundleId(null);
+        }
+      }
     };
     window.addEventListener("popstate", syncLocation);
-    return () => window.removeEventListener("popstate", syncLocation);
+    window.addEventListener("platform:navigate", syncLocation);
+    return () => {
+      window.removeEventListener("popstate", syncLocation);
+      window.removeEventListener("platform:navigate", syncLocation);
+    };
   }, []);
   useEffect(() => {
     if (!directory || !selectedCompanyKey) return;
+    const pinnedBundleId = detailBundleId ?? directory.bundleId;
+    const cached = detailCache.current.get(selectedCompanyKey);
+    if (cached?.bundleId === pinnedBundleId) {
+      setDetail(cached);
+      setDetailLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setDetailLoading(true);
     setFailure(null);
     api
-      .company(selectedCompanyKey, directory.bundleId, controller.signal)
+      .company(selectedCompanyKey, pinnedBundleId, controller.signal)
       .then((value) => {
-        if (!controller.signal.aborted) setDetail(value);
+        if (!controller.signal.aborted) {
+          detailCache.current.set(selectedCompanyKey, value);
+          setDetail(value);
+          setDetailBundleId(value.bundleId);
+        }
       })
       .catch((error) => {
         if (!controller.signal.aborted) {
@@ -116,7 +163,7 @@ export function HrPanoramaWorkspace({
         if (!controller.signal.aborted) setDetailLoading(false);
       });
     return () => controller.abort();
-  }, [api, directory, selectedCompanyKey]);
+  }, [api, directory, selectedCompanyKey, detailBundleId]);
   const filtered =
     directory?.items.filter((company) =>
       `${company.canonicalName} ${company.aliases.join(" ")}`
@@ -183,6 +230,7 @@ export function HrPanoramaWorkspace({
                         : undefined
                     }
                     onClick={() => openCompany(company.companyKey)}
+                    disabled={loading}
                     key={company.companyKey}
                   >
                     <strong>{company.canonicalName}</strong>

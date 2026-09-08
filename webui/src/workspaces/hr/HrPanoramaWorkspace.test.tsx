@@ -194,6 +194,11 @@ describe("HrPanoramaWorkspace", () => {
     expect(container.textContent).toContain("研发能力可能继续扩张");
     expect(onSelectReference).not.toHaveBeenCalled();
     expect(container.textContent).toContain("官网介绍了新的研发中心");
+    expect(
+      container.querySelector<HTMLAnchorElement>(
+        `a[href="/api/hr/panorama/reports/${bundleId}/evidence/${"a".repeat(64)}"]`,
+      )?.textContent,
+    ).toBe("查看原始证据");
     expect(onSelectReference).not.toHaveBeenCalled();
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>("button")]
@@ -327,8 +332,13 @@ describe("HrPanoramaWorkspace", () => {
     expect(container.querySelector(".hr-company-detail h2")?.textContent).toBe(
       "另一家公司",
     );
+    history.replaceState({}, "", "/hr/conversations/chat-1");
+    await act(async () => window.dispatchEvent(new Event("platform:navigate")));
+    expect(container.querySelector(".hr-company-detail h2")?.textContent).toBe(
+      "另一家公司",
+    );
     history.replaceState({}, "", "/hr/panorama?company=acme");
-    await act(async () => window.dispatchEvent(new PopStateEvent("popstate")));
+    await act(async () => window.dispatchEvent(new Event("platform:navigate")));
     await settle();
     expect(container.querySelector(".hr-company-detail h2")?.textContent).toBe(
       "艾克米",
@@ -455,5 +465,175 @@ describe("HrPanoramaWorkspace", () => {
     expect(content.textContent).toContain("任职要求：熟悉 Python");
     expect(container.textContent).toContain("开放");
     expect(container.textContent).not.toContain(" · open");
+  });
+  it("hides a completed jobs page while a changed filter is pending", async () => {
+    let resolveNext!: (value: any) => void;
+    const jobs = vi
+      .fn()
+      .mockResolvedValueOnce({
+        bundleId,
+        companyKey: "acme",
+        items: [
+          {
+            jobId: "old",
+            companyKey: "acme",
+            title: "旧范围岗位",
+            location: "上海",
+            status: "open",
+            dutyExcerpt: null,
+            requirementExcerpt: null,
+            sourceUrl: "https://example.com/old",
+            observedAt: detail.generatedAt,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 25,
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveNext = resolve;
+          }),
+      );
+    const onSelectReference = vi.fn();
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace
+          account={account}
+          api={fakeApi({ jobs })}
+          onSelectReference={onSelectReference}
+        />,
+      ),
+    );
+    await settle();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click(),
+    );
+    await settle();
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "查看公开岗位")!
+        .click(),
+    );
+    await settle();
+    expect(container.textContent).toContain("旧范围岗位");
+    const status = container.querySelector<HTMLSelectElement>(
+      ".hr-company-job-filters select",
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+      )!.set!.call(status, "open");
+      status.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.textContent).not.toContain("旧范围岗位");
+    expect(
+      [...container.querySelectorAll("button")].some(
+        (button) => button.textContent === "带入本页岗位",
+      ),
+    ).toBe(false);
+    await act(async () =>
+      resolveNext({
+        bundleId,
+        companyKey: "acme",
+        items: [],
+        total: 0,
+        offset: 0,
+        limit: 25,
+      }),
+    );
+  });
+  it("keeps pinned reading across publication refresh and uses latest bundle for a new company", async () => {
+    const nextBundle = "22222222-2222-4222-8222-222222222222";
+    const other = {
+      ...summary,
+      companyKey: "other",
+      canonicalName: "另一家公司",
+    };
+    const companies = vi
+      .fn()
+      .mockResolvedValueOnce({
+        bundleId,
+        generatedAt: detail.generatedAt,
+        items: [summary],
+        topics: { state: "blocked" },
+      })
+      .mockResolvedValue({
+        bundleId: nextBundle,
+        generatedAt: "2026-09-09T09:00:00Z",
+        items: [other],
+        topics: { state: "blocked" },
+      });
+    const company = vi
+      .fn()
+      .mockImplementation(async (key: string, pinned: string) => ({
+        ...detail,
+        bundleId: pinned,
+        company: key === "other" ? other : summary,
+      }));
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace
+          account={account}
+          api={fakeApi({ companies, company })}
+        />,
+      ),
+    );
+    await settle();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click(),
+    );
+    await settle();
+    await act(async () => window.dispatchEvent(new Event("platform:navigate")));
+    await settle();
+    expect(container.querySelector(".hr-company-detail h2")?.textContent).toBe(
+      "艾克米",
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="other"]')!
+        .click(),
+    );
+    await settle();
+    expect(company).toHaveBeenLastCalledWith(
+      "other",
+      nextBundle,
+      expect.any(AbortSignal),
+    );
+  });
+  it("keeps pinned reading when the refreshed current publication is empty", async () => {
+    const companies = vi
+      .fn()
+      .mockResolvedValueOnce({
+        bundleId,
+        generatedAt: detail.generatedAt,
+        items: [summary],
+        topics: { state: "blocked" },
+      })
+      .mockResolvedValue(null);
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace account={account} api={fakeApi({ companies })} />,
+      ),
+    );
+    await settle();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click(),
+    );
+    await settle();
+    await act(async () => window.dispatchEvent(new Event("platform:navigate")));
+    await settle();
+    expect(container.querySelector(".hr-company-detail h2")?.textContent).toBe(
+      "艾克米",
+    );
+    expect(container.textContent).toContain("研发能力可能继续扩张");
   });
 });
