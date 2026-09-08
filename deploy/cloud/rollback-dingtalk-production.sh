@@ -68,6 +68,40 @@ current_fae_started="$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' a
 
 environment_path="$platform_root/private/platform.env"
 current_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$RELEASE_PATH/deploy/cloud/compose.yaml")
+previous_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$PREVIOUS_RELEASE/deploy/cloud/compose.yaml")
+previous_office_overlay="$PREVIOUS_RELEASE/deploy/cloud/compose.office-recipient-directory.yaml"
+if [[ -f "$previous_office_overlay" && ! -L "$previous_office_overlay" ]]; then
+  office_recipient_bearer="$private_root/platform-office-recipient-bearer"
+  /usr/bin/python3 - "$office_recipient_bearer" <<'PY' || fail
+import os
+import stat
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+try:
+    metadata = os.fstat(descriptor)
+    payload = os.read(descriptor, 16_385)
+finally:
+    os.close(descriptor)
+try:
+    value = payload.decode("utf-8").strip()
+except UnicodeError:
+    raise SystemExit(1) from None
+if (
+    not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or metadata.st_uid != 10001
+    or metadata.st_gid != 10001
+    or len(payload) > 16_384
+    or len(value.encode("utf-8")) < 32
+    or not value.isascii()
+    or any(ord(character) < 33 or ord(character) > 126 for character in value)
+):
+    raise SystemExit(1)
+PY
+  export PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE="$office_recipient_bearer"
+  previous_compose+=( -f "$previous_office_overlay" )
+fi
 current_services="$("${current_compose[@]}" config --services)"
 postgres_container="$("${current_compose[@]}" ps -q platform-postgres)"
 [[ -n "$postgres_container" ]] || fail
@@ -145,7 +179,6 @@ PY
 /bin/mv -f "$environment_path.part" "$environment_path"
 /bin/ln -sfn "$PREVIOUS_RELEASE" "$platform_root/current"
 
-previous_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$PREVIOUS_RELEASE/deploy/cloud/compose.yaml")
 previous_services="$("${previous_compose[@]}" config --services)"
 services_to_start=()
 for service in platform-api platform-directory platform-dingtalk-stream platform-brain platform-loopback; do

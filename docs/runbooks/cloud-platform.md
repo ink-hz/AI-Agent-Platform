@@ -847,13 +847,18 @@ five-minute synchronization. Those remain separate gates: the private sanitizer 
 canary scan, reconciliation, stale-state test, restore drill, and local scheduler
 must pass before real Session data is considered available or current.
 
-## Office recipient resolver scoped release (`office_recipient_resolver_release`)
+## Office recipient resolver production baseline
 
-此能力只能在已完成常规不可变 release 后单独启用。通用 `deploy.sh` 明确拒绝
+Office 收件人目录是标准生产发布的必需能力，不是发布后的可选 overlay。每次正常发布都会用
+同一个正式 bearer 启动 `platform-api platform-loopback`；发布脚本在停止现有服务前验证秘密，
+并在新容器启动后验证功能开关、只读挂载、本地 peer 和真实授权请求。禁止出现“发布成功但能力关闭”。
+
+通用 `deploy.sh` 仍明确拒绝从本地发布输入传入
 `PLATFORM_OFFICE_RECIPIENT_BEARER`、`PLATFORM_OFFICE_RECIPIENT_BEARER_FILE` 和
-`PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED`，防止私有解析能力随普通发布被隐式开启。
+`PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED`。这些值由正式 Compose 和宿主机固定秘密路径决定，
+不得复制到 `platform.env`、命令参数、日志或仓库。
 
-1. 在 owner-only 终端创建共享秘密文件，不经过标准输出：
+1. 首次部署前，在 owner-only 终端创建正式共享秘密文件，不经过标准输出：
 
    ```bash
    umask 077
@@ -864,11 +869,11 @@ must pass before real Session data is considered available or current.
    ```
 
    文件必须是容器服务账号 UID 10001、GID 10001 所有的普通非符号链接、mode 0600、至少
-   32 字节；root 所有的 mode 0600 文件无法被容器读取，必须阻断发布。不得打印、复制到工单、
-   放入 argv 或提交仓库。AI ADMIN 通过独立的受保护部署步骤读取同一份秘密。
+   32 字节且不超过 16 KiB；去除首尾空白后必须是可用于 HTTP bearer 的可见 ASCII。
+   缺失、权限错误、符号链接、编码或内容错误都会在切流前阻断整次发布，旧服务继续运行。
+   不得打印、复制到工单、放入 argv 或提交仓库。AI ADMIN 通过自身受保护配置使用同一正式秘密。
 
-2. 记录当前两个目标容器的 Container ID、Image ID、StartedAt、RestartCount、配置摘要和
-   mounts 摘要。确认当前 release 包含
+2. 标准发布确认当前 release 包含
    `backend/control_migrations/053_office_recipient_directory.sql` 与
    `backend/control_migrations/054_office_recipient_directory_department_order.sql`，随后用既有
    owner migration runner 依次应用或验证 053、054；不得手工粘贴或改写 SQL。
@@ -877,32 +882,22 @@ must pass before real Session data is considered available or current.
    不可变的生产事实。后续 Agent subject 与 partner 身份迁移固定使用 055–059。禁止改写
    migration ledger、复用 053/054，或在 checksum guard 失败后继续部署。
 
-3. 在目标机的 protected environment 中只设置：
+3. 正式 `deploy/cloud/compose.yaml` 将固定宿主机路径只读挂载到 API 与 loopback，固定设置
+   `PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED=1`，并把 loopback peer 限定为
+   `172.31.0.1/32`。不再维护独立 Compose overlay 或 `platform-office-recipient.env`。
 
-   ```dotenv
-   PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE=/opt/orbbec-agent-platform/private/platform-office-recipient-bearer
-   ```
-
-   使用 base Compose 与显式 override，仅重建两个目标服务：
-
-   ```bash
-   docker compose --env-file /opt/orbbec-agent-platform/private/platform.env \
-     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml \
-     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.office-recipient-directory.yaml \
-     config --services
-   docker compose --env-file /opt/orbbec-agent-platform/private/platform.env \
-     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml \
-     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.office-recipient-directory.yaml \
-     up -d --no-deps platform-api platform-loopback
-   ```
-
-4. 从目标机验证回环请求加正确 bearer 成功；缺失 bearer、错误 bearer 和非本地 peer 均返回
+4. 发布门禁从目标机验证回环请求加正确 bearer 成功；缺失 bearer、错误 bearer 和非本地 peer 均返回
    404。响应必须为 `Cache-Control: no-store`，搜索响应不得包含解密后的收件人 ID，resolve
    响应只在这个服务间边界返回最小字段。
 
-5. 回退时先停止 AI ADMIN 新通知准备，确认没有依赖解析器的可认领发送，再用 base Compose
-   配置重建这两个服务，使 feature flag 恢复为 0。保留 migration 058、059 和目录数据，不删除表；
-   重新核对两个目标容器与公开页面状态。
+5. bearer 轮换必须原子替换固定文件并执行一次完整标准发布；不得只重建一个容器。Platform
+   回滚版本也必须包含相同生产基线，不能把能力恢复为 0。撤销该业务能力属于单独的架构变更，
+   不得作为普通发布或故障回滚的副作用。首次切换到本基线时，自动回滚和钉钉手工回滚会识别
+   上一历史 release 内的旧 overlay，仅用于恢复旧版本原有的启用状态。
+
+6. 发布完成后验证 AI ADMIN 既有进程未被修改或重启，并用其正式凭证完成一次 search/resolve。
+   旧的 `/opt/orbbec-agent-platform/private/platform-office-recipient.env` 是已废弃临时配置，确认
+   不再被任何进程引用后直接删除；正式 bearer 必须保留。
 
 # HR conversation attachment boundary
 
