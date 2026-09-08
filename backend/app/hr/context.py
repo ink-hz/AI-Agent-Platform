@@ -16,9 +16,9 @@ class HrPositionScope:
         self._repository = repository
 
     def for_conversation(
-        self, owner_id: UUID, conversation_id: UUID
+        self, owner_id: UUID, conversation_id: UUID, *, turn_id: UUID
     ) -> UUID | None:
-        return self._repository.position_for_conversation(owner_id, conversation_id)
+        return self._repository.position_for_conversation(owner_id, conversation_id, turn_id=turn_id)
 
     def bind_conversation(
         self,
@@ -108,8 +108,9 @@ class HrPositionScope:
         owner_id: UUID,
         conversation_id: UUID,
         artifact_id: UUID,
+        *, turn_id: UUID,
     ) -> bool:
-        position_id = self.for_conversation(owner_id, conversation_id)
+        position_id = self.for_conversation(owner_id, conversation_id, turn_id=turn_id)
         if position_id is None:
             return False
         self._repository.link_artifact(

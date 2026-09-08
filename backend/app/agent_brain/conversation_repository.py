@@ -605,6 +605,10 @@ class ConversationRepository:
             != submission.active_attachment_ids
         ):
             raise ConversationRepositoryConflict()
+        if conversation_row["direct_agent_id"] == "hr-bot":
+            from app.hr.turn_scope import submission_context
+            if turn.get("hr_input_context") != submission_context(submission):
+                raise ConversationRepositoryConflict("HR turn scope idempotency mismatch")
         return (
             self._conversation_from_row(conversation_row),
             message_record,
@@ -651,6 +655,8 @@ class ConversationRepository:
         submission: ConversationTurnSubmission,
     ) -> None:
         agent_id = conversation_row["direct_agent_id"]
+        if submission.hr_scope is not None and agent_id != "hr-bot":
+            raise ConversationRepositoryConflict("HR scope requires HR Agent")
         try:
             self._attachments.bind_turn_locked(
                 cursor,
@@ -667,6 +673,13 @@ class ConversationRepository:
                     else self._agent_attachment_support.get(agent_id, False)
                 ),
             )
+            if agent_id == "hr-bot":
+                from app.hr.turn_scope import record_turn_scope_locked
+                try:
+                    record_turn_scope_locked(cursor, conversation_row["owner_internal_user_id"],
+                        conversation_row["conversation_id"], turn_id, submission)
+                except (psycopg.errors.CheckViolation, psycopg.errors.NoDataFound, psycopg.errors.UniqueViolation):
+                    raise ConversationRepositoryConflict("HR turn scope unavailable") from None
         except ConversationAttachmentQuotaExceeded as error:
             raise ConversationRepositoryConflict(str(error)) from None
         except ConversationAttachmentConflict as error:
@@ -991,6 +1004,8 @@ class ConversationRepository:
         submission = _require_submission(submission)
         text = submission.text
         mode, direct_agent_id = _require_mode(mode, direct_agent_id)
+        if position_id is not None or position_draft_id is not None:
+            raise ValueError("Use per-turn HR scope")
         scoped = position_id is not None or position_draft_id is not None
         hr_scope_callback = getattr(
             hr_position_scope, "bind_new_conversation_locked", None
@@ -1049,7 +1064,7 @@ class ConversationRepository:
                     )
                     mission_id = mission.mission_id
                     created = True
-                if direct_agent_id == "hr-bot" and callable(hr_scope_callback):
+                if direct_agent_id == "hr-bot" and scoped and callable(hr_scope_callback):
                     scope_matches = hr_scope_callback(
                         cursor,
                         internal_user_id,
@@ -1255,7 +1270,7 @@ class ConversationRepository:
                 callback = getattr(
                     hr_position_scope, "bind_new_conversation_locked", None
                 )
-                if direct_agent_id == "hr-bot" and callable(callback):
+                if direct_agent_id == "hr-bot" and (position_id is not None or position_draft_id is not None) and callable(callback):
                     scope_matches = callback(
                         cursor,
                         internal_user_id,

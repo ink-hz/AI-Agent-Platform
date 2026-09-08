@@ -85,6 +85,9 @@ class ConversationRoute(APIRoute):
         return secure
 
 
+from app.execution_relay.contracts_v6 import HrTurnScope, HrMethodSelection
+
+
 class ConversationTextBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -93,6 +96,17 @@ class ConversationTextBody(BaseModel):
     active_attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=50)
     position_id: UUID | None = None
     position_draft_id: UUID | None = None
+    scope: HrTurnScope | None = None
+    method_selection: HrMethodSelection | None = Field(default=None, alias="methodSelection")
+
+    @field_validator("scope", "method_selection", mode="before")
+    @classmethod
+    def _hr_wire_values(cls, value, info):
+        if value is None:
+            return None
+        import json
+        model = HrTurnScope if info.field_name == "scope" else HrMethodSelection
+        return model.model_validate_json(json.dumps(value)) if isinstance(value, dict) else value
 
     @field_validator(
         "attachment_ids", "active_attachment_ids", mode="before"
@@ -120,8 +134,11 @@ class ConversationTextBody(BaseModel):
     def _normalized_submission(self) -> ConversationTextBody:
         if self.position_id is not None and self.position_draft_id is not None:
             raise ValueError("Conversation position scope is ambiguous")
+        if self.scope is not None and (self.position_id is not None or self.position_draft_id is not None):
+            raise ValueError("HR turn scope cannot use conversation binding")
         submission = ConversationTurnSubmission(
-            self.text, self.attachment_ids, self.active_attachment_ids
+            self.text, self.attachment_ids, self.active_attachment_ids,
+            self.scope, self.method_selection
         )
         self.text = submission.text
         self.attachment_ids = submission.attachment_ids
@@ -130,7 +147,8 @@ class ConversationTextBody(BaseModel):
 
     def submission(self) -> ConversationTurnSubmission:
         return ConversationTurnSubmission(
-            self.text, self.attachment_ids, self.active_attachment_ids
+            self.text, self.attachment_ids, self.active_attachment_ids,
+            self.scope, self.method_selection
         )
 
 
@@ -786,7 +804,7 @@ def build_conversation_router(
         request_id = _parse_idempotency_key(idempotency_key)
         _validate_input_bytes(body.text)
         if (
-            body.position_id is not None or body.position_draft_id is not None
+            body.position_id is not None or body.position_draft_id is not None or body.scope is not None
         ) and direct_agent_id != "hr-bot":
             raise HTTPException(422, "conversation request invalid", headers=_NO_STORE)
         if direct_agent_id is not None:

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from app.execution_relay.contracts_v6 import HrTurnScope, HrMethodSelection
 from app.agent_brain.recovery import SearchRecoveryState
 from app.agent_brain.repository import MissionRecord
 
@@ -61,6 +62,8 @@ class ConversationTurnSubmission:
     text: str
     attachment_ids: tuple[UUID, ...] = ()
     active_attachment_ids: tuple[UUID, ...] = ()
+    hr_scope: HrTurnScope | None = None
+    method_selection: HrMethodSelection | None = None
 
     def __post_init__(self) -> None:
         text = _normalized_text(self.text)
@@ -70,6 +73,13 @@ class ConversationTurnSubmission:
         )
         if not set(attachment_ids).issubset(active_attachment_ids):
             raise ValueError("New attachments must be active")
+        if self.hr_scope is not None:
+            if not isinstance(self.hr_scope, HrTurnScope) or not set(active_attachment_ids).issubset(self.hr_scope.attachment_ids):
+                raise ValueError("HR scope must include active attachments")
+        if self.method_selection is not None and (
+            self.hr_scope is None or not isinstance(self.method_selection, HrMethodSelection)
+        ):
+            raise ValueError("HR method selection requires turn scope")
         if not text and not attachment_ids:
             raise ValueError("Conversation text or attachment required")
         object.__setattr__(self, "text", text)
@@ -82,7 +92,8 @@ def normalize_turn_submission(
 ) -> ConversationTurnSubmission:
     if isinstance(value, ConversationTurnSubmission):
         return ConversationTurnSubmission(
-            value.text, value.attachment_ids, value.active_attachment_ids
+            value.text, value.attachment_ids, value.active_attachment_ids,
+            value.hr_scope, value.method_selection
         )
     if isinstance(value, str):
         return ConversationTurnSubmission(value)

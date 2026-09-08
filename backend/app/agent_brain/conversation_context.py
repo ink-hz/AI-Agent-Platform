@@ -212,9 +212,9 @@ class ConversationContextBuilder:
             raise ValueError("Conversation context identifiers invalid")
         with self.repository._connection() as connection, connection.cursor() as cursor:
             row = cursor.execute(
-                "select conversation.*,turn.user_message_id,message.seq as user_seq,"
-                "exists(select 1 from platform_hr.position_conversations binding "
-                "where binding.conversation_id=conversation.conversation_id "
+                "select conversation.*,turn.user_message_id,turn.hr_input_context,message.seq as user_seq,"
+                "exists(select 1 from platform_hr.position_task_records binding "
+                "where binding.conversation_id=conversation.conversation_id and binding.turn_id=turn.turn_id "
                 "and binding.owner_internal_user_id=conversation.owner_internal_user_id) "
                 "as verified_hr_position "
                 "from platform_control.conversations conversation "
@@ -231,15 +231,22 @@ class ConversationContextBuilder:
             conversation = self.repository._conversation_from_row(row)
             if conversation.summary_through_seq > row["user_seq"]:
                 raise ConversationContextError()
+            is_hr_v6 = row.get("hr_input_context") is not None
             message_rows = cursor.execute(
                 "select * from platform_control.conversation_messages "
                 "where conversation_id=%s and seq>%s and seq<=%s "
+                + ("and turn_id in (select history.turn_id from platform_control.conversation_turns history "
+                   "where history.conversation_id=conversation_messages.conversation_id "
+                   "and history.hr_input_context is not null and "
+                   "(history.hr_input_context->'scope'->>'positionId') is not distinct from "
+                   "(select current.hr_input_context->'scope'->>'positionId' from platform_control.conversation_turns current "
+                   "where current.turn_id=%s)) " if is_hr_v6 else "")
                 + ("order by seq desc limit %s" if direct_limit else "order by seq"),
                 (
                     conversation_id,
-                    conversation.summary_through_seq,
+                    0 if is_hr_v6 else conversation.summary_through_seq,
                     row["user_seq"],
-                ) + ((direct_limit,) if direct_limit else ()),
+                ) + ((turn_id,) if is_hr_v6 else ()) + ((direct_limit,) if direct_limit else ()),
             ).fetchall()
             if direct_limit:
                 message_rows.reverse()
@@ -283,9 +290,9 @@ class ConversationContextBuilder:
             row["mode"] == "direct_agent"
             and row["direct_agent_id"] == "hr-bot"
         )
-        hr_workflow_contract = HR_WORKFLOW_CONTRACT_V1 if is_hr_agent else None
+        hr_workflow_contract = HR_WORKFLOW_CONTRACT_V1 if is_hr_agent and not is_hr_v6 else None
         is_hr_position = is_hr_agent and row["verified_hr_position"] is True
-        if is_hr_position:
+        if is_hr_position and not is_hr_v6:
             if self._hr_task_context_provider is None:
                 raise ConversationContextError()
             try:
@@ -322,7 +329,7 @@ class ConversationContextBuilder:
                         exc_info=True,
                     )
                     hr_panorama_context = None
-        elif is_hr_agent and self._panorama_context_provider is not None:
+        elif is_hr_agent and not is_hr_v6 and self._panorama_context_provider is not None:
             general_retrieval = getattr(
                 self._panorama_context_provider,
                 "for_conversation_turn",
@@ -349,7 +356,7 @@ class ConversationContextBuilder:
         candidate_parser_attachment_id = None
         if (
             is_hr_agent
-            and not is_hr_position
+            and (not is_hr_position or is_hr_v6)
             and self._candidate_parser_input_provider is not None
         ):
             try:
@@ -374,10 +381,10 @@ class ConversationContextBuilder:
             active_attachment_ids.append(candidate_parser_attachment_id)
         return (
             ConversationContext(
-                summary=conversation.summary,
+                summary=None if is_hr_v6 else conversation.summary,
                 messages=messages,
                 estimated_utf8_bytes=_context_size(
-                    conversation.summary,
+                    None if is_hr_v6 else conversation.summary,
                     messages,
                     hr_position_context,
                     hr_panorama_context,
