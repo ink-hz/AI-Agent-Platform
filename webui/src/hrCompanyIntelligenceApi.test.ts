@@ -53,7 +53,9 @@ describe("HR company intelligence parser", () => {
     ).toBe(true);
     expect(parsedMissing.metrics).toBeNull();
     expect(parsedJobs.items).toHaveLength(jobsFixture.items.length);
-    expect(parsedJobs.items[0].requirementExcerpt).toBe(jobsFixture.items[0].requirement_excerpt);
+    expect(parsedJobs.items[0].requirementExcerpt).toBe(
+      jobsFixture.items[0].requirement_excerpt,
+    );
   });
   it("parses the independent company directory without inventing missing counts", () => {
     const parsed = parseCompanyDirectory(directory);
@@ -190,4 +192,22 @@ describe("HR company intelligence API", () => {
       ),
     ).rejects.toThrow("invalid company intelligence response");
   });
+  it.each([
+    ["offset", { offset: 25, limit: jobsFixture.limit }],
+    ["limit", { offset: jobsFixture.offset, limit: 10 }],
+  ])(
+    "rejects a jobs response with a mismatched %s",
+    async (_field, filters) => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        Response.json(jobsFixture),
+      );
+      await expect(
+        createHrCompanyIntelligenceApi("csrf").jobs(
+          jobsFixture.company_key,
+          jobsFixture.bundle_id,
+          filters,
+        ),
+      ).rejects.toThrow("invalid company intelligence response");
+    },
+  );
 });

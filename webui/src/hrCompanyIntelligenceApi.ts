@@ -264,10 +264,12 @@ export function createHrCompanyIntelligenceApi(
       return parsed;
     },
     async jobs(companyKey, bundleId, filters = {}, signal) {
+      const requestedOffset = filters.offset ?? 0;
+      const requestedLimit = filters.limit ?? 25;
       const params = new URLSearchParams({
         bundle_id: bundleId,
-        offset: String(filters.offset ?? 0),
-        limit: String(filters.limit ?? 25),
+        offset: String(requestedOffset),
+        limit: String(requestedLimit),
       });
       if (filters.location) params.set("location", filters.location);
       if (filters.status) params.set("status", filters.status);
@@ -279,7 +281,12 @@ export function createHrCompanyIntelligenceApi(
       if (!response.ok)
         throw new HrCompanyIntelligenceApiError(response.status);
       const parsed = parseCompanyJobs(await response.json());
-      if (parsed.companyKey !== companyKey || parsed.bundleId !== bundleId)
+      if (
+        parsed.companyKey !== companyKey ||
+        parsed.bundleId !== bundleId ||
+        parsed.offset !== requestedOffset ||
+        parsed.limit !== requestedLimit
+      )
         invalid();
       return parsed;
     },
