@@ -6,7 +6,7 @@ import type { Conversation, ConversationPage } from "../../conversationTypes";
 import { createHrApi } from "../../hrApi";
 import { createHrR12Api } from "../../hrR12Api";
 import type { HrContextVersion, HrPositionSection } from "../../hrR12Types";
-import type { HrConfirmedPositionPackage, HrPositionDetail, HrPositionPackage } from "../../hrTypes";
+import type { HrConfirmedPositionPackage, HrPosition, HrPositionDetail, HrPositionPackage } from "../../hrTypes";
 import { directConversationPath } from "../../platform/workspaces";
 import { navigate } from "../../router";
 import { WorkspaceErrorBoundary } from "../../shared/WorkspaceErrorBoundary";
@@ -16,7 +16,7 @@ import {
 import { HrConversationOutcomePanel } from "./HrConversationOutcomePanel";
 import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
 import { HrPositionDetailsDrawer } from "./HrPositionDetailsDrawer";
-import { HrPositionHeader } from "./HrPositionHeader";
+import { HrPositionPicker } from "./HrPositionPicker";
 import { HrPositionIndex } from "./HrPositionIndex";
 import { HrPositionWorkspace, loadPositionConversations } from "./HrPositionWorkspace";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
@@ -87,6 +87,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const [revealedRouteKey, setRevealedRouteKey] = useState<string | null>(null);
   const [positionDetailsOpen, setPositionDetailsOpen] = useState(false);
   const [conversationRevision, setConversationRevision] = useState(0);
+  const [selectedChatPosition, setSelectedChatPosition] = useState<HrPosition | null>(null);
   const draftOwnerId = props.account.internal_user_id;
   const retainFreeChatDraft = useCallback((snapshot: DirectAgentDraftSnapshot) => {
     freeChatDraftSnapshots.current.set(draftOwnerId, snapshot);
@@ -191,17 +192,11 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   ) : null;
   const drawerDetail = continuedPositionDetail ?? degradedDetail;
 
-  return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={panoramaActive ? "panorama" : positionsActive ? "positions" : "chat"}>
+  return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={panoramaActive ? "panorama" : positionsActive && !positionConversationRoute ? "positions" : "chat"}>
     {keepChatHost && <div
       className={`hr-workspace-chat-panel${positionConversationRoute ? " is-position-conversation" : ""}`}
       hidden={panoramaActive || (positionsActive && !positionThreadVisible)}
     >
-      {positionRouteReady && continuedPositionDetail && <HrPositionHeader
-        detail={continuedPositionDetail}
-        onNewConversation={() => navigate(`/hr/positions/${encodeURIComponent(continuedPositionDetail.positionId)}`)}
-        onOpenDetails={() => setPositionDetailsOpen(true)}
-        readOnly={props.account.hard_stale_read_only}
-      />}
       {trustedConfirmedRoute && !positionRouteReady && <header className="hr-confirmed-position-bar">
         <PlatformLink href="/hr/positions">← 岗位库</PlatformLink>
         <div><span>{continuedPositionDetailState === "error" ? "岗位资料加载失败" : "已确认岗位"}</span>
@@ -221,15 +216,33 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           autoFocusComposer
           conversationId={chatConversationId}
           conversationPath={positionRouteReady ? positionConversationPath : hrConversationPath}
+          createdConversationPath={selectedChatPosition && !positionRouteReady
+            ? (id) => {
+              lastChatTarget.current = { conversationId: id, positionId: selectedChatPosition.positionId };
+              return `/hr/positions/${encodeURIComponent(selectedChatPosition.positionId)}/conversations/${encodeURIComponent(id)}`;
+            }
+            : positionRouteReady ? positionConversationPath : hrConversationPath}
+          composerTools={(pending) => <HrPositionPicker
+            api={positionApi}
+            selected={positionRouteReady ? continuedPositionDetail : chatConversationId ? null : selectedChatPosition}
+            disabled={pending || props.account.hard_stale_read_only}
+            existingConversation={Boolean(chatConversationId)}
+            onOpenDetails={positionRouteReady ? () => setPositionDetailsOpen(true) : undefined}
+            onSelect={(position) => {
+              if (positionRouteReady && position?.positionId === props.positionId) return;
+              setSelectedChatPosition(position);
+              if (chatConversationId) navigate("/hr/");
+            }}
+          />}
           historyClient={positionRouteValidated ? historyClient : undefined}
           initialDraftSnapshot={freeChatDraftSnapshots.current.get(draftOwnerId)}
           key={`hr-chat:${draftOwnerId}`}
           layout={positionRouteReady ? "focused" : "standard"}
-          newConversationScope={positionRouteReady && props.positionId ? { positionId: props.positionId } : undefined}
+          newConversationScope={positionRouteReady && props.positionId ? { positionId: props.positionId } : selectedChatPosition ? { positionId: selectedChatPosition.positionId } : undefined}
           newConversationHeader={<section className="hr-conversation-welcome">
             <span>AI 招聘协作</span>
-            <h1>今天想推进哪项招聘工作？</h1>
-            <p>找岗位、做人才研究、筛简历、准备面试或整理招聘材料，直接告诉我。</p>
+            <h1>{selectedChatPosition ? selectedChatPosition.title : "今天想推进哪项招聘工作？"}</h1>
+            <p>{selectedChatPosition ? "已选择岗位，直接发送需求或上传材料，开始招聘协作。" : "直接聊，或在输入框旁搜索选择岗位，再一起推进招聘工作。"}</p>
           </section>}
           onDraftSnapshotChange={retainFreeChatDraft}
           onConversationSettled={handleConversationSettled}
@@ -245,8 +258,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           /> : undefined}
           workspaceLabel="HR 智能工作台"
           workspaceMark="HR"
-          workspaceRootPath={positionRouteReady && props.positionId
-            ? `/hr/positions/${encodeURIComponent(props.positionId)}` : "/hr/"}
+          workspaceRootPath="/hr/"
         />
       </WorkspaceErrorBoundary>
     </div>}

@@ -30,6 +30,7 @@ export interface DirectAgentWorkspaceProps {
   agentId: string;
   conversationId?: string;
   conversationPath: (conversationId: string) => string;
+  createdConversationPath?: (conversationId: string) => string;
   header?: ReactNode;
   workspaceLabel?: string;
   workspaceMark?: string;
@@ -46,7 +47,7 @@ export interface DirectAgentWorkspaceProps {
   showMaterialsTrigger?: boolean;
   showTaskStarters?: boolean;
   layout?: "standard" | "focused";
-  composerTools?: ReactNode;
+  composerTools?: ReactNode | ((pending: boolean) => ReactNode);
   threadSupplement?: ReactNode;
   initialDraftSnapshot?: DirectAgentDraftSnapshot;
   onDraftSnapshotChange?: (snapshot: DirectAgentDraftSnapshot) => void;
@@ -88,6 +89,7 @@ export function DirectAgentWorkspace({
   agentId,
   conversationId,
   conversationPath,
+  createdConversationPath = conversationPath,
   header,
   workspaceLabel,
   workspaceMark,
@@ -236,7 +238,7 @@ export function DirectAgentWorkspace({
     const input: string | TurnSubmission = card.attachment_limits ? {
       text: normalized, attachmentIds: readyIds, activeAttachmentIds: readyIds,
     } : normalized;
-    const requestKey = typeof input === "string" ? input : JSON.stringify(input);
+    const requestKey = JSON.stringify({ input, scope: newConversationScope ?? null });
     let selected = retained.current;
     if (!selected || selected.text !== requestKey) {
       selected = { text: requestKey, submission: newConversationScope
@@ -250,7 +252,8 @@ export function DirectAgentWorkspace({
     try {
       const result = await selected.submission.send(controller.signal);
       retained.current = null; upsertConversation(result.conversation);
-      onOpenConversation(conversationPath(result.conversation.conversation_id));
+      if (agentId === "hr-bot") { setText(""); setAttachments([]); setUploadQueue([]); }
+      onOpenConversation(createdConversationPath(result.conversation.conversation_id));
     } catch {
       if (!controller.signal.aborted) setFailure(true);
     } finally {
@@ -268,6 +271,8 @@ export function DirectAgentWorkspace({
   if (!card || !card.interaction_modes.includes("direct_chat")) {
     return <>{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}<ErrorState /></>;
   }
+
+  const renderedComposerTools = typeof composerTools === "function" ? composerTools(pending) : composerTools;
 
   return <div className={`brain-workspace agent-use-workspace${layout === "focused" ? " is-focused" : ""}`} data-agent-id={agentId}>
     <button aria-expanded={mobileOpen} aria-label={layout === "focused" ? "打开对话记录" : "打开对话列表"} className="brain-workspace-menu" onClick={() => setMobileOpen(true)} type="button">☰</button>
@@ -318,7 +323,7 @@ export function DirectAgentWorkspace({
           onConversationSettled={onConversationSettled}
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
-          composerTools={composerTools}
+          composerTools={renderedComposerTools}
           messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
           materialsPresentation={agentId === "hr-bot" ? "drawer" : layout === "focused" ? "hidden" : "sidebar"}
@@ -381,7 +386,7 @@ export function DirectAgentWorkspace({
                 onActiveChange={() => undefined} />)}
               {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}
             </section>}
-            <div className="agent-direct-composer-actions">{composerTools && <div className="conversation-composer-tools">{composerTools}</div>}<span>Enter 发送；Shift+Enter 换行。文字、图片和文件会随本轮一起发送。</span><button className="agent-direct-submit" disabled={submitDisabled} type="submit">{pending ? "正在创建…" : "发送"}</button></div>
+            <div className="agent-direct-composer-actions">{renderedComposerTools && <div className="conversation-composer-tools">{renderedComposerTools}</div>}<span>Enter 发送；Shift+Enter 换行。文字、图片和文件会随本轮一起发送。</span><button className="agent-direct-submit" disabled={submitDisabled} type="submit">{pending ? "正在创建…" : "发送"}</button></div>
           </form>
           {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
           {failure && <div className="brain-submit-error" role="alert"><span>对话暂未创建成功，可安全重试。</span><button onClick={() => void send()} type="button">重新提交</button></div>}
