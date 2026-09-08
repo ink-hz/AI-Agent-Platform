@@ -1,5 +1,7 @@
 # HR Unified Execution TDD Index Implementation Plan
 
+> **2026-09-08 交付范围调整：** Owner 已确认“最小可靠网页闭环优先”。当前执行队列改为 [HR 最小可靠网页计划](2026-09-08-hr-minimum-reliable-web.md)，约束见 [交付边界](../specs/2026-09-08-hr-minimum-reliable-web-design.md)。本文件保留合同、已完成证据及后续双渠道范围，不再要求完成全部18项才交付网页；飞书统一迁移和自动重跑许可后移。已完成工作不重做，未完成项不冒称完成。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **状态：** v0.3，P01 契约冻结、P02 本地仓储、P03a/b1/b2a、M03a/b/c 与 M04a 本地切片已通过规格/质量独立复审。P03 实际 Worker/上下文/能力与取消调度、M02 完整附件集成、M04b 及其余事项继续按依赖实施；生产编号和运行验收未完成。具体进度以第3节和执行记录为准，不以旧的剩余数量覆盖新进展。未勾选原始示例不冒充已通过证据。
