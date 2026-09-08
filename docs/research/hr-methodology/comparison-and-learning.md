@@ -1,3 +1,11 @@
+---
+id: comparison-and-learning
+title: 候选人比较与反馈
+revision: 1
+domains: [recruiting, hr-analytics]
+knowledge_forms: [thinking-model, methodology]
+---
+
 # 候选人比较与反馈：比较证据，而不是给人贴总标签
 
 ## 帮助理解什么

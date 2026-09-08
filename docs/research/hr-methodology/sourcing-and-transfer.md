@@ -1,3 +1,11 @@
+---
+id: sourcing-and-transfer
+title: 人才来源与能力迁移
+revision: 1
+domains: [recruiting, talent-development]
+knowledge_forms: [thinking-model, methodology]
+---
+
 # 人才来源与能力迁移：从公司名单转向任务相似性
 
 ## 帮助理解什么

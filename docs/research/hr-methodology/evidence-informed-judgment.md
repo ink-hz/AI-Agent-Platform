@@ -1,3 +1,11 @@
+---
+id: evidence-informed-judgment
+title: 循证判断
+revision: 1
+domains: [recruiting, hr-analytics]
+knowledge_forms: [thinking-model, methodology]
+---
+
 # 循证判断：让结论强度不超过证据
 
 ## 帮助理解什么

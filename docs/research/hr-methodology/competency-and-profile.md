@@ -1,3 +1,11 @@
+---
+id: competency-and-profile
+title: 胜任力与人才画像
+revision: 1
+domains: [recruiting, talent-development]
+knowledge_forms: [thinking-model, methodology]
+---
+
 # 胜任力与人才画像：从标签转向可观察行为
 
 ## 帮助理解什么

@@ -1,3 +1,11 @@
+---
+id: selection-and-work-samples
+title: 甄选与工作样本
+revision: 1
+domains: [recruiting]
+knowledge_forms: [thinking-model, methodology]
+---
+
 # 甄选与工作样本：相关性、一致性和表达机会
 
 ## 帮助理解什么

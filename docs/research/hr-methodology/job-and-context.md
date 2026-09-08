@@ -1,3 +1,11 @@
+---
+id: job-and-context
+title: 岗位与业务情境
+revision: 1
+domains: [recruiting, organization-design]
+knowledge_forms: [thinking-model, methodology]
+---
+
 # 岗位与业务情境：从结果、任务到能力
 
 ## 帮助理解什么

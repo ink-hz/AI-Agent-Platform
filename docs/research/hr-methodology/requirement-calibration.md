@@ -1,3 +1,11 @@
+---
+id: requirement-calibration
+title: 要求校准与 AMO
+revision: 1
+domains: [recruiting, performance]
+knowledge_forms: [thinking-model, methodology]
+---
+
 # 要求校准与 AMO：不要把所有问题都变成人才缺陷
 
 ## 帮助理解什么
