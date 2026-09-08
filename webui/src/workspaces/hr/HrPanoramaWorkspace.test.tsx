@@ -3,7 +3,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Account } from "../../auth";
-import type { HrCompanyIntelligenceApi } from "../../hrCompanyIntelligenceTypes";
+import type {
+  CompanyDetail,
+  CompanyDirectory,
+  HrCompanyIntelligenceApi,
+} from "../../hrCompanyIntelligenceTypes";
 import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
 
 const account: Account = {
@@ -636,4 +640,157 @@ describe("HrPanoramaWorkspace", () => {
     );
     expect(container.textContent).toContain("研发能力可能继续扩张");
   });
+  it("preserves the reading body and expanded jobs on a repeated company click", async () => {
+    const api = fakeApi();
+    await act(async () =>
+      root.render(<HrPanoramaWorkspace account={account} api={api} />),
+    );
+    await settle();
+    const clickCompany = () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click();
+    await act(async () => clickCompany());
+    await settle();
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((node) => node.textContent === "查看公开岗位")!
+        .click(),
+    );
+    await settle();
+    const body = container.querySelector(".hr-company-detail");
+    const jobsText = container.querySelector(".hr-company-jobs")?.textContent;
+    const push = vi.spyOn(history, "pushState");
+    await act(async () => clickCompany());
+    await settle();
+    expect(container.querySelector(".hr-company-detail")).toBe(body);
+    expect(container.textContent).toContain("研发能力可能继续扩张");
+    expect(container.querySelector(".hr-company-jobs")?.textContent).toBe(
+      jobsText,
+    );
+    expect(api.jobs).toHaveBeenCalledTimes(1);
+    expect(api.company).toHaveBeenCalledTimes(1);
+    expect(push).not.toHaveBeenCalled();
+  });
+  it.each(["latest", "removed", "empty", "error"] as const)(
+    "waits for the current directory before an uncached deep link: %s",
+    async (result) => {
+      const nextBundle = "22222222-2222-4222-8222-222222222222";
+      const other = {
+        ...summary,
+        companyKey: "other",
+        canonicalName: "另一家公司",
+      };
+      let resolveDirectory!: (value: CompanyDirectory | null) => void;
+      let rejectDirectory!: (reason: Error) => void;
+      const companies = vi
+        .fn()
+        .mockResolvedValueOnce({
+          bundleId,
+          generatedAt: detail.generatedAt,
+          items: [summary, other],
+          topics: { state: "blocked" },
+        })
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve, reject) => {
+              resolveDirectory = resolve;
+              rejectDirectory = reject;
+            }),
+        );
+      const company = vi
+        .fn()
+        .mockImplementation(async (key: string, pinned: string) => ({
+          ...detail,
+          bundleId: pinned,
+          company: other,
+        }));
+      await act(async () =>
+        root.render(
+          <HrPanoramaWorkspace
+            account={account}
+            api={fakeApi({ companies, company })}
+          />,
+        ),
+      );
+      await settle();
+      await act(async () => {
+        history.pushState({}, "", "/hr/panorama?company=other");
+        window.dispatchEvent(new Event("platform:navigate"));
+      });
+      await settle();
+      expect(company).not.toHaveBeenCalled();
+      await act(async () =>
+        result === "error"
+          ? rejectDirectory(new Error("offline"))
+          : resolveDirectory(
+              result === "empty"
+                ? null
+                : {
+                    bundleId: nextBundle,
+                    generatedAt: detail.generatedAt,
+                    items: result === "latest" ? [other] : [summary],
+                    topics: { state: "blocked" },
+                  },
+            ),
+      );
+      await settle();
+      if (result === "latest") {
+        expect(company).toHaveBeenCalledExactlyOnceWith(
+          "other",
+          nextBundle,
+          expect.any(AbortSignal),
+        );
+        expect(
+          container.querySelector(".hr-company-detail h2")?.textContent,
+        ).toBe("另一家公司");
+      } else {
+        expect(company).not.toHaveBeenCalled();
+        expect(container.textContent).toContain(
+          result === "empty"
+            ? "当前没有已发布情报"
+            : result === "error"
+              ? "HR 情报暂时无法读取"
+              : "当前情报不包含这家公司",
+        );
+      }
+      expect(container.textContent).not.toContain("正在读取公司情报");
+    },
+  );
+  it.each(["popstate", "platform:navigate"])(
+    "stops pending detail on returning to the root via %s and ignores a late response",
+    async (event) => {
+      let resolveDetail!: (value: CompanyDetail) => void;
+      const company = vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveDetail = resolve;
+          }),
+      );
+      await act(async () =>
+        root.render(
+          <HrPanoramaWorkspace account={account} api={fakeApi({ company })} />,
+        ),
+      );
+      await settle();
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+          .click(),
+      );
+      expect(container.textContent).toContain("正在读取公司情报");
+      await act(async () => {
+        history.pushState({}, "", "/hr/panorama");
+        window.dispatchEvent(new Event(event));
+      });
+      await settle();
+      expect(container.textContent).not.toContain("正在读取公司情报");
+      expect(container.textContent).toContain("选择一家公司开始阅读");
+      expect(company.mock.calls[0][2].aborted).toBe(true);
+      await act(async () => resolveDetail(detail));
+      await settle();
+      expect(container.querySelector(".hr-company-detail")).toBeNull();
+      expect(container.textContent).toContain("选择一家公司开始阅读");
+    },
+  );
 });

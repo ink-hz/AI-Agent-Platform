@@ -73,7 +73,10 @@ export function HrPanoramaWorkspace({
           if (!request.signal.aborted) setDirectory(value);
         })
         .catch((error) => {
-          if (!request.signal.aborted) setFailure(failureText(error));
+          if (!request.signal.aborted) {
+            setDirectory(null);
+            setFailure(failureText(error));
+          }
         })
         .finally(() => {
           if (!request.signal.aborted) setLoading(false);
@@ -89,7 +92,12 @@ export function HrPanoramaWorkspace({
     };
   }, [api]);
   const openCompany = (companyKey: string) => {
-    if (!directory) return;
+    if (!directory || loading) return;
+    if (
+      selectedCompanyKey === companyKey &&
+      detailBundleId === directory.bundleId
+    )
+      return;
     const url = new URL(window.location.href);
     url.searchParams.set("company", companyKey);
     history.pushState({}, "", `${url.pathname}${url.search}`);
@@ -110,7 +118,9 @@ export function HrPanoramaWorkspace({
     const syncLocation = () => {
       if (!/\/hr\/panorama(?:\/|$)/.test(location.pathname)) return;
       const companyKey = new URLSearchParams(location.search).get("company");
+      if (companyKey === selectedCompanyKey) return;
       setSelectedCompanyKey(companyKey);
+      setFailure(null);
       if (!companyKey) {
         setDetail(null);
         setDetailBundleId(null);
@@ -131,10 +141,26 @@ export function HrPanoramaWorkspace({
       window.removeEventListener("popstate", syncLocation);
       window.removeEventListener("platform:navigate", syncLocation);
     };
-  }, []);
+  }, [selectedCompanyKey]);
+  // Existing reading stays pinned; a new deep link waits for the current directory.
+  const requestedBundleId =
+    detailBundleId ?? (loading ? null : directory?.bundleId) ?? null;
+  const companyMissing = Boolean(
+    !detailBundleId &&
+    !loading &&
+    directory &&
+    selectedCompanyKey &&
+    !directory.items.some(
+      (company) => company.companyKey === selectedCompanyKey,
+    ),
+  );
   useEffect(() => {
-    if (!directory || !selectedCompanyKey) return;
-    const pinnedBundleId = detailBundleId ?? directory.bundleId;
+    if (!selectedCompanyKey || !requestedBundleId || companyMissing) {
+      setDetailLoading(false);
+      if (companyMissing) setFailure("当前情报不包含这家公司。");
+      return;
+    }
+    const pinnedBundleId = requestedBundleId;
     const cached = detailCache.current.get(selectedCompanyKey);
     if (cached?.bundleId === pinnedBundleId) {
       setDetail(cached);
@@ -163,7 +189,7 @@ export function HrPanoramaWorkspace({
         if (!controller.signal.aborted) setDetailLoading(false);
       });
     return () => controller.abort();
-  }, [api, directory, selectedCompanyKey, detailBundleId]);
+  }, [api, requestedBundleId, selectedCompanyKey, companyMissing]);
   const filtered =
     directory?.items.filter((company) =>
       `${company.canonicalName} ${company.aliases.join(" ")}`
