@@ -27,7 +27,8 @@
 
 ## 实际发布结果
 
-- Platform API / 独立 HR Worker / 本地 Signed Worker：`7bc7b042e18d47c180053eab307990a08baecde7`。发布前合并并保留已上线的公司情报版 `beeae7875eee47d29e82f4187cd10414d8398762`；新选材仍能带入按轮范围请求，账号切换、返回公司阅读、发送期间新增引用保留均经合并点组件检查。
+- 本次切换的 Platform API / 独立 HR Worker / 本地 Signed Worker：`7bc7b042e18d47c180053eab307990a08baecde7`。发布前合并并保留已上线的公司情报版 `beeae7875eee47d29e82f4187cd10414d8398762`；新选材仍能带入按轮范围请求，账号切换、返回公司阅读、发送期间新增引用保留均经合并点组件检查。
+- 后续并行发布：公司情报线程已独立将 API 更新至 `57561410cc13506b58f7422d2367b0042ed2639a`，继承本次 v6 并修正公司情报路由中央授权。只读核对 current 指针与 API 镜像一致、health 为 `ok`；独立 HR Worker / 本地 Signed Worker 仍为 `7bc7b042…`，无需重复发布。下方磁盘、资源与容器对照为本次 22:14 切换记录。
 - HR MetaBot：`6b1ff78952ff90d83f82c737eaabaf05fcf77ea4`，运行 `dist/index.js`；MCP 编译入口在正式安装目录完成 initialize。Team：`36b932b01f11e893dcca16ac8162b392b84fbb8c`，role manifest hash `92786276c247fe4ee4c1224cfb3232455a0c126cf51b9e54138775c4a46462f7`。三仓已推送 master。
 - 正式 094 已应用，checksum `e742c86cb6f0e80b20c3f90e338c11fe4c968653140455bde57032422e3f1784`；临时 migrator owner 成员资格已撤销。旧任务/岗位包领取与草稿生产函数对 app 和 brain worker 均不可执行。Local Worker 原表增加三列，仅应用一次。
 - 最终本地认证 readiness HTTP 200；云端签名观测 `ready=true`、`core_chat_collaboration_v6`、三个工具、准确 Team commit/hash。API health `ok`，HR Worker 运行，发布前后 HR 在途均 0，平台确认版本仍 0 行；没有伪造终态或重放历史任务。
