@@ -1663,6 +1663,117 @@ def test_build_runtime_rejects_bad_port_before_owned_cloud_client(monkeypatch) -
     assert cloud_constructions == 0
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, False), ("0", False), ("1", True)],
+)
+def test_build_runtime_uses_one_machine_gate_for_both_v5_paths(
+    monkeypatch, value, expected
+) -> None:
+    values = {
+        "PLATFORM_WORKER_ID": "worker-a",
+        "PLATFORM_WORKER_KEY_ID": "worker-v1",
+        "PLATFORM_WORKER_PRIVATE_KEY_FILE": "/private/worker.key",
+        "PLATFORM_WORKER_DATABASE_URL_FILE": "/private/worker.dsn",
+        "PLATFORM_WORKER_CALLBACK_PORT": "9120",
+        "PLATFORM_WORKER_CLOUD_URL": "https://cloud.example",
+        "PLATFORM_METABOT_RUNTIME_CONTRACT": "/runtime.json",
+        "PLATFORM_METABOT_API_SECRET_FILE": "/private/metabot-token",
+    }
+    if value is None:
+        monkeypatch.delenv("PLATFORM_WORKER_V5_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("PLATFORM_WORKER_V5_ENABLED", value)
+    monkeypatch.setattr(
+        worker_module,
+        "_required_environment",
+        lambda name: values[name],
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "_owner_private_key",
+        lambda _path: Ed25519PrivateKey.generate(),
+    )
+    monkeypatch.setattr(
+        worker_module.WorkerStore,
+        "from_dsn_file",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(
+        worker_module.MetaBotRuntimeMap,
+        "from_contract",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(worker_module, "MetaBotClient", lambda *_args: object())
+    monkeypatch.setattr(worker_module, "SignedCloudClient", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        worker_module.WorkerAcceptanceHooks,
+        "from_environment",
+        lambda: None,
+    )
+
+    runtime = worker_module.build_runtime_from_environment()
+
+    assert runtime.enable_v5_callbacks is expected
+    assert runtime.enable_v5_transport is expected
+
+
+@pytest.mark.parametrize("value", ["true", "yes", "2", " 1"])
+def test_build_runtime_rejects_ambiguous_v5_gate_before_cloud_construction(
+    monkeypatch, value
+) -> None:
+    values = {
+        "PLATFORM_WORKER_ID": "worker-a",
+        "PLATFORM_WORKER_KEY_ID": "worker-v1",
+        "PLATFORM_WORKER_PRIVATE_KEY_FILE": "/private/worker.key",
+        "PLATFORM_WORKER_DATABASE_URL_FILE": "/private/worker.dsn",
+        "PLATFORM_WORKER_CALLBACK_PORT": "9120",
+        "PLATFORM_WORKER_CLOUD_URL": "https://cloud.example",
+        "PLATFORM_METABOT_RUNTIME_CONTRACT": "/runtime.json",
+        "PLATFORM_METABOT_API_SECRET_FILE": "/private/metabot-token",
+    }
+    monkeypatch.setenv("PLATFORM_WORKER_V5_ENABLED", value)
+    cloud_constructions = 0
+
+    class Cloud:
+        def __init__(self, *_args, **_kwargs):
+            nonlocal cloud_constructions
+            cloud_constructions += 1
+
+    monkeypatch.setattr(
+        worker_module,
+        "_required_environment",
+        lambda name: values[name],
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "_owner_private_key",
+        lambda _path: Ed25519PrivateKey.generate(),
+    )
+    monkeypatch.setattr(
+        worker_module.WorkerStore,
+        "from_dsn_file",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(
+        worker_module.MetaBotRuntimeMap,
+        "from_contract",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(worker_module, "MetaBotClient", lambda *_args: object())
+    monkeypatch.setattr(worker_module, "SignedCloudClient", Cloud)
+    monkeypatch.setattr(
+        worker_module.WorkerAcceptanceHooks,
+        "from_environment",
+        lambda: None,
+    )
+
+    with pytest.raises(WorkerRuntimeError, match="worker runtime failed"):
+        worker_module.build_runtime_from_environment()
+
+    assert cloud_constructions == 0
+
+
 @pytest.mark.asyncio
 async def test_runtime_logs_never_include_protected_values(caplog) -> None:
     protected = (

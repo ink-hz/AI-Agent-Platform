@@ -1474,8 +1474,16 @@ def _required_environment(name: str) -> str:
     return value
 
 
+def _v5_enabled_from_environment() -> bool:
+    value = os.environ.get("PLATFORM_WORKER_V5_ENABLED", "0")
+    if value not in {"0", "1"}:
+        raise WorkerRuntimeError()
+    return value == "1"
+
+
 def build_runtime_from_environment() -> WorkerRuntime:
     try:
+        enable_v5 = _v5_enabled_from_environment()
         worker_id = _required_environment("PLATFORM_WORKER_ID")
         key_id = _required_environment("PLATFORM_WORKER_KEY_ID")
         private_key = _owner_private_key(
@@ -1513,6 +1521,8 @@ def build_runtime_from_environment() -> WorkerRuntime:
             metabot=metabot,
             callback_port=callback_port,
             acceptance_hooks=WorkerAcceptanceHooks.from_environment(),
+            enable_v5_callbacks=enable_v5,
+            enable_v5_transport=enable_v5,
         )
     except WorkerRuntimeError:
         raise
