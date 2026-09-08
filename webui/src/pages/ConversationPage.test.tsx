@@ -147,6 +147,63 @@ describe("ConversationPage", () => {
     expect(container.querySelector(".conversation-turn-retry")).toBeNull();
   });
 
+  it.each([false, true])("loads a late worker PDF without resubmission (next turn: %s)", async nextTurn => {
+    vi.useFakeTimers();
+    let ready = false;
+    const attachment: ConversationAttachment = {
+      attachmentId: "result-file", conversationId, source: "agent", displayName: "面试方案.pdf",
+      detectedMime: "application/pdf", sizeBytes: 1024, sha256: "a".repeat(64), state: "ready",
+      stateReason: null, createdAt: "2026-08-23T10:02:00Z", retainedUntil: "2027-08-23T10:02:00Z",
+      preview: { attachmentId: "result-file", detectedMime: "application/pdf" }, coverage: null,
+    };
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, mode: "direct_agent", direct_agent_id: "hr-bot", execution_owner: "worker_direct" }, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockResolvedValue([messages[0], { ...messages[1], result_delivery_status: "pending" }]),
+      fetchTurnMessages: vi.fn().mockImplementation(async (_id, turnId) => turnId === "turn-2" ? [] : [messages[0], { ...messages[1], result_delivery_status: ready ? "completed" : "pending", output_attachments: ready ? [attachment] : [] }]),
+      fetchSnapshot: vi.fn().mockImplementation(async () => ({
+        read_version: ready ? 3 : 2, event_cursor: 8,
+        turn: { turn_id: nextTurn && ready ? "turn-2" : "turn-1", turn_seq: nextTurn && ready ? 2 : 1, status: nextTurn && ready ? "queued" : "completed" },
+        attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: "completed", reason_code: null },
+        outcome: nextTurn && ready ? null : { terminal: true, kind: "completed", reason_code: null },
+        answer: nextTurn && ready ? null : { message_id: "message-2", role: "assistant", content: messages[1].content, completed_at: messages[1].completed_at },
+        result_enrichment: { status: ready ? "ready" : "pending", pending_count: ready ? 0 : 1, failed_count: 0 }, deliveries: [], context_manifest_ref: "context-manifest:command:owned",
+      })),
+    });
+    try {
+      await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+      expect(container.textContent).toContain("建议从 GitHub 开始");
+      ready = true;
+      await act(async () => vi.advanceTimersByTimeAsync(2_000));
+      expect(container.textContent).toContain("面试方案.pdf");
+      expect(api.fetchMessages).toHaveBeenCalledTimes(1);
+      expect(api.createMessageSubmission).not.toHaveBeenCalled();
+      expect(api.retryTurn).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("renders the durable file warning from the worker turn messages after refresh", async () => {
+    const warning = { ...messages[1], message_id: "file-warning", seq: 2, role: "system" as const,
+      content: "文字回答已完成，但生成文件未能整理成功，当前没有可下载附件。" };
+    const answer = { ...messages[1], seq: 3 };
+    const api = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: { ...conversation, mode: "direct_agent", direct_agent_id: "hr-bot", execution_owner: "worker_direct" }, current_turn: completedTurn }),
+      fetchMessages: vi.fn().mockResolvedValue([]),
+      fetchTurnMessages: vi.fn().mockResolvedValue([messages[0], warning, answer]),
+      fetchSnapshot: vi.fn().mockResolvedValue({
+        read_version: 2, event_cursor: 8, turn: { turn_id: "turn-1", turn_seq: 1, status: "completed" },
+        attempt: { attempt_id: "attempt", attempt_no: 1, lease_epoch: 1, status: "completed", reason_code: null },
+        outcome: { terminal: true, kind: "completed", reason_code: null },
+        answer: { message_id: answer.message_id, role: "assistant", content: answer.content, completed_at: answer.completed_at },
+        result_enrichment: { status: "none", pending_count: 0, failed_count: 0 }, deliveries: [], context_manifest_ref: null,
+      }),
+    });
+    await act(async () => root.render(<ConversationPage account={account} client={api} conversationId={conversationId} />));
+    expect(container.querySelectorAll('[data-message-id="file-warning"]')).toHaveLength(1);
+    expect(container.textContent).toContain(warning.content);
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(api.createMessageSubmission).not.toHaveBeenCalled();
+  });
+
   it("loads actual worker turn messages for actions and retains the prior answer on the next turn", async () => {
     const workerConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot", execution_owner: "worker_direct" as const };
     let submitted = false;

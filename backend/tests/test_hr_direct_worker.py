@@ -42,12 +42,29 @@ def direct_database(attempt_repository, conversation_database):
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute("set local role platform_control_owner")
         connection.execute(DRAFT.read_text())
+        connection.execute(DRAFT.with_name("hr_turn_input_context.sql").read_text())
     yield conversation_database
     with psycopg.connect(environment["admin"]) as connection:
         _drop_direct_draft(connection)
 
 
 def _drop_direct_draft(connection):
+    source = (DRAFT.parent.parent / "069_hr_position_intelligence.sql").read_text()
+    start = source.index("create function platform_hr.create_position_task_record_v69(")
+    end = source.index("$function$;", start) + len("$function$;")
+    connection.execute(source[start:end].replace("create function", "create or replace function", 1))
+    connection.execute("drop table if exists platform_control.result_artifact_intents")
+    connection.execute("drop function if exists platform_control.preserve_result_artifact_intent()")
+    # Restore the applied legacy function before removing its draft dependency.
+    legacy = DRAFT.parent.parent / "088_conversation_result_deliveries.sql"
+    source = legacy.read_text()
+    start = source.index("create or replace function platform_attachments.revoke_terminal_task_grants_v64()")
+    end = source.index("$function$;", start) + len("$function$;")
+    connection.execute(source[start:end])
+    source = (DRAFT.parent.parent / "064_conversation_attachments.sql").read_text()
+    start = source.index("create function platform_attachments.create_artifact_upload_v64(")
+    end = source.index("$function$;", start) + len("$function$;")
+    connection.execute(source[start:end].replace("create function", "create or replace function", 1))
     connection.execute("drop table if exists platform_control.v5_source_events")
     connection.execute("drop table if exists platform_control.direct_command_bindings")
     connection.execute("drop function if exists platform_control.preserve_direct_command_binding()")

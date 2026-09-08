@@ -3,6 +3,7 @@
 import signal
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from time import monotonic
 from uuid import UUID, uuid4
 
 import psycopg
@@ -17,11 +18,26 @@ from .turn_attempts import Lease, LeaseRejected
 
 class DirectWorker:
     def __init__(
-        self, attempts, adapter, *, executor_id=None, lease_seconds=60, limit=16
+        self,
+        attempts,
+        adapter,
+        *,
+        executor_id=None,
+        lease_seconds=60,
+        limit=16,
+        artifact_recovery=None,
     ):
         if not 1 <= limit <= 64 or lease_seconds < 10:
             raise ValueError("direct worker bounds invalid")
         self.attempts, self.adapter = attempts, adapter
+        self.artifact_recovery = artifact_recovery
+        self._artifact_pool = (
+            ThreadPoolExecutor(max_workers=1, thread_name_prefix="hr-result-files")
+            if artifact_recovery
+            else None
+        )
+        self._artifact_pending = None
+        self._artifact_after = 0.0
         self.executor_id = executor_id or uuid4()
         self.lease_seconds, self.limit = lease_seconds, limit
         self._preparations = {}
@@ -38,7 +54,7 @@ class DirectWorker:
                 # Only the classified read phase may be retried. This wait owns
                 # one bounded preparation slot, never the renewal thread.
                 if retry < 2:
-                    threading.Event().wait(0.25 * (2 ** retry))
+                    threading.Event().wait(0.25 * (2**retry))
                     continue
                 return "context_storage_unavailable"
             except ConversationContextError as error:
@@ -70,6 +86,15 @@ class DirectWorker:
         return None
 
     def tick(self) -> int:
+        try:
+            return self._advance_execution()
+        finally:
+            # Schedule only after this tick releases execution/conversation
+            # locks. Otherwise each file sweep can collide with its own renewal
+            # and repeatedly SKIP LOCKED while text/native reconciliation lives.
+            self._advance_artifacts()
+
+    def _advance_execution(self) -> int:
         processed = 0
         failures = {}
         for attempt_id, pending in tuple(self._preparations.items()):
@@ -89,8 +114,10 @@ class DirectWorker:
         rejected_ids = set()
         for row in rows:
             if (
-                row["status"] == "running" and row["transport_run_id"] is None
-                and row["attempt_id"] not in self._preparations and row["lease_live"]
+                row["status"] == "running"
+                and row["transport_run_id"] is None
+                and row["attempt_id"] not in self._preparations
+                and row["lease_live"]
             ):
                 # A lost claim response has no preparation Future/admission.
                 # Do not adopt it or renew forever: existing expiry recovery
@@ -149,8 +176,29 @@ class DirectWorker:
                 continue
         return processed
 
+    def _advance_artifacts(self):
+        if self._artifact_pool is None:
+            return
+        if self._artifact_pending is not None:
+            if not self._artifact_pending.done():
+                return
+            try:
+                self._artifact_pending.result()
+            except psycopg.Error:
+                # Original fixed Result and ready bytes survive storage loss.
+                # No retry of model execution follows a file-consumer failure.
+                pass
+            self._artifact_pending = None
+        if monotonic() >= self._artifact_after:
+            self._artifact_after = monotonic() + 2.0
+            self._artifact_pending = self._artifact_pool.submit(
+                self.artifact_recovery.retry_due, 20
+            )
+
     def close(self):
         self._pool.shutdown(wait=True, cancel_futures=True)
+        if self._artifact_pool is not None:
+            self._artifact_pool.shutdown(wait=True)
 
     def run(self, stopping):
         try:

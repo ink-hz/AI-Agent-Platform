@@ -7,6 +7,7 @@ release are deliberately separate, while sharing the original command binding.
 import json
 from uuid import uuid4
 
+from app.attachments.result_artifact_recovery import freeze_artifact_intents
 from app.execution_relay.content_crypto import SealedContent
 from app.execution_relay.contracts_v5 import CoreChatEventV5, parse_v5_event
 
@@ -65,6 +66,7 @@ class TurnResultProjector:
         if turn["assistant_message_id"] is not None:
             raise ValueError("authenticated source conflicts with published answer")
         conversation_id, turn_id = conversation["conversation_id"], turn["turn_id"]
+        self._file_warning(connection, event, conversation_id, turn)
         message_id = uuid4()
         sealed = self.codec.seal_json(
             message_subject(conversation_id, message_id),
@@ -85,6 +87,14 @@ class TurnResultProjector:
                 conversation_id,
             ),
         )
+        if event.payload.artifact_intents:
+            freeze_artifact_intents(
+                connection,
+                event,
+                message_id,
+                self.bindings._decode(binding).frozen.document,
+                self.bindings.materials(binding),
+            )
         connection.execute(
             "update platform_control.conversation_turns set status='completed',assistant_message_id=%s,updated_at=clock_timestamp() where turn_id=%s",
             (message_id, turn_id),
@@ -141,6 +151,58 @@ class TurnResultProjector:
             )
         self.attempts.assert_current(lease, connection=connection)
         return message_id
+
+    def _file_warning(self, connection, result, conversation_id, turn):
+        # Runtime emits this marker immediately before Result (heartbeats may
+        # interleave). Read only the last raw event, not unbounded private logs.
+        row = connection.execute(
+            "select * from platform_control.v5_source_events where run_id=%s "
+            "and seq<%s and event_type='raw_progress' order by seq desc limit 1",
+            (result.run_id, result.seq),
+        ).fetchone()
+        if row is None:
+            return
+        stored = self.codec.unseal_json(
+            f"execution-v5-source:{result.run_id}:{row['seq']}",
+            SealedContent(
+                bytes(row["payload_ciphertext"]), row["encryption_key_version"]
+            ),
+        )
+        marker = parse_v5_event(json.loads(stored["raw"]))
+        if (
+            marker.event_type != "raw_progress"
+            or (marker.run_id, marker.command_id, marker.attempt_id, marker.lease_epoch)
+            != (result.run_id, result.command_id, result.attempt_id, result.lease_epoch)
+            or marker.seq != row["seq"]
+            or marker.payload.source != "agent_runtime"
+            or marker.payload.source_ref != f"v5:{result.command_id}:output-files"
+            or marker.payload.visibility != "private"
+            or marker.payload.kind != "file"
+            or marker.payload.text != "output_files_unavailable"
+        ):
+            return
+        message_id = uuid4()
+        sealed = self.codec.seal_json(
+            message_subject(conversation_id, message_id),
+            {
+                "text": "文字回答已完成，但生成文件未能整理成功，当前没有可下载附件。",
+            },
+        )
+        connection.execute(
+            "insert into platform_control.conversation_messages(message_id,conversation_id,seq,role,"
+            "content_ciphertext,encryption_key_version,turn_id,mission_id,delivery_status,completed_at) "
+            "select %s,%s,coalesce(max(seq),0)+1,'system',%s,%s,%s,%s,'completed',clock_timestamp() "
+            "from platform_control.conversation_messages where conversation_id=%s",
+            (
+                message_id,
+                conversation_id,
+                sealed.ciphertext,
+                sealed.key_version,
+                turn["turn_id"],
+                turn["mission_id"],
+                conversation_id,
+            ),
+        )
 
     def _event(self, connection, conversation_id, turn_id, mission_id, kind, payload):
         event_id = uuid4()

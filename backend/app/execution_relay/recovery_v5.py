@@ -26,8 +26,8 @@ def bound_command(bindings, row):
         binding.frozen,
         lease_epoch=transport["leaseEpoch"],
         event_callback_url=f"{transport['callbackOrigin']}/callbacks/{binding.run_id}/{transport['callbackToken']}",
-        input_attachment_grants=[],
-        output_write_grant=None,
+        input_attachment_grants=bindings.materials(row)["inputAttachmentGrants"],
+        output_write_grant=bindings.materials(row)["outputWriteGrant"],
     )
     return command, transport
 

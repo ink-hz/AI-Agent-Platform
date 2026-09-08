@@ -33,7 +33,7 @@ from app.execution_relay.routes import build_execution_relay_router
 from app.execution_relay.worker_auth import WorkerRequestVerifier
 
 
-def _direct_process(database_url):
+def _direct_process(database_url, context_factory=None, worker_factory=None):
     from app.agent_brain.conversation_context import ConversationContextBuilder
     from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
     from app.agent_brain.direct_worker import DirectWorker
@@ -53,12 +53,19 @@ def _direct_process(database_url):
     adapter = DirectMissionAdapter(
         attempts,
         bindings,
-        ConversationContextBuilder(repository),
+        context_factory(repository, database_url)
+        if context_factory
+        else ConversationContextBuilder(repository),
         TurnResultProjector(attempts, bindings),
     )
     stopping = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
-    DirectWorker(attempts, adapter, lease_seconds=10).run(stopping)
+    worker = (
+        worker_factory(attempts, adapter, repository, database_url)
+        if worker_factory
+        else DirectWorker(attempts, adapter, lease_seconds=10)
+    )
+    worker.run(stopping)
 
 
 def _machine_process(
@@ -130,7 +137,7 @@ from app.control_plane.authorization import (
 from app.control_plane.middleware import IdentitySecurityMiddleware
 
 
-def _serve(database_url, listener):
+def _serve(database_url, listener, configure_app=None):
     secrets = AuthSecrets(b"w" * 32, key_version=1)
 
     async def disabled_login(_code):
@@ -174,6 +181,8 @@ def _serve(database_url, listener):
             v5_bindings=DirectCommandBindingRepository(relay),
         )
     )
+    if configure_app is not None:
+        configure_app(app, database_url)
     app.add_middleware(
         IdentitySecurityMiddleware,
         auth=auth,
@@ -187,6 +196,10 @@ def _serve(database_url, listener):
 
 
 class WebLoop:
+    configure_app = None
+    context_factory = None
+    worker_factory = None
+
     def __init__(self, environment, owner_id, conversation_id):
         self.machine = self.direct = None
         self.environment, self.owner_id, self.conversation_id = (
@@ -256,7 +269,11 @@ class WebLoop:
     def start_api(self):
         self.process = multiprocessing.get_context("spawn").Process(
             target=_serve,
-            args=(self.environment["urls"]["platform_control_app"], self.listener),
+            args=(
+                self.environment["urls"]["platform_control_app"],
+                self.listener,
+                self.configure_app,
+            ),
         )
         self.process.start()
         deadline = monotonic() + 10
@@ -366,7 +383,11 @@ class WebLoop:
     def start_direct(self):
         self.direct = multiprocessing.get_context("spawn").Process(
             target=_direct_process,
-            args=(self.environment["urls"]["platform_control_app"],),
+            args=(
+                self.environment["urls"]["platform_control_app"],
+                self.context_factory,
+                self.worker_factory,
+            ),
         )
         self.direct.start()
 

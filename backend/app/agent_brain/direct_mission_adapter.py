@@ -2,11 +2,17 @@
 
 import hashlib
 import json
-from dataclasses import asdict
-from datetime import timedelta
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
+from app.attachments.grant_service import TaskGrantError
 from app.execution_relay.content_crypto import SealedContent
 from app.execution_relay.contracts_v5 import parse_v5_event
+from app.execution_relay.models import (
+    OutputWriteGrantPayload,
+    TaskAttachmentGrantPayload,
+)
 
 from .conversation_context import ConversationContextError
 from .direct_command_binding import BindingRejected, FrozenInput
@@ -15,9 +21,10 @@ from .turn_attempts import TerminalEvidence
 
 
 class DirectMissionAdapter:
-    def __init__(self, attempts, bindings, context_builder, projector):
+    def __init__(self, attempts, bindings, context_builder, projector, *, attachment_grants=None):
         self.attempts, self.bindings = attempts, bindings
         self.context_builder, self.projector = context_builder, projector
+        self.attachment_grants = attachment_grants
 
     def prepare(self, lease):
         with self.attempts.transaction() as connection:
@@ -37,7 +44,14 @@ class DirectMissionAdapter:
         context = self.context_builder.build_direct(
             conversation["conversation_id"], turn["turn_id"]
         )
-        if context.active_attachment_ids:
+        selected = list(context.active_attachment_ids)
+        if context.hr_position_context is not None:
+            selected.extend(context.hr_position_context.material_attachment_ids)
+            selected.extend(context.hr_position_context.document_attachment_ids)
+        selected = tuple(dict.fromkeys(selected))
+        if selected and self.attachment_grants is None:
+            raise ConversationContextError("material_execution_unavailable")
+        if len(selected) > 5:
             raise ConversationContextError("material_execution_unavailable")
         document = {
             "summary": context.summary,
@@ -69,6 +83,9 @@ class DirectMissionAdapter:
         )
         with self.attempts.transaction() as connection:
             self.bindings._lock(lease, connection)
+            prepared = self.bindings.get_prepared(lease, connection=connection)
+            if prepared is not None:
+                return prepared
             authorized = connection.execute(
                 "select allowed from platform_control.resolve_agent_use_decision_v41(%s,'hr-bot')",
                 (conversation["owner_internal_user_id"],),
@@ -77,34 +94,58 @@ class DirectMissionAdapter:
                 return self._unstarted(
                     connection, lease, conversation, turn, "failed", "agent_use_denied"
                 )
+            # The compatibility task, its existing grants and the frozen command
+            # commit together; a lost commit response cannot issue a second set.
+            run_id = uuid4()
+            self._compatibility(connection, run_id, turn, prompt)
+            inputs, output = [], None
+            if self.attachment_grants is not None:
+                expires_at = datetime.now(UTC) + timedelta(hours=24)
+                try:
+                    inputs = [TaskAttachmentGrantPayload.model_validate(asdict(
+                        self.attachment_grants.issue_attachment(
+                            run_id, attachment_id, "hr-bot", expires_at=expires_at,
+                            connection=connection,
+                        )
+                    )).model_dump(mode="json", by_alias=True) for attachment_id in selected]
+                    if sum(value["sizeBytes"] for value in inputs) > 50 * 1024 * 1024:
+                        raise ConversationContextError("material_execution_unavailable")
+                    output = OutputWriteGrantPayload.model_validate(asdict(
+                        self.attachment_grants.issue_output(
+                            run_id, "hr-bot", expires_at=expires_at, connection=connection,
+                        )
+                    )).model_dump(mode="json", by_alias=True)
+                except TaskGrantError:
+                    raise ConversationContextError("material_execution_unavailable") from None
+            frozen = replace(frozen, run_id=run_id, input_grants=tuple(inputs), output_grant=output)
             binding = self.bindings.prepare(lease, frozen, connection=connection)
-            self._compatibility(connection, binding, turn, prompt)
             self.bindings.authorize_transport(
                 lease,
                 admission["workerId"],
                 admission["callbackOrigin"],
                 connection=connection,
             )
+            self.attempts.assert_current(lease, connection=connection)
             return binding
 
-    def _compatibility(self, connection, binding, turn, prompt):
+    def _compatibility(self, connection, run_id, turn, prompt):
         codec, mission_id = self.bindings.relay.content_codec, turn["mission_id"]
         objective = codec.seal_json(
-            _task_subject(mission_id, binding.run_id), {"text": prompt}
+            _task_subject(mission_id, run_id), {"text": prompt}
         )
         payload = codec.seal_json(
-            _run_subject(mission_id, binding.run_id, "input"), {"text": prompt}
+            _run_subject(mission_id, run_id, "input"), {"text": prompt}
         )
         connection.execute(
             "insert into platform_control.mission_tasks(task_id,mission_id,agent_id,objective_ciphertext,encryption_key_version,status,started_at) values(%s,%s,'hr-bot',%s,%s,'running',clock_timestamp()) on conflict(task_id) do nothing",
-            (binding.run_id, mission_id, objective.ciphertext, objective.key_version),
+            (run_id, mission_id, objective.ciphertext, objective.key_version),
         )
         connection.execute(
             "insert into platform_control.mission_runs(run_id,mission_id,task_id,phase,agent_id,status,input_ciphertext,encryption_key_version,started_at) values(%s,%s,%s,'direct','hr-bot','running',%s,%s,clock_timestamp()) on conflict(run_id) do nothing",
             (
-                binding.run_id,
+                run_id,
                 mission_id,
-                binding.run_id,
+                run_id,
                 payload.ciphertext,
                 payload.key_version,
             ),

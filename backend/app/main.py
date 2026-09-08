@@ -42,6 +42,7 @@ from .ai_notes.routes import (
 )
 from .attachments import routes as attachment_routes
 from .attachments.artifact_service import ArtifactOutputService, ArtifactRepository
+from .attachments.result_artifact_recovery import ArtifactRecovery
 from .attachments.citation_service import CitationRepository, CitationService
 from .attachments.conversation_repository import ConversationAttachmentRepository
 from .attachments.conversation_routes import build_conversation_attachment_router
@@ -1536,7 +1537,7 @@ def create_app(
         context = ConversationContextBuilder(conversation_repository,
             hr_task_context_provider=hr_task_context_provider, panorama_context_provider=hr_panorama_context_provider,
             candidate_parser_input_provider=hr_candidate_parser_input_provider)
-        return DirectWorker(attempts, DirectMissionAdapter(attempts, bindings, context, TurnResultProjector(attempts, bindings)))
+        return DirectWorker(attempts, DirectMissionAdapter(attempts, bindings, context, TurnResultProjector(attempts, bindings), attachment_grants=task_attachment_grant_service), artifact_recovery=ArtifactRecovery(conversation_repository))
     app.state.direct_worker_factory = direct_worker_factory
     app.state.hr_position_package_projector = hr_position_package_projector
     app.state.fae_access = None

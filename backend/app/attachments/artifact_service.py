@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
 from collections.abc import Callable
@@ -211,6 +212,12 @@ class ArtifactRepository:
         expires_at = datetime.now(UTC) + timedelta(seconds=self._upload_ttl_seconds)
         try:
             with self._connection() as connection, connection.transaction():
+                worker_output = connection.execute(
+                    "select 1 from platform_control.execution_jobs "
+                    "where run_id=%s and job_kind='worker_direct_v5'", (task_id,),
+                ).fetchone()
+                if worker_output and artifact_key != "artifact-" + hashlib.sha256(display_name.encode()).hexdigest()[:24]:
+                    raise ArtifactUploadConflict("artifact name identity invalid")
                 result = connection.execute(
                     "select * from platform_attachments.create_artifact_upload_v64("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",

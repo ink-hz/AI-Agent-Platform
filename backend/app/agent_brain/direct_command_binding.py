@@ -27,6 +27,9 @@ class FrozenInput:
     prompt: str
     context_hash: str
     tool_policy: str = "none"
+    run_id: UUID | None = None
+    input_grants: tuple[dict, ...] = ()
+    output_grant: dict | None = None
 
 
 def principal_reference(owner_id: UUID) -> str:
@@ -99,7 +102,10 @@ class DirectCommandBindingRepository:
             "executorId": str(lease.executor_id),
             "leaseEpoch": lease.lease_epoch,
         }
-        wrapper.update(format="hr_frozen_command_v2", transport=transport)
+        wrapper.update(
+            format="hr_frozen_command_v3" if "materials" in wrapper else "hr_frozen_command_v2",
+            transport=transport,
+        )
         sealed = self.relay.content_codec.seal_json(
             f"execution-job:{row['job_id']}:{row['run_id']}", wrapper
         )
@@ -161,8 +167,8 @@ class DirectCommandBindingRepository:
                             binding.frozen,
                             lease_epoch=lease.lease_epoch,
                             event_callback_url=f"{transport['callbackOrigin']}/callbacks/{binding.run_id}/{transport['callbackToken']}",
-                            input_attachment_grants=[],
-                            output_write_grant=None,
+                            input_attachment_grants=self.materials(row)["inputAttachmentGrants"],
+                            output_write_grant=self.materials(row)["outputWriteGrant"],
                         )
                         return {
                             "version": "hr_transport_handoff_v1",
@@ -194,8 +200,8 @@ class DirectCommandBindingRepository:
                 self._decode(row).frozen,
                 lease_epoch=lease.lease_epoch,
                 event_callback_url=f"{transport['callbackOrigin']}/callbacks/{run_id}/{transport['callbackToken']}",
-                input_attachment_grants=[],
-                output_write_grant=None,
+                input_attachment_grants=self.materials(row)["inputAttachmentGrants"],
+                output_write_grant=self.materials(row)["outputWriteGrant"],
             )
             acceptance = parse_v5_acceptance(value, command)
             self.record_acceptance(lease, acceptance, connection=connection)
@@ -335,7 +341,7 @@ class DirectCommandBindingRepository:
             "where t.conversation_id=%s and m.seq<=%s",
             (c["conversation_id"], t["user_seq"]),
         ).fetchone()["n"]
-        command_id, run_id = uuid4(), uuid4()
+        command_id, run_id = uuid4(), frozen_input.run_id or uuid4()
         principal = principal_reference(c["owner_internal_user_id"])
         frozen = parse_frozen_command(
             {
@@ -363,8 +369,14 @@ class DirectCommandBindingRepository:
                     "toolPolicy": frozen_input.tool_policy,
                 },
                 "retryOf": None,
-                "inputAttachments": [],
-                "outputScope": None,
+                "inputAttachments": [
+                    {"index": index, **{key: value[key] for key in (
+                        "attachmentId", "displayName", "detectedMime", "sizeBytes", "sha256",
+                    )}} for index, value in enumerate(frozen_input.input_grants)
+                ],
+                "outputScope": {key: frozen_input.output_grant[key] for key in (
+                    "taskId", "agentId", "maxFiles", "maxTotalBytes",
+                )} if frozen_input.output_grant is not None else None,
             }
         )
         job_id = self.relay.enqueue_v5_template(frozen, connection=connection)
@@ -385,6 +397,20 @@ class DirectCommandBindingRepository:
             (run_id, lease.attempt_id),
         )
         connection.execute("update platform_control.conversations set snapshot_version=snapshot_version+1 where conversation_id=%s", (c["conversation_id"],))
+        if frozen_input.input_grants or frozen_input.output_grant is not None:
+            row = self._transport_row(lease, connection)
+            wrapper = self._wrapper(row)
+            wrapper.update(format="hr_frozen_command_v3", materials={
+                "inputAttachmentGrants": list(frozen_input.input_grants),
+                "outputWriteGrant": frozen_input.output_grant,
+            })
+            sealed = self.relay.content_codec.seal_json(
+                f"execution-job:{job_id}:{run_id}", wrapper,
+            )
+            connection.execute(
+                "update platform_control.execution_jobs set payload_ciphertext=%s,encryption_key_version=%s where job_id=%s",
+                (sealed.ciphertext, sealed.key_version, job_id),
+            )
         return CommandBinding(
             lease.attempt_id, command_id, run_id, job_id, sequence, frozen
         )
@@ -506,6 +532,18 @@ class DirectCommandBindingRepository:
                 set(wrapper) == {"format", "commandHash", "command", "transport"}
                 and wrapper["format"] == "hr_frozen_command_v2"
             )
+            or (
+                wrapper.get("format") == "hr_frozen_command_v3"
+                and set(wrapper) in (
+                    {"format", "commandHash", "command", "materials"},
+                    {"format", "commandHash", "command", "materials", "transport"},
+                )
+                and type(wrapper.get("materials")) is dict
+                and set(wrapper["materials"]) == {"inputAttachmentGrants", "outputWriteGrant"}
+                and type(wrapper["materials"]["inputAttachmentGrants"]) is list
+                and (wrapper["materials"]["outputWriteGrant"] is None
+                     or type(wrapper["materials"]["outputWriteGrant"]) is dict)
+            )
         ):
             raise BindingRejected()
         if "transport" in wrapper:
@@ -533,6 +571,13 @@ class DirectCommandBindingRepository:
             ):
                 raise BindingRejected()
         return wrapper
+
+    def materials(self, row):
+        # Legacy text-only bindings have no transfer credentials. New credentials
+        # stay encrypted with the original command and are never reissued on poll.
+        return self._wrapper(row).get("materials", {
+            "inputAttachmentGrants": [], "outputWriteGrant": None,
+        })
 
     def _decode(self, row):
         wrapper = self._wrapper(row)

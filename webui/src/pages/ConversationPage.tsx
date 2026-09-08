@@ -331,6 +331,7 @@ export function ConversationPage({
       const controller = new AbortController();
       let inFlight = false;
       const loadingTurns = new Set<string>();
+      const enrichmentVersions = new Map<string, number>();
       const refresh = async () => {
         if (inFlight || controller.signal.aborted) return;
         inFlight = true;
@@ -339,14 +340,23 @@ export function ConversationPage({
           if (controller.signal.aborted) return;
           setWorkerSnapshot((previous) => previous && previous.read_version > value.read_version ? previous : value);
           const turnId = value.turn?.turn_id;
-          if (turnId && !loadingTurns.has(turnId) && (!messagesRef.current.some(message => message.turn_id === turnId)
-            || (value.answer && !messagesRef.current.some(message => message.message_id === value.answer?.message_id)))) {
-            loadingTurns.add(turnId);
+          const pendingTurns = messagesRef.current.filter(message => message.result_delivery_status === "pending").map(message => message.turn_id).filter((id): id is string => Boolean(id));
+          for (const candidateId of new Set([...(turnId ? [turnId] : []), ...pendingTurns])) {
+            const current = candidateId === turnId;
+            const missing = current && (!messagesRef.current.some(message => message.turn_id === candidateId)
+              || Boolean(value.answer && !messagesRef.current.some(message => message.message_id === value.answer?.message_id)));
+            const enrichmentChanged = (pendingTurns.includes(candidateId) || (current && value.result_enrichment.status !== "none"))
+              && enrichmentVersions.get(candidateId) !== value.read_version;
+            if (loadingTurns.has(candidateId) || (!missing && !enrichmentChanged)) continue;
+            loadingTurns.add(candidateId);
             // Independent rendering/enrichment read. Its failure cannot withhold
             // the authoritative answer or block the next snapshot refresh.
-            void (client.fetchTurnMessages ?? fetchConversationTurnMessages)(conversationId, turnId, controller.signal)
-              .then(items => { if (!controller.signal.aborted) mergeIntoMessages(items); })
-              .catch(() => undefined).finally(() => loadingTurns.delete(turnId));
+            void (client.fetchTurnMessages ?? fetchConversationTurnMessages)(conversationId, candidateId, controller.signal)
+              .then(items => { if (!controller.signal.aborted) {
+                mergeIntoMessages(items); enrichmentVersions.set(candidateId, value.read_version);
+                setAttachments(previous => [...new Map([...previous, ...items.flatMap(message => message.output_attachments)].map(item => [item.attachmentId, item])).values()]);
+              } })
+              .catch(() => undefined).finally(() => loadingTurns.delete(candidateId));
           }
           eventCursor.current = Math.max(eventCursor.current, value.event_cursor);
           setConnection("live");

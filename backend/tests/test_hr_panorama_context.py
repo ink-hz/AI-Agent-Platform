@@ -189,6 +189,24 @@ class MarkdownStore:
         )
 
 
+class LightweightMarkdownBundleSource(MarkdownBundleSource):
+    def current_bundle(self):
+        raise AssertionError("full analysis bundle must not be loaded for context")
+
+    def current_context_bundle(self):
+        self.calls.append(("current_context_bundle",))
+        # Match PanoramaRepository.current_context_bundle's explicit projection.
+        fields = {
+            "bundle_id", "owner_internal_user_id", "manifest_sha256",
+            "bundle_locator", "schema_version", "generated_at", "source_catalog",
+            "source_coverage", "agent_chunk_index", "agent_document_index",
+        }
+        return {key: value for key, value in self.record.items() if key in fields}
+
+    def bundle_jobs(self, bundle_id):
+        raise AssertionError("lightweight context must not load all bundle jobs")
+
+
 def test_position_task_gets_only_relevant_bundle_excerpts_with_provenance() -> None:
     source = BundleSource()
     fragment = PanoramaContextProvider(source).for_turn(
@@ -379,15 +397,7 @@ def test_general_hr_chat_can_retrieve_named_company_intelligence() -> None:
 
 
 def test_markdown_context_prefers_the_lightweight_current_bundle_projection() -> None:
-    class ProjectedSource(MarkdownBundleSource):
-        def current_bundle(self):
-            raise AssertionError("full analysis bundle must not be loaded for context")
-
-        def current_context_bundle(self):
-            self.calls.append(("current_context_bundle",))
-            return self.record
-
-    source = ProjectedSource()
+    source = LightweightMarkdownBundleSource()
     fragment = PanoramaContextProvider(
         source, markdown_store=MarkdownStore(source)
     ).for_conversation_turn(
@@ -399,6 +409,71 @@ def test_markdown_context_prefers_the_lightweight_current_bundle_projection() ->
 
     assert fragment.retrieval_version == "markdown-v1"
     assert ("current_context_bundle",) in source.calls
+
+
+@pytest.mark.parametrize("scope", ["position", "conversation"])
+@pytest.mark.parametrize("failure", ["tampered", "no_store", "missing_index", "empty_index", "invalid_index"])
+def test_lightweight_markdown_failure_is_bounded_unknown_and_pinned(scope, failure) -> None:
+    source = LightweightMarkdownBundleSource(tampered=failure == "tampered")
+    if failure == "missing_index":
+        source.record.pop("agent_chunk_index")
+    elif failure == "empty_index":
+        source.record["agent_chunk_index"] = []
+    elif failure == "invalid_index":
+        source.record["agent_chunk_index"] = [None]
+    provider = PanoramaContextProvider(
+        source, markdown_store=None if failure == "no_store" else MarkdownStore(source)
+    )
+
+    def read():
+        if scope == "position":
+            return provider.for_turn(
+                OWNER, POSITION, "生成禾赛岗位 JD", TURN, task_kind="jd",
+                position_context={"title": "点云算法工程师"},
+            )
+        return provider.for_conversation_turn(
+            OWNER, CONVERSATION, "分析禾赛招聘情报", TURN,
+        )
+
+    fragment = read()
+    document = fragment.as_prompt_document()
+    assert fragment.status == "unavailable"
+    assert fragment.bundle_id == fragment.insight_version_id == source.bundle_id
+    assert fragment.observed_at == NOW
+    assert fragment.manifest_sha256 == source.record["manifest_sha256"]
+    assert fragment.degraded_reason
+    assert fragment.unknowns and "无法据此判断" in " ".join(fragment.unknowns)
+    assert not any((fragment.source_facts, fragment.aggregates, fragment.interpretations, fragment.markdown_context, fragment.chunks))
+    assert len(json.dumps(document, ensure_ascii=False).encode()) <= MAX_PANORAMA_CONTEXT_BYTES
+    source.record["bundle_id"] = uuid4()
+    source.record["manifest_sha256"] = "e" * 64
+    assert read().as_prompt_document() == document
+    assert source.calls.count(("current_context_bundle",)) == 1
+
+
+def test_lightweight_markdown_keeps_verified_chunks_when_one_chunk_fails() -> None:
+    source = LightweightMarkdownBundleSource()
+
+    class PartlyUnavailableStore(MarkdownStore):
+        def read_chunk(self, bundle_id, record):
+            if record["chunk_id"] == "hesai-company":
+                raise PanoramaUnavailable("chunk unavailable")
+            return super().read_chunk(bundle_id, record)
+
+    fragment = PanoramaContextProvider(
+        source, markdown_store=PartlyUnavailableStore(source)
+    ).for_conversation_turn(OWNER, CONVERSATION, "分析禾赛点云算法招聘情报", TURN)
+
+    assert fragment.status == "partial"
+    assert fragment.degraded_reason == "markdown_verification_failed"
+    assert fragment.bundle_id == source.bundle_id
+    assert fragment.manifest_sha256 == source.record["manifest_sha256"]
+    assert "算法/点云" in fragment.markdown_context
+    assert "禾赛公开招聘信号" not in fragment.markdown_context
+    assert "hesai-company" not in {chunk["chunk_id"] for chunk in fragment.chunks}
+    assert fragment.unknowns
+    assert fragment.retrieval_version == "markdown-v1"
+    assert len(json.dumps(fragment.as_prompt_document(), ensure_ascii=False).encode()) <= MAX_PANORAMA_CONTEXT_BYTES
 
 
 def test_general_hr_chat_replays_pinned_markdown_without_a_current_bundle() -> None:

@@ -1,5 +1,7 @@
 """Owner-scoped repeatable-read snapshot; no orchestration or recovery writes."""
 
+from app.attachments.result_artifact_recovery import artifact_enrichment
+
 from .conversation_repository import ConversationRepositoryNotFound
 
 
@@ -107,4 +109,7 @@ class TurnSnapshotReader:
                     "content": record.content,
                     "completed_at": record.completed_at.isoformat(),
                 }
+                result["result_enrichment"] = artifact_enrichment(
+                    connection, record.message_id
+                )
             return result

@@ -2067,8 +2067,10 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 rows = cursor.execute(
-                    "select message.*,result_delivery.status as result_delivery_status "
+                    "select message.*,result_delivery.status as result_delivery_status, "
+                    "coalesce(to_jsonb(turn)->>'execution_owner','legacy_api_v1') as execution_owner "
                     "from platform_control.conversation_messages message "
+                    "left join platform_control.conversation_turns turn on turn.turn_id=message.turn_id "
                     "left join platform_control.conversation_result_deliveries result_delivery "
                     "on result_delivery.message_id=message.message_id "
                     "join platform_control.conversations conversation "
@@ -2085,6 +2087,20 @@ class ConversationRepository:
                     (conversation_id, internal_user_id),
                 ).fetchone() is None:
                     raise ConversationRepositoryNotFound()
+                worker_message_ids = [row["message_id"] for row in rows if row["execution_owner"] == "worker_direct"]
+                if worker_message_ids:
+                    # Existing public field is a read projection only. The v5
+                    # authority is fixed Result intents, never push Delivery.
+                    statuses = cursor.execute(
+                        "select message_id,case when bool_or(status='pending') then 'pending' "
+                        "when bool_or(status='failed') then 'failed' else 'completed' end as status "
+                        "from platform_control.result_artifact_intents where message_id=any(%s) group by message_id",
+                        (worker_message_ids,),
+                    ).fetchall()
+                    status_by_id = {row["message_id"]: row["status"] for row in statuses}
+                    for row in rows:
+                        if row["execution_owner"] == "worker_direct":
+                            row["result_delivery_status"] = status_by_id.get(row["message_id"])
                 records = tuple(
                     self._message_from_row(row, cursor) for row in rows
                 )

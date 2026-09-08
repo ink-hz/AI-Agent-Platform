@@ -741,10 +741,13 @@ class PostgresHrTaskContextSource:
                         ),
                     ).fetchall()
                 else:
+                    # Explicit turn_input bindings are the authority for this
+                    # round. A fresh resume need not become a global Position
+                    # material merely to be read in its owning conversation.
                     material_rows = connection.execute(
-                        "select attachment.attachment_id,material.position_id,"
+                        "select attachment.attachment_id,%s::uuid as position_id,"
                         "encode(attachment.sha256,'hex') as sha256,attachment.state,"
-                        "coalesce(material.active,false) as active,"
+                        "true as active,"
                         "attachment.retained_until,exists(select 1 from "
                         "platform_attachments.erasure_jobs erasure where "
                         "erasure.attachment_id=attachment.attachment_id) "
@@ -752,12 +755,7 @@ class PostgresHrTaskContextSource:
                         "join platform_attachments.attachments attachment "
                         "on attachment.attachment_id=binding.attachment_id "
                         "and attachment.owner_internal_user_id="
-                        "binding.owner_internal_user_id left join "
-                        "platform_hr.position_materials material "
-                        "on material.attachment_id=attachment.attachment_id "
-                        "and material.owner_internal_user_id="
-                        "attachment.owner_internal_user_id "
-                        "and material.position_id=%s where "
+                        "binding.owner_internal_user_id where "
                         "binding.owner_internal_user_id=%s "
                         "and binding.conversation_id=%s and binding.turn_id=%s "
                         "and binding.kind='turn_input' order by attachment.attachment_id",
