@@ -120,6 +120,7 @@ async function setTextarea(container: HTMLElement, value: string): Promise<void>
 
 describe("HR conversation scroll following", () => {
   let viewport: HTMLDivElement;
+  let host: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   let contentHeight: number;
   let viewportHeight: number;
@@ -136,9 +137,9 @@ describe("HR conversation scroll following", () => {
   beforeEach(() => {
     contentHeight = 1200; viewportHeight = 600;
     viewport = document.createElement("div"); viewport.className = "brain-workspace-main";
-    Object.defineProperties(viewport, {
-      scrollHeight: { get: () => contentHeight }, clientHeight: { get: () => viewportHeight },
-    });
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => contentHeight);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(() => viewportHeight);
+    host = viewport;
     document.body.append(viewport); root = createRoot(viewport);
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal("ResizeObserver", class {
@@ -148,13 +149,14 @@ describe("HR conversation scroll following", () => {
     });
   });
   afterEach(async () => {
-    await act(async () => root.unmount()); viewport.remove();
+    await act(async () => root.unmount()); host.remove();
     expect(resizeCallbacks.size).toBe(0);
     vi.unstubAllGlobals(); vi.restoreAllMocks();
   });
 
   it("opens at the latest answer and follows answer, attachment and viewport height changes", async () => {
     await act(async () => root.render(<ConversationPage account={account} client={api()} conversationId={conversationId} expectedAgentId="hr-bot" />));
+    viewport = host.querySelector<HTMLDivElement>(".conversation-scroll-region")!;
     expect(viewport.scrollTop).toBe(600);
     contentHeight = 1800; await resize();
     expect(viewport.scrollTop).toBe(1200);
@@ -164,20 +166,22 @@ describe("HR conversation scroll following", () => {
 
   it("leaves history reading in place, then resumes following from the latest button", async () => {
     await act(async () => root.render(<ConversationPage account={account} client={api()} conversationId={conversationId} expectedAgentId="hr-bot" />));
+    viewport = host.querySelector<HTMLDivElement>(".conversation-scroll-region")!;
     await scroll(200);
     contentHeight = 1800; await resize();
     expect(viewport.scrollTop).toBe(200);
-    const latest = [...viewport.querySelectorAll("button")].find(button => button.textContent?.includes("回到最新"));
+    const latest = [...host.querySelectorAll("button")].find(button => button.textContent?.includes("回到最新"));
     expect(latest).toBeDefined();
     await act(async () => latest!.click());
     expect(viewport.scrollTop).toBe(1200);
     contentHeight = 2000; await resize();
     expect(viewport.scrollTop).toBe(1400);
-    expect(viewport.textContent).not.toContain("回到最新");
+    expect(host.textContent).not.toContain("回到最新");
   });
 
   it("resumes when manually scrolled to the bottom and survives hiding the HR panel", async () => {
     await act(async () => root.render(<ConversationPage account={account} client={api()} conversationId={conversationId} expectedAgentId="hr-bot" />));
+    viewport = host.querySelector<HTMLDivElement>(".conversation-scroll-region")!;
     await scroll(100); await scroll(600);
     viewportHeight = 0; await resize();
     expect(viewport.scrollTop).toBe(600);
@@ -187,9 +191,10 @@ describe("HR conversation scroll following", () => {
 
   it("follows again after the user submits a new message while reading history", async () => {
     await act(async () => root.render(<ConversationPage account={account} client={api()} conversationId={conversationId} expectedAgentId="hr-bot" />));
+    viewport = host.querySelector<HTMLDivElement>(".conversation-scroll-region")!;
     await scroll(100);
-    await setTextarea(viewport, "继续分析");
-    await act(async () => viewport.querySelector<HTMLButtonElement>(".conversation-send")!.click());
+    await setTextarea(host, "继续分析");
+    await act(async () => host.querySelector<HTMLButtonElement>(".conversation-send")!.click());
     contentHeight = 1800; await resize();
     expect(viewport.scrollTop).toBe(1200);
   });

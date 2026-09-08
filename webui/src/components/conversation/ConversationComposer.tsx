@@ -60,7 +60,7 @@ export function ConversationComposer({
         onSubmit();
       }}
       placeholder={placeholder}
-      rows={compact ? 1 : 4}
+      rows={compact ? 3 : 4}
       value={value}
     />
     {attachmentControls && <div className="conversation-composer-attachments">
