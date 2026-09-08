@@ -295,7 +295,8 @@
             "official_position",
             "confirmed_standard",
             "material",
-            "intelligence"
+            "intelligence",
+            "candidate"
           ],
           "title": "Resourcekind",
           "type": "string"
@@ -571,7 +572,8 @@
             "official_position",
             "confirmed_standard",
             "material",
-            "intelligence"
+            "intelligence",
+            "candidate"
           ],
           "title": "Resourcekind",
           "type": "string"

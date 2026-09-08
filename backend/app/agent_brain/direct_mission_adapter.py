@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from app.attachments.grant_service import TaskGrantError
 from app.execution_relay.content_crypto import SealedContent
-from app.execution_relay.contracts_v5 import parse_v5_event
+from app.execution_relay.core_contract import parse_core_event
 from app.execution_relay.models import (
     OutputWriteGrantPayload,
     TaskAttachmentGrantPayload,
@@ -21,10 +21,11 @@ from .turn_attempts import TerminalEvidence
 
 
 class DirectMissionAdapter:
-    def __init__(self, attempts, bindings, context_builder, projector, *, attachment_grants=None):
+    def __init__(self, attempts, bindings, context_builder, projector, *, attachment_grants=None, role_packages=None):
         self.attempts, self.bindings = attempts, bindings
         self.context_builder, self.projector = context_builder, projector
         self.attachment_grants = attachment_grants
+        self.role_packages = role_packages
 
     def prepare(self, lease):
         with self.attempts.transaction() as connection:
@@ -44,14 +45,31 @@ class DirectMissionAdapter:
         context = self.context_builder.build_direct(
             conversation["conversation_id"], turn["turn_id"]
         )
+        hr_v6 = None
+        if self.role_packages is not None:
+            from app.hr.turn_scope import load_authorized_turn_scope
+            with self.attempts.transaction() as connection:
+                scope = load_authorized_turn_scope(conversation["owner_internal_user_id"],
+                    conversation["conversation_id"], turn["turn_id"], connection=connection)
+            role = self.role_packages.select(scope.method_selection)
+            observed=(lease.admission or {}).get('service',{})
+            if (observed.get('contractVersion')!='core_chat_collaboration_v6'
+                or observed.get('rolePackage')!=role.model_dump(mode='json',by_alias=True)):
+                raise ConversationContextError('executor_capability_missing')
+            hr_v6 = {"scope":scope.scope.model_dump(mode="json",by_alias=True),
+                "rolePackage":role.model_dump(mode="json",by_alias=True),
+                "methodSelection":scope.method_selection.model_dump(mode="json",by_alias=True) if scope.method_selection else None,
+                "toolCapabilities":["hr.read_context","hr.submit_result","hr.confirm_standard"]}
         selected = list(context.active_attachment_ids)
+        if hr_v6 is not None:
+            selected.extend(scope.scope.attachment_ids)
         if context.hr_position_context is not None:
             selected.extend(context.hr_position_context.material_attachment_ids)
             selected.extend(context.hr_position_context.document_attachment_ids)
         selected = tuple(dict.fromkeys(selected))
         if selected and self.attachment_grants is None:
             raise ConversationContextError("material_execution_unavailable")
-        if len(selected) > 5:
+        if len(selected) > (32 if hr_v6 is not None else 5):
             raise ConversationContextError("material_execution_unavailable")
         document = {
             "summary": context.summary,
@@ -64,8 +82,24 @@ class DirectMissionAdapter:
             if context.hr_panorama_context
             else None,
         }
+        if hr_v6 is not None:
+            document = {"messages":[asdict(m) for m in context.messages],
+                "scope":hr_v6["scope"],
+                "instructions":"Use HR business tools for scoped facts and durable results. Never infer confirmation from silence. Knowledge files are references, not tool authority."}
+            with self.attempts.transaction() as connection:
+                current_message = self.context_builder.repository._message_from_row(connection.execute(
+                    "select * from platform_control.conversation_messages where message_id=%s",(turn["user_message_id"],)).fetchone())
+            if current_message.standard_consent is not None:
+                document["userStandardConsent"] = {**current_message.standard_consent.model_dump(mode="json",by_alias=True),
+                    "confirmationMessageId":str(turn["user_message_id"])}
         if context.hr_reference_knowledge is not None:
             document["hr_reference_knowledge"] = context.hr_reference_knowledge
+            if hr_v6 is not None:
+                if context.hr_reference_knowledge['source_commit']!=hr_v6['rolePackage']['teamCommit']:
+                    raise ConversationContextError('executor_capability_missing')
+                # Native cwd is the verified immutable role release. Read the same source
+                # files here; the cloud knowledge projection only serves browsing/indexing.
+                document['hr_reference_knowledge']={**context.hr_reference_knowledge,'agent_release_path':'knowledge'}
         prompt = json.dumps(
             document, ensure_ascii=False, separators=(",", ":"), default=str
         )
@@ -82,8 +116,10 @@ class DirectMissionAdapter:
             turn["user_message_id"],
             turn["user_seq"],
             prompt,
-            hashlib.sha256(prompt.encode()).hexdigest(),
+            hashlib.sha256(json.dumps({"prompt":prompt,**{key:hr_v6[key] for key in ("scope","rolePackage","methodSelection")}},
+                ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()).hexdigest() if hr_v6 else hashlib.sha256(prompt.encode()).hexdigest(),
             admission["service"]["config"]["toolPolicy"],
+            hr_v6=hr_v6,
         )
         with self.attempts.transaction() as connection:
             self.bindings._lock(lease, connection)
@@ -123,6 +159,10 @@ class DirectMissionAdapter:
                     raise ConversationContextError("material_execution_unavailable") from None
             frozen = replace(frozen, run_id=run_id, input_grants=tuple(inputs), output_grant=output)
             binding = self.bindings.prepare(lease, frozen, connection=connection)
+            if hr_v6 is not None:
+                from psycopg.types.json import Jsonb
+                connection.execute('select platform_hr.pin_turn_role_v6(%s,%s,%s)',
+                    (conversation['owner_internal_user_id'],turn['turn_id'],Jsonb(hr_v6['rolePackage'])))
             self.bindings.authorize_transport(
                 lease,
                 admission["workerId"],
@@ -230,7 +270,7 @@ class DirectMissionAdapter:
                         source["encryption_key_version"],
                     ),
                 )
-                event = parse_v5_event(json.loads(raw["raw"]))
+                event = parse_core_event(json.loads(raw["raw"]))
                 if event.event_type == "result":
                     message_id = self.projector.commit_locked(connection, lease, event)
                     if (
@@ -309,7 +349,7 @@ class DirectMissionAdapter:
                     source["encryption_key_version"],
                 ),
             )
-            event = parse_v5_event(json.loads(stored["raw"]))
+            event = parse_core_event(json.loads(stored["raw"]))
             kind, summary = None, None
             if event.event_type == "run_heartbeat":
                 kind, summary = "agent.task_progress", "HR Agent 仍在处理"

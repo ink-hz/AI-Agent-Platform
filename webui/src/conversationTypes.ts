@@ -59,11 +59,25 @@ export interface SearchRecovery {
   coverageNote: string | null;
 }
 
+export interface HrTurnScope {
+  positionId: string | null;
+  positionCandidateIds: string[];
+  attachmentIds: string[];
+}
+export interface HrStandardConsent {
+  proposalResultId: string;
+  proposalContentSha256: string;
+  expectedContextVersionId: string | null;
+  selectedChangeIds: string[];
+}
+export interface HrComposerDraft { id:string; text:string; positionId?:string|null; standardConsent?:HrStandardConsent }
 export interface TurnSubmission {
   text: string;
   attachmentIds: string[];
   activeAttachmentIds: string[];
   userSelectedResources?: HrKnowledgeSelection[];
+  scope?: HrTurnScope;
+  standardConsent?: HrStandardConsent;
 }
 
 export interface HrKnowledgeSelection {

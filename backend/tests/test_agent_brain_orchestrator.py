@@ -40,8 +40,6 @@ from app.hr.position_intelligence_models import (
 )
 from app.hr.position_intelligence_repository import PositionIntelligenceRepository
 from app.hr.repository import HrPositionRepository
-from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
-from app.hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
 from test_control_plane_migration import control_database
 
 
@@ -65,27 +63,6 @@ def _wrong_codec_same_version() -> ContentCodec:
     )
 
 
-def test_planning_prompt_includes_hr_contract_only_when_context_carries_one() -> None:
-    card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
-    hr_context = ConversationContext(
-        summary=None,
-        messages=(ContextMessage(role="user", content="生成 JD"),),
-        estimated_utf8_bytes=64,
-        hr_workflow_contract=HR_WORKFLOW_CONTRACT_V1,
-    )
-    ordinary_context = ConversationContext(
-        summary=None,
-        messages=(ContextMessage(role="user", content="生成 JD"),),
-        estimated_utf8_bytes=64,
-    )
-
-    hr_document = json.loads(build_planning_prompt(hr_context, (card,)).split("\n", 1)[1])
-    ordinary_document = json.loads(
-        build_planning_prompt(ordinary_context, (card,)).split("\n", 1)[1]
-    )
-
-    assert hr_document["hr_workflow_contract"] == HR_WORKFLOW_CONTRACT_V1
-    assert "hr_workflow_contract" not in ordinary_document
 
 
 def test_planning_prompt_includes_panorama_only_when_context_carries_fragment() -> None:
@@ -1808,87 +1785,6 @@ def test_exact_32kib_direct_request_persists_compact_run_input(brain_database):
     assert next(iter(relay.payloads.values())) == original_payload
 
 
-@pytest.mark.postgres
-def test_hr_direct_relay_recovery_reuses_durable_position_envelope(
-    brain_database, request,
-):
-    environment, owner_id = brain_database
-    codec = _codec()
-    missions = MissionRepository(
-        environment["urls"]["platform_control_app"], content_codec=codec
-    )
-    conversations = ConversationRepository(
-        environment["urls"]["platform_control_app"],
-        content_codec=codec,
-        mission_repository=missions,
-    )
-    positions = HrPositionRepository(environment["urls"]["platform_control_app"])
-    position = positions.create_manual(
-        CreateManualPosition(owner_id, uuid4(), uuid4(), "恢复测试岗位")
-    )
-    request_id = uuid4()
-    PositionIntelligenceRepository(
-        environment["urls"]["platform_control_app"]
-    ).create_task_request(CreatePositionTaskRequest(
-        uuid4(), owner_id, position.position_id, request_id,
-        "9" * 64, "freeform", None,
-    ))
-    started = conversations.start(
-        owner_id, request_id, "生成岗位说明",
-        mode="direct_agent", direct_agent_id="hr-bot",
-    )
-    positions.bind_conversation(BindPositionConversation(
-        owner_id, position.position_id, started.conversation.conversation_id,
-        uuid4(), "created_in_position",
-    ))
-    context_builder = ConversationContextBuilder(
-        conversations,
-        hr_task_context_provider=HrTaskContextProvider(
-            PostgresHrTaskContextSource(
-                environment["urls"]["platform_control_app"],
-                execution_model_version="hr-runtime-test-v1",
-            )
-        ),
-    )
-    card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
-    relay = ScriptedRelay()
-    service = MissionOrchestrator(
-        missions, relay, capability_provider=lambda _owner: (card,),
-        conversation_context_builder=context_builder,
-        conversation_projection=ConversationProjection(conversations),
-    )
-
-    assert service.advance_pending(limit=50) == 1
-    original_payload = next(iter(relay.payloads.values()))
-    original_document = json.loads(original_payload.prompt.split("\n", 1)[1])
-    assert original_document["hr_position_context"]["position_id"] == str(
-        position.position_id
-    )
-    relay.payloads.clear()
-    relay.states.clear()
-    restarted = MissionOrchestrator(
-        missions, relay, capability_provider=lambda _owner: (card,),
-        conversation_context_builder=context_builder,
-        conversation_projection=ConversationProjection(conversations),
-    )
-    assert restarted.advance_pending(limit=50) == 1
-    assert next(iter(relay.payloads.values())) == original_payload
-
-    def cleanup():
-        with psycopg.connect(environment["admin"]) as connection:
-            connection.execute(
-                "delete from platform_hr.position_task_records "
-                "where owner_internal_user_id=%s", (owner_id,),
-            )
-            connection.execute(
-                "delete from platform_hr.position_task_requests "
-                "where owner_internal_user_id=%s", (owner_id,),
-            )
-            connection.execute(
-                "delete from platform_hr.position_conversations "
-                "where owner_internal_user_id=%s", (owner_id,),
-            )
-    request.addfinalizer(cleanup)
 
 
 @pytest.mark.postgres

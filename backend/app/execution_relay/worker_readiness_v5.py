@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import re
 from datetime import datetime, timezone
 
@@ -22,6 +23,8 @@ def probe_store(store):
         connection.execute("set local statement_timeout='1000ms'")
         connection.execute("set transaction read only")
         preflight(connection)
+        if os.environ.get('PLATFORM_WORKER_HR_V6_ENABLED')=='1':
+            connection.execute('select core_contract_version,business_grant_id,business_token_hash from execution_worker.v5_callback_runs limit 0')
         row = connection.execute(
             "select bool_and(has_table_privilege(current_user,'execution_worker.'||name,privilege)) as allowed "
             "from unnest(array['v5_callback_runs']) name "
@@ -108,13 +111,13 @@ class V5WorkerService:
                 self._last[name] = asyncio.get_running_loop().time()
             except _FAILURES:
                 self._last.pop(name, None)
-            await self.runtime.pause(1 if name == "upload" else 10)
+            await self.runtime.pause(1 if name == "upload" else 5 if name == "recovery" else 10)
 
     async def sample(self):
         runtime, metabot = self.runtime, self.runtime.metabot
         origin = f"http://127.0.0.1:{runtime.callback_port}"
         value = {
-            "version": "hr_v5_readiness_v1",
+            "version": "hr_v6_readiness_v1" if os.environ.get("PLATFORM_WORKER_HR_V6_ENABLED")=="1" else "hr_v5_readiness_v1",
             "sampledAt": datetime.now(timezone.utc).isoformat(),
             "callbackOrigin": origin,
             "service": None,

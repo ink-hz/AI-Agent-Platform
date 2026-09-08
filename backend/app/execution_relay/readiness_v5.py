@@ -33,7 +33,9 @@ def callback_origin(value):
 
 
 def parse_service(value):
-    if type(value) is not dict or set(value) != {
+    v6 = type(value) is dict and value.get('contractVersion')=='core_chat_collaboration_v6'
+    extra={'rolePackage','toolCapabilities'} if v6 else set()
+    if type(value) is not dict or set(value)-extra != {
         "contractVersion",
         "callbackOrigin",
         "durableTerminal",
@@ -44,7 +46,7 @@ def parse_service(value):
     }:
         raise ValueError("v5 readiness invalid")
     if (
-        value["contractVersion"] != "core_chat_collaboration_v5"
+        value["contractVersion"] not in {"core_chat_collaboration_v5","core_chat_collaboration_v6"}
         or type(value["durableTerminal"]) is not bool
         or type(value["healthy"]) is not bool
         or type(value["capacity"]) is not str
@@ -53,6 +55,11 @@ def parse_service(value):
         or value["reason"] not in REASONS
     ):
         raise ValueError("v5 readiness invalid")
+    if v6:
+        from .contracts_v6 import HrRolePackageRef
+        HrRolePackageRef.model_validate_json(json.dumps(value['rolePackage']),strict=True)
+        if value['toolCapabilities'] != ['hr.read_context','hr.submit_result','hr.confirm_standard']:
+            raise ValueError('v6 tools invalid')
     config = value["config"]
     callback_origin(value["callbackOrigin"])
     if type(config) is not dict or set(config) != {
@@ -104,7 +111,7 @@ def parse_observation(value):
     }:
         raise ValueError("v5 readiness invalid")
     if (
-        value["version"] != "hr_v5_readiness_v1"
+        value["version"] not in {"hr_v5_readiness_v1","hr_v6_readiness_v1"}
         or type(value["reason"]) is not str
         or value["reason"] not in REASONS
     ):
@@ -122,6 +129,8 @@ def parse_observation(value):
         raise ValueError("v5 readiness invalid")
     if value["service"] is not None:
         parse_service(value["service"])
+        if (value['version']=='hr_v6_readiness_v1') != (value['service']['contractVersion']=='core_chat_collaboration_v6'):
+            raise ValueError('HR readiness version mismatch')
         if value["service"]["callbackOrigin"] != value["callbackOrigin"]:
             raise ValueError("v5 readiness invalid")
     return sampled.astimezone(timezone.utc)

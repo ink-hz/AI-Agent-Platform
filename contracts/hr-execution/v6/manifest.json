@@ -4,6 +4,6 @@
   "files": {
     "command.schema.json": "186c4cf9b04b4d3b564960138bf50ac0ddcc5fc6316f82adadd594d9b5deadaf",
     "callback.schema.json": "2cb12e521b0170cc0214c2a66cad3b3c1dc63b50706b619c616ea180489dbb64",
-    "business-tools.schema.json": "805c0d4ec03ef20985f82ea55dd222e1870c8d34c1ee8fa6b5984f00a9ac3514"
+    "business-tools.schema.json": "a69b23dc65132019b10b217d526c36c7619309a99296159426bd4edb11372c4b"
   }
 }

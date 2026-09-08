@@ -554,7 +554,7 @@ function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
   }
   if (!isObject(value)
     || !["text", "attachmentIds", "activeAttachmentIds"].every((key) => Object.prototype.hasOwnProperty.call(value, key))
-    || Object.keys(value).some((key) => !new Set(["text", "attachmentIds", "activeAttachmentIds", "userSelectedResources"]).has(key))
+    || Object.keys(value).some((key) => !new Set(["text", "attachmentIds", "activeAttachmentIds", "userSelectedResources", "scope", "standardConsent"]).has(key))
     || typeof value.text !== "string"
     || !stringArray(value.attachmentIds)
     || !stringArray(value.activeAttachmentIds)
@@ -579,6 +579,8 @@ function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
     attachmentIds: [...value.attachmentIds],
     activeAttachmentIds: [...value.activeAttachmentIds],
     ...(userSelectedResources === undefined ? {} : { userSelectedResources }),
+    ...(value.scope ? {scope: structuredClone(value.scope)} : {}),
+    ...(value.standardConsent ? {standardConsent: structuredClone(value.standardConsent)} : {}),
   };
 }
 
@@ -597,8 +599,8 @@ function submissionBody(value: TurnSubmission, scope?: ConversationStartScope): 
     ...(value.userSelectedResources ? { user_selected_resources: value.userSelectedResources.map((item) => ({
       source_commit: item.sourceCommit, id: item.id, revision: item.revision, sha256: item.sha256,
     })) } : {}),
-    ...(scope?.positionId ? { position_id: scope.positionId } : {}),
-    ...(scope?.positionDraftId ? { position_draft_id: scope.positionDraftId } : {}),
+    ...(value.scope ? {scope:value.scope} : scope?.positionId ? {scope:{positionId:scope.positionId,positionCandidateIds:[],attachmentIds:[...new Set([...value.attachmentIds,...value.activeAttachmentIds])]}} : {}),
+    ...(value.standardConsent ? {standardConsent:value.standardConsent} : {}),
   });
 }
 

@@ -29,7 +29,7 @@ IDENTIFIER = r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
 UUID_WIRE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 ToolName = Literal["hr.read_context", "hr.submit_result", "hr.confirm_standard"]
 ResultSchemaId = Literal["hr.analysis.v1", "hr.standard-proposal.v1", "hr.candidate-analysis.v1"]
-ResourceKind = Literal["official_position", "confirmed_standard", "material", "intelligence"]
+ResourceKind = Literal["official_position", "confirmed_standard", "material", "intelligence", "candidate"]
 
 
 class V6ContractError(ValueError):
@@ -222,7 +222,7 @@ class HrReadContextRequest(StrictValue):
 
     @model_validator(mode="after")
     def _material_identity(self):
-        if self.resource_kind == "material" and self.resource_id is None:
+        if self.resource_kind in {"material","candidate"} and self.resource_id is None:
             raise ValueError("material identity required")
         return self
 

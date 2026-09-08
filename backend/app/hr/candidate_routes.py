@@ -453,37 +453,6 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
         )
         return {"items": [_analysis(item) for item in records]}
 
-    @router.post(
-        "/api/hr/position-candidates/{position_candidate_id}/analyses",
-        status_code=201,
-    )
-    async def add_analysis(
-        body: AnalysisBody,
-        request: Request,
-        position_candidate_id: Annotated[UUID, Path()],
-        idempotency_key: Annotated[
-            str | None, Header(alias="Idempotency-Key")
-        ] = None,
-    ):
-        command = _command(
-            CreateCandidateAnalysis,
-            owner_id=await owner(request, writable=True),
-            position_candidate_id=position_candidate_id,
-            context_version_id=body.context_version_id,
-            document_ids=body.document_ids,
-            feedback_ids=body.feedback_ids,
-            analysis_kind=body.analysis_kind,
-            client_request_id=_request_id(idempotency_key),
-            result=body.result,
-            evidence=body.evidence,
-            unknowns=body.unknowns,
-            conflicts=body.conflicts,
-            verification_questions=body.verification_questions,
-            agent_version=body.agent_version,
-            model_version=body.model_version,
-        )
-        return _analysis(await call(service.add_analysis, command))
-
     @router.get("/api/hr/position-candidates/{position_candidate_id}/feedback")
     async def list_feedback(
         request: Request,
@@ -518,29 +487,5 @@ def build_candidate_router(service, require_hr_access) -> APIRouter:
             client_request_id=_request_id(idempotency_key),
         )
         return _feedback(await call(service.append_feedback, command))
-
-    @router.post(
-        "/api/hr/positions/{position_id}/candidate-comparisons",
-        status_code=201,
-    )
-    async def compare_candidates(
-        body: ComparisonBody,
-        request: Request,
-        position_id: Annotated[UUID, Path()],
-        idempotency_key: Annotated[
-            str | None, Header(alias="Idempotency-Key")
-        ] = None,
-    ):
-        command = _command(
-            ComparePositionCandidates,
-            owner_id=await owner(request, writable=True),
-            position_id=position_id,
-            position_candidate_ids=body.position_candidate_ids,
-            context_version_id=body.context_version_id,
-            client_request_id=_request_id(idempotency_key),
-            agent_version=body.agent_version,
-            model_version=body.model_version,
-        )
-        return _analysis(await call(service.compare, command))
 
     return router

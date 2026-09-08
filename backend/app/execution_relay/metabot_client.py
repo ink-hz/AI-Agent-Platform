@@ -242,9 +242,10 @@ class MetaBotClient:
         from .readiness_v5 import parse_service
 
         port, secret = self._runtime_map.port_for("hr-bot"), self._bearer_secret
+        version = 'v6' if os.environ.get('PLATFORM_WORKER_HR_V6_ENABLED')=='1' else 'v5'
         async with (
             httpx.AsyncClient(timeout=3, follow_redirects=False, trust_env=False) as client,
-            client.stream("GET", f"http://127.0.0.1:{port}/api/core-chat/v5/readiness",
+            client.stream("GET", f"http://127.0.0.1:{port}/api/core-chat/{version}/readiness",
                           headers={"authorization": f"Bearer {secret}"}) as response,
         ):
             if response.status_code != 200:
@@ -395,10 +396,10 @@ class MetaBotClient:
 
     def start_v5_run(self, command):
         from .acceptance_v5 import parse_v5_acceptance
-        from .contracts_v5 import parse_v5_command
+        from .core_contract import parse_core_command
 
         try:
-            parsed = parse_v5_command(command)
+            parsed = parse_core_command(command)
             if parsed.target_bot != "hr-bot" or not self._bearer_secret:
                 raise ValueError
             port = self._runtime_map.port_for("hr-bot")
@@ -413,10 +414,10 @@ class MetaBotClient:
             raise MetaBotClientError(_REQUEST_FAILED) from None
 
     def recover_v5_run(self, command, stop):
-        from .contracts_v5 import parse_v5_command
+        from .core_contract import parse_core_command
         from .recovery_v5 import parse_observation
         try:
-            parsed = parse_v5_command(command)
+            parsed = parse_core_command(command)
             if parsed.target_bot != "hr-bot" or not self._bearer_secret or type(stop) is not bool:
                 raise ValueError
             port = self._runtime_map.port_for("hr-bot")

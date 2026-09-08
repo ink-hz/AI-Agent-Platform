@@ -460,7 +460,7 @@ class ConversationRepository:
                 row["encryption_key_version"],
             ),
         )
-        if "text" not in value or set(value)-{"text", "user_selected_resources", "standard_consent"} or not isinstance(value["text"], str):
+        if "text" not in value or set(value)-{"text", "user_selected_resources", "standard_consent", "trusted_channel_origin"} or not isinstance(value["text"], str):
             raise ConversationRepositoryError()
         from .conversation_models import normalize_knowledge_selections
         selections = normalize_knowledge_selections(value.get("user_selected_resources", ()))
@@ -499,6 +499,7 @@ class ConversationRepository:
             content=value["text"],
             user_selected_resources=selections,
             standard_consent=consent,
+            trusted_channel_origin=value.get("trusted_channel_origin"),
             input_attachments=inputs,
             output_attachments=outputs,
             active_attachment_ids=active,
@@ -604,7 +605,8 @@ class ConversationRepository:
             raise ConversationRepositoryError()
         message_record = self._message_from_row(message, cursor)
         if (
-            message_record.standard_consent != submission.standard_consent
+            message_record.trusted_channel_origin != submission.trusted_channel_origin
+            or message_record.standard_consent != submission.standard_consent
             or message_record.user_selected_resources != submission.user_selected_resources
             or message_record.content != submission.text
             or tuple(item.attachment_id for item in message_record.input_attachments)
@@ -756,7 +758,8 @@ class ConversationRepository:
         sealed = self.content_codec.seal_json(
             message_subject(conversation_id, message_id),
             {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {}),
-             **({"standard_consent": submission.standard_consent.model_dump(mode="json", by_alias=True)} if submission.standard_consent else {})}
+             **({"standard_consent": submission.standard_consent.model_dump(mode="json", by_alias=True)} if submission.standard_consent else {}),
+             **({"trusted_channel_origin":submission.trusted_channel_origin} if submission.trusted_channel_origin else {})}
         )
         message_row = cursor.execute(
             "insert into platform_control.conversation_messages "
@@ -860,7 +863,8 @@ class ConversationRepository:
         sealed = self.content_codec.seal_json(
             message_subject(conversation_id, message_id),
             {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {}),
-             **({"standard_consent": submission.standard_consent.model_dump(mode="json", by_alias=True)} if submission.standard_consent else {})}
+             **({"standard_consent": submission.standard_consent.model_dump(mode="json", by_alias=True)} if submission.standard_consent else {}),
+             **({"trusted_channel_origin":submission.trusted_channel_origin} if submission.trusted_channel_origin else {})}
         )
         message_row = cursor.execute(
             "insert into platform_control.conversation_messages "
@@ -1463,6 +1467,7 @@ class ConversationRepository:
                     source_record.active_attachment_ids,
                     user_selected_resources=source_record.user_selected_resources,
                     standard_consent=source_record.standard_consent,
+                    trusted_channel_origin=source_record.trusted_channel_origin,
                     **scope_options,
                 )
                 existing = cursor.execute(

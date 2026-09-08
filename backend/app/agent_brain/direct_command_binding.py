@@ -30,6 +30,7 @@ class FrozenInput:
     run_id: UUID | None = None
     input_grants: tuple[dict, ...] = ()
     output_grant: dict | None = None
+    hr_v6: dict | None = None
 
 
 def principal_reference(owner_id: UUID) -> str:
@@ -102,6 +103,15 @@ class DirectCommandBindingRepository:
             "executorId": str(lease.executor_id),
             "leaseEpoch": lease.lease_epoch,
         }
+        connection.execute(
+            "update platform_control.direct_command_bindings set transport_worker_id=%s where attempt_id=%s",
+            (worker_id,lease.attempt_id))
+        if wrapper["command"]["contractVersion"] == "core_chat_collaboration_v6":
+            from app.hr.tool_service import HrToolService
+            grant = transport.get("businessToolGrant")
+            if grant is None or transport.get("businessToolLeaseEpoch") != lease.lease_epoch:
+                grant=HrToolService(self.relay).issue_grant(connection,lease.attempt_id,worker_id,lease.lease_epoch).model_dump(mode="json",by_alias=True)
+            transport.update(businessToolGrant=grant,businessToolLeaseEpoch=lease.lease_epoch)
         wrapper.update(
             format="hr_frozen_command_v3" if "materials" in wrapper else "hr_frozen_command_v2",
             transport=transport,
@@ -169,6 +179,7 @@ class DirectCommandBindingRepository:
                             event_callback_url=f"{transport['callbackOrigin']}/callbacks/{binding.run_id}/{transport['callbackToken']}",
                             input_attachment_grants=self.materials(row)["inputAttachmentGrants"],
                             output_write_grant=self.materials(row)["outputWriteGrant"],
+                            business_tool_grant=transport.get("businessToolGrant"),
                         )
                         return {
                             "version": "hr_transport_handoff_v1",
@@ -202,6 +213,7 @@ class DirectCommandBindingRepository:
                 event_callback_url=f"{transport['callbackOrigin']}/callbacks/{run_id}/{transport['callbackToken']}",
                 input_attachment_grants=self.materials(row)["inputAttachmentGrants"],
                 output_write_grant=self.materials(row)["outputWriteGrant"],
+                business_tool_grant=transport.get("businessToolGrant"),
             )
             acceptance = parse_v5_acceptance(value, command)
             self.record_acceptance(lease, acceptance, connection=connection)
@@ -345,7 +357,8 @@ class DirectCommandBindingRepository:
         principal = principal_reference(c["owner_internal_user_id"])
         frozen = parse_frozen_command(
             {
-                "contractVersion": "core_chat_collaboration_v5",
+                "contractVersion": "core_chat_collaboration_v6" if frozen_input.hr_v6 else "core_chat_collaboration_v5",
+                **(frozen_input.hr_v6 or {}),
                 "runId": str(run_id),
                 "commandId": str(command_id),
                 "attemptId": str(lease.attempt_id),
@@ -358,7 +371,7 @@ class DirectCommandBindingRepository:
                 "principalRef": principal,
                 "targetBot": "hr-bot",
                 "prompt": frozen_input.prompt,
-                "contextMode": "frozen_prompt",
+                "contextMode": "frozen_intent_with_tools" if frozen_input.hr_v6 else "frozen_prompt",
                 "contextHash": frozen_input.context_hash,
                 "taskSessionId": f"platform:{c['conversation_id']}:hr-bot",
                 "resultMode": "public_markdown",
@@ -557,6 +570,7 @@ class DirectCommandBindingRepository:
                     "executorId",
                     "leaseEpoch",
                     "acknowledgedEpoch",
+                    *( ("businessToolGrant","businessToolLeaseEpoch") if wrapper["command"]["contractVersion"]=="core_chat_collaboration_v6" else () ),
                 }
                 or type(transport["callbackToken"]) is not str
                 or re.fullmatch(r"[A-Za-z0-9_-]{43}", transport["callbackToken"])

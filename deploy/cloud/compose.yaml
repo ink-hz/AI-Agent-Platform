@@ -80,6 +80,11 @@ services:
       PLATFORM_EXECUTION_RELAY_ENABLED: "1"
       PLATFORM_DIRECT_AGENT_ENABLED: "${PLATFORM_DIRECT_AGENT_ENABLED:-0}"
       PLATFORM_HR_WEB_WORKER_ENABLED: "${PLATFORM_HR_WEB_WORKER_ENABLED:-0}"
+      PLATFORM_HR_ROLE_PACKAGE_ROOT: /data/agent-platform/hr-role-packages
+      PLATFORM_HR_ROLE_PACKAGE_COMMIT: "${PLATFORM_HR_ROLE_PACKAGE_COMMIT:-}"
+      PLATFORM_HR_KNOWLEDGE_ROOT: "${PLATFORM_HR_KNOWLEDGE_ROOT:-}"
+      PLATFORM_HR_KNOWLEDGE_AGENT_ROOT: "${PLATFORM_HR_KNOWLEDGE_AGENT_ROOT:-}"
+      PLATFORM_HR_KNOWLEDGE_COMMIT: "${PLATFORM_HR_KNOWLEDGE_COMMIT:-}"
       PLATFORM_AGENT_BRAIN_ENABLED: "${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
       PLATFORM_AGENT_BRAIN_V2_ENABLED: "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
       PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/secrets/content-encryption-keyring
@@ -109,6 +114,8 @@ services:
     volumes: &platform-api-volumes
       - platform-api-secrets:/run/secrets:ro
       - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro
+      - /data/orbbec-agent-platform/hr-role-packages:/data/agent-platform/hr-role-packages:ro
+      - /data/orbbec-agent-platform/hr-knowledge:/data/agent-platform/hr-knowledge:ro
       - type: bind
         source: /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
         target: /run/office-recipient/platform-office-recipient-bearer

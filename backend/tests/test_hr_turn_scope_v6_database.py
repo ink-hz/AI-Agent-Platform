@@ -17,12 +17,10 @@ from app.execution_relay.contracts_v6 import HrTurnScope
 @pytest.fixture(scope='module')
 def scoped_database(control_database):
     env = control_database['environments']['production']
-    sql = (Path(__file__).parents[1] / 'control_migrations/pending/hr_role_tools_v6.sql').read_text()
     with psycopg.connect(env['admin']) as connection:
         connection.execute('set role platform_control_owner')
         for migration in sorted((Path(__file__).parents[1] / 'control_migrations/hr_web').glob('*.sql')):
             connection.execute(migration.read_text())
-        connection.execute(sql)
     return env
 
 

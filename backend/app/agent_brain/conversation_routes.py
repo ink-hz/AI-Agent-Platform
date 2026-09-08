@@ -830,10 +830,8 @@ def build_conversation_router(
             raise HTTPException(422, "conversation request invalid", headers=_NO_STORE)
         if direct_agent_id is not None:
             await require_direct_agent(context.internal_user_id, direct_agent_id)
-        if (body.position_id is not None or body.position_draft_id is not None) and not callable(
-            getattr(hr_position_scope, "bind_new_conversation_locked", None)
-        ):
-            raise HTTPException(503, "HR position draft scope unavailable", headers=_NO_STORE)
+        if body.position_id is not None or body.position_draft_id is not None:
+            raise HTTPException(410, "Legacy HR scope retired; use per-turn scope", headers=_NO_STORE)
         try:
             result = await asyncio.to_thread(
                 commands.start,

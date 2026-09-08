@@ -345,54 +345,6 @@ def build_position_intelligence_router(service, require_hr_access) -> APIRouter:
         records = await call(service.history, owner_id, position_id)
         return {"items": [_context(record) for record in records]}
 
-    @router.post("/api/hr/positions/{position_id}/context/drafts")
-    async def create_context_draft(
-        body: CreateContextDraftBody,
-        request: Request,
-        position_id: Annotated[UUID, Path()],
-        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-    ):
-        owner_id = await owner(request, writable=True)
-        values = body.model_dump()
-        values["source_material_attachment_ids"] = tuple(
-            values["source_material_attachment_ids"]
-        )
-        record = await call(
-            service.create_draft,
-            owner_id=owner_id,
-            position_id=position_id,
-            request_id=_request_id(idempotency_key),
-            created_by=owner_id,
-            **values,
-        )
-        return _context(record)
-
-    @router.post(
-        "/api/hr/positions/{position_id}/context/drafts/{draft_context_version_id}/confirm"
-    )
-    async def confirm_context_modules(
-        body: ConfirmContextModulesBody,
-        request: Request,
-        position_id: Annotated[UUID, Path()],
-        draft_context_version_id: Annotated[UUID, Path()],
-        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-    ):
-        owner_id = await owner(request, writable=True)
-        record = await call(
-            service.confirm_modules,
-            owner_id=owner_id,
-            position_id=position_id,
-            draft_context_version_id=draft_context_version_id,
-            request_id=_request_id(idempotency_key),
-            expected_current_context_version_id=(
-                body.expected_current_context_version_id
-            ),
-            expected_draft_row_version=body.expected_draft_row_version,
-            module_names=tuple(body.module_names),
-            confirmed_by=owner_id,
-        )
-        return _context(record)
-
     @router.get("/api/hr/positions/{position_id}/context/compare")
     async def compare_contexts(
         request: Request,

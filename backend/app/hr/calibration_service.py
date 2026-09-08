@@ -24,7 +24,7 @@ class HrCalibrationService:
         message = self.tools.codec.unseal_json(message_subject(scope.conversation_id,row['message_id']),
             SealedContent(bytes(row['content_ciphertext']),row['encryption_key_version']))
         consent = normalize_consent(message.get('standard_consent'))
-        if consent is None or message['text'] != consent.message_text() or any((
+        if consent is None or not consent.accepts_text(message['text']) or any((
             consent.proposal_result_id != request.proposal_result_id,
             consent.proposal_content_sha256 != request.proposal_content_sha256,
             consent.expected_context_version_id != request.expected_context_version_id,

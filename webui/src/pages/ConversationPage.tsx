@@ -39,6 +39,7 @@ import type {
   ConversationTaskDetail,
   ConversationAttachment,
   HrKnowledgeSelection,
+  HrTurnScope, HrComposerDraft, HrStandardConsent,
   TurnSubmission,
   TurnSnapshot,
 } from "../conversationTypes";
@@ -187,6 +188,7 @@ export function ConversationPage({
   onPositionMaterialChange,
   composerTools,
   threadSupplement,
+  turnScope, composerDraft, renderTurnContext,
   materialsPresentation = "sidebar",
   materialsOpen,
   onMaterialsOpenChange,
@@ -210,6 +212,9 @@ export function ConversationPage({
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
   composerTools?: ReactNode;
   threadSupplement?: ReactNode;
+  turnScope?:HrTurnScope;
+  composerDraft?:HrComposerDraft;
+  renderTurnContext?:(turnId:string)=>ReactNode;
   materialsPresentation?: "sidebar" | "drawer" | "hidden";
   materialsOpen?: boolean;
   onMaterialsOpenChange?: (open: boolean) => void;
@@ -231,6 +236,9 @@ export function ConversationPage({
   const messagesRef = useRef<ConversationMessage[]>([]);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [text, setText] = useState("");
+  const [standardConsent,setStandardConsent]=useState<HrStandardConsent|undefined>();
+  useEffect(()=>{if(composerDraft){setText(composerDraft.text);setStandardConsent(composerDraft.standardConsent);}},[composerDraft]);
+  useEffect(()=>{if(composerDraft?.positionId!==turnScope?.positionId)setStandardConsent(undefined);},[turnScope?.positionId,composerDraft]);
   const [loading, setLoading] = useState(true);
   const [loadFailure, setLoadFailure] = useState(false);
   const [connection, setConnection] = useState<"connecting" | "live" | "offline">("connecting");
@@ -563,6 +571,8 @@ export function ConversationPage({
       text: normalized,
       attachmentIds: [...newAttachmentIds],
       activeAttachmentIds: [...activeAttachmentIds],
+      ...(turnScope ? {scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...newAttachmentIds,...activeAttachmentIds])]}} : {}),
+      ...(standardConsent && normalized===`确认所选的 ${standardConsent.selectedChangeIds.length} 项岗位标准。` ? {standardConsent} : {}),
       ...(selectedKnowledgeResources.length ? { userSelectedResources: selectedKnowledgeResources } : {}),
     };
     const submissionKey = JSON.stringify(submissionInput);
@@ -572,7 +582,7 @@ export function ConversationPage({
         text: submissionKey,
         submission: client.createMessageSubmission(
           conversationId,
-          attachmentLimits || newAttachmentIds.length > 0 || activeAttachmentIds.length > 0 || selectedKnowledgeResources.length > 0 ? submissionInput : normalized,
+          attachmentLimits || turnScope || newAttachmentIds.length > 0 || activeAttachmentIds.length > 0 || selectedKnowledgeResources.length > 0 ? submissionInput : normalized,
           account.csrf_token,
         ),
       };
@@ -586,7 +596,7 @@ export function ConversationPage({
       if (controller.signal.aborted) return;
       if (expectedAgentId === "hr-bot") jumpToLatest();
       retained.current = null;
-      setText("");
+      setText(""); setStandardConsent(undefined);
       if (selectedKnowledgeResources.length) onKnowledgeResourcesSubmitted?.();
       setNewAttachmentIds([]); setUploadQueue([]);
       mergeIntoMessages([result.message]);
@@ -798,7 +808,7 @@ export function ConversationPage({
       onRetry={readOnly ? undefined : (message) => void resumeSearch(message)}
       renderAfterUserTurn={(turnId) => {
         const workroom = workrooms.get(turnId);
-        return workroom ? <MultiAgentWorkroom
+        return <>{renderTurnContext?.(turnId)}{workroom ? <MultiAgentWorkroom
           loadTaskDetail={loadTaskDetail}
           onConfirmAction={readOnly ? undefined : (actionId, actionDigest) => client.confirmAction(
             conversationId, actionId, actionDigest, account.csrf_token,
@@ -807,7 +817,7 @@ export function ConversationPage({
             conversationId, actionId, account.csrf_token,
           )}
           workroom={workroom}
-        /> : null;
+        /> : null}</>;
       }}
     />
     {group.answer && <article className="conversation-message conversation-message-assistant" aria-label={`${assistantLabel} 回答`}>
@@ -873,7 +883,7 @@ export function ConversationPage({
               : undefined}
       label={active && detail.conversation.mode === "brain" ? "补充当前任务" : "继续对话"}
       onChange={(value) => {
-        setText(value); setSendFailure(false);
+        setText(value); setStandardConsent(undefined); setSendFailure(false);
         if (retained.current?.text !== value.trim()) retained.current = null;
       }}
       onSubmit={() => void send()}

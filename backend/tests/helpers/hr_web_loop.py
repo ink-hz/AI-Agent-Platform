@@ -7,6 +7,8 @@ replacement in-memory conversation service.
 
 import asyncio
 import multiprocessing
+import os
+from pathlib import Path
 import signal
 import socket
 import threading
@@ -343,6 +345,8 @@ class WebLoop:
                 "drop table if exists execution_worker.v5_callback_events,execution_worker.v5_callback_runs,execution_worker.v5_callback_metadata"
             )
             connection.execute(MIGRATION.read_text())
+            if os.environ.get('PLATFORM_WORKER_HR_V6_ENABLED')=='1':
+                connection.execute((Path(__file__).parents[2]/'app/execution_relay/pending/worker_v6_tools.sql').read_text())
         self.worker_id = "web-loop-" + uuid4().hex
         key = Ed25519PrivateKey.generate()
         with psycopg.connect(self.environment["admin"]) as connection:

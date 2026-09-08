@@ -3,8 +3,6 @@ import type {
   HrCandidate, HrCandidateAnalysisKind, HrCandidateAnalysisVersion, HrCandidateDocument,
   HrCandidateDraft, HrConfirmedCandidate, HrContextComparison, HrContextVersion,
   HrDownloadTicket, HrHumanFeedback, HrPositionCandidate, HrPositionResources,
-  HrCandidateTaskKind, HrPositionTaskKind, HrStartableTaskKind, HrTaskKind, HrTaskRecord,
-  HrTaskReference,
   HrCandidateInterviewPlanResult, HrCandidateInterviewQuestion, HrCandidateMatchResult,
   HrOfficialPositionDownload, HrOfficialPositionVersion,
 } from "./hrR12Types";
@@ -14,7 +12,6 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const DRAFT_STATES = new Set(["pending", "processing", "ready", "failed", "confirmed", "dismissed"]);
 const CONTEXT_STATES = new Set(["draft", "confirmed", "superseded"]);
 const ANALYSIS_KINDS = new Set(["resume_extract", "match", "candidate_interview_plan", "comparison"]);
-const TASK_KINDS = new Set(["jd", "jr", "talent_profile", "sourcing_strategy", "position_interview_plan", "candidate_match", "candidate_interview_plan", "candidate_comparison"]);
 
 export class HrR12ApiError extends Error {
   constructor(public readonly status: number, public readonly detail: unknown = null) {
@@ -148,73 +145,9 @@ function feedback(value: unknown): HrHumanFeedback {
   const raw = object(value); if (!["accepted", "rejected", "correction"].includes(String(raw.feedback_kind))) throw new Error("HR R1.2 feedback response invalid");
   return { feedbackId: identifier(raw.feedback_id), positionCandidateId: identifier(raw.position_candidate_id), analysisVersionId: identifier(raw.analysis_version_id), feedbackKind: raw.feedback_kind as HrHumanFeedback["feedbackKind"], conclusionKey: string(raw.conclusion_key), correction: raw.correction === null ? null : string(raw.correction), reason: string(raw.reason), createdAt: string(raw.created_at) };
 }
-function task(value: unknown, requireCandidateBinding = false): HrTaskRecord {
-  const raw = object(value);
-  if (!["accepted", "running", "completed", "failed"].includes(String(raw.status)) || !TASK_KINDS.has(String(raw.task_kind))) throw new Error("HR R1.2 task response invalid");
-  const positionCandidateId = raw.position_candidate_id == null ? null : identifier(raw.position_candidate_id);
-  const candidateId = raw.candidate_id == null ? null : identifier(raw.candidate_id);
-  const conversationId = raw.conversation_id == null ? null : identifier(raw.conversation_id);
-  const turnId = raw.turn_id == null ? null : identifier(raw.turn_id);
-  if ((conversationId === null) !== (turnId === null)) throw new Error("HR R1.2 task binding invalid");
-  if (requireCandidateBinding && (!positionCandidateId || !candidateId)) throw new Error("HR R1.2 task binding invalid");
-  const references = raw.references === undefined ? [] : raw.references;
-  if (!Array.isArray(references)) throw new Error("HR R1.2 task references invalid");
-  const parsedReferences = references.map((value) => {
-    const reference = object(value);
-    if (!["official_position", "confirmed_context", "position_material", "candidate_snapshot", "panorama_insight", "intelligence_bundle"].includes(String(reference.source_type))) throw new Error("HR R1.2 task references invalid");
-    return {
-      sourceType: reference.source_type as HrTaskReference["sourceType"],
-      sourceId: identifier(reference.source_id),
-      displayLabel: string(reference.display_label),
-      version: reference.version == null ? null : string(reference.version),
-      selectedReason: string(reference.selected_reason),
-      freshness: reference.freshness == null ? null : string(reference.freshness),
-      ...(reference.source_url == null ? {} : { sourceUrl: string(reference.source_url) }),
-      ...(reference.evidence_sha256 == null ? {} : { evidenceSha256: string(reference.evidence_sha256) }),
-    };
-  });
-  return {
-    taskId: string(raw.task_id),
-    status: raw.status as HrTaskRecord["status"],
-    taskKind: raw.task_kind as HrTaskKind,
-    error: raw.error === undefined || raw.error === null ? null : string(raw.error),
-    conversationId, turnId, positionCandidateId, candidateId, references: parsedReferences,
-  };
-}
-
 export interface ConfirmCandidateInput { expectedRowVersion: number; contextVersionId: string; stableName: string; confirmedFacts: Record<string, unknown>; mergeCandidateId: string | null; }
 export interface CandidateAnalysisInput { contextVersionId: string; documentIds: string[]; analysisKind: Exclude<HrCandidateAnalysisKind, "comparison">; result: Record<string, unknown>; evidence: Record<string, unknown>[]; unknowns: string[]; conflicts: string[]; verificationQuestions: string[]; agentVersion: string; modelVersion: string; }
 export interface HumanFeedbackInput { analysisVersionId: string; feedbackKind: HrHumanFeedback["feedbackKind"]; conclusionKey: string; correction: string | null; reason: string; }
-interface BaseTaskInput { materialIds?: string[]; conversationId?: string; }
-export interface PositionTaskInput extends BaseTaskInput {
-  contextVersionId?: string; candidate?: never;
-}
-export interface CandidateTaskInput extends BaseTaskInput {
-  contextVersionId: string;
-  candidate: { candidateId: string; positionCandidateId: string };
-}
-export type StartTaskInput<K extends HrStartableTaskKind> = K extends HrCandidateTaskKind
-  ? CandidateTaskInput : PositionTaskInput;
-
-function taskBody<K extends HrStartableTaskKind>(taskKind: K, input: StartTaskInput<K>) {
-  const candidateKind = taskKind === "candidate_match" || taskKind === "candidate_interview_plan";
-  const candidate = "candidate" in input ? input.candidate : undefined;
-  if (candidateKind && (!candidate || !input.contextVersionId)) throw new Error("candidate task envelope invalid");
-  if (!candidateKind && candidate) throw new Error("position task envelope invalid");
-  return {
-    task_kind: taskKind,
-    context_version_id: input.contextVersionId ? identifier(input.contextVersionId) : null,
-    candidate_id: candidate ? identifier(candidate.candidateId) : null,
-    position_candidate_id: candidate ? identifier(candidate.positionCandidateId) : null,
-    material_ids: (input.materialIds ?? []).map(identifier),
-    conversation_id: input.conversationId ? identifier(input.conversationId) : null,
-  };
-}
-
-function startableTaskKind(value: HrTaskKind): asserts value is HrStartableTaskKind {
-  if (value === "candidate_comparison") throw new Error("task kind invalid");
-}
-
 export function createHrR12Api(csrfToken: string) {
   const positionPath = (positionId: string, suffix = "") => `/api/hr/positions/${encodeURIComponent(identifier(positionId))}${suffix}`;
   const write = (path: string, requestId: string, body: unknown, signal?: AbortSignal) => request(path, mutation(csrfToken, requestId, body, signal));
@@ -242,7 +175,6 @@ export function createHrR12Api(csrfToken: string) {
       return { current: summary.current === null ? null : contextVersion(summary.current), drafts: summary.drafts.map(contextVersion), history: items(history).map(contextVersion) };
     },
     compareContext(positionId: string, leftId: string, rightId: string, signal?: AbortSignal): Promise<HrContextComparison> { const query = new URLSearchParams({ left: identifier(leftId), right: identifier(rightId) }); return request(positionPath(positionId, `/context/compare?${query}`), { signal }).then((value) => { const raw = object(value); return { leftVersionId: identifier(raw.left_version_id), rightVersionId: identifier(raw.right_version_id), changedModules: stringList(raw.changed_modules), left: object(raw.left), right: object(raw.right) }; }); },
-    confirmContext(positionId: string, contextVersionId: string, currentContextVersionId: string | null, moduleNames: string[], rowVersion: number, requestId: string, signal?: AbortSignal): Promise<HrContextVersion> { return write(positionPath(positionId, `/context/drafts/${encodeURIComponent(identifier(contextVersionId))}/confirm`), requestId, { expected_current_context_version_id: currentContextVersionId === null ? null : identifier(currentContextVersionId), expected_draft_row_version: rowVersion, module_names: moduleNames }, signal).then(contextVersion); },
     createCandidateDraftBatch(positionId: string, attachmentIds: string[], requestId: string, signal?: AbortSignal): Promise<{ batchId: string; items: HrCandidateDraft[] }> { return write(positionPath(positionId, "/candidate-drafts:batch"), requestId, { attachment_ids: attachmentIds.map(identifier) }, signal).then((value) => { const raw = object(value); if (!Array.isArray(raw.items)) throw new Error("HR R1.2 candidate response invalid"); return { batchId: identifier(raw.batch_id), items: raw.items.map(draft) }; }); },
     candidateDrafts(positionId: string, signal?: AbortSignal): Promise<HrCandidateDraft[]> { return request(positionPath(positionId, "/candidate-drafts"), { signal }).then((value) => items(value).map(draft)); },
     retryDraft(draftId: string, expectedRowVersion: number, requestId: string, signal?: AbortSignal): Promise<HrCandidateDraft> { return write(`/api/hr/candidate-drafts/${encodeURIComponent(identifier(draftId))}:retry`, requestId, { expected_row_version: expectedRowVersion }, signal).then(draft); },
@@ -252,13 +184,8 @@ export function createHrR12Api(csrfToken: string) {
     candidateDocuments(candidateId: string, signal?: AbortSignal): Promise<HrCandidateDocument[]> { return request(`/api/hr/candidates/${encodeURIComponent(identifier(candidateId))}/documents`, { signal }).then((value) => items(value).map(document)); },
     downloadCandidateDocument(documentId: string, requestId: string, purpose: "preview" | "download" = "download", signal?: AbortSignal): Promise<HrDownloadTicket> { return write(`/api/hr/candidate-documents/${encodeURIComponent(identifier(documentId))}/ticket`, requestId, { purpose }, signal).then(ticket); },
     candidateAnalyses(positionCandidateId: string, signal?: AbortSignal): Promise<HrCandidateAnalysisVersion[]> { return request(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/analyses`, { signal }).then((value) => items(value).map(analysis)); },
-    createCandidateAnalysis(positionCandidateId: string, input: CandidateAnalysisInput, requestId: string, signal?: AbortSignal): Promise<HrCandidateAnalysisVersion> { return write(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/analyses`, requestId, { context_version_id: identifier(input.contextVersionId), document_ids: input.documentIds.map(identifier), analysis_kind: input.analysisKind, result: input.result, evidence: input.evidence, unknowns: input.unknowns, conflicts: input.conflicts, verification_questions: input.verificationQuestions, agent_version: input.agentVersion, model_version: input.modelVersion }, signal).then(analysis); },
     candidateFeedback(positionCandidateId: string, signal?: AbortSignal): Promise<HrHumanFeedback[]> { return request(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/feedback`, { signal }).then((value) => items(value).map(feedback)); },
     appendCandidateFeedback(positionCandidateId: string, input: HumanFeedbackInput, requestId: string, signal?: AbortSignal): Promise<HrHumanFeedback> { return write(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/feedback`, requestId, { analysis_version_id: identifier(input.analysisVersionId), feedback_kind: input.feedbackKind, conclusion_key: input.conclusionKey, correction: input.correction, reason: input.reason }, signal).then(feedback); },
-    compareCandidates(positionId: string, positionCandidateIds: string[], contextVersionId: string, requestId: string, signal?: AbortSignal): Promise<HrCandidateAnalysisVersion> { return write(positionPath(positionId, "/candidate-comparisons"), requestId, { position_candidate_ids: positionCandidateIds.map(identifier), context_version_id: identifier(contextVersionId), agent_version: "hr-r12", model_version: "platform" }, signal).then(analysis); },
-    startTask<K extends HrStartableTaskKind>(positionId: string, taskKind: K, requestId: string, input: StartTaskInput<K>, signal?: AbortSignal): Promise<HrTaskRecord> { startableTaskKind(taskKind); return write(positionPath(positionId, "/tasks"), requestId, taskBody(taskKind, input), signal).then(task); },
-    activeTasks(positionId: string, signal?: AbortSignal): Promise<HrTaskRecord[]> { return request(positionPath(positionId, "/tasks?status=active"), { signal }).then((value) => items(value).map((item) => task(item))); },
-    taskStatus(positionId: string, taskId: string, signal?: AbortSignal): Promise<HrTaskRecord> { return request(positionPath(positionId, `/tasks/${encodeURIComponent(identifier(taskId))}`), { signal }).then((value) => task(value, true)); },
   };
 }
 export type HrR12Api = ReturnType<typeof createHrR12Api>;

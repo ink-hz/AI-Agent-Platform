@@ -105,6 +105,8 @@ class Config:
     partner_callback_path: str
     control_plane: ControlPlaneConfig
     hr_web_worker_enabled: bool = False
+    hr_role_package_root: str = ""
+    hr_role_package_commit: str = ""
     hr_knowledge_root: str = ""
     hr_knowledge_agent_root: str = ""
     hr_knowledge_commit: str = ""
@@ -1015,11 +1017,15 @@ def load_config() -> Config:
         partner_callback_method=partner_callback_method,
         partner_callback_path=partner_callback_path,
         control_plane=_load_control_plane_config(),
+        hr_role_package_root=os.getenv("PLATFORM_HR_ROLE_PACKAGE_ROOT", "").strip(),
+        hr_role_package_commit=os.getenv("PLATFORM_HR_ROLE_PACKAGE_COMMIT", "").strip(),
         hr_knowledge_root=os.getenv("PLATFORM_HR_KNOWLEDGE_ROOT", "").strip(),
         hr_knowledge_agent_root=os.getenv("PLATFORM_HR_KNOWLEDGE_AGENT_ROOT", "").strip(),
         hr_knowledge_commit=os.getenv("PLATFORM_HR_KNOWLEDGE_COMMIT", "").strip(),
         hr_web_worker_enabled=_strict_flag("PLATFORM_HR_WEB_WORKER_ENABLED", "hr_web_worker_flag_invalid"),
     )
+    if config.hr_web_worker_enabled and (not config.hr_role_package_root or not re.fullmatch(r"[a-f0-9]{40}",config.hr_role_package_commit)):
+        raise RuntimeError("HR v6 requires its immutable role package")
     knowledge_settings = (config.hr_knowledge_root, config.hr_knowledge_agent_root, config.hr_knowledge_commit)
     if any(knowledge_settings) and not all(knowledge_settings):
         raise RuntimeError("HR knowledge configuration must include both roots and commit")

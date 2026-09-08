@@ -26,6 +26,9 @@ from .candidate_models import (
     CompleteCandidateDraft,
     FailCandidateDraft,
 )
+from app.agent_brain.conversation_models import ConversationTurnSubmission
+from app.execution_relay.contracts_v6 import HrTurnScope
+
 from .candidate_repository import (
     CandidateConflict,
     CandidateNotFound,
@@ -340,7 +343,9 @@ class CandidateParserSubmissionCoordinator:
         self._commands.start(
             selected.owner_id,
             selected.client_request_id,
-            _PARSER_PROMPT,
+            ConversationTurnSubmission(
+                _PARSER_PROMPT,hr_scope=HrTurnScope(
+                    positionId=None,positionCandidateIds=(),attachmentIds=(selected.attachment_id,))),
             mode="direct_agent",
             direct_agent_id="hr-bot",
         )

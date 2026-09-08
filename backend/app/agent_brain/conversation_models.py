@@ -92,6 +92,7 @@ class ConversationTurnSubmission:
     hr_scope: HrTurnScope | None = None
     method_selection: HrMethodSelection | None = None
     standard_consent: StandardConsent | None = None
+    trusted_channel_origin: dict[str,str] | None = field(default=None,repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "user_selected_resources", normalize_knowledge_selections(self.user_selected_resources))
@@ -116,7 +117,7 @@ class ConversationTurnSubmission:
         object.__setattr__(self, "method_selection", derived_method)
         if self.standard_consent is not None and (
             self.hr_scope is None or self.hr_scope.position_id is None
-            or self.text != self.standard_consent.message_text()
+            or not self.standard_consent.accepts_text(self.text)
         ):
             raise ValueError("Standard confirmation text or position changed")
         if not text and not attachment_ids:
@@ -134,7 +135,8 @@ def normalize_turn_submission(
             value.text, value.attachment_ids, value.active_attachment_ids,
             user_selected_resources=value.user_selected_resources,
             hr_scope=value.hr_scope, method_selection=value.method_selection,
-            standard_consent=value.standard_consent
+            standard_consent=value.standard_consent,
+            trusted_channel_origin=value.trusted_channel_origin,
         )
     if isinstance(value, str):
         return ConversationTurnSubmission(value)
@@ -224,6 +226,7 @@ class ConversationMessageRecord:
     result_delivery_status: Literal["pending", "completed", "failed"] | None = None
     user_selected_resources: tuple[dict[str, object], ...] = ()
     standard_consent: StandardConsent | None = None
+    trusted_channel_origin: dict[str,str] | None = field(default=None,repr=False)
 
 
 @dataclass(frozen=True)

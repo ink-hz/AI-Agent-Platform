@@ -19,7 +19,7 @@ import {
   type ConversationStartScope,
   type ConversationSubmission,
 } from "../../conversationApi";
-import type { Conversation, ConversationAttachment, ConversationPage, HrKnowledgeSelection, TurnSubmission } from "../../conversationTypes";
+import type { HrTurnScope, HrComposerDraft, Conversation, ConversationAttachment, ConversationPage, HrKnowledgeSelection, TurnSubmission } from "../../conversationTypes";
 import { ConversationPage as ConversationThread, type ConversationPageClient } from "../../pages/ConversationPage";
 import { workspaceLaunchPath } from "../../platform/workspaces";
 import { navigate } from "../../router";
@@ -49,6 +49,9 @@ export interface DirectAgentWorkspaceProps {
   layout?: "standard" | "focused";
   composerTools?: ReactNode | ((pending: boolean) => ReactNode);
   threadSupplement?: ReactNode;
+  turnScope?: HrTurnScope;
+  composerDraft?: HrComposerDraft;
+  renderTurnContext?: (turnId:string)=>ReactNode;
   initialDraftSnapshot?: DirectAgentDraftSnapshot;
   onDraftSnapshotChange?: (snapshot: DirectAgentDraftSnapshot) => void;
   onConversationSettled?: () => void;
@@ -111,6 +114,7 @@ export function DirectAgentWorkspace({
   layout = "standard",
   composerTools,
   threadSupplement,
+  turnScope, composerDraft, renderTurnContext,
   initialDraftSnapshot,
   onDraftSnapshotChange,
   onConversationSettled,
@@ -134,6 +138,7 @@ export function DirectAgentWorkspace({
   const [loadingMore, setLoadingMore] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [text, setText] = useState(() => initialDraftSnapshot?.text ?? "");
+  useEffect(()=>{ if (composerDraft && !conversationId) setText(composerDraft.text); },[composerDraft,conversationId]);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState(false);
   const [attachments, setAttachments] = useState<ConversationAttachment[]>(
@@ -241,8 +246,9 @@ export function DirectAgentWorkspace({
     const readyIds = attachments.filter((item) => item.state === "ready").map((item) => item.attachmentId);
     const uploadPending = uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state));
     if (!card || (!normalized && readyIds.length === 0) || uploadPending || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
-    const input: string | TurnSubmission = card.attachment_limits || selectedKnowledgeResources.length ? {
+    const input: string | TurnSubmission = card.attachment_limits || selectedKnowledgeResources.length || turnScope ? {
       text: normalized, attachmentIds: readyIds, activeAttachmentIds: readyIds,
+      ...(turnScope ? {scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...readyIds])]}} : {}),
       ...(selectedKnowledgeResources.length ? { userSelectedResources: selectedKnowledgeResources } : {}),
     } : normalized;
     const requestKey = JSON.stringify({ input, scope: newConversationScope ?? null });
@@ -337,6 +343,7 @@ export function DirectAgentWorkspace({
           onKnowledgeResourcesSubmitted={onKnowledgeResourcesSubmitted}
           messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
+          turnScope={turnScope} composerDraft={composerDraft} renderTurnContext={renderTurnContext}
           materialsPresentation={agentId === "hr-bot" ? "drawer" : layout === "focused" ? "hidden" : "sidebar"}
         />
         : <div className="agent-use-page"><div className="agent-direct-introduction">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}

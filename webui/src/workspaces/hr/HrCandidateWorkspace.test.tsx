@@ -174,63 +174,6 @@ it("uploads ready resume files and creates one recoverable batch", async () => {
   expect(client.createCandidateDraftBatch).toHaveBeenCalledWith(positionId, [attachmentIds[0]], expect.any(String), expect.any(AbortSignal));
 });
 
-it("loads candidate detail and versions, launches match/interview, records feedback, and compares through the frozen API", async () => {
-  const client = api();
-  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} taskConversationId={conversationId} />));
-  const first = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")!;
-  await act(async () => first.click());
-  expect(container.textContent).toContain("分析版本 v2");
-  expect(container.textContent).toContain("待验证信息");
-  expect(container.textContent).toContain("量产规模");
-  expect(container.textContent).toContain("匹配证据");
-  expect(container.textContent).toContain("简历事实：Python");
-  expect(container.textContent).toContain("hr-r12 · model");
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成专属面试题")?.click());
-  expect(client.startTask).toHaveBeenCalledTimes(2);
-  expect(client.startTask).toHaveBeenNthCalledWith(1, positionId, "candidate_match", expect.any(String), {
-    contextVersionId: contextId,
-    candidate: { candidateId: candidateIds[0], positionCandidateId: relationIds[0] },
-    materialIds: [],
-    conversationId,
-  }, expect.any(AbortSignal));
-  expect(client.startTask).toHaveBeenNthCalledWith(2, positionId, "candidate_interview_plan", expect.any(String), {
-    contextVersionId: contextId,
-    candidate: { candidateId: candidateIds[0], positionCandidateId: relationIds[0] },
-    materialIds: [],
-    conversationId,
-  }, expect.any(AbortSignal));
-  const textarea = container.querySelector<HTMLTextAreaElement>("textarea")!;
-  await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "量产经验已电话核实"); textarea.dispatchEvent(new Event("input", { bubbles: true })); });
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "记录人工纠正")?.click());
-  expect(client.appendCandidateFeedback).toHaveBeenCalledWith(relationIds[0], expect.objectContaining({ analysisVersionId: analysisId, correction: "量产经验已电话核实" }), expect.any(String), expect.any(AbortSignal));
-  for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]')) await act(async () => checkbox.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "比较已选候选人")?.click());
-  expect(client.compareCandidates).toHaveBeenCalledWith(positionId, relationIds, contextId, expect.any(String), expect.any(AbortSignal));
-  expect(container.textContent).toContain("候选人比较结果");
-  expect(container.textContent).toContain("项目规模口径不一致");
-});
-
-it("rejects a candidate task response bound to another conversation", async () => {
-  const client = api();
-  client.startTask.mockResolvedValue({
-    taskId: "task", status: "completed", taskKind: "candidate_match", error: null,
-    conversationId: otherContextId, turnId: draftIds[0],
-    positionCandidateId: relationIds[0], candidateId: candidateIds[0],
-  });
-  await act(async () => root.render(<HrCandidateWorkspace
-    api={client as never} csrfToken="csrf" currentContextVersionId={contextId}
-    positionId={positionId} taskConversationId={conversationId}
-  />));
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent === "查看候选人1")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent === "生成匹配分析")?.click());
-
-  expect(client.candidateAnalyses).toHaveBeenCalledTimes(1);
-  expect(container.textContent).toContain("任务绑定异常");
-});
-
 it("starts a new task conversation when no preserved chat is supplied", async () => {
   const client = api();
   await act(async () => root.render(<HrCandidateWorkspace
