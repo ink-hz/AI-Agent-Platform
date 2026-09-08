@@ -1,6 +1,6 @@
 # HR v6 交付记录
 
-2026-09-08：工程总装完成，发布准备中。不能据此称为生产已上线或回答质量已改善。
+2026-09-08 22:14 CST：三仓 v6 已上线，工程切换完成。尚无真实模型业务质量结论。
 
 ## 最终行为
 
@@ -25,4 +25,16 @@
 
 尚未提交生产模型消息，未做用户业务质量验收。没有同输入保留基线，未证实初始命令字节下降 50%；不能以工程机制或新提示词较短替代该数据。JD 刷新预算 60 秒、工具总等待 70 秒；真实官网首次耗时待观察。
 
-最终三仓版本、镜像、磁盘、迁移和 readiness 结果在实际切换后追加。当前生产仍为 Platform `6777d227a28c1548c6cdee480913b6f72818dde2` / HR MetaBot `6ddbdefffede245d48ec20b43ee487c7ff2c732c`。
+## 实际发布结果
+
+- Platform API / 独立 HR Worker / 本地 Signed Worker：`7bc7b042e18d47c180053eab307990a08baecde7`。发布前合并并保留已上线的公司情报版 `beeae7875eee47d29e82f4187cd10414d8398762`；新选材仍能带入按轮范围请求，账号切换、返回公司阅读、发送期间新增引用保留均经合并点组件检查。
+- HR MetaBot：`6b1ff78952ff90d83f82c737eaabaf05fcf77ea4`，运行 `dist/index.js`；MCP 编译入口在正式安装目录完成 initialize。Team：`36b932b01f11e893dcca16ac8162b392b84fbb8c`，role manifest hash `92786276c247fe4ee4c1224cfb3232455a0c126cf51b9e54138775c4a46462f7`。三仓已推送 master。
+- 正式 094 已应用，checksum `e742c86cb6f0e80b20c3f90e338c11fe4c968653140455bde57032422e3f1784`；临时 migrator owner 成员资格已撤销。旧任务/岗位包领取与草稿生产函数对 app 和 brain worker 均不可执行。Local Worker 原表增加三列，仅应用一次。
+- 最终本地认证 readiness HTTP 200；云端签名观测 `ready=true`、`core_chat_collaboration_v6`、三个工具、准确 Team commit/hash。API health `ok`，HR Worker 运行，发布前后 HR 在途均 0，平台确认版本仍 0 行；没有伪造终态或重放历史任务。
+- 公网页面资源：`index-DJaUEm9z.js` / `index-D3IZxH9U.css`；HTML 匹配，JS HTTP 200。没有另做浏览器业务验收。
+- 切换修正：完整配置不在 Git 中，已原样保留上一 HR release 的私有 `.env` 与 `runtime-contract.json`，依赖链接使用上一实际 release 的依赖根；云端补齐 knowledge 两个 root 配置。首次启动被配置门禁拒绝，修正后才记录上线成功；未禁用归档/Flywheel，未变更模型、飞书 app 或其他 Bot。
+- 云端除 API/HR Worker 外容器 ID 与镜像均未改变；非 HR PM2 进程 PID/重启次数一致，Nginx hash 一致。共享 Signed Worker 按本次 v6 必要范围重启并保持原持久状态。
+- 磁盘记录：根盘最终可用 `39,912,714,240` 字节、61%；与发布元数据中的 preflight 比净增 `1,208,320` 字节。/data 最终可用 `71,781,330,944` 字节，29%；包含 `236,185,805` 字节 control 数据库备份。保留当前＋`beeae78`、`6777d22` 两版回滚源；旧源归档遵守 10 版/30 天。没有删除其他服务仍引用的镜像或业务数据。
+- 发布锁释放，`/data/staging/orbbec-agent-platform/3e7d86c1df1143c78a4dd72575c4c2e7` 已清理。完整证据在 `/data/orbbec-agent-platform/release-metadata/7bc7b042e18d47c180053eab307990a08baecde7/`；本地 HR 配置和回退记录在 `/Users/agentops/AgentRuntime/instances/hr-bot/hr-web-v6/`。
+
+文档提交不需要再次部署上述版本。用户直接使用主对话验证岗位相关性、证据和建议质量。
