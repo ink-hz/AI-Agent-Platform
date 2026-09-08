@@ -180,11 +180,24 @@ def test_company_api_empty_unknown_validation_and_auth_order() -> None:
     assert client.get("/api/hr/panorama/companies/missing").status_code == 404
     assert client.get("/api/hr/panorama/companies/alpha/jobs?offset=-1").status_code == 422
     assert client.get("/api/hr/panorama/companies/alpha/jobs?limit=101").status_code == 422
+    assert client.get("/api/hr/panorama/companies/alpha/jobs?offset=100001").status_code == 422
     assert client.get("/api/hr/panorama/companies/alpha/jobs?status=deleted").status_code == 422
     calls = list(repository.calls)
     allowed = False
     assert client.get("/api/hr/panorama/companies/alpha/jobs").status_code == 403
     assert repository.calls == calls
+
+
+def test_router_rejects_service_missing_company_contract_at_startup() -> None:
+    class LegacyOnlyService:
+        def current_report(self): pass
+        def list_reports(self): pass
+        def report(self): pass
+        def document(self): pass
+        def evidence_file(self): pass
+
+    with pytest.raises(ValueError, match="panorama service required"):
+        build_panorama_router(LegacyOnlyService(), lambda *_args, **_kwargs: uuid4())
 
 
 class Result:
@@ -216,6 +229,23 @@ def test_repository_filters_and_paginates_through_security_definer_function() ->
     assert "offset %s limit %s" in normalized
     assert params == (bundle_id, "alpha", "深圳", "open", 1, 2)
     assert items == ({"job_id": "a", "company_key": "alpha"},) and total == 3
+
+
+def test_service_and_repository_reject_excessive_offset_before_database() -> None:
+    repository = Repository()
+    with pytest.raises(ValueError, match="offset"):
+        _service(repository).company_jobs("alpha", offset=100_001)
+    assert repository.calls == []
+
+    connection = Connection()
+
+    @contextmanager
+    def connect(): yield connection
+
+    with pytest.raises(ValueError, match="offset"):
+        PanoramaRepository(connection=connect).bundle_company_jobs(
+            uuid4(), "alpha", offset=100_001, limit=25)
+    assert connection.calls == []
 
 
 def test_real_derived_fixture_preserves_contract_and_provenance() -> None:

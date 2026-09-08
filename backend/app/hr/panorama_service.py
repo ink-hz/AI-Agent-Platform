@@ -270,7 +270,7 @@ class PanoramaService:
     ) -> Mapping[str, object]:
         if not isinstance(company_key, str) or not company_key:
             raise TypeError("panorama company key invalid")
-        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100_000:
             raise ValueError("panorama company job offset invalid")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ValueError("panorama company job limit invalid")

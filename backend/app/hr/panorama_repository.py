@@ -295,7 +295,7 @@ class PanoramaRepository:
         _identifier(bundle_id)
         selected_company_key = _company_key(company_key)
         selected_limit = _limit(limit)
-        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100_000:
             raise ValueError("panorama offset invalid")
         if any(value is not None and (not isinstance(value, str) or not value) for value in (location, status)):
             raise ValueError("panorama job filter invalid")

@@ -27,6 +27,9 @@ class FakeService:
         return value
 
     def current_report(self): self.calls.append(("current",)); return self._return(None if self.empty else self.report_value)
+    def companies(self): self.calls.append(("companies",)); return self._return(None)
+    def company(self, company_key, *, bundle_id=None): self.calls.append(("company", company_key, bundle_id)); return self._return({})
+    def company_jobs(self, company_key, **kwargs): self.calls.append(("company_jobs", company_key, kwargs)); return self._return({})
     def list_reports(self, *, limit=100): self.calls.append(("list", limit)); return self._return((self.report_value,))
     def report(self, bundle_id): self.calls.append(("report", bundle_id)); return self._return(self.report_value)
     def document(self, bundle_id, format):

@@ -45,7 +45,10 @@ def _value(record: object, name: str) -> object:
 
 
 def build_panorama_router(service, require_hr_access) -> APIRouter:
-    required = ("current_report", "list_reports", "report", "document", "evidence_file")
+    required = (
+        "current_report", "list_reports", "report", "document", "evidence_file",
+        "companies", "company", "company_jobs",
+    )
     if any(not callable(getattr(service, name, None)) for name in required):
         raise ValueError("panorama service required")
     if not callable(require_hr_access):
@@ -92,7 +95,7 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
         request: Request,
         company_key: Annotated[str, Path(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")],
         bundle_id: Annotated[UUID | None, Query()] = None,
-        offset: Annotated[int, Query(ge=0)] = 0,
+        offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 25,
         location: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
         status: Annotated[Literal["open", "closed", "unknown"] | None, Query()] = None,
