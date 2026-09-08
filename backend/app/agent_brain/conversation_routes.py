@@ -85,6 +85,7 @@ class ConversationRoute(APIRoute):
         return secure
 
 
+from app.hr.standard_consent import StandardConsent, normalize_consent
 from app.execution_relay.contracts_v6 import HrTurnScope, HrMethodSelection
 
 
@@ -99,6 +100,13 @@ class ConversationTextBody(BaseModel):
     position_draft_id: UUID | None = None
     scope: HrTurnScope | None = None
     method_selection: HrMethodSelection | None = Field(default=None, alias="methodSelection")
+
+    standard_consent: StandardConsent | None = Field(default=None, alias="standardConsent")
+
+    @field_validator("standard_consent", mode="before")
+    @classmethod
+    def _consent(cls, value):
+        return normalize_consent(value)
 
     @field_validator("scope", "method_selection", mode="before")
     @classmethod
@@ -146,7 +154,8 @@ class ConversationTextBody(BaseModel):
         submission = ConversationTurnSubmission(
             self.text, self.attachment_ids, self.active_attachment_ids,
             user_selected_resources=self.user_selected_resources,
-            hr_scope=self.scope, method_selection=self.method_selection
+            hr_scope=self.scope, method_selection=self.method_selection,
+            standard_consent=self.standard_consent
         )
         self.text = submission.text
         self.attachment_ids = submission.attachment_ids
@@ -157,7 +166,8 @@ class ConversationTextBody(BaseModel):
         return ConversationTurnSubmission(
             self.text, self.attachment_ids, self.active_attachment_ids,
             user_selected_resources=self.user_selected_resources,
-            hr_scope=self.scope, method_selection=self.method_selection
+            hr_scope=self.scope, method_selection=self.method_selection,
+            standard_consent=self.standard_consent
         )
 
 

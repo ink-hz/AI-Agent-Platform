@@ -460,10 +460,12 @@ class ConversationRepository:
                 row["encryption_key_version"],
             ),
         )
-        if set(value) not in ({"text"}, {"text", "user_selected_resources"}) or not isinstance(value["text"], str):
+        if "text" not in value or set(value)-{"text", "user_selected_resources", "standard_consent"} or not isinstance(value["text"], str):
             raise ConversationRepositoryError()
         from .conversation_models import normalize_knowledge_selections
         selections = normalize_knowledge_selections(value.get("user_selected_resources", ()))
+        from app.hr.standard_consent import normalize_consent
+        consent = normalize_consent(value.get("standard_consent"))
         inputs, outputs, active = (
             self._message_attachment_records_locked(cursor, row)
             if cursor is not None
@@ -496,6 +498,7 @@ class ConversationRepository:
             completed_at=row["completed_at"],
             content=value["text"],
             user_selected_resources=selections,
+            standard_consent=consent,
             input_attachments=inputs,
             output_attachments=outputs,
             active_attachment_ids=active,
@@ -601,7 +604,8 @@ class ConversationRepository:
             raise ConversationRepositoryError()
         message_record = self._message_from_row(message, cursor)
         if (
-            message_record.user_selected_resources != submission.user_selected_resources
+            message_record.standard_consent != submission.standard_consent
+            or message_record.user_selected_resources != submission.user_selected_resources
             or message_record.content != submission.text
             or tuple(item.attachment_id for item in message_record.input_attachments)
             != submission.attachment_ids
@@ -751,7 +755,8 @@ class ConversationRepository:
         turn_id = uuid4()
         sealed = self.content_codec.seal_json(
             message_subject(conversation_id, message_id),
-            {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {})}
+            {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {}),
+             **({"standard_consent": submission.standard_consent.model_dump(mode="json", by_alias=True)} if submission.standard_consent else {})}
         )
         message_row = cursor.execute(
             "insert into platform_control.conversation_messages "
@@ -854,7 +859,8 @@ class ConversationRepository:
         mission_event_id = uuid4()
         sealed = self.content_codec.seal_json(
             message_subject(conversation_id, message_id),
-            {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {})}
+            {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {}),
+             **({"standard_consent": submission.standard_consent.model_dump(mode="json", by_alias=True)} if submission.standard_consent else {})}
         )
         message_row = cursor.execute(
             "insert into platform_control.conversation_messages "
@@ -1456,6 +1462,7 @@ class ConversationRepository:
                     ),
                     source_record.active_attachment_ids,
                     user_selected_resources=source_record.user_selected_resources,
+                    standard_consent=source_record.standard_consent,
                     **scope_options,
                 )
                 existing = cursor.execute(
@@ -2804,7 +2811,8 @@ class ConversationRepository:
                     return None
                 message = self._message_from_row(row, cursor)
                 if (
-                    message.user_selected_resources != submission.user_selected_resources
+                    message.standard_consent != submission.standard_consent
+                    or message.user_selected_resources != submission.user_selected_resources
                     or message.content != submission.text
                     or tuple(
                         item.attachment_id for item in message.input_attachments

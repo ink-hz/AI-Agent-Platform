@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from app.hr.standard_consent import StandardConsent
 from app.execution_relay.contracts_v6 import HrTurnScope, HrMethodSelection
 from app.agent_brain.recovery import SearchRecoveryState
 from app.agent_brain.repository import MissionRecord
@@ -90,6 +91,7 @@ class ConversationTurnSubmission:
     user_selected_resources: tuple[dict[str, object], ...] = ()
     hr_scope: HrTurnScope | None = None
     method_selection: HrMethodSelection | None = None
+    standard_consent: StandardConsent | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "user_selected_resources", normalize_knowledge_selections(self.user_selected_resources))
@@ -103,10 +105,20 @@ class ConversationTurnSubmission:
         if self.hr_scope is not None:
             if not isinstance(self.hr_scope, HrTurnScope) or not set(active_attachment_ids).issubset(self.hr_scope.attachment_ids):
                 raise ValueError("HR scope must include active attachments")
-        if self.method_selection is not None and (
-            self.hr_scope is None or not isinstance(self.method_selection, HrMethodSelection)
+        derived_method = None
+        if self.user_selected_resources:
+            derived_method = HrMethodSelection.model_validate_json(json.dumps({
+                "resources": self.user_selected_resources,
+                "catalogRelease": self.user_selected_resources[0]["source_commit"],
+            }))
+        if self.method_selection is not None and self.method_selection != derived_method:
+            raise ValueError("Method selection must match selected knowledge resources")
+        object.__setattr__(self, "method_selection", derived_method)
+        if self.standard_consent is not None and (
+            self.hr_scope is None or self.hr_scope.position_id is None
+            or self.text != self.standard_consent.message_text()
         ):
-            raise ValueError("HR method selection requires turn scope")
+            raise ValueError("Standard confirmation text or position changed")
         if not text and not attachment_ids:
             raise ValueError("Conversation text or attachment required")
         object.__setattr__(self, "text", text)
@@ -121,7 +133,8 @@ def normalize_turn_submission(
         return ConversationTurnSubmission(
             value.text, value.attachment_ids, value.active_attachment_ids,
             user_selected_resources=value.user_selected_resources,
-            hr_scope=value.hr_scope, method_selection=value.method_selection
+            hr_scope=value.hr_scope, method_selection=value.method_selection,
+            standard_consent=value.standard_consent
         )
     if isinstance(value, str):
         return ConversationTurnSubmission(value)
@@ -210,6 +223,7 @@ class ConversationMessageRecord:
     artifact_versions: tuple[ConversationArtifactVersionProjection, ...] = ()
     result_delivery_status: Literal["pending", "completed", "failed"] | None = None
     user_selected_resources: tuple[dict[str, object], ...] = ()
+    standard_consent: StandardConsent | None = None
 
 
 @dataclass(frozen=True)

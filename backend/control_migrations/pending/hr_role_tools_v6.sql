@@ -805,3 +805,163 @@ begin
   return selected;
 end
 $function$;
+
+-- Business capability and append-only tool receipts; Turn/Attempt remain execution owners.
+create table platform_hr.tool_grants_v6 (
+ grant_id uuid primary key,
+ attempt_id uuid not null references platform_control.turn_attempts(attempt_id),
+ worker_id text not null references platform_control.execution_workers(worker_id),
+ lease_epoch bigint not null check(lease_epoch>0),
+ token_sha256 text not null check(token_sha256 ~ '^[a-f0-9]{64}$'),
+ expires_at timestamptz not null,
+ created_at timestamptz not null default clock_timestamp()
+);
+create table platform_hr.tool_operations_v6 (
+ receipt_id uuid primary key,
+ owner_internal_user_id uuid not null references platform_control.internal_users(internal_user_id),
+ conversation_id uuid not null,
+ turn_id uuid not null,
+ attempt_id uuid not null references platform_control.turn_attempts(attempt_id),
+ operation_id uuid not null,
+ tool text not null check(tool in ('hr.read_context','hr.submit_result','hr.confirm_standard')),
+ request_sha256 text not null check(request_sha256 ~ '^[a-f0-9]{64}$'),
+ content_sha256 text not null check(content_sha256 ~ '^[a-f0-9]{64}$'),
+ resource_kind text,
+ resource_id uuid,
+ version_ref text,
+ schema_id text,
+ payload_ciphertext bytea not null check(octet_length(payload_ciphertext)<=2097152),
+ encryption_key_version integer not null,
+ created_at timestamptz not null default clock_timestamp(),
+ unique(turn_id,operation_id),
+ foreign key(conversation_id,turn_id) references platform_control.conversation_turns(conversation_id,turn_id),
+ foreign key(conversation_id,owner_internal_user_id) references platform_control.conversations(conversation_id,owner_internal_user_id)
+);
+create function platform_hr.issue_tool_grant_v6(
+ selected_grant uuid, selected_attempt uuid, selected_worker text,
+ selected_epoch bigint, selected_hash text, selected_expiry timestamptz
+) returns void language plpgsql security definer set search_path=pg_catalog,platform_hr as $function$
+begin
+ if session_user not in ('platform_control_app','platform_control_app_preview','platform_brain_worker','platform_brain_worker_preview') then raise insufficient_privilege; end if;
+ perform 1 from platform_control.turn_attempts a
+ join platform_control.conversation_turns t using(turn_id)
+ join platform_control.conversations c using(conversation_id)
+ join platform_control.direct_command_bindings b using(attempt_id)
+ join platform_control.execution_workers w on w.worker_id=b.transport_worker_id
+ where a.attempt_id=selected_attempt and a.lease_epoch=selected_epoch
+   and a.status in ('running','reconciling') and a.lease_expires_at>clock_timestamp()
+   and a.cancel_requested_at is null and c.status='active' and c.direct_agent_id='hr-bot'
+   and c.execution_owner='worker_direct' and t.hr_input_context is not null
+   and b.transport_worker_id=selected_worker and b.retired_unsent_at is null
+   and w.status='active' and 'hr-bot'=any(w.allowed_agent_ids)
+   and selected_expiry>clock_timestamp() and selected_expiry<=clock_timestamp()+interval '24 hours';
+ if not found then raise insufficient_privilege; end if;
+ insert into platform_hr.tool_grants_v6(grant_id,attempt_id,worker_id,lease_epoch,token_sha256,expires_at)
+ values(selected_grant,selected_attempt,selected_worker,selected_epoch,selected_hash,selected_expiry);
+end $function$;
+
+create function platform_hr.authorize_tool_grant_v6(selected_grant uuid, selected_worker text, selected_hash text)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,platform_hr as $function$
+declare g platform_hr.tool_grants_v6%rowtype; c platform_control.conversations%rowtype;
+ t platform_control.conversation_turns%rowtype; a platform_control.turn_attempts%rowtype;
+begin
+ if session_user not in ('platform_control_app','platform_control_app_preview','platform_brain_worker','platform_brain_worker_preview') then raise insufficient_privilege; end if;
+ select * into g from platform_hr.tool_grants_v6 where grant_id=selected_grant
+ and worker_id=selected_worker and token_sha256=selected_hash and expires_at>clock_timestamp();
+ if not found then raise insufficient_privilege; end if;
+ -- Match the execution repository lock order, preventing writes after lease takeover.
+ select conversation.* into c from platform_control.conversations conversation
+ join platform_control.conversation_turns turn using(conversation_id)
+ join platform_control.turn_attempts attempt using(turn_id)
+ where attempt.attempt_id=g.attempt_id for update of conversation;
+ select turn.* into t from platform_control.conversation_turns turn
+ join platform_control.turn_attempts attempt using(turn_id)
+ where attempt.attempt_id=g.attempt_id for update of turn;
+ select * into a from platform_control.turn_attempts where attempt_id=g.attempt_id for update;
+ if a.lease_epoch<>g.lease_epoch or a.status not in ('running','reconciling')
+ or a.lease_expires_at<=clock_timestamp() or a.cancel_requested_at is not null
+ or c.status<>'active' or c.direct_agent_id<>'hr-bot' or c.execution_owner<>'worker_direct'
+ or t.origin_route_epoch<>c.route_epoch or t.execution_owner<>'worker_direct' then raise insufficient_privilege; end if;
+ perform 1 from platform_control.direct_command_bindings b
+ join platform_control.execution_workers w on w.worker_id=b.transport_worker_id
+ where b.attempt_id=a.attempt_id and b.transport_worker_id=selected_worker and b.retired_unsent_at is null
+ and w.status='active' and 'hr-bot'=any(w.allowed_agent_ids);
+ if not found then raise insufficient_privilege; end if;
+ perform platform_hr.validate_turn_scope_v6(c.owner_internal_user_id,c.conversation_id,t.turn_id,t.hr_input_context);
+ return jsonb_build_object('ownerId',c.owner_internal_user_id,'conversationId',c.conversation_id,
+ 'turnId',t.turn_id,'attemptId',a.attempt_id,'scope',t.hr_input_context->'scope');
+end $function$;
+
+create function platform_hr.record_tool_operation_v6(
+ selected_grant uuid,selected_worker text,selected_hash text,
+ selected_receipt uuid,selected_operation uuid,selected_tool text,selected_request_hash text,
+ selected_content_hash text,selected_resource_kind text,selected_resource uuid,selected_version text,
+ selected_schema text,selected_ciphertext bytea,selected_key_version integer
+) returns platform_hr.tool_operations_v6 language plpgsql security definer
+set search_path=pg_catalog,platform_hr as $function$
+declare scope jsonb; prior platform_hr.tool_operations_v6%rowtype;
+begin
+ scope:=platform_hr.authorize_tool_grant_v6(selected_grant,selected_worker,selected_hash);
+ select * into prior from platform_hr.tool_operations_v6 where turn_id=(scope->>'turnId')::uuid
+ and operation_id=selected_operation;
+ if found then
+   if prior.request_sha256<>selected_request_hash or prior.tool<>selected_tool then
+     raise unique_violation using message='HR tool operation mismatch';
+   end if;
+   return prior;
+ end if;
+ insert into platform_hr.tool_operations_v6(receipt_id,owner_internal_user_id,conversation_id,turn_id,
+ attempt_id,operation_id,tool,request_sha256,content_sha256,resource_kind,resource_id,version_ref,
+ schema_id,payload_ciphertext,encryption_key_version)
+ values(selected_receipt,(scope->>'ownerId')::uuid,(scope->>'conversationId')::uuid,(scope->>'turnId')::uuid,
+ (scope->>'attemptId')::uuid,selected_operation,selected_tool,selected_request_hash,selected_content_hash,
+ selected_resource_kind,selected_resource,selected_version,selected_schema,selected_ciphertext,selected_key_version)
+ returning * into prior;
+ return prior;
+end $function$;
+
+revoke all on platform_hr.tool_grants_v6,platform_hr.tool_operations_v6 from public;
+revoke all on function platform_hr.issue_tool_grant_v6(uuid,uuid,text,bigint,text,timestamptz) from public;
+revoke all on function platform_hr.authorize_tool_grant_v6(uuid,text,text) from public;
+revoke all on function platform_hr.record_tool_operation_v6(uuid,text,text,uuid,uuid,text,text,text,text,uuid,text,text,bytea,integer) from public;
+do $grant$
+declare app_role name; brain_role name;
+begin
+ if current_database()='agent_platform_control' and current_user='platform_control_owner' then
+ app_role:='platform_control_app';brain_role:='platform_brain_worker';
+ elsif current_database()='agent_platform_control_preview' and current_user='platform_control_owner_preview' then
+ app_role:='platform_control_app_preview';brain_role:='platform_brain_worker_preview';
+ else raise insufficient_privilege;end if;
+ execute format('grant select on platform_hr.tool_operations_v6 to %I,%I',app_role,brain_role);
+ execute format('grant execute on function platform_hr.issue_tool_grant_v6(uuid,uuid,text,bigint,text,timestamptz) to %I,%I',app_role,brain_role);
+ execute format('grant execute on function platform_hr.authorize_tool_grant_v6(uuid,text,text) to %I,%I',app_role,brain_role);
+ execute format('grant execute on function platform_hr.record_tool_operation_v6(uuid,text,text,uuid,uuid,text,text,text,text,uuid,text,text,bytea,integer) to %I,%I',app_role,brain_role);
+end $grant$;
+
+create table platform_hr.result_presentations_v6 (
+ owner_internal_user_id uuid not null references platform_control.internal_users(internal_user_id),
+ receipt_id uuid not null references platform_hr.tool_operations_v6(receipt_id),
+ presented_at timestamptz not null default clock_timestamp(),
+ primary key(owner_internal_user_id,receipt_id)
+);
+create function platform_hr.record_result_presentation_v6(selected_owner uuid,selected_receipt uuid)
+returns void language plpgsql security definer set search_path=pg_catalog,platform_hr as $function$
+begin
+ if session_user not in ('platform_control_app','platform_control_app_preview') then raise insufficient_privilege; end if;
+ perform 1 from platform_hr.tool_operations_v6 where receipt_id=selected_receipt
+ and owner_internal_user_id=selected_owner and tool='hr.submit_result';
+ if not found then raise no_data_found; end if;
+ insert into platform_hr.result_presentations_v6(owner_internal_user_id,receipt_id)
+ values(selected_owner,selected_receipt) on conflict do nothing;
+end $function$;
+revoke all on platform_hr.result_presentations_v6 from public;
+revoke all on function platform_hr.record_result_presentation_v6(uuid,uuid) from public;
+do $grant$
+declare app_role name;
+begin
+ if current_database()='agent_platform_control' and current_user='platform_control_owner' then app_role:='platform_control_app';
+ elsif current_database()='agent_platform_control_preview' and current_user='platform_control_owner_preview' then app_role:='platform_control_app_preview';
+ else raise insufficient_privilege;end if;
+ execute format('grant select on platform_hr.result_presentations_v6 to %I',app_role);
+ execute format('grant execute on function platform_hr.record_result_presentation_v6(uuid,uuid) to %I',app_role);
+end $grant$;

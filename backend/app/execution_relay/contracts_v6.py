@@ -61,15 +61,23 @@ class HrRolePackageRef(StrictValue):
     manifest_sha256: str = Field(alias="manifestSha256", pattern=SHA256)
 
 
+class HrKnowledgeResourceRef(StrictValue):
+    source_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,127}$")
+    revision: int = Field(ge=1)
+    sha256: str = Field(pattern=SHA256)
+
+
 class HrMethodSelection(StrictValue):
-    scenario_id: str | None = Field(alias="scenarioId", pattern=IDENTIFIER)
-    method_ids: tuple[Annotated[str, Field(pattern=IDENTIFIER)], ...] = Field(alias="methodIds", min_length=1, max_length=3)
-    catalog_release: str = Field(alias="catalogRelease", pattern=IDENTIFIER)
+    resources: tuple[HrKnowledgeResourceRef, ...] = Field(min_length=1, max_length=32)
+    catalog_release: str = Field(alias="catalogRelease", pattern=r"^[0-9a-f]{40}$")
 
     @model_validator(mode="after")
     def _unique(self):
-        if len(set(self.method_ids)) != len(self.method_ids):
-            raise ValueError("method selection invalid")
+        if (len({r.id for r in self.resources}) != len(self.resources)
+            or any(r.source_commit != self.catalog_release for r in self.resources)
+            or len(self.model_dump_json().encode()) > 8192):
+            raise ValueError("knowledge selection invalid")
         return self
 
 
