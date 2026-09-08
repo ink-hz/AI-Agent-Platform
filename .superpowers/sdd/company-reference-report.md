@@ -74,13 +74,13 @@ The host previously unmounted `HrPanoramaWorkspace` as soon as selection navigat
 
 `HrWorkspacePage` now retains the visited panorama child for the current `internal_user_id`, hides it from layout and the accessibility tree while another HR surface is active, and reuses the same keyed child on return. An account change unmounts the prior child and starts a fresh account-scoped host, so no company content or pinned reading bundle crosses accounts. Fresh application entry still mounts a new workspace and therefore reads the latest publication.
 
-Visible panorama scroll is captured by scoped `scroll` and `platform:navigate` listeners. Return restoration uses two animation frames so it runs after the router's scheduled `scrollTo(0, 0)`; effect cleanup cancels either pending frame. The chat host and its own draft/scroll behavior are unchanged, and retention never invokes submission.
+The scrolling element is the retained `.hr-workspace-panorama-panel` itself. Keeping that exact DOM node mounted preserves its native `scrollTop`; no window listener, animation frame, or `window.scrollTo` restoration is needed. The chat host and its own draft/scroll behavior are unchanged, and retention never invokes submission.
 
 Focused RED:
 
 ```text
 npm test -- --run src/workspaces/hr/HrWorkspacePage.test.tsx
-3 expected failures: panorama child unmounted, account change reused child state, and no restoration frame was scheduled.
+3 expected failures: panorama child unmounted, account change reused child state, and the panel node/scroll position was not retained.
 ```
 
 Focused GREEN:
@@ -89,3 +89,5 @@ Focused GREEN:
 npm test -- --run src/workspaces/hr/HrWorkspacePage.test.tsx
 1 file passed; 26 tests passed.
 ```
+
+Minor review follow-up replaced the initial window restoration implementation with native retained-container behavior. The focused scroll test failed against the old code because it scheduled `requestAnimationFrame`, then passed after removing the window listeners and double-frame restoration. It verifies the same panel node and `scrollTop` survive the round trip and that neither window restoration API is called.

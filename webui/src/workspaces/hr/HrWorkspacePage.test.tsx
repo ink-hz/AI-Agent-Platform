@@ -313,32 +313,20 @@ describe("HrWorkspacePage", () => {
     expect(container.querySelectorAll("[data-panorama-workspace]")).toHaveLength(1);
   });
 
-  it("restores company document scroll after navigation reset and cancels scheduled restoration on cleanup", async () => {
-    const frames: FrameRequestCallback[] = [];
-    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      frames.push(callback);
-      return frames.length;
-    });
-    const cancelFrame = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+  it("preserves the company panel scroll position without scheduling window restoration", async () => {
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
     const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 720 });
     await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
-    await act(async () => window.dispatchEvent(new Event("scroll")));
+    const panel = container.querySelector<HTMLElement>(".hr-workspace-panorama-panel")!;
+    panel.scrollTop = 720;
+    await act(async () => panel.dispatchEvent(new Event("scroll", { bubbles: true })));
     await act(async () => root.render(<HrWorkspacePage account={account} />));
     await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
 
-    const firstRestoreFrame = frames.shift()!;
-    await act(async () => firstRestoreFrame(0));
-    expect(scrollTo).not.toHaveBeenCalledWith(0, 720);
-    const secondRestoreFrame = frames.shift()!;
-    await act(async () => secondRestoreFrame(0));
-    expect(scrollTo).toHaveBeenCalledWith(0, 720);
-
-    await act(async () => root.render(<HrWorkspacePage account={account} />));
-    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
-    await act(async () => root.render(<HrWorkspacePage account={{ ...account, internal_user_id: "other-user" }} />));
-    expect(cancelFrame).toHaveBeenCalled();
-    requestFrame.mockRestore();
+    expect(container.querySelector(".hr-workspace-panorama-panel")).toBe(panel);
+    expect(panel.scrollTop).toBe(720);
+    expect(requestFrame).not.toHaveBeenCalled();
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   it("mounts only the position conversation workspace on a position detail route", async () => {
