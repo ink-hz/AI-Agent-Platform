@@ -9,6 +9,8 @@ ownership, while the process harness separately checks actual model transport.
 import base64
 import json
 import os
+
+import pytest
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -48,8 +50,9 @@ from tests.helpers.hr_recruiting_loop import configure_recruiting_api
 from tests.helpers.hr_web_loop import _codec
 
 
+@pytest.mark.parametrize("with_knowledge", [False, True])
 def test_actual_app_owns_snapshot_context_and_projection_but_not_direct_execution(
-    web_loop, monkeypatch, tmp_path
+    web_loop, monkeypatch, tmp_path, with_knowledge
 ):
     database_url = web_loop.environment["urls"]["platform_control_app"]
     database_file = tmp_path / "database-url"
@@ -100,6 +103,19 @@ def test_actual_app_owns_snapshot_context_and_projection_but_not_direct_executio
             audit_database_url_file="",
         ),
     )
+    knowledge_commit = None
+    if with_knowledge:
+        from test_hr_reference_knowledge import _commit_knowledge, _git
+        from app.hr.reference_knowledge_release import build_release
+        source = tmp_path / "knowledge-source"
+        source.mkdir()
+        _git(source, "init", "-q")
+        _git(source, "config", "user.name", "Test")
+        _git(source, "config", "user.email", "test@example.com")
+        knowledge_commit = _commit_knowledge(source)
+        release_root = tmp_path / "knowledge-releases"
+        build_release(source, knowledge_commit, release_root)
+        config = replace(config, hr_knowledge_root=str(release_root), hr_knowledge_agent_root="/agent/releases", hr_knowledge_commit=knowledge_commit)
     monkeypatch.setattr(app_main, "load_config", lambda: config)
     monkeypatch.setenv("HR_WEB_FIXTURE_ROOT", str(tmp_path))
     monkeypatch.setenv("PLATFORM_HR_INTELLIGENCE_ROOT", str(tmp_path / "intelligence"))
@@ -146,6 +162,8 @@ def test_actual_app_owns_snapshot_context_and_projection_but_not_direct_executio
     assert isinstance(app.state.hr_position_package_projector, PositionPackageProjector)
     assert app.state.hr_task_context_provider is not None
     assert app.state.hr_panorama_context_provider is not None
+    if with_knowledge:
+        assert worker.adapter.context_builder._hr_knowledge_repository is app.state.hr_knowledge_repository
     try:
         with TestClient(
             app,
@@ -164,6 +182,12 @@ def test_actual_app_owns_snapshot_context_and_projection_but_not_direct_executio
             )
             assert submitted.status_code in (200, 201), submitted.text
             turn_id = submitted.json()["turn"]["turn_id"]
+            if with_knowledge:
+                from uuid import UUID
+                assert client.get("/api/hr/knowledge").status_code == 200
+                context = worker.adapter.context_builder.build_direct(UUID(web_loop.conversation_id) if isinstance(web_loop.conversation_id, str) else web_loop.conversation_id, UUID(turn_id))
+                assert context.hr_reference_knowledge["source_commit"] == knowledge_commit
+
             snapshot = client.get(path + "/snapshot", params={"turn_id": turn_id})
             assert snapshot.status_code == 200, snapshot.text
             assert snapshot.json()["answer"] is None

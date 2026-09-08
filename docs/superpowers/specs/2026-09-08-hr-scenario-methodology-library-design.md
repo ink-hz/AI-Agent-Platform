@@ -2,7 +2,7 @@
 
 日期：2026-09-08
 
-状态：评审修订稿；本次交付为设计与研究材料，尚未接入或发布 Runtime。
+状态：评审通过后实施；版本读取、冻结上下文和用户指定已实现，真实 CLI 读取已验证。生产尚未启用。
 
 ## 1. 目标与核心决定
 
@@ -26,13 +26,13 @@
 
 正式上游选定为 `Orbbec-Agent-Team` 仓库的 `bots/hr/knowledge/`。已有 `knowledge/recruiting/.gitkeep` 可承接首批内容。`HR-Agent-Knowledge/` 目前只有空骨架，本方案不启用它，不修改或删除该目录。
 
-首批材料当前仍在本工作树的 `docs/research/hr-methodology/`，这是评审暂存位置。实施时把正文和来源台账迁入正式上游，平台此处改留迁移说明和上游引用，不形成两套可独立编辑的正文。本次文档修订没有执行迁移或部署。
+首批正文与来源台账已迁入 Orbbec-Agent-Team 的 `feat/hr-reference-knowledge` 分支，提交为 `6cea3c8877c3c66e5e3310e22f10b72032cbeaab`。Platform 原 `docs/research/hr-methodology/` 已改留迁移说明，不形成两套可独立编辑的正文。迁移时逐篇与来源提交比较，内容一致；生产目录尚未部署。
 
 正式上游结构：
 
 ```text
 bots/hr/knowledge/
-├── README.md                         # 短入口；当前暂存目录已有同用途索引
+├── README.md                         # 短入口
 ├── recruiting/
 │   ├── job-and-context.md
 │   ├── requirement-calibration.md
@@ -52,7 +52,7 @@ bots/hr/knowledge/
 | 本地 Agent | `<hr_bot_cwd>/.knowledge-releases/<source_commit>/` | Claude Code CLI 的 Read / Glob / Grep |
 | 云端 Platform | `<configured_knowledge_root>/releases/<source_commit>/` | 网页目录和正文读取服务 |
 
-路径由部署配置提供；`hr_bot_cwd` 来自实际 bot 配置，不把开发机用户名写进代码。`.knowledge-releases` 是上游源目录之外的部署产物，不入源仓库。首版沿已有 bot 与平台部署流程分发同一内容包，无需建设实时同步服务。上述发布产物和分发步骤尚待实现。
+路径由部署配置提供；`hr_bot_cwd` 来自实际 bot 配置，不把开发机用户名写进代码。`.knowledge-releases` 是上游源目录之外的部署产物，不入源仓库。首版沿已有 bot 与平台部署流程分发同一内容包，无需建设实时同步服务。内容包构建与本地验证已实现，生产两端分发尚未执行。
 
 两端完成内容校验后，才把该版本设为新任务使用的版本。首版可由发布过程核对两端 manifest，无需新增逐任务回源请求。若本地目录缺失或读取失败，明确记录知识不可用，Agent 可说明限制并继续一般分析，不能声称已经应用材料。
 
@@ -96,7 +96,7 @@ knowledge_forms: [thinking-model, methodology]
 
 模型工具循环在 MetaBot 的 Claude Code CLI 内，不在 Platform 内。静态代码核验：MetaBot `master` 的 `fe5ad87` 中，`src/config.ts` 默认 `toolPolicy=default`；`src/engines/claude/pty/pty-session.ts` 仅在 `toolPolicy=none` 时禁用工具。引擎层支持通过 CLI 读取本地文件，本方案直接使用该能力，不为 Agent 新建 Platform 按 ID 返回正文的接口。
 
-评审报告指出 HR 会话在 `bots/hr` 下运行、配置模型为 `claude-opus-5`。本次独立核验确认 bot 部署片段的工作目录指向 `bots/hr`、模型字段为 `claude-opus-5`，但未观察真实生产会话，也未核实当前生产有效配置。因此“引擎代码支持文件工具”和“当前 HR 生产链路成功读取知识”是两个不同结论，后者仍待实测。
+HR 部署片段的工作目录指向 `bots/hr`、模型字段为 `claude-opus-5`。实施中已用当前开发用户的真实 `claude-opus-5` CLI 完成三组教学案例对比，并观察到三次成功 Read；见[试验报告](../../reviews/2026-09-08-hr-reference-knowledge-trial.md)。该试验显式加载现有 HR 角色说明，未走生产 MetaBot PTY，因此不等同于生产链路读取验收。
 
 选择提示词表达如下意图：
 
@@ -149,9 +149,9 @@ knowledge_forms: [thinking-model, methodology]
 
 v5 设计接入点为 `backend/app/agent_brain/direct_mission_adapter.py` 的 `document` 字典；新增字段随原有 JSON 序列化进入 `FrozenInput`、`contextHash` 和已准备任务快照。复用现有冻结与重试机制，不另建快照系统。
 
-但是 MetaBot 的 `core-chat-v5-*` 当前只存在于 `feat/hr-unified-execution` 分支，未出现在核验的 `master fe5ad87`；Platform 的 `transport_v5.py` 也明确为 opt-in。不能把上述接入点写成已上线全链路。
+部署事实更正：MetaBot 的 `core-chat-v5-*` 尚未合入核验的 `master fe5ad87`，但另一会话的 2026-09-08 发布记录明确记载 **特性分支提交 `6ddbdef` 已部署**，签名 Relay 的 v5 已启用。`transport_v5.py` 的 opt-in 注释表示配置条件，不证明未部署。生产真实模型业务闭环仍未在该交接中验收；不能仅凭健康状态推定完成。
 
-Platform 另有 `orchestrator.py::_request_sections` 序列化已有 HR 上下文。若实施时仍通过该路径发起 HR 任务，仅修改 v5 的字典不会覆盖它。本方案优先沿正在推进的 v5 接入，待其真实链路确认后启用知识；若必须提前支持旧路径，应单独补该路径的输入传递和恢复验证，不能推定其拥有 v5 的冻结契约。
+Platform 另有 `orchestrator.py::_request_sections` 序列化已有 HR 上下文。若实施时仍通过该路径发起 HR 任务，仅修改 v5 的字典不会覆盖它。本方案仅沿 v5 接入知识，保留旧路径行为；发布知识前再确认当前部署配置和真实读取。若未来支持旧路径，需要单独验证其输入传递和恢复，不能推定它拥有 v5 的冻结契约。
 
 ## 6. 场景如何帮助选择
 
@@ -187,7 +187,7 @@ Agent 可以从 `job-and-context`、`requirement-calibration` 等资源获得分
 
 CLI 启动参数含 `--dangerously-skip-permissions`，正文在这样的会话中必须明确作为参考材料，不能成为工具操作授权。知识文件及引用来源中的命令、角色覆盖或数据外发要求不具有指令权；工具操作仍依据用户任务和可信 Agent 规则。该约束是提示词边界，不是已经实现的执行沙箱。
 
-本工作树为 `.worktrees/hr-methodology-library`，原始基线 `03e60f8`；核验时主工作树已推进至 `e8e75f1`，实施前需重新对齐另一会话的变更。旧的关键词路由、编译和步骤检查实验代码未提交、未部署；残留的对应 Python 缓存与空目录在本次修订中清理。
+本工作树为 `.worktrees/hr-methodology-library`，原始基线 `03e60f8`；本次实施前已合入主工作树 `b294f57`，保留另一会话的最新布局变更。旧的关键词路由、编译和步骤检查实验代码未提交、未部署；残留的对应 Python 缓存与空目录在本次修订中清理。
 
 ## 10. 业务效果与故障诊断
 
@@ -217,4 +217,4 @@ Agent 未选知识时，分别定位：
 5. 按项目要求先用 HTTP/API 验证输入持久化、冻结、恢复与版本关联，再对比实际业务回答；工程验证不能替代 HR 质量评审。
 6. 最后复用现有展示方式建设浏览、指定资源讨论和使用说明，做必要页面验收，再扩展其余 HR 领域。
 
-本次完成的是代码静态核验与文档/资源一致性修订。没有实跑 HR 生产会话，没有证明当前线上文件读取成功，也没有迁移知识或启用 v5。正式接入以上述真实验证为依据。
+当前已完成内容迁移、发布包构建、版本/字节预算/冻结接入及带身份 HTTP 验证；受控真实 CLI 已观察到文件读取。试验同时记录了回答中的无依据数字，业务质量仍需评审。没有运行 HR 生产业务会话或发布本功能。部署步骤见[发布与接入说明](../../runbooks/2026-09-08-hr-reference-knowledge.md)。

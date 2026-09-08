@@ -176,6 +176,8 @@ from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
 from .hr.intelligence_documents import IntelligenceDocumentStore
 from .hr.intelligence_markdown import IntelligenceMarkdownStore
+from .hr.reference_knowledge import HrKnowledgeRepository
+from .hr.reference_knowledge_routes import build_hr_knowledge_router
 from .hr.panorama_context import PanoramaContextProvider
 from .hr.panorama_repository import PanoramaRepository
 from .hr.panorama_routes import build_panorama_router
@@ -833,6 +835,7 @@ def create_app(
     hr_panorama_service=None,
     hr_panorama_projector=None,
     hr_panorama_context_provider=None,
+    hr_knowledge_repository=None,
     hr_resource_service=None,
     hr_task_context_provider=None,
     hr_position_task_service=None,
@@ -847,6 +850,10 @@ def create_app(
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
     config = load_config()
+    if hr_knowledge_repository is None and config.hr_knowledge_root:
+        hr_knowledge_repository = HrKnowledgeRepository(Path(config.hr_knowledge_root), config.hr_knowledge_agent_root, config.hr_knowledge_commit)
+        hr_knowledge_repository.prompt_context()
+
     owns_voc_extension_client = (
         voc_extension_client is None and config.voc_extension_enabled
     )
@@ -938,6 +945,7 @@ def create_app(
         conversation_command_service = ConversationCommandService(
             conversation_repository,
             v2_enabled=config.agent_brain_v2_enabled,
+            hr_knowledge_repository=hr_knowledge_repository,
         )
         action_command_service = ActionCommandService(
             control_database_url,
@@ -1519,6 +1527,7 @@ def create_app(
     app.state.hr_panorama_service = hr_panorama_service
     app.state.hr_panorama_projector = hr_panorama_projector
     app.state.hr_panorama_context_provider = hr_panorama_context_provider
+    app.state.hr_knowledge_repository = hr_knowledge_repository
     app.state.hr_resource_service = hr_resource_service
     app.state.hr_task_context_provider = hr_task_context_provider
     app.state.hr_position_task_service = hr_position_task_service
@@ -1536,7 +1545,8 @@ def create_app(
         bindings = DirectCommandBindingRepository(execution_relay_repository)
         context = ConversationContextBuilder(conversation_repository,
             hr_task_context_provider=hr_task_context_provider, panorama_context_provider=hr_panorama_context_provider,
-            candidate_parser_input_provider=hr_candidate_parser_input_provider)
+            candidate_parser_input_provider=hr_candidate_parser_input_provider,
+            hr_knowledge_repository=hr_knowledge_repository)
         return DirectWorker(attempts, DirectMissionAdapter(attempts, bindings, context, TurnResultProjector(attempts, bindings), attachment_grants=task_attachment_grant_service), artifact_recovery=ArtifactRecovery(conversation_repository))
     app.state.direct_worker_factory = direct_worker_factory
     app.state.hr_position_package_projector = hr_position_package_projector
@@ -1635,6 +1645,8 @@ def create_app(
         app.include_router(office_recipient_router)
     if agent_launch_service is not None:
         app.include_router(build_agent_launch_router(agent_launch_service))
+    if identity_enabled and agent_use_authorization is not None:
+        app.include_router(build_hr_knowledge_router(hr_knowledge_repository, agent_use_authorization))
     if identity_enabled and ai_notes_reader is not None:
         app.include_router(build_ai_notes_router(ai_notes_reader))
     if execution_relay_router is not None:

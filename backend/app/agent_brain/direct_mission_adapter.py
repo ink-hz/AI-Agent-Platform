@@ -14,7 +14,7 @@ from app.execution_relay.models import (
     TaskAttachmentGrantPayload,
 )
 
-from .conversation_context import ConversationContextError
+from .conversation_context import MAX_CONTEXT_BYTES, ConversationContextError, ConversationContextTooLarge
 from .direct_command_binding import BindingRejected, FrozenInput
 from .repository import _run_subject, _task_subject
 from .turn_attempts import TerminalEvidence
@@ -64,9 +64,13 @@ class DirectMissionAdapter:
             if context.hr_panorama_context
             else None,
         }
+        if context.hr_reference_knowledge is not None:
+            document["hr_reference_knowledge"] = context.hr_reference_knowledge
         prompt = json.dumps(
             document, ensure_ascii=False, separators=(",", ":"), default=str
         )
+        if len(prompt.encode("utf-8")) > MAX_CONTEXT_BYTES:
+            raise ConversationContextTooLarge()
         admission = lease.admission
         if not admission:
             raise BindingRejected()

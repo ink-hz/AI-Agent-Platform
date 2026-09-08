@@ -1,42 +1,7 @@
-# HR 场景方法论来源核验台账（2026-09-08）
+# HR 方法论来源台账已迁移
 
-本台账记录首批内容包实际读取范围。内容是面向工作台的中文提炼和组合，不把工作台流程冒充为来源机构或 Armstrong 的原有完整方法。访问日期均为 2026-09-08。
+唯一维护位置：`Orbbec-Agent-Team/bots/hr/knowledge/sources/2026-09-08-hr-methodology-sources.md`。
 
-## 核验结果
+来源提交：`6cea3c8877c3c66e5e3310e22f10b72032cbeaab`（`feat/hr-reference-knowledge`）。完整的实际读取范围、页码、Armstrong 文件截断限制及七份资源适配声明均保留在该提交中。
 
-| 来源 | 实际核验范围 | 用于支持 | 边界 |
-| --- | --- | --- | --- |
-| U.S. OPM, *Job Analysis* | 完整读取官方主页面正文，包括任务、胜任力、二者联系及用途；确认页面指向 six-step checklist 和 DEOH Appendix D，但本次没有把未逐页核对的 Appendix D 写成步骤出处 | 岗位分析应建立任务、能力及其岗位相关联系 | 资源中的分析组织方式是工作台适配，不称为 OPM 原文步骤 |
-| U.S. OPM, *Structured Interviews: A Practical Guide* (2008) | 完整核对 36 个 PDF 页：导论 pp.3–4，开发流程 pp.5–14，实施 pp.15–20，附录 pp.21–36 | 共同问题与量表、能力选择、行为/情境题、锚点、追问、试测、面试官培训、独立记录与评分误差 | 美国联邦语境的法律表述不移植为中国企业规则；示例均为自写 |
-| CEBMa, Briner, *The Basics of Evidence-Based Practice* v2 | 完整核对 7 个 PDF 页；重点为 pp.1–3 的可靠性、相关性与多来源证据，pp.3–4 的 Ask、Acquire、Appraise、Aggregate、Apply、Assess | 证据评价、冲突与未知、条件化决策及反馈复盘 | 招聘证据卡和比较矩阵是工作台适配，不是 CEBMa 发布的招聘模板 |
-| O*NET Resource Center, *The O*NET Content Model* | 完整核对网页的信息层级和定义：Worker Characteristics、Worker Requirements、Experience Requirements、Occupational Requirements、Occupation-Specific Information | 区分任务、工作活动、知识、技能、能力、工作情境；构造任务—能力和迁移提问 | O*NET 是美国职业信息框架，不能替代组织内部岗位事实或直接设门槛 |
-| U.S. OPM, *Work Samples and Simulations* | 完整核对页面的 Overview、Assessment Method Considerations 与 Work Samples 内容 | 工作样本复制实际岗位任务并观察行为/成果；考察入职时应具备能力；注意开发和实施负担 | 目录中的样本必须试用；不得称为已验证测评工具或索取可用于公司的免费劳动 |
-| CIPD, *Fair selection: An evidence review* (2023) | 完整核对 20 个 PDF 页：导论 pp.2–4，公平框架与研究 pp.5–12，实践建议 pp.13–16，方法 pp.17–18，参考文献 pp.19–20 | 岗位相关性、共同程序、信息透明、表达机会、解释与评估者培训；候选人公平感与后续行为有关 | 综述中的地区制度不写成中国法律要求；不将小效应写成确定因果 |
-| CIPD, *People performance: An evidence review* (2022) | 完整核对 27 个 PDF 页：绩效定义 pp.5–7，测量 pp.8–13，AMO pp.14–17，结论与建议 pp.18–22，方法和参考文献 pp.23–27 | 任务绩效会随岗位演化；测量适配后需验证；AMO 用于能力、动机、机会三向诊断 | AMO 不作为候选人录用总分或精确因果公式 |
-| Armstrong, *Handbook of Human Resource Management Practice*, 13th ed. | 检查本地 `/Users/neo/Developer/work/Armstrongs Handbook of Human Resource Management Practice_1.pdf`：共 440 个 PDF 页，正文止于印刷页 406；核对版权页、目录及可用范围内战略匹配、AMO、胜任力相关节选 | 仅作术语和整体框架背景 | 文件缺失正文 406 页之后内容；未读取第 50、51 章等缺失章节，未据此归因本目录七份工作台资源 |
-
-## 主张到来源的定位
-
-- 岗位分析连接任务、胜任力及二者关系：OPM *Job Analysis* 主页面正文；O*NET Content Model 的 Occupation-Specific Information 与 Worker Requirements。
-- 结构化面试让候选人接受相同核心问题并用共同量表评价：OPM 指南 pp.3–4；开发步骤、锚点与追问见 pp.5–14；实施和评分见 pp.15–20。
-- 行为锚点应描述不同熟练水平的具体行为：OPM 指南 pp.8–12；目录中的中文锚点为适配内容。
-- 循证实践需评价证据可靠性和情境相关性，并整合多个来源：CEBMa pp.1–4；六步骤见 pp.3–4。
-- 工作样本应尽量模拟实际岗位任务、观察行为或成果，并测入职时已应具备的能力：OPM *Work Samples and Simulations* 页面相关小节。
-- 甄选公平涉及岗位相关性、一致实施、透明信息、表达机会和评估者行为：CIPD *Fair selection* pp.5–16。
-- AMO 可提示能力、动机和机会问题，但各因素及绩效关系复杂：CIPD *People performance* pp.14–17。目录只将其用于诊断提问。
-
-## 适配声明与资源 ID
-
-以下七个 ID 与资源文件名、frontmatter 和索引一致。七份内容均经过中文提炼、情境组合和工作台适配，不声称是来源机构发布的同名完整方法。所有示例均为虚构业务情境，不含真实候选人隐私。
-
-| 资源 ID | 主要来源与适配范围 |
-| --- | --- |
-| `job-and-context` | OPM Job Analysis、O*NET、Armstrong 可见节选；组织岗位目的、任务和情境的分析视角 |
-| `requirement-calibration` | CEBMa、CIPD People performance、Fair selection；组合需求、供给、吸引力和甄选诊断，AMO 只作提问视角 |
-| `competency-and-profile` | OPM Job Analysis、O*NET、OPM 结构化面试指南；把岗位要求关联到可观察行为和证据 |
-| `sourcing-and-transfer` | O*NET、CEBMa；组合相邻任务、能力迁移与补证分析 |
-| `evidence-informed-judgment` | CEBMa、CIPD Fair selection；组织事实、陈述、推断和冲突证据的分析 |
-| `selection-and-work-samples` | OPM 结构化面试指南、Work Samples、CIPD Fair selection；中文场景与样本设计思路 |
-| `comparison-and-learning` | CEBMa、OPM 结构化面试指南、CIPD People performance；组合候选人证据比较与反馈学习 |
-
-具体主张仍以各篇正文的来源及上表实际核验范围为准，不能因为资源引用了某份文献，就把整篇适配内容归为该文献原文。
+参见[资源迁移说明](hr-methodology/README.md)。Platform 展示使用该来源生成的版本内容包，不独立维护台账正文。

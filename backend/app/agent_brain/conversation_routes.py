@@ -44,7 +44,7 @@ from .conversation_repository import (
     ConversationRepositoryNotFound,
     ConversationTurnInProgress,
 )
-from .conversation_service import ConversationCommandService
+from .conversation_service import ConversationCommandService, ConversationKnowledgeSelectionError
 from .routes import (
     MissionStreamBusy,
     MissionStreamLimiter,
@@ -91,8 +91,15 @@ class ConversationTextBody(BaseModel):
     text: str = Field(default="", max_length=32768)
     attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=5)
     active_attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=50)
+    user_selected_resources: tuple[dict[str, object], ...] = ()
     position_id: UUID | None = None
     position_draft_id: UUID | None = None
+
+    @field_validator("user_selected_resources", mode="before")
+    @classmethod
+    def _knowledge_selections(cls, value):
+        from .conversation_models import normalize_knowledge_selections
+        return normalize_knowledge_selections(value)
 
     @field_validator(
         "attachment_ids", "active_attachment_ids", mode="before"
@@ -121,7 +128,7 @@ class ConversationTextBody(BaseModel):
         if self.position_id is not None and self.position_draft_id is not None:
             raise ValueError("Conversation position scope is ambiguous")
         submission = ConversationTurnSubmission(
-            self.text, self.attachment_ids, self.active_attachment_ids
+            self.text, self.attachment_ids, self.active_attachment_ids, self.user_selected_resources
         )
         self.text = submission.text
         self.attachment_ids = submission.attachment_ids
@@ -130,7 +137,7 @@ class ConversationTextBody(BaseModel):
 
     def submission(self) -> ConversationTurnSubmission:
         return ConversationTurnSubmission(
-            self.text, self.attachment_ids, self.active_attachment_ids
+            self.text, self.attachment_ids, self.active_attachment_ids, self.user_selected_resources
         )
 
 
@@ -432,6 +439,8 @@ def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
             str(attachment_id) for attachment_id in record.active_attachment_ids
         ],
     }
+    if record.user_selected_resources:
+        payload["user_selected_resources"] = list(record.user_selected_resources)
     if record.search_recovery is not None:
         payload["search_recovery"] = record.search_recovery.public_payload()
     if record.citations:
@@ -809,6 +818,8 @@ def build_conversation_router(
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
+        except ConversationKnowledgeSelectionError:
+            raise HTTPException(422, "HR knowledge selection unavailable or invalid", headers=_NO_STORE) from None
         except Exception as error:  # Position callback errors remain opaque.
             from app.hr.repository import HrConflict, HrNotFound, HrUnavailable
 
@@ -1014,6 +1025,8 @@ def build_conversation_router(
                 context.internal_user_id,
                 conversation_id,
             )
+            if body.user_selected_resources and conversation.direct_agent_id != "hr-bot":
+                raise ConversationKnowledgeSelectionError("HR knowledge requires an HR conversation")
             if conversation.mode == "brain" and not brain_enabled:
                 raise HTTPException(
                     503, "Agent Brain unavailable", headers=_NO_STORE
@@ -1074,6 +1087,8 @@ def build_conversation_router(
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
+        except ConversationKnowledgeSelectionError:
+            raise HTTPException(422, "HR knowledge selection unavailable or invalid", headers=_NO_STORE) from None
         response.status_code = 201 if result.created else 200
         response.headers.update(_NO_STORE)
         return _create_payload(result)

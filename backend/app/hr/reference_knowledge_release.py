@@ -11,17 +11,11 @@ import subprocess
 import tempfile
 from typing import Any
 
-from app.ai_notes.repository import AiNotesContentError, parse_frontmatter
-from app.hr.reference_knowledge import HrKnowledgeError
+from app.hr.reference_knowledge import HrKnowledgeError, _resource_metadata
 
 
 _SOURCE_PREFIX = "bots/hr/knowledge/"
 _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
-_RESOURCE_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,127}\Z")
-_REQUIRED_FILES = {
-    "README.md",
-    "sources/2026-09-08-hr-methodology-sources.md",
-}
 
 
 def _git(repo: Path, *arguments: str) -> bytes:
@@ -39,60 +33,22 @@ def _digest(body: bytes) -> str:
 
 def _validate_relative(value: str) -> PurePosixPath:
     path = PurePosixPath(value)
-    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+    if (
+        path.is_absolute()
+        or not path.parts
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
         raise HrKnowledgeError("invalid knowledge path")
     return path
 
 
-def _resource_metadata(path: Path, relative: str, digest: str) -> dict[str, Any]:
-    try:
-        metadata, _ = parse_frontmatter(path)
-    except (AiNotesContentError, OSError, UnicodeError) as exc:
-        raise HrKnowledgeError("invalid knowledge resource metadata") from exc
-    required = ("id", "title", "revision", "domains", "knowledge_forms")
-    if any(key not in metadata for key in required):
-        raise HrKnowledgeError("invalid knowledge resource metadata")
-    resource_id = metadata["id"]
-    revision = metadata["revision"]
-    title = metadata["title"]
-    domains = metadata["domains"]
-    forms = metadata["knowledge_forms"]
-    if (
-        not isinstance(resource_id, str)
-        or _RESOURCE_ID.fullmatch(resource_id) is None
-        or Path(relative).stem != resource_id
-        or not isinstance(title, str)
-        or not title.strip()
-        or isinstance(revision, bool)
-        or not isinstance(revision, int)
-        or revision < 1
-        or not _valid_labels(domains)
-        or not _valid_labels(forms)
-    ):
-        raise HrKnowledgeError("invalid knowledge resource metadata")
-    return {
-        "id": resource_id,
-        "title": title,
-        "revision": revision,
-        "domains": domains,
-        "knowledge_forms": forms,
-        "path": relative,
-        "sha256": digest,
-    }
-
-
-def _valid_labels(value: object) -> bool:
-    return (
-        isinstance(value, list)
-        and bool(value)
-        and all(isinstance(item, str) and bool(item.strip()) for item in value)
-        and len(set(value)) == len(value)
-    )
-
-
 def _manifest_matches(release: Path, expected: dict[str, Any]) -> bool:
     manifest_path = release / "manifest.json"
-    if release.is_symlink() or manifest_path.is_symlink() or not manifest_path.is_file():
+    if (
+        release.is_symlink()
+        or manifest_path.is_symlink()
+        or not manifest_path.is_file()
+    ):
         return False
     try:
         actual = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -126,9 +82,17 @@ def build_release(source_repo: Path, source_commit: str, releases_root: Path) ->
     releases_root = Path(releases_root)
     if _COMMIT.fullmatch(source_commit) is None:
         raise HrKnowledgeError("invalid source_commit")
-    resolved = _git(
-        source_repo, "rev-parse", "--verify", "--end-of-options", f"{source_commit}^{{commit}}"
-    ).decode("ascii").strip()
+    resolved = (
+        _git(
+            source_repo,
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            f"{source_commit}^{{commit}}",
+        )
+        .decode("ascii")
+        .strip()
+    )
     if resolved != source_commit:
         raise HrKnowledgeError("invalid source_commit")
     tree = _git(
@@ -150,20 +114,28 @@ def build_release(source_repo: Path, source_commit: str, releases_root: Path) ->
             git_path = raw_path.decode("utf-8")
         except (ValueError, UnicodeError) as exc:
             raise HrKnowledgeError("invalid knowledge path") from exc
-        if kind != "blob" or mode == "120000" or not git_path.startswith(_SOURCE_PREFIX):
+        if (
+            kind != "blob"
+            or mode == "120000"
+            or not git_path.startswith(_SOURCE_PREFIX)
+        ):
             raise HrKnowledgeError("invalid knowledge path")
         relative = git_path.removeprefix(_SOURCE_PREFIX)
         _validate_relative(relative)
         blobs.append((relative, object_id))
     relative_names = {relative for relative, _ in blobs}
-    if not _REQUIRED_FILES <= relative_names:
+    if "README.md" not in relative_names or not any(
+        name.startswith("sources/") and name.endswith(".md") for name in relative_names
+    ):
         raise HrKnowledgeError("knowledge release is incomplete")
-    recruiting = sorted(
+    resource_paths = sorted(
         relative
         for relative in relative_names
-        if relative.startswith("recruiting/") and PurePosixPath(relative).suffix == ".md"
+        if not relative.startswith("sources/")
+        and PurePosixPath(relative).name != "README.md"
+        and PurePosixPath(relative).suffix == ".md"
     )
-    if not recruiting:
+    if not resource_paths:
         raise HrKnowledgeError("knowledge release is incomplete")
 
     releases_root.mkdir(parents=True, exist_ok=True)
@@ -178,10 +150,12 @@ def build_release(source_repo: Path, source_commit: str, releases_root: Path) ->
             files[relative] = _digest(body)
         resources = [
             _resource_metadata(staging / relative, relative, files[relative])
-            for relative in recruiting
+            for relative in resource_paths
         ]
         identities = [(item["id"], item["revision"]) for item in resources]
-        if len({item["id"] for item in resources}) != len(resources) or len(set(identities)) != len(resources):
+        if len({item["id"] for item in resources}) != len(resources) or len(
+            set(identities)
+        ) != len(resources):
             raise HrKnowledgeError("knowledge resource IDs/revisions must be unique")
         manifest = {
             "source_commit": source_commit,
@@ -197,7 +171,9 @@ def build_release(source_repo: Path, source_commit: str, releases_root: Path) ->
         if destination.exists() or destination.is_symlink():
             if _manifest_matches(destination, manifest):
                 return destination
-            raise HrKnowledgeError("immutable knowledge release already exists with changed content")
+            raise HrKnowledgeError(
+                "immutable knowledge release already exists with changed content"
+            )
         os.replace(staging, destination)
         staging = Path()
         return destination
@@ -207,12 +183,18 @@ def build_release(source_repo: Path, source_commit: str, releases_root: Path) ->
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build an immutable HR knowledge release")
+    parser = argparse.ArgumentParser(
+        description="Build an immutable HR knowledge release"
+    )
     parser.add_argument("--source-repo", type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--releases-root", type=Path, required=True)
     arguments = parser.parse_args()
-    print(build_release(arguments.source_repo, arguments.source_commit, arguments.releases_root))
+    print(
+        build_release(
+            arguments.source_repo, arguments.source_commit, arguments.releases_root
+        )
+    )
 
 
 if __name__ == "__main__":

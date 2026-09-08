@@ -28,17 +28,73 @@ def _relative_path(value: object) -> PurePosixPath:
     if not isinstance(value, str):
         raise HrKnowledgeError("invalid knowledge path")
     path = PurePosixPath(value)
-    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+    if (
+        path.is_absolute()
+        or not path.parts
+        or path.as_posix() != value
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
         raise HrKnowledgeError("invalid knowledge path")
     return path
 
 
+def _resource_metadata(path: Path, relative: str, digest: str) -> dict[str, Any]:
+    try:
+        metadata, _ = parse_frontmatter(path)
+    except (AiNotesContentError, OSError, UnicodeError) as exc:
+        raise HrKnowledgeError("invalid knowledge resource metadata") from exc
+    required = ("id", "title", "revision", "domains", "knowledge_forms")
+    if any(key not in metadata for key in required):
+        raise HrKnowledgeError("invalid knowledge resource metadata")
+    resource_id = metadata["id"]
+    revision = metadata["revision"]
+    title = metadata["title"]
+    domains = metadata["domains"]
+    forms = metadata["knowledge_forms"]
+    if (
+        not isinstance(resource_id, str)
+        or _RESOURCE_ID.fullmatch(resource_id) is None
+        or Path(relative).stem != resource_id
+        or not isinstance(title, str)
+        or not title.strip()
+        or isinstance(revision, bool)
+        or not isinstance(revision, int)
+        or revision < 1
+        or not _valid_labels(domains)
+        or not _valid_labels(forms)
+    ):
+        raise HrKnowledgeError("invalid knowledge resource metadata")
+    return {
+        "id": resource_id,
+        "title": title,
+        "revision": revision,
+        "domains": domains,
+        "knowledge_forms": forms,
+        "path": relative,
+        "sha256": digest,
+    }
+
+
+def _valid_labels(value: object) -> bool:
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(item, str) and bool(item.strip()) for item in value)
+        and len(set(value)) == len(value)
+    )
+
+
 def _read_manifest(root: Path, source_commit: str) -> tuple[Path, dict[str, Any]]:
-    if _COMMIT.fullmatch(source_commit) is None:
+    if not isinstance(source_commit, str) or _COMMIT.fullmatch(source_commit) is None:
         raise HrKnowledgeError("invalid source_commit")
     release = root / source_commit
     manifest_path = release / "manifest.json"
-    if release.is_symlink() or manifest_path.is_symlink() or not manifest_path.is_file():
+    if (
+        root.is_symlink()
+        or release.is_symlink()
+        or manifest_path.is_symlink()
+        or not manifest_path.is_file()
+    ):
         raise HrKnowledgeError("knowledge release unavailable")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -53,7 +109,14 @@ def _read_manifest(root: Path, source_commit: str) -> tuple[Path, dict[str, Any]
     for value, expected in files.items():
         relative = _relative_path(value)
         path = release.joinpath(*relative.parts)
-        if path.is_symlink() or not path.is_file() or not isinstance(expected, str):
+        if (
+            any(
+                release.joinpath(*relative.parts[:i]).is_symlink()
+                for i in range(1, len(relative.parts) + 1)
+            )
+            or not path.is_file()
+            or not isinstance(expected, str)
+        ):
             raise HrKnowledgeError("knowledge release content mismatch")
         try:
             actual = _digest(path.read_bytes())
@@ -61,6 +124,20 @@ def _read_manifest(root: Path, source_commit: str) -> tuple[Path, dict[str, Any]
             raise HrKnowledgeError("knowledge release unavailable") from exc
         if actual != expected:
             raise HrKnowledgeError("knowledge release content mismatch")
+    resource_ids = set()
+    for resource in resources:
+        if not isinstance(resource, dict):
+            raise HrKnowledgeError("knowledge resource manifest invalid")
+        relative = _relative_path(resource.get("path"))
+        digest = files.get(relative.as_posix())
+        if digest is None or resource.get("sha256") != digest:
+            raise HrKnowledgeError("knowledge resource hash mismatch")
+        expected = _resource_metadata(
+            release.joinpath(*relative.parts), relative.as_posix(), digest
+        )
+        if resource != expected or resource["id"] in resource_ids:
+            raise HrKnowledgeError("knowledge resource identity mismatch")
+        resource_ids.add(resource["id"])
     return release, manifest
 
 
@@ -105,7 +182,10 @@ class HrKnowledgeRepository:
             metadata, markdown = parse_frontmatter(release.joinpath(*relative.parts))
         except (AiNotesContentError, OSError, UnicodeError) as exc:
             raise HrKnowledgeError("knowledge resource unavailable") from exc
-        if any(metadata.get(key) != resource.get(key) for key in ("id", "title", "revision", "domains", "knowledge_forms")):
+        if any(
+            metadata.get(key) != resource.get(key)
+            for key in ("id", "title", "revision", "domains", "knowledge_forms")
+        ):
             raise HrKnowledgeError("knowledge resource identity mismatch")
         return {**resource, "source_commit": source_commit, "markdown": markdown}
 
@@ -113,7 +193,9 @@ class HrKnowledgeRepository:
         commits: set[str] = set()
         for selection in selections:
             if not isinstance(selection, dict) or set(selection) != _SELECTION_KEYS:
-                raise HrKnowledgeError("invalid knowledge selection; paths are not accepted")
+                raise HrKnowledgeError(
+                    "invalid knowledge selection; paths are not accepted"
+                )
             commit = selection.get("source_commit")
             if not isinstance(commit, str):
                 raise HrKnowledgeError("invalid knowledge selection identity")
@@ -149,6 +231,9 @@ class HrKnowledgeRepository:
             ),
             "user_selected_resources": normalized,
         }
-        if len(json.dumps(context, ensure_ascii=False).encode("utf-8")) > MAX_CONTEXT_BYTES:
+        if (
+            len(json.dumps(context, ensure_ascii=False).encode("utf-8"))
+            > MAX_CONTEXT_BYTES
+        ):
             raise HrKnowledgeError("hr_reference_knowledge exceeds 8 KiB")
         return context

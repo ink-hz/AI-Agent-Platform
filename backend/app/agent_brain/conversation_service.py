@@ -20,6 +20,10 @@ class ConversationCancelResult:
     cancel_requested: bool
 
 
+class ConversationKnowledgeSelectionError(ValueError):
+    """Selected reference cannot be used for this HR turn."""
+
+
 class ConversationCommandService:
     """Select the retained direct-Agent path or the durable Brain command path."""
 
@@ -32,10 +36,12 @@ class ConversationCommandService:
         max_steps: int = 12,
         max_tasks: int = 8,
         max_duration_seconds: int = 900,
+        hr_knowledge_repository=None,
     ) -> None:
         if type(v2_enabled) is not bool:
             raise ValueError("V2 Conversation flag invalid")
         self._repository = repository
+        self._hr_knowledge_repository = hr_knowledge_repository
         self.v2_enabled = v2_enabled
         self._model_config = dict(
             model_config
@@ -47,6 +53,16 @@ class ConversationCommandService:
         self._max_steps = max_steps
         self._max_tasks = max_tasks
         self._max_duration_seconds = max_duration_seconds
+
+    def _validate_knowledge(self, submission, *, mode, agent_id, worker_owned):
+        if not submission.user_selected_resources:
+            return
+        if mode != "direct_agent" or agent_id != "hr-bot" or not worker_owned or self._hr_knowledge_repository is None:
+            raise ConversationKnowledgeSelectionError("HR knowledge is unavailable for this conversation")
+        try:
+            self._hr_knowledge_repository.prompt_context(submission.user_selected_resources)
+        except ValueError:
+            raise ConversationKnowledgeSelectionError("HR knowledge selection unavailable or invalid") from None
 
     def ensure_direct_conversation_shell(
         self,
@@ -76,6 +92,7 @@ class ConversationCommandService:
         position_draft_id: UUID | None = None,
     ) -> ConversationCreateResult:
         submission = normalize_turn_submission(submission)
+        self._validate_knowledge(submission, mode=mode, agent_id=direct_agent_id, worker_owned=getattr(self._repository, "worker_direct_enabled", False))
         if not self.v2_enabled or mode == "direct_agent":
             return self._repository.start(
                 owner,
@@ -110,6 +127,7 @@ class ConversationCommandService:
         conversation = self._repository.conversation_for_owner(
             owner, conversation_id
         )
+        self._validate_knowledge(submission, mode=conversation.mode, agent_id=conversation.direct_agent_id, worker_owned=conversation.execution_owner == "worker_direct")
         if not self.v2_enabled or conversation.mode == "direct_agent":
             return self._repository.append_turn(
                 owner, conversation_id, request_id, submission

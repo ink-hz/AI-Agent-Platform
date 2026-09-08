@@ -58,7 +58,9 @@ def _commit_knowledge(repo: Path, *, marker: str = "body", revision: int = 1) ->
             _resource(resource_id, revision=revision, marker=marker), encoding="utf-8"
         )
         index_rows.append(f"- `{resource_id}`: Title {resource_id}")
-    (knowledge / "README.md").write_text("# Index\n\n" + "\n".join(index_rows) + "\n", encoding="utf-8")
+    (knowledge / "README.md").write_text(
+        "# Index\n\n" + "\n".join(index_rows) + "\n", encoding="utf-8"
+    )
     (sources / "2026-09-08-hr-methodology-sources.md").write_text(
         "# Sources\n", encoding="utf-8"
     )
@@ -82,7 +84,9 @@ def test_release_uses_only_committed_blobs_and_writes_complete_manifest(
 ) -> None:
     commit = _commit_knowledge(source_repo, marker="committed")
     changed = source_repo / "bots/hr/knowledge/recruiting/job-and-context.md"
-    changed.write_text(_resource("job-and-context", marker="uncommitted"), encoding="utf-8")
+    changed.write_text(
+        _resource("job-and-context", marker="uncommitted"), encoding="utf-8"
+    )
 
     release = build_release(source_repo, commit, tmp_path / "releases")
 
@@ -148,7 +152,9 @@ def test_repository_supports_historical_selection_and_checks_identity(
 ) -> None:
     first_commit = _commit_knowledge(source_repo, marker="historical", revision=1)
     first_release = build_release(source_repo, first_commit, tmp_path / "releases")
-    first_resource = json.loads((first_release / "manifest.json").read_text())["resources"][0]
+    first_resource = json.loads((first_release / "manifest.json").read_text())[
+        "resources"
+    ][0]
 
     for path in (source_repo / "bots/hr/knowledge").rglob("*"):
         if path.is_file():
@@ -168,7 +174,9 @@ def test_repository_supports_historical_selection_and_checks_identity(
     context = repository.prompt_context((selection,))
 
     assert context["source_commit"] == first_commit
-    assert context["agent_release_path"] == f"/srv/hr/.knowledge-releases/{first_commit}"
+    assert (
+        context["agent_release_path"] == f"/srv/hr/.knowledge-releases/{first_commit}"
+    )
     assert context["user_selected_resources"] == [selection]
     assert "historical" not in json.dumps(context, ensure_ascii=False)
     article = repository.article(first_commit, first_resource["id"])
@@ -176,7 +184,9 @@ def test_repository_supports_historical_selection_and_checks_identity(
     with pytest.raises(HrKnowledgeError, match="identity"):
         repository.prompt_context(({**selection, "sha256": "0" * 64},))
     with pytest.raises(HrKnowledgeError, match="one source_commit"):
-        repository.prompt_context((selection, {**selection, "source_commit": second_commit}))
+        repository.prompt_context(
+            (selection, {**selection, "source_commit": second_commit})
+        )
 
 
 def test_index_and_prompt_context_enforce_utf8_budgets(
@@ -205,3 +215,46 @@ def test_index_and_prompt_context_enforce_utf8_budgets(
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(HrKnowledgeError, match="4 KiB"):
         repository.index()
+
+
+@pytest.mark.parametrize(
+    "mutation", ["hash", "untracked-path", "duplicate-id", "parent-symlink"]
+)
+def test_manifest_binds_resources_to_verified_unique_files(
+    source_repo, tmp_path, mutation
+):
+    commit = _commit_knowledge(source_repo)
+    release = build_release(source_repo, commit, tmp_path / "releases")
+    manifest_path = release / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    resource = manifest["resources"][0]
+    if mutation == "hash":
+        resource["sha256"] = "0" * 64
+    elif mutation == "untracked-path":
+        del manifest["files"][resource["path"]]
+    elif mutation == "duplicate-id":
+        manifest["resources"].append(dict(resource))
+    else:
+        outside = tmp_path / "outside-resources"
+        (release / "recruiting").rename(outside)
+        (release / "recruiting").symlink_to(outside, target_is_directory=True)
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(HrKnowledgeError):
+        HrKnowledgeRepository(tmp_path / "releases", "/agent/releases", commit).index()
+
+
+def test_resource_discovery_extends_to_new_hr_domains_without_code_changes(
+    source_repo, tmp_path
+):
+    _commit_knowledge(source_repo)
+    performance = source_repo / "bots/hr/knowledge/performance"
+    performance.mkdir()
+    (performance / "goal-dialogue.md").write_text(_resource("goal-dialogue"))
+    _git(source_repo, "add", ".")
+    _git(source_repo, "commit", "-m", "add performance resource")
+    commit = _git(source_repo, "rev-parse", "HEAD")
+    build_release(source_repo, commit, tmp_path / "releases")
+    indexed = HrKnowledgeRepository(
+        tmp_path / "releases", "/agent/releases", commit
+    ).index()
+    assert "goal-dialogue" in {item["id"] for item in indexed["resources"]}
