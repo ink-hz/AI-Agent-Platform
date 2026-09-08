@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ArticleMarkdown } from "../../components/ai-notes/ArticleMarkdown";
 import { fetchHrKnowledgeArticle, fetchHrKnowledgeIndex, type HrKnowledgeArticle, type HrKnowledgeIndex } from "../../hrKnowledgeApi";
@@ -11,6 +11,13 @@ export interface HrKnowledgeClient {
 
 const defaultClient: HrKnowledgeClient = { index: fetchHrKnowledgeIndex, article: fetchHrKnowledgeArticle };
 
+function withoutReleaseLinks(markdown: string): string {
+  return markdown.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (link, label: string, href: string) => {
+    const target = href.trim();
+    return !/^[a-z][a-z0-9+.-]*:/i.test(target) && /\.md(?:#[^)]*)?$/i.test(target) ? label : link;
+  });
+}
+
 export function HrKnowledgePanel({ client = defaultClient, onClose, onSelect }: {
   client?: HrKnowledgeClient;
   onClose: () => void;
@@ -20,6 +27,7 @@ export function HrKnowledgePanel({ client = defaultClient, onClose, onSelect }: 
   const [article, setArticle] = useState<HrKnowledgeArticle | null>(null);
   const [filter, setFilter] = useState<string | null>(null);
   const [failure, setFailure] = useState(false);
+  const articleRequest = useRef(0);
   useEffect(() => {
     const controller = new AbortController();
     client.index(controller.signal).then(setIndex).catch(() => { if (!controller.signal.aborted) setFailure(true); });
@@ -29,13 +37,17 @@ export function HrKnowledgePanel({ client = defaultClient, onClose, onSelect }: 
   const resources = index?.resources.filter((item) => !filter || item.domains.includes(filter) || item.knowledgeForms.includes(filter)) ?? [];
   const open = (id: string) => {
     if (!index) return;
+    const request = articleRequest.current + 1;
+    articleRequest.current = request;
     setFailure(false);
-    void client.article(index.sourceCommit, id).then(setArticle).catch(() => setFailure(true));
+    void client.article(index.sourceCommit, id).then((value) => {
+      if (articleRequest.current === request) setArticle(value);
+    }).catch(() => { if (articleRequest.current === request) setFailure(true); });
   };
   return <><button aria-label="关闭方法与模型" className="hr-drawer-backdrop" onClick={onClose} type="button" />
     <aside aria-label="方法与模型" aria-modal="true" className="hr-knowledge-panel" role="dialog">
       <header><div><span>HR 参考知识</span><h2>方法与模型</h2></div><button onClick={onClose} type="button">关闭</button></header>
-      <p className="hr-knowledge-note">选择方法只会把版本标识加入下一轮任务；回答中提及的参考方法是 Agent 自述，不代表已核验实际读取。</p>
+      <p className="hr-knowledge-note">选择后，请继续写下你想解决的问题。</p>
       {!index && !failure && <p role="status">正在读取方法库…</p>}
       {failure && <p role="alert">方法库暂时无法读取。</p>}
       {index && <div className="hr-knowledge-layout">
@@ -46,11 +58,11 @@ export function HrKnowledgePanel({ client = defaultClient, onClose, onSelect }: 
         </nav>
         <main>
           {article ? <>
-            <div className="hr-knowledge-meta"><span>版本 {article.revision}</span><span>来源 {article.path}</span></div>
-            <ArticleMarkdown markdown={article.markdown} />
+            <div className="hr-knowledge-meta"><span>版本 {article.revision}</span></div>
+            <ArticleMarkdown markdown={withoutReleaseLinks(article.markdown)} />
             <button className="hr-knowledge-discuss" onClick={() => onSelect({ sourceCommit: article.sourceCommit,
               id: article.id, revision: article.revision, sha256: article.sha256 })} type="button">带着这个方法讨论</button>
-          </> : <ArticleMarkdown markdown={index.index} />}
+          </> : <div className="hr-knowledge-empty"><h3>选择一个方法查看详情</h3><p>可按适用领域或知识形式筛选，再带入下一轮对话。</p></div>}
         </main>
       </div>}
     </aside>

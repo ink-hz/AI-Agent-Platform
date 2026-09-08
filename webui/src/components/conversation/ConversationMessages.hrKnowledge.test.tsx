@@ -13,11 +13,11 @@ it("shows a restored user-selected method as user input metadata", async () => {
     message_id: "m1", conversation_id: "c1", seq: 1, role: "user", content: "设计面试",
     turn_id: "t1", delivery_status: "completed", created_at: "2026-09-08T00:00:00Z", completed_at: "2026-09-08T00:00:01Z",
     input_attachments: [], output_attachments: [], active_attachment_ids: [],
-    userSelectedResources: [{ sourceCommit: "abc123", id: "structured-interview", revision: "2026-09-08", sha256: "a".repeat(64) }],
+    userSelectedResources: [{ sourceCommit: "abc123", id: "structured-interview", revision: 1, sha256: "a".repeat(64) }],
   };
   try {
     await act(async () => root.render(<ConversationMessages messages={[message]} />));
     expect(host.textContent).toContain("用户指定参考");
-    expect(host.textContent).toContain("structured-interview · 2026-09-08");
+    expect(host.textContent).toContain("structured-interview · 1");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

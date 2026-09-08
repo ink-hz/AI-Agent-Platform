@@ -3,7 +3,7 @@ import { platformPath } from "./auth";
 export interface HrKnowledgeResource {
   id: string;
   title: string;
-  revision: string;
+  revision: number;
   domains: string[];
   knowledgeForms: string[];
   path: string;
@@ -36,12 +36,17 @@ function strings(value: unknown): string[] {
   return [...value];
 }
 
+function positiveInteger(value: unknown): number {
+  if (!Number.isSafeInteger(value) || Number(value) <= 0) throw new Error("HR knowledge response invalid");
+  return Number(value);
+}
+
 function resource(value: unknown): HrKnowledgeResource {
   const item = object(value);
   const path = text(item.path);
   const sha256 = text(item.sha256);
   if (path.startsWith("/") || path.includes("..") || !/^[0-9a-f]{64}$/.test(sha256)) throw new Error("HR knowledge response invalid");
-  return { id: text(item.id), title: text(item.title), revision: text(item.revision),
+  return { id: text(item.id), title: text(item.title), revision: positiveInteger(item.revision),
     domains: strings(item.domains), knowledgeForms: strings(item.knowledge_forms), path, sha256 };
 }
 

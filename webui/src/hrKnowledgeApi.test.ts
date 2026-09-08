@@ -6,7 +6,7 @@ import { fetchHrKnowledgeArticle, fetchHrKnowledgeIndex } from "./hrKnowledgeApi
 afterEach(() => { vi.unstubAllGlobals(); });
 
 it("reads the versioned HR knowledge index and article with same-origin credentials", async () => {
-  const resource = { id: "structured-interview", title: "结构化面试", revision: "2026-09-08",
+  const resource = { id: "structured-interview", title: "结构化面试", revision: 1,
     domains: ["招聘"], knowledge_forms: ["方法"], path: "recruiting/structured-interview.md", sha256: "a".repeat(64) };
   const fetchMock = vi.fn()
     .mockResolvedValueOnce(new Response(JSON.stringify({ source_commit: "abc123", index: "# 索引", resources: [resource] }), { status: 200 }))
@@ -23,7 +23,7 @@ it("reads the versioned HR knowledge index and article with same-origin credenti
 
 it("rejects absolute server paths and invalid hashes", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
-    source_commit: "abc123", index: "# 索引", resources: [{ id: "bad", title: "Bad", revision: "1",
+    source_commit: "abc123", index: "# 索引", resources: [{ id: "bad", title: "Bad", revision: 1,
       domains: [], knowledge_forms: [], path: "/srv/private.md", sha256: "bad" }],
   }), { status: 200 })));
   await expect(fetchHrKnowledgeIndex()).rejects.toThrow("invalid");

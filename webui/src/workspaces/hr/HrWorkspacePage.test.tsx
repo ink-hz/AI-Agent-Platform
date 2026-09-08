@@ -50,6 +50,14 @@ vi.mock("./HrPanoramaWorkspace", () => ({
   HrPanoramaWorkspace: () => <div data-panorama-workspace>全景报告</div>,
 }));
 
+vi.mock("./HrKnowledgePanel", () => ({
+  HrKnowledgePanel: ({ onSelect }: { onSelect: (value: unknown) => void }) => <button
+    data-select-knowledge
+    onClick={() => onSelect({ sourceCommit: "abc123", id: "structured-interview", revision: 1, sha256: "a".repeat(64) })}
+    type="button"
+  >选择结构化面试</button>,
+}));
+
 vi.mock("../../attachmentApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../attachmentApi")>();
   const upload = {
@@ -346,6 +354,19 @@ describe("HrWorkspacePage", () => {
     expect(container.querySelector<HTMLAnchorElement>(
       '.hr-workspace-nav a[href="/hr/conversations/c-7"]',
     )?.textContent).toBe("对话");
+  });
+
+  it("carries a method selected from panorama back to the retained conversation composer", async () => {
+    window.history.replaceState({}, "", "/hr/conversations/c-7");
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    await act(async () => root.render(<HrWorkspacePage account={account} panorama />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.includes("方法与模型"))!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-select-knowledge]")!.click());
+
+    expect(window.location.pathname).toBe("/hr/conversations/c-7");
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    expect(container.querySelector('[aria-label="本轮指定方法"]')?.textContent).toContain("structured-interview");
   });
 
   it("opens a new HR conversation at the canonical workspace root with a trailing slash", async () => {

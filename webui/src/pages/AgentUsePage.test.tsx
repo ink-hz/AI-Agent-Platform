@@ -177,7 +177,7 @@ describe("professional Agent use pages", () => {
   });
 
   it("keeps an explicitly selected method after failure and clears it only after success", async () => {
-    const selection = { sourceCommit: "abc123", id: "structured-interview", revision: "2026-09-08", sha256: "a".repeat(64) };
+    const selection = { sourceCommit: "abc123", id: "structured-interview", revision: 1, sha256: "a".repeat(64) };
     const send = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(result);
     const createSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
     const cleared = vi.fn();

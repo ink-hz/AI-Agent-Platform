@@ -92,8 +92,6 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const knowledgeSelections = useRef(new Map<string, HrKnowledgeSelection[]>());
   const [, setKnowledgeRevision] = useState(0);
   const draftOwnerId = props.account.internal_user_id;
-  const knowledgeOwner = `${draftOwnerId}:${props.conversationId ?? props.positionId ?? "new"}`;
-  const selectedKnowledge = knowledgeSelections.current.get(knowledgeOwner) ?? [];
   const retainFreeChatDraft = useCallback((snapshot: DirectAgentDraftSnapshot) => {
     freeChatDraftSnapshots.current.set(draftOwnerId, snapshot);
   }, [draftOwnerId]);
@@ -119,6 +117,8 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const chatHref = chatTarget?.positionId
     ? `/hr/positions/${encodeURIComponent(chatTarget.positionId)}/conversations/${encodeURIComponent(chatTarget.conversationId)}`
     : chatConversationId ? hrConversationPath(chatConversationId) : "/hr/";
+  const knowledgeOwner = `${draftOwnerId}:${chatConversationId ?? "new"}`;
+  const selectedKnowledge = knowledgeSelections.current.get(knowledgeOwner) ?? [];
   const keepChatHost = !positionDetailActive || Boolean(positionConversationRoute && (retainedPositionHost || positionRouteValidated));
   const positionConversationPath = (conversationId: string) => props.positionId
     ? `/hr/positions/${encodeURIComponent(props.positionId)}/conversations/${encodeURIComponent(conversationId)}`
@@ -314,6 +314,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
       knowledgeSelections.current.set(knowledgeOwner, [selection]);
       setKnowledgeRevision((value) => value + 1);
       setKnowledgeOpen(false);
+      navigate(chatHref);
     }} />}
   </HrWorkspaceShell>;
 }

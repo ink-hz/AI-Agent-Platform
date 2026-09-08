@@ -69,7 +69,7 @@ export interface TurnSubmission {
 export interface HrKnowledgeSelection {
   sourceCommit: string;
   id: string;
-  revision: string;
+  revision: number;
   sha256: string;
 }
 export type ConversationTurnStatus =

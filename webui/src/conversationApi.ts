@@ -143,7 +143,7 @@ function parseKnowledgeSelections(value: unknown): HrKnowledgeSelection[] {
   return value.map((item) => {
     if (!isObject(item) || !hasExactKeys(item, new Set(["source_commit", "id", "revision", "sha256"]))
       || !isNonEmptyString(item.source_commit) || !isNonEmptyString(item.id)
-      || !isNonEmptyString(item.revision) || typeof item.sha256 !== "string"
+      || !isPositiveInteger(item.revision) || typeof item.sha256 !== "string"
       || !/^[0-9a-f]{64}$/.test(item.sha256)) throw new Error("Message response invalid");
     return { sourceCommit: item.source_commit, id: item.id, revision: item.revision, sha256: item.sha256 };
   });
@@ -570,7 +570,7 @@ function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
     : value.userSelectedResources.map((item) => {
       if (!isObject(item) || !hasExactKeys(item, new Set(["sourceCommit", "id", "revision", "sha256"]))
         || !isNonEmptyString(item.sourceCommit) || !isNonEmptyString(item.id)
-        || !isNonEmptyString(item.revision) || typeof item.sha256 !== "string"
+        || !isPositiveInteger(item.revision) || typeof item.sha256 !== "string"
         || !/^[0-9a-f]{64}$/.test(item.sha256)) throw new Error("Conversation submission invalid");
       return { ...item };
     });
