@@ -32,7 +32,7 @@ describe("HrWorkspaceShell", () => {
     expect(container.querySelector(".hr-workspace-brand")?.textContent).toContain("HR 智能工作台");
     expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/"]')?.getAttribute("aria-current")).toBe("page");
     expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/positions"]')?.textContent).toBe("岗位");
-    expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/panorama"]')?.textContent).toBe("全景分析");
+    expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/panorama"]')?.textContent).toBe("HR 情报");
     expect(container.querySelector(".hr-workspace-identity")?.textContent).toContain("磐德");
     expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-platform-link')?.getAttribute("href")).toBe("/");
     expect(container.querySelectorAll<HTMLAnchorElement>(".hr-workspace-topbar a")).toHaveLength(5);
@@ -44,7 +44,7 @@ describe("HrWorkspaceShell", () => {
 
     expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/panorama"]')
       ?.getAttribute("aria-current")).toBe("page");
-    expect(container.querySelector('.hr-workspace-nav a[aria-current="page"]')?.textContent).toBe("全景分析");
+    expect(container.querySelector('.hr-workspace-nav a[aria-current="page"]')?.textContent).toBe("HR 情报");
   });
 
   it("shows the directory stale state inside the independent HR product", async () => {

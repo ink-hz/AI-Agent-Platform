@@ -23,6 +23,9 @@ import type { HrTurnScope, HrComposerDraft, Conversation, ConversationAttachment
 import { ConversationPage as ConversationThread, type ConversationPageClient } from "../../pages/ConversationPage";
 import { workspaceLaunchPath } from "../../platform/workspaces";
 import { navigate } from "../../router";
+import {
+  serializeHrConversationText, type HrIntelligenceReference,
+} from "../hr/hrIntelligenceReference";
 
 
 export interface DirectAgentWorkspaceProps {
@@ -58,6 +61,9 @@ export interface DirectAgentWorkspaceProps {
   selectedKnowledgeResources?: HrKnowledgeSelection[];
   onRemoveKnowledgeResource?: (id: string) => void;
   onKnowledgeResourcesSubmitted?: () => void;
+  intelligenceReferences?: readonly HrIntelligenceReference[];
+  onRemoveIntelligenceReference?: (key: string) => void;
+  onIntelligenceReferencesSubmitted?: (keys: readonly string[]) => void;
 }
 
 export interface DirectAgentDraftSnapshot {
@@ -121,6 +127,9 @@ export function DirectAgentWorkspace({
   selectedKnowledgeResources = [],
   onRemoveKnowledgeResource,
   onKnowledgeResourcesSubmitted,
+  intelligenceReferences = [],
+  onRemoveIntelligenceReference,
+  onIntelligenceReferencesSubmitted,
   loadCatalog = fetchAgentCatalog,
   createSubmission = startConversation,
   historyClient = DEFAULT_HISTORY_CLIENT,
@@ -148,15 +157,22 @@ export function DirectAgentWorkspace({
     () => initialDraftSnapshot?.uploadQueue.map((item) => ({ ...item })) ?? [],
   );
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
+  const retained = useRef<{ text: string; referenceKeys: string[]; submission: ConversationSubmission } | null>(null);
   const inFlight = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
   const uploaderRef = useRef<AttachmentUploaderHandle | null>(null);
   const card = catalog?.find((item) => item.agent_id === agentId) ?? null;
-  const inputTooLarge = conversationInputTooLarge(text.trim());
-  const submitDisabled = (!text.trim() && attachments.length === 0)
+  let serializedText = text.trim();
+  let referenceFailure: string | null = null;
+  try {
+    serializedText = serializeHrConversationText(text, intelligenceReferences);
+  } catch {
+    referenceFailure = "所选情报超过 12 KiB，请移除部分引用后再发送。";
+  }
+  const inputTooLarge = conversationInputTooLarge(serializedText);
+  const submitDisabled = (!serializedText && attachments.length === 0)
     || uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state))
-    || inputTooLarge || pending || account.hard_stale_read_only;
+    || Boolean(referenceFailure) || inputTooLarge || pending || account.hard_stale_read_only;
   const workspacePath = workspaceRootPath ?? rootPath(agentId);
 
   useEffect(() => {
@@ -242,10 +258,10 @@ export function DirectAgentWorkspace({
   };
 
   const send = async () => {
-    const normalized = text.trim();
+    const normalized = serializedText;
     const readyIds = attachments.filter((item) => item.state === "ready").map((item) => item.attachmentId);
     const uploadPending = uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state));
-    if (!card || (!normalized && readyIds.length === 0) || uploadPending || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
+    if (!card || (!normalized && readyIds.length === 0) || uploadPending || referenceFailure || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
     const input: string | TurnSubmission = card.attachment_limits || selectedKnowledgeResources.length || turnScope ? {
       text: normalized, attachmentIds: readyIds, activeAttachmentIds: readyIds,
       ...(turnScope ? {scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...readyIds])]}} : {}),
@@ -254,7 +270,7 @@ export function DirectAgentWorkspace({
     const requestKey = JSON.stringify({ input, scope: newConversationScope ?? null });
     let selected = retained.current;
     if (!selected || selected.text !== requestKey) {
-      selected = { text: requestKey, submission: newConversationScope
+      selected = { text: requestKey, referenceKeys: intelligenceReferences.map((item) => item.key), submission: newConversationScope
         ? createSubmission(input, account.csrf_token, card.agent_id, newConversationScope)
         : createSubmission(input, account.csrf_token, card.agent_id) };
       retained.current = selected;
@@ -265,6 +281,7 @@ export function DirectAgentWorkspace({
     try {
       const result = await selected.submission.send(controller.signal);
       retained.current = null; upsertConversation(result.conversation);
+      onIntelligenceReferencesSubmitted?.(selected.referenceKeys);
       if (agentId === "hr-bot") { setText(""); setAttachments([]); setUploadQueue([]); }
       if (selectedKnowledgeResources.length) onKnowledgeResourcesSubmitted?.();
       onOpenConversation(createdConversationPath(result.conversation.conversation_id));
@@ -344,6 +361,9 @@ export function DirectAgentWorkspace({
           messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
           turnScope={turnScope} composerDraft={composerDraft} renderTurnContext={renderTurnContext}
+          intelligenceReferences={intelligenceReferences}
+          onRemoveIntelligenceReference={onRemoveIntelligenceReference}
+          onIntelligenceReferencesSubmitted={onIntelligenceReferencesSubmitted}
           materialsPresentation={agentId === "hr-bot" ? "drawer" : layout === "focused" ? "hidden" : "sidebar"}
         />
         : <div className="agent-use-page"><div className="agent-direct-introduction">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>}
@@ -384,6 +404,15 @@ export function DirectAgentWorkspace({
               {selectedKnowledgeResources.map((item) => <span key={`${item.sourceCommit}:${item.id}`}><strong>{item.id}</strong><small>版本 {item.revision}</small>
                 <button aria-label={`移除方法 ${item.id}`} onClick={() => onRemoveKnowledgeResource?.(item.id)} type="button">×</button></span>)}
             </div>}
+            {intelligenceReferences.length > 0 && <section className="hr-intelligence-reference-selection" aria-label="已选公司情报">
+              <header><strong>已选公司情报</strong><PlatformLink href={`/hr/panorama?company=${encodeURIComponent(intelligenceReferences[0].companyKey)}`}>返回公司情报</PlatformLink></header>
+              {intelligenceReferences.map((reference) => <details key={reference.key}>
+                <summary>{reference.companyName} · {reference.label}</summary>
+                <p>{reference.excerpt}</p>
+                {reference.sourceUrls.map((url) => <a href={url} key={url} rel="noreferrer" target="_blank">查看来源</a>)}
+                {onRemoveIntelligenceReference && <button disabled={pending || account.hard_stale_read_only} onClick={() => { retained.current = null; onRemoveIntelligenceReference(reference.key); }} type="button">移除</button>}
+              </details>)}
+            </section>}
             <ComposerTextarea autoSize={agentId === "hr-bot"} aria-label={`交给 ${card.display_name}`} autoFocus={autoFocusComposer} id="direct-agent-request" rows={agentId === "hr-bot" ? 3 : 8} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
               placeholder="描述招聘任务、粘贴岗位说明或候选人资料……"
               onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }}
@@ -411,6 +440,7 @@ export function DirectAgentWorkspace({
             <div className="agent-direct-composer-actions">{renderedComposerTools && <div className="conversation-composer-tools">{renderedComposerTools}</div>}<span>Enter 发送；Shift+Enter 换行。文字、图片和文件会随本轮一起发送。</span><button className="agent-direct-submit" disabled={submitDisabled} type="submit">{pending ? "正在创建…" : "发送"}</button></div>
           </form>
           {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
+          {referenceFailure && <p className="mission-input-error" role="alert">{referenceFailure}</p>}
           {failure && <div className="brain-submit-error" role="alert"><span>对话暂未创建成功，可安全重试。</span><button onClick={() => void send()} type="button">重新提交</button></div>}
         </div>}
     </section>

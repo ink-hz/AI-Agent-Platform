@@ -38,6 +38,12 @@ def _limit(value: int) -> int:
     return value
 
 
+def _company_key(value: str) -> str:
+    if not isinstance(value, str) or not value or len(value) > 128:
+        raise ValueError("panorama company key invalid")
+    return value
+
+
 def _bundle(row: Mapping[str, Any]) -> dict[str, object]:
     required = {
         "bundle_id",
@@ -117,6 +123,97 @@ class PanoramaRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "current bundle")
 
+    def current_company_directory(self) -> Mapping[str, object] | None:
+        query = (
+            "select bundle_id,generated_at,"
+            "jsonb_build_object('schema_version',source_catalog->'schema_version','companies',"
+            "coalesce((select jsonb_agg(jsonb_build_object('company_key',company->'company_key',"
+            "'canonical_name',company->'canonical_name','aliases',company->'aliases')) "
+            "from jsonb_array_elements(source_catalog->'companies') company),'[]'::jsonb)) source_catalog,"
+            "jsonb_build_object('schema_version',source_coverage->'schema_version','companies',"
+            "coalesce((select jsonb_agg(jsonb_build_object('company_key',coverage->'company_key',"
+            "'state',coverage->'state','observed_at',coverage->'observed_at','job_count',coverage->'job_count',"
+            "'limitations',coverage->'limitations','document_limitations',coverage->'document_limitations')) "
+            "from jsonb_array_elements(source_coverage->'companies') coverage),'[]'::jsonb)) source_coverage,"
+            "coalesce((select jsonb_agg(jsonb_build_object('unit_id',unit->'unit_id','kind',unit->'kind',"
+            "'scope_key',unit->'scope_key','response',jsonb_build_object('summary',unit->'response'->'summary'))) "
+            "from jsonb_array_elements(analysis) unit where unit->>'kind'='company'),'[]'::jsonb) analysis "
+            "from platform_hr.read_current_intelligence_bundle_v85()"
+        )
+        try:
+            with self._connection() as connection:
+                return connection.execute(query, ()).fetchone()
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "current company directory")
+
+    def company_bundle(self, company_key: str, *, bundle_id: UUID | None = None) -> Mapping[str, object]:
+        selected_company_key = _company_key(company_key)
+        if bundle_id is None:
+            source, parameters = "platform_hr.read_current_intelligence_bundle_v85()", (selected_company_key,)
+        else:
+            _identifier(bundle_id)
+            source, parameters = "platform_hr.read_intelligence_bundle_v85(%s)", (selected_company_key, bundle_id)
+        response_fields = (
+            "'summary',unit->'response'->'summary','confidence',unit->'response'->'confidence',"
+            "'facts',unit->'response'->'facts','inferences',unit->'response'->'inferences',"
+            "'recommendations',unit->'response'->'recommendations','alternatives',unit->'response'->'alternatives',"
+            "'unknowns',unit->'response'->'unknowns'"
+        )
+        query = (
+            "with requested as (select %s::text company_key), source as (select bundle_id,generated_at,"
+            "source_catalog,source_coverage,aggregates,analysis from " + source + ") "
+            "select bundle_id,generated_at,"
+            "jsonb_build_object('schema_version',source_catalog->'schema_version','companies',"
+            "coalesce((select jsonb_agg(company) from jsonb_array_elements(source_catalog->'companies') company "
+            "where company->>'company_key'=requested.company_key),'[]'::jsonb)) source_catalog,"
+            "jsonb_build_object('schema_version',source_coverage->'schema_version','companies',"
+            "coalesce((select jsonb_agg(coverage) from jsonb_array_elements(source_coverage->'companies') coverage "
+            "where coverage->>'company_key'=requested.company_key),'[]'::jsonb)) source_coverage,"
+            "coalesce((select jsonb_agg(jsonb_build_object('unit_id',unit->'unit_id','kind',unit->'kind',"
+            "'scope_key',unit->'scope_key','response',jsonb_build_object(" + response_fields + "))) "
+            "from jsonb_array_elements(analysis) unit where unit->>'kind'='company' "
+            "and unit->>'scope_key'=requested.company_key),'[]'::jsonb) analysis,"
+            "jsonb_build_object('schema_version',aggregates->'schema_version','company_matrix',"
+            "case when aggregates->'company_matrix' ? requested.company_key then "
+            "jsonb_build_object(requested.company_key,aggregates->'company_matrix'->requested.company_key) "
+            "else '{}'::jsonb end) aggregates from source cross join requested "
+            "where exists (select 1 from jsonb_array_elements(source_catalog->'companies') company "
+            "where company->>'company_key'=requested.company_key)"
+        )
+        try:
+            with self._connection() as connection:
+                row = connection.execute(query, parameters).fetchone()
+            if row is None:
+                raise PanoramaNotFound("panorama company not found")
+            return row
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "company bundle")
+
+    def company_identity(self, company_key: str, *, bundle_id: UUID | None = None) -> UUID:
+        selected_company_key = _company_key(company_key)
+        if bundle_id is None:
+            source, parameters = "platform_hr.read_current_intelligence_bundle_v85()", (selected_company_key,)
+        else:
+            _identifier(bundle_id)
+            source, parameters = "platform_hr.read_intelligence_bundle_v85(%s)", (selected_company_key, bundle_id)
+        query = (
+            "with requested as (select %s::text company_key) select bundle_id from " + source + " source "
+            "cross join requested where exists (select 1 from jsonb_array_elements(source_catalog->'companies') company "
+            "where company->>'company_key'=requested.company_key)"
+        )
+        try:
+            with self._connection() as connection:
+                row = connection.execute(query, parameters).fetchone()
+            if row is None or not isinstance(row.get("bundle_id"), UUID):
+                raise PanoramaNotFound("panorama company not found")
+            return row["bundle_id"]
+        except PanoramaRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "company identity")
+
     def current_context_bundle(self) -> Mapping[str, object] | None:
         try:
             with self._connection() as connection:
@@ -190,6 +287,51 @@ class PanoramaRepository:
             return jobs
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "jobs")
+
+    def bundle_company_jobs(
+        self, bundle_id: UUID, company_key: str, *, offset: int, limit: int,
+        location: str | None = None, status: str | None = None,
+    ) -> tuple[tuple[Mapping[str, object], ...], int]:
+        _identifier(bundle_id)
+        selected_company_key = _company_key(company_key)
+        selected_limit = _limit(limit)
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100_000:
+            raise ValueError("panorama offset invalid")
+        if any(value is not None and (not isinstance(value, str) or not value) for value in (location, status)):
+            raise ValueError("panorama job filter invalid")
+        if status is not None and status not in {"open", "closed", "unknown"}:
+            raise ValueError("panorama job status invalid")
+        clauses = ["company_key=%s"]
+        parameters: list[object] = [bundle_id, selected_company_key]
+        if location is not None:
+            clauses.append("job->>'location'=%s")
+            parameters.append(location)
+        if status is not None:
+            clauses.append("job->>'status'=%s")
+            parameters.append(status)
+        parameters.extend((offset, selected_limit))
+        query = (
+            "with filtered as (select job,job_id from "
+            "platform_hr.read_intelligence_bundle_jobs_v85(%s) where "
+            + " and ".join(clauses)
+            + "), page as (select job from filtered order by job_id offset %s limit %s) "
+            "select coalesce((select jsonb_agg(job) from page),'[]'::jsonb) as items,"
+            "(select count(*) from filtered) as total"
+        )
+        try:
+            with self._connection() as connection:
+                row = connection.execute(query, tuple(parameters)).fetchone()
+            if not isinstance(row, Mapping):
+                raise TypeError("panorama company jobs invalid")
+            raw_items, total = row.get("items"), row.get("total")
+            if not isinstance(raw_items, list) or isinstance(total, bool) or not isinstance(total, int):
+                raise TypeError("panorama company jobs invalid")
+            items = tuple(raw_items)
+            if any(not isinstance(item, Mapping) for item in items):
+                raise ValueError("panorama company jobs invalid")
+            return items, total
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "company jobs")
 
     def bundle_reference_for_turn(
         self, owner_id: UUID, position_id: UUID, turn_id: UUID

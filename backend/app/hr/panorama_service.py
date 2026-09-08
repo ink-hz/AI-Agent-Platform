@@ -6,8 +6,9 @@ from datetime import datetime
 from typing import Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from .company_intelligence import project_companies, project_company
 from .intelligence_documents import IntelligenceDocumentStore, VerifiedDocument
-from .panorama_repository import PanoramaUnavailable
+from .panorama_repository import PanoramaNotFound, PanoramaUnavailable
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 _COVERAGE_STATES = frozenset({"succeeded", "empty_confirmed", "partial", "failed", "not_observed"})
@@ -19,6 +20,13 @@ class PanoramaReadRepository(Protocol):
     def list_bundles(self, *, limit: int = 100) -> tuple[Mapping[str, object], ...]: ...
     def bundle(self, bundle_id: UUID) -> Mapping[str, object]: ...
     def bundle_jobs(self, bundle_id: UUID) -> tuple[Mapping[str, object], ...]: ...
+    def current_company_directory(self) -> Mapping[str, object] | None: ...
+    def company_bundle(self, company_key: str, *, bundle_id: UUID | None = None) -> Mapping[str, object]: ...
+    def company_identity(self, company_key: str, *, bundle_id: UUID | None = None) -> UUID: ...
+    def bundle_company_jobs(
+        self, bundle_id: UUID, company_key: str, *, offset: int, limit: int,
+        location: str | None = None, status: str | None = None,
+    ) -> tuple[tuple[Mapping[str, object], ...], int]: ...
 
 
 class PanoramaDocumentReader(Protocol):
@@ -233,6 +241,58 @@ class PanoramaService:
     def current_report(self) -> Mapping[str, object] | None:
         record = self._repository.current_bundle()
         return None if record is None else _project(record, self._repository.bundle_jobs(_uuid(record.get("bundle_id"), "bundle")))
+
+    def _company_bundle(self, bundle_id: UUID | None) -> Mapping[str, object] | None:
+        if bundle_id is None:
+            return self._repository.current_bundle()
+        if not isinstance(bundle_id, UUID):
+            raise TypeError("panorama bundle identifier invalid")
+        return self._repository.bundle(bundle_id)
+
+    def companies(self) -> Mapping[str, object] | None:
+        narrow_read = getattr(self._repository, "current_company_directory", None)
+        record = narrow_read() if callable(narrow_read) else self._repository.current_bundle()
+        return None if record is None else project_companies(record)
+
+    def company(self, company_key: str, *, bundle_id: UUID | None = None) -> Mapping[str, object]:
+        if not isinstance(company_key, str) or not company_key:
+            raise TypeError("panorama company key invalid")
+        narrow_read = getattr(self._repository, "company_bundle", None)
+        record = narrow_read(company_key, bundle_id=bundle_id) if callable(narrow_read) else self._company_bundle(bundle_id)
+        if record is None:
+            raise PanoramaNotFound("panorama company not found")
+        return project_company(record, company_key)
+
+    def company_jobs(
+        self, company_key: str, *, bundle_id: UUID | None = None,
+        offset: int = 0, limit: int = 25, location: str | None = None,
+        status: str | None = None,
+    ) -> Mapping[str, object]:
+        if not isinstance(company_key, str) or not company_key:
+            raise TypeError("panorama company key invalid")
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100_000:
+            raise ValueError("panorama company job offset invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("panorama company job limit invalid")
+        if any(value is not None and (not isinstance(value, str) or not value) for value in (location, status)):
+            raise ValueError("panorama company job filter invalid")
+        if status is not None and status not in {"open", "closed", "unknown"}:
+            raise ValueError("panorama company job status invalid")
+        narrow_identity = getattr(self._repository, "company_identity", None)
+        if callable(narrow_identity):
+            selected_bundle_id = narrow_identity(company_key, bundle_id=bundle_id)
+        else:
+            record = self._company_bundle(bundle_id)
+            if record is None:
+                raise PanoramaNotFound("panorama company not found")
+            project_company(record, company_key)
+            selected_bundle_id = _uuid(record.get("bundle_id"), "bundle")
+        items, total = self._repository.bundle_company_jobs(
+            selected_bundle_id, company_key, offset=offset, limit=limit,
+            location=location, status=status,
+        )
+        return {"bundle_id": str(selected_bundle_id), "company_key": company_key,
+                "items": list(items), "total": total, "offset": offset, "limit": limit}
 
     def list_reports(self, *, limit: int = 100) -> tuple[Mapping[str, object], ...]:
         return tuple(_project(record, (), summary_only=True) for record in self._repository.list_bundles(limit=limit))

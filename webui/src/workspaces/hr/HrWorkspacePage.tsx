@@ -1,3 +1,4 @@
+import { formatHrIntelligenceReferences, type HrIntelligenceReference } from './hrIntelligenceReference';
 import { HrChannelLink } from './HrChannelLink';
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Account } from "../../auth";
@@ -22,6 +23,9 @@ import { useHrChatPosition } from "./useHrChatPosition";
 const suggestions=[['校准需求','请结合官网 JD 和已有确认标准，梳理这个岗位真正要解决的问题、关键能力与待澄清项。'],['人才搜寻','请为当前岗位设计可执行的人才搜寻方向，说明目标背景、关键词、证据和未知项。'],['面试设计','请根据当前岗位要求设计面试问题与评分证据，并区分事实、判断和待验证假设。']] as const;
 function chatPath(id:string){return directConversationPath('hr-bot',id)??`/hr/conversations/${encodeURIComponent(id)}`;}
 export function HrWorkspacePage(props:{account:Account;conversationId?:string;positionId?:string;section?:HrPositionSection;freeChat?:boolean;positions?:boolean;panorama?:boolean;panoramaReportId?:string}){
+  return <HrWorkspaceSession key={props.account.internal_user_id} {...props}/>;
+}
+function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
   const api=useMemo(()=>createHrApi(props.account.csrf_token),[props.account.csrf_token]);
   const r12=useMemo(()=>createHrR12Api(props.account.csrf_token),[props.account.csrf_token]);
   const lastChat=useRef<string|undefined>(undefined);
@@ -29,6 +33,19 @@ export function HrWorkspacePage(props:{account:Account;conversationId?:string;po
   if(!away)lastChat.current=props.conversationId;
   const conversationId=away?lastChat.current:props.conversationId;
   const chatHref=conversationId?chatPath(conversationId):'/hr/';
+  const panoramaActive=Boolean(props.panorama||props.panoramaReportId);
+  const panoramaVisited=useRef(false);if(panoramaActive)panoramaVisited.current=true;
+  const [intelligenceReferences,setIntelligenceReferences]=useState<HrIntelligenceReference[]>([]);
+  const intelligenceRef=useRef(intelligenceReferences);intelligenceRef.current=intelligenceReferences;
+  const [intelligenceError,setIntelligenceError]=useState('');
+  const selectIntelligence=useCallback((reference:HrIntelligenceReference)=>{
+    const current=intelligenceRef.current;
+    const next=current.some(item=>item.key===reference.key)?current:[...current,reference];
+    try{formatHrIntelligenceReferences(next);}catch{setIntelligenceError('所选情报超过 12 KiB，请先移除部分引用。');return;}
+    setIntelligenceReferences(next);setIntelligenceError('');navigate(chatHref);
+  },[chatHref]);
+  const removeIntelligence=useCallback((key:string)=>{setIntelligenceReferences(items=>items.filter(item=>item.key!==key));setIntelligenceError('');},[]);
+  const clearIntelligence=useCallback((keys:readonly string[])=>{const sent=new Set(keys);setIntelligenceReferences(items=>items.filter(item=>!sent.has(item.key)));},[]);
   const [selectedPosition,setSelectedPosition]=useState<HrPosition|null>(null);
   const [candidateIds,setCandidateIds]=useState<string[]>([]);
   const [candidateAttachments,setCandidateAttachments]=useState<string[]>([]);
@@ -50,6 +67,7 @@ export function HrWorkspacePage(props:{account:Account;conversationId?:string;po
     if(positionId!==selectedPosition?.positionId){
       try {choose(positionId?await api.position(positionId):null);}catch{setDraftError('无法读取该成果的岗位，请稍后重试。');return;}
     }
+    if(value.standardConsent)setIntelligenceReferences([]);
     setComposerDraft({...value,positionId});setDrawerOpen(false);navigate(chatHref);
   }
   return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={props.panorama||props.panoramaReportId?'panorama':props.positions||props.positionId?'positions':'chat'} onOpenKnowledge={()=>setKnowledgeOpen(true)}>
@@ -62,6 +80,7 @@ export function HrWorkspacePage(props:{account:Account;conversationId?:string;po
       onPositionMaterialChange={selectedPosition&&!props.account.hard_stale_read_only?position.changeMaterial:undefined}
       turnScope={{positionId:selectedPosition?.positionId??null,positionCandidateIds:candidateIds,attachmentIds:[...new Set([...position.selectedMaterialIds,...candidateAttachments])]}}
       composerDraft={composerDraft}
+      intelligenceReferences={intelligenceReferences} onRemoveIntelligenceReference={removeIntelligence} onIntelligenceReferencesSubmitted={clearIntelligence}
       composerTools={()=><><HrPositionPicker api={api} selected={selectedPosition} disabled={props.account.hard_stale_read_only} existingConversation={Boolean(conversationId)} onSelect={choose}
         onOpenDetails={position.detail?()=>{setDrawerTab('position');setDrawerOpen(true);}:undefined}/>{position.materialsControl}
         {candidateIds.length>0&&<button type="button" onClick={()=>{setCandidateIds([]);setCandidateAttachments([]);}}>已选 {candidateIds.length} 位候选人 ×</button>}
@@ -72,7 +91,7 @@ export function HrWorkspacePage(props:{account:Account;conversationId?:string;po
     /></WorkspaceErrorBoundary></div>
     {props.positionId?<main className="hr-position-state"><h1>岗位工作页已合并到主对话</h1><p>在输入框旁搜索岗位即可继续，已有消息与材料保留。</p><PlatformLink href={props.conversationId?chatPath(props.conversationId):chatHref}>返回对话</PlatformLink></main>
       :props.positions?<HrPositionIndex account={props.account} onSelect={value=>{choose(value);navigate(chatHref);}}/>:null}
-    {(props.panorama||props.panoramaReportId)&&<div className="hr-workspace-panorama-panel"><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId}/></WorkspaceErrorBoundary></div>}
+    {panoramaVisited.current&&<div className="hr-workspace-panorama-panel" hidden={!panoramaActive} aria-hidden={!panoramaActive?"true":undefined}><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligence}/>{intelligenceError&&<p role="alert">{intelligenceError}</p>}</WorkspaceErrorBoundary></div>}
     {position.detail&&<HrPositionDetailsDrawer api={r12} csrfToken={props.account.csrf_token} detail={position.detail} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}
       activeTab={drawerTab} onActiveTabChange={setDrawerTab} onConfirmed={position.confirmContext}

@@ -1,0 +1,217 @@
+{
+  "bundle_id": "2b49ecc4-42fe-45ae-80ac-26891f42ac6c",
+  "generated_at": "2026-09-06T14:37:42.467393+00:00",
+  "items": [
+    {
+      "aliases": [
+        "中山联合光电",
+        "Union Optech"
+      ],
+      "canonical_name": "联合光电",
+      "company_key": "union-optech",
+      "coverage": {
+        "document_limitations": [
+          "一个或多个公司公开材料渠道未能完成采集"
+        ],
+        "job_count": 8,
+        "limitations": [
+          "一个或多个公开招聘渠道未能完成采集"
+        ],
+        "observed_at": "2026-09-06T14:37:55.651406+00:00",
+        "state": "partial"
+      },
+      "summary": "联合光电：以 8 条公开岗位和 0 份非招聘公开材料为证据，从光学镜头与精密结构的设计、工艺和量产能力审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "RoboSense",
+        "深圳市速腾聚创科技有限公司"
+      ],
+      "canonical_name": "速腾聚创",
+      "company_key": "robosense",
+      "coverage": {
+        "document_limitations": [],
+        "job_count": 291,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:01.650896+00:00",
+        "state": "succeeded"
+      },
+      "summary": "速腾聚创：以 291 条公开岗位和 1 份非招聘公开材料为证据，从激光雷达及机器人感知的硬件、算法与质量体系审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "禾赛",
+        "Hesai"
+      ],
+      "canonical_name": "禾赛科技",
+      "company_key": "hesai",
+      "coverage": {
+        "document_limitations": [
+          "一个或多个公司公开材料渠道未能完成采集"
+        ],
+        "job_count": 364,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:04.108882+00:00",
+        "state": "succeeded"
+      },
+      "summary": "禾赛科技：以 364 条公开岗位和 0 份非招聘公开材料为证据，从激光雷达的芯片、光机电、算法与可靠性链路审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "拓竹科技",
+        "Bambu Lab",
+        "深圳拓竹科技有限公司"
+      ],
+      "canonical_name": "拓竹",
+      "company_key": "bambu-lab",
+      "coverage": {
+        "document_limitations": [
+          "一个或多个公司公开材料渠道未能完成采集"
+        ],
+        "job_count": 558,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:06.438286+00:00",
+        "state": "succeeded"
+      },
+      "summary": "拓竹：以 558 条公开岗位和 0 份非招聘公开材料为证据，从3D 打印整机、供应链、质量与量产工程链审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "Creality",
+        "深圳市创想三维科技股份有限公司"
+      ],
+      "canonical_name": "创想三维",
+      "company_key": "creality",
+      "coverage": {
+        "document_limitations": [],
+        "job_count": 55,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:07.518993+00:00",
+        "state": "succeeded"
+      },
+      "summary": "创想三维：以 55 条公开岗位和 1 份非招聘公开材料为证据，从3D 打印产品工程、制造导入与质量闭环审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "深圳市智能派科技有限公司",
+        "ELEGOO",
+        "爱乐酷"
+      ],
+      "canonical_name": "智能派",
+      "company_key": "elegoo",
+      "coverage": {
+        "document_limitations": [],
+        "job_count": 39,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:11.419912+00:00",
+        "state": "succeeded"
+      },
+      "summary": "智能派（ELEGOO）：以 39 条公开岗位和 1 份非招聘公开材料为证据，从桌面制造设备的嵌入式、硬件和产品协同审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "西安知象光电科技有限公司",
+        "Revopoint"
+      ],
+      "canonical_name": "知象光电",
+      "company_key": "revopoint",
+      "coverage": {
+        "document_limitations": [],
+        "job_count": 19,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:14.916310+00:00",
+        "state": "succeeded"
+      },
+      "summary": "知象光电：以 19 条公开岗位和 1 份非招聘公开材料为证据，从3D 扫描的点云、感知、标定与软硬件融合审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "SHINING 3D",
+        "先临三维科技股份有限公司"
+      ],
+      "canonical_name": "先临三维",
+      "company_key": "shining3d",
+      "coverage": {
+        "document_limitations": [],
+        "job_count": 173,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:18.552439+00:00",
+        "state": "succeeded"
+      },
+      "summary": "先临三维：以 173 条公开岗位和 1 份非招聘公开材料为证据，从工业与齿科 3D 数字化的设备、软件和应用链路审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "SCANTECH",
+        "思看科技（杭州）股份有限公司"
+      ],
+      "canonical_name": "思看科技",
+      "company_key": "scantech",
+      "coverage": {
+        "document_limitations": [],
+        "job_count": 0,
+        "limitations": [
+          "一个或多个公开招聘渠道未能完成采集"
+        ],
+        "observed_at": "2026-09-06T14:38:21.125743+00:00",
+        "state": "partial"
+      },
+      "summary": "思看科技：以 0 条公开岗位和 1 份非招聘公开材料为证据，从工业 3D 测量产品与国际化应用场景审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "智元",
+        "AGIBOT",
+        "智元创新"
+      ],
+      "canonical_name": "智元机器人",
+      "company_key": "agibot",
+      "coverage": {
+        "document_limitations": [
+          "一个或多个公司公开材料渠道未能完成采集"
+        ],
+        "job_count": 1539,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:25.107593+00:00",
+        "state": "succeeded"
+      },
+      "summary": "智元机器人：以 1539 条公开岗位和 0 份非招聘公开材料为证据，从具身智能、运动控制与软硬件系统协同审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "影石",
+        "Insta360",
+        "影石创新科技股份有限公司"
+      ],
+      "canonical_name": "影石创新",
+      "company_key": "insta360",
+      "coverage": {
+        "document_limitations": [],
+        "job_count": 375,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:26.992378+00:00",
+        "state": "succeeded"
+      },
+      "summary": "影石创新：以 375 条公开岗位和 1 份非招聘公开材料为证据，从智能影像设备的算法、芯片、软件与产品体验审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    },
+    {
+      "aliases": [
+        "Huawei",
+        "华为技术有限公司"
+      ],
+      "canonical_name": "华为",
+      "company_key": "huawei",
+      "coverage": {
+        "document_limitations": [],
+        "job_count": 16,
+        "limitations": [],
+        "observed_at": "2026-09-06T14:38:28.458082+00:00",
+        "state": "succeeded"
+      },
+      "summary": "华为：以 16 条公开岗位和 1 份非招聘公开材料为证据，从多业务技术底座与硬件器件、软件工具链能力审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+    }
+  ],
+  "topics": {
+    "state": "blocked"
+  }
+}
