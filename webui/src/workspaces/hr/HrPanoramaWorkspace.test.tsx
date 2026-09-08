@@ -793,4 +793,28 @@ describe("HrPanoramaWorkspace", () => {
       expect(container.textContent).toContain("选择一家公司开始阅读");
     },
   );
+  it("retries a failed company detail when its directory entry is clicked again", async () => {
+    const company = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(detail);
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace account={account} api={fakeApi({ company })} />,
+      ),
+    );
+    await settle();
+    const clickCompany = () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click();
+    await act(async () => clickCompany());
+    await settle();
+    expect(container.textContent).toContain("HR 情报暂时无法读取");
+    await act(async () => clickCompany());
+    await settle();
+    expect(company).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("研发能力可能继续扩张");
+    expect(container.textContent).not.toContain("HR 情报暂时无法读取");
+  });
 });

@@ -57,6 +57,7 @@ export function HrPanoramaWorkspace({
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRetry, setDetailRetry] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   useEffect(() => {
     let controller: AbortController | null = null;
@@ -95,9 +96,11 @@ export function HrPanoramaWorkspace({
     if (!directory || loading) return;
     if (
       selectedCompanyKey === companyKey &&
-      detailBundleId === directory.bundleId
-    )
+      (detailBundleId ?? directory.bundleId) === directory.bundleId
+    ) {
+      if (!detail && !detailLoading) setDetailRetry((attempt) => attempt + 1);
       return;
+    }
     const url = new URL(window.location.href);
     url.searchParams.set("company", companyKey);
     history.pushState({}, "", `${url.pathname}${url.search}`);
@@ -189,7 +192,7 @@ export function HrPanoramaWorkspace({
         if (!controller.signal.aborted) setDetailLoading(false);
       });
     return () => controller.abort();
-  }, [api, requestedBundleId, selectedCompanyKey, companyMissing]);
+  }, [api, requestedBundleId, selectedCompanyKey, companyMissing, detailRetry]);
   const filtered =
     directory?.items.filter((company) =>
       `${company.canonicalName} ${company.aliases.join(" ")}`
