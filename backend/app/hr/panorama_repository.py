@@ -125,7 +125,7 @@ class PanoramaRepository:
 
     def current_company_directory(self) -> Mapping[str, object] | None:
         query = (
-            "select bundle_id,generated_at,"
+            "select bundle_id,generated_at,(jsonb_array_length(coalesce(source_catalog->'topics','[]'::jsonb)) > 0) topics_available,"
             "jsonb_build_object('schema_version',source_catalog->'schema_version','companies',"
             "coalesce((select jsonb_agg(jsonb_build_object('company_key',company->'company_key',"
             "'canonical_name',company->'canonical_name','aliases',company->'aliases')) "
@@ -163,6 +163,11 @@ class PanoramaRepository:
             "with requested as (select %s::text company_key), source as (select bundle_id,generated_at,"
             "source_catalog,source_coverage,aggregates,analysis from " + source + ") "
             "select bundle_id,generated_at,"
+            "coalesce((select jsonb_agg(jsonb_build_object('topic_id',topic->'topic_id','title',topic->'title','summary',"
+            "(select string_agg(unit->'response'->>'summary',chr(10)||chr(10) order by declared.ordinality) from jsonb_array_elements_text(topic->'unit_ids') with ordinality declared(unit_id,ordinality) join jsonb_array_elements(source.analysis) unit on unit->>'unit_id'=declared.unit_id))) "
+            "from jsonb_array_elements(coalesce(source_catalog->'topics','[]'::jsonb)) topic "
+            "where exists (select 1 from jsonb_array_elements(topic->'discussed_companies') relation "
+            "where relation->>'company_key'=requested.company_key)),'[]'::jsonb) related_topics,"
             "jsonb_build_object('schema_version',source_catalog->'schema_version','companies',"
             "coalesce((select jsonb_agg(company) from jsonb_array_elements(source_catalog->'companies') company "
             "where company->>'company_key'=requested.company_key),'[]'::jsonb)) source_catalog,"
@@ -190,6 +195,36 @@ class PanoramaRepository:
             raise
         except (KeyError, TypeError, ValueError, psycopg.Error) as error:
             self._raise(error, "company bundle")
+
+    def topic_bundle(self, topic_id: str | None = None, *, bundle_id: UUID | None = None) -> Mapping[str, object] | None:
+        if topic_id is not None:
+            _company_key(topic_id)
+        if bundle_id is None:
+            source, parameters = "platform_hr.read_current_intelligence_bundle_v85()", (topic_id,)
+        else:
+            _identifier(bundle_id)
+            source, parameters = "platform_hr.read_intelligence_bundle_v85(%s)", (topic_id, bundle_id)
+        response = "jsonb_build_object('summary',unit->'response'->'summary')" if topic_id is None else (
+            "jsonb_build_object(" + ",".join(f"'{key}',unit->'response'->'{key}'" for key in
+                ("summary", "confidence", "facts", "inferences", "recommendations", "alternatives", "unknowns")) + ")"
+        )
+        query = (
+            "with requested as (select %s::text topic_id), source as (select bundle_id,generated_at,source_catalog,analysis from " + source + "), "
+            "selected as (select source.*,coalesce((select jsonb_agg(topic) from jsonb_array_elements(coalesce(source_catalog->'topics','[]'::jsonb)) topic "
+            "where requested.topic_id is null or topic->>'topic_id'=requested.topic_id),'[]'::jsonb) topics from source cross join requested) "
+            "select bundle_id,generated_at,"
+            "jsonb_build_object('companies',coalesce((select jsonb_agg(jsonb_build_object('company_key',company->'company_key','canonical_name',company->'canonical_name')) "
+            "from jsonb_array_elements(source_catalog->'companies') company),'[]'::jsonb)) "
+            "|| case when source_catalog ? 'topics' then jsonb_build_object('topics',topics) else '{}'::jsonb end source_catalog,"
+            "coalesce((select jsonb_agg(jsonb_build_object('unit_id',unit->'unit_id','kind',unit->'kind','scope_key',unit->'scope_key','response'," + response + ")) "
+            "from jsonb_array_elements(analysis) unit where unit->>'kind' in ('topic','track') "
+            "and exists (select 1 from jsonb_array_elements(topics) topic where topic->'unit_ids' ? (unit->>'unit_id'))),'[]'::jsonb) analysis from selected"
+        )
+        try:
+            with self._connection() as connection:
+                return connection.execute(query, parameters).fetchone()
+        except (KeyError, TypeError, ValueError, psycopg.Error) as error:
+            self._raise(error, "topic bundle")
 
     def company_identity(self, company_key: str, *, bundle_id: UUID | None = None) -> UUID:
         selected_company_key = _company_key(company_key)

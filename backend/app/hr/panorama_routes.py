@@ -47,7 +47,7 @@ def _value(record: object, name: str) -> object:
 def build_panorama_router(service, require_hr_access) -> APIRouter:
     required = (
         "current_report", "list_reports", "report", "document", "evidence_file",
-        "companies", "company", "company_jobs",
+        "companies", "company", "company_jobs", "topics", "topic",
     )
     if any(not callable(getattr(service, name, None)) for name in required):
         raise ValueError("panorama service required")
@@ -74,6 +74,21 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
             raise HTTPException(503, "HR panorama unavailable") from None
         except (KeyError, TypeError, ValueError):
             raise HTTPException(422, "HR panorama request invalid") from None
+
+    @router.get("/api/hr/panorama/topics")
+    async def topics(request: Request):
+        await authorize(request)
+        record = await call(service.topics)
+        return Response(status_code=204) if record is None else record
+
+    @router.get("/api/hr/panorama/topics/{topic_id}")
+    async def topic(
+        request: Request,
+        topic_id: Annotated[str, Path(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")],
+        bundle_id: Annotated[UUID | None, Query()] = None,
+    ):
+        await authorize(request)
+        return await call(service.topic, topic_id, bundle_id=bundle_id)
 
     @router.get("/api/hr/panorama/companies")
     async def companies(request: Request):

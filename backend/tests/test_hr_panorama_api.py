@@ -26,6 +26,8 @@ class FakeService:
         if self.error: raise self.error
         return value
 
+    def topics(self): self.calls.append(("topics",)); return self._return({"items": []})
+    def topic(self, topic_id, *, bundle_id=None): self.calls.append(("topic", topic_id, bundle_id)); return self._return({"topic_id": topic_id})
     def current_report(self): self.calls.append(("current",)); return self._return(None if self.empty else self.report_value)
     def companies(self): self.calls.append(("companies",)); return self._return(None)
     def company(self, company_key, *, bundle_id=None): self.calls.append(("company", company_key, bundle_id)); return self._return({})

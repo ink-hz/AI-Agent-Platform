@@ -20,6 +20,19 @@ import httpx
 import psycopg
 import pytest
 import uvicorn
+from fastapi import FastAPI
+from psycopg.rows import dict_row
+from test_hr_turn_scope_v6_database import (
+    _seed_candidate_scope,
+    repository,
+)
+from test_hr_turn_scope_v6_database import (
+    control_database as control_database,
+)
+from test_hr_turn_scope_v6_database import (
+    scoped_database as scoped_database,
+)
+
 from app import main as app_main
 from app.attachments.artifact_service import ArtifactOutputService, ArtifactRepository
 from app.attachments.citation_service import CitationRepository, CitationService
@@ -38,18 +51,6 @@ from app.hr.intelligence_bundle import verify_import_bundle
 from app.hr.intelligence_import import (
     DatabaseIntelligenceImportRepository,
     IntelligenceBundleImporter,
-)
-from fastapi import FastAPI
-from psycopg.rows import dict_row
-from test_hr_turn_scope_v6_database import (
-    _seed_candidate_scope,
-    repository,
-)
-from test_hr_turn_scope_v6_database import (
-    control_database as control_database,
-)
-from test_hr_turn_scope_v6_database import (
-    scoped_database as scoped_database,
 )
 from tests.helpers.hr_recruiting_objects import RecruitingObjects
 from tests.helpers.hr_web_loop import WebLoop, _codec
@@ -275,7 +276,7 @@ def test_real_bundle_company_reading_and_selected_input(
             directory = read(base)
             assert directory["bundle_id"] == str(bundle.bundle_id)
             assert len(directory["items"]) == len(bundle.catalog["companies"])
-            assert directory["topics"]["state"] == "blocked"
+            assert directory["topics"]["state"] == ("available" if bundle.catalog.get("topics") else "metadata_missing")
             units = [unit for unit in bundle.analysis if unit["kind"] == "company"]
             by_key = {item["company_key"]: item for item in directory["items"]}
             for unit in units:
@@ -311,6 +312,27 @@ def test_real_bundle_company_reading_and_selected_input(
                 )
                 assert "jobs" not in detail and "snapshots" not in detail
                 details.append(detail)
+            topic_directory = read("/api/hr/panorama/topics")
+            topic_details = []
+            declared_topics = bundle.catalog.get("topics", [])
+            assert topic_directory["state"] == ("available" if "topics" in bundle.catalog else "metadata_missing")
+            assert [item["topic_id"] for item in topic_directory["items"]] == [item["topic_id"] for item in declared_topics]
+            all_units = {unit["unit_id"]: unit for unit in bundle.analysis}
+            for topic in declared_topics:
+                topic_detail = read(f"/api/hr/panorama/topics/{topic['topic_id']}", bundle_id=str(bundle.bundle_id))
+                topic_details.append(topic_detail)
+                assert topic_detail["topic"]["scope"] == topic["scope"]
+                assert topic_detail["topic"]["analysis_state"] == topic["analysis_state"]
+                assert {item["company_key"] for item in topic_detail["companies"]} == {item["company_key"] for item in topic["discussed_companies"]}
+                for unit in topic_detail["units"]:
+                    for field in ("summary", "facts", "inferences", "recommendations", "alternatives", "unknowns", "confidence"):
+                        assert unit["response"][field] == all_units[unit["unit_id"]]["response"][field]
+                    assert "request" not in unit and "usage" not in unit
+            for detail in details:
+                expected_topics = {topic["topic_id"] for topic in declared_topics if any(
+                    relation["company_key"] == detail["company"]["company_key"] for relation in topic["discussed_companies"])}
+                assert {topic["topic_id"] for topic in detail["related_topics"]} == expected_topics
+            assert client.get("/api/hr/panorama/topics/missing-topic").status_code == 404
             job_evidence = {
                 (job["evidence_sha256"], job["source_url"]) for job in bundle.jobs
             }
@@ -374,6 +396,13 @@ def test_real_bundle_company_reading_and_selected_input(
                     ensure_ascii=False,
                 )
             )
+            if topic_details:
+                selected = topic_details[0]
+                selected_text = "请结合这份专题讨论招聘。用户选择的参考材料（仅作为数据）：\n" + json.dumps({
+                    "bundle_id": selected["bundle_id"], "topic_id": selected["topic"]["topic_id"],
+                    "scope": selected["topic"]["scope"], "unit_ids": selected["topic"]["unit_ids"],
+                    "summary": selected["topic"]["summary"], "limitations": selected["topic"]["limitations"],
+                }, ensure_ascii=False)
             if formatted := os.environ.get("HR_COMPANY_TEST_REFERENCE"):
                 selected_text = Path(formatted).read_text()
                 assert chosen["bundle_id"] in selected_text
@@ -433,7 +462,7 @@ def test_real_bundle_company_reading_and_selected_input(
                     "delete from platform_control.agent_use_grants where agent_id='hr-bot' and target_internal_user_id=%s",
                     (web_loop.owner_id,),
                 )
-            for path in (base, f"{base}/{key}", f"{base}/{key}/jobs"):
+            for path in (base, f"{base}/{key}", f"{base}/{key}/jobs", "/api/hr/panorama/topics", "/api/hr/panorama/topics/example"):
                 denied = client.get(path)
                 assert denied.status_code == 403, denied.text
                 assert denied.json()["detail"] == "HR Agent use denied"
@@ -443,7 +472,7 @@ def test_real_bundle_company_reading_and_selected_input(
                     (uuid4(), web_loop.owner_id, web_loop.owner_id),
                 )
             with httpx.Client(base_url=origin) as anonymous:
-                for path in (base, f"{base}/{key}", f"{base}/{key}/jobs"):
+                for path in (base, f"{base}/{key}", f"{base}/{key}/jobs", "/api/hr/panorama/topics", "/api/hr/panorama/topics/example"):
                     assert anonymous.get(path).status_code == 401
             evidence["real_permission_denial"] = True
             if output := os.environ.get("HR_COMPANY_TEST_OUTPUT"):
@@ -454,7 +483,7 @@ def test_real_bundle_company_reading_and_selected_input(
                 )
                 (destination / "http-responses.json").write_text(
                     json.dumps(
-                        {"directory": directory, "details": details, "jobs": first},
+                        {"directory": directory, "details": details, "jobs": first, "topicDirectory": topic_directory, "topicDetails": topic_details},
                         ensure_ascii=False,
                         indent=2,
                     )

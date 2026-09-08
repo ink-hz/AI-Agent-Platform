@@ -118,7 +118,7 @@ def test_company_list_has_independent_summaries_and_no_job_bulk_load() -> None:
             {"company_key": "beta", "canonical_name": "乙公司", "aliases": [],
              "summary": "乙公司独立摘要", "coverage": {"state": "not_observed", "observed_at": None,
              "job_count": None, "limitations": [], "document_limitations": ["官网未采集"]}},
-        ], "topics": {"state": "blocked"},
+        ], "topics": {"state": "metadata_missing"},
     }
     assert repository.calls == [("current_bundle",)]
 

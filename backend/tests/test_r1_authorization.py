@@ -65,6 +65,8 @@ FAE_SHELL_ROUTES = (
 )
 
 HR_POSITION_ROUTES = (
+    ("GET", "/api/hr/panorama/topics"),
+    ("GET", "/api/hr/panorama/topics/{topic_id}"),
     ("GET", "/api/hr/panorama/companies"),
     ("GET", "/api/hr/panorama/companies/{company_key}"),
     ("GET", "/api/hr/panorama/companies/{company_key}/jobs"),

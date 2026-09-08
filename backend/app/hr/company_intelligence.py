@@ -111,7 +111,7 @@ def project_companies(record: Mapping[str, object]) -> dict[str, object]:
         company = _mapping(raw, "catalog company")
         key = _text(company.get("company_key"), "company_key")
         items.append(_summary(company, coverage.get(key), units.get(key, ())))
-    return {"bundle_id": str(_bundle_id(record)), "generated_at": _iso(record.get("generated_at")), "items": items, "topics": {"state": "blocked"}}
+    return {"bundle_id": str(_bundle_id(record)), "generated_at": _iso(record.get("generated_at")), "items": items, "topics": {"state": "available" if record.get("topics_available") or _mapping(record.get("source_catalog"), "catalog").get("topics") else "metadata_missing"}}
 
 
 def project_company(record: Mapping[str, object], company_key: str) -> dict[str, object]:
@@ -133,6 +133,7 @@ def project_company(record: Mapping[str, object], company_key: str) -> dict[str,
         "bundle_id": str(_bundle_id(record)), "generated_at": _iso(record.get("generated_at")),
         "company": _summary(selected, coverage.get(company_key), selected_units),
         "units": [_unit(unit) for unit in selected_units], "metrics": metrics,
+        "related_topics": list(_sequence(record.get("related_topics", []), "related topics")),
     }
 
 

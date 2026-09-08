@@ -9,6 +9,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from .company_intelligence import project_companies, project_company
 from .intelligence_documents import IntelligenceDocumentStore, VerifiedDocument
 from .panorama_repository import PanoramaNotFound, PanoramaUnavailable
+from .topic_intelligence import project_topic, project_topics
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 _COVERAGE_STATES = frozenset({"succeeded", "empty_confirmed", "partial", "failed", "not_observed"})
@@ -22,6 +23,7 @@ class PanoramaReadRepository(Protocol):
     def bundle_jobs(self, bundle_id: UUID) -> tuple[Mapping[str, object], ...]: ...
     def current_company_directory(self) -> Mapping[str, object] | None: ...
     def company_bundle(self, company_key: str, *, bundle_id: UUID | None = None) -> Mapping[str, object]: ...
+    def topic_bundle(self, topic_id: str | None = None, *, bundle_id: UUID | None = None) -> Mapping[str, object] | None: ...
     def company_identity(self, company_key: str, *, bundle_id: UUID | None = None) -> UUID: ...
     def bundle_company_jobs(
         self, bundle_id: UUID, company_key: str, *, offset: int, limit: int,
@@ -262,6 +264,16 @@ class PanoramaService:
         if record is None:
             raise PanoramaNotFound("panorama company not found")
         return project_company(record, company_key)
+
+    def topics(self) -> Mapping[str, object] | None:
+        record = self._repository.topic_bundle()
+        return None if record is None else project_topics(record)
+
+    def topic(self, topic_id: str, *, bundle_id: UUID | None = None) -> Mapping[str, object]:
+        record = self._repository.topic_bundle(topic_id, bundle_id=bundle_id)
+        if record is None:
+            raise PanoramaNotFound("panorama topic not found")
+        return project_topic(record, topic_id)
 
     def company_jobs(
         self, company_key: str, *, bundle_id: UUID | None = None,

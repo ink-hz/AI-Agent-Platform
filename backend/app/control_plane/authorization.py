@@ -184,6 +184,8 @@ _HR_POSITION_ROUTES = frozenset({
     ("GET", "/api/hr/positions/{position_id}/tasks"),
     ("GET", "/api/hr/positions/{position_id}/tasks/{task_id}"),
     ("GET", "/api/hr/panorama/current"),
+    ("GET", "/api/hr/panorama/topics"),
+    ("GET", "/api/hr/panorama/topics/{topic_id}"),
     ("GET", "/api/hr/panorama/companies"),
     ("GET", "/api/hr/panorama/companies/{company_key}"),
     ("GET", "/api/hr/panorama/companies/{company_key}/jobs"),
