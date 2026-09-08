@@ -2852,3 +2852,11 @@ body {
   .agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer-actions:has(.hr-position-picker),
   .agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer-actions:has(.hr-position-picker) { grid-column: 1 / -1; grid-row: 3; justify-content: space-between; }
 }
+
+.hr-workspace-chat-panel .hr-position-task-popover { position: absolute; bottom: calc(100% + 10px); right: 0; left: auto; max-height: min(520px,65dvh); overflow-y: auto; }
+.hr-workspace-chat-panel .hr-position-task-status { flex: 0 0 auto; max-height: 22dvh; overflow-y: auto; }
+.hr-workspace-chat-panel .hr-position-task-status ul { width: 100%; }
+@media (max-width: 760px) {
+  .hr-workspace-chat-panel .hr-position-task-menu { position: static; }
+  .hr-workspace-chat-panel .hr-position-task-popover { position: absolute; right: 0; left: 0; bottom: calc(100% + 8px); width: 100%; max-height: 60dvh; border-radius: 14px; }
+}

@@ -15,11 +15,12 @@ import {
 } from "../direct/DirectAgentWorkspace";
 import { HrConversationOutcomePanel } from "./HrConversationOutcomePanel";
 import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
-import { HrPositionDetailsDrawer } from "./HrPositionDetailsDrawer";
+import { HrPositionDetailsDrawer, type HrPositionDetailsTab } from "./HrPositionDetailsDrawer";
 import { HrPositionPicker } from "./HrPositionPicker";
 import { HrPositionIndex } from "./HrPositionIndex";
 import { HrPositionWorkspace, loadPositionConversations } from "./HrPositionWorkspace";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
+import { useHrChatPosition } from "./useHrChatPosition";
 
 
 function hrConversationPath(conversationId: string): string {
@@ -86,6 +87,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   } | null>(null);
   const [revealedRouteKey, setRevealedRouteKey] = useState<string | null>(null);
   const [positionDetailsOpen, setPositionDetailsOpen] = useState(false);
+  const [positionDetailsTab, setPositionDetailsTab] = useState<HrPositionDetailsTab>("position");
   const [conversationRevision, setConversationRevision] = useState(0);
   const [selectedChatPosition, setSelectedChatPosition] = useState<HrPosition | null>(null);
   const draftOwnerId = props.account.internal_user_id;
@@ -190,7 +192,19 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
   const degradedDetail = props.positionId ? fallbackDetail(
     props.positionId, fallbackPositionPackage ?? activeConfirmedPosition?.positionPackage ?? null,
   ) : null;
-  const drawerDetail = continuedPositionDetail ?? degradedDetail;
+  const activeChatPositionId = positionRouteReady ? props.positionId
+    : !chatConversationId && !positionsActive && !panoramaActive ? selectedChatPosition?.positionId : undefined;
+  const chatPosition = useHrChatPosition({
+    positionId: activeChatPositionId,
+    conversationId: positionRouteValidated ? props.conversationId : undefined,
+    api: positionApi,
+    r12: positionDetailsApi,
+    readOnly: props.account.hard_stale_read_only,
+    onOpenResults: () => { setPositionDetailsTab("resources"); setPositionDetailsOpen(true); },
+  });
+  const drawerDetail = chatPosition.detail ?? continuedPositionDetail ?? degradedDetail;
+
+  useEffect(() => { setPositionDetailsOpen(false); }, [activeChatPositionId]);
 
   return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={panoramaActive ? "panorama" : positionsActive && !positionConversationRoute ? "positions" : "chat"}>
     {keepChatHost && <div
@@ -222,18 +236,22 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
               return `/hr/positions/${encodeURIComponent(selectedChatPosition.positionId)}/conversations/${encodeURIComponent(id)}`;
             }
             : positionRouteReady ? positionConversationPath : hrConversationPath}
-          composerTools={(pending) => <HrPositionPicker
+          header={chatPosition.status}
+          positionMaterialIds={chatPosition.detail?.materialAttachmentIds}
+          positionArtifactAttachmentIds={chatPosition.detail?.artifactAttachmentIds}
+          onPositionMaterialChange={activeChatPositionId && !props.account.hard_stale_read_only ? chatPosition.changeMaterial : undefined}
+          composerTools={(pending) => <><HrPositionPicker
             api={positionApi}
             selected={positionRouteReady ? continuedPositionDetail : chatConversationId ? null : selectedChatPosition}
-            disabled={pending || props.account.hard_stale_read_only}
+            disabled={pending || chatPosition.working || props.account.hard_stale_read_only}
             existingConversation={Boolean(chatConversationId)}
-            onOpenDetails={positionRouteReady ? () => setPositionDetailsOpen(true) : undefined}
+            onOpenDetails={drawerDetail && activeChatPositionId ? () => { setPositionDetailsTab("position"); setPositionDetailsOpen(true); } : undefined}
             onSelect={(position) => {
               if (positionRouteReady && position?.positionId === props.positionId) return;
               setSelectedChatPosition(position);
               if (chatConversationId) navigate("/hr/");
             }}
-          />}
+          />{chatPosition.menu(pending)}</>}
           historyClient={positionRouteValidated ? historyClient : undefined}
           initialDraftSnapshot={freeChatDraftSnapshots.current.get(draftOwnerId)}
           key={`hr-chat:${draftOwnerId}`}
@@ -295,14 +313,18 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
       </WorkspaceErrorBoundary>
     </div>}
 
-    {positionConversationRoute && drawerDetail && <HrPositionDetailsDrawer
+    {(positionConversationRoute || activeChatPositionId) && drawerDetail && <HrPositionDetailsDrawer
       api={positionDetailsApi}
+      activeTab={positionDetailsTab}
+      onActiveTabChange={setPositionDetailsTab}
       csrfToken={props.account.csrf_token}
-      currentContextVersionId={continuedPositionContext?.contextVersionId ?? null}
+      currentContextVersionId={chatPosition.context?.contextVersionId ?? continuedPositionContext?.contextVersionId ?? null}
+      contextRefreshGeneration={chatPosition.refreshGeneration}
+      resourceRefreshGeneration={chatPosition.refreshGeneration}
       degraded={continuedPositionDetailState === "error"}
       detail={drawerDetail}
       onClose={() => setPositionDetailsOpen(false)}
-      onConfirmed={setContinuedPositionContext}
+      onConfirmed={(context) => { setContinuedPositionContext(context); chatPosition.confirmContext(context); }}
       onRetryDetail={() => setContinuedPositionDetailAttempt((value) => value + 1)}
       open={positionDetailsOpen}
       readOnly={props.account.hard_stale_read_only}
