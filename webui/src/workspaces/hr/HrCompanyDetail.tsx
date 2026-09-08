@@ -68,10 +68,12 @@ export function HrCompanyDetail({
   detail,
   api,
   onSelectReference,
+  onOpenTopic,
 }: {
   detail: CompanyDetail;
   api: HrCompanyIntelligenceApi;
   onSelectReference?: (reference: HrIntelligenceReference) => void;
+  onOpenTopic?: (topicId: string, bundleId: string) => void;
 }) {
   const [jobsOpen, setJobsOpen] = useState(false);
   const [jobs, setJobs] = useState<CompanyJobsPage | null>(null);
@@ -417,6 +419,25 @@ export function HrCompanyDetail({
           )}
         </section>
       ))}
+      {(detail.relatedTopics ?? []).length > 0 && (
+        <section className="hr-company-unit hr-company-related-topics">
+          <h3>相关专题</h3>
+          <p>这些专题在正文中明确讨论了这家公司。</p>
+          {detail.relatedTopics!.map((topic) => (
+            <article key={topic.topicId}>
+              <button
+                type="button"
+                data-related-topic={topic.topicId}
+                disabled={!onOpenTopic}
+                onClick={() => onOpenTopic?.(topic.topicId, detail.bundleId)}
+              >
+                {topic.title}
+              </button>
+              {topic.summary && <p>{topic.summary}</p>}
+            </article>
+          ))}
+        </section>
+      )}
       <Metrics metrics={detail.metrics} />
       <section className="hr-company-jobs">
         <header>

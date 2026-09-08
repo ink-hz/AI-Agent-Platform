@@ -1,3 +1,4 @@
+import { hrReferenceTitle, hrReferenceHref } from "../hr/hrIntelligenceReference";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ComposerTextarea } from "../../components/conversation/ComposerTextarea";
 
@@ -404,10 +405,10 @@ export function DirectAgentWorkspace({
               {selectedKnowledgeResources.map((item) => <span key={`${item.sourceCommit}:${item.id}`}><strong>{item.id}</strong><small>版本 {item.revision}</small>
                 <button aria-label={`移除方法 ${item.id}`} onClick={() => onRemoveKnowledgeResource?.(item.id)} type="button">×</button></span>)}
             </div>}
-            {intelligenceReferences.length > 0 && <section className="hr-intelligence-reference-selection" aria-label="已选公司情报">
-              <header><strong>已选公司情报</strong><PlatformLink href={`/hr/panorama?company=${encodeURIComponent(intelligenceReferences[0].companyKey)}`}>返回公司情报</PlatformLink></header>
+            {intelligenceReferences.length > 0 && <section className="hr-intelligence-reference-selection" aria-label={intelligenceReferences.some((item) => item.kind === "topic") ? "已选 HR 情报" : "已选公司情报"}>
+              <header><strong>{intelligenceReferences.some((item) => item.kind === "topic") ? "已选 HR 情报" : "已选公司情报"}</strong><PlatformLink href={hrReferenceHref(intelligenceReferences[0])}>{intelligenceReferences[0].kind === "topic" ? "返回专题情报" : "返回公司情报"}</PlatformLink></header>
               {intelligenceReferences.map((reference) => <details key={reference.key}>
-                <summary>{reference.companyName} · {reference.label}</summary>
+                <summary>{hrReferenceTitle(reference)} · {reference.label}</summary>
                 <p>{reference.excerpt}</p>
                 {reference.sourceUrls.map((url) => <a href={url} key={url} rel="noreferrer" target="_blank">查看来源</a>)}
                 {onRemoveIntelligenceReference && <button disabled={pending || account.hard_stale_read_only} onClick={() => { retained.current = null; onRemoveIntelligenceReference(reference.key); }} type="button">移除</button>}

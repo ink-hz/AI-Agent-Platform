@@ -248,9 +248,25 @@ describe("HrPanoramaWorkspace", () => {
     expect(container.textContent).toContain("岗位暂时无法读取");
     expect(container.textContent).toContain("重试");
   });
-  it("explains blocked topics honestly", async () => {
+  it("explains missing topic metadata using the dedicated topic API", async () => {
     await act(async () =>
-      root.render(<HrPanoramaWorkspace account={account} api={fakeApi()} />),
+      root.render(
+        <HrPanoramaWorkspace
+          account={account}
+          api={fakeApi()}
+          topicApi={{
+            topics: vi
+              .fn()
+              .mockResolvedValue({
+                bundleId,
+                generatedAt: detail.generatedAt,
+                state: "metadata_missing",
+                items: [],
+              }),
+            topic: vi.fn(),
+          }}
+        />,
+      ),
     );
     await settle();
     await act(async () =>
@@ -258,8 +274,105 @@ describe("HrPanoramaWorkspace", () => {
         .find((node) => node.textContent === "专题")!
         .click(),
     );
-    expect(container.textContent).toContain("专题情报暂不可用");
+    expect(container.textContent).toContain("专题目录尚未就绪");
     expect(container.textContent).not.toContain("公司排名");
+  });
+  it("navigates company to related topic and back with the same publication", async () => {
+    const topic = {
+      topicId: "study",
+      title: "人才布局",
+      question: "关注什么？",
+      scope: { description: "公开岗位", companyKeys: ["acme"], tracks: [] },
+      analysisState: "limited" as const,
+      unitIds: ["unit-1"],
+      discussedCompanies: [
+        {
+          companyKey: "acme",
+          unitId: "unit-1",
+          claimIds: ["inf-1"],
+          explanation: "正文讨论公司",
+        },
+      ],
+      limitations: ["样本有限"],
+      summary: "专题正文摘要",
+    };
+    const company = vi
+      .fn()
+      .mockResolvedValue({
+        ...detail,
+        relatedTopics: [
+          { topicId: "study", title: "人才布局", summary: "专题正文摘要" },
+        ],
+      });
+    const topicApi = {
+      topics: vi
+        .fn()
+        .mockResolvedValue({
+          bundleId,
+          generatedAt: detail.generatedAt,
+          state: "available" as const,
+          items: [topic],
+        }),
+      topic: vi
+        .fn()
+        .mockResolvedValue({
+          bundleId,
+          generatedAt: detail.generatedAt,
+          topic,
+          units: detail.units.map((unit) => ({
+            ...unit,
+            kind: "topic",
+            scopeKey: "study",
+          })),
+          companies: [{ companyKey: "acme", canonicalName: "艾克米" }],
+        }),
+    };
+    await act(async () =>
+      root.render(
+        <HrPanoramaWorkspace
+          account={account}
+          api={fakeApi({ company })}
+          topicApi={topicApi}
+        />,
+      ),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-company-key="acme"]')!
+        .click(),
+    );
+    await settle();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-related-topic="study"]')!
+        .click(),
+    );
+    await settle();
+    expect(topicApi.topic).toHaveBeenCalledWith(
+      "study",
+      bundleId,
+      expect.any(AbortSignal),
+    );
+    expect(container.querySelector(".hr-topic-detail h2")?.textContent).toBe(
+      "人才布局",
+    );
+    expect(container.querySelector(".hr-topic-detail")?.textContent).toContain(
+      "正文讨论公司",
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(
+          '.hr-topic-detail [data-company-key="acme"]',
+        )!
+        .click(),
+    );
+    await settle();
+    expect(container.querySelector(".hr-company-detail h2")?.textContent).toBe(
+      "艾克米",
+    );
+    expect(new URLSearchParams(location.search).get("bundle_id")).toBe(
+      bundleId,
+    );
   });
   it("keeps duplicate local fact IDs scoped to their units", async () => {
     const duplicate = {

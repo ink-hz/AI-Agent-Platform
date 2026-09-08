@@ -71,9 +71,10 @@ export type CompanyDirectory = {
   bundleId: string;
   generatedAt: string;
   items: CompanySummary[];
-  topics: { state: "blocked" };
+  topics?: { state: string };
 };
 export type CompanyDetail = {
+  relatedTopics?: { topicId: string; title: string; summary: string | null }[];
   bundleId: string;
   generatedAt: string;
   company: CompanySummary;

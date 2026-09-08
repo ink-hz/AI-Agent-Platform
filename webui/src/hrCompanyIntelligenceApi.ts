@@ -80,23 +80,27 @@ function parseSummary(value: unknown): CompanySummary {
 
 export function parseCompanyDirectory(value: unknown): CompanyDirectory {
   const item = record(value);
-  const topics = record(item.topics);
-  if (topics.state !== "blocked") invalid();
+  const topicState = item.topics
+    ? string(record(item.topics).state)
+    : undefined;
   return {
     bundleId: uuid(item.bundle_id),
     generatedAt: date(item.generated_at),
     items: array(item.items, parseSummary),
-    topics: { state: "blocked" },
+    ...(topicState ? { topics: { state: topicState } } : {}),
   };
 }
 
-function parseUnit(value: unknown): CompanyUnit {
+export function parseAnalysisUnit(
+  value: unknown,
+): Omit<CompanyUnit, "kind"> & { kind: "company" | "topic" | "track" } {
   const item = record(value);
   const response = record(item.response);
-  if (item.kind !== "company") invalid();
+  if (item.kind !== "company" && item.kind !== "topic" && item.kind !== "track")
+    invalid();
   return {
     unitId: string(item.unit_id),
-    kind: "company",
+    kind: item.kind as "company" | "topic" | "track",
     scopeKey: string(item.scope_key),
     response: {
       summary: string(response.summary),
@@ -149,6 +153,12 @@ function parseUnit(value: unknown): CompanyUnit {
   };
 }
 
+function parseUnit(value: unknown): CompanyUnit {
+  const parsed = parseAnalysisUnit(value);
+  if (parsed.kind !== "company") invalid();
+  return { ...parsed, kind: "company" };
+}
+
 function parseMetrics(value: unknown): CompanyMetrics | null {
   if (value === null) return null;
   const item = record(value);
@@ -173,6 +183,17 @@ export function parseCompanyDetail(value: unknown): CompanyDetail {
     company: parseSummary(item.company),
     units: array(item.units, parseUnit),
     metrics: parseMetrics(item.metrics),
+    relatedTopics:
+      item.related_topics === undefined
+        ? []
+        : array(item.related_topics, (raw) => {
+            const topic = record(raw);
+            return {
+              topicId: string(topic.topic_id),
+              title: string(topic.title),
+              summary: nullableString(topic.summary),
+            };
+          }),
   };
   if (parsed.units.some((unit) => unit.scopeKey !== parsed.company.companyKey))
     invalid();

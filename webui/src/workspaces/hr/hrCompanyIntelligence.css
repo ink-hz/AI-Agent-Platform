@@ -394,3 +394,44 @@
     padding-top: 52px;
   }
 }
+
+.hr-topic-scope {
+  color: #52697d;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.hr-topic-scope h3 {
+  margin: 0;
+  color: #19324d;
+}
+.hr-topic-scope p {
+  margin: 6px 0;
+}
+.hr-topic-claim-link {
+  display: inline-block;
+  margin: 0 12px 8px 0;
+  font-size: 12px;
+  color: #23627a;
+}
+.hr-topic-detail .hr-company-unit > article {
+  margin-top: 16px;
+}
+.hr-topic-detail .hr-company-unit > article > button,
+.hr-company-related-topics button {
+  padding: 8px 12px;
+  border: 1px solid #9db9c5;
+  border-radius: 8px;
+  background: #fff;
+  color: #23627a;
+  font: inherit;
+  cursor: pointer;
+}
+.hr-topic-detail a {
+  color: #23627a;
+}
+.hr-topic-detail .hr-company-fact footer {
+  flex-wrap: wrap;
+}
+.hr-topic-detail [id] {
+  scroll-margin-top: 24px;
+}

@@ -10,6 +10,8 @@ import type {
   HrCompanyIntelligenceApi,
 } from "../../hrCompanyIntelligenceTypes";
 import type { HrIntelligenceReference } from "./hrIntelligenceReference";
+import { HrTopicWorkspace } from "./HrTopicWorkspace";
+import type { HrTopicIntelligenceApi } from "../../hrTopicIntelligenceApi";
 import { HrCompanyDetail } from "./HrCompanyDetail";
 import "./hrCompanyIntelligence.css";
 
@@ -33,12 +35,14 @@ const coverageLabel = (state: string) =>
 export function HrPanoramaWorkspace({
   account,
   api: injectedApi,
+  topicApi,
   onSelectReference,
 }: {
   account: Account;
   insightVersionId?: string;
   executionConversationId?: string;
   api?: HrCompanyIntelligenceApi;
+  topicApi?: HrTopicIntelligenceApi;
   onSelectReference?: (reference: HrIntelligenceReference) => void;
 }) {
   const defaultApi = useMemo(
@@ -46,11 +50,18 @@ export function HrPanoramaWorkspace({
     [account.csrf_token],
   );
   const api = injectedApi ?? defaultApi;
-  const [root, setRoot] = useState<"companies" | "topics">("companies");
+  const [root, setRoot] = useState<"companies" | "topics">(() =>
+    new URLSearchParams(location.search).has("topic") ||
+    new URLSearchParams(location.search).get("view") === "topics"
+      ? "topics"
+      : "companies",
+  );
   const [directory, setDirectory] = useState<CompanyDirectory | null>(null);
   const [detail, setDetail] = useState<CompanyDetail | null>(null);
   const detailCache = useRef(new Map<string, CompanyDetail>());
-  const [detailBundleId, setDetailBundleId] = useState<string | null>(null);
+  const [detailBundleId, setDetailBundleId] = useState<string | null>(() =>
+    new URLSearchParams(location.search).get("bundle_id"),
+  );
   const [selectedCompanyKey, setSelectedCompanyKey] = useState(() =>
     new URLSearchParams(location.search).get("company"),
   );
@@ -63,6 +74,11 @@ export function HrPanoramaWorkspace({
     let controller: AbortController | null = null;
     const refresh = () => {
       if (!/\/hr\/panorama(?:\/|$)/.test(location.pathname)) return;
+      const params = new URLSearchParams(location.search);
+      if (params.has("topic") || params.get("view") === "topics") {
+        controller?.abort();
+        return;
+      }
       controller?.abort();
       const request = new AbortController();
       controller = request;
@@ -92,6 +108,22 @@ export function HrPanoramaWorkspace({
       window.removeEventListener("popstate", refresh);
     };
   }, [api]);
+  const navigateRoot = (
+    view: "companies" | "topics",
+    objectId?: string,
+    bundleId?: string,
+  ) => {
+    const url = new URL(location.href);
+    for (const key of ["company", "topic", "view", "bundle_id"])
+      url.searchParams.delete(key);
+    if (view === "topics") url.searchParams.set("view", "topics");
+    if (objectId)
+      url.searchParams.set(view === "topics" ? "topic" : "company", objectId);
+    if (bundleId) url.searchParams.set("bundle_id", bundleId);
+    history.pushState({}, "", `${url.pathname}${url.search}`);
+    setRoot(view);
+    window.dispatchEvent(new Event("platform:navigate"));
+  };
   const openCompany = (companyKey: string) => {
     if (!directory || loading) return;
     if (
@@ -103,6 +135,9 @@ export function HrPanoramaWorkspace({
     }
     const url = new URL(window.location.href);
     url.searchParams.set("company", companyKey);
+    url.searchParams.delete("topic");
+    url.searchParams.delete("view");
+    url.searchParams.delete("bundle_id");
     history.pushState({}, "", `${url.pathname}${url.search}`);
     setDetail(null);
     setDetailBundleId(directory.bundleId);
@@ -111,6 +146,7 @@ export function HrPanoramaWorkspace({
   const closeCompany = () => {
     const url = new URL(window.location.href);
     url.searchParams.delete("company");
+    url.searchParams.delete("bundle_id");
     history.pushState({}, "", `${url.pathname}${url.search}`);
     setSelectedCompanyKey(null);
     setDetail(null);
@@ -120,8 +156,16 @@ export function HrPanoramaWorkspace({
   useEffect(() => {
     const syncLocation = () => {
       if (!/\/hr\/panorama(?:\/|$)/.test(location.pathname)) return;
-      const companyKey = new URLSearchParams(location.search).get("company");
-      if (companyKey === selectedCompanyKey) return;
+      const params = new URLSearchParams(location.search);
+      const isTopics = params.has("topic") || params.get("view") === "topics";
+      setRoot(isTopics ? "topics" : "companies");
+      const companyKey = isTopics ? null : params.get("company");
+      const pinned = params.get("bundle_id");
+      if (
+        companyKey === selectedCompanyKey &&
+        (!pinned || pinned === detailBundleId)
+      )
+        return;
       setSelectedCompanyKey(companyKey);
       setFailure(null);
       if (!companyKey) {
@@ -129,12 +173,12 @@ export function HrPanoramaWorkspace({
         setDetailBundleId(null);
       } else {
         const cached = detailCache.current.get(companyKey);
-        if (cached) {
+        if (cached && (!pinned || cached.bundleId === pinned)) {
           setDetail(cached);
           setDetailBundleId(cached.bundleId);
         } else {
           setDetail(null);
-          setDetailBundleId(null);
+          setDetailBundleId(pinned);
         }
       }
     };
@@ -144,18 +188,18 @@ export function HrPanoramaWorkspace({
       window.removeEventListener("popstate", syncLocation);
       window.removeEventListener("platform:navigate", syncLocation);
     };
-  }, [selectedCompanyKey]);
+  }, [selectedCompanyKey, detailBundleId]);
   // Existing reading stays pinned; a new deep link waits for the current directory.
   const requestedBundleId =
     detailBundleId ?? (loading ? null : directory?.bundleId) ?? null;
   const companyMissing = Boolean(
     !detailBundleId &&
-    !loading &&
-    directory &&
-    selectedCompanyKey &&
-    !directory.items.some(
-      (company) => company.companyKey === selectedCompanyKey,
-    ),
+      !loading &&
+      directory &&
+      selectedCompanyKey &&
+      !directory.items.some(
+        (company) => company.companyKey === selectedCompanyKey,
+      ),
   );
   useEffect(() => {
     if (!selectedCompanyKey || !requestedBundleId || companyMissing) {
@@ -205,30 +249,32 @@ export function HrPanoramaWorkspace({
         <div>
           <p>HR INTELLIGENCE</p>
           <h1>HR 情报</h1>
-          <span>阅读最新发布的公司公开情报与可核验依据。</span>
+          <span>按公司或专题阅读最新情报与可核验依据。</span>
         </div>
       </header>
       <nav className="hr-company-roots" aria-label="情报范围">
         <button
           aria-current={root === "companies" ? "page" : undefined}
-          onClick={() => setRoot("companies")}
+          onClick={() => navigateRoot("companies")}
         >
           公司
         </button>
         <button
           aria-current={root === "topics" ? "page" : undefined}
-          onClick={() => setRoot("topics")}
+          onClick={() => navigateRoot("topics")}
         >
           专题
         </button>
       </nav>
       {root === "topics" ? (
-        <section className="hr-company-topic-state">
-          <h2>专题情报暂不可用</h2>
-          <p>
-            当前专题范围及公司关联尚未完成核验，因此暂不提供跨公司专题比较。
-          </p>
-        </section>
+        <HrTopicWorkspace
+          account={account}
+          api={topicApi}
+          onSelectReference={onSelectReference}
+          onOpenCompany={(companyKey, bundleId) =>
+            navigateRoot("companies", companyKey, bundleId)
+          }
+        />
       ) : (
         <div className="hr-company-layout">
           <aside className="hr-company-index">
@@ -299,6 +345,9 @@ export function HrPanoramaWorkspace({
                   detail={detail}
                   api={api}
                   onSelectReference={onSelectReference}
+                  onOpenTopic={(topicId, bundleId) =>
+                    navigateRoot("topics", topicId, bundleId)
+                  }
                 />
               </>
             )}

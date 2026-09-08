@@ -61,7 +61,7 @@ describe("HR company intelligence parser", () => {
     const parsed = parseCompanyDirectory(directory);
     expect(parsed.items[0].coverage?.jobCount).toBeNull();
     expect(parsed.items[0].aliases).toEqual(["ACME"]);
-    expect(parsed.topics.state).toBe("blocked");
+    expect(parsed.topics?.state).toBe("blocked");
   });
 
   it("rejects unsafe source URLs in facts", () => {
