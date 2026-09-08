@@ -20,32 +20,18 @@ import httpx
 import psycopg
 import pytest
 import uvicorn
-from fastapi import FastAPI
-from psycopg.rows import dict_row
-from test_hr_web_app_startup import (
-    attempt_repository as attempt_repository,
-)
-from test_hr_web_app_startup import (
-    control_database as control_database,
-)
-from test_hr_web_app_startup import (
-    conversation_database as conversation_database,
-)
-from test_hr_web_app_startup import (
-    direct_database as direct_database,
-)
-from test_hr_web_app_startup import (
-    repository as repository,
-)
-from test_hr_web_app_startup import (
-    web_loop as web_loop,
-)
-from test_hr_web_app_startup import (
-    worker_conversation as worker_conversation,
-)
-
 from app import main as app_main
+from app.attachments.artifact_service import ArtifactOutputService, ArtifactRepository
 from app.attachments.citation_service import CitationRepository, CitationService
+from app.attachments.conversation_repository import ConversationAttachmentRepository
+from app.attachments.download_service import (
+    ConversationAttachmentAccessRepository,
+    ConversationAttachmentDownloadService,
+    S3ImmutableAttachmentStore,
+)
+from app.attachments.grant_service import AttachmentGrantService, TaskGrantRepository
+from app.attachments.object_writer import AttachmentObjectWriter
+from app.attachments.upload_service import AttachmentUploadService
 from app.config import load_config
 from app.control_plane.auth import AuthSecrets, DingTalkWebAuth, WebSessionRepository
 from app.hr.intelligence_bundle import verify_import_bundle
@@ -53,8 +39,20 @@ from app.hr.intelligence_import import (
     DatabaseIntelligenceImportRepository,
     IntelligenceBundleImporter,
 )
-from tests.helpers.hr_recruiting_loop import configure_recruiting_api
-from tests.helpers.hr_web_loop import _codec
+from fastapi import FastAPI
+from psycopg.rows import dict_row
+from test_hr_turn_scope_v6_database import (
+    _seed_candidate_scope,
+    repository,
+)
+from test_hr_turn_scope_v6_database import (
+    control_database as control_database,
+)
+from test_hr_turn_scope_v6_database import (
+    scoped_database as scoped_database,
+)
+from tests.helpers.hr_recruiting_objects import RecruitingObjects
+from tests.helpers.hr_web_loop import WebLoop, _codec
 
 pytestmark = [
     pytest.mark.postgres,
@@ -63,6 +61,19 @@ pytestmark = [
         reason="real bundle path not supplied",
     ),
 ]
+
+
+@pytest.fixture()
+def web_loop(scoped_database):
+    ids = _seed_candidate_scope(scoped_database)
+    conversation = repository(scoped_database).ensure_direct_conversation_shell(
+        ids["owner"], uuid4(), direct_agent_id="hr-bot", title="Owned company reading"
+    )
+    loop = WebLoop(scoped_database, ids["owner"], conversation.conversation_id)
+    try:
+        yield loop
+    finally:
+        loop.close()
 
 
 def _actual_app(web_loop, monkeypatch, tmp_path, root):
@@ -103,12 +114,29 @@ def _actual_app(web_loop, monkeypatch, tmp_path, root):
             }
         )
     )
+    role_commit = "a" * 40
+    role_root = tmp_path / "roles" / role_commit
+    role_files = []
+    for name in (
+        "bots/hr/CLAUDE.md", "shared/base-rules.md",
+        "shared/orbbec-context.md", "shared/web-research.md",
+    ):
+        target = role_root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("Owned HTTP fixture; no model execution.")
+        role_files.append({"path": name, "sha256": hashlib.sha256(target.read_bytes()).hexdigest()})
+    (role_root / "role-package.json").write_text(json.dumps({
+        "format": "hr-role-package-v1", "teamCommit": role_commit,
+        "catalogRelease": role_commit, "cwd": "bots/hr", "files": role_files,
+    }))
     config = load_config()
     config = replace(
         config,
         execution_relay_enabled=True,
         direct_agent_enabled=True,
         hr_web_worker_enabled=True,
+        hr_role_package_root=str(role_root.parent),
+        hr_role_package_commit=role_commit,
         agent_brain_enabled=False,
         content_encryption_keyring_file=str(keyring),
         static_dir=str(Path(__file__).parents[2] / "webui/dist"),
@@ -139,7 +167,24 @@ def _actual_app(web_loop, monkeypatch, tmp_path, root):
         app_key="owned-web-fixture",
     )
     attachments = FastAPI()
-    configure_recruiting_api(attachments, database_url)
+    # Keep real attachment services without importing the removed task harness.
+    objects = RecruitingObjects(tmp_path / "objects")
+    codec = _codec()
+    immutable = S3ImmutableAttachmentStore(objects, "owned-company-files")
+    writer = AttachmentObjectWriter(objects, "owned-company-files")
+    attachments.state.conversation_attachment_upload_service = AttachmentUploadService(
+        ConversationAttachmentRepository(database_url, content_codec=codec), writer
+    )
+    attachments.state.conversation_attachment_download_service = ConversationAttachmentDownloadService(
+        ConversationAttachmentAccessRepository(database_url, content_codec=codec),
+        immutable, ticket_secret=b"r" * 32,
+    )
+    attachments.state.task_attachment_grant_service = AttachmentGrantService(
+        TaskGrantRepository(database_url, content_codec=codec), immutable
+    )
+    attachments.state.artifact_output_service = ArtifactOutputService(
+        ArtifactRepository(database_url, content_codec=codec), writer
+    )
     services = {
         name: getattr(attachments.state, name)
         for name in (
