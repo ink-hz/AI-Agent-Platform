@@ -1,7 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
-// Follow the actual workspace scroller, including space occupied by the sticky
-// composer. A message anchor alone can land behind that composer.
+// Messages scroll independently; the composer stays in the bottom layout row.
 export function useConversationScroll(conversationId: string, enabled: boolean) {
   const pageRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLElement | null>(null);
@@ -25,7 +24,7 @@ export function useConversationScroll(conversationId: string, enabled: boolean) 
   useLayoutEffect(() => {
     if (!enabled) return;
     const page = pageRef.current;
-    const viewport = page?.closest<HTMLElement>(".brain-workspace-main");
+    const viewport = page?.closest<HTMLElement>(".conversation-scroll-region");
     if (!page || !viewport) return;
     viewportRef.current = viewport;
     jumpToLatest();

@@ -762,7 +762,7 @@ export function ConversationPage({
   messageGroups.push({ key: "remaining", messages: remainingMessages, answer: null });
   const workerFailure = workerOwned && workerSnapshot?.outcome
     && ["failed", "interrupted"].includes(workerSnapshot.outcome.kind) ? workerSnapshot.outcome.kind : null;
-  const conversationContent = <div className="conversation-page" ref={pageRef}>
+  const conversationContent = <div className="conversation-page">
     <header className="conversation-header">
       <div>
         <h1>{assistantLabel}</h1>
@@ -775,6 +775,8 @@ export function ConversationPage({
         type="button"
       >会话材料</button>}
     </header>
+    <div className={expectedAgentId === "hr-bot" ? "conversation-scroll-region" : "conversation-flow"}>
+    <div className={expectedAgentId === "hr-bot" ? "conversation-scroll-content" : "conversation-flow"} ref={pageRef}>
     {connection === "offline" && <aside className="conversation-connection is-offline" role="status"><strong>连接暂时中断</strong><span>正在从上次进度继续连接，不会重复提交请求。</span></aside>}
     {connection === "connecting" && <aside className="conversation-connection" role="status">正在连接对话…</aside>}
     {messageGroups.map(group => <Fragment key={group.key}><ConversationMessages
@@ -831,6 +833,8 @@ export function ConversationPage({
     />}
     {!workerOwned && detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
       && <button className="conversation-turn-retry" disabled={pending || readOnly} onClick={() => void retryTurn()} type="button">重试本轮</button>}
+    </div>
+    </div>
     <ConversationComposer
       compact={expectedAgentId === "hr-bot"}
       navigation={expectedAgentId === "hr-bot" && !following
@@ -886,7 +890,7 @@ export function ConversationPage({
       />
     </aside>
     : null;
-  return <div className={showMaterials ? "conversation-workspace-grid" : "conversation-workspace-content"}>
+  return <div className={`${showMaterials ? "conversation-workspace-grid" : "conversation-workspace-content"}${expectedAgentId === "hr-bot" ? " is-hr-conversation" : ""}`}>
     {conversationContent}
     {showMaterials && attachmentLimits && <SessionMaterialsDrawer
       activeIds={activeAttachmentIds} attachments={attachments} limits={attachmentLimits} onDelete={(item) => void removeAttachment(item)}

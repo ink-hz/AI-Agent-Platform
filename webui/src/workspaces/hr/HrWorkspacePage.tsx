@@ -223,7 +223,7 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
           conversationPath={positionRouteReady ? positionConversationPath : hrConversationPath}
           historyClient={positionRouteValidated ? historyClient : undefined}
           initialDraftSnapshot={freeChatDraftSnapshots.current.get(draftOwnerId)}
-          key={`hr-chat:${draftOwnerId}:${chatConversationId ?? "new"}`}
+          key={`hr-chat:${draftOwnerId}`}
           layout={positionRouteReady ? "focused" : "standard"}
           newConversationScope={positionRouteReady && props.positionId ? { positionId: props.positionId } : undefined}
           newConversationHeader={<section className="hr-conversation-welcome">

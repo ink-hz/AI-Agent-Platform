@@ -69,14 +69,14 @@ describe("HR workspace core acceptance", () => {
     try {
       await render("");
       const input = container.querySelector("textarea")!;
-      expect(input.rows).toBe(1);
-      expect(input.style.height).toBe("48px");
+      expect(input.rows).toBe(3);
+      expect(input.style.height).toBe("96px");
       measuredHeight = 130; await render("多行岗位需求");
       expect(input.style.height).toBe("130px");
       measuredHeight = 350; await render("更长的岗位需求");
-      expect(input.style.height).toBe("200px");
+      expect(input.style.height).toBe("220px");
       measuredHeight = 25; await render("");
-      expect(input.style.height).toBe("48px");
+      expect(input.style.height).toBe("96px");
       expect(container.querySelector("textarea")).toBe(input);
     } finally { height.mockRestore(); }
   });

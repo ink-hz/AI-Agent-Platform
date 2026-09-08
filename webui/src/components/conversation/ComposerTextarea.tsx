@@ -6,7 +6,7 @@ export function ComposerTextarea({ autoSize = false, ...props }: TextareaHTMLAtt
     const input = inputRef.current;
     if (!input) return;
     input.style.height = "auto";
-    input.style.height = `${Math.max(48, Math.min(200, input.scrollHeight))}px`;
+    input.style.height = `${Math.max(96, Math.min(220, input.scrollHeight))}px`;
   };
   useLayoutEffect(() => {
     if (autoSize) resize();
