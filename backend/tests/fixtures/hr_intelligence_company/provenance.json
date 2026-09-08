@@ -1,0 +1,6 @@
+{
+  "extraction_script": "extract_fixture.py",
+  "source_bundle_id": "2b49ecc4-42fe-45ae-80ac-26891f42ac6c",
+  "source_generated_at": "2026-09-06T14:37:42.467393+00:00",
+  "source_manifest_sha256": "5d446fe136a3fe2d3d1bb06873f9584e4a357f9546e9f66e686e14950dab98a3"
+}

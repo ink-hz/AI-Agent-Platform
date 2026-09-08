@@ -72,6 +72,37 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
         except (KeyError, TypeError, ValueError):
             raise HTTPException(422, "HR panorama request invalid") from None
 
+    @router.get("/api/hr/panorama/companies")
+    async def companies(request: Request):
+        await authorize(request)
+        record = await call(service.companies)
+        return Response(status_code=204) if record is None else record
+
+    @router.get("/api/hr/panorama/companies/{company_key}")
+    async def company(
+        request: Request,
+        company_key: Annotated[str, Path(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")],
+        bundle_id: Annotated[UUID | None, Query()] = None,
+    ):
+        await authorize(request)
+        return await call(service.company, company_key, bundle_id=bundle_id)
+
+    @router.get("/api/hr/panorama/companies/{company_key}/jobs")
+    async def company_jobs(
+        request: Request,
+        company_key: Annotated[str, Path(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")],
+        bundle_id: Annotated[UUID | None, Query()] = None,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 25,
+        location: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+        status: Annotated[Literal["open", "closed", "unknown"] | None, Query()] = None,
+    ):
+        await authorize(request)
+        return await call(
+            service.company_jobs, company_key, bundle_id=bundle_id, offset=offset,
+            limit=limit, location=location, status=status,
+        )
+
     @router.get("/api/hr/panorama/current")
     async def current_report(request: Request):
         await authorize(request)
