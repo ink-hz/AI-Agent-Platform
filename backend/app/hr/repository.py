@@ -668,16 +668,16 @@ class HrPositionRepository:
             raise HrUnavailable("position repository unavailable") from None
 
     def position_for_conversation(
-        self, owner_id: UUID, conversation_id: UUID
+        self, owner_id: UUID, conversation_id: UUID, *, turn_id: UUID
     ) -> UUID | None:
-        if not isinstance(owner_id, UUID) or not isinstance(conversation_id, UUID):
+        if any(not isinstance(value, UUID) for value in (owner_id, conversation_id, turn_id)):
             raise ValueError("position conversation identifiers required")
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select position_id from platform_hr.position_conversations "
-                    "where owner_internal_user_id=%s and conversation_id=%s",
-                    (owner_id, conversation_id),
+                    "select position_id from platform_hr.position_task_records "
+                    "where owner_internal_user_id=%s and conversation_id=%s and turn_id=%s",
+                    (owner_id, conversation_id, turn_id),
                 ).fetchone()
             return row["position_id"] if row is not None else None
         except (KeyError, TypeError, ValueError, psycopg.Error):
@@ -840,8 +840,9 @@ class HrPositionRepository:
             with self._connection() as connection:
                 row = connection.execute(
                     "select position.*,(select count(*) from "
-                    "platform_hr.position_conversations binding where "
-                    "binding.position_id=position.position_id)::bigint "
+                    "(select conversation_id,position_id,owner_internal_user_id from platform_hr.position_task_records "
+                    "union select conversation_id,position_id,owner_internal_user_id from platform_hr.position_conversations) binding where "
+                    "binding.position_id=position.position_id and binding.owner_internal_user_id=position.owner_internal_user_id)::bigint "
                     "as conversation_count,(select count(*) from "
                     "platform_hr.position_materials material where "
                     "material.position_id=position.position_id and material.active)::bigint "
@@ -849,8 +850,9 @@ class HrPositionRepository:
                     "platform_hr.position_artifacts artifact where "
                     "artifact.position_id=position.position_id)::bigint "
                     "as artifact_count,array(select binding.conversation_id from "
-                    "platform_hr.position_conversations binding where "
-                    "binding.position_id=position.position_id order by binding.created_at desc) "
+                    "(select conversation_id,position_id,owner_internal_user_id from platform_hr.position_task_records "
+                    "union select conversation_id,position_id,owner_internal_user_id from platform_hr.position_conversations) binding where "
+                    "binding.position_id=position.position_id and binding.owner_internal_user_id=position.owner_internal_user_id order by binding.conversation_id) "
                     "as conversation_ids,array(select material.attachment_id from "
                     "platform_hr.position_materials material where "
                     "material.position_id=position.position_id and material.active "

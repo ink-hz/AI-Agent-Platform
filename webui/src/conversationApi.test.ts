@@ -147,6 +147,36 @@ describe("continuous Conversation API", () => {
     }
   });
 
+  it("submits and restores an HR knowledge selection without changing its identity", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("58df615d-dfd1-4b02-87f7-9a1d7a04f7fa");
+    const selected = {
+      sourceCommit: "abc123", id: "structured-interview", revision: 1, sha256: "a".repeat(64),
+    };
+    const projected = { ...message, user_selected_resources: [{
+      source_commit: selected.sourceCommit, id: selected.id, revision: selected.revision, sha256: selected.sha256,
+    }] };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ ...submissionResult, message: projected }, 201))
+      .mockResolvedValueOnce(jsonResponse({ ...submissionResult, message: projected }, 201))
+      .mockResolvedValueOnce(jsonResponse({ items: [projected] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await startConversation({
+      text: "设计面试", attachmentIds: [], activeAttachmentIds: [], userSelectedResources: [selected],
+    }, "csrf", "hr-bot").send();
+    await createConversationMessageSubmission(CONVERSATION_ID, {
+      text: "继续设计", attachmentIds: [], activeAttachmentIds: [], userSelectedResources: [selected],
+    }, "csrf").send();
+    const restored = await fetchConversationMessages(CONVERSATION_ID);
+    expect(restored).toEqual([expect.objectContaining({ userSelectedResources: [selected] })]);
+    expect(restored[0]).not.toHaveProperty("user_selected_resources");
+    for (const call of fetchMock.mock.calls.slice(0, 2)) {
+      expect(JSON.parse(call[1].body)).toMatchObject({ user_selected_resources: [{
+        source_commit: selected.sourceCommit, id: selected.id, revision: 1, sha256: selected.sha256,
+      }] });
+    }
+  });
+
   it("reuses one conversation for a follow-up and retains its UUID across retries", async () => {
     vi.spyOn(crypto, "randomUUID").mockReturnValue("58df615d-dfd1-4b02-87f7-9a1d7a04f7fa");
     const fetchMock = vi.fn()

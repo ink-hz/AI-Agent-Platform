@@ -44,7 +44,7 @@ from .conversation_repository import (
     ConversationRepositoryNotFound,
     ConversationTurnInProgress,
 )
-from .conversation_service import ConversationCommandService
+from .conversation_service import ConversationCommandService, ConversationKnowledgeSelectionError
 from .routes import (
     MissionStreamBusy,
     MissionStreamLimiter,
@@ -85,14 +85,43 @@ class ConversationRoute(APIRoute):
         return secure
 
 
+from app.hr.standard_consent import StandardConsent, normalize_consent
+from app.execution_relay.contracts_v6 import HrTurnScope, HrMethodSelection
+
+
 class ConversationTextBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     text: str = Field(default="", max_length=32768)
     attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=5)
     active_attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=50)
+    user_selected_resources: tuple[dict[str, object], ...] = ()
     position_id: UUID | None = None
     position_draft_id: UUID | None = None
+    scope: HrTurnScope | None = None
+    method_selection: HrMethodSelection | None = Field(default=None, alias="methodSelection")
+
+    standard_consent: StandardConsent | None = Field(default=None, alias="standardConsent")
+
+    @field_validator("standard_consent", mode="before")
+    @classmethod
+    def _consent(cls, value):
+        return normalize_consent(value)
+
+    @field_validator("scope", "method_selection", mode="before")
+    @classmethod
+    def _hr_wire_values(cls, value, info):
+        if value is None:
+            return None
+        import json
+        model = HrTurnScope if info.field_name == "scope" else HrMethodSelection
+        return model.model_validate_json(json.dumps(value)) if isinstance(value, dict) else value
+
+    @field_validator("user_selected_resources", mode="before")
+    @classmethod
+    def _knowledge_selections(cls, value):
+        from .conversation_models import normalize_knowledge_selections
+        return normalize_knowledge_selections(value)
 
     @field_validator(
         "attachment_ids", "active_attachment_ids", mode="before"
@@ -120,8 +149,13 @@ class ConversationTextBody(BaseModel):
     def _normalized_submission(self) -> ConversationTextBody:
         if self.position_id is not None and self.position_draft_id is not None:
             raise ValueError("Conversation position scope is ambiguous")
+        if self.scope is not None and (self.position_id is not None or self.position_draft_id is not None):
+            raise ValueError("HR turn scope cannot use conversation binding")
         submission = ConversationTurnSubmission(
-            self.text, self.attachment_ids, self.active_attachment_ids
+            self.text, self.attachment_ids, self.active_attachment_ids,
+            user_selected_resources=self.user_selected_resources,
+            hr_scope=self.scope, method_selection=self.method_selection,
+            standard_consent=self.standard_consent
         )
         self.text = submission.text
         self.attachment_ids = submission.attachment_ids
@@ -130,7 +164,10 @@ class ConversationTextBody(BaseModel):
 
     def submission(self) -> ConversationTurnSubmission:
         return ConversationTurnSubmission(
-            self.text, self.attachment_ids, self.active_attachment_ids
+            self.text, self.attachment_ids, self.active_attachment_ids,
+            user_selected_resources=self.user_selected_resources,
+            hr_scope=self.scope, method_selection=self.method_selection,
+            standard_consent=self.standard_consent
         )
 
 
@@ -432,6 +469,8 @@ def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
             str(attachment_id) for attachment_id in record.active_attachment_ids
         ],
     }
+    if record.user_selected_resources:
+        payload["user_selected_resources"] = list(record.user_selected_resources)
     if record.search_recovery is not None:
         payload["search_recovery"] = record.search_recovery.public_payload()
     if record.citations:
@@ -786,15 +825,13 @@ def build_conversation_router(
         request_id = _parse_idempotency_key(idempotency_key)
         _validate_input_bytes(body.text)
         if (
-            body.position_id is not None or body.position_draft_id is not None
+            body.position_id is not None or body.position_draft_id is not None or body.scope is not None
         ) and direct_agent_id != "hr-bot":
             raise HTTPException(422, "conversation request invalid", headers=_NO_STORE)
         if direct_agent_id is not None:
             await require_direct_agent(context.internal_user_id, direct_agent_id)
-        if (body.position_id is not None or body.position_draft_id is not None) and not callable(
-            getattr(hr_position_scope, "bind_new_conversation_locked", None)
-        ):
-            raise HTTPException(503, "HR position draft scope unavailable", headers=_NO_STORE)
+        if body.position_id is not None or body.position_draft_id is not None:
+            raise HTTPException(410, "Legacy HR scope retired; use per-turn scope", headers=_NO_STORE)
         try:
             result = await asyncio.to_thread(
                 commands.start,
@@ -809,6 +846,8 @@ def build_conversation_router(
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
+        except ConversationKnowledgeSelectionError:
+            raise HTTPException(422, "HR knowledge selection unavailable or invalid", headers=_NO_STORE) from None
         except Exception as error:  # Position callback errors remain opaque.
             from app.hr.repository import HrConflict, HrNotFound, HrUnavailable
 
@@ -1014,6 +1053,8 @@ def build_conversation_router(
                 context.internal_user_id,
                 conversation_id,
             )
+            if body.user_selected_resources and conversation.direct_agent_id != "hr-bot":
+                raise ConversationKnowledgeSelectionError("HR knowledge requires an HR conversation")
             if conversation.mode == "brain" and not brain_enabled:
                 raise HTTPException(
                     503, "Agent Brain unavailable", headers=_NO_STORE
@@ -1074,6 +1115,8 @@ def build_conversation_router(
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
+        except ConversationKnowledgeSelectionError:
+            raise HTTPException(422, "HR knowledge selection unavailable or invalid", headers=_NO_STORE) from None
         response.status_code = 201 if result.created else 200
         response.headers.update(_NO_STORE)
         return _create_payload(result)

@@ -71,15 +71,15 @@ export function HrPositionPicker({ api, selected, disabled = false, existingConv
   }}>
     <button ref={trigger} className="hr-position-picker-trigger" type="button" disabled={disabled}
       aria-expanded={open && !disabled} aria-controls={panelId} aria-haspopup="dialog" onClick={() => setOpen((value) => !value)}>
-      <BriefcaseBusiness size={16} aria-hidden="true" /><span>{selected?.title ?? (existingConversation ? "选择岗位开新对话" : "选择岗位")}</span><ChevronDown size={14} aria-hidden="true" />
+      <BriefcaseBusiness size={16} aria-hidden="true" /><span>{selected?.title ?? (existingConversation ? "选择本轮岗位" : "选择岗位")}</span><ChevronDown size={14} aria-hidden="true" />
     </button>
     {selected && onOpenDetails && <button className="hr-position-picker-details" type="button" onClick={onOpenDetails}>岗位资料</button>}
     {open && !disabled && <section id={panelId} className="hr-position-picker-popover" role="dialog" aria-label="选择招聘岗位">
       <header><strong>{selected ? "切换岗位" : "选择岗位"}</strong><button type="button" aria-label="关闭岗位选择" onClick={() => { setOpen(false); trigger.current?.focus(); }}><X size={16} /></button></header>
       <label className="hr-position-picker-search"><Search size={16} aria-hidden="true" /><input autoFocus type="search" aria-label="搜索岗位" placeholder="搜索名称、编号、部门或地点" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-      {existingConversation && <p className="hr-position-picker-hint">切换岗位会开始新对话，当前对话保留在历史记录中。</p>}
+      {existingConversation && <p className="hr-position-picker-hint">切换岗位只影响下一轮，当前执行和已有消息保持原来的岗位。</p>}
       <div className="hr-position-picker-results">
-        <button type="button" className="hr-position-picker-option" aria-pressed={!selected && !existingConversation} onClick={() => select(null)}><strong>通用对话</strong><small>不指定岗位</small></button>
+        <button type="button" className="hr-position-picker-option" aria-pressed={!selected} onClick={() => select(null)}><strong>通用对话</strong><small>不指定岗位</small></button>
         {state === "loading" ? <p role="status">正在搜索岗位…</p> : state === "error" ? <p role="alert">岗位暂时无法读取。<button type="button" onClick={() => setAttempt((value) => value + 1)}>重试</button></p>
           : visible.length === 0 ? <p>没有找到匹配的岗位，试试其他关键词。</p>
           : visible.map((position) => <button key={position.positionId} type="button" className="hr-position-picker-option" aria-pressed={selected?.positionId === position.positionId} onClick={() => select(position)}>

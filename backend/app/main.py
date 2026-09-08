@@ -163,7 +163,6 @@ from .health.platform import (
     build_public_platform_health,
 )
 from .health.poller import HealthCache, poll_loop
-from .hr.candidate_context import CandidateEnvelopeProvider
 from .hr.candidate_parser_runtime import (
     CandidateParserAppRepository,
     CandidateParserInputProvider,
@@ -176,6 +175,11 @@ from .hr.candidate_service import CandidateService
 from .hr.context import HrPositionScope
 from .hr.intelligence_documents import IntelligenceDocumentStore
 from .hr.intelligence_markdown import IntelligenceMarkdownStore
+from .hr.role_package import HrRolePackages
+from .hr.tool_service import HrToolService
+from .hr.tool_routes import build_hr_result_router
+from .hr.reference_knowledge import HrKnowledgeRepository
+from .hr.reference_knowledge_routes import build_hr_knowledge_router
 from .hr.panorama_context import PanoramaContextProvider
 from .hr.panorama_repository import PanoramaRepository
 from .hr.panorama_routes import build_panorama_router
@@ -183,11 +187,7 @@ from .hr.panorama_service import PanoramaService
 from .hr.position_intelligence_repository import PositionIntelligenceRepository
 from .hr.position_intelligence_routes import build_position_intelligence_router
 from .hr.position_intelligence_service import PositionIntelligenceService
-from .hr.position_package_projection import (
-    PositionPackageProjectionRepository,
-    PositionPackageProjector,
-    position_package_projection_loop,
-)
+
 from .hr.repository import HrPositionRepository
 from .hr.resource_routes import build_hr_resource_router
 from .hr.resource_service import (
@@ -196,15 +196,7 @@ from .hr.resource_service import (
 )
 from .hr.routes import build_hr_position_router
 from .hr.service import HrPositionService
-from .hr.task_context import HrTaskContextProvider, PostgresHrTaskContextSource
-from .hr.task_repository import PostgresHrPositionTaskRepository
-from .hr.task_result_projection import (
-    HrTaskResultProjectionRepository,
-    HrTaskResultReconciler,
-    hr_task_result_projection_loop,
-)
-from .hr.task_routes import build_hr_position_task_router
-from .hr.task_service import HrPositionTaskService
+
 from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
 from .observability.repository import (
@@ -263,31 +255,6 @@ def _optional_hr_bot_model_version(contract_path: str) -> str | None:
         return None
 
 
-def _build_position_package_projector(
-    *,
-    identity_enabled: bool,
-    direct_agent_enabled: bool,
-    database_url: str | None,
-    positions: object | None,
-    content_codec: object | None,
-    model_version: str | None,
-) -> PositionPackageProjector | None:
-    if (
-        not identity_enabled
-        or not direct_agent_enabled
-        or database_url is None
-        or positions is None
-        or content_codec is None
-        or model_version is None
-    ):
-        return None
-    return PositionPackageProjector(
-        PositionPackageProjectionRepository(database_url),
-        positions,
-        content_codec,
-        worker_id=f"platform-position-package-{uuid4().hex}",
-        model_version=model_version,
-    )
 
 
 class _UnavailableFaeWorkbenchRepository:
@@ -833,13 +800,10 @@ def create_app(
     hr_panorama_service=None,
     hr_panorama_projector=None,
     hr_panorama_context_provider=None,
+    hr_knowledge_repository=None,
     hr_resource_service=None,
-    hr_task_context_provider=None,
-    hr_position_task_service=None,
     hr_candidate_parser_submission_coordinator=None,
     hr_candidate_parser_input_provider=None,
-    hr_task_result_reconciler=None,
-    hr_position_package_projector=None,
     agent_use_authorization=None,
     hr_position_scope=None,
     access_history_repository=None,
@@ -847,6 +811,13 @@ def create_app(
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
     config = load_config()
+    if hr_knowledge_repository is None and config.hr_knowledge_root:
+        hr_knowledge_repository = HrKnowledgeRepository(Path(config.hr_knowledge_root), config.hr_knowledge_agent_root, config.hr_knowledge_commit)
+        hr_knowledge_repository.prompt_context()
+
+    hr_role_packages = HrRolePackages(config.hr_role_package_root,config.hr_role_package_commit) if config.hr_web_worker_enabled else None
+    if hr_role_packages is not None:
+        hr_role_packages.select()
     owns_voc_extension_client = (
         voc_extension_client is None and config.voc_extension_enabled
     )
@@ -912,13 +883,7 @@ def create_app(
             control_database_url,
             content_codec=content_codec,
         )
-        execution_relay_router = build_execution_relay_router(
-            execution_relay_repository,
-            WorkerRequestVerifier(control_database_url),
-            lease_seconds=config.execution_relay_lease_seconds,
-            max_body_bytes=config.execution_relay_max_body_bytes,
-            v5_bindings=DirectCommandBindingRepository(execution_relay_repository) if config.hr_web_worker_enabled else None,
-        )
+
     if config.direct_agent_enabled or config.agent_brain_enabled:
         if (
             control_database_url is None
@@ -938,6 +903,7 @@ def create_app(
         conversation_command_service = ConversationCommandService(
             conversation_repository,
             v2_enabled=config.agent_brain_v2_enabled,
+            hr_knowledge_repository=hr_knowledge_repository,
         )
         action_command_service = ActionCommandService(
             control_database_url,
@@ -945,6 +911,20 @@ def create_app(
             dsn_purpose="app",
         )
         agent_use_authorization = AgentUseAuthorization(control_database_url)
+    hr_channel_service = None
+    if config.hr_web_worker_enabled and conversation_command_service is not None:
+        from app.hr.channel_identity import HrChannelIdentityService, build_channel_user_router
+        hr_channel_service = HrChannelIdentityService(HrToolService(execution_relay_repository), conversation_command_service, agent_use_authorization)
+    if config.execution_relay_enabled:
+        execution_relay_router = build_execution_relay_router(
+            execution_relay_repository,
+            WorkerRequestVerifier(control_database_url),
+            lease_seconds=config.execution_relay_lease_seconds,
+            max_body_bytes=config.execution_relay_max_body_bytes,
+            v5_bindings=DirectCommandBindingRepository(execution_relay_repository) if config.hr_web_worker_enabled else None,
+            hr_channel_service=hr_channel_service,
+            hr_tool_service=HrToolService(execution_relay_repository) if config.hr_web_worker_enabled else None,
+        )
     if config.direct_agent_enabled:
         v1_mission_modes.append("direct_agent")
     if config.agent_brain_enabled and not config.agent_brain_v2_enabled:
@@ -1171,8 +1151,6 @@ def create_app(
     position_intelligence_repository = None
     candidate_repository = None
     candidate_task_validator = None
-    hr_model_version = None
-    hr_model_version_checked = False
     panorama_repository = None
     intelligence_document_store = None
     if identity_enabled and control_database_url is not None:
@@ -1200,8 +1178,6 @@ def create_app(
             )
         if (
             hr_position_intelligence_service is None
-            or hr_task_context_provider is None
-            or hr_position_task_service is None
         ):
             position_intelligence_repository = PositionIntelligenceRepository(
                 control_database_url
@@ -1212,8 +1188,6 @@ def create_app(
             )
         if (
             hr_candidate_service is None
-            or hr_task_context_provider is None
-            or hr_position_task_service is None
         ):
             candidate_repository = CandidateRepository(control_database_url)
         if hr_candidate_service is None:
@@ -1263,78 +1237,7 @@ def create_app(
                 ),
                 conversation_attachment_download_service,
             )
-        if hr_task_context_provider is None or hr_position_task_service is None:
-            def context_is_confirmed(owner_id, position_id, context_version_id):
-                current = position_intelligence_repository.current(
-                    owner_id, position_id
-                )
-                return (
-                    current is not None
-                    and current.state == "confirmed"
-                    and current.context_version_id == context_version_id
-                )
 
-            candidate_task_validator = CandidateEnvelopeProvider(
-                candidate_repository, context_is_confirmed
-            )
-            if hr_task_context_provider is None and "direct_agent" in v1_mission_modes:
-                hr_model_version = _optional_hr_bot_model_version(
-                    cluster_contract_path or config.metabot_contract_path
-                )
-                hr_model_version_checked = True
-                if hr_model_version is not None:
-                    hr_task_context_provider = HrTaskContextProvider(
-                        PostgresHrTaskContextSource(
-                            control_database_url,
-                            execution_model_version=hr_model_version,
-                        ),
-                        candidate_provider=candidate_task_validator,
-                    )
-        if (
-            hr_position_task_service is None
-            and conversation_command_service is not None
-            and hr_position_scope is not None
-            and hr_task_context_provider is not None
-        ):
-            hr_position_task_service = HrPositionTaskService(
-                hr_position_intelligence_service,
-                conversation_command_service,
-                hr_position_scope,
-                PostgresHrPositionTaskRepository(control_database_url),
-                candidate_validator=candidate_task_validator,
-            )
-        if (
-            hr_task_result_reconciler is None
-            and "direct_agent" in v1_mission_modes
-            and content_codec is not None
-            and hr_position_intelligence_service is not None
-            and hr_candidate_service is not None
-        ):
-            hr_task_result_reconciler = HrTaskResultReconciler(
-                HrTaskResultProjectionRepository(control_database_url),
-                hr_position_intelligence_service,
-                hr_candidate_service,
-                content_codec,
-                worker_id=f"platform-hr-projection-{uuid4().hex}",
-            )
-        if hr_position_package_projector is None:
-            direct_hr_runtime = (
-                "direct_agent" in v1_mission_modes
-                and content_codec is not None
-                and hr_position_service is not None
-            )
-            if direct_hr_runtime and not hr_model_version_checked:
-                hr_model_version = _optional_hr_bot_model_version(
-                    cluster_contract_path or config.metabot_contract_path
-                )
-            hr_position_package_projector = _build_position_package_projector(
-                identity_enabled=identity_enabled,
-                direct_agent_enabled="direct_agent" in v1_mission_modes,
-                database_url=control_database_url,
-                positions=hr_position_service,
-                content_codec=content_codec,
-                model_version=hr_model_version,
-            )
     if v1_mission_modes:
         if (
             mission_repository is None
@@ -1349,7 +1252,6 @@ def create_app(
             capability_provider=agent_use_authorization.permitted_agents_for_user_id,
             conversation_context_builder=ConversationContextBuilder(
                 conversation_repository,
-                hr_task_context_provider=hr_task_context_provider,
                 panorama_context_provider=hr_panorama_context_provider,
                 candidate_parser_input_provider=(
                     hr_candidate_parser_input_provider
@@ -1454,14 +1356,6 @@ def create_app(
             tasks.append(asyncio.create_task(candidate_parser_submission_loop(
                 hr_candidate_parser_submission_coordinator
             )))
-        if hr_task_result_reconciler is not None:
-            tasks.append(asyncio.create_task(
-                hr_task_result_projection_loop(hr_task_result_reconciler)
-            ))
-        if hr_position_package_projector is not None:
-            tasks.append(asyncio.create_task(
-                position_package_projection_loop(hr_position_package_projector)
-            ))
         try:
             yield
         finally:
@@ -1519,27 +1413,25 @@ def create_app(
     app.state.hr_panorama_service = hr_panorama_service
     app.state.hr_panorama_projector = hr_panorama_projector
     app.state.hr_panorama_context_provider = hr_panorama_context_provider
+    app.state.hr_knowledge_repository = hr_knowledge_repository
     app.state.hr_resource_service = hr_resource_service
-    app.state.hr_task_context_provider = hr_task_context_provider
-    app.state.hr_position_task_service = hr_position_task_service
     app.state.hr_candidate_parser_submission_coordinator = (
         hr_candidate_parser_submission_coordinator
     )
     app.state.hr_candidate_parser_input_provider = (
         hr_candidate_parser_input_provider
     )
-    app.state.hr_task_result_reconciler = hr_task_result_reconciler
     def direct_worker_factory():
         if not config.hr_web_worker_enabled or conversation_repository is None:
             raise RuntimeError("HR web worker is disabled")
         attempts = TurnAttemptRepository(control_database_url, content_codec)
         bindings = DirectCommandBindingRepository(execution_relay_repository)
         context = ConversationContextBuilder(conversation_repository,
-            hr_task_context_provider=hr_task_context_provider, panorama_context_provider=hr_panorama_context_provider,
-            candidate_parser_input_provider=hr_candidate_parser_input_provider)
-        return DirectWorker(attempts, DirectMissionAdapter(attempts, bindings, context, TurnResultProjector(attempts, bindings), attachment_grants=task_attachment_grant_service), artifact_recovery=ArtifactRecovery(conversation_repository))
+            panorama_context_provider=hr_panorama_context_provider,
+            candidate_parser_input_provider=hr_candidate_parser_input_provider,
+            hr_knowledge_repository=hr_knowledge_repository)
+        return DirectWorker(attempts, DirectMissionAdapter(attempts, bindings, context, TurnResultProjector(attempts, bindings), attachment_grants=task_attachment_grant_service, role_packages=hr_role_packages), artifact_recovery=ArtifactRecovery(conversation_repository))
     app.state.direct_worker_factory = direct_worker_factory
-    app.state.hr_position_package_projector = hr_position_package_projector
     app.state.fae_access = None
     app.state.voc_access = None
     app.state.fae_session_read_audit = None
@@ -1635,6 +1527,8 @@ def create_app(
         app.include_router(office_recipient_router)
     if agent_launch_service is not None:
         app.include_router(build_agent_launch_router(agent_launch_service))
+    if identity_enabled and agent_use_authorization is not None:
+        app.include_router(build_hr_knowledge_router(hr_knowledge_repository, agent_use_authorization))
     if identity_enabled and ai_notes_reader is not None:
         app.include_router(build_ai_notes_router(ai_notes_reader))
     if execution_relay_router is not None:
@@ -1662,6 +1556,10 @@ def create_app(
             raise HTTPException(403, "HR Agent use denied")
         return context.internal_user_id
 
+    if config.hr_web_worker_enabled and execution_relay_repository is not None and agent_use_authorization is not None:
+        app.include_router(build_hr_result_router(HrToolService(execution_relay_repository), require_hr_access))
+    if hr_channel_service is not None:
+        app.include_router(build_channel_user_router(hr_channel_service, require_hr_access))
     if hr_position_service is not None and agent_use_authorization is not None:
         app.include_router(
             build_hr_position_router(hr_position_service, agent_use_authorization)
@@ -1683,12 +1581,6 @@ def create_app(
     if hr_resource_service is not None and agent_use_authorization is not None:
         app.include_router(
             build_hr_resource_router(hr_resource_service, require_hr_access)
-        )
-    if hr_position_task_service is not None and agent_use_authorization is not None:
-        app.include_router(
-            build_hr_position_task_router(
-                hr_position_task_service, require_hr_access
-            )
         )
     if mission_repository is not None and agent_use_authorization is not None:
         app.include_router(

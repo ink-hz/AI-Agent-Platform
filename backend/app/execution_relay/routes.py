@@ -190,6 +190,8 @@ def build_execution_relay_router(
     max_body_bytes: int,
     requests_per_window: int = 120,
     v5_bindings=None,
+    hr_tool_service=None,
+    hr_channel_service=None,
 ) -> APIRouter:
     limiter = ExecutionWorkerRequestLimiter(limit=requests_per_window)
     router = APIRouter(prefix="/api/v1/execution-worker")
@@ -198,6 +200,14 @@ def build_execution_relay_router(
         return await _authenticate(
             request, verifier, limiter, max_body_bytes
         )
+
+    if hr_channel_service is not None:
+        from app.hr.channel_identity import attach_channel_worker_route
+        attach_channel_worker_route(router, authenticated, hr_channel_service)
+
+    if hr_tool_service is not None:
+        from app.hr.tool_routes import attach_hr_tool_routes
+        attach_hr_tool_routes(router, authenticated, hr_tool_service)
 
     @router.post("/lease")
     async def lease(request: Request):

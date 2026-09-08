@@ -12,7 +12,8 @@ from app.agent_brain.direct_command_binding import BindingRejected
 from app.agent_brain.turn_attempts import Lease, LeaseRejected
 
 from .acceptance_v5 import parse_v5_acceptance
-from .contracts_v5 import ExecutionRecoveryV5, parse_v5_command
+from .contracts_v5 import ExecutionRecoveryV5
+from .core_contract import parse_core_command
 from .frozen_command_v5 import hydrate_frozen_command
 from .worker_v5_receiver import TrustedV5CallbackBinding
 
@@ -28,6 +29,7 @@ def bound_command(bindings, row):
         event_callback_url=f"{transport['callbackOrigin']}/callbacks/{binding.run_id}/{transport['callbackToken']}",
         input_attachment_grants=bindings.materials(row)["inputAttachmentGrants"],
         output_write_grant=bindings.materials(row)["outputWriteGrant"],
+        business_tool_grant=transport.get("businessToolGrant"),
     )
     return command, transport
 
@@ -104,6 +106,19 @@ def recovery_work(bindings, worker_id):
                         "reconciling",
                     )
                     attempt, row = _current(bindings, connection, worker_id, lease)
+                    wrapper=bindings._wrapper(row)
+                    transport=wrapper['transport']
+                    if (wrapper['command']['contractVersion']=='core_chat_collaboration_v6'
+                        and not attempt['cancel_requested_at']
+                        and transport.get('businessToolLeaseEpoch')!=lease.lease_epoch):
+                        from app.hr.tool_service import HrToolService
+                        grant=HrToolService(bindings.relay).issue_grant(connection,lease.attempt_id,worker_id,lease.lease_epoch)
+                        transport.update(leaseEpoch=lease.lease_epoch,executorId=str(lease.executor_id),
+                            businessToolLeaseEpoch=lease.lease_epoch,businessToolGrant=grant.model_dump(mode='json',by_alias=True))
+                        sealed=bindings.relay.content_codec.seal_json(f"execution-job:{row['job_id']}:{row['run_id']}",wrapper)
+                        connection.execute('update platform_control.execution_jobs set payload_ciphertext=%s,encryption_key_version=%s where job_id=%s',
+                            (sealed.ciphertext,sealed.key_version,row['job_id']))
+                        row=bindings._transport_row(lease,connection)
                     command, transport = bound_command(bindings, row)
                     connection.execute(
                         "update platform_control.direct_command_bindings set recovery_poll_after=clock_timestamp()+interval '2 seconds' where attempt_id=%s",
@@ -209,7 +224,7 @@ class V5RecoveryAdapter:
             or type(item["stop"]) is not bool
         ):
             raise ValueError("v5 recovery work invalid")
-        command = parse_v5_command(item["command"])
+        command = parse_core_command(item["command"])
         if not command.event_callback_url.startswith(
             item["callbackOrigin"] + "/callbacks/"
         ):

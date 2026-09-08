@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from app.hr.standard_consent import StandardConsent
+from app.execution_relay.contracts_v6 import HrTurnScope, HrMethodSelection
 from app.agent_brain.recovery import SearchRecoveryState
 from app.agent_brain.repository import MissionRecord
 
@@ -56,13 +60,42 @@ def _normalized_ids(value: object, *, maximum: int) -> tuple[UUID, ...]:
     return tuple(sorted(value, key=str))
 
 
+def normalize_knowledge_selections(value: object) -> tuple[dict[str, object], ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("HR knowledge selection invalid")
+    selected = []
+    identities = set()
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"source_commit", "id", "revision", "sha256"}:
+            raise ValueError("HR knowledge selection invalid")
+        for key, pattern in (("source_commit", r"[0-9a-f]{40}"), ("id", r"[a-z0-9][a-z0-9-]{0,127}"), ("sha256", r"[0-9a-f]{64}")):
+            if not isinstance(item[key], str) or re.fullmatch(pattern, item[key]) is None:
+                raise ValueError("HR knowledge selection invalid")
+        if type(item["revision"]) is not int or item["revision"] < 1:
+            raise ValueError("HR knowledge revision invalid")
+        identity = (item["source_commit"], item["id"])
+        if identity in identities:
+            raise ValueError("HR knowledge selection duplicated")
+        identities.add(identity)
+        selected.append(dict(item))
+    if len(json.dumps(selected, ensure_ascii=False).encode("utf-8")) > 8 * 1024:
+        raise ValueError("HR knowledge selection too large")
+    return tuple(selected)
+
+
 @dataclass(frozen=True, slots=True)
 class ConversationTurnSubmission:
     text: str
     attachment_ids: tuple[UUID, ...] = ()
     active_attachment_ids: tuple[UUID, ...] = ()
+    user_selected_resources: tuple[dict[str, object], ...] = ()
+    hr_scope: HrTurnScope | None = None
+    method_selection: HrMethodSelection | None = None
+    standard_consent: StandardConsent | None = None
+    trusted_channel_origin: dict[str,str] | None = field(default=None,repr=False)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "user_selected_resources", normalize_knowledge_selections(self.user_selected_resources))
         text = _normalized_text(self.text)
         attachment_ids = _normalized_ids(self.attachment_ids, maximum=5)
         active_attachment_ids = _normalized_ids(
@@ -70,6 +103,23 @@ class ConversationTurnSubmission:
         )
         if not set(attachment_ids).issubset(active_attachment_ids):
             raise ValueError("New attachments must be active")
+        if self.hr_scope is not None:
+            if not isinstance(self.hr_scope, HrTurnScope) or not set(active_attachment_ids).issubset(self.hr_scope.attachment_ids):
+                raise ValueError("HR scope must include active attachments")
+        derived_method = None
+        if self.user_selected_resources:
+            derived_method = HrMethodSelection.model_validate_json(json.dumps({
+                "resources": self.user_selected_resources,
+                "catalogRelease": self.user_selected_resources[0]["source_commit"],
+            }))
+        if self.method_selection is not None and self.method_selection != derived_method:
+            raise ValueError("Method selection must match selected knowledge resources")
+        object.__setattr__(self, "method_selection", derived_method)
+        if self.standard_consent is not None and (
+            self.hr_scope is None or self.hr_scope.position_id is None
+            or not self.standard_consent.accepts_text(self.text)
+        ):
+            raise ValueError("Standard confirmation text or position changed")
         if not text and not attachment_ids:
             raise ValueError("Conversation text or attachment required")
         object.__setattr__(self, "text", text)
@@ -82,7 +132,11 @@ def normalize_turn_submission(
 ) -> ConversationTurnSubmission:
     if isinstance(value, ConversationTurnSubmission):
         return ConversationTurnSubmission(
-            value.text, value.attachment_ids, value.active_attachment_ids
+            value.text, value.attachment_ids, value.active_attachment_ids,
+            user_selected_resources=value.user_selected_resources,
+            hr_scope=value.hr_scope, method_selection=value.method_selection,
+            standard_consent=value.standard_consent,
+            trusted_channel_origin=value.trusted_channel_origin,
         )
     if isinstance(value, str):
         return ConversationTurnSubmission(value)
@@ -170,6 +224,9 @@ class ConversationMessageRecord:
     citations: tuple[ConversationCitationProjection, ...] = ()
     artifact_versions: tuple[ConversationArtifactVersionProjection, ...] = ()
     result_delivery_status: Literal["pending", "completed", "failed"] | None = None
+    user_selected_resources: tuple[dict[str, object], ...] = ()
+    standard_consent: StandardConsent | None = None
+    trusted_channel_origin: dict[str,str] | None = field(default=None,repr=False)
 
 
 @dataclass(frozen=True)

@@ -26,6 +26,9 @@ from .candidate_models import (
     CompleteCandidateDraft,
     FailCandidateDraft,
 )
+from app.agent_brain.conversation_models import ConversationTurnSubmission
+from app.execution_relay.contracts_v6 import HrTurnScope
+
 from .candidate_repository import (
     CandidateConflict,
     CandidateNotFound,
@@ -171,8 +174,11 @@ class CandidateParserAppRepository:
                     "attempt.draft_id,attempt.attachment_id,"
                     "attempt.draft_client_request_id,conversation.conversation_id,"
                     "conversation.mode,conversation.direct_agent_id,"
-                    "exists(select 1 from platform_hr.position_conversations scope "
-                    "where scope.conversation_id=conversation.conversation_id) "
+                    "not platform_hr.candidate_parser_scope_valid_v6("
+                    "attempt.owner_internal_user_id,conversation.conversation_id,"
+                    "(select selected_turn.turn_id from platform_control.conversation_turns selected_turn "
+                    "where selected_turn.conversation_id=conversation.conversation_id "
+                    "and selected_turn.client_request_id=attempt.attempt_id),attempt.draft_id) "
                     "as position_bound,"
                     "exists(select 1 from platform_control.conversation_turns turn "
                     "where turn.conversation_id=conversation.conversation_id "
@@ -182,13 +188,18 @@ class CandidateParserAppRepository:
                     "left join platform_control.conversations conversation on "
                     "conversation.owner_internal_user_id="
                     "attempt.owner_internal_user_id and "
-                    "conversation.started_by_client_request_id=attempt.attempt_id "
+                    "conversation.conversation_id in (select source_turn.conversation_id "
+                    "from platform_control.conversation_turns source_turn "
+                    "where source_turn.client_request_id=attempt.attempt_id) "
                     "where attempt.state='processing' "
                     "and attempt.lease_expires_at>now() and ("
                     "conversation.conversation_id is null or conversation.mode<>"
                     "'direct_agent' or conversation.direct_agent_id<>'hr-bot' or "
-                    "exists(select 1 from platform_hr.position_conversations scope "
-                    "where scope.conversation_id=conversation.conversation_id) or "
+                    "not platform_hr.candidate_parser_scope_valid_v6("
+                    "attempt.owner_internal_user_id,conversation.conversation_id,"
+                    "(select selected_turn.turn_id from platform_control.conversation_turns selected_turn "
+                    "where selected_turn.conversation_id=conversation.conversation_id "
+                    "and selected_turn.client_request_id=attempt.attempt_id),attempt.draft_id) or "
                     "not exists(select 1 from platform_control.conversation_turns turn "
                     "where turn.conversation_id=conversation.conversation_id and "
                     "turn.client_request_id=attempt.attempt_id)) "
@@ -226,8 +237,11 @@ class CandidateParserAppRepository:
                     "exists(select 1 from platform_attachments.erasure_jobs erasure "
                     "where erasure.attachment_id=attachment.attachment_id) "
                     "as erasure_pending,"
-                    "exists(select 1 from platform_hr.position_conversations scope "
-                    "where scope.conversation_id=conversation.conversation_id) "
+                    "not platform_hr.candidate_parser_scope_valid_v6("
+                    "attempt.owner_internal_user_id,conversation.conversation_id,"
+                    "(select selected_turn.turn_id from platform_control.conversation_turns selected_turn "
+                    "where selected_turn.conversation_id=conversation.conversation_id "
+                    "and selected_turn.client_request_id=attempt.attempt_id),attempt.draft_id) "
                     "as position_bound,"
                     "exists(select 1 from platform_attachments.bindings binding "
                     "where binding.owner_internal_user_id=attempt.owner_internal_user_id "
@@ -240,8 +254,7 @@ class CandidateParserAppRepository:
                     "join platform_hr.candidate_draft_processing_attempts attempt on "
                     "attempt.owner_internal_user_id="
                     "conversation.owner_internal_user_id and "
-                    "attempt.attempt_id=turn.client_request_id and "
-                    "attempt.attempt_id=conversation.started_by_client_request_id "
+                    "attempt.attempt_id=turn.client_request_id "
                     "join platform_hr.candidate_drafts draft on "
                     "draft.draft_id=attempt.draft_id and "
                     "draft.owner_internal_user_id=attempt.owner_internal_user_id and "
@@ -330,7 +343,9 @@ class CandidateParserSubmissionCoordinator:
         self._commands.start(
             selected.owner_id,
             selected.client_request_id,
-            _PARSER_PROMPT,
+            ConversationTurnSubmission(
+                _PARSER_PROMPT,hr_scope=HrTurnScope(
+                    positionId=None,positionCandidateIds=(),attachmentIds=(selected.attachment_id,))),
             mode="direct_agent",
             direct_agent_id="hr-bot",
         )

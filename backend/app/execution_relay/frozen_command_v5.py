@@ -97,13 +97,20 @@ class FrozenCommandV5:
 
 
 def parse_frozen_command(value) -> FrozenCommandV5:
+    if isinstance(value,dict) and value.get("contractVersion")=="core_chat_collaboration_v6":
+        from .frozen_command_v6 import parse_frozen_v6
+        return parse_frozen_v6(value)
+    return _parse_frozen(value,_Template)
+
+
+def _parse_frozen(value,template):
     try:
-        if not _exact(value, _Template):
+        if not _exact(value, template):
             raise ValueError
         encoded = canonical_command_bytes(value)
         if len(encoded) > 1024 * 1024:
             raise ValueError
-        model = _Template.model_validate_json(encoded, strict=True)
+        model = template.model_validate_json(encoded, strict=True)
         attachments = value["inputAttachments"]
         output = value["outputScope"]
         scope = value["permissionScope"]
@@ -176,6 +183,7 @@ def hydrate_frozen_command(
     event_callback_url,
     input_attachment_grants,
     output_write_grant,
+    business_tool_grant=None,
 ):
     # Revalidate even a manually constructed internal object; only actual complete
     # transport is passed to the frozen P01 parser, never invented credentials.
@@ -190,4 +198,8 @@ def hydrate_frozen_command(
         inputAttachmentGrants=input_attachment_grants,
         outputWriteGrant=output_write_grant,
     )
+    if value["contractVersion"]=="core_chat_collaboration_v6":
+        from .contracts_v6 import parse_v6_command
+        value["businessToolGrant"]=business_tool_grant
+        return parse_v6_command(value)
     return parse_v5_command(value)

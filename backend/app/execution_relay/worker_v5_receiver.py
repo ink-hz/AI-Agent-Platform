@@ -11,7 +11,9 @@ from uuid import UUID
 
 import psycopg
 
-from .contracts_v5 import CallbackAckV5, parse_v5_command, parse_v5_event
+from .contracts_v5 import CallbackAckV5
+from .core_contract import parse_core_event
+from .core_contract import parse_core_command
 
 
 class V5ReceiverUnavailable(RuntimeError):
@@ -35,7 +37,7 @@ class TrustedV5CallbackBinding:
 
 def register(store, command: dict, binding: TrustedV5CallbackBinding) -> None:
     """Internal trusted-dispatch seam, never exposed over callback HTTP."""
-    parsed = parse_v5_command(command)
+    parsed = parse_core_command(command)
     url = urlsplit(parsed.event_callback_url)
     if (
         not isinstance(binding, TrustedV5CallbackBinding)
@@ -99,6 +101,7 @@ def register(store, command: dict, binding: TrustedV5CallbackBinding) -> None:
                 "UPDATE execution_worker.v5_callback_runs SET transport_lease_epoch=%s,token_hash=%s WHERE run_id=%s",
                 (parsed.lease_epoch, token_hash, parsed.run_id),
             )
+            _store_business_grant(connection,parsed)
             return
         connection.execute(
             "INSERT INTO execution_worker.v5_callback_runs "
@@ -116,6 +119,8 @@ def register(store, command: dict, binding: TrustedV5CallbackBinding) -> None:
                 token_hash,
             ),
         )
+
+        _store_business_grant(connection,parsed)
 
 
 def registered(store, run_id: UUID) -> bool:
@@ -166,7 +171,7 @@ def _accept(
         ):
             raise PermissionError("v5 callback unauthorized")
         raw = json.loads(body)
-        event = parse_v5_event(raw)
+        event = parse_core_event(raw)
         if (event.run_id, event.command_id, event.attempt_id, event.lease_epoch) != (
             run_id,
             row["command_id"],
@@ -174,6 +179,8 @@ def _accept(
             row["launch_lease_epoch"],
         ):
             raise ValueError("v5 event identity invalid")
+        if event.contract_version != row.get('core_contract_version','core_chat_collaboration_v5'):
+            raise ValueError('source contract mismatch')
         cursor = row["accepted_through"]
 
         def ack(status):
@@ -221,3 +228,13 @@ def _accept(
             accepted_through=event.seq,
             expected_seq=event.seq + 1,
         )
+
+
+def _store_business_grant(connection,command):
+    if command.contract_version!='core_chat_collaboration_v6':
+        return
+    grant=command.business_tool_grant
+    if grant is None:
+        raise ValueError('HR business capability missing')
+    connection.execute("update execution_worker.v5_callback_runs set core_contract_version=%s,business_grant_id=%s,business_token_hash=%s where run_id=%s",
+        (command.contract_version,grant.grant_id,hashlib.sha256(grant.bearer_token.encode()).digest(),command.run_id))

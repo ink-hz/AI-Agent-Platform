@@ -4,21 +4,19 @@ import type { HrR12Api } from "../../hrR12Api";
 import type { ConversationFeedbackRating, ConversationFeedbackReason } from "../../conversationTypes";
 import type {
   HrCandidate, HrCandidateAnalysisVersion, HrCandidateDocument, HrCandidateDraft,
-  HrHumanFeedback, HrPositionCandidate, HrTaskRecord,
+  HrHumanFeedback, HrPositionCandidate,
 } from "../../hrR12Types";
 import {
   AttachmentUploader, type AttachmentUploadClient, type UploadQueueItem,
 } from "../../components/conversation/AttachmentUploader";
 import { completeMutationRequest, retainMutationRequest } from "./hrMutationRequest";
 import { HrCandidateAnalysisCard } from "./HrCandidateAnalysisCard";
-import { HrTaskReferences } from "./HrTaskReferences";
 
 type CandidateApi = Pick<HrR12Api,
   "candidateDrafts" | "retryDraft" | "confirmDraft" | "createCandidateDraftBatch"
   | "positionCandidates" | "candidate" | "candidateDocuments" | "candidateAnalyses"
-  | "candidateFeedback" | "appendCandidateFeedback" | "compareCandidates"
-  | "downloadCandidateDocument" | "resources" | "downloadResource"
-  | "startTask" | "taskStatus">;
+  | "candidateFeedback" | "appendCandidateFeedback"
+  | "downloadCandidateDocument" | "resources" | "downloadResource">;
 type NamedRelation = { relation: HrPositionCandidate; candidate: HrCandidate };
 type CandidateDetail = NamedRelation & { documents: HrCandidateDocument[]; analyses: HrCandidateAnalysisVersion[]; feedback: HrHumanFeedback[] };
 type DraftEdit = { stableName: string; facts: string; mergeCandidateId: string | null | undefined };
@@ -27,7 +25,6 @@ const STATE_LABEL: Record<HrCandidateDraft["state"], string> = {
   pending: "等待解析", processing: "正在解析", ready: "待确认", failed: "解析失败",
   confirmed: "已确认", dismissed: "已忽略",
 };
-const TASK_LABEL = { candidate_match: "匹配分析", candidate_interview_plan: "候选人专属面试题" } as const;
 const FEEDBACK_REASON_LABEL: Record<ConversationFeedbackReason, string> = {
   inaccurate: "信息不准确", incomplete: "信息不完整", unclear: "表达不清楚",
   unresolved: "没有解决问题", file_format: "文件或格式有问题",
@@ -49,9 +46,6 @@ function newestAnalysis(items: HrCandidateAnalysisVersion[]): HrCandidateAnalysi
 }
 function draftEdit(draft: HrCandidateDraft): DraftEdit {
   return { stableName: extractedName(draft), facts: JSON.stringify(draft.extractedFacts, null, 2), mergeCandidateId: draft.identityCandidateIds.length === 0 ? null : undefined };
-}
-function taskStatus(status: HrTaskRecord["status"]): string {
-  return status === "accepted" ? "已受理" : status === "running" ? "执行中" : status === "completed" ? "已完成" : "执行失败";
 }
 function factLabel(value: string): string {
   const labels: Record<string, string> = { skills: "技能", experience: "经历", years: "年限", education: "教育背景", location: "所在地" };
@@ -179,9 +173,9 @@ function LegacyAnalysisCard({ analysis, candidateNames }: { analysis: Extract<Hr
   </article>;
 }
 
-export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContextVersionId, taskConversationId, uploadClient, readOnly = false }: {
+export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContextVersionId, onDraft, uploadClient, readOnly = false }: {
   api: CandidateApi; positionId: string; csrfToken: string;
-  currentContextVersionId: string | null; taskConversationId?: string;
+  currentContextVersionId: string | null; onDraft?:(text:string,ids:string[],attachments:string[])=>void;
   uploadClient?: AttachmentUploadClient; readOnly?: boolean;
 }) {
   const [drafts, setDrafts] = useState<HrCandidateDraft[]>([]);
@@ -195,11 +189,8 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
   const [correction, setCorrection] = useState("");
   const [analysisFeedback, setAnalysisFeedback] = useState<Record<string, ConversationFeedbackRating | "pending" | "error">>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const [analysisTask, setAnalysisTask] = useState<HrTaskRecord | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const analysisTaskScope = useRef<{ positionCandidateId: string; candidateId: string; taskKind: keyof typeof TASK_LABEL } | null>(null);
-  const selectedRelationId = useRef<string | null>(null);
   const mutation = useRef<AbortController | null>(null);
   const draftPollAttempt = useRef(0);
 
@@ -236,28 +227,9 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
   }, [api, positionId, processing, drafts]);
 
   useEffect(() => {
-    setComparisonIds((ids) => ids.filter((id) => relations.some((item) => item.relation.positionCandidateId === id && item.relation.contextVersionId === currentContextVersionId)));
+    setComparisonIds((ids) => ids.filter((id) => relations.some((item) => item.relation.positionCandidateId === id)));
   }, [currentContextVersionId, relations]);
 
-  useEffect(() => {
-    const scope = analysisTaskScope.current;
-    if (!analysisTask || !scope || !["accepted", "running"].includes(analysisTask.status)) return;
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => {
-      void api.taskStatus(positionId, analysisTask.taskId, controller.signal).then(async (terminal) => {
-        if (controller.signal.aborted) return;
-        if (terminal.positionCandidateId !== scope.positionCandidateId || terminal.candidateId !== scope.candidateId || terminal.taskKind !== scope.taskKind) {
-          setAnalysisTask(null); setNotice("候选人任务绑定异常，已停止自动刷新。"); return;
-        }
-        setAnalysisTask(terminal);
-        if (terminal.status === "accepted" || terminal.status === "running") return;
-        if (terminal.status === "failed") { if (selectedRelationId.current === scope.positionCandidateId) setNotice(`${TASK_LABEL[terminal.taskKind as keyof typeof TASK_LABEL]}执行失败：${terminal.error ?? "未知错误"}`); return; }
-        const analyses = await api.candidateAnalyses(scope.positionCandidateId, controller.signal);
-        if (!controller.signal.aborted) { setSelected((value) => value?.relation.positionCandidateId === scope.positionCandidateId ? { ...value, analyses } : value); if (selectedRelationId.current === scope.positionCandidateId) setNotice(`${TASK_LABEL[scope.taskKind]}已完成，分析版本已刷新。`); }
-      }).catch(() => { if (!controller.signal.aborted) setNotice("候选人任务状态暂时无法刷新，可手动刷新分析。"); });
-    }, 1_000);
-    return () => { window.clearTimeout(timeout); controller.abort(); };
-  }, [analysisTask, api, positionId]);
 
   function controller(): AbortController { mutation.current?.abort(); const next = new AbortController(); mutation.current = next; return next; }
   async function refresh() { draftPollAttempt.current = 0; const current = controller(); try { await load(current.signal); if (!current.signal.aborted) setNotice("候选人状态已刷新。"); } catch { if (!current.signal.aborted) setNotice("候选人状态暂时无法刷新。"); } }
@@ -297,8 +269,7 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
     }
   }
   async function openCandidate(item: NamedRelation) {
-    selectedRelationId.current = item.relation.positionCandidateId;
-    const current = controller(); setNotice(analysisTask?.status === "failed" && analysisTaskScope.current?.positionCandidateId === item.relation.positionCandidateId ? `${TASK_LABEL[analysisTask.taskKind as keyof typeof TASK_LABEL]}执行失败：${analysisTask.error ?? "未知错误"}` : null); setCorrection("");
+    const current = controller(); setNotice(null); setCorrection("");
     try { const [documents, analyses, feedback] = await Promise.all([api.candidateDocuments(item.candidate.candidateId, current.signal), api.candidateAnalyses(item.relation.positionCandidateId, current.signal), api.candidateFeedback(item.relation.positionCandidateId, current.signal)]); if (!current.signal.aborted) setSelected({ ...item, documents, analyses, feedback }); }
     catch { if (!current.signal.aborted) setNotice("候选人详情暂时不可用"); }
   }
@@ -374,32 +345,9 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
     }
   }
   async function launch(kind: "candidate_match" | "candidate_interview_plan") {
-    if (readOnly || !selected || !currentContextVersionId || selected.relation.contextVersionId !== currentContextVersionId) return;
-    const current = controller();
-    const input = { contextVersionId: currentContextVersionId, candidate: { candidateId: selected.candidate.candidateId, positionCandidateId: selected.relation.positionCandidateId }, materialIds: [], ...(taskConversationId ? { conversationId: taskConversationId } : {}) };
-    const operation = retainMutationRequest(`candidate-task:${positionId}:${kind}`, input);
-    try {
-      const task = await api.startTask(positionId, kind, operation.requestId, input, current.signal);
-      if (current.signal.aborted) return;
-      completeMutationRequest(operation.key);
-      const scope = { positionCandidateId: selected.relation.positionCandidateId, candidateId: selected.candidate.candidateId, taskKind: kind };
-      analysisTaskScope.current = scope;
-      if (task.taskKind !== kind || (taskConversationId && (
-        task.conversationId !== taskConversationId
-        || task.candidateId !== scope.candidateId
-        || task.positionCandidateId !== scope.positionCandidateId
-      ))) { setAnalysisTask(null); setNotice("候选人任务绑定异常，已停止自动刷新。"); return; }
-      setAnalysisTask(task);
-      if (task.status === "failed") { setNotice(`${TASK_LABEL[kind]}执行失败：${task.error ?? "未知错误"}`); return; }
-      if (task.status === "completed") {
-        try {
-          const analyses = await api.candidateAnalyses(scope.positionCandidateId, current.signal);
-          if (!current.signal.aborted) { setSelected((value) => value?.relation.positionCandidateId === scope.positionCandidateId ? { ...value, analyses } : value); setNotice(`${TASK_LABEL[kind]}已完成，分析版本已刷新。`); }
-        } catch { if (!current.signal.aborted) setNotice(`${TASK_LABEL[kind]}任务已完成，分析暂时无法刷新，请手动刷新。`); }
-        return;
-      }
-      setNotice(`${TASK_LABEL[kind]}已启动，完成后将自动刷新分析版本。`);
-    } catch { if (!current.signal.aborted) setNotice("候选人任务未启动，可以安全重试。"); }
+    if(readOnly||!selected||!onDraft)return;
+    onDraft(`请结合当前岗位标准，为 ${selected.candidate.stableName} ${kind==='candidate_match'?'分析匹配证据、差距和待验证项':'设计面试问题与证据标准'}。`,
+      [selected.relation.positionCandidateId],selected.documents.filter(item=>item.status==='active').sort((a,b)=>b.versionNumber-a.versionNumber).slice(0,1).map(item=>item.attachmentId));
   }
   async function appendFeedback() {
     if (readOnly) return;
@@ -431,17 +379,22 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
     } catch { if (!current.signal.aborted) { setAnalysisFeedback((value) => ({ ...value, [item.analysisVersionId]: "error" })); setNotice("分析反馈未保存，请重试。"); } }
   }
   async function compare() {
-    if (readOnly || !currentContextVersionId || comparisonIds.length < 2) return;
-    const current = controller();
-    const operation = retainMutationRequest(`candidate-comparison:${positionId}`, { comparisonIds, currentContextVersionId });
-    try { const result = await api.compareCandidates(positionId, comparisonIds, currentContextVersionId, operation.requestId, current.signal); if (!current.signal.aborted) { completeMutationRequest(operation.key); setComparison(result); setNotice(`候选人比较已生成：分析版本 v${result.versionNumber}`); } } catch (error) { if (!current.signal.aborted) { if ((error as { status?: number }).status === 409) completeMutationRequest(operation.key); setNotice((error as { status?: number }).status === 409 ? "已选候选人的上下文版本已变化，请刷新后重算。" : "候选人比较未完成，请重试。"); } }
+    if(readOnly||comparisonIds.length<2||!onDraft)return;
+    const current=controller();
+    try {
+      const chosen=relations.filter(item=>comparisonIds.includes(item.relation.positionCandidateId));
+      const documents=await Promise.all(chosen.map(item=>api.candidateDocuments(item.candidate.candidateId,current.signal)));
+      if(current.signal.aborted)return;
+      onDraft(`请比较 ${chosen.map(item=>item.candidate.stableName).join('、')} 与当前岗位的匹配证据，明确未知项，不自动做出录用或淘汰决定。`,comparisonIds,
+        documents.flatMap(items=>items.filter(item=>item.status==='active').sort((a,b)=>b.versionNumber-a.versionNumber).slice(0,1).map(item=>item.attachmentId)));
+    }catch{if(!current.signal.aborted)setNotice('候选人材料暂时无法读取。');}
   }
 
   const readyUploads = queue.filter((item) => item.state === "ready" && item.attachment).length;
   const orderedAnalyses = useMemo(() => [...(selected?.analyses ?? [])].sort((left, right) => right.versionNumber - left.versionNumber), [selected?.analyses]);
   const candidateNames = useMemo(() => new Map(relations.map((item) => [item.candidate.candidateId, item.candidate.stableName])), [relations]);
   const renderAnalysis = (item: HrCandidateAnalysisVersion) => {
-    const canRetry = !readOnly && Boolean(currentContextVersionId) && selected?.relation.contextVersionId === currentContextVersionId;
+    const canRetry = !readOnly && Boolean(onDraft);
     const retryUnavailableReason = readOnly ? undefined : !currentContextVersionId
       ? "确认岗位上下文后才能重新生成此分析"
       : selected?.relation.contextVersionId !== currentContextVersionId
@@ -462,9 +415,9 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
     <header><div><span>CANDIDATE INTELLIGENCE</span><h2>候选人</h2></div><div><strong>{relations.length} 位已确认</strong><button type="button" onClick={() => void refresh()}>刷新候选人状态</button></div></header>
     <section className="hr-candidate-import" aria-label="批量简历导入"><h3>批量上传简历</h3><p>每份简历独立解析；单份失败不会影响其他文件。</p><AttachmentUploader acceptedInputTypes={["pdf", "office", "text"]} client={uploadClient} conversationId={null} csrfToken={csrfToken} disabled={readOnly} limits={{ max_file_bytes: 50 * 1024 * 1024, max_files_per_message: 100, max_bytes_per_message: 500 * 1024 * 1024, max_files_per_conversation: 100, max_bytes_per_conversation: 500 * 1024 * 1024 }} onQueueChange={setQueue} /><button disabled={readOnly || readyUploads === 0} type="button" onClick={() => void createBatch()}>开始解析 {readyUploads} 份简历</button></section>
     <section aria-label="简历解析状态"><h3>解析与确认</h3>{drafts.length === 0 && <p>尚未上传简历。</p>}{drafts.map((draft) => { const edit = edits[draft.draftId] ?? draftEdit(draft); const unknowns = Array.isArray(draft.extractedFacts.unknowns) ? draft.extractedFacts.unknowns.filter((item): item is string => typeof item === "string") : []; return <article key={draft.draftId} data-state={draft.state}><div><strong>{extractedName(draft)}</strong><span>{STATE_LABEL[draft.state]}</span></div><p>材料 {draft.attachmentId.slice(0, 8)}</p>{draft.state === "failed" && <><p>失败原因：{draftErrorLabel(draft.errorCode)}</p><button disabled={readOnly} type="button" onClick={() => void retry(draft)}>重试解析</button></>}{draft.state === "ready" && <><button type="button" onClick={() => review(draft)}>审阅{extractedName(draft)}</button>{editingDraftId === draft.draftId && <form className="hr-candidate-confirm" onSubmit={(event) => { event.preventDefault(); void confirm(draft); }}><p>来源附件 {draft.attachmentId}</p>{unknowns.map((item) => <p key={item}>待人工核实：{item}</p>)}<label>候选人称谓<input aria-label="候选人称谓" disabled={readOnly} value={edit.stableName} onChange={(event) => setEdits((items) => ({ ...items, [draft.draftId]: { ...edit, stableName: event.target.value } }))} /></label><label>确认后的候选人事实<textarea aria-label="确认后的候选人事实 JSON" disabled={readOnly} value={edit.facts} onChange={(event) => setEdits((items) => ({ ...items, [draft.draftId]: { ...edit, facts: event.target.value } }))} /></label>{draft.identityCandidateIds.length > 0 && <fieldset disabled={readOnly}><legend>身份候选：必须明确选择</legend><label><input checked={edit.mergeCandidateId === null} name={`identity-${draft.draftId}`} type="radio" value="new" onChange={() => setEdits((items) => ({ ...items, [draft.draftId]: { ...edit, mergeCandidateId: null } }))} />新建候选人</label>{draft.identityCandidateIds.map((candidateId) => <label key={candidateId}><input checked={edit.mergeCandidateId === candidateId} name={`identity-${draft.draftId}`} type="radio" value={candidateId} onChange={() => setEdits((items) => ({ ...items, [draft.draftId]: { ...edit, mergeCandidateId: candidateId } }))} />合并到 {candidateId}</label>)}</fieldset>}<button disabled={readOnly || !currentContextVersionId || !edit.stableName.trim() || edit.mergeCandidateId === undefined} type="submit">确认候选人</button></form>}</>}</article>; })}</section>
-    <section aria-label="已确认候选人"><h3>已确认候选人</h3>{loadState === "ready" && relations.length === 0 && <p>暂无候选人</p>}{relations.map((item) => { const comparable = item.relation.contextVersionId === currentContextVersionId; return <article key={item.relation.positionCandidateId}><label><input disabled={readOnly || !comparable} name="candidate-comparison" type="checkbox" checked={comparisonIds.includes(item.relation.positionCandidateId)} onChange={() => setComparisonIds((ids) => ids.includes(item.relation.positionCandidateId) ? ids.filter((id) => id !== item.relation.positionCandidateId) : [...ids, item.relation.positionCandidateId])} />加入比较</label><button type="button" onClick={() => void openCandidate(item)}>查看{item.candidate.stableName}</button><small>岗位上下文 {item.relation.contextVersionId.slice(0, 8)}{!comparable && " · 上下文版本不同，需重算后比较"}</small></article>; })}<button disabled={readOnly || comparisonIds.length < 2 || !currentContextVersionId} type="button" onClick={() => void compare()}>比较已选候选人</button></section>
+    <section aria-label="已确认候选人"><h3>已确认候选人</h3>{loadState === "ready" && relations.length === 0 && <p>暂无候选人</p>}{relations.map((item) => { const comparable = item.relation.status === "active"; return <article key={item.relation.positionCandidateId}><label><input disabled={readOnly || !comparable} name="candidate-comparison" type="checkbox" checked={comparisonIds.includes(item.relation.positionCandidateId)} onChange={() => setComparisonIds((ids) => ids.includes(item.relation.positionCandidateId) ? ids.filter((id) => id !== item.relation.positionCandidateId) : [...ids, item.relation.positionCandidateId])} />加入比较</label><button type="button" onClick={() => void openCandidate(item)}>查看{item.candidate.stableName}</button><small>岗位上下文 {item.relation.contextVersionId.slice(0, 8)}{!comparable && " · 已归档"}</small></article>; })}<button disabled={readOnly || comparisonIds.length < 2 || !onDraft} type="button" onClick={() => void compare()}>比较已选候选人</button></section>
     {comparison && <section aria-label="候选人比较结果" className="hr-candidate-comparison"><h3>候选人比较结果</h3>{renderAnalysis(comparison)}</section>}
-    {selected && <section aria-label="候选人详情" className="hr-candidate-detail"><header><div><span>CANDIDATE</span><h3>{selected.candidate.stableName}</h3></div><button type="button" onClick={() => setSelected(null)}>关闭详情</button></header><CandidateFacts facts={selected.candidate.facts} /><section aria-label="候选人材料"><h4>候选人材料（{selected.documents.length}）</h4>{[...selected.documents].sort((left, right) => right.versionNumber - left.versionNumber).map((document) => <article key={document.documentId}><strong>简历 v{document.versionNumber}</strong><small>{document.status === "active" ? "可预览和下载" : "已删除或保留期已结束"}</small>{document.status === "active" && <div><button disabled={readOnly} type="button" onClick={() => void openDocument(document, "preview")}>预览简历 v{document.versionNumber}</button><button disabled={readOnly} type="button" onClick={() => void openDocument(document, "download")}>下载简历 v{document.versionNumber}</button></div>}</article>)}</section><div className="hr-candidate-actions"><button disabled={readOnly || !currentContextVersionId || selected.relation.contextVersionId !== currentContextVersionId} type="button" onClick={() => void launch("candidate_match")}>生成匹配分析</button><button disabled={readOnly || !currentContextVersionId || selected.relation.contextVersionId !== currentContextVersionId} type="button" onClick={() => void launch("candidate_interview_plan")}>生成专属面试题</button><button type="button" onClick={() => void refreshAnalyses()}>刷新分析</button></div>{analysisTask && analysisTaskScope.current?.positionCandidateId === selected.relation.positionCandidateId && <div role="status"><p>{TASK_LABEL[analysisTask.taskKind as keyof typeof TASK_LABEL]}：{taskStatus(analysisTask.status)}</p><HrTaskReferences references={analysisTask.references ?? []} /></div>}<section aria-label="分析历史"><h4>分析历史</h4>{orderedAnalyses.map(renderAnalysis)}</section>{newestAnalysis(orderedAnalyses) && <form onSubmit={(event) => { event.preventDefault(); void appendFeedback(); }}><label>人工纠正<textarea aria-label="人工纠正" disabled={readOnly} value={correction} onChange={(event) => setCorrection(event.target.value)} /></label><button disabled={readOnly || !correction.trim()} type="submit">记录人工纠正</button></form>}<section aria-label="人工反馈"><h4>人工反馈</h4>{selected.feedback.map((item) => <p key={item.feedbackId}>{item.correction ?? item.reason}</p>)}</section></section>}
+    {selected && <section aria-label="候选人详情" className="hr-candidate-detail"><header><div><span>CANDIDATE</span><h3>{selected.candidate.stableName}</h3></div><button type="button" onClick={() => setSelected(null)}>关闭详情</button></header><CandidateFacts facts={selected.candidate.facts} /><section aria-label="候选人材料"><h4>候选人材料（{selected.documents.length}）</h4>{[...selected.documents].sort((left, right) => right.versionNumber - left.versionNumber).map((document) => <article key={document.documentId}><strong>简历 v{document.versionNumber}</strong><small>{document.status === "active" ? "可预览和下载" : "已删除或保留期已结束"}</small>{document.status === "active" && <div><button disabled={readOnly} type="button" onClick={() => void openDocument(document, "preview")}>预览简历 v{document.versionNumber}</button><button disabled={readOnly} type="button" onClick={() => void openDocument(document, "download")}>下载简历 v{document.versionNumber}</button></div>}</article>)}</section><div className="hr-candidate-actions"><button disabled={readOnly || !currentContextVersionId} type="button" onClick={() => void launch("candidate_match")}>在对话中分析</button><button disabled={readOnly || !currentContextVersionId} type="button" onClick={() => void launch("candidate_interview_plan")}>在对话中设计面试</button><button type="button" onClick={() => void refreshAnalyses()}>刷新分析</button></div><section aria-label="分析历史"><h4>分析历史</h4>{orderedAnalyses.map(renderAnalysis)}</section>{newestAnalysis(orderedAnalyses) && <form onSubmit={(event) => { event.preventDefault(); void appendFeedback(); }}><label>人工纠正<textarea aria-label="人工纠正" disabled={readOnly} value={correction} onChange={(event) => setCorrection(event.target.value)} /></label><button disabled={readOnly || !correction.trim()} type="submit">记录人工纠正</button></form>}<section aria-label="人工反馈"><h4>人工反馈</h4>{selected.feedback.map((item) => <p key={item.feedbackId}>{item.correction ?? item.reason}</p>)}</section></section>}
     {!currentContextVersionId && <p role="status">确认岗位上下文后，才能确认候选人和生成岗位相对分析。</p>}
     {readOnly && <p role="status">当前为只读模式，不能上传、确认、分析或记录人工反馈。</p>}
     {notice && <p role={loadState === "error" ? "alert" : "status"}>{notice}{loadState === "error" && <>。<button type="button" onClick={() => setLoadAttempt((value) => value + 1)}>重试</button></>}</p>}

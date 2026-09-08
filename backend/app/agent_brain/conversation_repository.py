@@ -460,8 +460,12 @@ class ConversationRepository:
                 row["encryption_key_version"],
             ),
         )
-        if set(value) != {"text"} or not isinstance(value["text"], str):
+        if "text" not in value or set(value)-{"text", "user_selected_resources", "standard_consent", "trusted_channel_origin"} or not isinstance(value["text"], str):
             raise ConversationRepositoryError()
+        from .conversation_models import normalize_knowledge_selections
+        selections = normalize_knowledge_selections(value.get("user_selected_resources", ()))
+        from app.hr.standard_consent import normalize_consent
+        consent = normalize_consent(value.get("standard_consent"))
         inputs, outputs, active = (
             self._message_attachment_records_locked(cursor, row)
             if cursor is not None
@@ -493,6 +497,9 @@ class ConversationRepository:
             created_at=row["created_at"],
             completed_at=row["completed_at"],
             content=value["text"],
+            user_selected_resources=selections,
+            standard_consent=consent,
+            trusted_channel_origin=value.get("trusted_channel_origin"),
             input_attachments=inputs,
             output_attachments=outputs,
             active_attachment_ids=active,
@@ -598,13 +605,20 @@ class ConversationRepository:
             raise ConversationRepositoryError()
         message_record = self._message_from_row(message, cursor)
         if (
-            message_record.content != submission.text
+            message_record.trusted_channel_origin != submission.trusted_channel_origin
+            or message_record.standard_consent != submission.standard_consent
+            or message_record.user_selected_resources != submission.user_selected_resources
+            or message_record.content != submission.text
             or tuple(item.attachment_id for item in message_record.input_attachments)
             != submission.attachment_ids
             or message_record.active_attachment_ids
             != submission.active_attachment_ids
         ):
             raise ConversationRepositoryConflict()
+        if conversation_row["direct_agent_id"] == "hr-bot":
+            from app.hr.turn_scope import submission_context
+            if turn.get("hr_input_context") != submission_context(submission):
+                raise ConversationRepositoryConflict("HR turn scope idempotency mismatch")
         return (
             self._conversation_from_row(conversation_row),
             message_record,
@@ -651,6 +665,8 @@ class ConversationRepository:
         submission: ConversationTurnSubmission,
     ) -> None:
         agent_id = conversation_row["direct_agent_id"]
+        if submission.hr_scope is not None and agent_id != "hr-bot":
+            raise ConversationRepositoryConflict("HR scope requires HR Agent")
         try:
             self._attachments.bind_turn_locked(
                 cursor,
@@ -667,6 +683,13 @@ class ConversationRepository:
                     else self._agent_attachment_support.get(agent_id, False)
                 ),
             )
+            if agent_id == "hr-bot":
+                from app.hr.turn_scope import record_turn_scope_locked
+                try:
+                    record_turn_scope_locked(cursor, conversation_row["owner_internal_user_id"],
+                        conversation_row["conversation_id"], turn_id, submission)
+                except (psycopg.errors.CheckViolation, psycopg.errors.NoDataFound, psycopg.errors.UniqueViolation):
+                    raise ConversationRepositoryConflict("HR turn scope unavailable") from None
         except ConversationAttachmentQuotaExceeded as error:
             raise ConversationRepositoryConflict(str(error)) from None
         except ConversationAttachmentConflict as error:
@@ -733,7 +756,10 @@ class ConversationRepository:
         message_id = uuid4()
         turn_id = uuid4()
         sealed = self.content_codec.seal_json(
-            message_subject(conversation_id, message_id), {"text": text}
+            message_subject(conversation_id, message_id),
+            {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {}),
+             **({"standard_consent": submission.standard_consent.model_dump(mode="json", by_alias=True)} if submission.standard_consent else {}),
+             **({"trusted_channel_origin":submission.trusted_channel_origin} if submission.trusted_channel_origin else {})}
         )
         message_row = cursor.execute(
             "insert into platform_control.conversation_messages "
@@ -835,7 +861,10 @@ class ConversationRepository:
         mission_message_id = uuid4()
         mission_event_id = uuid4()
         sealed = self.content_codec.seal_json(
-            message_subject(conversation_id, message_id), {"text": text}
+            message_subject(conversation_id, message_id),
+            {"text": text, **({"user_selected_resources": list(submission.user_selected_resources)} if submission.user_selected_resources else {}),
+             **({"standard_consent": submission.standard_consent.model_dump(mode="json", by_alias=True)} if submission.standard_consent else {}),
+             **({"trusted_channel_origin":submission.trusted_channel_origin} if submission.trusted_channel_origin else {})}
         )
         message_row = cursor.execute(
             "insert into platform_control.conversation_messages "
@@ -991,6 +1020,8 @@ class ConversationRepository:
         submission = _require_submission(submission)
         text = submission.text
         mode, direct_agent_id = _require_mode(mode, direct_agent_id)
+        if position_id is not None or position_draft_id is not None:
+            raise ValueError("Use per-turn HR scope")
         scoped = position_id is not None or position_draft_id is not None
         hr_scope_callback = getattr(
             hr_position_scope, "bind_new_conversation_locked", None
@@ -1049,7 +1080,7 @@ class ConversationRepository:
                     )
                     mission_id = mission.mission_id
                     created = True
-                if direct_agent_id == "hr-bot" and callable(hr_scope_callback):
+                if direct_agent_id == "hr-bot" and scoped and callable(hr_scope_callback):
                     scope_matches = hr_scope_callback(
                         cursor,
                         internal_user_id,
@@ -1255,7 +1286,7 @@ class ConversationRepository:
                 callback = getattr(
                     hr_position_scope, "bind_new_conversation_locked", None
                 )
-                if direct_agent_id == "hr-bot" and callable(callback):
+                if direct_agent_id == "hr-bot" and (position_id is not None or position_draft_id is not None) and callable(callback):
                     scope_matches = callback(
                         cursor,
                         internal_user_id,
@@ -1420,6 +1451,13 @@ class ConversationRepository:
                 if source_message is None:
                     raise ConversationRepositoryError()
                 source_record = self._message_from_row(source_message, cursor)
+                scope_options = {}
+                if conversation_row["direct_agent_id"] == "hr-bot":
+                    from app.hr.turn_scope import load_authorized_turn_scope
+                    original_scope = load_authorized_turn_scope(
+                        internal_user_id, conversation_id, source_turn_id, connection=cursor)
+                    scope_options = {"hr_scope": original_scope.scope,
+                                     "method_selection": original_scope.method_selection}
                 submission = ConversationTurnSubmission(
                     source_record.content,
                     tuple(
@@ -1427,6 +1465,10 @@ class ConversationRepository:
                         for item in source_record.input_attachments
                     ),
                     source_record.active_attachment_ids,
+                    user_selected_resources=source_record.user_selected_resources,
+                    standard_consent=source_record.standard_consent,
+                    trusted_channel_origin=source_record.trusted_channel_origin,
+                    **scope_options,
                 )
                 existing = cursor.execute(
                     "select 1 from platform_control.conversation_turns "
@@ -2774,7 +2816,9 @@ class ConversationRepository:
                     return None
                 message = self._message_from_row(row, cursor)
                 if (
-                    message.content != submission.text
+                    message.standard_consent != submission.standard_consent
+                    or message.user_selected_resources != submission.user_selected_resources
+                    or message.content != submission.text
                     or tuple(
                         item.attachment_id for item in message.input_attachments
                     )

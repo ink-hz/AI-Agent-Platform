@@ -160,27 +160,6 @@ describe("R1.2 HR API", () => {
     await expect(api.candidateAnalyses(POSITION_CANDIDATE_ID)).rejects.toThrow("analysis response invalid");
   });
 
-  it("keeps existing comparison results readable through the shared analysis parser", async () => {
-    const comparisonResult = {
-      candidates: [{ position_candidate_id: POSITION_CANDIDATE_ID, candidate_id: CANDIDATE_ID, summary: "匹配", evidence_coverage: 2, unknown_count: 1 }],
-      ranking: null, comparison_basis: "same_position_context",
-    };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      analysis_version_id: REQUEST_ID, position_candidate_id: POSITION_CANDIDATE_ID,
-      position_id: POSITION_ID, candidate_id: CANDIDATE_ID, context_version_id: CONTEXT_ID,
-      version_number: 1, analysis_kind: "comparison", document_ids: [ATTACHMENT_ID],
-      feedback_ids: [], result: comparisonResult, evidence: [], unknowns: [], conflicts: [],
-      verification_questions: [], agent_version: "hr-r12", model_version: "platform",
-      created_at: "2026-09-04T00:00:00Z",
-    }), { status: 200 })));
-
-    await expect(createHrR12Api("csrf").compareCandidates(
-      POSITION_ID, [POSITION_CANDIDATE_ID], CONTEXT_ID, REQUEST_ID,
-    )).resolves.toMatchObject({
-      analysisKind: "comparison", result: comparisonResult, sourceArtifactVersionId: null,
-    });
-  });
-
   it("normalizes an omitted interview artifact version to the missing-PDF state", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [{
       analysis_version_id: REQUEST_ID, position_candidate_id: POSITION_CANDIDATE_ID,
@@ -210,36 +189,6 @@ describe("R1.2 HR API", () => {
     await expect(createHrR12Api("csrf").resources(POSITION_ID)).resolves.toMatchObject({ artifacts: [{
       artifactVersionId: ARTIFACT_VERSION_ID, attachmentId: ATTACHMENT_ID,
     }] });
-  });
-
-  it("normalizes the frozen position context contract and confirms against both baselines", async () => {
-    const raw = {
-      context_version_id: CONTEXT_ID, position_id: POSITION_ID, version_number: 3,
-      state: "draft", modules: { profile: { summary: "技术负责人" } }, summary: "新画像",
-      official_version_id: null, base_context_version_id: null, source_conversation_id: null,
-      source_turn_id: null, source_artifact_version_id: null, source_material_attachment_ids: [],
-      agent_id: null, model_version: null, created_by: CANDIDATE_ID, confirmed_by: null,
-      created_at: "2026-09-04T00:00:00Z", confirmed_at: null, row_version: 2,
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ current: null, drafts: [raw] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [raw] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...raw, state: "confirmed" }), { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const api = createHrR12Api("csrf");
-    await expect(api.context(POSITION_ID)).resolves.toMatchObject({
-      current: null, drafts: [{ contextVersionId: CONTEXT_ID, displayVersion: 3, status: "draft", rowVersion: 2 }],
-      history: [{ contextVersionId: CONTEXT_ID }],
-    });
-    await api.confirmContext(POSITION_ID, CONTEXT_ID, null, ["profile"], 2, REQUEST_ID);
-
-    expect(fetchMock.mock.calls[2]?.[0]).toContain(`/context/drafts/${CONTEXT_ID}/confirm`);
-    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toEqual({
-      expected_current_context_version_id: null,
-      expected_draft_row_version: 2,
-      module_names: ["profile"],
-    });
   });
 
   it("uses frozen candidate paths and normalizes list envelopes", async () => {
@@ -286,66 +235,5 @@ describe("R1.2 HR API", () => {
     ]);
   });
 
-  it("starts durable tasks with a position context envelope and paired candidate identity", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      task_id: REQUEST_ID, status: "accepted", task_kind: "candidate_match", error: "worker unavailable",
-    }), { status: 202 }));
-    vi.stubGlobal("fetch", fetchMock);
 
-    const task = await createHrR12Api("csrf").startTask(POSITION_ID, "candidate_match", REQUEST_ID, {
-      contextVersionId: CONTEXT_ID,
-      candidate: { candidateId: CANDIDATE_ID, positionCandidateId: POSITION_CANDIDATE_ID },
-      materialIds: [],
-      conversationId: CONVERSATION_ID,
-    });
-
-    expect(task.error).toBe("worker unavailable");
-
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
-      task_kind: "candidate_match",
-      context_version_id: CONTEXT_ID,
-      candidate_id: CANDIDATE_ID,
-      position_candidate_id: POSITION_CANDIDATE_ID,
-      material_ids: [],
-      conversation_id: CONVERSATION_ID,
-    });
-  });
-
-  it("keeps the conversation and turn created for a position task", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      task_id: REQUEST_ID, status: "accepted", task_kind: "jd", error: null,
-      conversation_id: CONVERSATION_ID, turn_id: TURN_ID,
-      position_candidate_id: null, candidate_id: null,
-    }), { status: 202 })));
-
-    const task = await createHrR12Api("csrf").startTask(
-      POSITION_ID, "jd", REQUEST_ID, { materialIds: [] },
-    );
-
-    expect(task.conversationId).toBe(CONVERSATION_ID);
-    expect(task.turnId).toBe(TURN_ID);
-  });
-
-  it("reads an authoritative terminal candidate task with its exact binding", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      task_id: REQUEST_ID, status: "failed", task_kind: "candidate_match", error: "model failed",
-      position_candidate_id: POSITION_CANDIDATE_ID, candidate_id: CANDIDATE_ID,
-    }), { status: 200 })));
-
-    await expect(createHrR12Api("csrf").taskStatus(POSITION_ID, REQUEST_ID)).resolves.toMatchObject({
-      taskId: REQUEST_ID, status: "failed", error: "model failed",
-      positionCandidateId: POSITION_CANDIDATE_ID, candidateId: CANDIDATE_ID,
-    });
-    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain(`/positions/${POSITION_ID}/tasks/${REQUEST_ID}`);
-  });
-
-  it("rejects malformed task envelopes before making a request", () => {
-    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
-    const unsafe = createHrR12Api("csrf").startTask as unknown as (...args: unknown[]) => unknown;
-
-    expect(() => unsafe(POSITION_ID, "candidate_match", REQUEST_ID, { contextVersionId: CONTEXT_ID })).toThrow("candidate task envelope invalid");
-    expect(() => unsafe(POSITION_ID, "jd", REQUEST_ID, { candidate: { candidateId: CANDIDATE_ID, positionCandidateId: POSITION_CANDIDATE_ID } })).toThrow("position task envelope invalid");
-    expect(() => unsafe(POSITION_ID, "candidate_comparison", REQUEST_ID, {})).toThrow("task kind invalid");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });

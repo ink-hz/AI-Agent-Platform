@@ -30,7 +30,7 @@ function statusLabel(detail: HrPositionDetail): string {
 export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, csrfToken, currentContextVersionId = null,
   detail, initialTab = "position", open, readOnly, onActiveTabChange, onClose, onConfirmed,
   contextRefreshGeneration = 0, degraded = false, onRetryDetail, resourceRefreshGeneration = 0,
-  taskConversationId }: {
+  onCandidateDraft }: {
   activeTab?: HrPositionDetailsTab;
   api: HrR12Api;
   csrfToken: string;
@@ -47,6 +47,7 @@ export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, c
   onRetryDetail?(): void;
   resourceRefreshGeneration?: number;
   taskConversationId?: string;
+  onCandidateDraft?:(text:string,ids:string[],attachments:string[])=>void;
 }) {
   const [uncontrolledActiveTab, setUncontrolledActiveTab] = useState<HrPositionDetailsTab>(initialTab);
   const activeTab = controlledActiveTab ?? uncontrolledActiveTab;
@@ -124,7 +125,7 @@ export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, c
       </section>}
       {visited.has("candidates") && <section aria-labelledby="hr-position-details-tab-candidates" hidden={activeTab !== "candidates"} id="hr-position-details-candidates" role="tabpanel"><HrCandidateWorkspace
         api={api} csrfToken={csrfToken} currentContextVersionId={currentContextVersionId}
-        positionId={detail.positionId} readOnly={readOnly} taskConversationId={taskConversationId}
+        positionId={detail.positionId} readOnly={readOnly} onDraft={onCandidateDraft}
       /></section>}
       {visited.has("resources") && <section aria-labelledby="hr-position-details-tab-resources" hidden={activeTab !== "resources"} id="hr-position-details-resources" role="tabpanel"><HrPositionResourcesPanel
         api={api} positionId={detail.positionId} readOnly={readOnly}

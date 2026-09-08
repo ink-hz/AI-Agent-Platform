@@ -318,79 +318,9 @@ def execute_import(
         raise ValueError("official snapshot required")
     if not isinstance(owner_id, UUID) or not isinstance(request_id, UUID):
         raise ValueError("import identifiers invalid")
-    conversations = _owner_conversations(conversation_repository, owner_id)
-    official_titles = {job.canonical_id: job.title for job in snapshot.jobs}
-    discovery = discover_historical_positions(
-        conversations, official_titles, rule_version=rule_version,
-    )
-    conversation_ids = tuple(
-        conversation.conversation_id for conversation in conversations
-    )
-    historical_resources = resource_repository.conversation_resources(
-        owner_id, conversation_ids
-    )
-    persisted_bindings = resource_repository.position_bindings_for_conversations(
-        owner_id, conversation_ids
-    )
-    conversation_id_set = set(conversation_ids)
-    if any(
-        resource.owner_id != owner_id
-        or resource.conversation_id not in conversation_id_set
-        for resource in historical_resources
-    ) or any(
-        binding.owner_id != owner_id
-        or binding.conversation_id not in conversation_id_set
-        for binding in persisted_bindings
-    ):
-        raise ValueError("historical resource scope invalid")
-    planned_bindings = tuple(
-        HistoricalPositionBinding(
-            link.conversation_id,
-            owner_id,
-            uuid5(owner_id, f"official-position:{link.official_job_id}"),
-        )
-        for link in discovery.exact_links
-    )
-    resource_discovery = discover_resource_bindings(
-        historical_resources, (*persisted_bindings, *planned_bindings)
-    )
-    resource_application = None
-    if apply:
-        projected = project_official_jobs(
-            snapshot, position_repository, owner_id, request_id,
-        )
-        official_ids = {
-            job.canonical_id: record.position_id
-            for job, record in zip(snapshot.jobs, projected, strict=True)
-        }
-        apply_historical_discovery(
-            discovery, official_ids, position_repository, owner_id, request_id,
-        )
-        resource_application = apply_resource_bindings(
-            resource_discovery, resource_repository.apply_resource_binding
-        )
-    resource_counts = resource_discovery.counts()
-    return {
-        "mode": "apply" if apply else "dry-run",
-        "run_id": str(request_id),
-        "snapshot_version": snapshot.version,
-        "official_positions": len(snapshot.jobs),
-        "hr_conversations": len(conversations),
-        "exact_bindings": len(discovery.exact_links),
-        "drafts": len(discovery.drafts),
-        "skipped_conversations": len(discovery.skipped_conversation_ids),
-        **resource_counts,
-        "applied": (
-            resource_application.applied_count
-            if resource_application is not None
-            else 0
-        ),
-        "noop": (
-            resource_application.noop_count
-            if resource_application is not None
-            else 0
-        ),
-    }
+    projected=project_official_jobs(snapshot,position_repository,owner_id,request_id) if apply else ()
+    return {"mode":"apply" if apply else "dry-run","run_id":str(request_id),
+        "snapshot_version":snapshot.version,"official_positions":len(snapshot.jobs),"projected":len(projected)}
 
 
 def _read_snapshot(path_value: str) -> OfficialJobSnapshot:

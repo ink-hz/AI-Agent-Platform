@@ -176,6 +176,30 @@ describe("professional Agent use pages", () => {
     expect(historyClient.list).toHaveBeenCalledWith(expect.any(AbortSignal), undefined, 20, "hr-bot");
   });
 
+  it("keeps an explicitly selected method after failure and clears it only after success", async () => {
+    const selection = { sourceCommit: "abc123", id: "structured-interview", revision: 1, sha256: "a".repeat(64) };
+    const send = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(result);
+    const createSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
+    const cleared = vi.fn();
+    await act(async () => root.render(<DirectAgentWorkspace
+      account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
+      createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={vi.fn()}
+      conversationPath={(id) => `/hr/conversations/${id}`} selectedKnowledgeResources={[selection]}
+      onKnowledgeResourcesSubmitted={cleared}
+    />));
+    const textarea = container.querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "设计面试");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>("button[type=submit]")!.click());
+    expect(createSubmission).toHaveBeenCalledWith(expect.objectContaining({ userSelectedResources: [selection] }), "csrf", "hr-bot");
+    expect(container.textContent).toContain("structured-interview");
+    expect(cleared).not.toHaveBeenCalled();
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "重新提交")!.click());
+    expect(cleared).toHaveBeenCalledTimes(1);
+  });
+
   it("uses FAE actions only for HR direct conversations", async () => {
     await act(async () => root.render(<DirectAgentWorkspace
       account={account} agentId="hr-bot" conversationId="hr-conversation"

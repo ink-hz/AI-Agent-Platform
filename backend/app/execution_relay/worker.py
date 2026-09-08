@@ -343,7 +343,8 @@ class SignedCloudClient:
         # the server's shared 120/min and reserve readiness/control capacity.
         return (len(lanes) < 114 and v5_count < 50
             and (lane == "readiness" or sum(item not in {"legacy", "readiness"} for item in lanes) < 42)
-            and (lane != "source" or lanes.count("source") < 20))
+            and (lane != "source" or lanes.count("source") < 20)
+            and (lane != "control" or lanes.count("control") < 28))
 
     def can_upload_v5(self):
         return self._v5_can_send("source")
@@ -435,6 +436,24 @@ class SignedCloudClient:
             return response
         except (httpx.HTTPError, ValueError, TypeError, CloudRelayError):
             raise CloudRelayError() from None
+
+    async def post_hr_channel(self, body):
+        path=f"{_API_PREFIX}/hr/v6/channel-messages"
+        if not 0<len(body)<=65536:raise CloudRelayError()
+        if not self._v5_can_send("control"):raise V5BudgetDeferred()
+        self._sent_requests.append((time.monotonic(),"control"))
+        return await self._client.request("POST",self._base_url+path,content=body,
+            headers={**self._signer.sign("POST",path,body),"Content-Type":"application/json"},timeout=20)
+
+    async def post_hr_tool(self,path,body,grant_id,token):
+        if path not in {f"{_API_PREFIX}/hr/v6/query",f"{_API_PREFIX}/hr/v6/results",f"{_API_PREFIX}/hr/v6/confirmations",f"{_API_PREFIX}/hr/v6/official-source",f"{_API_PREFIX}/hr/v6/official-verifications"} or not 0<len(body)<=1048576:
+            raise CloudRelayError()
+        if not self._v5_can_send("control"):
+            raise V5BudgetDeferred()
+        self._sent_requests.append((time.monotonic(),"control"))
+        return await self._client.request("POST",self._base_url+path,content=body,
+            headers={**self._signer.sign("POST",path,body),"Content-Type":"application/json",
+                "X-Hr-Tool-Grant":str(grant_id),"Authorization":"Bearer "+token},timeout=65)
 
     async def heartbeat(self) -> tuple[RelayStopRequest, ...]:
         response = await self._post(f"{_API_PREFIX}/heartbeat", {})
@@ -1246,6 +1265,21 @@ async def _handle_callback_connection(
             from .worker_readiness_v5 import challenge
 
             await challenge(runtime, headers, await asyncio.wait_for(reader.readexactly(length), 3), writer)
+            return
+        if target == "/hr/v6/channel-messages":
+            if not 0<length<=65536:raise ValueError
+            from .worker_hr_tools import channel_proxy
+            await channel_proxy(runtime,headers,await asyncio.wait_for(reader.readexactly(length),10),writer)
+            return
+        if target.startswith("/hr/v6/tools/"):
+            parts=target.split("/")
+            if len(parts)!=6 or not 0<length<=_CALLBACK_BODY_LIMIT:
+                raise ValueError
+            run_id=UUID(parts[4])
+            if str(run_id)!=parts[4] or _CALLBACK_TOKEN.fullmatch(parts[5]) is None:
+                raise ValueError
+            from .worker_hr_tools import proxy
+            await proxy(runtime,run_id,parts[5],await asyncio.wait_for(reader.readexactly(length),10),writer)
             return
         parts = target.split("/")
         if len(parts) != 4 or parts[1] != "callbacks":

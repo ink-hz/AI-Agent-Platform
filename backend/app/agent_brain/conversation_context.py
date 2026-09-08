@@ -17,54 +17,12 @@ from app.agent_brain.conversation_repository import (
 from app.execution_relay.content_crypto import ContentCryptoError
 from app.hr.panorama_context import PanoramaContextFragment
 from app.hr.position_intelligence_models import HrPositionContextEnvelope
-from app.hr.structured_output import HR_WORKFLOW_CONTRACT_V1
-from app.hr.task_context import HrTaskContextError, canonical_hash
 
 logger = logging.getLogger(__name__)
 
 MAX_CONTEXT_BYTES = 96 * 1024
 COMPACTION_TRIGGER_BYTES = 64 * 1024
 
-
-def _panorama_position_context(
-    envelope: HrPositionContextEnvelope,
-) -> dict[str, object] | None:
-    try:
-        document = json.loads(envelope.prompt_context)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(document, dict):
-        return None
-    official = document.get("official_facts")
-    selected: dict[str, object] = {}
-    title = document.get("position_title")
-    if isinstance(title, str) and title.strip():
-        selected["title"] = title[:500]
-    if isinstance(official, dict):
-        for key in ("title", "department", "category", "subcategory"):
-            value = official.get(key)
-            if isinstance(value, str) and value.strip():
-                selected[key] = value[:500]
-        locations = official.get("locations")
-        if isinstance(locations, list):
-            selected["locations"] = [
-                value[:500] for value in locations[:20]
-                if isinstance(value, str) and value.strip()
-            ]
-        for key in ("duty", "requirement"):
-            value = official.get(key)
-            if isinstance(value, str) and value.strip():
-                selected[key] = value[:2000]
-    confirmed = document.get("confirmed_context")
-    if isinstance(confirmed, dict):
-        modules = confirmed.get("modules")
-        if isinstance(modules, dict):
-            for key in ("jd", "jr"):
-                module = modules.get(key)
-                value = module.get("text") if isinstance(module, dict) else None
-                if isinstance(value, str) and value.strip():
-                    selected[key] = value[:2000]
-    return selected or None
 
 
 class ConversationContextError(ConversationRepositoryError):
@@ -104,6 +62,7 @@ class ConversationContext:
     hr_position_context: HrPositionContextEnvelope | None = None
     hr_panorama_context: PanoramaContextFragment | None = None
     hr_workflow_contract: str | None = None
+    hr_reference_knowledge: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +114,7 @@ def _context_size(
     hr_position_context: HrPositionContextEnvelope | None = None,
     hr_panorama_context: PanoramaContextFragment | None = None,
     hr_workflow_contract: str | None = None,
+    hr_reference_knowledge: dict[str, object] | None = None,
 ) -> int:
     total = 0
     if summary is not None:
@@ -174,6 +134,8 @@ def _context_size(
         ) + 32
     if hr_workflow_contract is not None:
         total += len(hr_workflow_contract.encode("utf-8")) + 32
+    if hr_reference_knowledge is not None:
+        total += len(json.dumps(hr_reference_knowledge, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + 32
     return total
 
 
@@ -182,16 +144,12 @@ class ConversationContextBuilder:
         self,
         repository: ConversationRepository,
         *,
-        hr_task_context_provider: object | None = None,
         panorama_context_provider: object | None = None,
         candidate_parser_input_provider: object | None = None,
+        hr_knowledge_repository=None,
     ) -> None:
         if not isinstance(repository, ConversationRepository):
             raise ValueError("Conversation repository required")
-        if hr_task_context_provider is not None and not callable(
-            getattr(hr_task_context_provider, "build_for_turn", None)
-        ):
-            raise ValueError("HR task context provider invalid")
         if candidate_parser_input_provider is not None and not callable(
             getattr(candidate_parser_input_provider, "for_turn", None)
         ):
@@ -201,7 +159,7 @@ class ConversationContextBuilder:
         ):
             raise ValueError("Panorama context provider invalid")
         self.repository = repository
-        self._hr_task_context_provider = hr_task_context_provider
+        self._hr_knowledge_repository = hr_knowledge_repository
         self._panorama_context_provider = panorama_context_provider
         self._candidate_parser_input_provider = candidate_parser_input_provider
 
@@ -212,9 +170,9 @@ class ConversationContextBuilder:
             raise ValueError("Conversation context identifiers invalid")
         with self.repository._connection() as connection, connection.cursor() as cursor:
             row = cursor.execute(
-                "select conversation.*,turn.user_message_id,message.seq as user_seq,"
-                "exists(select 1 from platform_hr.position_conversations binding "
-                "where binding.conversation_id=conversation.conversation_id "
+                "select conversation.*,turn.user_message_id,turn.hr_input_context,message.seq as user_seq,"
+                "exists(select 1 from platform_hr.position_task_records binding "
+                "where binding.conversation_id=conversation.conversation_id and binding.turn_id=turn.turn_id "
                 "and binding.owner_internal_user_id=conversation.owner_internal_user_id) "
                 "as verified_hr_position "
                 "from platform_control.conversations conversation "
@@ -231,15 +189,22 @@ class ConversationContextBuilder:
             conversation = self.repository._conversation_from_row(row)
             if conversation.summary_through_seq > row["user_seq"]:
                 raise ConversationContextError()
+            is_hr_v6 = row.get("hr_input_context") is not None
             message_rows = cursor.execute(
                 "select * from platform_control.conversation_messages "
                 "where conversation_id=%s and seq>%s and seq<=%s "
+                + ("and turn_id in (select history.turn_id from platform_control.conversation_turns history "
+                   "where history.conversation_id=conversation_messages.conversation_id "
+                   "and history.hr_input_context is not null and "
+                   "(history.hr_input_context->'scope'->>'positionId') is not distinct from "
+                   "(select current.hr_input_context->'scope'->>'positionId' from platform_control.conversation_turns current "
+                   "where current.turn_id=%s)) " if is_hr_v6 else "")
                 + ("order by seq desc limit %s" if direct_limit else "order by seq"),
                 (
                     conversation_id,
-                    conversation.summary_through_seq,
+                    0 if is_hr_v6 else conversation.summary_through_seq,
                     row["user_seq"],
-                ) + ((direct_limit,) if direct_limit else ()),
+                ) + ((turn_id,) if is_hr_v6 else ()) + ((direct_limit,) if direct_limit else ()),
             ).fetchall()
             if direct_limit:
                 message_rows.reverse()
@@ -277,79 +242,23 @@ class ConversationContextBuilder:
             for record in records
         )
         messages = tuple(message for _seq, message in sequenced)
+        hr_reference_knowledge = None
         hr_position_context = None
         hr_panorama_context = None
         is_hr_agent = (
             row["mode"] == "direct_agent"
             and row["direct_agent_id"] == "hr-bot"
         )
-        hr_workflow_contract = HR_WORKFLOW_CONTRACT_V1 if is_hr_agent else None
+        hr_workflow_contract = None
+        if is_hr_agent and row.get("execution_owner") == "worker_direct" and self._hr_knowledge_repository is not None:
+            hr_reference_knowledge = self._hr_knowledge_repository.prompt_context(records[-1].user_selected_resources)
+        elif records[-1].user_selected_resources:
+            raise ConversationContextError("HR knowledge unavailable for selected resources")
         is_hr_position = is_hr_agent and row["verified_hr_position"] is True
-        if is_hr_position:
-            if self._hr_task_context_provider is None:
-                raise ConversationContextError()
-            try:
-                hr_position_context = (
-                    self._hr_task_context_provider.build_for_turn(
-                        row["owner_internal_user_id"], conversation_id, turn_id
-                    )
-                )
-                if (
-                    not isinstance(hr_position_context, HrPositionContextEnvelope)
-                    or canonical_hash(hr_position_context)
-                    != hr_position_context.canonical_sha256
-                ):
-                    raise ValueError
-            except (HrTaskContextError, ValueError):
-                raise ConversationContextError() from None
-            if self._panorama_context_provider is not None:
-                try:
-                    hr_panorama_context = self._panorama_context_provider.for_turn(
-                        row["owner_internal_user_id"],
-                        hr_position_context.position_id,
-                        messages[-1].content,
-                        turn_id,
-                        task_kind=hr_position_context.task_kind,
-                        position_context=_panorama_position_context(hr_position_context),
-                    )
-                    if hr_panorama_context is not None and not isinstance(
-                        hr_panorama_context, PanoramaContextFragment
-                    ):
-                        raise ValueError
-                except Exception:
-                    logger.warning(
-                        "Panorama context omitted for conversation turn",
-                        exc_info=True,
-                    )
-                    hr_panorama_context = None
-        elif is_hr_agent and self._panorama_context_provider is not None:
-            general_retrieval = getattr(
-                self._panorama_context_provider,
-                "for_conversation_turn",
-                None,
-            )
-            if callable(general_retrieval):
-                try:
-                    hr_panorama_context = general_retrieval(
-                        row["owner_internal_user_id"],
-                        conversation_id,
-                        messages[-1].content,
-                        turn_id,
-                    )
-                    if hr_panorama_context is not None and not isinstance(
-                        hr_panorama_context, PanoramaContextFragment
-                    ):
-                        raise ValueError
-                except Exception:
-                    logger.warning(
-                        "General HR intelligence context omitted for conversation turn",
-                        exc_info=True,
-                    )
-                    hr_panorama_context = None
         candidate_parser_attachment_id = None
         if (
             is_hr_agent
-            and not is_hr_position
+            and (not is_hr_position or is_hr_v6)
             and self._candidate_parser_input_provider is not None
         ):
             try:
@@ -374,19 +283,21 @@ class ConversationContextBuilder:
             active_attachment_ids.append(candidate_parser_attachment_id)
         return (
             ConversationContext(
-                summary=conversation.summary,
+                summary=None if is_hr_v6 else conversation.summary,
                 messages=messages,
                 estimated_utf8_bytes=_context_size(
-                    conversation.summary,
+                    None if is_hr_v6 else conversation.summary,
                     messages,
                     hr_position_context,
                     hr_panorama_context,
                     hr_workflow_contract,
+                    hr_reference_knowledge,
                 ),
                 active_attachment_ids=tuple(dict.fromkeys(active_attachment_ids)),
                 hr_position_context=hr_position_context,
                 hr_panorama_context=hr_panorama_context,
                 hr_workflow_contract=hr_workflow_contract,
+                hr_reference_knowledge=hr_reference_knowledge,
             ),
             row["user_seq"],
             sequenced,
@@ -435,7 +346,7 @@ class ConversationContextBuilder:
         while size > MAX_CONTEXT_BYTES and len(messages) > 1:
             messages = messages[1:]
             size = _context_size(context.summary, messages, context.hr_position_context,
-                context.hr_panorama_context, context.hr_workflow_contract)
+                context.hr_panorama_context, context.hr_workflow_contract, context.hr_reference_knowledge)
         if size > MAX_CONTEXT_BYTES:
             raise ConversationContextTooLarge()
         return replace(context, messages=messages, estimated_utf8_bytes=size)

@@ -19,7 +19,7 @@ import {
   type ConversationStartScope,
   type ConversationSubmission,
 } from "../../conversationApi";
-import type { Conversation, ConversationAttachment, ConversationPage, TurnSubmission } from "../../conversationTypes";
+import type { HrTurnScope, HrComposerDraft, Conversation, ConversationAttachment, ConversationPage, HrKnowledgeSelection, TurnSubmission } from "../../conversationTypes";
 import { ConversationPage as ConversationThread, type ConversationPageClient } from "../../pages/ConversationPage";
 import { workspaceLaunchPath } from "../../platform/workspaces";
 import { navigate } from "../../router";
@@ -52,9 +52,15 @@ export interface DirectAgentWorkspaceProps {
   layout?: "standard" | "focused";
   composerTools?: ReactNode | ((pending: boolean) => ReactNode);
   threadSupplement?: ReactNode;
+  turnScope?: HrTurnScope;
+  composerDraft?: HrComposerDraft;
+  renderTurnContext?: (turnId:string)=>ReactNode;
   initialDraftSnapshot?: DirectAgentDraftSnapshot;
   onDraftSnapshotChange?: (snapshot: DirectAgentDraftSnapshot) => void;
   onConversationSettled?: () => void;
+  selectedKnowledgeResources?: HrKnowledgeSelection[];
+  onRemoveKnowledgeResource?: (id: string) => void;
+  onKnowledgeResourcesSubmitted?: () => void;
   intelligenceReferences?: readonly HrIntelligenceReference[];
   onRemoveIntelligenceReference?: (key: string) => void;
   onIntelligenceReferencesSubmitted?: (keys: readonly string[]) => void;
@@ -114,9 +120,13 @@ export function DirectAgentWorkspace({
   layout = "standard",
   composerTools,
   threadSupplement,
+  turnScope, composerDraft, renderTurnContext,
   initialDraftSnapshot,
   onDraftSnapshotChange,
   onConversationSettled,
+  selectedKnowledgeResources = [],
+  onRemoveKnowledgeResource,
+  onKnowledgeResourcesSubmitted,
   intelligenceReferences = [],
   onRemoveIntelligenceReference,
   onIntelligenceReferencesSubmitted,
@@ -137,6 +147,7 @@ export function DirectAgentWorkspace({
   const [loadingMore, setLoadingMore] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [text, setText] = useState(() => initialDraftSnapshot?.text ?? "");
+  useEffect(()=>{ if (composerDraft && !conversationId) setText(composerDraft.text); },[composerDraft,conversationId]);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState(false);
   const [attachments, setAttachments] = useState<ConversationAttachment[]>(
@@ -251,8 +262,10 @@ export function DirectAgentWorkspace({
     const readyIds = attachments.filter((item) => item.state === "ready").map((item) => item.attachmentId);
     const uploadPending = uploadQueue.some((item) => ["queued", "uploading", "processing"].includes(item.state));
     if (!card || (!normalized && readyIds.length === 0) || uploadPending || referenceFailure || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
-    const input: string | TurnSubmission = card.attachment_limits ? {
+    const input: string | TurnSubmission = card.attachment_limits || selectedKnowledgeResources.length || turnScope ? {
       text: normalized, attachmentIds: readyIds, activeAttachmentIds: readyIds,
+      ...(turnScope ? {scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...readyIds])]}} : {}),
+      ...(selectedKnowledgeResources.length ? { userSelectedResources: selectedKnowledgeResources } : {}),
     } : normalized;
     const requestKey = JSON.stringify({ input, scope: newConversationScope ?? null });
     let selected = retained.current;
@@ -270,6 +283,7 @@ export function DirectAgentWorkspace({
       retained.current = null; upsertConversation(result.conversation);
       onIntelligenceReferencesSubmitted?.(selected.referenceKeys);
       if (agentId === "hr-bot") { setText(""); setAttachments([]); setUploadQueue([]); }
+      if (selectedKnowledgeResources.length) onKnowledgeResourcesSubmitted?.();
       onOpenConversation(createdConversationPath(result.conversation.conversation_id));
     } catch {
       if (!controller.signal.aborted) setFailure(true);
@@ -341,8 +355,12 @@ export function DirectAgentWorkspace({
           onConversationUpdated={upsertConversation}
           personaSubtitle={card.persona_subtitle}
           composerTools={renderedComposerTools}
+          selectedKnowledgeResources={selectedKnowledgeResources}
+          onRemoveKnowledgeResource={onRemoveKnowledgeResource}
+          onKnowledgeResourcesSubmitted={onKnowledgeResourcesSubmitted}
           messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
+          turnScope={turnScope} composerDraft={composerDraft} renderTurnContext={renderTurnContext}
           intelligenceReferences={intelligenceReferences}
           onRemoveIntelligenceReference={onRemoveIntelligenceReference}
           onIntelligenceReferencesSubmitted={onIntelligenceReferencesSubmitted}
@@ -382,6 +400,10 @@ export function DirectAgentWorkspace({
                 uploaderRef.current?.addFiles(files);
               }
             }}>
+            {selectedKnowledgeResources.length > 0 && <div className="hr-knowledge-selection" aria-label="本轮指定方法">
+              {selectedKnowledgeResources.map((item) => <span key={`${item.sourceCommit}:${item.id}`}><strong>{item.id}</strong><small>版本 {item.revision}</small>
+                <button aria-label={`移除方法 ${item.id}`} onClick={() => onRemoveKnowledgeResource?.(item.id)} type="button">×</button></span>)}
+            </div>}
             {intelligenceReferences.length > 0 && <section className="hr-intelligence-reference-selection" aria-label="已选公司情报">
               <header><strong>已选公司情报</strong><PlatformLink href={`/hr/panorama?company=${encodeURIComponent(intelligenceReferences[0].companyKey)}`}>返回公司情报</PlatformLink></header>
               {intelligenceReferences.map((reference) => <details key={reference.key}>
