@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ComposerTextarea } from "../../components/conversation/ComposerTextarea";
 
 import type { Account } from "../../auth";
 import { fetchAgentCatalog } from "../../brainApi";
@@ -354,7 +355,7 @@ export function DirectAgentWorkspace({
                 uploaderRef.current?.addFiles(files);
               }
             }}>
-            <textarea aria-label={`交给 ${card.display_name}`} autoFocus={autoFocusComposer} id="direct-agent-request" rows={8} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
+            <ComposerTextarea autoSize={agentId === "hr-bot"} aria-label={`交给 ${card.display_name}`} autoFocus={autoFocusComposer} id="direct-agent-request" rows={agentId === "hr-bot" ? 1 : 8} maxLength={32 * 1024} value={text} disabled={account.hard_stale_read_only}
               placeholder="描述招聘任务、粘贴岗位说明或候选人资料……"
               onChange={(event) => { const next = event.target.value; setText(next); if (retained.current?.text !== next.trim()) retained.current = null; setFailure(false); }}
               onKeyDown={(event) => {
