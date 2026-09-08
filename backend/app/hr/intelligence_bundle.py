@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from uuid import UUID
 
+from .topic_catalog import validate_topic_catalog, validate_topic_provenance
+
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 _REQUIRED_V1_TOP_LEVEL = frozenset(
     {
@@ -164,6 +166,11 @@ def verify_import_bundle(
     coverage = _json(root / "source-coverage.json", dict)
     aggregates = _json(root / "aggregates.json", dict)
     analysis = _mapping_tuple(_json(root / "analysis.json", list), "analysis")
+    try:
+        topics = validate_topic_catalog(catalog, analysis)
+        validate_topic_provenance(manifest, analysis, analysis_sha256=entries["analysis.json"], topics=topics)
+    except ValueError as exc:
+        raise BundleVerificationError(str(exc)) from None
     usage = _mapping_tuple(_json(root / "analysis-usage.json", list), "usage")
     evidence_index = _mapping_tuple(
         _json(root / "raw-evidence-index.json", list),

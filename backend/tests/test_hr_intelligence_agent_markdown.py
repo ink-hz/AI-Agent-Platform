@@ -276,3 +276,29 @@ def test_evidence_section_only_lists_exact_fact_references() -> None:
     assert "evidence_count: 1" in body
     assert SOURCE_URL in body
     assert "https://example.com/jobs/unused" not in body
+
+
+def test_declared_topic_metadata_controls_docs_and_discussion_routing():
+    inputs = _inputs()
+    unit = deepcopy(inputs['analyses'][0])
+    unit.update(kind='track', scope_key='campus')
+    inputs['analyses'] += (dict(unit, unit_id='00000000-0000-4000-8000-000000000004'),)
+    inputs['catalog']['topics'] = [{
+        'topic_id': 'campus-review', 'title': '校园人才布局', 'question': '校招正在关注什么能力？',
+        'scope': {'description': '已采集禾赛校招岗位', 'company_keys': ['hesai'], 'tracks': ['campus']},
+        'analysis_state': 'limited', 'unit_ids': ['00000000-0000-4000-8000-000000000004'],
+        'discussed_companies': [], 'limitations': ['没有跨期证据。'],
+    }]
+    package = compile_agent_markdown(**inputs)
+    assert {p for p in package.files if p.startswith('agent/topics/')} == {'agent/topics/campus-review.md'}
+    body = package.files['agent/topics/campus-review.md'].decode()
+    for text in ['校园人才布局', '校招正在关注什么能力？', '已采集禾赛校招岗位', 'limited', '没有跨期证据。']:
+        assert text in body
+    chunks = [c for c in package.chunks if c.scope == 'topic']
+    assert chunks and all(c.companies == () and c.tracks == ('campus',) for c in chunks)
+    inputs['catalog']['topics'][0]['discussed_companies'] = [{
+        'company_key': 'hesai', 'unit_id': '00000000-0000-4000-8000-000000000004',
+        'claim_ids': ['I-company-hesai-1'], 'explanation': '研判指出禾赛公开人才需求。',
+    }]
+    related = compile_agent_markdown(**inputs)
+    assert all(c.companies == ('hesai',) for c in related.chunks if c.scope == 'topic')

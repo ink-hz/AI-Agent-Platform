@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from uuid import UUID, uuid4
 
+from app.hr.topic_catalog import validate_topic_catalog, validate_topic_provenance
+
 from .agent_markdown import compile_agent_markdown
 from .analysis_units import AcceptedAnalysis
 from .chunk_index import MarkdownChunk, validate_chunk_index
@@ -285,6 +287,7 @@ def build_bundle(inputs: BundleInputs, *, root: str | Path) -> Path:
         item.as_dict()
         for item in sorted(inputs.analyses, key=lambda value: str(value.unit.unit_id))
     ]
+    validate_topic_catalog(inputs.source_catalog, analyses)
     usage = [item.usage.as_dict() for item in inputs.analyses]
     evidence = _evidence_index(inputs)
     input_sha256 = _input_fingerprint(inputs, jobs, analyses, evidence)
@@ -466,6 +469,13 @@ def verify_bundle(
             != hashlib.sha256((selected / name).read_bytes()).hexdigest()
         ):
             raise BundleVerificationError("bundle document checksum mismatch")
+    try:
+        catalog = json.loads((selected / "source-catalog.json").read_text("utf-8"))
+        analysis = json.loads((selected / "analysis.json").read_text("utf-8"))
+        topics = validate_topic_catalog(catalog, analysis)
+        validate_topic_provenance(manifest, analysis, analysis_sha256=entries["analysis.json"], topics=topics)
+    except (ValueError, TypeError) as exc:
+        raise BundleVerificationError(f"bundle topic catalog invalid: {exc}") from None
     agent_document_index: Mapping[str, Mapping[str, object]] = {}
     if schema_version == 2:
         raw_agent_index = manifest.get("agent_document_index")
