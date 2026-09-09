@@ -2,6 +2,8 @@
 
 ## 最新续接（覆盖下方旧版布局与版本描述）
 
+- **2026-09-09 09:18 CST：HR 情报登录失效恢复已上线。** 当前 API `a58642366bd016de154845552b2de897d50888a2`，继承公司/专题 `70924d3`。401 提供重新登录，返回情报目录；公司页可重新读取，403 保持权限提示。登录返回地址接口 400→200，匿名情报仍 401。仅 API 更新，HR Worker / Relay / Team 不变；不重复部署或已完成检查。详见 [恢复交付记录](../reviews/2026-09-09-hr-intelligence-session-recovery.md)。下方 API 版本为历史。
+
 - **2026-09-08 22:14 CST：v6 已上线，不要重复部署。** 本轮 Platform 版本 `7bc7b042e18d47c180053eab307990a08baecde7`（独立 HR Worker 与本地 Signed Worker 仍使用此版），HR MetaBot `6b1ff78952ff90d83f82c737eaabaf05fcf77ea4`，Team role/knowledge `36b932b01f11e893dcca16ac8162b392b84fbb8c`；三个 master 已推送。页面 `index-DJaUEm9z.js` / `index-D3IZxH9U.css`。
 - 随后公司情报线程独立发布中央授权修正，当前 API 为 `57561410cc13506b58f7422d2367b0042ed2639a`，已包含上述 v6；只读核对 current 指针、API 镜像与 health 一致且健康。两条开发线已合并；无需为版本号不同重发 HR Worker 或 Relay。
 - T01–T10 工程交付完成：按轮选岗位/候选人/材料、按需工具、结构化成果、部分确认、固定角色与读取证明、飞书真实身份关联及同标准、旧入口和后台生产者删除；保留新合入的公司情报阅读/选材能力。正式 094 已应用，旧函数执行权限撤销，历史数据保留。
