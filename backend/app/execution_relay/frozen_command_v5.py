@@ -97,6 +97,9 @@ class FrozenCommandV5:
 
 
 def parse_frozen_command(value) -> FrozenCommandV5:
+    if isinstance(value,dict) and value.get("contractVersion")=="core_chat_collaboration_v7":
+        from .frozen_command_v7 import parse_frozen_v7
+        return parse_frozen_v7(value)
     if isinstance(value,dict) and value.get("contractVersion")=="core_chat_collaboration_v6":
         from .frozen_command_v6 import parse_frozen_v6
         return parse_frozen_v6(value)
@@ -198,6 +201,10 @@ def hydrate_frozen_command(
         inputAttachmentGrants=input_attachment_grants,
         outputWriteGrant=output_write_grant,
     )
+    if value["contractVersion"]=="core_chat_collaboration_v7":
+        from .contracts_v7 import parse_v7_command
+        value["businessToolGrant"]=business_tool_grant
+        return parse_v7_command(value)
     if value["contractVersion"]=="core_chat_collaboration_v6":
         from .contracts_v6 import parse_v6_command
         value["businessToolGrant"]=business_tool_grant

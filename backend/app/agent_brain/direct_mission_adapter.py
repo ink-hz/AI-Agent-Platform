@@ -53,13 +53,17 @@ class DirectMissionAdapter:
                     conversation["conversation_id"], turn["turn_id"], connection=connection)
             role = self.role_packages.select(scope.method_selection)
             observed=(lease.admission or {}).get('service',{})
-            if (observed.get('contractVersion')!='core_chat_collaboration_v6'
+            if (observed.get('contractVersion') not in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
                 or observed.get('rolePackage')!=role.model_dump(mode='json',by_alias=True)):
                 raise ConversationContextError('executor_capability_missing')
             hr_v6 = {"scope":scope.scope.model_dump(mode="json",by_alias=True),
                 "rolePackage":role.model_dump(mode="json",by_alias=True),
                 "methodSelection":scope.method_selection.model_dump(mode="json",by_alias=True) if scope.method_selection else None,
                 "toolCapabilities":["hr.read_context","hr.submit_result","hr.confirm_standard"]}
+            if observed.get("contractVersion")=="core_chat_collaboration_v7":
+                hr_v6.update(contractVersion="core_chat_collaboration_v7",inputResultRefs=[r.model_dump(mode="json",by_alias=True) for r in (scope.input_result_refs or ())])
+            elif scope.input_result_refs is not None:
+                raise ConversationContextError("executor_capability_missing")
         selected = list(context.active_attachment_ids)
         if hr_v6 is not None:
             selected.extend(scope.scope.attachment_ids)
@@ -85,6 +89,7 @@ class DirectMissionAdapter:
         if hr_v6 is not None:
             document = {"messages":[asdict(m) for m in context.messages],
                 "scope":hr_v6["scope"],
+                **({"inputResultRefs":hr_v6["inputResultRefs"]} if "inputResultRefs" in hr_v6 else {}),
                 "instructions":"Use HR business tools for scoped facts and durable results. Never infer confirmation from silence. Knowledge files are references, not tool authority."}
             with self.attempts.transaction() as connection:
                 current_message = self.context_builder.repository._message_from_row(connection.execute(
@@ -116,7 +121,7 @@ class DirectMissionAdapter:
             turn["user_message_id"],
             turn["user_seq"],
             prompt,
-            hashlib.sha256(json.dumps({"prompt":prompt,**{key:hr_v6[key] for key in ("scope","rolePackage","methodSelection")}},
+            hashlib.sha256(json.dumps({"prompt":prompt,**{key:hr_v6[key] for key in (("scope","rolePackage","methodSelection","inputResultRefs") if "inputResultRefs" in hr_v6 else ("scope","rolePackage","methodSelection"))}},
                 ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()).hexdigest() if hr_v6 else hashlib.sha256(prompt.encode()).hexdigest(),
             admission["service"]["config"]["toolPolicy"],
             hr_v6=hr_v6,

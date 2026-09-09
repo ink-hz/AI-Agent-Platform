@@ -554,7 +554,7 @@ function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
   }
   if (!isObject(value)
     || !["text", "attachmentIds", "activeAttachmentIds"].every((key) => Object.prototype.hasOwnProperty.call(value, key))
-    || Object.keys(value).some((key) => !new Set(["text", "attachmentIds", "activeAttachmentIds", "userSelectedResources", "scope", "standardConsent"]).has(key))
+    || Object.keys(value).some((key) => !new Set(["text", "attachmentIds", "activeAttachmentIds", "userSelectedResources", "scope", "standardConsent", "inputResultRefs"]).has(key))
     || typeof value.text !== "string"
     || !stringArray(value.attachmentIds)
     || !stringArray(value.activeAttachmentIds)
@@ -581,6 +581,7 @@ function normalizedSubmission(value: string | TurnSubmission): TurnSubmission {
     ...(userSelectedResources === undefined ? {} : { userSelectedResources }),
     ...(value.scope ? {scope: structuredClone(value.scope)} : {}),
     ...(value.standardConsent ? {standardConsent: structuredClone(value.standardConsent)} : {}),
+    ...(value.inputResultRefs ? {inputResultRefs: structuredClone(value.inputResultRefs)} : {}),
   };
 }
 
@@ -601,6 +602,7 @@ function submissionBody(value: TurnSubmission, scope?: ConversationStartScope): 
     })) } : {}),
     ...(value.scope ? {scope:value.scope} : scope?.positionId ? {scope:{positionId:scope.positionId,positionCandidateIds:[],attachmentIds:[...new Set([...value.attachmentIds,...value.activeAttachmentIds])]}} : {}),
     ...(value.standardConsent ? {standardConsent:value.standardConsent} : {}),
+    ...(value.inputResultRefs ? {inputResultRefs:value.inputResultRefs} : {}),
   });
 }
 

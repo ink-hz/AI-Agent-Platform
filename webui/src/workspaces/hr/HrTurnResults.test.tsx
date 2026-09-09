@@ -13,8 +13,27 @@ it('opens the exact result and drafts only the user selected standard, without s
     expect(fetcher.mock.calls[0]?.[0]).toContain('/api/v1/hr/results/result-a');
     expect(div.querySelector('button')?.disabled).toBe(true);
     await act(async()=>{div.querySelector<HTMLInputElement>('input')!.click();});
+    expect(div.querySelector('button')?.disabled).toBe(true);
+    const review=div.querySelector<HTMLInputElement>('input[name=body-review]');
+    expect(review).not.toBeNull();
+    await act(async()=>{review!.click();});
     await act(async()=>{div.querySelector('button')!.click();});
-    expect(onDraft).toHaveBeenCalledWith(expect.objectContaining({text:'确认所选的 1 项岗位标准。',standardConsent:{proposalResultId:'result-a',proposalContentSha256:'a'.repeat(64),expectedContextVersionId:'base-a',selectedChangeIds:['mission-1']}}),'position-a');
+    expect(onDraft).toHaveBeenCalledWith(expect.objectContaining({text:'确认所选的 1 项岗位标准。已核对所选正文，仅保留岗位级标准，不含候选人个人信息或逐人评价。',standardConsent:{proposalResultId:'result-a',proposalContentSha256:'a'.repeat(64),expectedContextVersionId:'base-a',selectedChangeIds:['mission-1'],bodyReviewed:true}}),'position-a');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  }finally{await act(async()=>root.unmount());div.remove();vi.restoreAllMocks();}
+});
+
+it('prepares an interview with exact candidate and result input, without sending',async()=>{
+  (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+  const div=document.createElement('div');document.body.append(div);const root=createRoot(div);const onDraft=vi.fn();
+  const fetcher=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response(JSON.stringify({positionId:'position-a',positionTitle:'嵌入式工程师',candidateNames:['测试候选人'],positionCandidateIds:['candidate-a'],attachmentIds:['resume-a'],result:{schemaId:'hr.candidate-analysis.v2',title:'项目贡献分析',markdown:'本人贡献待验证'}})));
+  try{
+    await act(async()=>root.render(<HrTurnResults turnId="turn-a" readOnly={false} onDraft={onDraft} data={{turns:[],results:[{turnId:'turn-a',resultId:'result-a',schemaId:'hr.candidate-analysis.v2',contentSha256:'a'.repeat(64)}]}}/>));
+    await act(async()=>{const detail=div.querySelector('details')!;detail.open=true;detail.dispatchEvent(new Event('toggle'));});
+    expect(div.textContent).not.toContain('填入确认消息');
+    const action=[...div.querySelectorAll('button')].find(b=>b.textContent==='准备面试')!;
+    await act(async()=>action.click());
+    expect(onDraft).toHaveBeenCalledWith(expect.objectContaining({text:expect.stringContaining('测试候选人'),positionCandidateIds:['candidate-a'],attachmentIds:['resume-a'],inputResults:[{resultId:'result-a',schemaId:'hr.candidate-analysis.v2',contentSha256:'a'.repeat(64),title:'项目贡献分析'}]}),'position-a');
     expect(fetcher).toHaveBeenCalledTimes(1);
   }finally{await act(async()=>root.unmount());div.remove();vi.restoreAllMocks();}
 });

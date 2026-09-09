@@ -64,13 +64,15 @@ export interface HrTurnScope {
   positionCandidateIds: string[];
   attachmentIds: string[];
 }
+export interface HrInputResultRef {resultId:string; schemaId:string; contentSha256:string; title:string}
 export interface HrStandardConsent {
+  bodyReviewed?: true;
   proposalResultId: string;
   proposalContentSha256: string;
   expectedContextVersionId: string | null;
   selectedChangeIds: string[];
 }
-export interface HrComposerDraft { id:string; text:string; positionId?:string|null; standardConsent?:HrStandardConsent }
+export interface HrComposerDraft { id:string; text:string; positionId?:string|null; standardConsent?:HrStandardConsent; inputResults?:HrInputResultRef[]; positionCandidateIds?:string[]; attachmentIds?:string[] }
 export interface TurnSubmission {
   text: string;
   attachmentIds: string[];
@@ -78,6 +80,7 @@ export interface TurnSubmission {
   userSelectedResources?: HrKnowledgeSelection[];
   scope?: HrTurnScope;
   standardConsent?: HrStandardConsent;
+  inputResultRefs?: Omit<HrInputResultRef,"title">[];
 }
 
 export interface HrKnowledgeSelection {

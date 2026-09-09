@@ -106,7 +106,7 @@ class DirectCommandBindingRepository:
         connection.execute(
             "update platform_control.direct_command_bindings set transport_worker_id=%s where attempt_id=%s",
             (worker_id,lease.attempt_id))
-        if wrapper["command"]["contractVersion"] == "core_chat_collaboration_v6":
+        if wrapper["command"]["contractVersion"] in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}:
             from app.hr.tool_service import HrToolService
             grant = transport.get("businessToolGrant")
             if grant is None or transport.get("businessToolLeaseEpoch") != lease.lease_epoch:
@@ -570,7 +570,7 @@ class DirectCommandBindingRepository:
                     "executorId",
                     "leaseEpoch",
                     "acknowledgedEpoch",
-                    *( ("businessToolGrant","businessToolLeaseEpoch") if wrapper["command"]["contractVersion"]=="core_chat_collaboration_v6" else () ),
+                    *( ("businessToolGrant","businessToolLeaseEpoch") if wrapper["command"]["contractVersion"]in {'core_chat_collaboration_v6','core_chat_collaboration_v7'} else () ),
                 }
                 or type(transport["callbackToken"]) is not str
                 or re.fullmatch(r"[A-Za-z0-9_-]{43}", transport["callbackToken"])

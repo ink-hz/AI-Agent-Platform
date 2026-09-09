@@ -167,10 +167,15 @@ def is_execution_worker_request(method: str, path: str) -> bool:
             "/api/v1/execution-worker/v5/readiness",
             "/api/v1/execution-worker/v5/recovery",
             "/api/v1/execution-worker/hr/v6/official-source",
+            "/api/v1/execution-worker/hr/v7/official-source",
             "/api/v1/execution-worker/hr/v6/official-verifications",
+            "/api/v1/execution-worker/hr/v7/official-verifications",
             "/api/v1/execution-worker/hr/v6/query",
+            "/api/v1/execution-worker/hr/v7/query",
             "/api/v1/execution-worker/hr/v6/results",
+            "/api/v1/execution-worker/hr/v7/results",
             "/api/v1/execution-worker/hr/v6/confirmations",
+            "/api/v1/execution-worker/hr/v7/confirmations",
         }
         or _WORKER_RUN_ROUTE.fullmatch(path) is not None
         or re.fullmatch(r"/api/v1/execution-worker/v5/runs/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(?:acceptance|events|event-batches|recovery)", path) is not None

@@ -89,6 +89,8 @@ from app.hr.standard_consent import StandardConsent, normalize_consent
 from app.execution_relay.contracts_v6 import HrTurnScope, HrMethodSelection
 
 
+from app.execution_relay.contracts_v7 import HrResultRef
+
 class ConversationTextBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -99,6 +101,15 @@ class ConversationTextBody(BaseModel):
     position_id: UUID | None = None
     position_draft_id: UUID | None = None
     scope: HrTurnScope | None = None
+    input_result_refs: tuple[HrResultRef, ...] | None = Field(default=None, alias="inputResultRefs", max_length=20)
+
+    @field_validator("input_result_refs", mode="before")
+    @classmethod
+    def _result_inputs(cls,value):
+        if value is None: return None
+        if not isinstance(value,(list,tuple)): raise ValueError("result inputs invalid")
+        import json
+        return tuple(HrResultRef.model_validate_json(json.dumps(r)) for r in value)
     method_selection: HrMethodSelection | None = Field(default=None, alias="methodSelection")
 
     standard_consent: StandardConsent | None = Field(default=None, alias="standardConsent")
@@ -155,7 +166,7 @@ class ConversationTextBody(BaseModel):
             self.text, self.attachment_ids, self.active_attachment_ids,
             user_selected_resources=self.user_selected_resources,
             hr_scope=self.scope, method_selection=self.method_selection,
-            standard_consent=self.standard_consent
+            standard_consent=self.standard_consent, input_result_refs=self.input_result_refs
         )
         self.text = submission.text
         self.attachment_ids = submission.attachment_ids
@@ -167,7 +178,7 @@ class ConversationTextBody(BaseModel):
             self.text, self.attachment_ids, self.active_attachment_ids,
             user_selected_resources=self.user_selected_resources,
             hr_scope=self.scope, method_selection=self.method_selection,
-            standard_consent=self.standard_consent
+            standard_consent=self.standard_consent, input_result_refs=self.input_result_refs
         )
 
 

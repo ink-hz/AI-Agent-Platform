@@ -7,6 +7,7 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 from app.execution_relay.contracts_v6 import HrTurnScope, HrMethodSelection
+from app.execution_relay.contracts_v7 import HrResultRef
 
 
 @dataclass(frozen=True)
@@ -16,13 +17,14 @@ class AuthorizedHrTurnScope:
     turn_id: UUID
     scope: HrTurnScope
     method_selection: HrMethodSelection | None
+    input_result_refs: tuple[HrResultRef,...] | None = None
 
 
 def submission_context(submission) -> dict[str, Any]:
     scope = submission.hr_scope or HrTurnScope(
         positionId=None, positionCandidateIds=(), attachmentIds=submission.active_attachment_ids,
     )
-    return {"scope": scope.model_dump(mode="json", by_alias=True),
+    return {**({"inputResultRefs":[r.model_dump(mode="json",by_alias=True) for r in submission.input_result_refs]} if submission.input_result_refs is not None else {}), "scope": scope.model_dump(mode="json", by_alias=True),
             "methodSelection": submission.method_selection.model_dump(mode="json", by_alias=True)
             if submission.method_selection is not None else None}
 
@@ -47,4 +49,5 @@ def load_authorized_turn_scope(owner_id: UUID, conversation_id: UUID, turn_id: U
     scope = HrTurnScope.model_validate_json(json.dumps(value["scope"]))
     method = value["methodSelection"]
     return AuthorizedHrTurnScope(owner_id, conversation_id, turn_id, scope,
-        HrMethodSelection.model_validate_json(json.dumps(method)) if method is not None else None)
+        HrMethodSelection.model_validate_json(json.dumps(method)) if method is not None else None,
+        tuple(HrResultRef.model_validate_json(json.dumps(r)) for r in value["inputResultRefs"]) if "inputResultRefs" in value else None)

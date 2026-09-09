@@ -54,6 +54,8 @@ export interface DirectAgentWorkspaceProps {
   composerTools?: ReactNode | ((pending: boolean) => ReactNode);
   threadSupplement?: ReactNode;
   turnScope?: HrTurnScope;
+  inputResults?: import("../../conversationTypes").HrInputResultRef[];
+  onInputResultsSubmitted?:(ids:readonly string[])=>void;
   composerDraft?: HrComposerDraft;
   renderTurnContext?: (turnId:string)=>ReactNode;
   initialDraftSnapshot?: DirectAgentDraftSnapshot;
@@ -121,7 +123,7 @@ export function DirectAgentWorkspace({
   layout = "standard",
   composerTools,
   threadSupplement,
-  turnScope, composerDraft, renderTurnContext,
+  turnScope, composerDraft, renderTurnContext, inputResults = [], onInputResultsSubmitted,
   initialDraftSnapshot,
   onDraftSnapshotChange,
   onConversationSettled,
@@ -265,7 +267,7 @@ export function DirectAgentWorkspace({
     if (!card || (!normalized && readyIds.length === 0) || uploadPending || referenceFailure || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
     const input: string | TurnSubmission = card.attachment_limits || selectedKnowledgeResources.length || turnScope ? {
       text: normalized, attachmentIds: readyIds, activeAttachmentIds: readyIds,
-      ...(turnScope ? {scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...readyIds])]}} : {}),
+      ...(turnScope ? {inputResultRefs:inputResults.map(({title,...ref})=>ref),scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...readyIds])]}} : {}),
       ...(selectedKnowledgeResources.length ? { userSelectedResources: selectedKnowledgeResources } : {}),
     } : normalized;
     const requestKey = JSON.stringify({ input, scope: newConversationScope ?? null });
@@ -282,6 +284,7 @@ export function DirectAgentWorkspace({
     try {
       const result = await selected.submission.send(controller.signal);
       retained.current = null; upsertConversation(result.conversation);
+      onInputResultsSubmitted?.(inputResults.map(r=>r.resultId));
       onIntelligenceReferencesSubmitted?.(selected.referenceKeys);
       if (agentId === "hr-bot") { setText(""); setAttachments([]); setUploadQueue([]); }
       if (selectedKnowledgeResources.length) onKnowledgeResourcesSubmitted?.();
@@ -361,7 +364,7 @@ export function DirectAgentWorkspace({
           onKnowledgeResourcesSubmitted={onKnowledgeResourcesSubmitted}
           messageActionsPresentation={agentId === "hr-bot" ? "icon" : "legacy"}
           threadSupplement={threadSupplement}
-          turnScope={turnScope} composerDraft={composerDraft} renderTurnContext={renderTurnContext}
+          turnScope={turnScope} inputResults={inputResults} onInputResultsSubmitted={onInputResultsSubmitted} composerDraft={composerDraft} renderTurnContext={renderTurnContext}
           intelligenceReferences={intelligenceReferences}
           onRemoveIntelligenceReference={onRemoveIntelligenceReference}
           onIntelligenceReferencesSubmitted={onIntelligenceReferencesSubmitted}

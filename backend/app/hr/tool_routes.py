@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 from app.execution_relay.contracts_v6 import parse_v6_tool_request, V6ContractError
+from app.execution_relay.contracts_v7 import parse_v7_tool_request
 from app.execution_relay.content_crypto import ContentCryptoError
 from .tool_service import HrToolError
 
@@ -33,7 +34,7 @@ def attach_hr_tool_routes(router, authenticated, service):
                 if type(raw) is not dict or set(raw)!={'request','observation'}:
                     raise ValueError('official observation invalid')
                 observation=raw['observation'];raw=raw['request']
-            value = parse_v6_tool_request(raw)
+            value = (parse_v7_tool_request if "/hr/v7/" in request.url.path else parse_v6_tool_request)(raw)
             if value.tool != expected_tool:
                 return _error(400, 'HR tool route mismatch')
             if source:
@@ -51,22 +52,27 @@ def attach_hr_tool_routes(router, authenticated, service):
             return _error(503, 'HR tool temporarily unavailable')
 
     # Machine-only registry observations. These are not model-callable tool arguments.
+    @router.post('/hr/v7/official-source')
     @router.post('/hr/v6/official-source')
     async def official_source(request: Request):
         return await invoke(request,'hr.read_context',source=True)
 
+    @router.post('/hr/v7/official-verifications')
     @router.post('/hr/v6/official-verifications')
     async def official_verification(request: Request):
         return await invoke(request,'hr.read_context',verified=True)
 
+    @router.post('/hr/v7/query')
     @router.post('/hr/v6/query')
     async def query(request: Request):
         return await invoke(request, 'hr.read_context')
 
+    @router.post('/hr/v7/results')
     @router.post('/hr/v6/results')
     async def result(request: Request):
         return await invoke(request, 'hr.submit_result')
 
+    @router.post('/hr/v7/confirmations')
     @router.post('/hr/v6/confirmations')
     async def confirmation(request: Request):
         return await invoke(request, 'hr.confirm_standard')

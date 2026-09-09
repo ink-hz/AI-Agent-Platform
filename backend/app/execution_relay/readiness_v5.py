@@ -33,7 +33,7 @@ def callback_origin(value):
 
 
 def parse_service(value):
-    v6 = type(value) is dict and value.get('contractVersion')=='core_chat_collaboration_v6'
+    v6 = type(value) is dict and value.get('contractVersion') in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
     extra={'rolePackage','toolCapabilities'} if v6 else set()
     if type(value) is not dict or set(value)-extra != {
         "contractVersion",
@@ -46,7 +46,7 @@ def parse_service(value):
     }:
         raise ValueError("v5 readiness invalid")
     if (
-        value["contractVersion"] not in {"core_chat_collaboration_v5","core_chat_collaboration_v6"}
+        value["contractVersion"] not in {"core_chat_collaboration_v5","core_chat_collaboration_v6","core_chat_collaboration_v7"}
         or type(value["durableTerminal"]) is not bool
         or type(value["healthy"]) is not bool
         or type(value["capacity"]) is not str
@@ -111,7 +111,7 @@ def parse_observation(value):
     }:
         raise ValueError("v5 readiness invalid")
     if (
-        value["version"] not in {"hr_v5_readiness_v1","hr_v6_readiness_v1"}
+        value["version"] not in {"hr_v5_readiness_v1","hr_v6_readiness_v1","hr_v7_readiness_v1"}
         or type(value["reason"]) is not str
         or value["reason"] not in REASONS
     ):
@@ -129,7 +129,7 @@ def parse_observation(value):
         raise ValueError("v5 readiness invalid")
     if value["service"] is not None:
         parse_service(value["service"])
-        if (value['version']=='hr_v6_readiness_v1') != (value['service']['contractVersion']=='core_chat_collaboration_v6'):
+        if value['version'] != 'hr_'+value['service']['contractVersion'].rsplit('_',1)[1]+'_readiness_v1':
             raise ValueError('HR readiness version mismatch')
         if value["service"]["callbackOrigin"] != value["callbackOrigin"]:
             raise ValueError("v5 readiness invalid")

@@ -1,6 +1,7 @@
 """Explicit user intent attached to a submitted message, never supplied by a bot."""
 import json
 from uuid import UUID
+from typing import Literal
 from pydantic import Field, model_validator
 from app.execution_relay.contracts_v6 import StrictValue, SHA256
 
@@ -11,6 +12,8 @@ class StandardConsent(StrictValue):
     expected_context_version_id: UUID | None = Field(alias='expectedContextVersionId')
     selected_change_ids: tuple[str,...] = Field(alias='selectedChangeIds',min_length=1,max_length=8)
 
+    body_reviewed: Literal[True] | None = Field(default=None,alias='bodyReviewed')
+
     @model_validator(mode='after')
     def unique(self):
         if len(set(self.selected_change_ids)) != len(self.selected_change_ids):
@@ -18,13 +21,13 @@ class StandardConsent(StrictValue):
         return self
 
     def accepts_text(self, text):
-        return text in {self.message_text(), self.channel_message_text()}
+        return text == self.message_text() or (self.body_reviewed is None and text == self.channel_message_text())
 
     def channel_message_text(self):
         return f"/确认 {self.proposal_result_id} {','.join(self.selected_change_ids)}"
 
     def message_text(self):
-        return f'确认所选的 {len(self.selected_change_ids)} 项岗位标准。'
+        return f'确认所选的 {len(self.selected_change_ids)} 项岗位标准。' + ('已核对所选正文，仅保留岗位级标准，不含候选人个人信息或逐人评价。' if self.body_reviewed else '')
 
 
 def normalize_consent(value):

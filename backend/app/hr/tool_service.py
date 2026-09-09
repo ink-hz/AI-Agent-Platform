@@ -16,6 +16,8 @@ from app.execution_relay.contracts_v6 import (
     HrReadContextReply, HrSubmitResultReply, HrResultRef,
 )
 from .turn_scope import load_authorized_turn_scope
+from app.execution_relay.contracts_v7 import (CandidateDeliverable, HrCandidateInterviewRecord,
+    HrReadContextReply, HrSubmitResultReply, HrResultRef)
 
 
 def canonical(value):
@@ -48,8 +50,7 @@ class HrToolService:
             (grant.grant_id, attempt_id, worker_id, lease_epoch, digest(token), grant.expires_at))
         return grant
 
-    @staticmethod
-    def _authorize(connection, worker_id, grant_id, token):
+    def _authorize(self, connection, worker_id, grant_id, token):
         if not isinstance(token, str) or re.fullmatch(r'[A-Za-z0-9_-]{43}', token) is None:
             raise HrToolError('permission_expired', '业务工具授权失效')
         try:
@@ -66,7 +67,18 @@ class HrToolService:
         allowed = connection.execute("select allowed from platform_control.resolve_agent_use_decision_v41(%s,'hr-bot')", (owner,)).fetchone()
         if allowed is None or allowed['allowed'] is not True:
             raise HrToolError('permission_expired', 'HR 使用权限已失效')
-        return load_authorized_turn_scope(owner, conversation, turn, connection=connection), value
+        scope=load_authorized_turn_scope(owner, conversation, turn, connection=connection)
+        row=connection.execute('select j.job_id,j.run_id,j.payload_ciphertext,j.encryption_key_version from platform_control.direct_command_bindings b join platform_control.execution_jobs j using(job_id) where b.attempt_id=%s',(UUID(value['attemptId']),)).fetchone()
+        if row is None: raise HrToolError('permission_expired','业务工具没有对应的冻结命令')
+        frozen=self.codec.unseal_json(f"execution-job:{row['job_id']}:{row['run_id']}",SealedContent(bytes(row['payload_ciphertext']),row['encryption_key_version']))['command']
+        value['contractVersion']=frozen['contractVersion']
+        if frozen['contractVersion']=='core_chat_collaboration_v7':
+            from dataclasses import replace
+            refs=tuple(HrResultRef.model_validate_json(canonical(r)) for r in frozen['inputResultRefs'])
+            if refs!=(scope.input_result_refs or ()):
+                raise HrToolError('scope_mismatch','冻结成果输入与本轮不一致')
+            scope=replace(scope,input_result_refs=refs)
+        return scope,value
 
     def _decode(self, row):
         return self.codec.unseal_json(f"hr-tool:{row['receipt_id']}", SealedContent(row['payload_ciphertext'], row['encryption_key_version']))
@@ -87,6 +99,10 @@ class HrToolService:
         try:
             with self.repository._connection() as connection, connection.transaction():
                 scope, identity = self._authorize(connection, worker_id, grant_id, token)
+                from app.execution_relay.contracts_v6 import parse_v6_tool_request
+                from app.execution_relay.contracts_v7 import parse_v7_tool_request
+                parser=parse_v7_tool_request if identity['contractVersion']=='core_chat_collaboration_v7' else parse_v6_tool_request
+                request=parser(request.model_dump(mode='json',by_alias=True))
                 request_hash = digest(canonical(request.model_dump(mode='json', by_alias=True)))
                 prior = connection.execute('select * from platform_hr.tool_operations_v6 where turn_id=%s and operation_id=%s',
                     (scope.turn_id, request.operation_id)).fetchone()
@@ -120,6 +136,9 @@ class HrToolService:
                     (grant_id, worker_id, digest(token), receipt_id, request.operation_id, request.tool,
                      request_hash, content_hash, resource_kind, resource_id, version_ref, schema_id,
                      sealed.ciphertext, sealed.key_version)).fetchone()
+                if body is not None and scope.input_result_refs is not None:
+                    connection.execute("select platform_hr.record_result_scope_v7(%s,%s,%s,%s,%s)",
+                        (grant_id,worker_id,digest(token),receipt_id,list(getattr(request.result,"position_candidate_ids",()))))
                 return self._decode(row)['reply']
         except (psycopg.errors.InsufficientPrivilege, psycopg.errors.NoDataFound):
             raise HrToolError('permission_expired', '业务工具授权或所选材料已失效') from None
@@ -138,6 +157,12 @@ class HrToolService:
             raise HrToolError('scope_mismatch','候选人不在本轮所选范围')
         if request.resource_kind == 'material' and resource_id not in scope.scope.attachment_ids:
             raise HrToolError('scope_mismatch', '材料不在本轮授权范围内')
+        if request.resource_kind=='result':
+            reference=next((r for r in (scope.input_result_refs or ()) if r.result_id==resource_id),None)
+            if reference is None:
+                raise HrToolError('scope_mismatch','成果不在本次参考中')
+            if request.version_ref not in (None,reference.content_sha256):
+                raise HrToolError('version_conflict','成果引用版本已变化')
         # Recorded means the first successful read in this turn, even after an Attempt retry.
         if request.read_mode == 'recorded':
             recorded = connection.execute('select * from platform_hr.tool_operations_v6 where turn_id=%s '
@@ -147,7 +172,7 @@ class HrToolService:
             if recorded:
                 prior = self._decode(recorded)['reply']
                 return HrReadContextReply.model_validate_json(canonical({**prior, 'readId':str(receipt_id), 'verification':'recorded'}))
-            if request.version_ref is not None:
+            if request.version_ref is not None and request.resource_kind!='result':
                 raise HrToolError('source_unavailable', '本轮未记录所请求版本')
         status = 'current'
         if request.resource_kind == 'official_position':
@@ -194,6 +219,13 @@ class HrToolService:
             feedback=connection.execute('select feedback_id,analysis_version_id,feedback_kind,conclusion_key,correction,reason,created_at from platform_hr.human_feedback where position_candidate_id=%s and owner_internal_user_id=%s order by created_at desc limit 20',(resource_id,scope.owner_id)).fetchall()
             document={**row,'documents':documents,'human_feedback':feedback}
             version=digest(canonical(document))
+        elif request.resource_kind == 'result':
+            row=connection.execute("select * from platform_hr.tool_operations_v6 where receipt_id=%s and owner_internal_user_id=%s and tool='hr.submit_result'",(resource_id,scope.owner_id)).fetchone()
+            if row is None or row['schema_id']!=reference.schema_id or row['content_sha256']!=reference.content_sha256:
+                raise HrToolError('result_unregistered','成果引用不可用')
+            load_authorized_turn_scope(scope.owner_id,row['conversation_id'],row['turn_id'],connection=connection)
+            document={'resultRef':reference.model_dump(mode='json',by_alias=True),'result':self._decode(row)['result']}
+            version=reference.content_sha256
         elif request.resource_kind == 'material':
             row = connection.execute("select attachment_id,encode(sha256,'hex') as sha256,coalesce(detected_mime,declared_mime) as media_type,size_bytes from platform_attachments.attachments "
                 'where attachment_id=%s and owner_internal_user_id=%s', (resource_id, scope.owner_id)).fetchone()
@@ -218,6 +250,34 @@ class HrToolService:
                 "where receipt_id=%s and turn_id=%s and tool='hr.read_context'", (ref.read_id, scope.turn_id)).fetchone()
             if read is None or read['content_sha256'] != ref.content_sha256:
                 raise HrToolError('result_unregistered', '结果引用的读取记录不属于本轮')
+        if isinstance(result,CandidateDeliverable):
+            if scope.scope.position_id is None or not set(result.position_candidate_ids).issubset(scope.scope.position_candidate_ids):
+                raise HrToolError('scope_mismatch','候选人成果不在本轮所选范围')
+            for baseline in (*getattr(result,'baseline_refs',()),*getattr(result,'record_material_refs',())):
+                read=connection.execute("select * from platform_hr.tool_operations_v6 where receipt_id=%s and turn_id=%s and tool='hr.read_context'",(baseline.read_id,scope.turn_id)).fetchone()
+                expected_kind={'confirmed_standard':'confirmed_standard','official_position':'official_position','user_material':'material'}[baseline.kind]
+                if read is None or read['resource_kind']!=expected_kind or read['content_sha256']!=baseline.content_sha256:
+                    raise HrToolError('result_unregistered','基准没有对应的本轮读取证据')
+                if baseline.kind=='confirmed_standard':
+                    if read['version_ref']!=str(baseline.context_version_id):
+                        raise HrToolError('version_conflict','岗位标准基准不匹配')
+                    confirmed=connection.execute("select 1 from platform_hr.position_context_versions where context_version_id=%s and owner_internal_user_id=%s and position_id=%s and confirmed_by is not null and state in ('confirmed','superseded')",(baseline.context_version_id,scope.owner_id,scope.scope.position_id)).fetchone()
+                    if confirmed is None: raise HrToolError('version_conflict','基准不是已确认岗位标准')
+                elif baseline.kind=='official_position':
+                    if baseline.position_id!=scope.scope.position_id or baseline.version_ref!=read['version_ref']:
+                        raise HrToolError('scope_mismatch','官网基准与本轮岗位不匹配')
+                elif baseline.attachment_id!=read['resource_id'] or baseline.attachment_id not in scope.scope.attachment_ids:
+                    raise HrToolError('scope_mismatch','基准材料不在本轮范围')
+            if isinstance(result,HrCandidateInterviewRecord) and result.plan_ref is not None:
+                if result.plan_ref not in (scope.input_result_refs or ()):
+                    raise HrToolError('scope_mismatch','面试方案必须列在本次参考中')
+                read=connection.execute("select * from platform_hr.tool_operations_v6 where turn_id=%s and tool='hr.read_context' and resource_kind='result' and resource_id=%s and version_ref=%s order by created_at limit 1",(scope.turn_id,result.plan_ref.result_id,result.plan_ref.content_sha256)).fetchone()
+                if read is None: raise HrToolError('result_unregistered','尚未读取本次引用的面试方案')
+                plan=json.loads(self._decode(read)['reply']['contentText'])['result']
+                if plan['positionCandidateIds']!=[str(x) for x in result.position_candidate_ids]:
+                    raise HrToolError('scope_mismatch','面试记录与方案候选人不一致')
+                if not {a.question_id for a in result.answers}.issubset({q['questionId'] for q in plan['questions']}):
+                    raise HrToolError('scope_mismatch','记录问题不属于引用的面试方案')
         if isinstance(result, HrStandardProposal) and scope.scope.position_id is None:
             raise HrToolError('scope_mismatch', '长期标准建议需要先选择岗位')
         if isinstance(result, HrCandidateAnalysis):
@@ -250,4 +310,8 @@ class HrToolService:
             scope=load_authorized_turn_scope(owner_id,row['conversation_id'],row['turn_id'],connection=connection)
             value = self._decode(row)
             connection.execute('select platform_hr.record_result_presentation_v6(%s,%s)', (owner_id,result_id))
-            return {**value, 'conversationId':str(row['conversation_id']), 'turnId':str(row['turn_id']), 'positionId':str(scope.scope.position_id) if scope.scope.position_id else None}
+            candidate_ids=row.get('result_candidate_ids') if row.get('result_candidate_ids') is not None else list(scope.scope.position_candidate_ids)
+            candidates=connection.execute('select c.stable_name from platform_hr.position_candidates pc join platform_hr.candidates c using(candidate_id,owner_internal_user_id) where pc.owner_internal_user_id=%s and pc.position_candidate_id=any(%s) order by c.stable_name',(owner_id,candidate_ids)).fetchall()
+            reusable=connection.execute("select a.attachment_id from platform_attachments.attachments a where a.owner_internal_user_id=%s and a.attachment_id=any(%s) and (exists(select 1 from platform_hr.position_materials m where m.attachment_id=a.attachment_id and m.owner_internal_user_id=a.owner_internal_user_id and m.position_id=%s and m.active) or exists(select 1 from platform_hr.candidate_documents d join platform_hr.position_candidates pc using(candidate_id,owner_internal_user_id) where d.attachment_id=a.attachment_id and d.owner_internal_user_id=a.owner_internal_user_id and d.status='active' and pc.position_candidate_id=any(%s) and pc.status='active')) order by a.attachment_id",(owner_id,list(scope.scope.attachment_ids),scope.scope.position_id,candidate_ids)).fetchall()
+            position=connection.execute('select title from platform_hr.positions where owner_internal_user_id=%s and position_id=%s',(owner_id,scope.scope.position_id)).fetchone() if scope.scope.position_id else None
+            return {**value, 'candidateNames':[c['stable_name'] for c in candidates], 'positionTitle':position['title'] if position else None, 'positionCandidateIds':[str(x) for x in (row.get('result_candidate_ids') if row.get('result_candidate_ids') is not None else getattr(scope.scope,'position_candidate_ids',()))], 'candidateDerived':bool(row.get('candidate_derived') or scope.scope.position_candidate_ids), 'attachmentIds':[str(x['attachment_id']) for x in reusable], 'conversationId':str(row['conversation_id']), 'turnId':str(row['turn_id']), 'positionId':str(scope.scope.position_id) if scope.scope.position_id else None}

@@ -70,7 +70,7 @@ def tool_loop(scoped_database, tmp_path, request):
             connection.execute('select platform_hr.confirm_candidate_draft_v70(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)',
                 (ids['owner'],ids['draft'],uuid4(),2,ids['candidate'],None,ids['document'],ids['relation'],ids['context'],'Fixture Candidate','{"skills":["Python"]}'))
     attachment_grants=None
-    if getattr(request,'param',None)=='candidate_attachment':
+    if getattr(request,'param',None) in ('candidate_attachment','v7'):
         from app.attachments.conversation_repository import attachment_name_subject,attachment_object_subject
         from app.attachments.grant_service import AttachmentGrantService,TaskGrantRepository
         source_chat=repository(env).ensure_direct_conversation_shell(ids['owner'],uuid4(),direct_agent_id='hr-bot',title='Original resume conversation')
@@ -91,15 +91,17 @@ def tool_loop(scoped_database, tmp_path, request):
         connection.execute("update platform_control.conversations set execution_owner='worker_direct',route_epoch=7 where conversation_id=%s",(conversation.conversation_id,))
     relay = ExecutionRelayRepository(env['urls']['platform_control_app'],content_codec=_codec())
     ready=observation()
-    ready['version']='hr_v6_readiness_v1'
-    ready['service'].update(contractVersion='core_chat_collaboration_v6',rolePackage=roles.select().model_dump(mode='json',by_alias=True),
+    version='v7' if getattr(request,'param',None)=='v7' else 'v6'
+    ready['version']=f'hr_{version}_readiness_v1'
+    ready['service'].update(contractVersion=f'core_chat_collaboration_{version}',rolePackage=roles.select().model_dump(mode='json',by_alias=True),
         toolCapabilities=['hr.read_context','hr.submit_result','hr.confirm_standard'])
     record_observation(relay,worker_id,ready)
     loop = ToolLoop(env,ids['owner'],conversation.conversation_id)
     loop.roles = roles
+    loop.attachment_grants=attachment_grants
     try:
         response = loop.client.post(f'/api/v1/conversations/{conversation.conversation_id}/messages',
-            json={'text':'按当前岗位分析','scope':{'positionId':str(ids['position']),'positionCandidateIds':[str(ids['relation'])] if getattr(request,'param',False) else [],'attachmentIds':[str(ids['attachment'])] if getattr(request,'param',None)=='candidate_attachment' else []}},
+            json={**({'inputResultRefs':[]} if version=='v7' else {}),'text':'按当前岗位分析','scope':{'positionId':str(ids['position']),'positionCandidateIds':[str(ids['relation'])] if getattr(request,'param',False) else [],'attachmentIds':[str(ids['attachment'])] if getattr(request,'param',None) in ('candidate_attachment','v7') else []}},
             headers={'Idempotency-Key':str(uuid4())})
         assert response.status_code in (200,201),response.text
         attempts = TurnAttemptRepository(env['urls']['platform_control_app'],_codec())
@@ -108,7 +110,7 @@ def tool_loop(scoped_database, tmp_path, request):
         bindings = DirectCommandBindingRepository(relay)
         adapter = DirectMissionAdapter(attempts,bindings,ConversationContextBuilder(repo),TurnResultProjector(attempts,bindings),role_packages=loop.roles,attachment_grants=attachment_grants)
         binding = adapter.prepare(lease)
-        assert binding.frozen.document['contractVersion']=='core_chat_collaboration_v6'
+        assert binding.frozen.document['contractVersion']==f'core_chat_collaboration_{version}'
         assert binding.frozen.document['scope']['positionId']==str(ids['position'])
         assert 'official_facts' not in binding.frozen.document['prompt']
         assert adapter.prepare(lease).frozen.command_hash == binding.frozen.command_hash

@@ -242,7 +242,7 @@ class MetaBotClient:
         from .readiness_v5 import parse_service
 
         port, secret = self._runtime_map.port_for("hr-bot"), self._bearer_secret
-        version = 'v6' if os.environ.get('PLATFORM_WORKER_HR_V6_ENABLED')=='1' else 'v5'
+        version = 'v7' if os.environ.get('PLATFORM_WORKER_HR_V7_ENABLED')=='1' else 'v6' if os.environ.get('PLATFORM_WORKER_HR_V6_ENABLED')=='1' else 'v5'
         async with (
             httpx.AsyncClient(timeout=3, follow_redirects=False, trust_env=False) as client,
             client.stream("GET", f"http://127.0.0.1:{port}/api/core-chat/{version}/readiness",

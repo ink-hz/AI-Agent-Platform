@@ -47,7 +47,7 @@ def accept_source(bindings, worker_id, run_id, body):
         frozen = bindings._decode({**job,**row}).frozen.document
         if event.contract_version != frozen["contractVersion"]:
             raise ValueError("source contract mismatch")
-        if event.contract_version=="core_chat_collaboration_v6" and event.event_type=="result":
+        if event.contract_version in {'core_chat_collaboration_v6','core_chat_collaboration_v7'} and event.event_type=="result":
             for ref in event.payload.result_refs:
                 found=connection.execute("select 1 from platform_hr.tool_operations_v6 where receipt_id=%s "
                     "and turn_id=%s and tool='hr.submit_result' and schema_id=%s and content_sha256=%s",
@@ -55,7 +55,7 @@ def accept_source(bindings, worker_id, run_id, body):
                 if found is None:
                     raise ValueError("result_unregistered")
         knowledge_read = None
-        if (event.contract_version=='core_chat_collaboration_v6' and event.event_type=='raw_progress'
+        if (event.contract_version in {'core_chat_collaboration_v6','core_chat_collaboration_v7'} and event.event_type=='raw_progress'
             and event.payload.source_ref=='hr:knowledge-read:v1'):
             import re
             knowledge_read=json.loads(event.payload.text)

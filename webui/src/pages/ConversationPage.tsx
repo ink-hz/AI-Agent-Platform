@@ -194,7 +194,7 @@ export function ConversationPage({
   onPositionMaterialChange,
   composerTools,
   threadSupplement,
-  turnScope, composerDraft, renderTurnContext,
+  turnScope, composerDraft, renderTurnContext, inputResults = [], onInputResultsSubmitted,
   materialsPresentation = "sidebar",
   materialsOpen,
   onMaterialsOpenChange,
@@ -222,6 +222,8 @@ export function ConversationPage({
   composerTools?: ReactNode;
   threadSupplement?: ReactNode;
   turnScope?:HrTurnScope;
+  inputResults?: import("../conversationTypes").HrInputResultRef[];
+  onInputResultsSubmitted?:(ids:readonly string[])=>void;
   composerDraft?:HrComposerDraft;
   renderTurnContext?:(turnId:string)=>ReactNode;
   materialsPresentation?: "sidebar" | "drawer" | "hidden";
@@ -596,8 +598,8 @@ export function ConversationPage({
       text: normalized,
       attachmentIds: [...newAttachmentIds],
       activeAttachmentIds: [...activeAttachmentIds],
-      ...(turnScope ? {scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...newAttachmentIds,...activeAttachmentIds])]}} : {}),
-      ...(standardConsent && normalized===`确认所选的 ${standardConsent.selectedChangeIds.length} 项岗位标准。` ? {standardConsent} : {}),
+      ...(turnScope ? {inputResultRefs:inputResults.map(({title,...ref})=>ref),scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...newAttachmentIds,...activeAttachmentIds])]}} : {}),
+      ...(standardConsent && normalized===`确认所选的 ${standardConsent.selectedChangeIds.length} 项岗位标准。${standardConsent.bodyReviewed?"已核对所选正文，仅保留岗位级标准，不含候选人个人信息或逐人评价。":""}` ? {standardConsent} : {}),
       ...(selectedKnowledgeResources.length ? { userSelectedResources: selectedKnowledgeResources } : {}),
     };
     const submissionKey = JSON.stringify(submissionInput);
@@ -625,6 +627,7 @@ export function ConversationPage({
       setText(""); setStandardConsent(undefined);
       if (selectedKnowledgeResources.length) onKnowledgeResourcesSubmitted?.();
       onIntelligenceReferencesSubmitted?.(selected.referenceKeys);
+      onInputResultsSubmitted?.(inputResults.map(r=>r.resultId));
       setNewAttachmentIds([]); setUploadQueue([]);
       mergeIntoMessages([result.message]);
       if ("conversation" in result) {

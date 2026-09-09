@@ -5,8 +5,8 @@ import os
 import re
 from pathlib import Path
 
-async def read_official(runtime,request,raw,grant_id,token):
-    base='/api/v1/execution-worker/hr/v6/'
+async def read_official(runtime,request,raw,grant_id,token,*,version="v6"):
+    base='/api/v1/execution-worker/hr/'+version+'/'
     source=await runtime.cloud.post_hr_tool(base+'official-source',raw,grant_id,token)
     if source.status_code!=200:
         return source

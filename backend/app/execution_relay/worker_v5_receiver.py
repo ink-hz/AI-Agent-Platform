@@ -231,7 +231,7 @@ def _accept(
 
 
 def _store_business_grant(connection,command):
-    if command.contract_version!='core_chat_collaboration_v6':
+    if command.contract_version not in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}:
         return
     grant=command.business_tool_grant
     if grant is None:

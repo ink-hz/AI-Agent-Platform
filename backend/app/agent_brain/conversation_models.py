@@ -92,6 +92,7 @@ class ConversationTurnSubmission:
     hr_scope: HrTurnScope | None = None
     method_selection: HrMethodSelection | None = None
     standard_consent: StandardConsent | None = None
+    input_result_refs: tuple[object, ...] | None = None
     trusted_channel_origin: dict[str,str] | None = field(default=None,repr=False)
 
     def __post_init__(self) -> None:
@@ -106,6 +107,11 @@ class ConversationTurnSubmission:
         if self.hr_scope is not None:
             if not isinstance(self.hr_scope, HrTurnScope) or not set(active_attachment_ids).issubset(self.hr_scope.attachment_ids):
                 raise ValueError("HR scope must include active attachments")
+        if self.input_result_refs is not None:
+            from app.execution_relay.contracts_v7 import HrResultRef
+            if (len(self.input_result_refs)>20 or any(not isinstance(r,HrResultRef) for r in self.input_result_refs)
+                or len({r.result_id for r in self.input_result_refs})!=len(self.input_result_refs)):
+                raise ValueError("HR result inputs invalid")
         derived_method = None
         if self.user_selected_resources:
             derived_method = HrMethodSelection.model_validate_json(json.dumps({
@@ -135,7 +141,7 @@ def normalize_turn_submission(
             value.text, value.attachment_ids, value.active_attachment_ids,
             user_selected_resources=value.user_selected_resources,
             hr_scope=value.hr_scope, method_selection=value.method_selection,
-            standard_consent=value.standard_consent,
+            standard_consent=value.standard_consent, input_result_refs=value.input_result_refs,
             trusted_channel_origin=value.trusted_channel_origin,
         )
     if isinstance(value, str):
@@ -226,6 +232,7 @@ class ConversationMessageRecord:
     result_delivery_status: Literal["pending", "completed", "failed"] | None = None
     user_selected_resources: tuple[dict[str, object], ...] = ()
     standard_consent: StandardConsent | None = None
+    input_result_refs: tuple[object, ...] | None = None
     trusted_channel_origin: dict[str,str] | None = field(default=None,repr=False)
 
 

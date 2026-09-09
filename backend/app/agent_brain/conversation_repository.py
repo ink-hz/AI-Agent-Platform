@@ -665,7 +665,7 @@ class ConversationRepository:
         submission: ConversationTurnSubmission,
     ) -> None:
         agent_id = conversation_row["direct_agent_id"]
-        if submission.hr_scope is not None and agent_id != "hr-bot":
+        if (submission.hr_scope is not None or submission.input_result_refs is not None) and agent_id != "hr-bot":
             raise ConversationRepositoryConflict("HR scope requires HR Agent")
         try:
             self._attachments.bind_turn_locked(
@@ -1457,7 +1457,7 @@ class ConversationRepository:
                     original_scope = load_authorized_turn_scope(
                         internal_user_id, conversation_id, source_turn_id, connection=cursor)
                     scope_options = {"hr_scope": original_scope.scope,
-                                     "method_selection": original_scope.method_selection}
+                                     "method_selection": original_scope.method_selection, "input_result_refs":original_scope.input_result_refs}
                 submission = ConversationTurnSubmission(
                     source_record.content,
                     tuple(

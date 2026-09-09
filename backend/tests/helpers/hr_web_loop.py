@@ -347,6 +347,8 @@ class WebLoop:
             connection.execute(MIGRATION.read_text())
             if os.environ.get('PLATFORM_WORKER_HR_V6_ENABLED')=='1':
                 connection.execute((Path(__file__).parents[2]/'app/execution_relay/pending/worker_v6_tools.sql').read_text())
+            if os.environ.get('PLATFORM_WORKER_HR_V7_ENABLED')=='1':
+                connection.execute((Path(__file__).parents[2]/'app/execution_relay/pending/worker_v7_tools.sql').read_text())
         self.worker_id = "web-loop-" + uuid4().hex
         key = Ed25519PrivateKey.generate()
         with psycopg.connect(self.environment["admin"]) as connection:

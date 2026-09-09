@@ -438,7 +438,7 @@ class SignedCloudClient:
             raise CloudRelayError() from None
 
     async def post_hr_tool(self,path,body,grant_id,token):
-        if path not in {f"{_API_PREFIX}/hr/v6/query",f"{_API_PREFIX}/hr/v6/results",f"{_API_PREFIX}/hr/v6/confirmations",f"{_API_PREFIX}/hr/v6/official-source",f"{_API_PREFIX}/hr/v6/official-verifications"} or not 0<len(body)<=1048576:
+        if path not in {f"{_API_PREFIX}/hr/{version}/{endpoint}" for version in ("v6","v7") for endpoint in ("query","results","confirmations","official-source","official-verifications")} or not 0<len(body)<=1048576:
             raise CloudRelayError()
         if not self._v5_can_send("control"):
             raise V5BudgetDeferred()
@@ -1258,7 +1258,7 @@ async def _handle_callback_connection(
 
             await challenge(runtime, headers, await asyncio.wait_for(reader.readexactly(length), 3), writer)
             return
-        if target.startswith("/hr/v6/tools/"):
+        if target.startswith(("/hr/v6/tools/","/hr/v7/tools/")):
             parts=target.split("/")
             if len(parts)!=6 or not 0<length<=_CALLBACK_BODY_LIMIT:
                 raise ValueError

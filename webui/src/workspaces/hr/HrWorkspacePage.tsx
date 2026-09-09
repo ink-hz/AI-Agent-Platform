@@ -2,7 +2,7 @@ import { formatHrIntelligenceReferences, type HrIntelligenceReference } from './
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Account } from "../../auth";
 import { PlatformLink } from "../../components/PlatformLink";
-import type { HrComposerDraft, HrKnowledgeSelection } from "../../conversationTypes";
+import type { HrComposerDraft, HrKnowledgeSelection, HrInputResultRef } from "../../conversationTypes";
 import { createHrApi } from "../../hrApi";
 import { createHrR12Api } from "../../hrR12Api";
 import type { HrPositionSection } from "../../hrR12Types";
@@ -17,7 +17,7 @@ import { HrPositionPicker } from "./HrPositionPicker";
 import { HrKnowledgePanel } from "./HrKnowledgePanel";
 import { HrPositionIndex } from "./HrPositionIndex";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
-import { HrTurnResults, useHrConversationResults } from "./HrTurnResults";
+import { HrTurnResults, HrInputResults, useHrConversationResults } from "./HrTurnResults";
 import { useHrChatPosition } from "./useHrChatPosition";
 function chatPath(id:string){return directConversationPath('hr-bot',id)??`/hr/conversations/${encodeURIComponent(id)}`;}
 export function HrWorkspacePage(props:{account:Account;conversationId?:string;positionId?:string;section?:HrPositionSection;freeChat?:boolean;positions?:boolean;panorama?:boolean;panoramaReportId?:string}){
@@ -51,6 +51,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
   const [drawerTab,setDrawerTab]=useState<HrPositionDetailsTab>('position');
   const [knowledgeOpen,setKnowledgeOpen]=useState(false);
   const [knowledge,setKnowledge]=useState<HrKnowledgeSelection[]>([]);
+  const [inputResults,setInputResults]=useState<HrInputResultRef[]>([]);
   const [composerDraft,setComposerDraft]=useState<HrComposerDraft>();
   const [revision,setRevision]=useState(0);
   const [draftError,setDraftError]=useState('');
@@ -59,13 +60,15 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
   const settled=useCallback(()=>setRevision(value=>value+1),[]);
   const position=useHrChatPosition({positionId:selectedPosition?.positionId,api,r12,readOnly:props.account.hard_stale_read_only,revision});
   const results=useHrConversationResults(conversationId,revision);
-  function choose(value:HrPosition|null){setSelectedPosition(value);setCandidateIds([]);setCandidateAttachments([]);setDrawerOpen(false);}
+  function choose(value:HrPosition|null){if(inputResults.length)setDraftError("已切换岗位，原成果引用已移除。");setInputResults([]);setSelectedPosition(value);setCandidateIds([]);setCandidateAttachments([]);setDrawerOpen(false);}
   async function fill(value:HrComposerDraft,positionId:string|null){
     setDraftError('');
     if(positionId!==selectedPosition?.positionId){
       try {choose(positionId?await api.position(positionId):null);}catch{setDraftError('无法读取该成果的岗位，请稍后重试。');return;}
     }
     if(value.standardConsent)setIntelligenceReferences([]);
+    setInputResults(value.inputResults??[]);
+    setCandidateIds(value.positionCandidateIds??[]);setCandidateAttachments(value.attachmentIds??[]);
     setComposerDraft({...value,positionId});setDrawerOpen(false);navigate(chatHref);
   }
   return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={props.panorama||props.panoramaReportId?'panorama':props.positions||props.positionId?'positions':'chat'} onOpenKnowledge={()=>setKnowledgeOpen(true)}>
@@ -77,11 +80,11 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
       positionMaterialIds={position.detail?.materialAttachmentIds} positionArtifactAttachmentIds={position.detail?.artifactAttachmentIds}
       onPositionMaterialChange={selectedPosition&&!props.account.hard_stale_read_only?position.changeMaterial:undefined}
       turnScope={{positionId:selectedPosition?.positionId??null,positionCandidateIds:candidateIds,attachmentIds:[...new Set([...position.selectedMaterialIds,...candidateAttachments])]}}
-      composerDraft={composerDraft}
+      composerDraft={composerDraft} inputResults={inputResults} onInputResultsSubmitted={ids=>setInputResults(items=>items.filter(r=>!ids.includes(r.resultId)))}
       intelligenceReferences={intelligenceReferences} onRemoveIntelligenceReference={removeIntelligence} onIntelligenceReferencesSubmitted={clearIntelligence}
-      composerTools={()=><><HrPositionPicker api={api} selected={selectedPosition} disabled={props.account.hard_stale_read_only} existingConversation={Boolean(conversationId)} onSelect={choose}
+      composerTools={()=><><HrInputResults items={inputResults} onRemove={id=>setInputResults(items=>items.filter(r=>r.resultId!==id))}/><HrPositionPicker api={api} selected={selectedPosition} disabled={props.account.hard_stale_read_only} existingConversation={Boolean(conversationId)} onSelect={choose}
         onOpenDetails={selectedPosition?()=>{setDrawerTab('position');setDrawerOpen(true);}:undefined}/>{position.materialsControl}
-        {candidateIds.length>0&&<button type="button" onClick={()=>{setCandidateIds([]);setCandidateAttachments([]);}}>已选 {candidateIds.length} 位候选人 ×</button>}
+        {candidateIds.length>0&&<button type="button" onClick={()=>{setCandidateIds([]);setCandidateAttachments([]);setInputResults([]);}}>已选 {candidateIds.length} 位候选人 ×</button>}
         </>}
       newConversationHeader={<section className="hr-conversation-welcome"><span>AI 招聘协作</span><h1>{selectedPosition?.title??'今天想推进哪项招聘工作？'}</h1><p>搜索选择岗位，直接提出要求。切换岗位只影响下一轮，同一段对话可以一直使用。</p></section>}
       selectedKnowledgeResources={knowledge} onKnowledgeResourcesSubmitted={()=>setKnowledge([])} onRemoveKnowledgeResource={id=>setKnowledge(items=>items.filter(item=>item.id!==id))}
@@ -93,7 +96,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
     {selectedPosition&&<HrPositionDetailsDrawer key={selectedPosition.positionId} api={r12} csrfToken={props.account.csrf_token} detail={position.detail??selectedPosition} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}
       activeTab={drawerTab} onActiveTabChange={setDrawerTab} onConfirmed={position.confirmContext}
-      onCandidateDraft={(text,ids,attachments)=>{setCandidateIds(ids);setCandidateAttachments(attachments);setComposerDraft({id:crypto.randomUUID(),text});setDrawerOpen(false);}}/>}
+      onCandidateDraft={(text,ids,attachments)=>{setInputResults([]);setCandidateIds(ids);setCandidateAttachments(attachments);setComposerDraft({id:crypto.randomUUID(),text});setDrawerOpen(false);}}/>}
     {knowledgeOpen&&<HrKnowledgePanel onClose={()=>setKnowledgeOpen(false)} onSelect={selection=>{setKnowledge([selection]);setKnowledgeOpen(false);navigate(chatHref);}}/>}
   </HrWorkspaceShell>;
 }

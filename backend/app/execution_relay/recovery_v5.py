@@ -108,7 +108,7 @@ def recovery_work(bindings, worker_id):
                     attempt, row = _current(bindings, connection, worker_id, lease)
                     wrapper=bindings._wrapper(row)
                     transport=wrapper['transport']
-                    if (wrapper['command']['contractVersion']=='core_chat_collaboration_v6'
+                    if (wrapper['command']['contractVersion']in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
                         and not attempt['cancel_requested_at']
                         and transport.get('businessToolLeaseEpoch')!=lease.lease_epoch):
                         from app.hr.tool_service import HrToolService

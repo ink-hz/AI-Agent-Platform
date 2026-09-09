@@ -105,7 +105,7 @@ def claim_direct(repository, executor_id, lease_seconds):
                     "select worker_id,v5_observation from platform_control.execution_workers "
                     "where status='active' and 'hr-bot'=any(allowed_agent_ids) "
                     "and v5_observation->>'ready'='true' "
-                    "and (v5_observation->'service'->>'contractVersion')=case when %s then 'core_chat_collaboration_v6' else 'core_chat_collaboration_v5' end "
+                    "and (v5_observation->'service'->>'contractVersion')=any(case when %s then array['core_chat_collaboration_v6','core_chat_collaboration_v7'] else array['core_chat_collaboration_v5'] end) "
                     "and (v5_observation->>'expiresAt')::timestamptz>clock_timestamp() "
                     "order by worker_id limit 1 for share skip locked",
                     (bool(t.get('hr_input_context')),)

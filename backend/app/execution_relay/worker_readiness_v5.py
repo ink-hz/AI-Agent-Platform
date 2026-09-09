@@ -23,7 +23,7 @@ def probe_store(store):
         connection.execute("set local statement_timeout='1000ms'")
         connection.execute("set transaction read only")
         preflight(connection)
-        if os.environ.get('PLATFORM_WORKER_HR_V6_ENABLED')=='1':
+        if os.environ.get('PLATFORM_WORKER_HR_V6_ENABLED')=='1' or os.environ.get('PLATFORM_WORKER_HR_V7_ENABLED')=='1':
             connection.execute('select core_contract_version,business_grant_id,business_token_hash from execution_worker.v5_callback_runs limit 0')
         row = connection.execute(
             "select bool_and(has_table_privilege(current_user,'execution_worker.'||name,privilege)) as allowed "
@@ -117,7 +117,7 @@ class V5WorkerService:
         runtime, metabot = self.runtime, self.runtime.metabot
         origin = f"http://127.0.0.1:{runtime.callback_port}"
         value = {
-            "version": "hr_v6_readiness_v1" if os.environ.get("PLATFORM_WORKER_HR_V6_ENABLED")=="1" else "hr_v5_readiness_v1",
+            "version": "hr_v7_readiness_v1" if os.environ.get("PLATFORM_WORKER_HR_V7_ENABLED")=="1" else "hr_v6_readiness_v1" if os.environ.get("PLATFORM_WORKER_HR_V6_ENABLED")=="1" else "hr_v5_readiness_v1",
             "sampledAt": datetime.now(timezone.utc).isoformat(),
             "callbackOrigin": origin,
             "service": None,

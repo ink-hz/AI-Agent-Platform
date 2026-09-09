@@ -1,0 +1,518 @@
+{
+  "$defs": {
+    "CancelledEventPayloadV5": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "agent_runtime",
+          "title": "Source",
+          "type": "string"
+        },
+        "sourceRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Sourceref",
+          "type": "string"
+        },
+        "terminal": {
+          "const": "cancelled",
+          "title": "Terminal",
+          "type": "string"
+        },
+        "reasonCode": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Reasoncode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "sourceRef",
+        "terminal",
+        "reasonCode"
+      ],
+      "title": "CancelledEventPayloadV5",
+      "type": "object"
+    },
+    "ErrorEventPayloadV5": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "agent_runtime",
+          "title": "Source",
+          "type": "string"
+        },
+        "sourceRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Sourceref",
+          "type": "string"
+        },
+        "terminal": {
+          "const": "failed",
+          "title": "Terminal",
+          "type": "string"
+        },
+        "errorCode": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Errorcode",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "sourceRef",
+        "terminal",
+        "errorCode",
+        "message"
+      ],
+      "title": "ErrorEventPayloadV5",
+      "type": "object"
+    },
+    "ExecutionRecoveryV5": {
+      "additionalProperties": false,
+      "properties": {
+        "evidenceComplete": {
+          "title": "Evidencecomplete",
+          "type": "boolean"
+        },
+        "toolEffect": {
+          "enum": [
+            "unknown",
+            "read_only",
+            "write"
+          ],
+          "title": "Tooleffect",
+          "type": "string"
+        },
+        "hasOutput": {
+          "title": "Hasoutput",
+          "type": "boolean"
+        },
+        "executorStopped": {
+          "title": "Executorstopped",
+          "type": "boolean"
+        },
+        "executorStopProofRef": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Executorstopproofref"
+        },
+        "replayUsed": {
+          "title": "Replayused",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evidenceComplete",
+        "toolEffect",
+        "hasOutput",
+        "executorStopped",
+        "executorStopProofRef",
+        "replayUsed"
+      ],
+      "title": "ExecutionRecoveryV5",
+      "type": "object"
+    },
+    "FrozenArtifactIntentV5": {
+      "additionalProperties": false,
+      "properties": {
+        "taskId": {
+          "format": "uuid",
+          "title": "Taskid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "principalRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Principalref",
+          "type": "string"
+        },
+        "conversationId": {
+          "format": "uuid",
+          "title": "Conversationid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "index": {
+          "maximum": 19,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "title": "Sha256",
+          "type": "string"
+        },
+        "mimeType": {
+          "maxLength": 255,
+          "minLength": 3,
+          "title": "Mimetype",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 262144000,
+          "title": "Sizebytes",
+          "type": "integer"
+        },
+        "displayName": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Displayname",
+          "type": "string"
+        },
+        "opaqueSpoolRef": {
+          "maxLength": 256,
+          "minLength": 7,
+          "title": "Opaquespoolref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId",
+        "principalRef",
+        "conversationId",
+        "index",
+        "sha256",
+        "mimeType",
+        "sizeBytes",
+        "displayName",
+        "opaqueSpoolRef"
+      ],
+      "title": "FrozenArtifactIntentV5",
+      "type": "object"
+    },
+    "HrResultRef": {
+      "additionalProperties": false,
+      "properties": {
+        "resultId": {
+          "format": "uuid",
+          "title": "Resultid",
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "schemaId": {
+          "enum": [
+            "hr.analysis.v1",
+            "hr.standard-proposal.v1",
+            "hr.candidate-analysis.v1",
+            "hr.candidate-analysis.v2",
+            "hr.candidate-interview-plan.v1",
+            "hr.candidate-interview-record.v1",
+            "hr.candidate-outreach-draft.v1"
+          ],
+          "title": "Schemaid",
+          "type": "string"
+        },
+        "contentSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Contentsha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resultId",
+        "schemaId",
+        "contentSha256"
+      ],
+      "title": "HrResultRef",
+      "type": "object"
+    },
+    "InterruptedEventPayloadV5": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "agent_runtime",
+          "title": "Source",
+          "type": "string"
+        },
+        "sourceRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Sourceref",
+          "type": "string"
+        },
+        "terminal": {
+          "const": "interrupted",
+          "title": "Terminal",
+          "type": "string"
+        },
+        "reasonCode": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Reasoncode",
+          "type": "string"
+        },
+        "executionRecovery": {
+          "$ref": "#/$defs/ExecutionRecoveryV5"
+        }
+      },
+      "required": [
+        "source",
+        "sourceRef",
+        "terminal",
+        "reasonCode",
+        "executionRecovery"
+      ],
+      "title": "InterruptedEventPayloadV5",
+      "type": "object"
+    },
+    "RawProgressPayloadV5": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "provider",
+            "agent_sdk",
+            "agent_runtime"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "sourceRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Sourceref",
+          "type": "string"
+        },
+        "visibility": {
+          "const": "private",
+          "title": "Visibility",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "state",
+            "question",
+            "file",
+            "log",
+            "thinking_summary",
+            "work_update",
+            "agent_message",
+            "artifact"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "sourceRef",
+        "visibility",
+        "kind",
+        "text"
+      ],
+      "title": "RawProgressPayloadV5",
+      "type": "object"
+    },
+    "ResultEventPayloadV7": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "agent_runtime",
+          "title": "Source",
+          "type": "string"
+        },
+        "sourceRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Sourceref",
+          "type": "string"
+        },
+        "terminal": {
+          "const": "completed",
+          "title": "Terminal",
+          "type": "string"
+        },
+        "publicAnswerMarkdown": {
+          "maxLength": 131072,
+          "minLength": 1,
+          "title": "Publicanswermarkdown",
+          "type": "string"
+        },
+        "artifactIntents": {
+          "items": {
+            "$ref": "#/$defs/FrozenArtifactIntentV5"
+          },
+          "maxItems": 20,
+          "title": "Artifactintents",
+          "type": "array"
+        },
+        "executionRecovery": {
+          "$ref": "#/$defs/ExecutionRecoveryV5"
+        },
+        "resultRefs": {
+          "items": {
+            "$ref": "#/$defs/HrResultRef"
+          },
+          "maxItems": 20,
+          "title": "Resultrefs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source",
+        "sourceRef",
+        "terminal",
+        "publicAnswerMarkdown",
+        "artifactIntents",
+        "executionRecovery",
+        "resultRefs"
+      ],
+      "title": "ResultEventPayloadV7",
+      "type": "object"
+    },
+    "RunHeartbeatPayloadV5": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "executor",
+          "title": "Source",
+          "type": "string"
+        },
+        "executorRef": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Executorref",
+          "type": "string"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "title": "Observedat",
+          "type": "string"
+        },
+        "visibility": {
+          "const": "private",
+          "title": "Visibility",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "executorRef",
+        "observedAt",
+        "visibility"
+      ],
+      "title": "RunHeartbeatPayloadV5",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "core_chat_collaboration_v7",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "runId": {
+      "format": "uuid",
+      "title": "Runid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "commandId": {
+      "format": "uuid",
+      "title": "Commandid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "attemptId": {
+      "format": "uuid",
+      "title": "Attemptid",
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "leaseEpoch": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Leaseepoch",
+      "type": "integer"
+    },
+    "seq": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "type": {
+      "enum": [
+        "run_heartbeat",
+        "result",
+        "error",
+        "cancelled",
+        "interrupted",
+        "raw_progress"
+      ],
+      "title": "Type",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "payload": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunHeartbeatPayloadV5"
+        },
+        {
+          "$ref": "#/$defs/ResultEventPayloadV7"
+        },
+        {
+          "$ref": "#/$defs/ErrorEventPayloadV5"
+        },
+        {
+          "$ref": "#/$defs/CancelledEventPayloadV5"
+        },
+        {
+          "$ref": "#/$defs/InterruptedEventPayloadV5"
+        },
+        {
+          "$ref": "#/$defs/RawProgressPayloadV5"
+        }
+      ],
+      "title": "Payload"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "runId",
+    "commandId",
+    "attemptId",
+    "leaseEpoch",
+    "seq",
+    "type",
+    "createdAt",
+    "payload"
+  ],
+  "title": "CoreChatEventV7",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/hr-execution/v7/callback.schema.json"
+}
