@@ -1,0 +1,477 @@
+{
+  "date": "2026-09-09",
+  "documents": [
+    {
+      "original": "docs/superpowers/plans/2026-09-03-hr-agent-web-workspace.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-03-hr-agent-web-workspace.md",
+      "original_sha256": "feaa7322d06c90bcdb0cea3ebd14c3564d9cbff5709834a18fbb5a9040002303",
+      "archived_sha256": "b98eef96156849092444dc5fe062404e7572744b7b41872a9001f3b4280a6d75",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-03-metabot-hr-runtime-hardening.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-03-metabot-hr-runtime-hardening.md",
+      "original_sha256": "b2eda84be1c7dd8d03424d6350e2ef6239f6add1e6125c7134da0652e8a136b1",
+      "archived_sha256": "9d3e94e07153d2af7b325ad0f14be26ba425abe57d71458570764c0ad42f64e8",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-conversation-first-workspace-redesign.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-conversation-first-workspace-redesign.md",
+      "original_sha256": "6144400240634a9e6eda2b7579c3553042639b43c7b39a835dbfda697fc6aa57",
+      "archived_sha256": "65ea2b8a83db9cfac03da73955a972ad5cf7f4e408d111cfe279cc22ed9d9a24",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-p0-combined-acceptance.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-p0-combined-acceptance.md",
+      "original_sha256": "43cb08a8cec6c7a6b4468d0a90f9d292c66eefd8e2f9bf52c5bca501e3b5aa42",
+      "archived_sha256": "190e4435b2d4d7d0498adf03cf1bcc47c98571f566cd5a1641dcdaef66fbd813",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-p0-panorama-intelligence.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-p0-panorama-intelligence.md",
+      "original_sha256": "1de563cffda9ea58645fff4096c712d6b8654139d223d0d8911a0ca5452188b6",
+      "archived_sha256": "a58159ec44251320a2b120e75d947dfee61eaa142e424c89c09085cd0b86ef68",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-p0-recruiting-loop.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-p0-recruiting-loop.md",
+      "original_sha256": "f747368364299e5070c8ffd14f4c5f2c2d65ffc244df6cfad4b3b5dd3f745796",
+      "archived_sha256": "fb8511a85bbc5aa9de5f6a6589b17558cfc340c8dccd2ce3cb6b9ae1fbee142e",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-position-chat-first-layout.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-position-chat-first-layout.md",
+      "original_sha256": "5b1afaf2001a90cb39a332a116f1755d8f59007f045db97c3b0dcc05917fc1c7",
+      "archived_sha256": "395d202a289f22ea054e462f5a5bf7e2f68ab1b68fc1404de93fcb12845042ad",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-position-chat-surface-and-upload-recovery.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-position-chat-surface-and-upload-recovery.md",
+      "original_sha256": "fa171309ccbf5351364435f3dff30a159f573d3e54e2c3fa800b48e7e3f19e1f",
+      "archived_sha256": "b4531b12337fd4c8440ad43b06b75c72d92acc4a166bba7d084910ae043da32a",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-position-spine-r11.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-position-spine-r11.md",
+      "original_sha256": "cdf5369d7e7d5f0af1542e5d604fa7ced101d6dd8d8ceb4042c45cfe76a053df",
+      "archived_sha256": "72a5062ed4a8801bceb4c54d7976fb2a4f3a7e98da9d13dc349376ef3808bb3f",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-r12-candidate-intelligence.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-r12-candidate-intelligence.md",
+      "original_sha256": "f723c36c3597f6c9fb4552820c62503c9ee6bd8e4ed6ebafbde3b2f5773a1f47",
+      "archived_sha256": "4417270fdb76c97c6d40101933b689e3847362fc68e46865e913e0190f4ba15d",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-r12-integration.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-r12-integration.md",
+      "original_sha256": "9f3cecdbbd74aa93add325cacc3534ae1720d41e7373b95ba799ca33d73033de",
+      "archived_sha256": "860a0c7cf94e8fa2f2d3c29283ba763ad739dbbd4206342bae24746657ea16de",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-r12-position-context.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-r12-position-context.md",
+      "original_sha256": "aebce06ca3665cea41cbae4b06ce9aed522533faca363f341e4e10250ac56225",
+      "archived_sha256": "ed69cc18e4ef41557d7116fbbc3639bb1e9b8c00d233a379994ad249a7b6c46b",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-r12-workbench-resources.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-r12-workbench-resources.md",
+      "original_sha256": "074fe216ca3e7dbe290aa487061acff674dd70592ad2c68aab9feb95d088a3bc",
+      "archived_sha256": "41c9bd16c87d61edaf446adb4cb49d925d810e74ca56c6cc59393c71e4c9e8d0",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-task-result-projection.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-task-result-projection.md",
+      "original_sha256": "2cd97fc1de146a6c81ed0a5a2574fedf64d4fe2879d561be1e93feb261701366",
+      "archived_sha256": "9875ce2181260e692990a0e4093eefba551d25d70593a0d88ce60bff1c84b453",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-04-hr-workbench-p0-usability-fix.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-04-hr-workbench-p0-usability-fix.md",
+      "original_sha256": "33ef0591698ec5e680dba8dae43300627eea852210537c14b1a9be8bd9ae05b7",
+      "archived_sha256": "fc06d1681d083d17ba50a1693fba24baa53a0e108898bbbbd5bc1354d5c009fe",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-05-hr-core-usability-and-task-intelligence.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-05-hr-core-usability-and-task-intelligence.md",
+      "original_sha256": "988470443bffc73e61915579e8545a5da6563db3844dcce557cf871a7f710bf2",
+      "archived_sha256": "291b8680a0412813393dd4c569b2f93fa452fed0a40e46df46cd63b9fe4be8a2",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-05-hr-panorama-v2-delivery.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-05-hr-panorama-v2-delivery.md",
+      "original_sha256": "ef4781a03df16a09d4c1ee946b4f1f6caac316ee530fa6f5f40bafea62b9a75d",
+      "archived_sha256": "3570f4e5ab02a412175080325db8cf08a78be43c513492788799cf00cbd682d7",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-06-hr-agent-markdown-intelligence.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-06-hr-agent-markdown-intelligence.md",
+      "original_sha256": "2fa0cb20d0c864f62d5bbaaada5e4b82e5fb51e3c5ae1124581495f85cbc3447",
+      "archived_sha256": "acd1918146c9c61ede28ece52cebc61c7ce92f7d78f25af484b9d3aa46d04467",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-06-hr-local-intelligence-factory.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-06-hr-local-intelligence-factory.md",
+      "original_sha256": "467906b9de7795e0920e79d74d9f3582e50a8eebc9252d3c3b5b06b36dbfab29",
+      "archived_sha256": "4c1de8df3a0f5d9b79cb36880028bc2538d23377842effd353514df52720f590",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-06-hr-panorama-intelligence-v2.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-06-hr-panorama-intelligence-v2.md",
+      "original_sha256": "67d01ecaf568c08f4dc01359ec54bdc46dad001d296fcf8b37d247a7bdddf073",
+      "archived_sha256": "87dd5bbd1a233db359fe249672625b68b7f73d0f00f3ede6f9fee3ae048fff6d",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-06-hr-recruiting-intelligence-production-pipeline.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-06-hr-recruiting-intelligence-production-pipeline.md",
+      "original_sha256": "c3b1eb76d1d84d29c1258d2d8842ee755b06d4b35d05f7761634f080dc5c1465",
+      "archived_sha256": "09064d584ec5946b4bff82d18d2071078b6da764added4668147bcfb40c4cb71",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-07-hr-intelligence-direct-release.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-07-hr-intelligence-direct-release.md",
+      "original_sha256": "32e2c38c85af0a336a766d88845c01124ef0627b2ea2963eacc15d8bdcaef780",
+      "archived_sha256": "756f682a6eeaff4ba411debd30a8ebf301feebfc83cc3a694aaa705becf74cb7",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-07-hr-result-pipeline-refactor.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-07-hr-result-pipeline-refactor.md",
+      "original_sha256": "913179e35520464f6a53e17d989c65120057d2dafa51e85d3f5582f242cc0738",
+      "archived_sha256": "eb312852c18cd653a07b70e863bb0e3d8b4e0a1f45d63617216ffb04c37e2f8c",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-07-hr-unified-execution-metabot-tdd.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-07-hr-unified-execution-metabot-tdd.md",
+      "original_sha256": "6c9919183ec219a3a4a7c74a918a2d00214acf847e872c5f2efc78531e7eedca",
+      "archived_sha256": "3d1d4130d0efb350c4f1e3154d6962ed5a33c66123a4c9a533218a5e625975fa",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-07-hr-unified-execution-platform-tdd.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-07-hr-unified-execution-platform-tdd.md",
+      "original_sha256": "30d401a072806a7a363a8d31e890a01b09e1d83415a68152c3ad53ec8b11cf2a",
+      "archived_sha256": "3bcfe58d8a2b688536eb07697f98e0aac34dff40e85f87b2825ae49f6108f91e",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-07-hr-unified-execution-rollout-tdd.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-07-hr-unified-execution-rollout-tdd.md",
+      "original_sha256": "e5f112c7093aebafaf1fec89cd0b8dd8c8a69948680eb6ef70279f98bc462790",
+      "archived_sha256": "17b75292aaa4ebdac622bbe70f94d65a815724aaf38ad203d3c87e54c85eb31a",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-07-hr-unified-execution-tdd.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-07-hr-unified-execution-tdd.md",
+      "original_sha256": "91fb28dd88a4f29ac87d495410e3c4b8a1e5ad2fe42e1a6f2d1cb14835cd71d5",
+      "archived_sha256": "a80e4a5d4869eaf737031f3c5b46cb9c9280ab43c9f3d07e09f49cb1d251d621",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-08-hr-intelligence-company-consumption.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-08-hr-intelligence-company-consumption.md",
+      "original_sha256": "9265474b7a1ea06f6711a233fdc04b1477c6fe26149659dbc3df5998a9d2729f",
+      "archived_sha256": "77c7c83c5e03be24ac004a07298c7b1f73dce538bc95a1bf7416ac71ee80d49f",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "hr-cloud-loop-7de658e-snapshot"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-08-hr-minimum-reliable-web.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-08-hr-minimum-reliable-web.md",
+      "original_sha256": "a20bf10b54d3900b03139ba2e9a9d3620de7af485f3ea675cf0e094d56481089",
+      "archived_sha256": "fd6644a67be1c3b5569e6ffe9a3201864c965ffa713cb7aac233d96b129c24f7",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-08-hr-reference-knowledge-implementation.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-08-hr-reference-knowledge-implementation.md",
+      "original_sha256": "41ec8f9f20ebe50fa593edf283f7ca2084cc7682bd6ec63b2b5554cec405f6c6",
+      "archived_sha256": "7cee3f2e3a4544539446744147a010501af02dea7f9f39561369d2c84cee7150",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "hr-cloud-loop-7de658e-snapshot"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-08-hr-role-tools-unification.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-08-hr-role-tools-unification.md",
+      "original_sha256": "4595eb9ad46767a2b9cc4e897d2fc9b322278cc68af686446865b6b8d6523622",
+      "archived_sha256": "cec721c135b46723426fb35cd10de71d5dc8355fd02c18e89573441dfcb1e4c0",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-08-hr-topic-consumption.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-08-hr-topic-consumption.md",
+      "original_sha256": "dbab72e4f31c9f70e0c00e000935590536ff80920038005161a17d84f3b52e1f",
+      "archived_sha256": "cec0f93a875b91caba699b46bd0ac51c97d0c0d484002ca4491e2793ad19473b",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "hr-cloud-loop-7de658e-snapshot"
+    },
+    {
+      "original": "docs/superpowers/plans/2026-09-09-hr-deliverables-v7.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/plans/2026-09-09-hr-deliverables-v7.md",
+      "original_sha256": "3f351ae1f3e01546995ee9db561eda2483a15f2870cc98f839b1742c686da04b",
+      "archived_sha256": "c53a61fad9b84d1a267372e9ef4c6c7376f274885a2e2dbc0aced53b0fce51ea",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "hr-cloud-loop-7de658e-snapshot"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-03-hr-agent-web-workspace-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-03-hr-agent-web-workspace-design.md",
+      "original_sha256": "5cb9114267e6024ab79edf19e39087a1570a832476cd55e8394168befd9ccf40",
+      "archived_sha256": "6a59eedf09747c20d0c9f4f755929ccb343511cd1586cd9a5b6d4e793cc8369d",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-03-hr-position-lifecycle-workbench-requirements.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-03-hr-position-lifecycle-workbench-requirements.md",
+      "original_sha256": "6d44077ebbbf6f3eb8576a9a834b558be47a78de83c77a2b02eb021e3e16bb5a",
+      "archived_sha256": "2c9b1987cb0d6701ec05f79fd8ff807daec8b1c59063b12499970cbf264d5f0b",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-03-hr-recruiting-intelligence-handoff.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-03-hr-recruiting-intelligence-handoff.md",
+      "original_sha256": "9dff1f594290f8022e163e6813290ed6b2787f96096affc4f4aca28b341bb096",
+      "archived_sha256": "85d703a597ec5f7db90405be2749249345318efa042ce787b72da79b765ea1f9",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-03-hr-runtime-search-sync-hardening-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-03-hr-runtime-search-sync-hardening-design.md",
+      "original_sha256": "c48d2f64bb951e88e59e49c15d5ca759b020a53ace0f9e0c49e1f46d2a696e65",
+      "archived_sha256": "f89d494216796d8bbe69ad353d47e4af411f27cf6ae21cde7dfc2574f5113dc8",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-04-hr-chat-composer-usability-and-position-import-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-04-hr-chat-composer-usability-and-position-import-design.md",
+      "original_sha256": "ad9ead2961c574f84a4d9cc8876edc95f3446a41b5bbb4e59f259c981ced1f1e",
+      "archived_sha256": "3dd8db6d202b4037ba0a72f1922dbbb43e196f48160f7a2c36b3b2a5e92c79d6",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-04-hr-conversation-first-workspace-redesign.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-04-hr-conversation-first-workspace-redesign.md",
+      "original_sha256": "1d82347ed930c49307152089598ad5ec1af09d32100adc310a26c9c427c9441f",
+      "archived_sha256": "ca1525129e05c8e00c52cce152a657a180b994e92405993ff2a163ae4291922e",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-04-hr-p0-recruiting-closed-loop-and-panorama-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-04-hr-p0-recruiting-closed-loop-and-panorama-design.md",
+      "original_sha256": "5f5a4b8019c9a5a1f5ed71aa9a64d0cc22bc9ea181468a2a4b0b5f5579dfba6a",
+      "archived_sha256": "c3d91e70e753f68113ab3682fca700733ad0a08c4fb5fc28a67e949d8ef07209",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-04-hr-position-chat-first-layout-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-04-hr-position-chat-first-layout-design.md",
+      "original_sha256": "6620d439dcc1ced4911ae2ea0aa76bb3204948d9a7120a8098f7a9f8dc3a09b2",
+      "archived_sha256": "b7d1ca660418d0ca18ea6e583bf7bfcce706905693e560c61dc809f573c329b0",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-04-hr-position-chat-surface-and-upload-recovery-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-04-hr-position-chat-surface-and-upload-recovery-design.md",
+      "original_sha256": "e0e1d5dfed81649c4af28c5ba55ebe28dfab60f28fca26bd72d589dbc1eaac9d",
+      "archived_sha256": "3a1adac26e3d8d9cb5545630d80a997d70a8e8cba972704759f64c057051e971",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-04-hr-position-intelligence-release-1-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-04-hr-position-intelligence-release-1-design.md",
+      "original_sha256": "f4a731f41c4c1a9e186cb6d0c531b40bc6f3ec4316afc6ca4a48cb81f3b7ed8f",
+      "archived_sha256": "bdd44096414cc6757841d33d95d6f2324c7e7a33259f0013fc78ebb93404c430",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-04-hr-task-result-projection-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-04-hr-task-result-projection-design.md",
+      "original_sha256": "f27a8889e2b830da9ac8815fbcf031daa3c17f505b217d420679de3383715282",
+      "archived_sha256": "da794cb1379ce6b09766f5f44b869951ecb8ab726bfa69d8a6fafadabdc98da6",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-04-hr-usable-workbench-r12-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-04-hr-usable-workbench-r12-design.md",
+      "original_sha256": "465af704c44bf868307c9119675441a91afc87f2789541fb5876cb354c2a681f",
+      "archived_sha256": "7c67790b0803a7db5e0b3278c7b5cb49aab617c83624c688ff0d1beeb9d9c97e",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-05-hr-workspace-usability-and-panorama-v2-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-05-hr-workspace-usability-and-panorama-v2-design.md",
+      "original_sha256": "2529210fe5cff4f5d05f289986b7ad1ee73d550a335e9b18de801591e6d06e8f",
+      "archived_sha256": "4eba9fba0ca11b75628365bd8e599b2120407c4183830c682a292bd6ced94db7",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-06-hr-agent-markdown-intelligence-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-06-hr-agent-markdown-intelligence-design.md",
+      "original_sha256": "751670fb36e4e89c04fd440a94bd24addbb335202998f64c41bfc22b21bb7206",
+      "archived_sha256": "c70be31d25706a12e6756ab7783e02a5d9ecd81029766327821a203d018ccd41",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-06-hr-local-intelligence-factory-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-06-hr-local-intelligence-factory-design.md",
+      "original_sha256": "eccf4dcf42797325a713deb0e785aa4575078a8f49f7753f724f70b26d24cb51",
+      "archived_sha256": "1ec715f7386bafbd84979a9c15feafbab4c81670691f841f2333cc1556fe9717",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-06-hr-recruiting-intelligence-production-pipeline-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-06-hr-recruiting-intelligence-production-pipeline-design.md",
+      "original_sha256": "00d42d2445c1308bb85db198bbfc28c6f4cd33142a42f12fd19c1aed913f945e",
+      "archived_sha256": "a0d45c407151dd5b318fd080baedea270eb4d531cc599533ad30f4b9e405ecee",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-07-hr-intelligence-direct-release-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-07-hr-intelligence-direct-release-design.md",
+      "original_sha256": "dd902c2595adaa4b2fe3b4a2bb6f0fd9ca417abd503938183ab39560f90353f7",
+      "archived_sha256": "14337bca54c4fdd41ced0e30a31a960addd727568934ec42e496bbeb3c371472",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-07-hr-runtime-refactor-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-07-hr-runtime-refactor-design.md",
+      "original_sha256": "cb856798d8dc50218a35af89f9f005bf959d44d0895f77054e6990b398a4736c",
+      "archived_sha256": "47074bbd869089ae1f845298cefef54bf9be8867f68856fdac2dd5a1debf2e8e",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-07-hr-unified-execution-contract-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-07-hr-unified-execution-contract-design.md",
+      "original_sha256": "f34e1b96cdacc7b460ba7863116eecad63599a89f04120cf497ca341607147e6",
+      "archived_sha256": "47ae8a2cff3b7b49907ac9289aece2e5f8830c3bf181f025eee89f58463115c7",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-08-hr-intelligence-company-topic-experience-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-08-hr-intelligence-company-topic-experience-design.md",
+      "original_sha256": "053bc1957863b10ad27cc12103fb643133b5181a0342cb648e255f55a9fbbab5",
+      "archived_sha256": "918be0759684947d57a44bbd952adf0ddac966797eb7391c765a2b74f53cf038",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "hr-cloud-loop-7de658e-snapshot"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-08-hr-minimum-reliable-web-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-08-hr-minimum-reliable-web-design.md",
+      "original_sha256": "57e6383ddd3cdb7cb2096afc078c76342f7080cd0eebca89be004ad6c10e9bbf",
+      "archived_sha256": "ab1e33d9a908f8a1a252159763bc58239efa2644f294d023d4a9269c4f9bf6cc",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-08-hr-role-tools-unification-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-08-hr-role-tools-unification-design.md",
+      "original_sha256": "31fb65efe30e61c27b16a984bb90ed1b44338b2d3976de38869d343cfaaa4781",
+      "archived_sha256": "bbde4a18ff74163d07728ba6f094ba6b978e467990bbef7a410df09e8d2a44d5",
+      "status": "停止旧方向实施：原“最高设计约束”、持续实施与按未勾选项继续施工的表述不再适用于新 HR。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-08-hr-scenario-methodology-library-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-08-hr-scenario-methodology-library-design.md",
+      "original_sha256": "ed2bd8d16b9cdd9c0870a8e3eb3deb4aefbd30fa5fd9c4542b6e2720ad2952a1",
+      "archived_sha256": "fbfbc569079ce3d7b6d2debb8c3545243bbc7a948c8d3ed0f940ce4403fab747",
+      "status": "历史设计/计划：需求与证据可追溯，不按旧待办自动继续；新 HR 以根目录主文档为准。",
+      "source": "current-checkout"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-09-hr-agent-scenario-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-09-hr-agent-scenario-design.md",
+      "original_sha256": "480ebdcdf3498646b5cb02c82f001846d4a322c4cbbc21e371a86270988bd8e5",
+      "archived_sha256": "cc2e3943d37b837a9a7b05d998e2e29116a0e51c60346e63ec0aaef94f1005ad",
+      "status": "已被根目录两份主文档替代，仅作需求与旧实现快照。",
+      "source": "hr-cloud-loop-7de658e-snapshot"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-09-hr-agent-workbench-architecture.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-09-hr-agent-workbench-architecture.md",
+      "original_sha256": "2371c84a3cef85366349b10b9052d20d620dfa1981fdf0af7a7008411876666a",
+      "archived_sha256": "b406ceb550231a205a3cd204412f9aaeaef80b863b88cdb827a59e87f746d721",
+      "status": "已被根目录两份主文档替代，仅作需求与旧实现快照。",
+      "source": "hr-cloud-loop-7de658e-snapshot"
+    },
+    {
+      "original": "docs/superpowers/specs/2026-09-09-hr-cloud-loop-agent-design.md",
+      "archive": "docs/archive/hr/2026-09-09/docs/superpowers/specs/2026-09-09-hr-cloud-loop-agent-design.md",
+      "original_sha256": "b6677b72f18ecc6a52a88408125d626cce7b07986a91e47478452de561118a83",
+      "archived_sha256": "a9a8e33413daf9c1c1622ab6a056a6986bd0b48ac09d2442eb637b3dc3c31677",
+      "status": "已被根目录两份主文档替代，仅作需求与旧实现快照。",
+      "source": "hr-cloud-loop-7de658e-snapshot"
+    }
+  ]
+}

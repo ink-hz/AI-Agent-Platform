@@ -1,0 +1,16 @@
+{
+  "archived": 59,
+  "primary_documents": [
+    "HR总体架构设计.md",
+    "HR_Agent工作流.md"
+  ],
+  "legacy_runbooks_annotated": [
+    "docs/runbooks/2026-09-08-hr-web-core-handoff.md",
+    "docs/runbooks/2026-09-08-hr-role-tools-v6-cutover.md",
+    "docs/runbooks/2026-09-08-hr-position-task-current-implementation.md",
+    "docs/runbooks/hr-intelligence-bundle.md"
+  ],
+  "root_original_backup": "/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/hr-docs-before-a98ja87g",
+  "product_code_changed": false,
+  "production_queried": false
+}
