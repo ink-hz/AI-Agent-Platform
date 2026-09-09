@@ -73,6 +73,7 @@ function TopicWorkspaceContent({
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const denialLatched = useRef(false);
   const requests = useRef(new Set<AbortController>());
   const deny = (error: unknown) => {
@@ -80,6 +81,7 @@ function TopicWorkspaceContent({
     for (const request of requests.current) request.abort();
     requests.current.clear();
     setDenied(true);
+    setSessionExpired(error instanceof HrCompanyIntelligenceApiError && error.status === 401);
     setDirectory(null);
     setDetail(null);
     setLoading(false);
@@ -89,6 +91,7 @@ function TopicWorkspaceContent({
   const retry = () => {
     denialLatched.current = false;
     setDenied(false);
+    setSessionExpired(false);
     setRefresh((value) => value + 1);
   };
   useEffect(() => {
@@ -229,6 +232,7 @@ function TopicWorkspaceContent({
         {directoryError && (
           <p role="alert">
             {directoryError}
+            {sessionExpired && <a data-hr-login href={platformPath("/login?return_path=%2Fhr%2Fpanorama")}>重新登录</a>}
             <button type="button" onClick={retry}>
               重试
             </button>
