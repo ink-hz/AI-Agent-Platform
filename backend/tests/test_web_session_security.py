@@ -1231,3 +1231,14 @@ def test_directory_promotion_serializes_before_waiting_session_issue(
     assert not promotion.is_alive()
     assert not issuer.is_alive()
     assert result == [None]
+
+
+def test_hr_intelligence_reauthentication_return_path() -> None:
+    from app.control_plane.auth import validate_return_path
+
+    for prefix in ("/", "/_preview/dingtalk-r1/"):
+        path = prefix + "hr/panorama"
+        assert validate_return_path(path, route_prefix=prefix) == path
+    for suffix in ("?next=https://evil.test", "/../account", "#fragment", "/extra"):
+        with pytest.raises(ValueError):
+            validate_return_path("/hr/panorama" + suffix, route_prefix="/")

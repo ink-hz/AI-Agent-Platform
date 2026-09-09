@@ -60,6 +60,11 @@ function accountResponse(): Response {
 
 
 describe("login return path", () => {
+  it("returns to HR intelligence after reauthentication", () => {
+    expect(loginReturnPath('?return_path=%2Fhr%2Fpanorama')).toBe('/hr/panorama');
+    expect(loginReturnPath('?return_path=%2Fhr%2Fpanorama%3Fnext%3Dhttps%3A%2F%2Fevil.test')).toBe('/');
+  });
+
   it("accepts canonical workspace paths and rejects malformed variants", () => {
     expect(loginReturnPath("?return_path=%2Ffae%2Fconversations%2Fc-1")).toBe("/fae/conversations/c-1");
     expect(loginReturnPath("?return_path=%2Ffae%2Fmanage%2Freports%2Fr-1")).toBe("/fae/manage/reports/r-1");

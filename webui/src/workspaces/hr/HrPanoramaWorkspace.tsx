@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Account } from "../../auth";
+import { platformPath, type Account } from "../../auth";
 import {
   createHrCompanyIntelligenceApi,
   HrCompanyIntelligenceApiError,
@@ -71,6 +71,7 @@ export function HrPanoramaWorkspace({
   const [detailRetry, setDetailRetry] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const requests = useRef(new Set<AbortController>());
   const clearDeniedContent = (error: unknown) => {
     if (
@@ -86,6 +87,7 @@ export function HrPanoramaWorkspace({
     setLoading(false);
     setDetailLoading(false);
     setAccessDenied(true);
+    setSessionExpired(error.status === 401);
   };
   useEffect(() => {
     let controller: AbortController | null = null;
@@ -108,6 +110,7 @@ export function HrPanoramaWorkspace({
           if (!request.signal.aborted) {
             setDirectory(value);
             setAccessDenied(false);
+            setSessionExpired(false);
           }
         })
         .catch((error) => {
@@ -367,7 +370,14 @@ export function HrPanoramaWorkspace({
           </aside>
           <section className="hr-company-reading">
             {failure && (
-              <div className="hr-company-state is-error">{failure}</div>
+              <div className="hr-company-state is-error" role="alert">
+                <p>{failure}</p>
+                {sessionExpired && <a data-hr-login href={platformPath("/login?return_path=%2Fhr%2Fpanorama")}>重新登录</a>}
+                <button type="button" onClick={() => {
+                  window.dispatchEvent(new Event("platform:navigate"));
+                  setDetailRetry((value) => value + 1);
+                }}>重新读取</button>
+              </div>
             )}
             {detailLoading && (
               <div className="hr-company-state">正在读取公司情报…</div>

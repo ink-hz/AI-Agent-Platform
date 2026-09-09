@@ -136,6 +136,23 @@ describe("HrPanoramaWorkspace", () => {
     container.remove();
     vi.restoreAllMocks();
   });
+  it.each([401, 403])("recovers a denied company directory without a page reload (%s)", async (status) => {
+    const companies = vi.fn().mockRejectedValueOnce(new HrCompanyIntelligenceApiError(status))
+      .mockResolvedValue({ bundleId, generatedAt: detail.generatedAt, items: [summary] });
+    await act(async () => root.render(<HrPanoramaWorkspace account={account} api={fakeApi({ companies })} />));
+    await settle();
+    const login = container.querySelector<HTMLAnchorElement>('a[data-hr-login]');
+    if (status === 401) expect(login?.getAttribute('href')).toBe('/login?return_path=%2Fhr%2Fpanorama');
+    else expect(login).toBeNull();
+    expect(container.textContent).not.toContain('艾克米');
+    const retry = [...container.querySelectorAll('button')].find(item => item.textContent === '重新读取');
+    expect(retry).toBeDefined();
+    await act(async () => retry!.click());
+    await settle();
+    expect(container.textContent).toContain('艾克米');
+    expect(container.textContent).not.toContain('登录状态已失效');
+    expect(companies).toHaveBeenCalledTimes(2);
+  });
   it("shows company and topic roots without report history", async () => {
     await act(async () =>
       root.render(<HrPanoramaWorkspace account={account} api={fakeApi()} />),

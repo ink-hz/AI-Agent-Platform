@@ -356,6 +356,9 @@ describe("topic workspace", () => {
         status === 401 ? "登录状态已失效" : "当前账号无法查看",
       );
       expect(container.textContent).not.toContain("人才布局");
+      const login = container.querySelector<HTMLAnchorElement>('a[data-hr-login]');
+      if (status === 401) expect(login?.getAttribute('href')).toBe('/login?return_path=%2Fhr%2Fpanorama');
+      else expect(login).toBeNull();
     },
   );
   it("rejects oversized topic selection without truncating its caveats", async () => {
