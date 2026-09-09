@@ -552,3 +552,14 @@ it("distinguishes an empty candidate set from a local read failure", async () =>
   expect(container.textContent).toContain("候选人数据暂时无法读取");
   expect([...container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "重试")).toBe(true);
 });
+
+it('drafts a first interview without a confirmed standard and preserves the exact candidate', async () => {
+  const client = api(); const onDraft = vi.fn();
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={null} positionId={positionId} onDraft={onDraft} />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === '查看候选人1')!.click());
+  const button = [...container.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === '在对话中设计面试')!;
+  expect(button.disabled).toBe(false);
+  await act(async () => button.click());
+  expect(onDraft).toHaveBeenCalledWith(expect.stringContaining('候选人1'), [relationIds[0]], expect.any(Array));
+  expect(client.startTask).not.toHaveBeenCalled();
+});

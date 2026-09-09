@@ -13,6 +13,7 @@ import { WorkspaceErrorBoundary } from "../../shared/WorkspaceErrorBoundary";
 import { DirectAgentWorkspace, type DirectAgentDraftSnapshot } from "../direct/DirectAgentWorkspace";
 import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
 import { HrPositionDetailsDrawer, type HrPositionDetailsTab } from "./HrPositionDetailsDrawer";
+import { HrPositionActions } from "./HrPositionActions";
 import { HrPositionPicker } from "./HrPositionPicker";
 import { HrKnowledgePanel } from "./HrKnowledgePanel";
 import { HrPositionIndex } from "./HrPositionIndex";
@@ -84,6 +85,9 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
       intelligenceReferences={intelligenceReferences} onRemoveIntelligenceReference={removeIntelligence} onIntelligenceReferencesSubmitted={clearIntelligence}
       composerTools={()=><><HrInputResults items={inputResults} onRemove={id=>setInputResults(items=>items.filter(r=>r.resultId!==id))}/><HrPositionPicker api={api} selected={selectedPosition} disabled={props.account.hard_stale_read_only} existingConversation={Boolean(conversationId)} onSelect={choose}
         onOpenDetails={selectedPosition?()=>{setDrawerTab('position');setDrawerOpen(true);}:undefined}/>{position.materialsControl}
+        {selectedPosition&&<HrPositionActions title={selectedPosition.title} readOnly={props.account.hard_stale_read_only}
+          onDraft={text=>void fill({id:crypto.randomUUID(),text},selectedPosition.positionId)}
+          onCandidates={()=>{setDrawerTab('candidates');setDrawerOpen(true);}}/>}
         {candidateIds.length>0&&<button type="button" onClick={()=>{setCandidateIds([]);setCandidateAttachments([]);setInputResults([]);}}>已选 {candidateIds.length} 位候选人 ×</button>}
         </>}
       newConversationHeader={<section className="hr-conversation-welcome"><span>AI 招聘协作</span><h1>{selectedPosition?.title??'今天想推进哪项招聘工作？'}</h1><p>搜索选择岗位，直接提出要求。切换岗位只影响下一轮，同一段对话可以一直使用。</p></section>}
