@@ -169,7 +169,6 @@ def is_execution_worker_request(method: str, path: str) -> bool:
             "/api/v1/execution-worker/hr/v6/official-source",
             "/api/v1/execution-worker/hr/v6/official-verifications",
             "/api/v1/execution-worker/hr/v6/query",
-            "/api/v1/execution-worker/hr/v6/channel-messages",
             "/api/v1/execution-worker/hr/v6/results",
             "/api/v1/execution-worker/hr/v6/confirmations",
         }

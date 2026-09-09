@@ -437,14 +437,6 @@ class SignedCloudClient:
         except (httpx.HTTPError, ValueError, TypeError, CloudRelayError):
             raise CloudRelayError() from None
 
-    async def post_hr_channel(self, body):
-        path=f"{_API_PREFIX}/hr/v6/channel-messages"
-        if not 0<len(body)<=65536:raise CloudRelayError()
-        if not self._v5_can_send("control"):raise V5BudgetDeferred()
-        self._sent_requests.append((time.monotonic(),"control"))
-        return await self._client.request("POST",self._base_url+path,content=body,
-            headers={**self._signer.sign("POST",path,body),"Content-Type":"application/json"},timeout=20)
-
     async def post_hr_tool(self,path,body,grant_id,token):
         if path not in {f"{_API_PREFIX}/hr/v6/query",f"{_API_PREFIX}/hr/v6/results",f"{_API_PREFIX}/hr/v6/confirmations",f"{_API_PREFIX}/hr/v6/official-source",f"{_API_PREFIX}/hr/v6/official-verifications"} or not 0<len(body)<=1048576:
             raise CloudRelayError()
@@ -1265,11 +1257,6 @@ async def _handle_callback_connection(
             from .worker_readiness_v5 import challenge
 
             await challenge(runtime, headers, await asyncio.wait_for(reader.readexactly(length), 3), writer)
-            return
-        if target == "/hr/v6/channel-messages":
-            if not 0<length<=65536:raise ValueError
-            from .worker_hr_tools import channel_proxy
-            await channel_proxy(runtime,headers,await asyncio.wait_for(reader.readexactly(length),10),writer)
             return
         if target.startswith("/hr/v6/tools/"):
             parts=target.split("/")

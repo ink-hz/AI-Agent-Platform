@@ -1,5 +1,4 @@
 import { formatHrIntelligenceReferences, type HrIntelligenceReference } from './hrIntelligenceReference';
-import { HrChannelLink } from './HrChannelLink';
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Account } from "../../auth";
 import { PlatformLink } from "../../components/PlatformLink";
@@ -20,7 +19,6 @@ import { HrPositionIndex } from "./HrPositionIndex";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
 import { HrTurnResults, useHrConversationResults } from "./HrTurnResults";
 import { useHrChatPosition } from "./useHrChatPosition";
-const suggestions=[['校准需求','请结合官网 JD 和已有确认标准，梳理这个岗位真正要解决的问题、关键能力与待澄清项。'],['人才搜寻','请为当前岗位设计可执行的人才搜寻方向，说明目标背景、关键词、证据和未知项。'],['面试设计','请根据当前岗位要求设计面试问题与评分证据，并区分事实、判断和待验证假设。']] as const;
 function chatPath(id:string){return directConversationPath('hr-bot',id)??`/hr/conversations/${encodeURIComponent(id)}`;}
 export function HrWorkspacePage(props:{account:Account;conversationId?:string;positionId?:string;section?:HrPositionSection;freeChat?:boolean;positions?:boolean;panorama?:boolean;panoramaReportId?:string}){
   return <HrWorkspaceSession key={props.account.internal_user_id} {...props}/>;
@@ -84,7 +82,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
       composerTools={()=><><HrPositionPicker api={api} selected={selectedPosition} disabled={props.account.hard_stale_read_only} existingConversation={Boolean(conversationId)} onSelect={choose}
         onOpenDetails={selectedPosition?()=>{setDrawerTab('position');setDrawerOpen(true);}:undefined}/>{position.materialsControl}
         {candidateIds.length>0&&<button type="button" onClick={()=>{setCandidateIds([]);setCandidateAttachments([]);}}>已选 {candidateIds.length} 位候选人 ×</button>}
-        <HrChannelLink csrfToken={props.account.csrf_token} disabled={props.account.hard_stale_read_only}/><details className="hr-next-turn-options"><summary>招聘协作</summary><div>{suggestions.map(([label,text])=><button type="button" key={label} disabled={props.account.hard_stale_read_only} onClick={()=>setComposerDraft({id:crypto.randomUUID(),text})}>{label}</button>)}</div></details></>}
+        </>}
       newConversationHeader={<section className="hr-conversation-welcome"><span>AI 招聘协作</span><h1>{selectedPosition?.title??'今天想推进哪项招聘工作？'}</h1><p>搜索选择岗位，直接提出要求。切换岗位只影响下一轮，同一段对话可以一直使用。</p></section>}
       selectedKnowledgeResources={knowledge} onKnowledgeResourcesSubmitted={()=>setKnowledge([])} onRemoveKnowledgeResource={id=>setKnowledge(items=>items.filter(item=>item.id!==id))}
       renderTurnContext={turnId=><HrTurnResults turnId={turnId} data={results} readOnly={props.account.hard_stale_read_only} onDraft={(value,id)=>void fill(value,id)}/>}

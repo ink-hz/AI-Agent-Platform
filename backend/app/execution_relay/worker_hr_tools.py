@@ -55,16 +55,3 @@ async def proxy(runtime,run_id,callback_token,body,writer):
     await writer.drain()
     writer.close()
     await writer.wait_closed()
-
-
-async def channel_proxy(runtime,headers,body,writer):
-    status,payload=401,{'detail':'HR channel unauthorized'}
-    if runtime.enable_v5_callbacks and runtime.metabot is not None and runtime.metabot.authenticates_v5_machine(headers.get('authorization','')):
-        try:
-            response=await runtime.cloud.post_hr_channel(body)
-            status,payload=response.status_code,response.json()
-        except Exception:
-            status,payload=503,{'detail':'渠道接入暂时不可用，请在 HR 网页继续'}
-    raw=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode()
-    writer.write((f'HTTP/1.1 {status} Response\r\nContent-Type: application/json\r\nContent-Length: {len(raw)}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n').encode()+raw)
-    await writer.drain();writer.close();await writer.wait_closed()

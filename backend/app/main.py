@@ -911,10 +911,6 @@ def create_app(
             dsn_purpose="app",
         )
         agent_use_authorization = AgentUseAuthorization(control_database_url)
-    hr_channel_service = None
-    if config.hr_web_worker_enabled and conversation_command_service is not None:
-        from app.hr.channel_identity import HrChannelIdentityService, build_channel_user_router
-        hr_channel_service = HrChannelIdentityService(HrToolService(execution_relay_repository), conversation_command_service, agent_use_authorization)
     if config.execution_relay_enabled:
         execution_relay_router = build_execution_relay_router(
             execution_relay_repository,
@@ -922,7 +918,6 @@ def create_app(
             lease_seconds=config.execution_relay_lease_seconds,
             max_body_bytes=config.execution_relay_max_body_bytes,
             v5_bindings=DirectCommandBindingRepository(execution_relay_repository) if config.hr_web_worker_enabled else None,
-            hr_channel_service=hr_channel_service,
             hr_tool_service=HrToolService(execution_relay_repository) if config.hr_web_worker_enabled else None,
         )
     if config.direct_agent_enabled:
@@ -1558,8 +1553,6 @@ def create_app(
 
     if config.hr_web_worker_enabled and execution_relay_repository is not None and agent_use_authorization is not None:
         app.include_router(build_hr_result_router(HrToolService(execution_relay_repository), require_hr_access))
-    if hr_channel_service is not None:
-        app.include_router(build_channel_user_router(hr_channel_service, require_hr_access))
     if hr_position_service is not None and agent_use_authorization is not None:
         app.include_router(
             build_hr_position_router(hr_position_service, agent_use_authorization)

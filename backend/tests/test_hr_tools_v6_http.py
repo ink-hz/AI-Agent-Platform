@@ -42,14 +42,7 @@ def configure_tools(app, database_url):
             raise HTTPException(403,'HR use denied')
         return user
     app.include_router(build_hr_result_router(HrToolService(relay),access))
-    from app.hr.channel_identity import HrChannelIdentityService,attach_channel_worker_route,build_channel_user_router
-    from app.agent_brain.conversation_repository import ConversationRepository
-    from app.agent_brain.conversation_service import ConversationCommandService
-    channels=HrChannelIdentityService(HrToolService(relay),ConversationCommandService(ConversationRepository(database_url,content_codec=_codec(),worker_direct_enabled=True),v2_enabled=False),AgentUseAuthorization(database_url))
-    channel_router=APIRouter(prefix='/api/v1/execution-worker')
-    attach_channel_worker_route(channel_router,authenticate,channels)
-    app.include_router(channel_router)
-    app.include_router(build_channel_user_router(channels,access))
+
 
 
 class ToolLoop(WebLoop):
@@ -182,7 +175,7 @@ def test_signed_read_submit_replay_and_rejection(tool_loop):
     assert expired.status_code==401,expired.text
 
 
-def confirm_selected_standard(loop,signer,grant,service,lease,ids,*,channel=False):
+def confirm_selected_standard(loop,signer,grant,service,lease,ids):
     proposal={'tool':'hr.submit_result','operationId':str(uuid4()),'result':{
         'schemaId':'hr.standard-proposal.v1','title':'协作标准建议','baseContextVersionId':str(ids['context']),
         'changes':[{'changeId':'mission-1','module':'mission','markdown':'做好技术招聘协作'},
@@ -208,25 +201,11 @@ def confirm_selected_standard(loop,signer,grant,service,lease,ids,*,channel=Fals
     with psycopg.connect(loop.environment['admin']) as connection:
         connection.execute("update platform_control.turn_attempts set status='cancelled' where attempt_id=%s",(lease.attempt_id,))
         connection.execute("update platform_control.conversation_turns set status='cancelled' where turn_id=%s",(turn[0],))
-    if channel:
-        path='/api/v1/execution-worker/hr/v6/channel-messages'
-        message={'tenantId':'confirm-tenant','appId':'confirm-app','openId':'confirm-person','chatId':'confirm-private','messageId':'confirm-message','text':''}
-        def send_channel(text):
-            raw=json.dumps({**message,'text':text},ensure_ascii=False).encode()
-            return httpx.post(loop.origin+path,content=raw,headers={**signer.sign('POST',path,raw),'Content-Type':'application/json'},timeout=10)
-        link=loop.client.post('/api/v1/hr/channel-link')
-        assert link.status_code==200,link.text
-        assert send_channel(link.json()['command']).status_code==200
-        from app.hr.standard_consent import normalize_consent
-        next_turn=send_channel(normalize_consent(consent).channel_message_text())
-        assert next_turn.status_code==200,next_turn.text
-        assert send_channel(normalize_consent(consent).channel_message_text()).json()==next_turn.json()
-    else:
-        next_turn=loop.client.post(f'/api/v1/conversations/{loop.conversation_id}/messages',
-            json={'text':'确认所选的 1 项岗位标准。','standardConsent':consent,
-                  'scope':{'positionId':str(ids['position']),'positionCandidateIds':[],'attachmentIds':[]}},
-            headers={'Idempotency-Key':str(uuid4())})
-        assert next_turn.status_code in (200,201),next_turn.text
+    next_turn=loop.client.post(f'/api/v1/conversations/{loop.conversation_id}/messages',
+        json={'text':'确认所选的 1 项岗位标准。','standardConsent':consent,
+              'scope':{'positionId':str(ids['position']),'positionCandidateIds':[],'attachmentIds':[]}},
+        headers={'Idempotency-Key':str(uuid4())})
+    assert next_turn.status_code in (200,201),next_turn.text
     env=loop.environment
     attempts=TurnAttemptRepository(env['urls']['platform_control_app'],_codec())
     lease=attempts.claim_due(uuid4(),120)
@@ -313,47 +292,12 @@ def test_selected_candidate_document_uses_grants_without_conversation_rebinding(
         repository.consume_read(token_sha256=bearer_token_sha256(inputs[0]['bearerToken']),attachment_id=ids['attachment'])
 
 
-def test_channel_identity_and_idempotent_scoped_intake(tool_loop):
-    from app.agent_brain.conversation_repository import message_subject
-    from app.execution_relay.content_crypto import SealedContent
-    loop,signer,grant,service,lease,ids=tool_loop
-    path='/api/v1/execution-worker/hr/v6/channel-messages'
-    message={'tenantId':'fixture-tenant','appId':'fixture-app','openId':'fixture-person','chatId':'fixture-private','messageId':'fixture-message','text':'/标准 J11014'}
-    def send(value, signed=True):
-        raw=json.dumps(value,ensure_ascii=False).encode()
-        headers={'Content-Type':'application/json'}
-        if signed:headers.update(signer.sign('POST',path,raw))
-        return httpx.post(loop.origin+path,content=raw,headers=headers,timeout=10)
-    assert send(message,False).status_code==401
-    assert send(message).status_code==403
-    code=loop.client.post('/api/v1/hr/channel-link')
-    assert code.status_code==200,code.text
-    linked=send({**message,'text':code.json()['command']})
-    assert linked.status_code==200,linked.text
-    assert send({**message,'text':code.json()['command']}).status_code==200
-    assert send({**message,'openId':'other-person','text':code.json()['command']}).status_code==403
-    with psycopg.connect(loop.environment['admin']) as c:
-        c.execute("update platform_hr.positions set source_kind='official_site',official_job_id='J11014',official_status='active' where position_id=%s",(ids['position'],))
-        other=_seed_candidate_scope(loop.environment)
-        c.execute("update platform_hr.positions set source_kind='official_site',official_job_id='J11014',official_status='active' where position_id=%s",(other['position'],))
-    standard=send(message)
-    assert standard.status_code==200,standard.text
-    assert str(ids['context']) in standard.json()['text'] and str(other['context']) not in standard.json()['text']
-    assert send({**message,'text':'/标准 J99999'}).status_code==403
-    intake={**message,'messageId':'fixture-intake','text':'J11014 请基于已确认标准继续校准需求'}
-    accepted=send(intake)
-    assert accepted.status_code==200,accepted.text
-    assert send(intake).json()==accepted.json()
-    assert send({**intake,'text':'J11014 换一条输入'}).status_code==409
-    with service.repository._connection() as c:
-        row=c.execute('select m.* from platform_control.conversation_turns t join platform_control.conversation_messages m on m.message_id=t.user_message_id where t.turn_id=%s',(UUID(accepted.json()['turnId']),)).fetchone()
-        value=service.codec.unseal_json(message_subject(row['conversation_id'],row['message_id']),SealedContent(bytes(row['content_ciphertext']),row['encryption_key_version']))
-        assert value['text']==intake['text'] and value['trusted_channel_origin']['openId']=='fixture-person'
-        scope=c.execute('select hr_input_context from platform_control.conversation_turns where turn_id=%s',(UUID(accepted.json()['turnId']),)).fetchone()
-        assert scope['hr_input_context']['scope']['positionId']==str(ids['position'])
-    assert loop.client.delete('/api/v1/hr/channel-link').status_code==200
-    assert send(message).status_code==403
-
-
-def test_channel_confirmation_keeps_real_owner_and_partial_selection(tool_loop):
-    confirm_selected_standard(*tool_loop,channel=True)
+def test_feishu_link_endpoints_are_removed(tool_loop):
+    loop, signer, grant, service, lease, ids = tool_loop
+    assert loop.client.post('/api/v1/hr/channel-link').status_code == 403
+    assert loop.client.delete('/api/v1/hr/channel-link').status_code == 403
+    path = '/api/v1/execution-worker/hr/v6/channel-messages'
+    raw = json.dumps({'tenantId':'retired','appId':'retired','openId':'retired','chatId':'retired','messageId':'retired','text':'/关联 retired'}).encode()
+    response = httpx.post(loop.origin + path, content=raw,
+        headers={**signer.sign('POST', path, raw), 'Content-Type':'application/json'}, timeout=10)
+    assert response.status_code == 404
