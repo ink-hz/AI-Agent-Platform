@@ -9,6 +9,15 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
+# Project before materializing rows: producer request/evidence payloads can be
+# hundreds of MB. jsonb_array_elements would spill those discarded fields to
+# disk, and correlated topic lookups would repeat that work for every topic.
+_DISPLAY_ANALYSIS_SQL = (
+    "(select coalesce(jsonb_agg(to_jsonb(display_unit)),'[]'::jsonb) "
+    "from jsonb_to_recordset(original.analysis) "
+    "as display_unit(unit_id text,kind text,scope_key text,response jsonb)) analysis"
+)
+
 
 class PanoramaRepositoryError(RuntimeError):
     pass
@@ -125,6 +134,9 @@ class PanoramaRepository:
 
     def current_company_directory(self) -> Mapping[str, object] | None:
         query = (
+            "with source as materialized (select bundle_id,generated_at,source_catalog,source_coverage,"
+            + _DISPLAY_ANALYSIS_SQL
+            + " from platform_hr.read_current_intelligence_bundle_v85() original) "
             "select bundle_id,generated_at,(jsonb_array_length(coalesce(source_catalog->'topics','[]'::jsonb)) > 0) topics_available,"
             "jsonb_build_object('schema_version',source_catalog->'schema_version','companies',"
             "coalesce((select jsonb_agg(jsonb_build_object('company_key',company->'company_key',"
@@ -138,7 +150,7 @@ class PanoramaRepository:
             "coalesce((select jsonb_agg(jsonb_build_object('unit_id',unit->'unit_id','kind',unit->'kind',"
             "'scope_key',unit->'scope_key','response',jsonb_build_object('summary',unit->'response'->'summary'))) "
             "from jsonb_array_elements(analysis) unit where unit->>'kind'='company'),'[]'::jsonb) analysis "
-            "from platform_hr.read_current_intelligence_bundle_v85()"
+            "from source"
         )
         try:
             with self._connection() as connection:
@@ -160,8 +172,8 @@ class PanoramaRepository:
             "'unknowns',unit->'response'->'unknowns'"
         )
         query = (
-            "with requested as (select %s::text company_key), source as (select bundle_id,generated_at,"
-            "source_catalog,source_coverage,aggregates,analysis from " + source + ") "
+            "with requested as (select %s::text company_key), source as materialized (select bundle_id,generated_at,"
+            "source_catalog,source_coverage,aggregates," + _DISPLAY_ANALYSIS_SQL + " from " + source + " original) "
             "select bundle_id,generated_at,"
             "coalesce((select jsonb_agg(jsonb_build_object('topic_id',topic->'topic_id','title',topic->'title','summary',"
             "(select string_agg(unit->'response'->>'summary',chr(10)||chr(10) order by declared.ordinality) from jsonb_array_elements_text(topic->'unit_ids') with ordinality declared(unit_id,ordinality) join jsonb_array_elements(source.analysis) unit on unit->>'unit_id'=declared.unit_id))) "
@@ -209,7 +221,8 @@ class PanoramaRepository:
                 ("summary", "confidence", "facts", "inferences", "recommendations", "alternatives", "unknowns")) + ")"
         )
         query = (
-            "with requested as (select %s::text topic_id), source as (select bundle_id,generated_at,source_catalog,analysis from " + source + "), "
+            "with requested as (select %s::text topic_id), source as materialized (select bundle_id,generated_at,source_catalog,"
+            + _DISPLAY_ANALYSIS_SQL + " from " + source + " original), "
             "selected as (select source.*,coalesce((select jsonb_agg(topic) from jsonb_array_elements(coalesce(source_catalog->'topics','[]'::jsonb)) topic "
             "where requested.topic_id is null or topic->>'topic_id'=requested.topic_id),'[]'::jsonb) topics from source cross join requested) "
             "select bundle_id,generated_at,"
