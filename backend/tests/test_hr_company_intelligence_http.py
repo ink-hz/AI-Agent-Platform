@@ -11,6 +11,7 @@ import json
 import os
 import socket
 import threading
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic, sleep
@@ -52,6 +53,7 @@ from app.hr.intelligence_import import (
     DatabaseIntelligenceImportRepository,
     IntelligenceBundleImporter,
 )
+from app.hr.panorama_repository import PanoramaRepository
 from tests.helpers.hr_recruiting_objects import RecruitingObjects
 from tests.helpers.hr_web_loop import WebLoop, _codec
 
@@ -207,6 +209,42 @@ def _actual_app(web_loop, monkeypatch, tmp_path, root):
     )
 
 
+def _assert_read_queries_do_not_spill(database_url, bundle):
+    """Large producer inputs must not become intermediate display rows.
+
+    Inspect actual PostgreSQL I/O instead of asserting a machine-dependent
+    duration or a particular SQL spelling. Keep work_mem at production's 4 MB.
+    """
+    plans = []
+
+    @contextmanager
+    def connection_factory():
+        with psycopg.connect(database_url, row_factory=dict_row) as connection:
+            connection.execute("set transaction read only")
+            connection.execute("set local work_mem = '4MB'")
+
+            class MeasuredConnection:
+                def execute(self, query, parameters):
+                    plan = connection.execute(
+                        "explain (analyze, buffers, format json) " + query, parameters
+                    ).fetchone()["QUERY PLAN"][0]
+                    plans.append(plan)
+                    assert plan["Plan"].get("Temp Written Blocks", 0) == 0, plan
+                    return connection.execute(query, parameters)
+
+            yield MeasuredConnection()
+
+    repo = PanoramaRepository(connection=connection_factory)
+    repo.current_company_directory()
+    key = bundle.catalog["companies"][0]["company_key"]
+    repo.company_bundle(key)
+    repo.company_bundle(key, bundle_id=bundle.bundle_id)
+    repo.topic_bundle()
+    for topic in bundle.catalog.get("topics", []):
+        repo.topic_bundle(topic["topic_id"], bundle_id=bundle.bundle_id)
+    assert len(plans) >= 4
+
+
 def test_real_bundle_company_reading_and_selected_input(
     web_loop, monkeypatch, tmp_path
 ):
@@ -223,6 +261,9 @@ def test_real_bundle_company_reading_and_selected_input(
     assert (
         importer.import_bundle(bundle_path, owner_id=web_loop.owner_id)["bundle_id"]
         == bundle.bundle_id
+    )
+    _assert_read_queries_do_not_spill(
+        web_loop.environment["urls"]["platform_control_app"], bundle
     )
     app = _actual_app(web_loop, monkeypatch, tmp_path, bundle_path.parent.parent)
     listener = socket.socket()
