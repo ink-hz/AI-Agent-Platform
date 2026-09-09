@@ -1,0 +1,532 @@
+[
+  {
+    "name": "start_without_position",
+    "definition": "WorkInput",
+    "valid": true,
+    "value": {
+      "thread_id": null,
+      "text": "请梳理这份公开 JD 的任务与要求，保存待确认建议。",
+      "objects": [],
+      "references": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "budget_profile": "calibration-test"
+    }
+  },
+  {
+    "name": "accepted",
+    "definition": "WorkView",
+    "valid": true,
+    "value": {
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "thread_id": "00000000-0000-4000-8000-000000000006",
+      "input_revision": 1,
+      "state": "queued",
+      "answer_state": "none",
+      "result_refs": [],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "revision": 1,
+        "limits": {
+          "model_calls": 32,
+          "total_tokens": 600000,
+          "active_seconds": 900
+        },
+        "charged_calls": 0,
+        "charged_tokens": 0,
+        "active_seconds": 0,
+        "usage_quality": "reported",
+        "reserve": {
+          "model_calls": 2,
+          "total_tokens": 40000,
+          "active_seconds": 60
+        }
+      },
+      "last_event_seq": 1,
+      "phase": "research"
+    }
+  },
+  {
+    "name": "associate_and_continue",
+    "definition": "AppendInput",
+    "valid": true,
+    "value": {
+      "expected_input_revision": 1,
+      "text": "关联到这个岗位，形成两条待确认建议。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "references": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "question_id": null
+    }
+  },
+  {
+    "name": "discover_methods",
+    "definition": "ListResourcesInput",
+    "valid": true,
+    "value": {
+      "kinds": [
+        "method"
+      ]
+    }
+  },
+  {
+    "name": "read_page",
+    "definition": "ReadResourceInput",
+    "valid": true,
+    "value": {
+      "ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "offset": 0,
+      "limit": 8000
+    }
+  },
+  {
+    "name": "read_receipt",
+    "definition": "ReadResourceOutput",
+    "valid": true,
+    "value": {
+      "status": "ok",
+      "data": {
+        "ref": {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "text": "负责设备质量验证。",
+        "offset": 0,
+        "end": 9,
+        "total_characters": 9,
+        "next_offset": null,
+        "read_id": "00000000-0000-4000-8000-000000000007"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "empty_result_list",
+    "definition": "ListResourcesOutput",
+    "valid": true,
+    "value": {
+      "status": "empty",
+      "data": {
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "save_note",
+    "definition": "SaveNoteInput",
+    "valid": true,
+    "value": {
+      "body": "职责要求验证设备质量，但尚缺量产阶段信息。",
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "open_questions": [
+        "设备处于哪个阶段？"
+      ]
+    }
+  },
+  {
+    "name": "save_proposal",
+    "definition": "SaveResultInput",
+    "valid": true,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ]
+    }
+  },
+  {
+    "name": "confirm_two_changes",
+    "definition": "ConfirmInput",
+    "valid": true,
+    "value": {
+      "proposal_ref": {
+        "kind": "result",
+        "id": "00000000-0000-4000-8000-000000000011",
+        "revision": "00000000-0000-4000-8000-000000000012",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "selected_change_ids": [
+        "00000000-0000-4000-8000-000000000008",
+        "00000000-0000-4000-8000-000000000009"
+      ],
+      "expected_standard_revision": null
+    }
+  },
+  {
+    "name": "link_without_copy",
+    "definition": "LinkResultInput",
+    "valid": true,
+    "value": {
+      "expected_result_revision": "00000000-0000-4000-8000-000000000003",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extend_not_reset",
+    "definition": "ExtendBudgetInput",
+    "valid": true,
+    "value": {
+      "expected_budget_revision": 1,
+      "addition": {
+        "model_calls": 3,
+        "total_tokens": 60000,
+        "active_seconds": 120
+      },
+      "reason": "继续未读部分。"
+    }
+  },
+  {
+    "name": "cancel",
+    "definition": "CancelInput",
+    "valid": true,
+    "value": {
+      "reason": "结束这次工作。"
+    }
+  },
+  {
+    "name": "ask",
+    "definition": "AskUserInput",
+    "valid": true,
+    "value": {
+      "question": "设备目前处于哪个阶段？",
+      "options": [
+        "样机验证",
+        "量产导入"
+      ]
+    }
+  },
+  {
+    "name": "wrong_object",
+    "definition": "SaveResultOutput",
+    "valid": true,
+    "value": {
+      "status": "forbidden",
+      "data": null,
+      "error": {
+        "code": "scope_denied",
+        "message": "当前请求无法执行。",
+        "retryable": false,
+        "details": {}
+      }
+    }
+  },
+  {
+    "name": "old_content_removed",
+    "definition": "SaveResultOutput",
+    "valid": true,
+    "value": {
+      "status": "missing",
+      "data": null,
+      "error": {
+        "code": "reference_unavailable",
+        "message": "当前请求无法执行。",
+        "retryable": false,
+        "details": {}
+      }
+    }
+  },
+  {
+    "name": "baseline_changed",
+    "definition": "SaveResultOutput",
+    "valid": true,
+    "value": {
+      "status": "conflict",
+      "data": null,
+      "error": {
+        "code": "revision_conflict",
+        "message": "当前请求无法执行。",
+        "retryable": false,
+        "details": {}
+      }
+    }
+  },
+  {
+    "name": "owner_is_not_model_parameter",
+    "definition": "SaveNoteInput",
+    "valid": false,
+    "value": {
+      "body": "note",
+      "source_refs": [],
+      "open_questions": [],
+      "owner_id": "00000000-0000-4000-8000-000000000010"
+    }
+  },
+  {
+    "name": "reference_requires_hash",
+    "definition": "ReadResourceInput",
+    "valid": false,
+    "value": {
+      "ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "r1"
+      }
+    }
+  },
+  {
+    "name": "confirm_requires_selected_items",
+    "definition": "ConfirmInput",
+    "valid": false,
+    "value": {
+      "proposal_ref": {
+        "kind": "result",
+        "id": "00000000-0000-4000-8000-000000000011",
+        "revision": "00000000-0000-4000-8000-000000000012",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "selected_change_ids": [],
+      "expected_standard_revision": null
+    }
+  },
+  {
+    "name": "negative_budget",
+    "definition": "ExtendBudgetInput",
+    "valid": false,
+    "value": {
+      "expected_budget_revision": 1,
+      "addition": {
+        "model_calls": -1,
+        "total_tokens": 0,
+        "active_seconds": 0
+      },
+      "reason": "x"
+    }
+  },
+  {
+    "name": "unknown_tool_field",
+    "definition": "AskUserInput",
+    "valid": false,
+    "value": {
+      "question": "q",
+      "options": [],
+      "confirm_as_user": true
+    }
+  },
+  {
+    "name": "save_calibration",
+    "definition": "SaveResultInput",
+    "valid": true,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "role_calibration",
+      "title": "岗位理解",
+      "body": "先区分设备验证任务与量产责任。",
+      "objects": [],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [],
+      "base_standard_ref": null,
+      "changes": []
+    }
+  },
+  {
+    "name": "calibration_receipt",
+    "definition": "SaveResultOutput",
+    "valid": true,
+    "value": {
+      "status": "ok",
+      "data": {
+        "result_ref": {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "saved": true
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "proposal_receipt",
+    "definition": "SaveResultOutput",
+    "valid": true,
+    "value": {
+      "status": "ok",
+      "data": {
+        "result_ref": {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000011",
+          "revision": "00000000-0000-4000-8000-000000000012",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "saved": true
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "confirm_receipt",
+    "definition": "StandardView",
+    "valid": true,
+    "value": {
+      "ref": {
+        "kind": "standard",
+        "id": "00000000-0000-4000-8000-000000000004",
+        "revision": "00000000-0000-4000-8000-000000000013",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "position_id": "00000000-0000-4000-8000-000000000004",
+      "items": [
+        {
+          "item_id": "00000000-0000-4000-8000-000000000014",
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "item_id": "00000000-0000-4000-8000-000000000015",
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "confirmed_by": "00000000-0000-4000-8000-000000000016",
+      "confirmed_at": "2026-09-09T11:30:00Z",
+      "proposal_ref": {
+        "kind": "result",
+        "id": "00000000-0000-4000-8000-000000000011",
+        "revision": "00000000-0000-4000-8000-000000000012",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "selected_change_ids": [
+        "00000000-0000-4000-8000-000000000008",
+        "00000000-0000-4000-8000-000000000009"
+      ]
+    }
+  },
+  {
+    "name": "changed_baseline",
+    "definition": "Problem",
+    "valid": true,
+    "value": {
+      "code": "revision_conflict",
+      "message": "岗位标准已更新，请核对当前标准后确认。",
+      "retryable": false,
+      "details": {
+        "current_revision": "00000000-0000-4000-8000-000000000017"
+      }
+    }
+  },
+  {
+    "name": "thread_list",
+    "definition": "ThreadPage",
+    "valid": true,
+    "value": {
+      "items": [
+        {
+          "thread_id": "00000000-0000-4000-8000-000000000006",
+          "title": "公开岗位需求校准",
+          "updated_at": "2026-09-09T11:00:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "reopen_pending_question",
+    "definition": "MessagePage",
+    "valid": true,
+    "value": {
+      "items": [
+        {
+          "entry_id": "00000000-0000-4000-8000-000000000020",
+          "seq": 7,
+          "input_revision": 2,
+          "kind": "question",
+          "body": "设备目前处于哪个阶段？",
+          "options": [
+            "样机验证",
+            "量产导入"
+          ],
+          "question_id": "00000000-0000-4000-8000-000000000021",
+          "visibility": "available"
+        }
+      ],
+      "next_after": 7
+    }
+  }
+]
