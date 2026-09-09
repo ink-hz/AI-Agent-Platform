@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { HrR12Api } from "../../hrR12Api";
 import type { HrContextVersion } from "../../hrR12Types";
-import type { HrPositionDetail } from "../../hrTypes";
+import type { HrPosition } from "../../hrTypes";
 import { HrCandidateWorkspace } from "./HrCandidateWorkspace";
 import { HrPositionContextPanel } from "./HrPositionContextPanel";
 import { HrOfficialPositionPanel } from "./HrOfficialPositionPanel";
@@ -11,16 +11,16 @@ import { trapDialogFocus } from "./modalFocus";
 
 export type HrPositionDetailsTab = "position" | "candidates" | "resources";
 const TABS: ReadonlyArray<readonly [HrPositionDetailsTab, string]> = [
-  ["position", "岗位信息"],
+  ["position", "JD / JR"],
   ["candidates", "候选人"],
   ["resources", "材料与成果"],
 ];
 
-function sourceLabel(detail: HrPositionDetail): string {
+function sourceLabel(detail: HrPosition): string {
   return detail.sourceKind === "official_site" ? "官网同步" : "手动创建";
 }
 
-function statusLabel(detail: HrPositionDetail): string {
+function statusLabel(detail: HrPosition): string {
   if (detail.internalStatus === "archived") return "已归档";
   if (detail.officialStatus === "inactive") return "官网已下线";
   if (detail.officialStatus === "stale" || detail.officialStatus === "suspected_inactive") return "官网状态待核验";
@@ -35,7 +35,7 @@ export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, c
   api: HrR12Api;
   csrfToken: string;
   currentContextVersionId?: string | null;
-  detail: HrPositionDetail;
+  detail: HrPosition;
   initialTab?: HrPositionDetailsTab;
   open: boolean;
   readOnly: boolean;
@@ -121,7 +121,7 @@ export function HrPositionDetailsDrawer({ activeTab: controlledActiveTab, api, c
           <div><dt>状态</dt><dd>{statusLabel(detail)}</dd></div>
           {detail.officialJobId && <div><dt>官网岗位编号</dt><dd>{detail.officialJobId}</dd></div>}
         </dl></article>}
-        <HrPositionContextPanel api={api} heading="内部岗位理解" onConfirmed={onConfirmed} positionId={detail.positionId} readOnly={readOnly} refreshGeneration={contextRefreshGeneration} />
+        <HrPositionContextPanel api={api} heading="对话中已确认的岗位标准" onConfirmed={onConfirmed} positionId={detail.positionId} readOnly={readOnly} refreshGeneration={contextRefreshGeneration} />
       </section>}
       {visited.has("candidates") && <section aria-labelledby="hr-position-details-tab-candidates" hidden={activeTab !== "candidates"} id="hr-position-details-candidates" role="tabpanel"><HrCandidateWorkspace
         api={api} csrfToken={csrfToken} currentContextVersionId={currentContextVersionId}

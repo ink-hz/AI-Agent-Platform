@@ -209,6 +209,38 @@ describe("HrWorkspacePage", () => {
     vi.clearAllMocks();
   });
 
+  it("opens JD and JR immediately after selecting a position while ancillary data is pending", async () => {
+    history.replaceState({}, "", "/hr/");
+    const client = vi.mocked(createHrApi).getMockImplementation()!('csrf');
+    const r12 = vi.mocked(createHrR12Api).getMockImplementation()!('csrf');
+    const position = { positionId, sourceKind: 'official_site', officialJobId: 'J10001', title: '视觉算法工程师', department: '研发', locations: ['深圳'], officialStatus: 'active', internalStatus: 'active', sourceVersion: 'v1', rowVersion: 1, createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T00:00:00Z' };
+    vi.mocked(client.listPositions).mockResolvedValue({ items: [position], nextCursor: null } as never);
+    vi.mocked(client.position).mockReturnValue(new Promise(() => {}));
+    vi.mocked(r12.resources).mockReturnValue(new Promise(() => {}));
+    const official = { ...position, officialVersionId: '55555555-5555-4555-8555-555555555555', duty: '开发三维视觉算法', requirement: '具备视觉算法工程经验', headcount: 1, lastObservedAt: '2026-09-09T00:00:00Z', sourceChangedAt: '2026-09-09T00:00:00Z' };
+    Object.assign(r12, { officialVersions: vi.fn().mockResolvedValue([official]) });
+    await act(async () => root.render(<HrWorkspacePage account={account} />));
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, '正在讨论的要求');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      container.querySelector<HTMLButtonElement>('.hr-position-picker-trigger')!.click();
+    });
+    await act(async () => new Promise(resolve => setTimeout(resolve, 15)));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.hr-position-picker-option')].find(item => item.textContent?.includes('视觉算法工程师'))!.click());
+    const inspect = [...container.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === '查看 JD / JR');
+    expect(inspect).toBeDefined();
+    await act(async () => inspect!.click());
+    expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).not.toBeNull();
+    expect(container.textContent).toContain('开发三维视觉算法');
+    expect(container.textContent).toContain('具备视觉算法工程经验');
+    expect(container.textContent).toContain('对话中已确认的岗位标准');
+    expect(container.textContent).toContain('尚无已确认标准');
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭岗位资料"]')!.click());
+    expect(textarea.value).toBe('正在讨论的要求');
+    expect(location.pathname).toBe('/hr/');
+    expect(startConversation).not.toHaveBeenCalled();
+  });
   it("opens a conversation-first HR workspace at the canonical root", async () => {
     await act(async () => root.render(<HrWorkspacePage account={account} />));
 

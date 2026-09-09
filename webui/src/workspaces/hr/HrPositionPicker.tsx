@@ -73,7 +73,7 @@ export function HrPositionPicker({ api, selected, disabled = false, existingConv
       aria-expanded={open && !disabled} aria-controls={panelId} aria-haspopup="dialog" onClick={() => setOpen((value) => !value)}>
       <BriefcaseBusiness size={16} aria-hidden="true" /><span>{selected?.title ?? (existingConversation ? "选择本轮岗位" : "选择岗位")}</span><ChevronDown size={14} aria-hidden="true" />
     </button>
-    {selected && onOpenDetails && <button className="hr-position-picker-details" type="button" onClick={onOpenDetails}>岗位资料</button>}
+    {selected && onOpenDetails && <button className="hr-position-picker-details" type="button" onClick={onOpenDetails}>查看 JD / JR</button>}
     {open && !disabled && <section id={panelId} className="hr-position-picker-popover" role="dialog" aria-label="选择招聘岗位">
       <header><strong>{selected ? "切换岗位" : "选择岗位"}</strong><button type="button" aria-label="关闭岗位选择" onClick={() => { setOpen(false); trigger.current?.focus(); }}><X size={16} /></button></header>
       <label className="hr-position-picker-search"><Search size={16} aria-hidden="true" /><input autoFocus type="search" aria-label="搜索岗位" placeholder="搜索名称、编号、部门或地点" value={query} onChange={(event) => setQuery(event.target.value)} /></label>

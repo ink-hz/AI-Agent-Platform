@@ -82,7 +82,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
       composerDraft={composerDraft}
       intelligenceReferences={intelligenceReferences} onRemoveIntelligenceReference={removeIntelligence} onIntelligenceReferencesSubmitted={clearIntelligence}
       composerTools={()=><><HrPositionPicker api={api} selected={selectedPosition} disabled={props.account.hard_stale_read_only} existingConversation={Boolean(conversationId)} onSelect={choose}
-        onOpenDetails={position.detail?()=>{setDrawerTab('position');setDrawerOpen(true);}:undefined}/>{position.materialsControl}
+        onOpenDetails={selectedPosition?()=>{setDrawerTab('position');setDrawerOpen(true);}:undefined}/>{position.materialsControl}
         {candidateIds.length>0&&<button type="button" onClick={()=>{setCandidateIds([]);setCandidateAttachments([]);}}>已选 {candidateIds.length} 位候选人 ×</button>}
         <HrChannelLink csrfToken={props.account.csrf_token} disabled={props.account.hard_stale_read_only}/><details className="hr-next-turn-options"><summary>招聘协作</summary><div>{suggestions.map(([label,text])=><button type="button" key={label} disabled={props.account.hard_stale_read_only} onClick={()=>setComposerDraft({id:crypto.randomUUID(),text})}>{label}</button>)}</div></details></>}
       newConversationHeader={<section className="hr-conversation-welcome"><span>AI 招聘协作</span><h1>{selectedPosition?.title??'今天想推进哪项招聘工作？'}</h1><p>搜索选择岗位，直接提出要求。切换岗位只影响下一轮，同一段对话可以一直使用。</p></section>}
@@ -92,7 +92,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
     {props.positionId?<main className="hr-position-state"><h1>岗位工作页已合并到主对话</h1><p>在输入框旁搜索岗位即可继续，已有消息与材料保留。</p><PlatformLink href={props.conversationId?chatPath(props.conversationId):chatHref}>返回对话</PlatformLink></main>
       :props.positions?<HrPositionIndex account={props.account} onSelect={value=>{choose(value);navigate(chatHref);}}/>:null}
     {panoramaVisited.current&&<div className="hr-workspace-panorama-panel" hidden={!panoramaActive} aria-hidden={!panoramaActive?"true":undefined}><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligence}/>{intelligenceError&&<p role="alert">{intelligenceError}</p>}</WorkspaceErrorBoundary></div>}
-    {position.detail&&<HrPositionDetailsDrawer api={r12} csrfToken={props.account.csrf_token} detail={position.detail} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
+    {selectedPosition&&<HrPositionDetailsDrawer key={selectedPosition.positionId} api={r12} csrfToken={props.account.csrf_token} detail={position.detail??selectedPosition} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}
       activeTab={drawerTab} onActiveTabChange={setDrawerTab} onConfirmed={position.confirmContext}
       onCandidateDraft={(text,ids,attachments)=>{setCandidateIds(ids);setCandidateAttachments(attachments);setComposerDraft({id:crypto.randomUUID(),text});setDrawerOpen(false);}}/>}

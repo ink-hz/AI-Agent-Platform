@@ -87,8 +87,8 @@ export function HrOfficialPositionPanel({ api, positionId, currentSourceVersion,
         <div><dt>用工类型</dt><dd>{display(selected.employmentType)}</dd></div>
         <div><dt>薪资</dt><dd>{display(selected.salary)}</dd></div>
       </dl>
-      <section><h4>岗位职责</h4><p>{display(selected.duty)}</p></section>
-      <section><h4>任职要求</h4><p>{display(selected.requirement)}</p></section>
+      <section><h4>JD · 岗位职责</h4><p>{display(selected.duty)}</p></section>
+      <section><h4>JR · 任职要求</h4><p>{display(selected.requirement)}</p></section>
       <footer>官网更新时间：{displayDate(selected.sourceChangedAt)} · 平台采集：{displayDate(selected.lastObservedAt)} · 来源版本：{selected.sourceVersion}</footer>
     </article>}
   </section>;

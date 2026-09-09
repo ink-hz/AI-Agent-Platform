@@ -3,7 +3,7 @@ import type { HrR12Api } from "../../hrR12Api";
 import type { HrContextVersion } from "../../hrR12Types";
 import { MessageMarkdown } from "../../components/MessageMarkdown";
 
-const LABELS: Record<string,string> = { mission:"岗位使命", jd:"JD", jr:"任职要求", competencies:"能力要求", profile:"人才画像", talent_profile:"人才画像", sourcing:"搜寻策略", sourcing_strategy:"搜寻策略", interview_standard:"面试标准", unknowns:"待澄清事项" };
+const LABELS: Record<string,string> = { mission:"岗位使命", jd:"JD · 岗位职责", jr:"JR · 任职要求", competencies:"能力要求", profile:"人才画像", talent_profile:"人才画像", sourcing:"搜寻策略", sourcing_strategy:"搜寻策略", interview_standard:"面试标准", unknowns:"待澄清事项" };
 function text(value: Record<string,unknown>) {
   const valueText=[value.markdown,value.visible_markdown,value.summary,value.text].find(item=>typeof item==='string');
   return typeof valueText==='string'?valueText:JSON.stringify(value,null,2);
