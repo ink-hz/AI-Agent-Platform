@@ -15,7 +15,7 @@ import pytest
 
 
 @contextmanager
-def provider_server(chunks: list[bytes], *, status: int = 200, delay: float = 0):
+def provider_server(chunks: list[bytes], *, status: int = 200, delay: float = 0, require_anthropic: bool = False):
     requests: list[dict[str, object]] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -28,14 +28,24 @@ def provider_server(chunks: list[bytes], *, status: int = 200, delay: float = 0)
                     "body": json.loads(self.rfile.read(length)),
                 }
             )
+            if require_anthropic:
+                body=requests[-1]['body']
+                if any(m.get('role') not in {'user','assistant'} for m in body.get('messages',[])):
+                    self.send_response(400);self.end_headers();return
+                for message in body.get('messages',[]):
+                    if not isinstance(message.get('content'),list):
+                        self.send_response(400);self.end_headers();return
             self.send_response(status)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             for chunk in chunks:
                 if delay:
                     time.sleep(delay)
-                self.wfile.write(chunk)
-                self.wfile.flush()
+                try:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                except (BrokenPipeError,ConnectionResetError):
+                    return
 
         def log_message(self, format: str, *args: object) -> None:
             return
@@ -430,3 +440,59 @@ def test_diagnostics_disabled_untrusted_expired_and_deleted_are_unreadable(
     store.delete(trusted, record.diagnostic_id)
     with pytest.raises(DiagnosticAccessError):
         store.read(trusted, record.diagnostic_id, now=now)
+
+
+def test_anthropic_request_uses_native_system_tool_pairs(tmp_path):
+    from dataclasses import replace
+    from app.hr_agent.model import ConfiguredHttpModelPort, collect_reply
+    credential=tmp_path/'credential';write_credential(credential)
+    chunks=[b'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',b'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":2,"output_tokens":1}}\n\n',b'data: {"type":"message_stop"}\n\n']
+    messages=(
+        {'role':'system','content':'trusted system'},
+        {'role':'user','content':'first'},
+        {'role':'user','content':'second'},
+        {'role':'assistant','content':'reading','tool_calls':[{'id':'call1','type':'function','function':{'name':'read_resource','arguments':'{"offset":0}'}},{'id':'call2','type':'function','function':{'name':'list_resources','arguments':{'kind':'method'}}}]},
+        {'role':'tool','tool_call_id':'call1','content':'{"text":"fake"}'},
+        {'role':'tool','tool_call_id':'call2','content':'{"items":[]}'},
+        {'role':'user','content':'continue'},
+    )
+    with provider_server(chunks,require_anthropic=True) as (endpoint,seen):
+        profile=replace(openai_profile(endpoint,credential),protocol='anthropic_messages_sse')
+        reply=collect_reply(ConfiguredHttpModelPort(profile).stream(replace(request(),messages=messages)))
+    assert reply.text=='ok' and len(seen)==1
+    wire=seen[0]['body']
+    assert wire['system']==[{'type':'text','text':'trusted system'}]
+    assert [m['role'] for m in wire['messages']]==['user','assistant','user']
+    assert wire['messages'][0]['content']==[{'type':'text','text':'first'},{'type':'text','text':'second'}]
+    assert wire['messages'][1]['content'][1:]==[{'type':'tool_use','id':'call1','name':'read_resource','input':{'offset':0}},{'type':'tool_use','id':'call2','name':'list_resources','input':{'kind':'method'}}]
+    assert wire['messages'][2]['content']==[{'type':'tool_result','tool_use_id':'call1','content':'{"text":"fake"}'},{'type':'tool_result','tool_use_id':'call2','content':'{"items":[]}'},{'type':'text','text':'continue'}]
+
+
+def test_absolute_deadline_expires_during_partial_sse_line(tmp_path):
+    from app.hr_agent.model import ConfiguredHttpModelPort,ModelTransportError
+    credential=tmp_path/'credential';write_credential(credential)
+    chunks=[b'data: ']+[b' ']*15+[b'{}\n\n']
+    with provider_server(chunks,delay=0.035) as (endpoint,seen):
+        started=time.monotonic()
+        with pytest.raises(ModelTransportError,match='transport_error'):
+            list(ConfiguredHttpModelPort(openai_profile(endpoint,credential)).stream(request(deadline_seconds=0.14)))
+        elapsed=time.monotonic()-started
+        assert elapsed<0.32
+        assert not any(t.name=='hr-model-http' for t in threading.enumerate())
+    assert len(seen)==1
+
+
+@pytest.mark.parametrize('messages',[
+    ({'role':'user','content':'start'},{'role':'tool','tool_call_id':'orphan','content':'x'}),
+    ({'role':'user','content':'start'},{'role':'assistant','content':None,'tool_calls':[{'id':'a','type':'function','function':{'name':'read_resource','arguments':'{'}}]}),
+    ({'role':'user','content':'start'},{'role':'assistant','content':None,'tool_calls':[{'id':'a','type':'function','function':{'name':'read_resource','arguments':{}}}]}),
+])
+def test_anthropic_invalid_tool_pairs_never_send_http(tmp_path,messages):
+    from dataclasses import replace
+    from app.hr_agent.model import ConfiguredHttpModelPort, ModelProtocolError
+    credential=tmp_path/'credential';write_credential(credential)
+    with provider_server([]) as (endpoint,seen):
+        profile=replace(openai_profile(endpoint,credential),protocol='anthropic_messages_sse')
+        with pytest.raises(ModelProtocolError,match='invalid_response'):
+            list(ConfiguredHttpModelPort(profile).stream(replace(request(),messages=messages)))
+    assert seen==[]

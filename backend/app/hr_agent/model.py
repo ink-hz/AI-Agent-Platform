@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import asyncio
+import queue
+import threading
 import stat
 import time
 from collections.abc import Iterable, Iterator
@@ -134,26 +137,11 @@ class ConfiguredHttpModelPort:
         credential = _credential(self._profile.credential_file)
         headers, body = self._wire_request(request, credential)
         deadline_at = time.monotonic() + timeout
+        lines = _http_lines(self._profile.endpoint, headers, body, deadline_at)
         try:
-            with (
-                httpx.Client(
-                    timeout=httpx.Timeout(timeout), follow_redirects=False
-                ) as client,
-                client.stream(
-                    "POST", self._profile.endpoint, headers=headers, json=body
-                ) as response,
-            ):
-                if response.status_code == 429:
-                    raise ModelTransportError("rate_limited")
-                if response.status_code in {401, 403}:
-                    raise ModelTransportError("provider_refused")
-                if response.status_code < 200 or response.status_code >= 300:
-                    raise ModelTransportError("transport_error")
-                yield from self._normalize(response.iter_lines(), deadline_at)
-        except ModelError:
-            raise
-        except (httpx.HTTPError, OSError, UnicodeError):
-            raise ModelTransportError("transport_error") from None
+            yield from self._normalize(lines, deadline_at)
+        finally:
+            lines.close()
 
     def _wire_request(
         self, request: ModelRequest, credential: str
@@ -175,6 +163,7 @@ class ConfiguredHttpModelPort:
                     "stream_options": {"include_usage": True},
                 },
             )
+        system, messages = _anthropic_messages(messages)
         return (
             {
                 "x-api-key": credential,
@@ -184,6 +173,7 @@ class ConfiguredHttpModelPort:
             {
                 "model": self._profile.model,
                 "messages": messages,
+                "system": system,
                 "tools": [_anthropic_tool(tool) for tool in tools],
                 "max_tokens": request.max_output_tokens,
                 "stream": True,
@@ -198,6 +188,113 @@ class ConfiguredHttpModelPort:
             yield from _openai_events(bounded)
         else:
             yield from _anthropic_events(bounded)
+
+
+def _http_lines(endpoint, headers, body, deadline_at):
+    """Cancel the whole request at one deadline, including partial SSE lines.
+
+    Async socket cancellation runs in an owned thread so the public model port
+    remains an iterator usable by the independent synchronous Worker.
+    """
+    output = queue.SimpleQueue()
+    state = {}
+
+    async def fetch():
+        state['loop'] = asyncio.get_running_loop()
+        state['task'] = asyncio.current_task()
+        try:
+            remaining = deadline_at - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError()
+            async with asyncio.timeout(remaining):
+                async with httpx.AsyncClient(timeout=httpx.Timeout(remaining), follow_redirects=False) as client:
+                    async with client.stream('POST', endpoint, headers=headers, json=body) as response:
+                        if response.status_code == 429:
+                            raise ModelTransportError('rate_limited')
+                        if response.status_code in {401,403}:
+                            raise ModelTransportError('provider_refused')
+                        if not 200 <= response.status_code < 300:
+                            raise ModelTransportError('transport_error')
+                        async for line in response.aiter_lines():
+                            output.put(('line',line))
+        except ModelError as error:
+            output.put(('error',error))
+        except (TimeoutError,httpx.HTTPError,OSError,UnicodeError):
+            output.put(('error',ModelTransportError('transport_error')))
+        except asyncio.CancelledError:
+            pass
+        finally:
+            output.put(('done',None))
+
+    thread = threading.Thread(target=lambda: asyncio.run(fetch()), name='hr-model-http', daemon=True)
+    thread.start()
+    try:
+        while True:
+            remaining = deadline_at-time.monotonic()
+            if remaining <= 0:
+                raise ModelTransportError('transport_error')
+            try:
+                kind,value = output.get(timeout=remaining)
+            except queue.Empty:
+                raise ModelTransportError('transport_error') from None
+            if kind == 'error':
+                raise value
+            if kind == 'done':
+                return
+            yield value
+    finally:
+        loop,task=state.get('loop'),state.get('task')
+        if thread.is_alive() and loop is not None and task is not None:
+            try:loop.call_soon_threadsafe(task.cancel)
+            except RuntimeError:pass # Loop already closed after complete response.
+        thread.join(timeout=0.1)
+
+
+def _anthropic_messages(messages):
+    """Convert canonical text/tool messages without dropping tool identities."""
+    system=[]
+    converted=[]
+    pending=set()
+    seen=set()
+    try:
+        for message in messages:
+            role=message['role']
+            content=message.get('content')
+            if role == 'system':
+                if converted or not isinstance(content,str):raise ValueError()
+                if content:system.append({'type':'text','text':content})
+                continue
+            blocks=[]
+            if role == 'tool':
+                identity=message['tool_call_id']
+                if identity not in pending or not isinstance(content,str):raise ValueError()
+                pending.remove(identity)
+                blocks=[{'type':'tool_result','tool_use_id':identity,'content':content}]
+                role='user'
+            elif role in {'user','assistant'}:
+                if pending:raise ValueError()
+                if content is not None and not isinstance(content,str):raise ValueError()
+                if content:blocks.append({'type':'text','text':content})
+                calls=message.get('tool_calls',[])
+                if not isinstance(calls,list) or (calls and role!='assistant'):raise ValueError()
+                for call in calls:
+                    if call.get('type')!='function':raise ValueError()
+                    identity=call['id'];function=call['function']
+                    if not isinstance(identity,str) or not identity or identity in seen:raise ValueError()
+                    name=function['name'];arguments=function['arguments']
+                    if isinstance(arguments,str):arguments=json.loads(arguments)
+                    if not isinstance(arguments,dict) or not isinstance(name,str) or not name:raise ValueError()
+                    blocks.append({'type':'tool_use','id':identity,'name':name,'input':arguments})
+                    pending.add(identity);seen.add(identity)
+            else:raise ValueError()
+            if not blocks:raise ValueError()
+            if converted and converted[-1]['role']==role:
+                converted[-1]['content'].extend(blocks)
+            else:converted.append({'role':role,'content':blocks})
+        if pending or not converted:raise ValueError()
+        return system,converted
+    except (KeyError,TypeError,ValueError,AttributeError):
+        raise ModelProtocolError('invalid_response') from None
 
 
 def _deadline_lines(lines: Iterable[str], deadline_at: float) -> Iterator[str]:
