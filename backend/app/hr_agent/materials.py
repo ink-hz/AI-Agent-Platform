@@ -1,10 +1,8 @@
 """Private immutable UTF-8 material views over the real attachment store."""
 
 import hashlib
-import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import UUID
 
 from psycopg.rows import dict_row
@@ -28,6 +26,53 @@ class MaterialAsset:
     size_bytes: int
     sha256: bytes = field(repr=False)
     derivative_kind: str | None = None
+
+
+def _material_bytes(store, asset):
+    """Read bounded A1 text in memory; a killed worker leaves no plaintext file."""
+    from time import monotonic
+
+    from app.attachments.conversation_models import MAX_FILE_BYTES
+    from app.attachments.download_service import S3ImmutableAttachmentStore
+
+    if not 0 <= asset.size_bytes <= MAX_FILE_BYTES:
+        raise ValueError("material size invalid")
+    if not isinstance(store, S3ImmutableAttachmentStore):
+        data = store.read_verified(asset)
+        if not isinstance(data, bytes) or len(data) > asset.size_bytes:
+            raise ValueError("material bytes invalid")
+        return data
+    # Reuse the configured immutable attachment client's endpoint and credentials,
+    # and the same version/ETag preconditions as its disk-based download reader.
+    request = {"Bucket": store._bucket, "Key": asset.object_ref}
+    locator = asset.immutable_locator
+    if locator.startswith("version:"):
+        request["VersionId"] = locator.removeprefix("version:")
+    elif locator.startswith("etag:"):
+        request["IfMatch"] = locator.removeprefix("etag:")
+    else:
+        raise ValueError("immutable material required")
+    deadline = monotonic() + 30
+    response = store._client.get_object(**request)
+    body = response["Body"]
+    try:
+        if int(response["ContentLength"]) != asset.size_bytes:
+            raise ValueError("material size mismatch")
+        data = bytearray()
+        while True:
+            if monotonic() >= deadline:
+                raise ValueError("material read timeout")
+            chunk = body.read(min(1024 * 1024, asset.size_bytes - len(data) + 1))
+            if (
+                not isinstance(chunk, bytes)
+                or len(data) + len(chunk) > asset.size_bytes
+            ):
+                raise ValueError("material size mismatch")
+            if not chunk:
+                return bytes(data)
+            data.extend(chunk)
+    finally:
+        body.close()
 
 
 class MaterialService:
@@ -127,11 +172,7 @@ class MaterialService:
                 row["size_bytes"],
                 bytes(row["sha256"]),
             )
-            with tempfile.TemporaryDirectory(
-                prefix="hr-material-", dir=self.temporary_root
-            ) as directory:
-                path = self.store.stage_verified(asset, directory)
-                data = Path(path).read_bytes()
+            data = _material_bytes(self.store, asset)
             if (
                 len(data) != asset.size_bytes
                 or hashlib.sha256(data).digest() != asset.sha256

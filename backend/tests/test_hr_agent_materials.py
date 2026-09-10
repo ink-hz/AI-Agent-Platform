@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-
 from app.attachments.conversation_models import ObjectReceipt
 from app.attachments.conversation_repository import ConversationAttachmentRepository
 from app.attachments.conversation_routes import build_conversation_attachment_router
@@ -42,16 +41,15 @@ class MemoryStore:
         data = self.objects[ref]
         return OpenedObject(io.BytesIO(data), len(data), "etag:local-immutable")
 
-    def stage_verified(self, asset, directory):
-        path = Path(directory) / "text"
-        path.write_bytes(self.objects[asset.object_ref])
-        return path
+    def read_verified(self, asset):
+        return self.objects[asset.object_ref]
 
 
 @pytest.fixture
 def uploaded(secured, database):
     client, headers, repo, owner = secured
     with database.admin_connection() as conn:
+        conn.execute("TRUNCATE platform_attachments.attachments CASCADE")
         conn.execute(
             "INSERT INTO platform_control.internal_users (internal_user_id,display_name,status) VALUES (%s,'Local Test','active')",
             (owner,),
@@ -61,14 +59,13 @@ def uploaded(secured, database):
         ConversationAttachmentRepository(database.dsn, content_codec=repo.codec), store
     )
     # Build a fresh app so the middleware route snapshot includes upload endpoints.
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
     from app.control_plane.authorization import AuthorizationService
     from app.control_plane.middleware import IdentitySecurityMiddleware
     from app.hr_agent.access import HrAccess
     from app.hr_agent.routes import build_hr_agent_router
     from app.hr_agent.service import HrAgentService
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
     from tests.test_hr_position_api import _SecurityAuth
 
     materials = MaterialService(database.connection, repo.codec, store)
@@ -181,18 +178,18 @@ def test_deleted_material_never_returns_available_ref(uploaded, database):
 
 def test_quarantine_during_object_read_does_not_release_text(uploaded, database):
     client, _headers, _repo, _owner, _materials, aid, _data, store = uploaded
-    stage = store.stage_verified
+    stage = store.read_verified
 
-    def quarantine(asset, directory):
-        path = stage(asset, directory)
+    def quarantine(asset):
+        data = stage(asset)
         with database.admin_connection() as conn:
             conn.execute(
                 "UPDATE platform_attachments.attachments SET state='quarantined' WHERE attachment_id=%s",
                 (aid,),
             )
-        return path
+        return data
 
-    store.stage_verified = quarantine
+    store.read_verified = quarantine
     response = client.get("/api/hr/agent/materials/" + aid)
     assert response.status_code == 410, response.text
 
@@ -366,3 +363,110 @@ def test_worker_material_factory_loads_only_attachment_settings(
         build_material_service_from_environment(
             {"PLATFORM_CONVERSATION_ATTACHMENT_ENABLED": "1"}
         )
+
+
+def test_material_resolve_never_stages_plaintext_on_disk(uploaded, monkeypatch):
+    import tempfile
+
+    _client, _headers, _repo, owner, materials, aid, data, _store = uploaded
+
+    def no_staging(*args, **kwargs):
+        pytest.fail("Material plaintext must stay in memory")
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", no_staging)
+    view = materials.resolve(owner, aid)
+    assert materials.read_text(owner, view["text_ref"]).text == data.decode()
+
+
+def test_real_s3_reader_preserves_immutable_precondition_and_bounds(uploaded):
+    from app.attachments.download_service import S3ImmutableAttachmentStore
+
+    _client, _headers, _repo, owner, materials, aid, data, store = uploaded
+    requests = []
+    streams = []
+
+    class LocalS3:
+        def get_object(self, **request):
+            requests.append(request)
+            stream = io.BytesIO(store.objects[request["Key"]])
+            streams.append(stream)
+            return {"Body": stream, "ContentLength": len(data)}
+
+    materials.store = S3ImmutableAttachmentStore(LocalS3(), "local-bucket")
+    assert (
+        materials.read_text(owner, materials.resolve(owner, aid)["text_ref"]).text
+        == data.decode()
+    )
+    assert all(request["IfMatch"] == "local-immutable" for request in requests)
+    assert all(stream.closed for stream in streams)
+    store.objects[next(iter(store.objects))] = data + b"extra"
+    with pytest.raises(HrAgentProblem):
+        materials.resolve(owner, aid)
+    assert streams[-1].closed
+
+
+def test_killed_material_reader_leaves_no_plaintext_files(uploaded, database, tmp_path):
+    import json
+    import subprocess
+    import sys
+    import time
+
+    _client, _headers, repo, _owner, _materials, aid, data, _store = uploaded
+    config = tmp_path / "material-process.json"
+    marker = tmp_path / "read-started"
+    config.write_text(
+        json.dumps(
+            {
+                "dsn": database.dsn,
+                "keyring": str(repo.settings.content_keyring_file),
+                "root": str(repo.settings.work_dir),
+                "marker": str(marker),
+                "aid": aid,
+                "owner": str(_owner),
+                "size": len(data),
+            }
+        )
+    )
+    config.chmod(0o600)
+    script = """
+import json,sys,time
+from pathlib import Path
+from uuid import UUID
+from app.attachments.download_service import S3ImmutableAttachmentStore
+from app.hr_agent.materials import build_material_service
+cfg=json.loads(Path(sys.argv[1]).read_text())
+class Body:
+    def read(self, size):
+        Path(cfg['marker']).touch()
+        time.sleep(60)
+        return b''
+    def close(self):pass
+class LocalS3:
+    def get_object(self,**request):return {'Body':Body(),'ContentLength':cfg['size']}
+service=build_material_service(cfg['dsn'],cfg['keyring'],S3ImmutableAttachmentStore(LocalS3(),'local'),temporary_root=cfg['root'])
+service.resolve(UUID(cfg['owner']),cfg['aid'])
+"""
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(config)],
+        cwd=Path(__file__).parents[1],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while (
+            not marker.exists()
+            and time.monotonic() < deadline
+            and process.poll() is None
+        ):
+            time.sleep(0.02)
+        assert marker.exists()
+        process.kill()
+        stdout, stderr = process.communicate(timeout=5)
+        assert process.returncode < 0
+        assert list(repo.settings.work_dir.rglob("*")) == []
+        assert data not in stdout + stderr
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
