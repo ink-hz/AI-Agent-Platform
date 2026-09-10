@@ -25,7 +25,7 @@
 
 PDF用已有pypdf；DOCX用stdlib zip/XML受控解析（不执行宏、不访问外部关系、不落明文文件）。解析在有界子进程内：限制源大小、解压大小、页/文本总量和墙钟时间；到界不截断后声称全文，保留failed/unsupported或明确的部分coverage。按原文顺序保留段落/表格单元内容；页无可提取文本、图像/嵌入对象等无法证明全文时coverage_complete=false并给可解释说明。没有OCR时不声称扫描PDF已读全文。
 
-MaterialView继续区分原件/正文与parser_release；ResourceText给出coverage_complete和coverage_notes使模型知道解析边界。ref摘要沿用A0 canonical JSON，算法变化必须改parser_release。解析正文加密存储，不写普通日志或明文临时目录。
+MaterialView继续区分原件/正文与parser_release；ResourceText给出coverage_complete和coverage_notes使模型知道解析边界。UTF8摘要沿用A0 canonical JSON；新PDF/DOCX解析正文摘要同时包含coverage_notes，算法变化必须改parser_release。解析正文加密存储，不写普通日志或明文临时目录。
 
 验收：真实上传PDF/DOCX→请求解析→Worker处理→解析引用→读取；多页和表格末尾文字保留；扫描/损坏/受保护/zip膨胀/超时；跨owner、源失效、重复键、进程重启；不是文件名或缩略图冒充正文。
 
@@ -76,11 +76,16 @@ MaterialView继续区分原件/正文与parser_release；ResourceText给出cover
 
 ## 进度
 
-- [ ] B1a PDF/DOCX 持久解析与覆盖。
-- [ ] B1b 专业内容构建、发布固定与浏览/选择。
-- [ ] B2a 精确文件导出与撤权下载。
-- [ ] B2b 新工作界面与跨入口使用。
-- [ ] B3 提案、部分确认与并发。
-- [ ] B4 工程/浏览器验证。
-- [ ] B4 真实模型与用户专业审读。
+- [x] B1a PDF/DOCX 持久解析与覆盖。
+- [x] B1b 专业内容构建、发布固定与浏览/选择。
+- [x] B2a 精确文件导出与撤权下载。
+- [x] B2b 新工作界面与跨入口使用（原生文件上传浏览器分项见下）。
+- [x] B3 提案、部分确认与并发。
+- [x] B4 API/数据库/进程工程验证。
+- [ ] B4 浏览器全部分项（其余交互已验，原生文件上传待权限开放）。
+- [x] B4 真实公开模型运行与证据导出。
+- [ ] B4 用户或指定 HR 专业审读。
 - [ ] B阶段用户验收。
+
+
+证据：[B 核验报告](../../reviews/2026-09-10-hr-cloud-loop-b.md)。后端216通过/1默认真实模型跳过，身份回跳272通过；真实模型完整旅程单独通过。原生文件选择器已打开，setFiles被Chrome扩展权限拒绝，因此该浏览器分项继续保留待验，不把API上传代替页面上传。独立评审/最终前端修订与截图以报告最终记录为准。

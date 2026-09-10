@@ -1,0 +1,863 @@
+{
+  "provider": {
+    "model": "claude-opus-4-8",
+    "protocol": "anthropic_messages_sse",
+    "profile_revision": "fae-env-20260910"
+  },
+  "public_fixture": {
+    "provenance": {
+      "representation": "saved_normalized_record",
+      "normalized_sha256": "89db450608da4aa40f06174071bc9350419a18f50a8fb7ed2c96e0ecb26f6a0d",
+      "bundle_id": "aebca08a-1715-536a-869a-39663b81c8e4",
+      "limitation": "本地保存的公开归档统一记录；未重新抓取官网，未回查缺失的原始证据包。"
+    },
+    "job": {
+      "company_key": "agibot",
+      "duty_excerpt": "1、研发多条件动作生成：文本/语音韵律/视觉条件→全身动作与手势； 2、研究可控生成：风格、人设、情绪、节奏、强约束（空间/安全/可执行）下的生成； 3、解决可执行性：动力学约束、接触与平衡、IK约束、动作拼接与过渡自然性； 4、评测与数据：动作自然度、稳定性、可执行性、审美与一致性指标；线上A/B与回归； 5、与TTS/对话/控制/安全协作：打通“说什么→怎么说→怎么动”的闭环；",
+      "evidence_sha256": "189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5",
+      "job_id": "921d9d76-6993-59af-a0d6-5f93278c166d",
+      "location": "深圳、上海",
+      "observed_at": "2026-09-06T14:38:22.792168+00:00",
+      "public_job_key": "7610278886073583914",
+      "raw_location": "深圳 / 上海",
+      "requirement_excerpt": "1、熟悉动作生成/扩散模型/序列模型等，有研究与落地能力； 2、具备运动学基础：IK/约束、动作拼接过渡、抖动/不稳定识别与处理思路； 3、有项目/科研：Text2Motion、Speech2Motion、风格控制、韵律对齐等任一方向； 加分项： 熟悉动作生成/扩散模型/序列模型等，有研究与落地能力； 具备运动学基础：IK/约束、动作拼接过渡、抖动/不稳定识别与处理思路； 有项目/科研：Text2Motion、Speech2Motion、风格控制、韵律对齐等任一方向。",
+      "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+      "source_url": "https://agirobot.jobs.feishu.cn/socialrecruitment/position/7610278886073583914/detail",
+      "status": "open",
+      "title": "多模态生成动作大模型工程师/专家"
+    }
+  },
+  "input": "请通读上传的公开岗位材料，帮我理解这个岗位真正要交付什么、哪些条件有歧义，以及用人经理需要确认什么。请自主选择适用的方法，说明具体证据、反例和边界，保存一份岗位校准成果。当前没有选本公司岗位，材料是竞对静态公开归档，不要把它确认为我们的标准。可以先完成可答部分，把影响后续校准的少量问题列出来。",
+  "release": {
+    "role_release": "hr-9ced2871a8dc5def26fc4345",
+    "knowledge_release": "hr-9ced2871a8dc5def26fc4345",
+    "role_manifest_sha": "8861b8227b0580e664a8cbc1d8df817811fcce04be1702bc9990bc86f9faaeaf"
+  },
+  "work": {
+    "work_id": "015b94c2-7870-4680-bc55-341f7f7303e7",
+    "thread_id": "77dfcfb4-ab02-4e50-afab-beae4316df32",
+    "input_revision": 2,
+    "state": "completed",
+    "phase": "research",
+    "answer_state": "ended",
+    "result_refs": [
+      {
+        "kind": "result",
+        "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+        "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+        "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+      },
+      {
+        "kind": "result",
+        "id": "cd3d2d5f-6d68-4cc9-ae60-03c29d86225a",
+        "revision": "d6a32796-e05a-4700-abac-0e2050c1702b",
+        "sha256": "08c9d6609c4344330c67398f16810b16d4203ab41da2617e35c1cb78a04af39f"
+      },
+      {
+        "kind": "result",
+        "id": "dc2b9483-68c9-4aa3-a4d2-83c52ac67a26",
+        "revision": "c44dbd71-a820-4553-82da-50cf685e2bbf",
+        "sha256": "97fd759a5bfe87a49384658c16981d2bd4e3ae959a970b9314b10d5f2d5c58f6"
+      }
+    ],
+    "pending_question_id": null,
+    "block_reason": null,
+    "budget": {
+      "active_seconds": 145.23584300000002,
+      "charged_calls": 6,
+      "charged_tokens": 85665,
+      "limits": {
+        "active_seconds": 900,
+        "model_calls": 20,
+        "total_tokens": 600000
+      },
+      "reserve": {
+        "active_seconds": 30,
+        "model_calls": 2,
+        "total_tokens": 16000
+      },
+      "revision": 1,
+      "usage_quality": "mixed"
+    },
+    "checkpoint": {
+      "catalog_refs": [],
+      "discovery_state": "open",
+      "input_revision": 2,
+      "last_note_entry_id": null,
+      "open_questions": [],
+      "pending_operation_ids": [],
+      "readings": [
+        {
+          "ref": {
+            "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+            "kind": "material",
+            "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+            "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+          },
+          "remaining_ranges": [],
+          "state": "returned",
+          "total_characters": 636
+        },
+        {
+          "ref": {
+            "id": "requirement-calibration",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+          },
+          "remaining_ranges": [],
+          "state": "returned",
+          "total_characters": 1787
+        }
+      ],
+      "revision": 8
+    },
+    "last_event_seq": 20
+  },
+  "stages": [
+    {
+      "work_id": "015b94c2-7870-4680-bc55-341f7f7303e7",
+      "thread_id": "77dfcfb4-ab02-4e50-afab-beae4316df32",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+          "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+          "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 62.108555,
+        "charged_calls": 3,
+        "charged_tokens": 30555,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 20,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 16000
+        },
+        "revision": 1,
+        "usage_quality": "mixed"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+              "kind": "material",
+              "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+              "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 636
+          }
+        ],
+        "revision": 7
+      },
+      "last_event_seq": 9
+    },
+    {
+      "work_id": "015b94c2-7870-4680-bc55-341f7f7303e7",
+      "thread_id": "77dfcfb4-ab02-4e50-afab-beae4316df32",
+      "input_revision": 2,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+          "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+          "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+        },
+        {
+          "kind": "result",
+          "id": "cd3d2d5f-6d68-4cc9-ae60-03c29d86225a",
+          "revision": "d6a32796-e05a-4700-abac-0e2050c1702b",
+          "sha256": "08c9d6609c4344330c67398f16810b16d4203ab41da2617e35c1cb78a04af39f"
+        },
+        {
+          "kind": "result",
+          "id": "dc2b9483-68c9-4aa3-a4d2-83c52ac67a26",
+          "revision": "c44dbd71-a820-4553-82da-50cf685e2bbf",
+          "sha256": "97fd759a5bfe87a49384658c16981d2bd4e3ae959a970b9314b10d5f2d5c58f6"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 145.23584300000002,
+        "charged_calls": 6,
+        "charged_tokens": 85665,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 20,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 16000
+        },
+        "revision": 1,
+        "usage_quality": "mixed"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 2,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+              "kind": "material",
+              "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+              "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 636
+          },
+          {
+            "ref": {
+              "id": "requirement-calibration",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 1787
+          }
+        ],
+        "revision": 8
+      },
+      "last_event_seq": 20
+    },
+    {
+      "work_id": "3ecd0536-d4d2-4737-bfbb-d39be137bceb",
+      "thread_id": "24f52a9f-6e7b-41bd-9d4e-47c3e6d7b333",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 14.727254,
+        "charged_calls": 2,
+        "charged_tokens": 15724,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 20,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 16000
+        },
+        "revision": 1,
+        "usage_quality": "mixed"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "49a59847-3fd0-4415-a5ff-613b158a51b7",
+              "kind": "standard",
+              "revision": "9eceba27-614e-4897-ab17-d7466d038ec1",
+              "sha256": "76617526a8170a2b29cf6b80ad6c0ae80282f0d3e6923e7036cdcf1995286c6a"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 759
+          }
+        ],
+        "revision": 5
+      },
+      "last_event_seq": 6
+    }
+  ],
+  "confirmed_standard": {
+    "position_id": "49a59847-3fd0-4415-a5ff-613b158a51b7",
+    "items": [
+      {
+        "item_id": "71ca64bc-0da5-4ce7-979b-ed5b8a09d789",
+        "text": "【必备】具备动作生成的实做能力，熟悉扩散模型或序列模型等主流方法，能独立完成从建模到生成的实现。验证：项目细节追问 + 代码/结果佐证。"
+      }
+    ],
+    "confirmed_by": "635cf1a4-46ab-4b23-bb15-bce28d1ad099",
+    "confirmed_at": "2026-09-10T12:01:04.446480+00:00",
+    "proposal_ref": {
+      "kind": "result",
+      "id": "dc2b9483-68c9-4aa3-a4d2-83c52ac67a26",
+      "revision": "c44dbd71-a820-4553-82da-50cf685e2bbf",
+      "sha256": "97fd759a5bfe87a49384658c16981d2bd4e3ae959a970b9314b10d5f2d5c58f6"
+    },
+    "selected_change_ids": [
+      "79bc964f-838a-4686-ab0c-b472e2d7de3d"
+    ],
+    "ref": {
+      "kind": "standard",
+      "id": "49a59847-3fd0-4415-a5ff-613b158a51b7",
+      "revision": "9eceba27-614e-4897-ab17-d7466d038ec1",
+      "sha256": "76617526a8170a2b29cf6b80ad6c0ae80282f0d3e6923e7036cdcf1995286c6a"
+    }
+  },
+  "messages": {
+    "items": [
+      {
+        "entry_id": "8654a7e2-6ab8-4cb2-9c7c-a25e675aec50",
+        "seq": 1,
+        "input_revision": 1,
+        "kind": "user",
+        "body": "请通读上传的公开岗位材料，帮我理解这个岗位真正要交付什么、哪些条件有歧义，以及用人经理需要确认什么。请自主选择适用的方法，说明具体证据、反例和边界，保存一份岗位校准成果。当前没有选本公司岗位，材料是竞对静态公开归档，不要把它确认为我们的标准。可以先完成可答部分，把影响后续校准的少量问题列出来。",
+        "options": [],
+        "question_id": null,
+        "visibility": "available"
+      },
+      {
+        "entry_id": "c573169b-db68-4d8d-b1cb-d19ff285216d",
+        "seq": 4,
+        "input_revision": 1,
+        "kind": "assistant",
+        "body": "已通读全文并保存了一份岗位校准成果（参考性质）。要点如下：\n\n## 这个岗位真正要交付什么\n从职责链路而非头衔看，核心是打通 **「说什么→怎么说→怎么动」的闭环**：以文本 / 语音韵律 / 视觉为条件，生成全身动作与手势。\n\n关键不在\"生成好看的动作\"，而在两个约束同时成立：\n- **可控且有表现力**：风格、人设、情绪、节奏（职责2）\n- **真实可执行**：动力学约束、接触与平衡、IK、动作拼接过渡（职责3）\n\n且交付必须**可量化、可迭代**——自然度/稳定性/可执行性/审美一致性指标 + 线上 A/B + 回归（职责4），并与 TTS/对话/控制/安全**跨团队协作**（职责5）。\n\n## 有歧义、需要用人经理确认的地方\n1. **要求 = 加分（最关键缺陷）**：JD 的「要求 1/2/3」与「加分项」三条**逐字完全相同**，等于没有区分必备门槛与加分。据此无法定任何硬性条件，疑为发布方复制错误。\n2. **执行载体不明**：全身动作 + 动力学/IK/平衡，既可能是**实体人形机器人**，也可能是**虚拟数字人/动画**。两者候选人背景差异极大（机器人控制 vs 计算机图形/动画）。域名含 robot 略偏实体，但正文未点明——不足以断定。\n3. **职级跨度**：「工程师/专家」双头衔，未给年限、职级，也未说明偏研究型还是落地型；而职责同时含\"研究可控生成\"和\"线上 A/B 落地\"，跨度很大。\n\n## 反证与边界（避免过度收窄）\n- 「熟悉扩散/序列模型」≠ 必须有顶会论文，职责更偏落地与可执行性。\n- Text2Motion / Speech2Motion / 风格控制 / 韵律对齐是**任一方向**即可，不应要求全都具备。\n- 这是竞对静态归档（观察时点 2026-09-06），**未重新抓取官网**，只作对标参考，我未将其确认为本公司标准。\n\n## 影响后续校准的少量待确认问题\n1. 本公司对标岗位的**执行载体**是实体人形机器人还是数字人/虚拟形象？（决定候选人背景与硬技能）\n2. 本岗位**必备条件 vs 加分项**如何区分？（竞对 JD 无法提供，需用人经理自定）\n3. 目标**职级与主导取向**：偏工程落地还是偏研究？年限区间？\n\n成果已保存为 role_calibration（标题：*岗位校准（参考）：多模态生成动作大模型工程师/专家*）。需要的话，我可以在你确认上述 3 个问题后，把它落成一份本公司可用的 JD / 需求标准草案。",
+        "options": [],
+        "question_id": null,
+        "visibility": "available"
+      },
+      {
+        "entry_id": "721b1eb9-31ac-45fc-bbb8-0e7ecc5028e3",
+        "seq": 5,
+        "input_revision": 2,
+        "kind": "user",
+        "body": "现在以已选的本公司测试岗位继续：目标是可运行在机器人上的动作生成模块，研发探索阶段，目前没有线上A/B系统。我们允许有动作生成项目、尚无真机经历的人入职培养；三个月后能独立完成约束验证。请读我选的要求校准方法，依据这次澄清修正前面的判断，保留临时基准标记，保存一份岗位校准成果和分条标准建议供我选择。当前本岗位尚无正式标准。其余未知写明边界，先形成可评审提案，不自动确认。",
+        "options": [],
+        "question_id": null,
+        "visibility": "available"
+      },
+      {
+        "entry_id": "f15a90ed-6a85-4896-819c-4fa44f01c274",
+        "seq": 9,
+        "input_revision": 2,
+        "kind": "assistant",
+        "body": "已读要求校准方法（requirement-calibration r2），并依据你这轮澄清修正了判断，两份成果都已保存（临时基准，未自动确认）。\n\n## 依澄清做了哪些修正（相对竞对原文）\n1. **执行载体确定为实体机器人** —— 消解了原文\"机器人 vs 数字人\"的歧义；纯图形/动画背景不再天然匹配，需看物理可执行性理解。\n2. **线上 A/B 从职责剥离** —— 本岗位无该系统，不作门槛；评测能力仍需要，但形态是离线/仿真的**约束验证**。\n3. **\"真机经历\"降级为可培养项** —— 不是入职硬门槛，用\"入职约三个月能独立完成约束验证\"作为培养期验收点（AMO 中的\"机会\"维度：能否达成还取决于带教与平台资源）。\n\n## 保存的两份成果\n**① 岗位校准（临时）** `role_calibration`\n交付物、核心能力链、用人策略、相对原文的修正、以及边界与未知。\n\n**② 分条标准建议（提案）** `standard_proposal`（base_standard_ref = null，因本岗位尚无正式标准），8 条可逐条勾选：\n\n| 强度 | 条目要点 |\n|---|---|\n| 必备 | 动作生成实做（扩散/序列模型） |\n| 必备 | 运动学基础（IK/约束/拼接/抖动处理） |\n| 必备 | ≥1 个动作生成项目（任一方向即可） |\n| 可培养·三个月验收 | 实体机器人约束验证独立能力 |\n| 加分 | 多模态条件生成 |\n| 加分 | 表现力可控生成 |\n| 加分 | 跨 TTS/对话/控制/安全协作 |\n| 不作门槛 | 顶会论文、线上 A/B 实战 |\n\n## 仍未解决、会影响后续的边界（需用人经理确认）\n1. **机器人形态与自由度**（人形全身 vs 上肢/手势）——决定运动学与安全约束的深度。\n2. **\"独立完成约束验证\"的验收口径**——覆盖哪些约束、仿真还是真机、通过标准。这条直接决定\"三个月可培养\"能否作为评价点。\n3. **职级/年限与研究-落地取向**（原文\"工程师/专家\"双头衔本轮未澄清）。\n4. **培养资源**：是否有带教、真机与仿真平台——影响三个月目标可达性。\n\n以上均为**可评审提案，未自动确认**。正式标准需你在界面选定条目后才生效；继续讨论或保存提案都不构成确认。要不要我针对第 2 点（验收口径）先草拟几种可选定义供你挑？",
+        "options": [],
+        "question_id": null,
+        "visibility": "available"
+      }
+    ],
+    "next_after": 9
+  },
+  "results": [
+    {
+      "base_standard_ref": null,
+      "basis": [
+        {
+          "input_revision": 1,
+          "kind": "user_temporary",
+          "ref": null
+        }
+      ],
+      "body": "来源与性质：竞对（AGIRobot，飞书社招）公开静态归档，观察时点 2026-09-06T14:38Z，来源 URL 见材料。此为竞对参考，非奥比中光已确认标准，不作为本公司门槛。归档说明未重新抓取官网、未回查缺失原始证据包，故仅代表该观察时点的公开文本。\n\n一、岗位真正要交付什么（从职责链路推导，非头衔）\n核心交付：打通「说什么→怎么说→怎么动」闭环——以文本/语音韵律/视觉为条件，生成全身动作与手势，且动作必须在真实动力学约束下可执行，并可被量化评测与线上迭代。\n关键张力：既要可控且有表现力的生成（风格/人设/情绪/节奏），又要满足硬约束（空间/安全/可执行、动力学、接触平衡、IK、拼接过渡）。可执行性与可度量性（自然度/稳定性/可执行性指标 + A/B + 回归）是重心，而非单纯生成好看动作。\n协作面：需与 TTS/对话/控制/安全多团队协作（职责5）。\n\n二、条件歧义与边界（影响后续校准）\n1. 要求与加分项逐字重复：JD 中「要求1/2/3」与「加分项」三条完全相同，实际未区分必备门槛与加分，无法据此定硬性条件。疑为发布方复制错误。此为最影响校准的缺陷。\n2. 执行载体不明：「全身动作+动力学/平衡/IK」既可指实体人形机器人，也可指虚拟数字人/动画，二者候选人背景（机器人控制 vs 计算机图形/动画）差异大。来源域名含 robot 倾向实体，但正文未点明。\n3. 职级/头衔跨度：「工程师/专家」双头衔，未给职级、年限、研究型 vs 落地型主导；职责同时含「研究可控生成」与「线上A/B落地」，跨度大。\n\n三、反证与不应做的推断\n- 「熟悉扩散/序列模型」不等于必须顶会论文；职责更重落地与可执行性。\n- Text2Motion/Speech2Motion/风格控制/韵律对齐为「任一方向」，不应要求全部具备。\n- 不应将 JD 每句自动当硬门槛，尤其在要求/加分不可区分的情况下。\n\n四、若迁移到本公司校准时的建议动作\n先与用人经理确认下列开放问题，再据此把「必备/加分」「实体机器人 vs 数字人」「职级」落到本公司岗位标准；本归档只作对标参考。",
+      "changes": [],
+      "kind": "role_calibration",
+      "objects": [],
+      "preceding_refs": [],
+      "source_refs": [
+        {
+          "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+          "kind": "material",
+          "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+          "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+        }
+      ],
+      "title": "岗位校准（参考）：多模态生成动作大模型工程师/专家 — 竞对公开归档解读",
+      "ref": {
+        "kind": "result",
+        "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+        "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+        "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+      },
+      "access_state": "available"
+    },
+    {
+      "base_standard_ref": null,
+      "basis": [
+        {
+          "input_revision": 2,
+          "kind": "user_temporary",
+          "ref": null
+        }
+      ],
+      "body": "性质：本公司测试岗位的临时校准，基于用户第2轮澄清（临时基准，非正式标准）。竞对归档（d10b5fff…）仅作对标参考，不移植其门槛。方法依据 requirement-calibration r2（AMO / 任务相关性 / 要求强度分层）。\n\n一、本岗位真正要交付什么（据澄清修正）\n交付物：可运行在实体机器人上的动作生成模块。当前处研发探索阶段，尚无线上 A/B 系统。\n核心能力链：多条件动作生成 → 满足物理可执行约束（动力学、接触平衡、IK、拼接过渡）→ 能对生成结果做约束验证。表现力/风格类可控生成为方向性能力，非当前阶段主交付。\n用人策略：允许有动作生成项目、但无真机经历者入职培养；成功标准是入职约三个月后能独立完成约束验证。因此\"真机经历\"是可培养项，不是入职硬门槛。\n\n二、相对竞对原文的修正（保留改了什么）\n1. 执行载体：原文实体机器人/数字人歧义 → 本岗位确认为实体机器人。纯图形/动画背景不再天然匹配，需看物理可执行性理解。\n2. 线上A/B：原文职责4含\"线上A/B与回归\" → 本岗位无该系统，不作硬门槛；评测能力仍需要，但形态是离线/仿真的约束验证。\n3. 真机经历：从\"疑似要求\"降级为\"可培养、非入职门槛\"，用三个月独立约束验证作为培养期验收点。\n\n三、要求强度分层（待用户选择，非确认）\n- 必备（入职即须、支撑核心交付）：动作生成/扩散或序列模型的实做能力；运动学基础（IK/约束、拼接过渡、抖动与不稳定的识别处理思路）；至少一个动作生成项目经历（Text2Motion/Speech2Motion/风格控制/韵律对齐任一）。\n- 可培养（允许入职后达成，三个月验收）：面向实体机器人的约束验证独立能力（真机/动力学可执行性）。\n- 加分：多模态条件（语音韵律/视觉）经验；表现力可控生成（风格/情绪/节奏）；跨 TTS/对话/控制/安全协作经验。\n- 惯例/不作门槛：顶会论文；线上A/B实战（本阶段无系统）；要求全部四个方向都具备。\n\n四、未知与边界（影响后续，需用人经理确认）\n1. 机器人形态与自由度（人形全身 vs 上肢/手势为主）未定，影响运动学与安全约束的深度要求。\n2. \"独立完成约束验证\"的具体验收口径未定：哪些约束（动力学/接触/安全）、用仿真还是真机、通过标准是什么。\n3. 职级/年限与研究-落地取向未定（原文\"工程师/专家\"双头衔，本轮未澄清）。\n4. 培养资源未定：是否有带教、真机与仿真平台可用，直接影响三个月目标可达性（AMO 中的机会维度）。\n\n以上为可评审提案，未自动确认；正式标准需用户在界面选定条目后生效。",
+      "changes": [],
+      "kind": "role_calibration",
+      "objects": [
+        {
+          "id": "49a59847-3fd0-4415-a5ff-613b158a51b7",
+          "kind": "position"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+          "kind": "result",
+          "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+          "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+        }
+      ],
+      "source_refs": [
+        {
+          "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+          "kind": "material",
+          "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+          "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+        },
+        {
+          "id": "requirement-calibration",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        }
+      ],
+      "title": "岗位校准（临时）：本公司机器人动作生成模块 — 依澄清修正",
+      "ref": {
+        "kind": "result",
+        "id": "cd3d2d5f-6d68-4cc9-ae60-03c29d86225a",
+        "revision": "d6a32796-e05a-4700-abac-0e2050c1702b",
+        "sha256": "08c9d6609c4344330c67398f16810b16d4203ab41da2617e35c1cb78a04af39f"
+      },
+      "access_state": "available"
+    },
+    {
+      "base_standard_ref": null,
+      "basis": [
+        {
+          "input_revision": 2,
+          "kind": "user_temporary",
+          "ref": null
+        }
+      ],
+      "body": "分条标准建议（提案，供界面选择；当前本岗位无正式标准，base 为 null）。基于用户第2轮澄清临时基准，竞对归档仅参考。每条标明强度分层与验证思路，未自动确认。",
+      "changes": [
+        {
+          "action": "add",
+          "change_id": "79bc964f-838a-4686-ab0c-b472e2d7de3d",
+          "target_item_id": null,
+          "text": "【必备】具备动作生成的实做能力，熟悉扩散模型或序列模型等主流方法，能独立完成从建模到生成的实现。验证：项目细节追问 + 代码/结果佐证。"
+        },
+        {
+          "action": "add",
+          "change_id": "99f39120-2ed0-44ec-a987-2bc86fe2aabc",
+          "target_item_id": null,
+          "text": "【必备】具备运动学基础：理解 IK 与约束、动作拼接与过渡，能识别并处理抖动/不稳定。验证：给定不自然动作案例，说明诊断与处理思路。"
+        },
+        {
+          "action": "add",
+          "change_id": "cee1525b-61b9-4371-9d04-500b6155bada",
+          "target_item_id": null,
+          "text": "【必备】至少一个动作生成项目经历（Text2Motion / Speech2Motion / 风格控制 / 韵律对齐任一即可，不要求全部）。验证：项目目标、个人承担、生成质量评估方式。"
+        },
+        {
+          "action": "add",
+          "change_id": "a228ae29-44ee-4e1e-91e8-062ba4144e27",
+          "target_item_id": null,
+          "text": "【可培养·三个月验收】面向实体机器人的约束验证独立能力（动力学可执行性/接触平衡等）。允许入职时无真机经历；入职约三个月后能独立完成约束验证为培养期目标。验证口径待用人经理定义（仿真或真机、覆盖哪些约束、通过标准）。"
+        },
+        {
+          "action": "add",
+          "change_id": "df799249-0283-4266-a76a-47ae540de710",
+          "target_item_id": null,
+          "text": "【加分】多模态条件生成经验（语音韵律 / 视觉条件驱动动作）。"
+        },
+        {
+          "action": "add",
+          "change_id": "72c4ef57-429a-44fb-953a-89e393908ed6",
+          "target_item_id": null,
+          "text": "【加分】表现力可控生成经验（风格 / 人设 / 情绪 / 节奏）。"
+        },
+        {
+          "action": "add",
+          "change_id": "21e85ad0-17dc-402b-be3b-6ad0e642557e",
+          "target_item_id": null,
+          "text": "【加分】与 TTS / 对话 / 控制 / 安全等团队的跨模块协作经验。"
+        },
+        {
+          "action": "add",
+          "change_id": "c87f1970-2a13-452a-a554-2ca65d9340f2",
+          "target_item_id": null,
+          "text": "【不作门槛】顶会论文、线上 A/B 实战经验——本岗位处研发探索阶段、无线上 A/B 系统，不作为筛选门槛。"
+        }
+      ],
+      "kind": "standard_proposal",
+      "objects": [
+        {
+          "id": "49a59847-3fd0-4415-a5ff-613b158a51b7",
+          "kind": "position"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+          "kind": "result",
+          "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+          "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+        }
+      ],
+      "source_refs": [
+        {
+          "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+          "kind": "material",
+          "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+          "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+        },
+        {
+          "id": "requirement-calibration",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        }
+      ],
+      "title": "分条标准建议（提案）：本公司机器人动作生成模块岗位",
+      "ref": {
+        "kind": "result",
+        "id": "dc2b9483-68c9-4aa3-a4d2-83c52ac67a26",
+        "revision": "c44dbd71-a820-4553-82da-50cf685e2bbf",
+        "sha256": "97fd759a5bfe87a49384658c16981d2bd4e3ae959a970b9314b10d5f2d5c58f6"
+      },
+      "access_state": "available"
+    }
+  ],
+  "attempts": [
+    {
+      "ordinal": 1,
+      "status": "committed",
+      "purpose": "work",
+      "usage_quality": "reported",
+      "reserved_tokens": 19177,
+      "charged_tokens": 7576
+    },
+    {
+      "ordinal": 2,
+      "status": "committed",
+      "purpose": "work",
+      "usage_quality": "reported",
+      "reserved_tokens": 21716,
+      "charged_tokens": 10773
+    },
+    {
+      "ordinal": 3,
+      "status": "committed",
+      "purpose": "work",
+      "usage_quality": "reported",
+      "reserved_tokens": 28282,
+      "charged_tokens": 12206
+    },
+    {
+      "ordinal": 4,
+      "status": "committed",
+      "purpose": "work",
+      "usage_quality": "reported",
+      "reserved_tokens": 31907,
+      "charged_tokens": 12708
+    },
+    {
+      "ordinal": 5,
+      "status": "committed",
+      "purpose": "work",
+      "usage_quality": "reported",
+      "reserved_tokens": 37562,
+      "charged_tokens": 18412
+    },
+    {
+      "ordinal": 6,
+      "status": "committed",
+      "purpose": "work",
+      "usage_quality": "reported",
+      "reserved_tokens": 53222,
+      "charged_tokens": 23990
+    }
+  ],
+  "tools": [
+    {
+      "namespace": "tool:read_resource",
+      "status": "committed",
+      "receipt": {
+        "data": {
+          "coverage_complete": true,
+          "coverage_notes": [],
+          "end": 636,
+          "next_offset": null,
+          "offset": 0,
+          "read_id": "9427c534-93fd-4a7f-b3ef-7f7f947b5012",
+          "ref": {
+            "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+            "kind": "material",
+            "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+            "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+          },
+          "text": "公开招聘归档（不是本公司已确认标准）\n观察时间：2026-09-06T14:38:22.792168+00:00\n来源：https://agirobot.jobs.feishu.cn/socialrecruitment/position/7610278886073583914/detail\n本地保存的公开归档统一记录；未重新抓取官网，未回查缺失的原始证据包。\n\n多模态生成动作大模型工程师/专家\n\n职责\n1、研发多条件动作生成：文本/语音韵律/视觉条件→全身动作与手势； 2、研究可控生成：风格、人设、情绪、节奏、强约束（空间/安全/可执行）下的生成； 3、解决可执行性：动力学约束、接触与平衡、IK约束、动作拼接与过渡自然性； 4、评测与数据：动作自然度、稳定性、可执行性、审美与一致性指标；线上A/B与回归； 5、与TTS/对话/控制/安全协作：打通“说什么→怎么说→怎么动”的闭环；\n\n要求\n1、熟悉动作生成/扩散模型/序列模型等，有研究与落地能力； 2、具备运动学基础：IK/约束、动作拼接过渡、抖动/不稳定识别与处理思路； 3、有项目/科研：Text2Motion、Speech2Motion、风格控制、韵律对齐等任一方向； 加分项： 熟悉动作生成/扩散模型/序列模型等，有研究与落地能力； 具备运动学基础：IK/约束、动作拼接过渡、抖动/不稳定识别与处理思路； 有项目/科研：Text2Motion、Speech2Motion、风格控制、韵律对齐等任一方向。",
+          "total_characters": 636
+        },
+        "error": null,
+        "status": "ok"
+      }
+    },
+    {
+      "namespace": "tool:save_result",
+      "status": "committed",
+      "receipt": {
+        "data": {
+          "access_state": "available",
+          "base_standard_ref": null,
+          "basis": [
+            {
+              "input_revision": 1,
+              "kind": "user_temporary",
+              "ref": null
+            }
+          ],
+          "body": "来源与性质：竞对（AGIRobot，飞书社招）公开静态归档，观察时点 2026-09-06T14:38Z，来源 URL 见材料。此为竞对参考，非奥比中光已确认标准，不作为本公司门槛。归档说明未重新抓取官网、未回查缺失原始证据包，故仅代表该观察时点的公开文本。\n\n一、岗位真正要交付什么（从职责链路推导，非头衔）\n核心交付：打通「说什么→怎么说→怎么动」闭环——以文本/语音韵律/视觉为条件，生成全身动作与手势，且动作必须在真实动力学约束下可执行，并可被量化评测与线上迭代。\n关键张力：既要可控且有表现力的生成（风格/人设/情绪/节奏），又要满足硬约束（空间/安全/可执行、动力学、接触平衡、IK、拼接过渡）。可执行性与可度量性（自然度/稳定性/可执行性指标 + A/B + 回归）是重心，而非单纯生成好看动作。\n协作面：需与 TTS/对话/控制/安全多团队协作（职责5）。\n\n二、条件歧义与边界（影响后续校准）\n1. 要求与加分项逐字重复：JD 中「要求1/2/3」与「加分项」三条完全相同，实际未区分必备门槛与加分，无法据此定硬性条件。疑为发布方复制错误。此为最影响校准的缺陷。\n2. 执行载体不明：「全身动作+动力学/平衡/IK」既可指实体人形机器人，也可指虚拟数字人/动画，二者候选人背景（机器人控制 vs 计算机图形/动画）差异大。来源域名含 robot 倾向实体，但正文未点明。\n3. 职级/头衔跨度：「工程师/专家」双头衔，未给职级、年限、研究型 vs 落地型主导；职责同时含「研究可控生成」与「线上A/B落地」，跨度大。\n\n三、反证与不应做的推断\n- 「熟悉扩散/序列模型」不等于必须顶会论文；职责更重落地与可执行性。\n- Text2Motion/Speech2Motion/风格控制/韵律对齐为「任一方向」，不应要求全部具备。\n- 不应将 JD 每句自动当硬门槛，尤其在要求/加分不可区分的情况下。\n\n四、若迁移到本公司校准时的建议动作\n先与用人经理确认下列开放问题，再据此把「必备/加分」「实体机器人 vs 数字人」「职级」落到本公司岗位标准；本归档只作对标参考。",
+          "changes": [],
+          "kind": "role_calibration",
+          "objects": [],
+          "preceding_refs": [],
+          "ref": {
+            "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+            "kind": "result",
+            "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+            "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+          },
+          "source_refs": [
+            {
+              "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+              "kind": "material",
+              "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+              "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+            }
+          ],
+          "title": "岗位校准（参考）：多模态生成动作大模型工程师/专家 — 竞对公开归档解读"
+        },
+        "error": null,
+        "status": "ok"
+      }
+    },
+    {
+      "namespace": "tool:read_resource",
+      "status": "committed",
+      "receipt": {
+        "data": {
+          "coverage_complete": true,
+          "coverage_notes": [],
+          "end": 1787,
+          "next_offset": null,
+          "offset": 0,
+          "read_id": "095d309e-6e79-429c-9972-ab068e5200b8",
+          "ref": {
+            "id": "requirement-calibration",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+          },
+          "text": "---\nid: requirement-calibration\ntitle: 要求校准与 AMO\nrevision: 2\ndomains: [recruiting, performance]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 要求校准与 AMO：不要把所有问题都变成人才缺陷\n\n## 帮助理解什么\n\n当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。\n\n## 核心关系\n\n长期招不到人至少可能涉及四类解释：需求定义是否真实且清楚；目标人才供给是否存在；薪酬、地点、工作方式、发展机会和雇主信息是否有吸引力；甄选流程是否因门槛、速度或评价偏差误杀。四类因素可能同时发生，招聘时长本身不能证明“市场没人”。\n\nAMO 从能力、动机和机会三个方向拓宽诊断：一个人是否会做、是否愿意投入、环境是否允许他做出结果。它适合提出问题，不适合把候选人压缩成 A×M×O 总分或宣称单一因素造成绩效。\n\n## 如何结合证据思考\n\n查看漏斗各阶段的数量、等待时间、退出原因和评价分歧，并把组织数据与招聘人员、用人经理及候选人的观点并置。对每项要求追问业务理由、对应任务、失败风险和可接受的替代证据。把“必须”“有帮助”“可以培养”和“只是惯例”看作待论证判断，而非固定字段。\n\n如果建议调整，可以优先提出可逆、可观察的试验，例如重新表达岗位价值、抽样复核被筛掉材料、允许相邻行业以工作样本补证。结果只能支持或削弱当前假设，不能自动改写已确认画像。\n\n## 区分任务需要与文案写出的要求强度\n\n能力与任务相关，不等于已经证明它必须在入职前具备；原文明确给出的优先、可培养或替代经历也不能被自动升级成硬门槛。理解条件时，同时看它支撑什么交付、原文要求达到何种独立程度，以及用户是否已经确认适用条件。不要把一段宽技术清单读成每一项都要精通。\n\n若同一能力在同一条广告中既列为任职要求又列为加分，当前文本没有稳定说明缺少该经历是否仍可评估。可以继续分析任务相关性和候选材料，但不能默默选择更严或更松的一段作结论。只有当歧义影响当前判断时，才向岗位方澄清，例如这项经历是入职即须独立交付，还是允许在相邻经验基础上学习。\n\n相邻岗位若将任职要求与加分分开表达，可以帮助定位当前记录的局部问题，不代表它们的门槛可直接移植。岗位跨度、经验入口或用工形式不同，也可能合理地产生不同要求；不能把差异一律判为矛盾。\n\n用户说明目标岗位的实际条件后，应按该澄清继续当前工作，保留它相对原文改变了什么；分析建议本身不修改长期标准。切换岗位或业务团队时重新判断适用性，不能沿用上一岗位的硬门槛。\n\n本节依据真实文案冲突归纳，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)。这是思考材料，不是按“必需”“优先”等关键词执行的筛选程序。\n\n## 适用与局限\n\n适合长期空缺、漏斗异常、条件互相矛盾、用人经理反复加码等情境。漏斗数据可能受季节、渠道和岗位变化影响；候选人退出原因也常不完整。AMO 各因素相互作用，不能当精确因果模型。\n\n## 可结合的视角\n\n可与“岗位与业务情境”核查要求依据，与“人才来源与能力迁移”扩展供给假设，与“循证判断”评价漏斗解释。不存在必须依次采用的顺序。\n\n## 案例\n\n一个数据产品经理岗位空缺三个月。简历数量并不少，但业务初筛淘汰率很高；“同业五年”无法对应某项独有任务，而薪酬与地点的退出反馈也明显。较好的理解是：供给、要求和吸引力都有待验证。允许相邻行业候选人用复杂 B2B 发现与落地证据补充，只是一个可审阅假设，最终效果仍需观察录用和入职表现。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，pp.1–4。\n- CIPD, *People performance: An evidence review*，AMO 讨论 pp.14–17。\n- CIPD, *Fair selection: An evidence review*，公平框架与实践建议 pp.5–16。\n",
+          "total_characters": 1787
+        },
+        "error": null,
+        "status": "ok"
+      }
+    },
+    {
+      "namespace": "tool:save_result",
+      "status": "committed",
+      "receipt": {
+        "data": {
+          "access_state": "available",
+          "base_standard_ref": null,
+          "basis": [
+            {
+              "input_revision": 2,
+              "kind": "user_temporary",
+              "ref": null
+            }
+          ],
+          "body": "性质：本公司测试岗位的临时校准，基于用户第2轮澄清（临时基准，非正式标准）。竞对归档（d10b5fff…）仅作对标参考，不移植其门槛。方法依据 requirement-calibration r2（AMO / 任务相关性 / 要求强度分层）。\n\n一、本岗位真正要交付什么（据澄清修正）\n交付物：可运行在实体机器人上的动作生成模块。当前处研发探索阶段，尚无线上 A/B 系统。\n核心能力链：多条件动作生成 → 满足物理可执行约束（动力学、接触平衡、IK、拼接过渡）→ 能对生成结果做约束验证。表现力/风格类可控生成为方向性能力，非当前阶段主交付。\n用人策略：允许有动作生成项目、但无真机经历者入职培养；成功标准是入职约三个月后能独立完成约束验证。因此\"真机经历\"是可培养项，不是入职硬门槛。\n\n二、相对竞对原文的修正（保留改了什么）\n1. 执行载体：原文实体机器人/数字人歧义 → 本岗位确认为实体机器人。纯图形/动画背景不再天然匹配，需看物理可执行性理解。\n2. 线上A/B：原文职责4含\"线上A/B与回归\" → 本岗位无该系统，不作硬门槛；评测能力仍需要，但形态是离线/仿真的约束验证。\n3. 真机经历：从\"疑似要求\"降级为\"可培养、非入职门槛\"，用三个月独立约束验证作为培养期验收点。\n\n三、要求强度分层（待用户选择，非确认）\n- 必备（入职即须、支撑核心交付）：动作生成/扩散或序列模型的实做能力；运动学基础（IK/约束、拼接过渡、抖动与不稳定的识别处理思路）；至少一个动作生成项目经历（Text2Motion/Speech2Motion/风格控制/韵律对齐任一）。\n- 可培养（允许入职后达成，三个月验收）：面向实体机器人的约束验证独立能力（真机/动力学可执行性）。\n- 加分：多模态条件（语音韵律/视觉）经验；表现力可控生成（风格/情绪/节奏）；跨 TTS/对话/控制/安全协作经验。\n- 惯例/不作门槛：顶会论文；线上A/B实战（本阶段无系统）；要求全部四个方向都具备。\n\n四、未知与边界（影响后续，需用人经理确认）\n1. 机器人形态与自由度（人形全身 vs 上肢/手势为主）未定，影响运动学与安全约束的深度要求。\n2. \"独立完成约束验证\"的具体验收口径未定：哪些约束（动力学/接触/安全）、用仿真还是真机、通过标准是什么。\n3. 职级/年限与研究-落地取向未定（原文\"工程师/专家\"双头衔，本轮未澄清）。\n4. 培养资源未定：是否有带教、真机与仿真平台可用，直接影响三个月目标可达性（AMO 中的机会维度）。\n\n以上为可评审提案，未自动确认；正式标准需用户在界面选定条目后生效。",
+          "changes": [],
+          "kind": "role_calibration",
+          "objects": [
+            {
+              "id": "49a59847-3fd0-4415-a5ff-613b158a51b7",
+              "kind": "position"
+            }
+          ],
+          "preceding_refs": [
+            {
+              "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+              "kind": "result",
+              "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+              "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+            }
+          ],
+          "ref": {
+            "id": "cd3d2d5f-6d68-4cc9-ae60-03c29d86225a",
+            "kind": "result",
+            "revision": "d6a32796-e05a-4700-abac-0e2050c1702b",
+            "sha256": "08c9d6609c4344330c67398f16810b16d4203ab41da2617e35c1cb78a04af39f"
+          },
+          "source_refs": [
+            {
+              "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+              "kind": "material",
+              "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+              "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+            },
+            {
+              "id": "requirement-calibration",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+            }
+          ],
+          "title": "岗位校准（临时）：本公司机器人动作生成模块 — 依澄清修正"
+        },
+        "error": null,
+        "status": "ok"
+      }
+    },
+    {
+      "namespace": "tool:save_result",
+      "status": "committed",
+      "receipt": {
+        "data": {
+          "access_state": "available",
+          "base_standard_ref": null,
+          "basis": [
+            {
+              "input_revision": 2,
+              "kind": "user_temporary",
+              "ref": null
+            }
+          ],
+          "body": "分条标准建议（提案，供界面选择；当前本岗位无正式标准，base 为 null）。基于用户第2轮澄清临时基准，竞对归档仅参考。每条标明强度分层与验证思路，未自动确认。",
+          "changes": [
+            {
+              "action": "add",
+              "change_id": "79bc964f-838a-4686-ab0c-b472e2d7de3d",
+              "target_item_id": null,
+              "text": "【必备】具备动作生成的实做能力，熟悉扩散模型或序列模型等主流方法，能独立完成从建模到生成的实现。验证：项目细节追问 + 代码/结果佐证。"
+            },
+            {
+              "action": "add",
+              "change_id": "99f39120-2ed0-44ec-a987-2bc86fe2aabc",
+              "target_item_id": null,
+              "text": "【必备】具备运动学基础：理解 IK 与约束、动作拼接与过渡，能识别并处理抖动/不稳定。验证：给定不自然动作案例，说明诊断与处理思路。"
+            },
+            {
+              "action": "add",
+              "change_id": "cee1525b-61b9-4371-9d04-500b6155bada",
+              "target_item_id": null,
+              "text": "【必备】至少一个动作生成项目经历（Text2Motion / Speech2Motion / 风格控制 / 韵律对齐任一即可，不要求全部）。验证：项目目标、个人承担、生成质量评估方式。"
+            },
+            {
+              "action": "add",
+              "change_id": "a228ae29-44ee-4e1e-91e8-062ba4144e27",
+              "target_item_id": null,
+              "text": "【可培养·三个月验收】面向实体机器人的约束验证独立能力（动力学可执行性/接触平衡等）。允许入职时无真机经历；入职约三个月后能独立完成约束验证为培养期目标。验证口径待用人经理定义（仿真或真机、覆盖哪些约束、通过标准）。"
+            },
+            {
+              "action": "add",
+              "change_id": "df799249-0283-4266-a76a-47ae540de710",
+              "target_item_id": null,
+              "text": "【加分】多模态条件生成经验（语音韵律 / 视觉条件驱动动作）。"
+            },
+            {
+              "action": "add",
+              "change_id": "72c4ef57-429a-44fb-953a-89e393908ed6",
+              "target_item_id": null,
+              "text": "【加分】表现力可控生成经验（风格 / 人设 / 情绪 / 节奏）。"
+            },
+            {
+              "action": "add",
+              "change_id": "21e85ad0-17dc-402b-be3b-6ad0e642557e",
+              "target_item_id": null,
+              "text": "【加分】与 TTS / 对话 / 控制 / 安全等团队的跨模块协作经验。"
+            },
+            {
+              "action": "add",
+              "change_id": "c87f1970-2a13-452a-a554-2ca65d9340f2",
+              "target_item_id": null,
+              "text": "【不作门槛】顶会论文、线上 A/B 实战经验——本岗位处研发探索阶段、无线上 A/B 系统，不作为筛选门槛。"
+            }
+          ],
+          "kind": "standard_proposal",
+          "objects": [
+            {
+              "id": "49a59847-3fd0-4415-a5ff-613b158a51b7",
+              "kind": "position"
+            }
+          ],
+          "preceding_refs": [
+            {
+              "id": "d4e37729-9155-40fb-a5a5-65557f82924b",
+              "kind": "result",
+              "revision": "ddf61782-0de2-4f54-a8c0-c6e7d4f43007",
+              "sha256": "de11fb081f01f4e0ab7e72262bfa5a69715ecfb7c7bd9b3f4f83103f5b0f1e1b"
+            }
+          ],
+          "ref": {
+            "id": "dc2b9483-68c9-4aa3-a4d2-83c52ac67a26",
+            "kind": "result",
+            "revision": "c44dbd71-a820-4553-82da-50cf685e2bbf",
+            "sha256": "97fd759a5bfe87a49384658c16981d2bd4e3ae959a970b9314b10d5f2d5c58f6"
+          },
+          "source_refs": [
+            {
+              "id": "d10b5fff-3b64-46f6-aec2-a2ea7bcd3395:text",
+              "kind": "material",
+              "revision": "cb99655f34d201875246ef4c71c26dbde5a1ab0be070b0bac672c2cf27160a2d:utf8-v1",
+              "sha256": "6c5f781faed12555ebac494ebd24825476c922edebcb9decbeee2429cb37ef1f"
+            },
+            {
+              "id": "requirement-calibration",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+            }
+          ],
+          "title": "分条标准建议（提案）：本公司机器人动作生成模块岗位"
+        },
+        "error": null,
+        "status": "ok"
+      }
+    }
+  ],
+  "acceptance": "Real model output awaits user HR professional review; no real candidate/production data."
+}

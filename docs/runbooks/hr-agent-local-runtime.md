@@ -1,4 +1,4 @@
-# HR A1 独立 Worker 与本地工程验收
+# HR 独立 Worker 与本地工程验收
 
 本记录只描述 A1 的本地工程验证和待审阅装配，不表示生产发布或真实模型业务验收。真实候选人处理仍须满足根目录总体架构 §6 的服务与数据处理授权。
 
@@ -10,7 +10,7 @@
 
 Worker 与 API 都从已校验文件读取同一 HR 提供方、预算、诊断配置与内容密钥。`PLATFORM_CONTROL_DATABASE_URL_FILE` 必须是 app 角色，不能使用管理或迁移角色。配置缺失时阻止工作，错误日志不输出文件内容、DSN 或提供方响应。
 
-附件读取由 `PLATFORM_CONVERSATION_ATTACHMENT_ENABLED` 单独开启，使用附件自己的存储配置和 `PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE`。HR 内容密钥不能替代附件密钥。当前只覆盖已授权 UTF-8 正文，其他格式和生产材料边界见后续批次。
+附件读取由 `PLATFORM_CONVERSATION_ATTACHMENT_ENABLED` 单独开启，使用附件自己的存储配置和 `PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE`。HR 内容密钥不能替代附件密钥。A1 覆盖 UTF-8；B 增加独立的 PDF/DOCX 解析队列，详见下文。真实候选人材料仍未获本批验收授权。
 
 ## Compose 待审阅装配
 
@@ -64,3 +64,31 @@ cd backend
 上例摘要为占位说明，不能直接作为有效发布加载。实际目录的全部正文摘要在启动时验证；路径不得为绝对路径、`..` 或符号链接。A1 支持 method/intelligence 的受控公开正文；真正的专业内容和已有情报包适配在 B1/C2 完成，不把测试样例作为正式方法库。
 
 工作输入固定配置修订、发布 ID 与 manifest 摘要。已有工作不会因为目录内容被替换而继续读新内容；部署另一份发布前需保留旧发布并规划旧工作的归属，A1 不实现跨发布自动切换。新工作/新输入只接受进程当前配置的完整有效发布。
+
+## B 增补：解析与保留发布
+
+B 要求独立 `backend/control_migrations/hr_agent/` 的 096、097 均已应用；启动验证 17 张表、所需权限与两份迁移摘要。它不使用 `hr_web/094/095`，不在 Worker 启动时执行 DDL。097 新增加密解析内容和幂等请求表；已有096不改。
+
+从仓库根构建专业发布（输出必须是准备好的本地目录，不是生产路径）：
+
+```sh
+PYTHONPATH=backend backend/.venv/bin/python backend/tools/hr_agent/build_knowledge_release.py --output /tmp/hr-knowledge-review
+```
+
+把 `PLATFORM_HR_AGENT_KNOWLEDGE_DIR` 指向上述发布根。构建器核验来源摘要，写 `releases/<release_id>/` 后原子更新 `current.json`。API 与 Worker 都挂载同一发布根；新输入发现当前发布，旧输入仍读取原发布；删除原发布会阻塞旧执行，不能自动偷换。保留期与清理需随实际部署制定。兼容 A1 单 manifest 目录。
+
+受控来源在 `backend/hr_agent_knowledge/provenance.json`：七份方法正文、来源台账与已核验案例沿用 Team `7757ca4a2ce380206ff5019917b39de8bef10814`，角色仅适配云端五工具。目录浏览和 Agent Read 引用同一正文；模型是否使用方法由其判断。
+
+PDF/DOCX 通过用户 `POST /api/hr/agent/materials/{attachment_id}/parse` 入队，GET 不启动解析。每轮 Worker 先处理至多一个解析再认领工作。源上限20 MiB、解压32 MiB、最多500页/100万字符、子进程默认20秒、最多3次尝试；失败不冒充全文。没有 OCR；PDF视觉/阅读顺序和DOCX忽略对象均显式报告覆盖边界。Linux 子进程地址空间限制512 MiB，macOS没有等效强制限制；两者仍有输入/输出/时间上限。解析前和提交前均检查当前 HR 权限与原件可用性。
+
+独立试用入口 `/hr/agent`，可带准确 `position`、`work` UUID。模型没有确认标准工具，确认只走真实用户 HTTP。精确成果 `/file` 是已保存 Markdown 的确定性导出，每次下载重查权限/来源。当前没有历史标准专用 HTTP 展示入口；旧基准的删除/替换提案须先请求修订，不能盲选无法展示的原条目。
+
+## B 公开模型验证配置
+
+用户指定沿用 AI-FAE-Agent `.env`：Anthropic Messages 网关模型别名 `claude-opus-4-8`，Bearer 认证。profile 的 `auth_scheme: bearer` 仅由服务器配置；`credential_file` 为0600私有文件，不复制进源码或浏览器。本批仅发送公开 JD 与方法，未授权真实候选人。模型别名不作为官方型号或能力声明。
+
+该网关实测拒绝工具输入 schema 顶层组合关键字。适配器把顶层组合条件移入工具说明供模型阅读，服务端继续使用完整 JSON Schema 校验；未放宽业务条件。错误反馈只返回 schema 字段和条件，不回显用户参数值。
+
+公开实测采用20次调用、60万累计 token、900秒活动时间，输出上限4096；使用UTF-8字节上界估算，输入压缩触发/目标70,000/50,000，配置窗口131,072。它们是验证配置，不是供应商窗口实测或生产成本默认值。真实输出与评审限制见 `docs/reviews/artifacts/2026-09-10-hr-b-public-model/`。
+
+B 未启动云端服务，也未切换现行 HR。Compose 的生产凭据、网络、TLS、对象存储和容量仍需 E 阶段演练与实际授权。
