@@ -135,6 +135,49 @@ services:
       retries: 12
       start_period: 15s
 
+  platform-hr-agent-worker:
+    image: ${PLATFORM_IMAGE}
+    profiles: ["hr-agent"]
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command: ["python", "-m", "app.hr_agent.worker"]
+    environment:
+      PLATFORM_HR_AGENT_ENABLED: "1"
+      PLATFORM_EXECUTION_RELAY_ENABLED: "0"
+      PLATFORM_CONTROL_DATABASE_URL_FILE: /run/hr-agent-secrets/control-database-url
+      PLATFORM_HR_AGENT_CONTENT_KEYRING_FILE: /run/hr-agent-secrets/hr-content-keyring.json
+      PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE: /run/hr-agent-secrets/hr-provider-profile.json
+      PLATFORM_HR_AGENT_BUDGET_PROFILE_FILE: /run/hr-agent-secrets/hr-budget-profile.json
+      PLATFORM_HR_AGENT_DIAGNOSTIC_PROFILE_FILE: /run/hr-agent-secrets/hr-diagnostic-profile.json
+      PLATFORM_HR_AGENT_KNOWLEDGE_DIR: /data/hr-knowledge
+      PLATFORM_HR_AGENT_WORK_DIR: /data/hr-work
+      PLATFORM_CONVERSATION_ATTACHMENT_ENABLED: "${PLATFORM_HR_AGENT_ATTACHMENTS_ENABLED:-0}"
+      PLATFORM_ATTACHMENT_S3_ENDPOINT: http://platform-minio:9000
+      PLATFORM_ATTACHMENT_S3_BUCKET: orbbec-agent-attachments
+      PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE: /run/hr-agent-secrets/attachment-s3-access-key
+      PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE: /run/hr-agent-secrets/attachment-s3-secret-key
+      PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE: /run/hr-agent-secrets/control-database-url
+      PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/hr-agent-secrets/content-encryption-keyring
+    volumes:
+      - platform-hr-agent-secrets:/run/hr-agent-secrets:ro
+      - /data/orbbec-agent-platform/hr-knowledge:/data/hr-knowledge:ro
+      - /data/orbbec-agent-platform/hr-work:/data/hr-work
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    networks:
+      platform-internal: {}
+      platform-edge:
+        gw_priority: 1
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
   platform-hr-web-worker:
     image: ${PLATFORM_IMAGE}
     profiles: ["hr-web"]
@@ -475,4 +518,7 @@ volumes:
     external: true
   platform-attachment-worker-secrets:
     name: orbbec-agent-platform-attachment-worker-secrets
+    external: true
+  platform-hr-agent-secrets:
+    name: orbbec-agent-platform-hr-agent-secrets
     external: true

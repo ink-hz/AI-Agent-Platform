@@ -1,0 +1,16 @@
+# Explicit HR API opt-in. Base compose remains unchanged when this file is absent.
+# Validate the combined configuration before provisioning or enabling any service.
+services:
+  platform-api:
+    environment:
+      PLATFORM_HR_AGENT_ENABLED: "1"
+      PLATFORM_HR_AGENT_CONTENT_KEYRING_FILE: /run/hr-agent-secrets/hr-content-keyring.json
+      PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE: /run/hr-agent-secrets/hr-provider-profile.json
+      PLATFORM_HR_AGENT_BUDGET_PROFILE_FILE: /run/hr-agent-secrets/hr-budget-profile.json
+      PLATFORM_HR_AGENT_DIAGNOSTIC_PROFILE_FILE: /run/hr-agent-secrets/hr-diagnostic-profile.json
+      PLATFORM_HR_AGENT_KNOWLEDGE_DIR: /data/hr-knowledge
+      PLATFORM_HR_AGENT_WORK_DIR: /data/hr-work
+    volumes:
+      - platform-hr-agent-secrets:/run/hr-agent-secrets:ro
+      - /data/orbbec-agent-platform/hr-knowledge:/data/hr-knowledge:ro
+      - /data/orbbec-agent-platform/hr-work:/data/hr-work
