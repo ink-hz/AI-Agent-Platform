@@ -98,6 +98,33 @@ def test_bytes_order_coverage_and_failures():
     )
 
 
+def test_docx_reports_omml_math_and_word_symbols_as_partial_coverage():
+    data = docx()
+    source = io.BytesIO(data)
+    output = io.BytesIO()
+    with zipfile.ZipFile(source) as archive, zipfile.ZipFile(output, "w") as rewritten:
+        for entry in archive.infolist():
+            body = archive.read(entry)
+            if entry.filename == "word/document.xml":
+                body = body.replace(
+                    b"</w:body>",
+                    b'<w:p><w:r><w:t>Required formula: </w:t></w:r>'
+                    b'<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x=7</m:t></m:r></m:oMath>'
+                    b'<w:r><w:sym w:font="Symbol" w:char="F061"/></w:r></w:p></w:body>',
+                )
+            rewritten.writestr(entry, body)
+
+    result = parsing.parse_bytes(output.getvalue(), DOCX)
+
+    assert result["state"] == "ready"
+    assert "Required formula: " in result["text"]
+    assert result["coverage_complete"] is False
+    assert any(
+        "equations or symbols" in note.lower()
+        for note in result["coverage_notes"]
+    )
+
+
 def test_durable_queue_reclaim_and_source_scope(uploaded, database):
     _, _, repo, owner, materials, aid, _, store = uploaded
     import hashlib
@@ -325,3 +352,74 @@ def test_parse_key_conflict_and_revoked_during_processing(uploaded, database):
         assert row[0:2] == ("failed", "source_unavailable")
         assert b"Last page" not in bytes(row[2])
     assert materials.resolve(owner, first)["text_ref"] is None
+
+
+def test_worker_revalidates_owner_grant_before_source_io(uploaded, database, monkeypatch):
+    _client, _headers, repo, owner, materials, _, _, store = uploaded
+    service = parsing.MaterialParsingService(repo, materials)
+    aid = upload_document(uploaded, database, pdf(), "application/pdf", "grant.pdf")
+    receipt = service.request(owner, aid, str(uuid4()))
+    grant = {"allowed": False}
+    calls = {"read": 0, "parse": 0}
+
+    def authorize(owner_id, objects, refs, work_id):
+        if not grant["allowed"]:
+            raise HrAgentProblem("scope_denied", http_status=403)
+
+    def unexpected_read(asset):
+        calls["read"] += 1
+        return b"private"
+
+    def unexpected_parse(*args, **kwargs):
+        calls["parse"] += 1
+        return {"state": "ready", "text": "private"}
+
+    repo.scope_validator = authorize
+    store.read_verified = unexpected_read
+    monkeypatch.setattr(parsing, "parse_bytes", unexpected_parse)
+
+    assert service.process_one("revoked-owner")
+    assert calls == {"read": 0, "parse": 0}
+    with database.admin_connection() as conn:
+        row = conn.execute(
+            "SELECT state,error_code,lease_owner,lease_until FROM platform_hr_agent.material_parses WHERE parse_id=%s",
+            (receipt["parse_id"],),
+        ).fetchone()
+    assert row == ("failed", "source_unavailable", None, None)
+
+
+def test_worker_revalidates_owner_grant_before_ready_persistence(
+    uploaded, database, monkeypatch
+):
+    _client, _headers, repo, owner, materials, _, _, _store = uploaded
+    service = parsing.MaterialParsingService(repo, materials)
+    aid = upload_document(uploaded, database, pdf(), "application/pdf", "mid-grant.pdf")
+    receipt = service.request(owner, aid, str(uuid4()))
+    grant = {"allowed": True}
+
+    def authorize(owner_id, objects, refs, work_id):
+        if not grant["allowed"]:
+            raise HrAgentProblem("scope_denied", http_status=403)
+
+    def revoke_during_parse(*args, **kwargs):
+        grant["allowed"] = False
+        return {
+            "state": "ready",
+            "error_code": None,
+            "text": "private parsed text",
+            "coverage_complete": True,
+            "coverage_notes": [],
+        }
+
+    repo.scope_validator = authorize
+    monkeypatch.setattr(parsing, "parse_bytes", revoke_during_parse)
+
+    assert service.process_one("mid-revoked-owner")
+    with database.admin_connection() as conn:
+        row = conn.execute(
+            "SELECT state,error_code,sealed_content,lease_owner,lease_until FROM platform_hr_agent.material_parses WHERE parse_id=%s",
+            (receipt["parse_id"],),
+        ).fetchone()
+    assert row[0:2] == ("failed", "source_unavailable")
+    assert b"private parsed text" not in bytes(row[2])
+    assert row[3:] == (None, None)

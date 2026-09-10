@@ -124,6 +124,15 @@ def _extract(data, mime, expanded):
                 notes.append(
                     "Visual objects, alternate content, deleted text, or fields are not fully represented."
                 )
+            if any(
+                el.tag
+                in (
+                    "{http://schemas.openxmlformats.org/officeDocument/2006/math}oMath",
+                    ns + "sym",
+                )
+                for el in root.iter()
+            ):
+                notes.append("Equations or symbols are not fully represented.")
             if not any(parts):
                 notes.append("No extractable document text.")
     else:
@@ -254,6 +263,7 @@ class MaterialParsingService:
             )
             attempt = c.fetchone()["attempts"]
         try:
+            self.repo._scope(task["owner_id"], [], [])
             row = self.materials._row(task["owner_id"], task["attachment_id"])
             if (
                 row["state"] != "ready"
@@ -270,6 +280,8 @@ class MaterialParsingService:
                 else _failure("attempt_limit")
             )
             self.materials._assert_current(task["owner_id"], row)
+            if result["state"] == "ready":
+                self.repo._scope(task["owner_id"], [], [])
         except Exception:  # noqa: BLE001 - source/storage failures must stay opaque
             result = _failure("source_unavailable")
         sealed = self.repo._seal(
