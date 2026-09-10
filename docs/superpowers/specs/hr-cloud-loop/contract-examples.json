@@ -49,7 +49,17 @@
         }
       },
       "last_event_seq": 1,
-      "phase": "research"
+      "phase": "research",
+      "checkpoint": {
+        "revision": 1,
+        "input_revision": 1,
+        "discovery_state": "open",
+        "catalog_refs": [],
+        "readings": [],
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "last_note_entry_id": null
+      }
     }
   },
   {
@@ -159,7 +169,8 @@
       ],
       "open_questions": [
         "设备处于哪个阶段？"
-      ]
+      ],
+      "reading_targets": []
     }
   },
   {
@@ -205,6 +216,18 @@
           "action": "add",
           "target_item_id": null,
           "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
         }
       ]
     }
@@ -328,7 +351,8 @@
       "body": "note",
       "source_refs": [],
       "open_questions": [],
-      "owner_id": "00000000-0000-4000-8000-000000000010"
+      "owner_id": "00000000-0000-4000-8000-000000000010",
+      "reading_targets": []
     }
   },
   {
@@ -403,7 +427,19 @@
       ],
       "preceding_refs": [],
       "base_standard_ref": null,
-      "changes": []
+      "changes": [],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ]
     }
   },
   {
@@ -527,6 +563,1613 @@
         }
       ],
       "next_after": 7
+    }
+  },
+  {
+    "name": "Change_add_valid",
+    "definition": "Change",
+    "valid": true,
+    "value": {
+      "action": "add",
+      "target_item_id": null,
+      "text": "新增要求",
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "Change_add_bad_target",
+    "definition": "Change",
+    "valid": false,
+    "value": {
+      "action": "add",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": "新增要求",
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "Change_add_bad_text",
+    "definition": "Change",
+    "valid": false,
+    "value": {
+      "action": "add",
+      "target_item_id": null,
+      "text": null,
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "Change_replace_valid",
+    "definition": "Change",
+    "valid": true,
+    "value": {
+      "action": "replace",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": "修改要求",
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "Change_replace_bad_target",
+    "definition": "Change",
+    "valid": false,
+    "value": {
+      "action": "replace",
+      "target_item_id": null,
+      "text": "修改要求",
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "Change_replace_bad_text",
+    "definition": "Change",
+    "valid": false,
+    "value": {
+      "action": "replace",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": null,
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "Change_remove_valid",
+    "definition": "Change",
+    "valid": true,
+    "value": {
+      "action": "remove",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": null,
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "Change_remove_bad_target",
+    "definition": "Change",
+    "valid": false,
+    "value": {
+      "action": "remove",
+      "target_item_id": null,
+      "text": null,
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "Change_remove_bad_text",
+    "definition": "Change",
+    "valid": false,
+    "value": {
+      "action": "remove",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": "不得有正文",
+      "change_id": "00000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "name": "ProposedChange_add_valid",
+    "definition": "ProposedChange",
+    "valid": true,
+    "value": {
+      "action": "add",
+      "target_item_id": null,
+      "text": "新增要求"
+    }
+  },
+  {
+    "name": "ProposedChange_add_bad_target",
+    "definition": "ProposedChange",
+    "valid": false,
+    "value": {
+      "action": "add",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": "新增要求"
+    }
+  },
+  {
+    "name": "ProposedChange_add_bad_text",
+    "definition": "ProposedChange",
+    "valid": false,
+    "value": {
+      "action": "add",
+      "target_item_id": null,
+      "text": null
+    }
+  },
+  {
+    "name": "ProposedChange_replace_valid",
+    "definition": "ProposedChange",
+    "valid": true,
+    "value": {
+      "action": "replace",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": "修改要求"
+    }
+  },
+  {
+    "name": "ProposedChange_replace_bad_target",
+    "definition": "ProposedChange",
+    "valid": false,
+    "value": {
+      "action": "replace",
+      "target_item_id": null,
+      "text": "修改要求"
+    }
+  },
+  {
+    "name": "ProposedChange_replace_bad_text",
+    "definition": "ProposedChange",
+    "valid": false,
+    "value": {
+      "action": "replace",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": null
+    }
+  },
+  {
+    "name": "ProposedChange_remove_valid",
+    "definition": "ProposedChange",
+    "valid": true,
+    "value": {
+      "action": "remove",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": null
+    }
+  },
+  {
+    "name": "ProposedChange_remove_bad_target",
+    "definition": "ProposedChange",
+    "valid": false,
+    "value": {
+      "action": "remove",
+      "target_item_id": null,
+      "text": null
+    }
+  },
+  {
+    "name": "ProposedChange_remove_bad_text",
+    "definition": "ProposedChange",
+    "valid": false,
+    "value": {
+      "action": "remove",
+      "target_item_id": "00000000-0000-4000-8000-000000000020",
+      "text": "不得有正文"
+    }
+  },
+  {
+    "name": "proposal_requires_changes",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "jd_rejects_changes",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "jd",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "jd_rejects_standard_base",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "jd",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": {
+        "kind": "standard",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "00000000-0000-4000-8000-000000000013",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "changes": [],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "proposal_rejects_material_base",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "new_result_rejects_expected_revision",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": "00000000-0000-4000-8000-000000000030",
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "existing_result_requires_revision",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": "00000000-0000-4000-8000-000000000030",
+      "expected_revision": null,
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "reserve_can_be_zero",
+    "definition": "BudgetAmounts",
+    "valid": true,
+    "value": {
+      "model_calls": 0,
+      "total_tokens": 0,
+      "active_seconds": 0
+    }
+  },
+  {
+    "name": "addition_cannot_be_zero",
+    "definition": "BudgetAddition",
+    "valid": false,
+    "value": {
+      "model_calls": 0,
+      "total_tokens": 0,
+      "active_seconds": 0
+    }
+  },
+  {
+    "name": "add_only_model_calls",
+    "definition": "BudgetAddition",
+    "valid": true,
+    "value": {
+      "model_calls": 1,
+      "total_tokens": 0,
+      "active_seconds": 0
+    }
+  },
+  {
+    "name": "add_only_total_tokens",
+    "definition": "BudgetAddition",
+    "valid": true,
+    "value": {
+      "model_calls": 0,
+      "total_tokens": 1,
+      "active_seconds": 0
+    }
+  },
+  {
+    "name": "add_only_active_seconds",
+    "definition": "BudgetAddition",
+    "valid": true,
+    "value": {
+      "model_calls": 0,
+      "total_tokens": 0,
+      "active_seconds": 1
+    }
+  },
+  {
+    "name": "extension_rejects_zero",
+    "definition": "ExtendBudgetInput",
+    "valid": false,
+    "value": {
+      "expected_budget_revision": 1,
+      "addition": {
+        "model_calls": 0,
+        "total_tokens": 0,
+        "active_seconds": 0
+      },
+      "reason": "继续未读部分。"
+    }
+  },
+  {
+    "name": "summary_has_sources",
+    "definition": "SummaryProvenance",
+    "valid": true,
+    "value": {
+      "derived_from": [
+        {
+          "entry_id": "00000000-0000-4000-8000-000000000031",
+          "seq": 1,
+          "input_revision": 1
+        }
+      ],
+      "policy_revision": "scope-summary-1"
+    }
+  },
+  {
+    "name": "summary_requires_sources",
+    "definition": "SummaryProvenance",
+    "valid": false,
+    "value": {
+      "derived_from": [],
+      "policy_revision": "scope-summary-1"
+    }
+  },
+  {
+    "name": "model_note_cannot_claim_summary",
+    "definition": "SaveNoteInput",
+    "valid": false,
+    "value": {
+      "body": "职责要求验证设备质量，但尚缺量产阶段信息。",
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "open_questions": [
+        "设备处于哪个阶段？"
+      ],
+      "summary_provenance": {
+        "derived_from": [
+          {
+            "entry_id": "00000000-0000-4000-8000-000000000031",
+            "seq": 1,
+            "input_revision": 1
+          }
+        ],
+        "policy_revision": "scope-summary-1"
+      },
+      "reading_targets": []
+    }
+  },
+  {
+    "name": "material_original_and_text",
+    "definition": "MaterialView",
+    "valid": true,
+    "value": {
+      "attachment_id": "00000000-0000-4000-8000-000000000001",
+      "state": "ready",
+      "visibility": {
+        "kind": "private",
+        "subject_id": "00000000-0000-4000-8000-000000000040"
+      },
+      "original_ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "text_ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "text-utf8-v1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "parse_state": "ready",
+      "parser_release": "utf8-v1",
+      "coverage_complete": true
+    }
+  },
+  {
+    "name": "material_processing",
+    "definition": "MaterialView",
+    "valid": true,
+    "value": {
+      "attachment_id": "00000000-0000-4000-8000-000000000001",
+      "state": "ready",
+      "visibility": {
+        "kind": "private",
+        "subject_id": "00000000-0000-4000-8000-000000000040"
+      },
+      "original_ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "text_ref": null,
+      "parse_state": "processing",
+      "parser_release": "utf8-v1",
+      "coverage_complete": false
+    }
+  },
+  {
+    "name": "material_ready_requires_text",
+    "definition": "MaterialView",
+    "valid": false,
+    "value": {
+      "attachment_id": "00000000-0000-4000-8000-000000000001",
+      "state": "ready",
+      "visibility": {
+        "kind": "private",
+        "subject_id": "00000000-0000-4000-8000-000000000040"
+      },
+      "original_ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "text_ref": null,
+      "parse_state": "ready",
+      "parser_release": "utf8-v1",
+      "coverage_complete": true
+    }
+  },
+  {
+    "name": "material_failed_cannot_claim_text",
+    "definition": "MaterialView",
+    "valid": false,
+    "value": {
+      "attachment_id": "00000000-0000-4000-8000-000000000001",
+      "state": "ready",
+      "visibility": {
+        "kind": "private",
+        "subject_id": "00000000-0000-4000-8000-000000000040"
+      },
+      "original_ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "text_ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "text-utf8-v1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "parse_state": "failed",
+      "parser_release": "utf8-v1",
+      "coverage_complete": true
+    }
+  },
+  {
+    "name": "private_resource_requires_subject",
+    "definition": "ResourceVisibility",
+    "valid": false,
+    "value": {
+      "kind": "private",
+      "subject_id": null
+    }
+  },
+  {
+    "name": "standard_conflict_current_revision",
+    "definition": "StandardConflict",
+    "valid": true,
+    "value": {
+      "code": "revision_conflict",
+      "message": "岗位标准已更新，请重新查看差异。",
+      "retryable": false,
+      "details": {
+        "conflict_kind": "standard_revision",
+        "current_revision": "00000000-0000-4000-8000-000000000044"
+      }
+    }
+  },
+  {
+    "name": "standard_conflict_requires_current",
+    "definition": "StandardConflict",
+    "valid": false,
+    "value": {
+      "code": "revision_conflict",
+      "message": "岗位标准已更新，请重新查看差异。",
+      "retryable": false,
+      "details": {
+        "conflict_kind": "standard_revision"
+      }
+    }
+  },
+  {
+    "name": "standard_conflict_rejects_integer_revision",
+    "definition": "StandardConflict",
+    "valid": false,
+    "value": {
+      "code": "revision_conflict",
+      "message": "岗位标准已更新，请重新查看差异。",
+      "retryable": false,
+      "details": {
+        "conflict_kind": "standard_revision",
+        "current_revision": 2
+      }
+    }
+  },
+  {
+    "name": "budget_conflict_integer_revision",
+    "definition": "Problem",
+    "valid": true,
+    "value": {
+      "code": "revision_conflict",
+      "message": "岗位标准已更新，请重新查看差异。",
+      "retryable": false,
+      "details": {
+        "conflict_kind": "budget_revision",
+        "current_revision": 2
+      }
+    }
+  },
+  {
+    "name": "tool_error_user_projection",
+    "definition": "Event",
+    "valid": true,
+    "value": {
+      "seq": 1,
+      "type": "tool_error",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "input_revision": 1,
+      "at": "2026-09-10T00:00:00Z",
+      "state": "running",
+      "message": "资料访问被拒绝。",
+      "result_ref": null,
+      "phase": "research",
+      "error": {
+        "code": "scope_denied",
+        "message": "当前范围无权读取该资料。",
+        "retryable": false,
+        "details": {}
+      },
+      "tool_status": "forbidden"
+    }
+  },
+  {
+    "name": "tool_error_requires_error",
+    "definition": "Event",
+    "valid": false,
+    "value": {
+      "seq": 1,
+      "type": "tool_error",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "input_revision": 1,
+      "at": "2026-09-10T00:00:00Z",
+      "state": "running",
+      "message": "资料访问被拒绝。",
+      "result_ref": null,
+      "phase": "research",
+      "error": null,
+      "tool_status": "forbidden"
+    }
+  },
+  {
+    "name": "recovery_user_projection",
+    "definition": "Event",
+    "valid": true,
+    "value": {
+      "seq": 1,
+      "type": "recovery_started",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "input_revision": 1,
+      "at": "2026-09-10T00:00:00Z",
+      "state": "running",
+      "message": "正在恢复已保存进度。",
+      "result_ref": null,
+      "phase": "research",
+      "error": null,
+      "tool_status": null
+    }
+  },
+  {
+    "name": "remaining_reading_checkpoint",
+    "definition": "WorkCheckpoint",
+    "valid": true,
+    "value": {
+      "revision": 1,
+      "input_revision": 1,
+      "discovery_state": "open",
+      "catalog_refs": [],
+      "readings": [
+        {
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "total_characters": 100,
+          "remaining_ranges": [
+            {
+              "start": 40,
+              "end": 100
+            }
+          ],
+          "state": "partial"
+        }
+      ],
+      "open_questions": [],
+      "pending_operation_ids": [],
+      "last_note_entry_id": null
+    }
+  },
+  {
+    "name": "temporary_basis",
+    "definition": "ResultBasis",
+    "valid": true,
+    "value": {
+      "kind": "user_temporary",
+      "ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "input_revision": 1
+    }
+  },
+  {
+    "name": "temporary_basis_requires_input",
+    "definition": "ResultBasis",
+    "valid": false,
+    "value": {
+      "kind": "user_temporary",
+      "ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "input_revision": null
+    }
+  },
+  {
+    "name": "confirmed_basis_rejects_material",
+    "definition": "ResultBasis",
+    "valid": false,
+    "value": {
+      "kind": "confirmed_standard",
+      "ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "input_revision": null
+    }
+  },
+  {
+    "name": "ordinary_log_whitelist",
+    "definition": "OrdinaryLogRecord",
+    "valid": true,
+    "value": {
+      "at": "2026-09-10T00:00:00Z",
+      "event": "model_request",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000051",
+      "operation_id": null,
+      "state": "running",
+      "duration_ms": 10,
+      "input_tokens": 100,
+      "output_tokens": null,
+      "error_code": null,
+      "profile_revision": "test-v1"
+    }
+  },
+  {
+    "name": "ordinary_log_rejects_prompt",
+    "definition": "OrdinaryLogRecord",
+    "valid": false,
+    "value": {
+      "at": "2026-09-10T00:00:00Z",
+      "event": "model_request",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000051",
+      "operation_id": null,
+      "state": "running",
+      "duration_ms": 10,
+      "input_tokens": 100,
+      "output_tokens": null,
+      "error_code": null,
+      "profile_revision": "test-v1",
+      "prompt": "synthetic-sensitive-sentinel"
+    }
+  },
+  {
+    "name": "ordinary_log_rejects_message",
+    "definition": "OrdinaryLogRecord",
+    "valid": false,
+    "value": {
+      "at": "2026-09-10T00:00:00Z",
+      "event": "model_request",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000051",
+      "operation_id": null,
+      "state": "running",
+      "duration_ms": 10,
+      "input_tokens": 100,
+      "output_tokens": null,
+      "error_code": null,
+      "profile_revision": "test-v1",
+      "message": "synthetic-sensitive-sentinel"
+    }
+  },
+  {
+    "name": "ordinary_log_rejects_headers",
+    "definition": "OrdinaryLogRecord",
+    "valid": false,
+    "value": {
+      "at": "2026-09-10T00:00:00Z",
+      "event": "model_request",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000051",
+      "operation_id": null,
+      "state": "running",
+      "duration_ms": 10,
+      "input_tokens": 100,
+      "output_tokens": null,
+      "error_code": null,
+      "profile_revision": "test-v1",
+      "headers": "synthetic-sensitive-sentinel"
+    }
+  },
+  {
+    "name": "ordinary_log_rejects_credential",
+    "definition": "OrdinaryLogRecord",
+    "valid": false,
+    "value": {
+      "at": "2026-09-10T00:00:00Z",
+      "event": "model_request",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000051",
+      "operation_id": null,
+      "state": "running",
+      "duration_ms": 10,
+      "input_tokens": 100,
+      "output_tokens": null,
+      "error_code": null,
+      "profile_revision": "test-v1",
+      "credential": "synthetic-sensitive-sentinel"
+    }
+  },
+  {
+    "name": "ordinary_log_rejects_resume",
+    "definition": "OrdinaryLogRecord",
+    "valid": false,
+    "value": {
+      "at": "2026-09-10T00:00:00Z",
+      "event": "model_request",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000051",
+      "operation_id": null,
+      "state": "running",
+      "duration_ms": 10,
+      "input_tokens": 100,
+      "output_tokens": null,
+      "error_code": null,
+      "profile_revision": "test-v1",
+      "resume": "synthetic-sensitive-sentinel"
+    }
+  },
+  {
+    "name": "ordinary_log_rejects_extra",
+    "definition": "OrdinaryLogRecord",
+    "valid": false,
+    "value": {
+      "at": "2026-09-10T00:00:00Z",
+      "event": "model_request",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000051",
+      "operation_id": null,
+      "state": "running",
+      "duration_ms": 10,
+      "input_tokens": 100,
+      "output_tokens": null,
+      "error_code": null,
+      "profile_revision": "test-v1",
+      "extra": "synthetic-sensitive-sentinel"
+    }
+  },
+  {
+    "name": "ordinary_log_rejects_file_path",
+    "definition": "OrdinaryLogRecord",
+    "valid": false,
+    "value": {
+      "at": "2026-09-10T00:00:00Z",
+      "event": "model_request",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000051",
+      "operation_id": null,
+      "state": "running",
+      "duration_ms": 10,
+      "input_tokens": 100,
+      "output_tokens": null,
+      "error_code": null,
+      "profile_revision": "test-v1",
+      "file_path": "synthetic-sensitive-sentinel"
+    }
+  },
+  {
+    "name": "waiting_user_requires_question",
+    "definition": "WorkView",
+    "valid": false,
+    "value": {
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "thread_id": "00000000-0000-4000-8000-000000000006",
+      "input_revision": 1,
+      "state": "waiting_user",
+      "answer_state": "none",
+      "result_refs": [],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "revision": 1,
+        "limits": {
+          "model_calls": 32,
+          "total_tokens": 600000,
+          "active_seconds": 900
+        },
+        "charged_calls": 0,
+        "charged_tokens": 0,
+        "active_seconds": 0,
+        "usage_quality": "reported",
+        "reserve": {
+          "model_calls": 2,
+          "total_tokens": 40000,
+          "active_seconds": 60
+        }
+      },
+      "last_event_seq": 1,
+      "phase": "research",
+      "checkpoint": {
+        "revision": 1,
+        "input_revision": 1,
+        "discovery_state": "open",
+        "catalog_refs": [],
+        "readings": [],
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "last_note_entry_id": null
+      }
+    }
+  },
+  {
+    "name": "calibration_requires_basis",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "role_calibration",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [],
+      "basis": []
+    }
+  },
+  {
+    "name": "reject_injected_WorkInput_owner_id",
+    "definition": "WorkInput",
+    "valid": false,
+    "value": {
+      "thread_id": null,
+      "text": "请梳理这份公开 JD 的任务与要求，保存待确认建议。",
+      "objects": [],
+      "references": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "budget_profile": "calibration-test",
+      "owner_id": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_AppendInput_state",
+    "definition": "AppendInput",
+    "valid": false,
+    "value": {
+      "expected_input_revision": 1,
+      "text": "关联到这个岗位，形成两条待确认建议。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "references": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "question_id": null,
+      "state": "completed"
+    }
+  },
+  {
+    "name": "reject_injected_ListResourcesInput_owner_id",
+    "definition": "ListResourcesInput",
+    "valid": false,
+    "value": {
+      "kinds": [
+        "method"
+      ],
+      "owner_id": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_ReadResourceInput_lease_id",
+    "definition": "ReadResourceInput",
+    "valid": false,
+    "value": {
+      "ref": {
+        "kind": "material",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "revision": "public-jd-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "offset": 0,
+      "limit": 8000,
+      "lease_id": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_SaveNoteInput_state",
+    "definition": "SaveNoteInput",
+    "valid": false,
+    "value": {
+      "body": "职责要求验证设备质量，但尚缺量产阶段信息。",
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "open_questions": [
+        "设备处于哪个阶段？"
+      ],
+      "reading_targets": [],
+      "state": "completed"
+    }
+  },
+  {
+    "name": "reject_injected_SaveNoteInput_owner_id",
+    "definition": "SaveNoteInput",
+    "valid": false,
+    "value": {
+      "body": "职责要求验证设备质量，但尚缺量产阶段信息。",
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "open_questions": [
+        "设备处于哪个阶段？"
+      ],
+      "reading_targets": [],
+      "owner_id": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_SaveResultInput_confirmed_by",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ],
+      "confirmed_by": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_SaveResultInput_idempotency_key",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ],
+      "idempotency_key": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_SaveResultInput_lease_id",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ],
+      "lease_id": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_SaveResultInput_state",
+    "definition": "SaveResultInput",
+    "valid": false,
+    "value": {
+      "result_id": null,
+      "expected_revision": null,
+      "kind": "standard_proposal",
+      "title": "岗位要求建议",
+      "body": "以下两项供用人经理确认。",
+      "objects": [
+        {
+          "kind": "position",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "source_refs": [
+        {
+          "kind": "material",
+          "id": "00000000-0000-4000-8000-000000000001",
+          "revision": "public-jd-1",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "preceding_refs": [
+        {
+          "kind": "result",
+          "id": "00000000-0000-4000-8000-000000000002",
+          "revision": "00000000-0000-4000-8000-000000000003",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "base_standard_ref": null,
+      "changes": [
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够设计设备验证方案。"
+        },
+        {
+          "action": "add",
+          "target_item_id": null,
+          "text": "能够区分设计问题与制造问题。"
+        }
+      ],
+      "basis": [
+        {
+          "kind": "user_temporary",
+          "ref": {
+            "kind": "material",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "revision": "public-jd-1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "input_revision": 1
+        }
+      ],
+      "state": "completed"
+    }
+  },
+  {
+    "name": "reject_injected_AskUserInput_model_endpoint",
+    "definition": "AskUserInput",
+    "valid": false,
+    "value": {
+      "question": "设备目前处于哪个阶段？",
+      "options": [
+        "样机验证",
+        "量产导入"
+      ],
+      "model_endpoint": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_AskUserInput_owner_id",
+    "definition": "AskUserInput",
+    "valid": false,
+    "value": {
+      "question": "设备目前处于哪个阶段？",
+      "options": [
+        "样机验证",
+        "量产导入"
+      ],
+      "owner_id": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_ConfirmInput_confirmed_by",
+    "definition": "ConfirmInput",
+    "valid": false,
+    "value": {
+      "proposal_ref": {
+        "kind": "result",
+        "id": "00000000-0000-4000-8000-000000000011",
+        "revision": "00000000-0000-4000-8000-000000000012",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "selected_change_ids": [
+        "00000000-0000-4000-8000-000000000008",
+        "00000000-0000-4000-8000-000000000009"
+      ],
+      "expected_standard_revision": null,
+      "confirmed_by": "forged"
+    }
+  },
+  {
+    "name": "reject_injected_ConfirmInput_owner_id",
+    "definition": "ConfirmInput",
+    "valid": false,
+    "value": {
+      "proposal_ref": {
+        "kind": "result",
+        "id": "00000000-0000-4000-8000-000000000011",
+        "revision": "00000000-0000-4000-8000-000000000012",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "selected_change_ids": [
+        "00000000-0000-4000-8000-000000000008",
+        "00000000-0000-4000-8000-000000000009"
+      ],
+      "expected_standard_revision": null,
+      "owner_id": "forged"
     }
   }
 ]
