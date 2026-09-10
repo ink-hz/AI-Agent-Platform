@@ -159,13 +159,31 @@ def _process_fixture():
     settings = load_hr_agent_settings(json.loads(config.read_text()))
     dsn = (config.parent/'dsn').read_text()
     repo = HrAgentRepository(lambda: psycopg.connect(dsn), settings.create_codec(), settings=settings)
+    resources = None
+    if scenario == 'summary_checkpoint':
+        from app.hr_agent.resources import build_runtime_services
+        repo, resources = build_runtime_services(settings, lambda: psycopg.connect(dsn))
     def context(repository, resources, fence):
         entries = repository.read_selected_entries(fence)
+        if scenario == 'summary_checkpoint':
+            from app.hr_agent.context import estimate_input_tokens
+            current, _, view, _ = repository.context_input(fence)
+            messages = ({'role': 'user', 'content': json.dumps({'goal': current['text'], 'checkpoint': view['checkpoint'], 'entries': [{'entry_id': str(e.entry_id), 'kind': e.kind, 'body': e.body} for e in entries]}, ensure_ascii=False)},)
+            provenance = {'derived_from': [{'entry_id': str(e.entry_id), 'seq': e.seq, 'input_revision': e.input_revision} for e in entries], 'policy_revision': 'process-checkpoint-v1'}
+            purpose = 'summary' if any(e.kind == 'note' for e in entries) and not any(e.kind == 'summary' for e in entries) else 'work'
+            dependencies = {json.dumps(ref, sort_keys=True): ref for ref in current['references']}
+            dependencies.update({json.dumps(ref, sort_keys=True): ref for e in entries for ref in e.source_refs})
+            return ModelContext(purpose, messages, (), tuple(dependencies.values()), estimate_input_tokens(messages, (), 'conservative_utf8'), fence.input_revision, summary_provenance=provenance if purpose == 'summary' else None)
         if scenario == 'summary' and not any(e.kind == 'summary' for e in entries):
             provenance = {'derived_from': [{'entry_id': str(e.entry_id), 'seq': e.seq, 'input_revision': e.input_revision} for e in entries], 'policy_revision': 'process-v1'}
             return ModelContext('summary', ({'role': 'user', 'content': '压缩公开材料'},), (), (), 20, fence.input_revision, summary_provenance=provenance)
         return ModelContext('work', ({'role': 'user', 'content': repository.context_input(fence)[0]['text']},), (), (), 20, fence.input_revision)
     def observe(event, identity):
+        if scenario == 'summary_checkpoint' and event == 'model_committed':
+            with repo.connection_factory() as connection:
+                purpose = connection.execute('select purpose from platform_hr_agent.model_attempts where attempt_id=%s', (identity,)).fetchone()[0]
+            if purpose != 'summary':
+                return
         if event == point:
             (config.parent/'marker').write_text(str(identity))
             threading.Event().wait()
@@ -177,8 +195,9 @@ def _process_fixture():
         return result
     repo._receipt = receipt
     def runner(repository, model, resources, fence, **kwargs):
-        return run_work(repository, model, resources, fence, context_builder=context, tool_executor=lambda r, rs, f, op: r.execute_local_tool(f, op), observer=observe, **kwargs)
-    run_worker(repo, ConfiguredHttpModelPort.from_mapping(settings.provider_profile), None, poll_seconds=.05, runner=runner)
+        executor = None if scenario == 'summary_checkpoint' else lambda r, rs, f, op: r.execute_local_tool(f, op)
+        return run_work(repository, model, resources, fence, context_builder=context, tool_executor=executor, observer=observe, **kwargs)
+    run_worker(repo, ConfiguredHttpModelPort.from_mapping(settings.provider_profile), resources, poll_seconds=.05, runner=runner)
 
 
 @pytest.mark.parametrize('scenario', ['work', 'summary', 'sending'])
@@ -409,6 +428,77 @@ def test_compose_api_opt_in_uses_same_hr_configuration_paths():
         assert worker['environment'][key] == value
     assert 'PLATFORM_EXECUTION_RELAY_ENABLED' not in api['environment']
     assert 'platform-hr-agent-secrets:/run/hr-agent-secrets:ro' in api['volumes']
+
+
+def test_summary_kill_preserves_partial_read_questions_and_source_identities(database, tmp_path):
+    from app.hr_agent.resources import build_runtime_services
+    from test_hr_agent_context import publication
+    with database.admin_connection() as c:
+        c.execute('truncate platform_hr_agent.threads, platform_hr_agent.operations cascade')
+    def tool_response(name, args):
+        packet = {'choices': [{'delta': {'tool_calls': [{'index': 0, 'id': 'call-' + name, 'function': {'name': name, 'arguments': json.dumps(args)}}]}, 'finish_reason': 'tool_calls'}], 'usage': {'prompt_tokens': 30, 'completion_tokens': 10}}
+        return 'data: ' + json.dumps(packet) + '\n\ndata: [DONE]\n\n'
+    with Provider([]) as provider:
+        config, settings = process_config(tmp_path, database, provider.endpoint)
+        ref = publication(settings.knowledge_dir)
+        total = len((settings.knowledge_dir/'method.md').read_text())
+        questions = ['未读部分是否提供竞争解释？', '还缺哪些承重证据？']
+        provider.responses.extend([
+            tool_response('read_resource', {'ref': ref, 'offset': 0, 'limit': 5}),
+            tool_response('save_note', {'body': '仅返回前五字，仍需继续阅读并核对证据。', 'source_refs': [ref], 'open_questions': questions, 'reading_targets': [ref]}),
+            wire(), wire(),
+        ])
+        repo, resources = build_runtime_services(settings, database.connection)
+        owner = grant_test_owner(database)
+        view = repo.submit(owner, {'thread_id': None, 'text': '分段阅读公开方法并保留未解决问题', 'objects': [], 'references': [ref], 'budget_profile': 'test'}, uuid4())
+        first = launch(config, 'model_committed', 'summary_checkpoint')
+        try:
+            wait_until(lambda: (tmp_path/'marker').exists() or first.poll() is not None)
+            assert first.poll() is None, first.communicate()[1].decode()
+            before = repo.get_work(owner, view['work_id'])['checkpoint']
+            assert before['open_questions'] == questions
+            assert before['readings'] == [{'ref': ref, 'total_characters': total, 'remaining_ranges': [{'start': 5, 'end': total}], 'state': 'partial'}]
+            assert before['last_note_entry_id'] is not None
+            with database.connection() as c:
+                summary_attempt = c.execute("select attempt_id from platform_hr_agent.model_attempts where purpose='summary' and status='committed'").fetchone()[0]
+                source_entries = {str(r[0]) for r in c.execute("select entry_id from platform_hr_agent.entries where kind in ('user','tool','note')").fetchall()}
+            assert len(provider.requests) == 3
+            summary_input = json.dumps(provider.requests[2]['messages'], ensure_ascii=False)
+            assert questions[0] in summary_input
+            assert ref['sha256'] in summary_input
+            first.kill(); first.wait(timeout=5)
+            time.sleep(3.2)
+            second = launch(config, scenario='summary_checkpoint')
+            try:
+                wait_until(lambda: repo.get_work(owner, view['work_id'])['state'] == 'completed' or second.poll() is not None)
+                done = repo.get_work(owner, view['work_id'])
+                assert done['state'] == 'completed'
+                for field in ('readings', 'open_questions', 'last_note_entry_id', 'discovery_state', 'catalog_refs'):
+                    assert done['checkpoint'][field] == before[field]
+                with repo.transaction() as c:
+                    c.execute("select * from platform_hr_agent.entries where model_attempt_id=%s and kind='summary'", (summary_attempt,))
+                    summary = c.fetchone()
+                    provenance = repo._unseal('entries', summary['entry_id'], 'sealed_summary_provenance', summary)
+                    assert {s['entry_id'] for s in provenance['derived_from']} == source_entries
+                    c.execute('select entry_id,seq,input_revision from platform_hr_agent.entries where work_id=%s', (view['work_id'],))
+                    surviving = {(str(e['entry_id']), e['seq'], e['input_revision']) for e in c.fetchall()}
+                    assert all((e['entry_id'], e['seq'], e['input_revision']) in surviving for e in provenance['derived_from'])
+                    assert summary['source_refs'] == [ref]
+                    c.execute('select count(*) as count from platform_hr_agent.read_records')
+                    assert c.fetchone()['count'] == 1
+                    c.execute("select count(*) as count from platform_hr_agent.entries where kind='note'")
+                    assert c.fetchone()['count'] == 1
+                assert resources.knowledge.read(ref) == (settings.knowledge_dir/'method.md').read_text()
+                assert len(provider.requests) == 4
+                restarted_input = json.dumps(provider.requests[-1]['messages'], ensure_ascii=False)
+                assert questions[1] in restarted_input
+                assert 'remaining_ranges' in restarted_input
+                assert ref['sha256'] in restarted_input
+            finally:
+                second.terminate(); second.wait(timeout=5)
+        finally:
+            if first.poll() is None:
+                first.kill(); first.wait(timeout=5)
 
 
 if __name__ == '__main__':
