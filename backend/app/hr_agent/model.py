@@ -513,7 +513,7 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
         dict(raw_usage) or None,
         input_total,
         output_total,
-        "reported" if raw_usage else "missing",
+        "reported" if raw_usage else "unknown",
     )
     return ModelReply(final_text, tuple(tool_calls), stop_reason, usage)
 

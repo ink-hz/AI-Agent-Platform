@@ -496,3 +496,12 @@ def test_anthropic_invalid_tool_pairs_never_send_http(tmp_path,messages):
         with pytest.raises(ModelProtocolError,match='invalid_response'):
             list(ConfiguredHttpModelPort(profile).stream(replace(request(),messages=messages)))
     assert seen==[]
+
+
+def test_missing_provider_usage_keeps_explicit_unknown_quality():
+    from app.hr_agent.model import collect_reply
+    from app.hr_agent.types import ModelEvent
+    reply=collect_reply([ModelEvent('text_delta',{'text':'fake answer'}),ModelEvent('stop',{'reason':'stop'})])
+    assert reply.usage.quality=='unknown'
+    assert reply.usage.raw is None
+    assert reply.usage.input_total is None and reply.usage.output_total is None
