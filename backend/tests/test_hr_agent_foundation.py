@@ -118,3 +118,14 @@ def test_config_requires_integer_environment_time_units(tmp_path,key,value):
     from hr_agent_support import make_hr_settings
     with pytest.raises(ValueError,match='^HR configuration invalid$'):
         make_hr_settings(tmp_path,**{'PLATFORM_HR_AGENT_'+key:value})
+
+
+@pytest.mark.parametrize('endpoint',['http://127.0.0.1:PRIVATE_PORT_SENTINEL/v1','http://127.0.0.1:65536/v1','http://127.0.0.1:0/v1'])
+def test_config_rejects_invalid_endpoint_port_without_secret_echo(tmp_path,endpoint):
+    import json
+    from hr_agent_support import make_hr_settings
+    settings=make_hr_settings(tmp_path)
+    path=tmp_path/'invalid-provider.json'
+    path.write_text(json.dumps({**settings.provider_profile,'endpoint':endpoint}))
+    with pytest.raises(ValueError,match='^HR configuration invalid$'):
+        make_hr_settings(tmp_path/'again',PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))

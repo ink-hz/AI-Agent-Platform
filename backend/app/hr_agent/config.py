@@ -67,6 +67,8 @@ def load_hr_agent_settings(environment: Mapping[str,str]) -> HrAgentSettings:
         if set(provider)-allowed: raise ValueError()
         if provider.get('protocol') not in {'openai_chat_sse','anthropic_messages_sse'}: raise ValueError()
         endpoint=urlsplit(provider['endpoint'])
+        port=endpoint.port
+        if port is not None and port==0: raise ValueError()
         if endpoint.scheme not in {'http','https'} or not endpoint.hostname or endpoint.username or endpoint.password or endpoint.fragment: raise ValueError()
         credential=Path(provider['credential_file'])
         if not credential.is_absolute() or credential.is_symlink() or not credential.is_file() or stat.S_IMODE(credential.stat().st_mode)!=0o600: raise ValueError()
