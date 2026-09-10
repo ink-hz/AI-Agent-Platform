@@ -28,6 +28,7 @@ import {
   type AttachmentUpload,
 } from "../../attachmentApi";
 import { MessageMarkdown } from "../../components/MessageMarkdown";
+import { HrLoopMethodPreview } from "./HrLoopMethodPreview";
 import { HrPositionPicker } from "./HrPositionPicker";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
 import "./HrLoopWorkspace.css";
@@ -201,6 +202,18 @@ function Workspace({
       setBusy(false);
       setConfiguration(null);
       clearPrivate();
+      // Revocation clears the entire private view; ordinary work selection retains navigation.
+      setThreads([]);
+      setHistory([]);
+      setMethods([]);
+      setPosition(null);
+      setPositionId(undefined);
+      setText("");
+      setNotice("");
+      setReason("");
+      setAddition({ model_calls: 0, total_tokens: 0, active_seconds: 0 });
+      keys.current.clear();
+      budgetAttempt.current = null;
     }
   }
   useEffect(() => {
@@ -660,7 +673,7 @@ function Workspace({
                   关闭方法
                 </button>
               </header>
-              <MessageMarkdown content={method.text} />
+              <HrLoopMethodPreview content={method.text} />
               <button
                 type="button"
                 disabled={disabled}
@@ -896,8 +909,10 @@ function Workspace({
                   <span key={identity(r)}>
                     {methods.find((m) => identity(m.ref) === identity(r))
                       ?.title ??
-                      (r.kind === "material_text"
-                        ? "材料正文"
+                      (r.kind === "material"
+                        ? r.id.endsWith(":text")
+                          ? "材料正文"
+                          : "材料原件"
                         : r.kind === "method"
                           ? "已选方法"
                           : r.kind === "result"
@@ -1049,6 +1064,15 @@ function Workspace({
               ) : (
                 <p>暂无已确认标准，或尚未读取。</p>
               )}
+              {standard && (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => addReference(standard.ref)}
+                >
+                  带此标准讨论
+                </button>
+              )}
               <button type="button" onClick={() => void rereadStandard()}>
                 重新阅读当前标准
               </button>
@@ -1121,6 +1145,22 @@ function ResultCard({
         成果已保存
         {result.kind === "standard_proposal" ? " · 建议尚待用户确认" : ""}
       </span>
+      {result.basis.length > 0 && (
+        <section className="hr-loop-basis" aria-label="基准性质">
+          <strong>基准性质</strong>
+          <ul>
+            {result.basis.map((basis, index) => (
+              <li key={index}>
+                {basis.kind === "confirmed_standard"
+                  ? "已确认标准 · 采用成果保存时引用的标准版本。"
+                  : basis.kind === "official_original"
+                    ? "官网原文 · 采用成果保存时引用的官网材料。"
+                    : `临时要求 · 来自第 ${basis.input_revision} 次已接收输入，尚未确认为正式标准。`}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <MessageMarkdown content={result.body} />
       {result.kind === "standard_proposal" && (
         <fieldset disabled={disabled}>

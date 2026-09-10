@@ -44,7 +44,7 @@ export type SavedResult = {
   }[];
   base_standard_ref: ExactRef | null;
   basis: {
-    kind: string;
+    kind: "confirmed_standard" | "official_original" | "user_temporary";
     ref: ExactRef | null;
     input_revision: number | null;
   }[];

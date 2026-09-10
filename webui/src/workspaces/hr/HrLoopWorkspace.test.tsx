@@ -524,13 +524,11 @@ it("does not restore a late position result after a work access revocation", asy
         api={client as never}
         positionApi={
           {
-            position: vi
-              .fn()
-              .mockResolvedValue({
-                positionId: "p",
-                title: "岗位",
-                locations: [],
-              }),
+            position: vi.fn().mockResolvedValue({
+              positionId: "p",
+              title: "岗位",
+              locations: [],
+            }),
           } as never
         }
         initialWorkId="w"
@@ -544,14 +542,12 @@ it("does not restore a late position result after a work access revocation", asy
 
 it("restores references again after a failed refresh and same revision reload", async () => {
   const client = api({
-    input: vi
-      .fn()
-      .mockResolvedValue({
-        input_revision: 2,
-        text: "old",
-        objects: [],
-        references: [ref],
-      }),
+    input: vi.fn().mockResolvedValue({
+      input_revision: 2,
+      text: "old",
+      objects: [],
+      references: [ref],
+    }),
     work: vi.fn().mockResolvedValue(work),
   });
   await act(async () =>
@@ -563,9 +559,15 @@ it("restores references again after a failed refresh and same revision reload", 
       />,
     ),
   );
-  expect(el.querySelector('[aria-label="本次参考"]')?.textContent).toContain("已存成果");
-  client.work.mockRejectedValueOnce(new HrLoopError(503, "temporarily_unavailable", {}));
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 2600)); });
+  expect(el.querySelector('[aria-label="本次参考"]')?.textContent).toContain(
+    "已存成果",
+  );
+  client.work.mockRejectedValueOnce(
+    new HrLoopError(503, "temporarily_unavailable", {}),
+  );
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2600));
+  });
   await act(async () => button("重新加载").click());
   await type("继续");
   await act(async () => button("发送").click());
@@ -625,13 +627,11 @@ it("shows the exact original standard text for destructive changes", async () =>
   const client = api({
     work: vi.fn().mockResolvedValue({ ...work, result_refs: [ref] }),
     result: vi.fn().mockResolvedValue(proposal),
-    standard: vi
-      .fn()
-      .mockResolvedValue({
-        ref: standardRef,
-        items: [{ item_id: "old-item", text: "原有五年经验要求" }],
-        confirmed_at: "today",
-      }),
+    standard: vi.fn().mockResolvedValue({
+      ref: standardRef,
+      items: [{ item_id: "old-item", text: "原有五年经验要求" }],
+      confirmed_at: "today",
+    }),
   });
   await act(async () =>
     root.render(
@@ -640,13 +640,11 @@ it("shows the exact original standard text for destructive changes", async () =>
         api={client as never}
         positionApi={
           {
-            position: vi
-              .fn()
-              .mockResolvedValue({
-                positionId: "p",
-                title: "岗位",
-                locations: [],
-              }),
+            position: vi.fn().mockResolvedValue({
+              positionId: "p",
+              title: "岗位",
+              locations: [],
+            }),
           } as never
         }
         initialWorkId="w"
@@ -718,16 +716,14 @@ it("shows rejected uploads as unavailable instead of still checking", async () =
   vi.mocked(uploadAttachmentContent).mockResolvedValue({} as never);
   vi.mocked(completeAttachmentUpload).mockResolvedValue({} as never);
   const client = api({
-    material: vi
-      .fn()
-      .mockResolvedValue({
-        attachment_id: "attachment",
-        state: "rejected",
-        parse_state: "not_started",
-        text_ref: null,
-        original_ref: null,
-        coverage_complete: false,
-      }),
+    material: vi.fn().mockResolvedValue({
+      attachment_id: "attachment",
+      state: "rejected",
+      parse_state: "not_started",
+      text_ref: null,
+      original_ref: null,
+      coverage_complete: false,
+    }),
   });
   await act(async () =>
     root.render(<HrLoopWorkspace account={account} api={client as never} />),
@@ -745,4 +741,208 @@ it("shows rejected uploads as unavailable instead of still checking", async () =
   expect(el.querySelector(".hr-loop-upload")?.textContent).not.toContain(
     "正在检查",
   );
+});
+
+it.each([
+  ["user_temporary", null, 2, "临时要求", "第 2 次已接收输入"],
+  [
+    "confirmed_standard",
+    { ...ref, kind: "standard" },
+    null,
+    "已确认标准",
+    "成果保存时引用的标准版本",
+  ],
+  [
+    "official_original",
+    { ...ref, kind: "material", id: "source:original" },
+    null,
+    "官网原文",
+    "成果保存时引用的官网材料",
+  ],
+])(
+  "renders verified %s basis independently of prose",
+  async (kind, source, inputRevision, label, meaning) => {
+    const result = {
+      ref,
+      kind: "requirements",
+      title: "要求分析",
+      body: "正文没有基准标签。",
+      objects: [],
+      changes: [],
+      base_standard_ref: null,
+      basis: [{ kind, ref: source, input_revision: inputRevision }],
+    };
+    const client = api({
+      work: vi.fn().mockResolvedValue({ ...work, result_refs: [ref] }),
+      result: vi.fn().mockResolvedValue(result),
+    });
+    await act(async () =>
+      root.render(
+        <HrLoopWorkspace
+          account={account}
+          api={client as never}
+          initialWorkId="w"
+        />,
+      ),
+    );
+    const basis = el.querySelector('[aria-label="基准性质"]');
+    expect(basis?.textContent).toContain(label);
+    expect(basis?.textContent).toContain(meaning);
+    expect(basis?.textContent).not.toContain(String(kind));
+    expect(basis?.textContent).not.toContain("v1");
+  },
+);
+it.each([403, 410])(
+  "clears private navigation and draft on revocation %s despite delayed success",
+  async (status) => {
+    let reject!: (v: unknown) => void;
+    let resolve!: (v: unknown) => void;
+    const client = api({
+      threads: vi
+        .fn()
+        .mockResolvedValue({
+          items: [{ thread_id: "private-thread", title: "私有历史标题" }],
+          next_cursor: null,
+        }),
+      works: vi.fn().mockResolvedValue({ items: [work], next_cursor: null }),
+      work: vi.fn(
+        () =>
+          new Promise((_r, j) => {
+            reject = j;
+          }),
+      ),
+      results: vi.fn((q: { position?: string }) =>
+        q.position
+          ? new Promise((r) => {
+              resolve = r;
+            })
+          : Promise.resolve({ items: [], next_cursor: null }),
+      ),
+      result: vi
+        .fn()
+        .mockResolvedValue({
+          ref,
+          kind: "research",
+          title: "迟到私有成果",
+          body: "迟到私有正文",
+          objects: [],
+          changes: [],
+          base_standard_ref: null,
+          basis: [],
+        }),
+    });
+    await act(async () =>
+      root.render(
+        <HrLoopWorkspace
+          account={account}
+          api={client as never}
+          positionApi={
+            {
+              position: vi
+                .fn()
+                .mockResolvedValue({
+                  positionId: "p",
+                  title: "私有岗位名称",
+                  locations: [],
+                }),
+            } as never
+          }
+          initialWorkId="w"
+          initialPositionId="p"
+        />,
+      ),
+    );
+    await act(async () => button("私有历史标题").click());
+    await type("尚未发送的私有草稿");
+    expect(el.textContent).toContain("私有历史标题");
+    expect(el.textContent).toContain("私有岗位名称");
+    expect(el.textContent).toContain("等待你的补充 · 第 2 次输入");
+    await act(async () =>
+      reject(new HrLoopError(status, "dependency_revoked", {})),
+    );
+    await act(async () => resolve({ items: [{ ref }], next_cursor: null }));
+    expect(el.textContent).not.toContain("私有历史标题");
+    expect(el.textContent).not.toContain("私有岗位名称");
+    expect(el.textContent).not.toContain("等待你的补充 · 第 2 次输入");
+    expect(el.textContent).not.toContain("迟到私有");
+    expect(el.querySelector("textarea")?.value).toBe("");
+  },
+);
+it("previews method prose without YAML or broken relative source navigation", async () => {
+  const methodRef = { ...ref, kind: "method" };
+  const source =
+    "---\nid: private-method-id\nrevision: hidden-revision\n---\n# 方法正文\n[内部来源](../sources/method.md) 与 [公开来源](https://example.org/source)";
+  const client = api({
+    knowledge: vi
+      .fn()
+      .mockResolvedValue({
+        release_id: "release",
+        items: [{ ref: methodRef, title: "阅读方法", description: "" }],
+      }),
+    method: vi.fn().mockResolvedValue({ ref: methodRef, text: source }),
+  });
+  await act(async () =>
+    root.render(<HrLoopWorkspace account={account} api={client as never} />),
+  );
+  await act(async () => button("阅读方法").click());
+  const preview = el.querySelector(".hr-loop-method")!;
+  expect(preview.textContent).toContain("方法正文");
+  expect(preview.textContent).toContain("内部来源");
+  expect(preview.textContent).not.toContain("private-method-id");
+  expect(preview.querySelector('a[href="../sources/method.md"]')).toBeNull();
+  expect(
+    preview.querySelector('a[href="https://example.org/source"]'),
+  ).not.toBeNull();
+  await act(async () => button("带此方法讨论").click());
+  await type("讨论");
+  await act(async () => button("发送").click());
+  expect(client.submit.mock.calls[0][0].references).toEqual([methodRef]);
+});
+it("labels real parsed material refs and can add the exact current standard", async () => {
+  const standardRef = { ...ref, kind: "standard", id: "standard" };
+  const client = api({
+    input: vi
+      .fn()
+      .mockResolvedValue({
+        input_revision: 2,
+        text: "old",
+        objects: [],
+        references: [{ ...ref, kind: "material", id: "attachment:text" }],
+      }),
+    standard: vi
+      .fn()
+      .mockResolvedValue({
+        ref: standardRef,
+        items: [],
+        confirmed_at: "today",
+      }),
+  });
+  await act(async () =>
+    root.render(
+      <HrLoopWorkspace
+        account={account}
+        api={client as never}
+        positionApi={
+          {
+            position: vi
+              .fn()
+              .mockResolvedValue({
+                positionId: "p",
+                title: "岗位",
+                locations: [],
+              }),
+          } as never
+        }
+        initialPositionId="p"
+        initialWorkId="w"
+      />,
+    ),
+  );
+  expect(el.querySelector('[aria-label="本次参考"]')?.textContent).toContain(
+    "材料正文",
+  );
+  await act(async () => button("带此标准讨论").click());
+  await type("继续");
+  await act(async () => button("发送").click());
+  expect(client.append.mock.calls[0][1].references).toContainEqual(standardRef);
 });

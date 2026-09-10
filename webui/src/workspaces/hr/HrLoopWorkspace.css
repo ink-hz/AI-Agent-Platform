@@ -375,3 +375,16 @@
     align-items: flex-end;
   }
 }
+
+.hr-loop-basis {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: #f1f6f3;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.hr-loop-basis ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
