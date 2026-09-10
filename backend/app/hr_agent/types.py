@@ -8,10 +8,26 @@ from uuid import UUID
 import copy
 import hashlib
 import json
+import re
 from jsonschema import Draft202012Validator, FormatChecker
 
 _SCHEMA = json.loads(Path(__file__).with_name('contracts.schema.json').read_text())
-_VALIDATORS = {name: Draft202012Validator({'$defs':_SCHEMA['$defs'],'$ref':f'#/$defs/{name}'}, format_checker=FormatChecker()) for name in _SCHEMA['$defs']}
+_FORMAT_CHECKER = FormatChecker()
+
+@_FORMAT_CHECKER.checks('date-time')
+def _rfc3339_datetime(value):
+    # jsonschema's optional RFC3339 dependency is deliberately unnecessary here.
+    if not isinstance(value, str):
+        return True
+    if not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])', value):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.upper().replace('Z', '+00:00'))
+        return parsed.tzinfo is not None
+    except ValueError:
+        return False
+
+_VALIDATORS = {name: Draft202012Validator({'$defs':_SCHEMA['$defs'],'$ref':f'#/$defs/{name}'}, format_checker=_FORMAT_CHECKER) for name in _SCHEMA['$defs']}
 
 class HrAgentProblem(RuntimeError):
     def __init__(self, problem: dict, http_status: int = 422):

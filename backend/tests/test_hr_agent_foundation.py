@@ -83,3 +83,38 @@ def test_readiness_rejects_different_migration_checksum():
         with db.admin_connection() as c:
             c.execute("UPDATE platform_control.schema_migrations SET sha256=%s WHERE version=96",('0'*64,))
         assert not check_schema_ready(db)
+
+@pytest.mark.parametrize('revocation', ['INSERT ON platform_hr_agent.works','UPDATE ON platform_hr_agent.works','SELECT ON platform_hr_agent.inputs','INSERT ON platform_hr_agent.entries','USAGE ON SCHEMA platform_hr_agent'])
+def test_readiness_rejects_missing_application_write_grant(revocation):
+    from app.hr_agent.config import check_schema_ready
+    from hr_agent_support import hr_agent_database
+    with hr_agent_database() as db:
+        with db.admin_connection() as c:
+            c.execute('REVOKE '+revocation+' FROM platform_control_app')
+        assert not check_schema_ready(db)
+
+@pytest.mark.parametrize('document,field,value', [
+    ('budget','model_calls',32.5), ('budget','model_calls',True),
+    ('budget','total_tokens',600000.0), ('budget','active_seconds',900.5),
+    ('budget','max_output_tokens',4096.0), ('budget','input_target_tokens','8000'),
+    ('budget','input_trigger_tokens',12000.5), ('budget','work_retention_seconds',True),
+    ('provider','context_window_tokens',32768.5), ('provider','timeout_seconds',1.5),
+])
+def test_config_requires_integer_numeric_units(tmp_path,document,field,value):
+    import json
+    from hr_agent_support import make_hr_settings
+    settings=make_hr_settings(tmp_path)
+    profile=dict(settings.budget_profile if document=='budget' else settings.provider_profile)
+    if field in ('model_calls','total_tokens','active_seconds'):
+        profile['limits']=dict(profile['limits'],**{field:value})
+    else: profile[field]=value
+    path=tmp_path/'invalid.json'; path.write_text(json.dumps(profile))
+    key='PLATFORM_HR_AGENT_'+('BUDGET' if document=='budget' else 'PROVIDER')+'_PROFILE_FILE'
+    with pytest.raises(ValueError,match='^HR configuration invalid$'):
+        make_hr_settings(tmp_path/'again',**{key:str(path)})
+
+@pytest.mark.parametrize('key,value',[('LEASE_SECONDS','60.5'),('HEARTBEAT_SECONDS','1e1'),('LEASE_SECONDS',True)])
+def test_config_requires_integer_environment_time_units(tmp_path,key,value):
+    from hr_agent_support import make_hr_settings
+    with pytest.raises(ValueError,match='^HR configuration invalid$'):
+        make_hr_settings(tmp_path,**{'PLATFORM_HR_AGENT_'+key:value})

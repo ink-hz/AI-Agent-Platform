@@ -35,3 +35,19 @@ def test_read_range_does_not_claim_reverse_coverage():
     value=case['value'].copy()
     value['offset']=20; value['end']=10
     with pytest.raises(HrAgentProblem): validate_contract('ResourceText',value)
+
+@pytest.mark.parametrize('timestamp',['2026-02-30T12:00:00Z','2026-13-01T12:00:00Z','2026-01-01T25:00:00Z','2026-01-01','2026-01-01T12:00:00','2026-01-01T12:00:00+25:00'])
+def test_runtime_rejects_invalid_rfc3339_calendar(timestamp):
+    from app.hr_agent.types import validate_contract,HrAgentProblem
+    cases=json.loads((BASE/'docs/superpowers/specs/hr-cloud-loop/contract-examples.json').read_text())
+    value=next(c['value'].copy() for c in cases if c['valid'] and c['definition']=='Event')
+    value['at']=timestamp
+    with pytest.raises(HrAgentProblem): validate_contract('Event',value)
+
+@pytest.mark.parametrize('timestamp',['2024-02-29T23:59:59Z','2026-01-01t12:00:00z','2026-01-01T12:00:00.123+08:00'])
+def test_runtime_accepts_valid_rfc3339_calendar(timestamp):
+    from app.hr_agent.types import validate_contract
+    cases=json.loads((BASE/'docs/superpowers/specs/hr-cloud-loop/contract-examples.json').read_text())
+    value=next(c['value'].copy() for c in cases if c['valid'] and c['definition']=='Event')
+    value['at']=timestamp
+    assert validate_contract('Event',value)['at']==timestamp
