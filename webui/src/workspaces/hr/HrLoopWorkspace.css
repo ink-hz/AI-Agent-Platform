@@ -1,3 +1,10 @@
+/* The loop uses a scrollable document; existing chat workspaces own their inner scroll. */
+.hr-workspace-body:has(> .hr-loop) {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+}
+
 .hr-loop {
   display: grid;
   grid-template-columns: 210px minmax(350px, 1fr) minmax(280px, 360px);
