@@ -88,6 +88,7 @@ class MaterialService:
         self.codec = attachment_codec
         self.store = immutable_store
         self.temporary_root = temporary_root
+        self.parsing = None
 
     def _row(self, owner_id, attachment_id):
         if not isinstance(owner_id, UUID):
@@ -121,6 +122,51 @@ class MaterialService:
                 "temporarily_unavailable", retryable=True, http_status=503
             ) from None
 
+    def _read_bytes(self, row):
+        try:
+            reference = self.codec.unseal_json(
+                attachment_object_subject(
+                    row["attachment_id"], row["write_attempt_id"]
+                ),
+                SealedContent(
+                    bytes(row["object_ref_ciphertext"]), row["object_ref_key_version"]
+                ),
+            )
+            if set(reference) != {"object_ref"}:
+                raise ValueError()
+            asset = MaterialAsset(
+                reference["object_ref"],
+                row["immutable_locator"],
+                row["size_bytes"],
+                bytes(row["sha256"]),
+            )
+            data = _material_bytes(self.store, asset)
+            if (
+                len(data) != asset.size_bytes
+                or hashlib.sha256(data).digest() != asset.sha256
+            ):
+                raise ValueError()
+        except Exception:  # noqa: BLE001 - private storage and crypto errors are opaque
+            raise problem(
+                "temporarily_unavailable", retryable=True, http_status=503
+            ) from None
+        return data
+
+    def _assert_current(self, owner_id, row):
+        # Recheck current visibility after object I/O, before returning a usable ref.
+        current = self._row(owner_id, row["attachment_id"])
+        if current["state"] != "ready" or any(
+            current[name] != row[name]
+            for name in (
+                "sha256",
+                "detected_mime",
+                "size_bytes",
+                "immutable_locator",
+                "write_attempt_id",
+            )
+        ):
+            raise problem("reference_unavailable", http_status=410)
+
     def _view(self, owner_id, row):
         view = {
             "attachment_id": str(row["attachment_id"]),
@@ -153,48 +199,15 @@ class MaterialService:
         }
         view["original_ref"] = original
         if row["detected_mime"] != "text/plain":
-            view["parse_state"] = "unsupported"
+            if self.parsing is not None:
+                return self.parsing.existing(owner_id, row, view)
+            from .material_parsing import RELEASES
+
+            if row["detected_mime"] not in RELEASES:
+                view["parse_state"] = "unsupported"
             return view, None
-        try:
-            reference = self.codec.unseal_json(
-                attachment_object_subject(
-                    row["attachment_id"], row["write_attempt_id"]
-                ),
-                SealedContent(
-                    bytes(row["object_ref_ciphertext"]), row["object_ref_key_version"]
-                ),
-            )
-            if set(reference) != {"object_ref"}:
-                raise ValueError()
-            asset = MaterialAsset(
-                reference["object_ref"],
-                row["immutable_locator"],
-                row["size_bytes"],
-                bytes(row["sha256"]),
-            )
-            data = _material_bytes(self.store, asset)
-            if (
-                len(data) != asset.size_bytes
-                or hashlib.sha256(data).digest() != asset.sha256
-            ):
-                raise ValueError()
-        except Exception:  # noqa: BLE001 - private storage and crypto errors are opaque
-            raise problem(
-                "temporarily_unavailable", retryable=True, http_status=503
-            ) from None
-        # Recheck current visibility after object I/O, before returning a usable ref.
-        current = self._row(owner_id, row["attachment_id"])
-        if current["state"] != "ready" or any(
-            current[name] != row[name]
-            for name in (
-                "sha256",
-                "detected_mime",
-                "size_bytes",
-                "immutable_locator",
-                "write_attempt_id",
-            )
-        ):
-            raise problem("reference_unavailable", http_status=410)
+        data = self._read_bytes(row)
+        self._assert_current(owner_id, row)
         try:
             text = data.decode("utf-8", errors="strict")
         except UnicodeError:
