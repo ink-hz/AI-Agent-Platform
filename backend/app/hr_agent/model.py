@@ -48,13 +48,20 @@ class ProviderProfile:
     timeout_seconds: float = 120.0
 
     def __post_init__(self) -> None:
-        parsed = urlparse(self.endpoint)
+        try:
+            parsed = urlparse(self.endpoint)
+            port = parsed.port
+        except (ValueError,TypeError):
+            raise ValueError('invalid provider profile') from None
         if (
             not self.profile_id
             or not self.revision
             or self.protocol not in {"openai_chat_sse", "anthropic_messages_sse"}
             or parsed.scheme not in {"http", "https"}
             or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or (port is not None and port == 0)
             or not self.model
             or not isinstance(self.credential_file, Path)
             or not self.credential_file.is_absolute()
@@ -184,10 +191,13 @@ class ConfiguredHttpModelPort:
         self, lines: Iterable[str], deadline_at: float
     ) -> Iterator[ModelEvent]:
         bounded = _deadline_lines(lines, deadline_at)
-        if self._profile.protocol == "openai_chat_sse":
-            yield from _openai_events(bounded)
-        else:
-            yield from _anthropic_events(bounded)
+        events = (_openai_events(bounded) if self._profile.protocol == 'openai_chat_sse'
+                  else _anthropic_events(bounded))
+        for event in events:
+            if event.type == 'usage':
+                yield ModelEvent('usage', {'provider_protocol': self._profile.protocol, 'raw': event.payload})
+            else:
+                yield event
 
 
 def _http_lines(endpoint, headers, body, deadline_at):
@@ -223,6 +233,10 @@ def _http_lines(endpoint, headers, body, deadline_at):
             output.put(('error',ModelTransportError('transport_error')))
         except asyncio.CancelledError:
             pass
+        except Exception:
+            # Configuration/serialization/library failures must not print a
+            # background-thread traceback containing endpoint or provider data.
+            output.put(('error',ModelTransportError('transport_error')))
         finally:
             output.put(('done',None))
 
@@ -449,6 +463,7 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
     calls: dict[int, dict[str, object]] = {}
     raw_usage: dict[str, object] = {}
     stop_reason: str | None = None
+    usage_protocol: str | None = None
     for event in events:
         if event.type == "text_delta":
             value = event.payload.get("text")
@@ -475,10 +490,16 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
                 raise ModelProtocolError("invalid_response")
             call["arguments"] = str(call["arguments"]) + fragment
         elif event.type == "usage":
-            for key, value in event.payload.items():
-                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                    raise ModelProtocolError("invalid_response")
-                raw_usage[key] = value
+            payload = event.payload
+            if 'provider_protocol' in payload:
+                protocol = payload['provider_protocol']
+                if protocol not in {'openai_chat_sse','anthropic_messages_sse'} or not isinstance(payload.get('raw'),dict):
+                    raise ModelProtocolError('invalid_response')
+                if usage_protocol is not None and usage_protocol != protocol:
+                    raise ModelProtocolError('invalid_response')
+                usage_protocol = protocol
+                payload = payload['raw']
+            raw_usage.update(payload)
         elif event.type == "stop":
             reason = event.payload.get("reason")
             if stop_reason is not None or not isinstance(reason, str) or not reason:
@@ -488,6 +509,10 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
             raise ModelProtocolError("invalid_response")
     if stop_reason is None:
         raise ModelProtocolError("incomplete_response")
+    if stop_reason in {'length','max_tokens','max_output_tokens','pause_turn'}:
+        raise ModelProtocolError('incomplete_response')
+    if stop_reason in {'refusal','content_filter'}:
+        raise ModelTransportError('provider_refused')
     tool_calls: list[ToolCall] = []
     for index in sorted(calls):
         call = calls[index]
@@ -507,13 +532,12 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
     tool_stop_reasons = {"tool_calls", "tool_use"}
     if bool(tool_calls) != (stop_reason in tool_stop_reasons):
         raise ModelProtocolError("invalid_response")
-    input_total = raw_usage.get("prompt_tokens", raw_usage.get("input_tokens"))
-    output_total = raw_usage.get("completion_tokens", raw_usage.get("output_tokens"))
+    input_total, output_total = _usage_totals(raw_usage, usage_protocol)
     usage = Usage(
         dict(raw_usage) or None,
         input_total,
         output_total,
-        "reported" if raw_usage else "unknown",
+        "reported" if input_total is not None and output_total is not None else "unknown",
     )
     return ModelReply(final_text, tuple(tool_calls), stop_reason, usage)
 
@@ -529,3 +553,26 @@ def _anthropic_tool(tool: dict) -> dict:
     if isinstance(function.get("description"), str):
         converted["description"] = function["description"]
     return converted
+
+
+def _usage_totals(raw: dict, protocol: str | None) -> tuple[int | None, int | None]:
+    """Normalize native non-overlapping counters; retain raw nested details.
+
+    OpenAI prompt/completion totals already include cached/reasoning tokens.
+    Anthropic input_tokens excludes its cache creation and cache read buckets.
+    Untagged events are supported for internal scripted model fixtures only.
+    """
+    if protocol is None:
+        protocol = 'openai_chat_sse' if any(k in raw for k in ('prompt_tokens','completion_tokens')) else 'anthropic_messages_sse'
+
+    def counter(name, default=None):
+        value=raw.get(name,default)
+        if value is not None and (type(value) is not int or value < 0):
+            raise ModelProtocolError('invalid_response')
+        return value
+
+    if protocol == 'openai_chat_sse':
+        return counter('prompt_tokens'),counter('completion_tokens')
+    input_parts=[counter('input_tokens'),counter('cache_creation_input_tokens',0),counter('cache_read_input_tokens',0)]
+    input_total=sum(input_parts) if all(value is not None for value in input_parts) else None
+    return input_total,counter('output_tokens')

@@ -416,6 +416,7 @@ def test_diagnostics_disabled_untrusted_expired_and_deleted_are_unreadable(
         tmp_path / "enabled",
         JsonCodec(),
         enabled=True,
+        audit=lambda *args: None,
         trusted_roles=("hr_diagnostics",),
         max_ttl_seconds=60,
     )
@@ -428,6 +429,7 @@ def test_diagnostics_disabled_untrusted_expired_and_deleted_are_unreadable(
         tmp_path / "enabled",
         JsonCodec(),
         enabled=True,
+        audit=lambda *args: None,
         trusted_roles=("hr_diagnostics",),
         max_ttl_seconds=60,
     )
@@ -505,3 +507,63 @@ def test_missing_provider_usage_keeps_explicit_unknown_quality():
     assert reply.usage.quality=='unknown'
     assert reply.usage.raw is None
     assert reply.usage.input_total is None and reply.usage.output_total is None
+
+
+@pytest.mark.parametrize('raw,expected',[
+    ({'prompt_tokens':100,'completion_tokens':20,'total_tokens':120,'prompt_tokens_details':{'cached_tokens':90},'completion_tokens_details':{'reasoning_tokens':15}},(100,20)),
+    ({'input_tokens':100,'output_tokens':20,'cache_creation_input_tokens':30,'cache_read_input_tokens':900,'cache_creation':{'ephemeral_5m_input_tokens':30,'ephemeral_1h_input_tokens':0}},(1030,20)),
+])
+def test_provider_usage_preserves_nested_details_without_double_count(raw,expected):
+    from app.hr_agent.model import collect_reply
+    from app.hr_agent.types import ModelEvent
+    reply=collect_reply([ModelEvent('text_delta',{'text':'fake'}),ModelEvent('usage',raw),ModelEvent('stop',{'reason':'stop'})])
+    assert (reply.usage.input_total,reply.usage.output_total)==expected
+    assert reply.usage.raw==raw
+    assert reply.usage.quality=='reported'
+
+@pytest.mark.parametrize('reason',['length','max_tokens'])
+@pytest.mark.parametrize('tools',[False,True])
+def test_provider_truncation_never_returns_a_committable_reply(reason,tools):
+    from app.hr_agent.model import collect_reply,ModelProtocolError
+    from app.hr_agent.types import ModelEvent
+    events=[ModelEvent('text_delta',{'text':'incomplete fake answer'})]
+    if tools:events.append(ModelEvent('tool_delta',{'index':0,'provider_call_id':'truncated','name':'save_note','arguments_delta':'{"body":"unfinished"}'}))
+    events.extend([ModelEvent('usage',{'prompt_tokens':10,'completion_tokens':128}),ModelEvent('stop',{'reason':reason})])
+    with pytest.raises(ModelProtocolError,match='incomplete_response'):collect_reply(events)
+
+
+def test_provider_rejects_invalid_port_with_sanitized_error(tmp_path):
+    with pytest.raises(ValueError,match='^invalid provider profile$'):
+        openai_profile('http://127.0.0.1:PRIVATE_PORT_SENTINEL/v1',tmp_path/'credential')
+
+
+def test_http_thread_unexpected_error_is_sanitized(tmp_path,monkeypatch,capsys):
+    import httpx
+    from app.hr_agent.model import ConfiguredHttpModelPort,ModelTransportError
+    credential=tmp_path/'credential';write_credential(credential)
+    def unexpected(*args,**kwargs):raise ValueError('PRIVATE_TRANSPORT_SENTINEL')
+    monkeypatch.setattr(httpx,'AsyncClient',unexpected)
+    with pytest.raises(ModelTransportError,match='^transport_error$'):
+        list(ConfiguredHttpModelPort(openai_profile('http://127.0.0.1:1/v1',credential)).stream(request()))
+    assert 'PRIVATE_TRANSPORT_SENTINEL' not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('protocol,raw,expected',[
+    ('openai_chat_sse',{'prompt_tokens':10,'completion_tokens':5,'prompt_tokens_details':{'cached_tokens':8},'completion_tokens_details':{'reasoning_tokens':4}},15),
+    ('anthropic_messages_sse',{'input_tokens':10,'cache_creation_input_tokens':20,'cache_read_input_tokens':30,'output_tokens':5},65),
+])
+def test_real_http_native_usage_is_normalized_by_profile(tmp_path,protocol,raw,expected):
+    from dataclasses import replace
+    from app.hr_agent.model import ConfiguredHttpModelPort,collect_reply
+    credential=tmp_path/'credential';write_credential(credential)
+    def data(value):return ('data: '+json.dumps(value)+'\n\n').encode()
+    if protocol=='openai_chat_sse':
+        chunks=[data({'choices':[{'delta':{'content':'fake'},'finish_reason':'stop'}],'usage':raw}),b'data: [DONE]\n\n']
+    else:
+        chunks=[data({'type':'message_start','message':{'usage':raw}}),data({'type':'content_block_delta','index':0,'delta':{'type':'text_delta','text':'fake'}}),data({'type':'message_delta','delta':{'stop_reason':'end_turn'}}),data({'type':'message_stop'})]
+    with provider_server(chunks) as (endpoint,seen):
+        profile=replace(openai_profile(endpoint,credential),protocol=protocol)
+        reply=collect_reply(ConfiguredHttpModelPort(profile).stream(request()))
+    assert reply.usage.input_total+reply.usage.output_total==expected
+    assert reply.usage.raw==raw
+    assert len(seen)==1
