@@ -2,7 +2,7 @@ import ipaddress
 import os
 import re
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -16,6 +16,7 @@ from .control_plane.partner_provider import (
     validate_partner_callback,
 )
 from .control_plane.partner_release import validate_partner_release
+from .hr_agent.config import HrAgentSettings, load_hr_agent_settings
 from .local_secrets import SecretFileUnavailable, read_secret_file
 
 DEFAULT_SECRETS_DIR = (
@@ -105,6 +106,7 @@ class Config:
     partner_callback_path: str
     control_plane: ControlPlaneConfig
     hr_web_worker_enabled: bool = False
+    hr_agent_settings: HrAgentSettings = field(default_factory=HrAgentSettings)
 
 
 def _enabled(name: str, default: str = "0") -> bool:
@@ -1012,6 +1014,7 @@ def load_config() -> Config:
         partner_callback_method=partner_callback_method,
         partner_callback_path=partner_callback_path,
         control_plane=_load_control_plane_config(),
+        hr_agent_settings=load_hr_agent_settings(os.environ),
         hr_web_worker_enabled=_strict_flag("PLATFORM_HR_WEB_WORKER_ENABLED", "hr_web_worker_flag_invalid"),
     )
     _validate_cloud_config(config)

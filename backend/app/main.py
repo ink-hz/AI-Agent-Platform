@@ -827,6 +827,7 @@ def create_app(
     partner_provider: PartnerIdentityProvider | None = None,
     fae_workbench_service=None,
     fae_report_service=None,
+    hr_agent_service=None,
     hr_position_service=None,
     hr_position_intelligence_service=None,
     hr_candidate_service=None,
@@ -1641,6 +1642,71 @@ def create_app(
         app.include_router(execution_relay_router)
     if agent_use_authorization is not None:
         app.include_router(build_agent_catalog_router(agent_use_authorization))
+    # Cloud HR loop is an independent opt-in; never use Relay's content codec.
+    from .hr_agent.access import HrAccess
+    from .hr_agent.config import check_schema_ready
+    from .hr_agent.routes import build_hr_agent_router
+    from .hr_agent.service import HrAgentService
+
+    if hr_agent_service is None and config.hr_agent_settings.enabled:
+        if not identity_enabled:
+            raise RuntimeError("HR Agent requires platform identity")
+        hr_database_url = read_secret_file(config.control_plane.control_database_url_file)
+        validate_control_dsn(hr_database_url, purpose="app")
+
+        def hr_agent_connection():
+            return psycopg.connect(
+                hr_database_url,
+                connect_timeout=3,
+                options="-c statement_timeout=10000 -c timezone=UTC",
+            )
+
+        if agent_use_authorization is None:
+            agent_use_authorization = AgentUseAuthorization(hr_database_url)
+        if authorization_service is None:
+            authorization_service = AuthorizationService(
+                AuthorizationRepository(hr_database_url), cloud_mode=cloud_mode
+            )
+        app.state.agent_use_authorization = agent_use_authorization
+        hr_materials = None
+        if conversation_attachment_download_service is not None:
+            from .hr_agent.materials import MaterialService
+
+            hr_downloads = conversation_attachment_download_service
+            hr_materials = MaterialService(
+                hr_downloads._repository._connection,
+                hr_downloads._repository._content_codec,
+                hr_downloads._store,
+                temporary_root=config.hr_agent_settings.work_dir,
+            )
+        hr_ready = check_schema_ready(hr_agent_connection)
+        hr_repository = None
+        if hr_ready:
+            from .hr_agent.resources import build_runtime_services
+
+            hr_repository, _hr_resources = build_runtime_services(
+                config.hr_agent_settings,
+                hr_agent_connection,
+                material_service=hr_materials,
+                agent_use_authorization=agent_use_authorization,
+            )
+        hr_agent_service = HrAgentService(
+            hr_repository,
+            HrAccess(agent_use_authorization),
+            materials=hr_materials,
+            ready=hr_ready,
+        )
+    if hr_agent_service is None:
+        hr_agent_service = HrAgentService(
+            None,
+            HrAccess(agent_use_authorization)
+            if agent_use_authorization is not None
+            else None,
+            ready=False,
+        )
+    app.state.hr_agent_service = hr_agent_service
+    app.include_router(build_hr_agent_router(hr_agent_service))
+
     async def require_hr_access(request: Request, *, writable: bool = False):
         context = getattr(request.state, "auth_context", None)
         if not isinstance(context, AuthContext):

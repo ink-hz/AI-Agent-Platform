@@ -128,6 +128,22 @@ _VOC_MUTATION_ROUTES = frozenset({
 })
 
 _HR_POSITION_ROUTES = frozenset({
+    ("POST", "/api/hr/agent/works"),
+    ("GET", "/api/hr/agent/threads"),
+    ("GET", "/api/hr/agent/threads/{thread_id}/works"),
+    ("GET", "/api/hr/agent/works/{work_id}"),
+    ("GET", "/api/hr/agent/works/{work_id}/messages"),
+    ("GET", "/api/hr/agent/works/{work_id}/events"),
+    ("POST", "/api/hr/agent/works/{work_id}/inputs"),
+    ("POST", "/api/hr/agent/works/{work_id}/cancel"),
+    ("POST", "/api/hr/agent/works/{work_id}/budget-extensions"),
+    ("GET", "/api/hr/agent/materials/{attachment_id}"),
+    ("GET", "/api/hr/agent/results"),
+    ("GET", "/api/hr/agent/results/{result_id}/revisions/{revision}"),
+    ("POST", "/api/hr/agent/results/{result_id}/links"),
+    ("POST", "/api/hr/agent/positions/{position_id}/standards/confirm"),
+    ("GET", "/api/hr/agent/positions/{position_id}/standards/current"),
+
     ("GET", "/api/hr/positions"),
     ("GET", "/api/hr/positions/{position_id}"),
     ("GET", "/api/hr/position-drafts"),
