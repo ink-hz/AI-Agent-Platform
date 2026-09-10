@@ -154,6 +154,14 @@ function canonicalEncodedDetailPath(value: string): boolean {
 
 
 function safeLoginReturnPath(value: string): boolean {
+  if (value.startsWith("/hr/agent?")) {
+    const query = value.slice("/hr/agent?".length);
+    if (!/^[a-zA-Z0-9=&-]+$/.test(query)) return false;
+    const params = new URLSearchParams(query);
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return params.size > 0 && [...params].every(([key, id]) =>
+      (key === "position" || key === "work") && params.getAll(key).length === 1 && uuid.test(id));
+  }
   if (!value.startsWith("/") || value.startsWith("//") || /[?#\\\u0000-\u001f\u007f]/.test(value)) return false;
   const canonicalDetail = canonicalEncodedDetailPath(value);
   if (value.includes("%") && !canonicalDetail) return false;
@@ -164,7 +172,7 @@ function safeLoginReturnPath(value: string): boolean {
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
   if (/^\/ai-notes\/[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,127}$/.test(value)) return true;
   return value === "/office/" || value === "/admin/" || value === "/admin" || value === "/fae/"
-    || value === `${FAE_MANAGEMENT_PATH}/` || value === "/hr" || value === "/hr/" || value === "/hr/chat"
+    || value === `${FAE_MANAGEMENT_PATH}/` || value === "/hr" || value === "/hr/" || value === "/hr/chat" || value === "/hr/agent"
     || value === "/marketing" || value === "/marketing/"
     || /^\/fae\/conversations\/[A-Za-z0-9:._-]+$/.test(value)
     || /^\/fae\/manage\/(?:sessions|issues|reports)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)

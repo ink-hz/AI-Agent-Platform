@@ -35,7 +35,8 @@ describe("HrWorkspaceShell", () => {
     expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/panorama"]')?.textContent).toBe("全景分析");
     expect(container.querySelector(".hr-workspace-identity")?.textContent).toContain("磐德");
     expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-platform-link')?.getAttribute("href")).toBe("/");
-    expect(container.querySelectorAll<HTMLAnchorElement>(".hr-workspace-topbar a")).toHaveLength(5);
+    expect(container.querySelectorAll<HTMLAnchorElement>(".hr-workspace-topbar a")).toHaveLength(6);
+    expect(container.querySelector('.hr-workspace-nav a[href="/hr/agent"]')?.textContent).toBe("Hannah 试用");
     expect(container.textContent).not.toContain("专业 Agent");
   });
 

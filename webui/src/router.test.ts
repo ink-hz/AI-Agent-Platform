@@ -242,3 +242,10 @@ describe("Platform router", () => {
     expect(safeLegacyWorkspaceSearch("/voc/manage/", "?view=management")).toBe("");
   });
 });
+
+it('routes the opt in cloud HR workbench with resumable context', () => {
+  const position='11111111-1111-4111-8111-111111111111';
+  const work='22222222-2222-4222-8222-222222222222';
+  expect(parseRoute('/hr/agent',`?position=${position}&work=${work}`)).toEqual({name:'hr-agent',positionId:position,workId:work});
+  expect(parseRoute('/hr/agent','?work=unsafe')).toEqual({name:'not-found'});
+});

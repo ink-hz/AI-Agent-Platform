@@ -32,6 +32,7 @@ import { MissionPage } from "./pages/MissionPage";
 import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AiNotesPage } from "./pages/AiNotesPage";
+import { HrLoopWorkspace } from "./workspaces/hr/HrLoopWorkspace";
 import { HrWorkspacePage } from "./workspaces/hr/HrWorkspacePage";
 import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspacePage";
 import { FaeManagementWorkspace } from "./workspaces/fae/FaeManagementWorkspace";
@@ -87,7 +88,7 @@ function AccessState({
 
 
 function viewerRouteAllowed(account: Account, route: ReturnType<typeof useRoute>): boolean {
-  if (["brain", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-positions", "hr-position", "hr-position-section", "hr-position-conversation", "hr-conversation", "hr-panorama", "hr-panorama-report", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
+  if (["brain", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-position-conversation", "hr-conversation", "hr-panorama", "hr-panorama-report", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
   if (route.name === "admin-governance") return true;
   if (route.name === "admin-voc") return true;
   if (route.name === "admin-agent-runtime") return account.observation_agent_ids.includes(route.agentId);
@@ -115,6 +116,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "agents": return <AgentUseDirectoryPage />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
     case "hr": return account ? <HrWorkspacePage account={account} /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
+    case "hr-agent": return account ? <HrLoopWorkspace account={account} initialPositionId={route.positionId} initialWorkId={route.workId} /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
     case "hr-chat": return account ? <HrWorkspacePage account={account} freeChat /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
     case "hr-positions": return account ? <HrWorkspacePage account={account} positions /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
     case "hr-position": return account ? <HrWorkspacePage account={account} positionId={route.positionId} /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
@@ -196,7 +198,7 @@ export default function App() {
   if (failure) return <AccessState title="暂时无法进入平台" description="连接服务时遇到短暂问题，请重新尝试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
   if (!legacyMode && account) {
-    const usageRoute = ["brain", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-positions", "hr-position", "hr-position-section", "hr-position-conversation", "hr-conversation", "hr-panorama", "hr-panorama-report", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
+    const usageRoute = ["brain", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-position-conversation", "hr-conversation", "hr-panorama", "hr-panorama-report", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
     const faeManagementRoute = route.name.startsWith("fae-manage-");
     const ownerOnlyRoute = route.name === "admin-access";
     const allowed = usageRoute || faeManagementRoute || account.role === "platform_owner" || (!ownerOnlyRoute && account.role === "platform_admin")

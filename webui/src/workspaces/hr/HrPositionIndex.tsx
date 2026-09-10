@@ -227,10 +227,11 @@ function PositionSection({ title, caption, positions }: { title: string; caption
   return <section className="hr-position-section">
     <div className="hr-position-section-heading"><div><h2>{title}</h2><p>{caption}</p></div><span>{positions.length}</span></div>
     {positions.length === 0 ? <div className="hr-position-empty">没有匹配的岗位。</div>
-      : <div className="hr-position-grid">{positions.map((position) => <PlatformLink className="hr-position-card" href={`/hr/positions/${encodeURIComponent(position.positionId)}`} key={position.positionId}>
+      : <div className="hr-position-grid">{positions.map((position) => <article className="hr-position-card" key={position.positionId}>
         <div><span className={`hr-position-chip hr-position-chip--${position.sourceKind}`}>{sourceLabel(position)}</span>{position.officialStatus && <span className={`hr-position-status hr-position-status--${position.officialStatus}`}>{officialStatus(position.officialStatus)}</span>}</div>
-        <h3>{position.title}</h3><p>{[position.department, ...position.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
+        <h3><PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>{position.title}</PlatformLink></h3><p>{[position.department, ...position.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
         <footer><span>{position.officialJobId ?? "内部岗位"}</span><span>{position.sourceVersion ? `官网版本 ${position.sourceVersion}` : "内部上下文"}</span></footer>
-      </PlatformLink>)}</div>}
+      <PlatformLink href={`/hr/agent?position=${encodeURIComponent(position.positionId)}`}>与 Hannah 讨论岗位</PlatformLink>
+      </article>)}</div>}
   </section>;
 }

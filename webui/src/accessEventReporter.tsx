@@ -22,6 +22,7 @@ export function accessEventForRoute(route: Route): PageAccessEvent | null {
     case "ai-notes": return { workspace_key: "platform", page_key: "platform.ai_notes" };
     case "ai-note": return { workspace_key: "platform", page_key: "platform.ai_note" };
     case "hr": return { workspace_key: "hr", page_key: "hr.chat" };
+    case "hr-agent": return { workspace_key: "hr", page_key: "hr.agent" };
     case "hr-chat": return { workspace_key: "hr", page_key: "hr.free_chat" };
     case "hr-positions": return { workspace_key: "hr", page_key: "hr.positions" };
     case "hr-position": return { workspace_key: "hr", page_key: "hr.position_detail" };

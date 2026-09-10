@@ -509,3 +509,10 @@ describe("identity management contract", () => {
     await expect(listManagedUsers()).rejects.toThrow("management response invalid");
   });
 });
+
+it('preserves only validated HR agent resume context through login',()=>{
+ const work='11111111-1111-4111-8111-111111111111';const path=`/hr/agent?work=${work}`;
+ expect(loginReturnPath(`?${new URLSearchParams({return_path:'/hr/agent'})}`)).toBe('/hr/agent');
+ expect(loginReturnPath(`?${new URLSearchParams({return_path:path})}`)).toBe(path);
+ for(const unsafe of ['/hr/agent?work=unsafe','/hr/agent?redirect=https://evil.test','/hr/agent?work='+work+'&work='+work])expect(loginReturnPath(`?${new URLSearchParams({return_path:unsafe})}`)).toBe('/');
+});

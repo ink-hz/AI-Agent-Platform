@@ -24,6 +24,7 @@ export function routeDocumentTitle(route: Route): string {
     case "agents": return `专业 Agent · ${PLATFORM_TITLE}`;
     case "voc-workspace": return `VOC 洞察助手 · ${PLATFORM_TITLE}`;
     case "hr": return `HR 智能工作台 · ${PLATFORM_TITLE}`;
+    case "hr-agent": return "Hannah · HR 智能工作台";
     case "hr-chat": return `HR 智能工作台 · ${PLATFORM_TITLE}`;
     case "hr-positions": return "岗位 · HR 智能工作台";
     case "hr-position": return "岗位 · HR 智能工作台";

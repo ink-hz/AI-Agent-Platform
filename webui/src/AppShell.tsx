@@ -62,7 +62,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const current = routeSection(route);
   const brainWorkspace = route.name === "brain" || route.name === "conversation"
     || route.name === "marketing" || route.name === "marketing-conversation";
-  const hrWorkspace = route.name === "hr" || route.name === "hr-chat" || route.name === "hr-positions"
+  const hrWorkspace = route.name === "hr" || route.name === "hr-chat" || route.name === "hr-agent" || route.name === "hr-positions"
     || route.name === "hr-position" || route.name === "hr-position-section"
     || route.name === "hr-position-conversation" || route.name === "hr-conversation"
     || route.name === "hr-panorama" || route.name === "hr-panorama-report";
