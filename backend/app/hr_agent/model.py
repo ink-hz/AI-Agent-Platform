@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import asyncio
+import json
 import queue
-import threading
 import stat
+import threading
 import time
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -51,8 +51,8 @@ class ProviderProfile:
         try:
             parsed = urlparse(self.endpoint)
             port = parsed.port
-        except (ValueError,TypeError):
-            raise ValueError('invalid provider profile') from None
+        except (ValueError, TypeError):
+            raise ValueError("invalid provider profile") from None
         if (
             not self.profile_id
             or not self.revision
@@ -191,11 +191,17 @@ class ConfiguredHttpModelPort:
         self, lines: Iterable[str], deadline_at: float
     ) -> Iterator[ModelEvent]:
         bounded = _deadline_lines(lines, deadline_at)
-        events = (_openai_events(bounded) if self._profile.protocol == 'openai_chat_sse'
-                  else _anthropic_events(bounded))
+        events = (
+            _openai_events(bounded)
+            if self._profile.protocol == "openai_chat_sse"
+            else _anthropic_events(bounded)
+        )
         for event in events:
-            if event.type == 'usage':
-                yield ModelEvent('usage', {'provider_protocol': self._profile.protocol, 'raw': event.payload})
+            if event.type == "usage":
+                yield ModelEvent(
+                    "usage",
+                    {"provider_protocol": self._profile.protocol, "raw": event.payload},
+                )
             else:
                 yield event
 
@@ -210,105 +216,148 @@ def _http_lines(endpoint, headers, body, deadline_at):
     state = {}
 
     async def fetch():
-        state['loop'] = asyncio.get_running_loop()
-        state['task'] = asyncio.current_task()
+        state["loop"] = asyncio.get_running_loop()
+        state["task"] = asyncio.current_task()
         try:
             remaining = deadline_at - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError()
             async with asyncio.timeout(remaining):
-                async with httpx.AsyncClient(timeout=httpx.Timeout(remaining), follow_redirects=False) as client:
-                    async with client.stream('POST', endpoint, headers=headers, json=body) as response:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(remaining), follow_redirects=False
+                ) as client:
+                    async with client.stream(
+                        "POST", endpoint, headers=headers, json=body
+                    ) as response:
                         if response.status_code == 429:
-                            raise ModelTransportError('rate_limited')
-                        if response.status_code in {401,403}:
-                            raise ModelTransportError('provider_refused')
+                            raise ModelTransportError("rate_limited")
+                        if response.status_code in {401, 403}:
+                            raise ModelTransportError("provider_refused")
                         if not 200 <= response.status_code < 300:
-                            raise ModelTransportError('transport_error')
+                            raise ModelTransportError("transport_error")
                         async for line in response.aiter_lines():
-                            output.put(('line',line))
+                            output.put(("line", line))
         except ModelError as error:
-            output.put(('error',error))
-        except (TimeoutError,httpx.HTTPError,OSError,UnicodeError):
-            output.put(('error',ModelTransportError('transport_error')))
+            output.put(("error", error))
+        except (TimeoutError, httpx.HTTPError, OSError, UnicodeError):
+            output.put(("error", ModelTransportError("transport_error")))
         except asyncio.CancelledError:
             pass
-        except Exception:
+        except Exception:  # noqa: BLE001 - provider failures cannot leak private traceback
             # Configuration/serialization/library failures must not print a
             # background-thread traceback containing endpoint or provider data.
-            output.put(('error',ModelTransportError('transport_error')))
+            output.put(("error", ModelTransportError("transport_error")))
         finally:
-            output.put(('done',None))
+            output.put(("done", None))
 
-    thread = threading.Thread(target=lambda: asyncio.run(fetch()), name='hr-model-http', daemon=True)
+    thread = threading.Thread(
+        target=lambda: asyncio.run(fetch()), name="hr-model-http", daemon=True
+    )
     thread.start()
     try:
         while True:
-            remaining = deadline_at-time.monotonic()
+            remaining = deadline_at - time.monotonic()
             if remaining <= 0:
-                raise ModelTransportError('transport_error')
+                raise ModelTransportError("transport_error")
             try:
-                kind,value = output.get(timeout=remaining)
+                kind, value = output.get(timeout=remaining)
             except queue.Empty:
-                raise ModelTransportError('transport_error') from None
-            if kind == 'error':
+                raise ModelTransportError("transport_error") from None
+            if kind == "error":
                 raise value
-            if kind == 'done':
+            if kind == "done":
                 return
             yield value
     finally:
-        loop,task=state.get('loop'),state.get('task')
+        loop, task = state.get("loop"), state.get("task")
         if thread.is_alive() and loop is not None and task is not None:
-            try:loop.call_soon_threadsafe(task.cancel)
-            except RuntimeError:pass # Loop already closed after complete response.
+            try:
+                loop.call_soon_threadsafe(task.cancel)
+            except RuntimeError:
+                pass  # Loop already closed after complete response.
         thread.join(timeout=0.1)
 
 
 def _anthropic_messages(messages):
     """Convert canonical text/tool messages without dropping tool identities."""
-    system=[]
-    converted=[]
-    pending=set()
-    seen=set()
+    system = []
+    converted = []
+    pending = set()
+    seen = set()
     try:
         for message in messages:
-            role=message['role']
-            content=message.get('content')
-            if role == 'system':
-                if converted or not isinstance(content,str):raise ValueError()
-                if content:system.append({'type':'text','text':content})
+            role = message["role"]
+            content = message.get("content")
+            if role == "system":
+                if converted or not isinstance(content, str):
+                    raise ValueError()
+                if content:
+                    system.append({"type": "text", "text": content})
                 continue
-            blocks=[]
-            if role == 'tool':
-                identity=message['tool_call_id']
-                if identity not in pending or not isinstance(content,str):raise ValueError()
+            blocks = []
+            if role == "tool":
+                identity = message["tool_call_id"]
+                if identity not in pending or not isinstance(content, str):
+                    raise ValueError()
                 pending.remove(identity)
-                blocks=[{'type':'tool_result','tool_use_id':identity,'content':content}]
-                role='user'
-            elif role in {'user','assistant'}:
-                if pending:raise ValueError()
-                if content is not None and not isinstance(content,str):raise ValueError()
-                if content:blocks.append({'type':'text','text':content})
-                calls=message.get('tool_calls',[])
-                if not isinstance(calls,list) or (calls and role!='assistant'):raise ValueError()
+                blocks = [
+                    {"type": "tool_result", "tool_use_id": identity, "content": content}
+                ]
+                role = "user"
+            elif role in {"user", "assistant"}:
+                if pending:
+                    raise ValueError()
+                if content is not None and not isinstance(content, str):
+                    raise ValueError()
+                if content:
+                    blocks.append({"type": "text", "text": content})
+                calls = message.get("tool_calls", [])
+                if not isinstance(calls, list) or (calls and role != "assistant"):
+                    raise ValueError()
                 for call in calls:
-                    if call.get('type')!='function':raise ValueError()
-                    identity=call['id'];function=call['function']
-                    if not isinstance(identity,str) or not identity or identity in seen:raise ValueError()
-                    name=function['name'];arguments=function['arguments']
-                    if isinstance(arguments,str):arguments=json.loads(arguments)
-                    if not isinstance(arguments,dict) or not isinstance(name,str) or not name:raise ValueError()
-                    blocks.append({'type':'tool_use','id':identity,'name':name,'input':arguments})
-                    pending.add(identity);seen.add(identity)
-            else:raise ValueError()
-            if not blocks:raise ValueError()
-            if converted and converted[-1]['role']==role:
-                converted[-1]['content'].extend(blocks)
-            else:converted.append({'role':role,'content':blocks})
-        if pending or not converted:raise ValueError()
-        return system,converted
-    except (KeyError,TypeError,ValueError,AttributeError):
-        raise ModelProtocolError('invalid_response') from None
+                    if call.get("type") != "function":
+                        raise ValueError()
+                    identity = call["id"]
+                    function = call["function"]
+                    if (
+                        not isinstance(identity, str)
+                        or not identity
+                        or identity in seen
+                    ):
+                        raise ValueError()
+                    name = function["name"]
+                    arguments = function["arguments"]
+                    if isinstance(arguments, str):
+                        arguments = json.loads(arguments)
+                    if (
+                        not isinstance(arguments, dict)
+                        or not isinstance(name, str)
+                        or not name
+                    ):
+                        raise ValueError()
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": identity,
+                            "name": name,
+                            "input": arguments,
+                        }
+                    )
+                    pending.add(identity)
+                    seen.add(identity)
+            else:
+                raise ValueError()
+            if not blocks:
+                raise ValueError()
+            if converted and converted[-1]["role"] == role:
+                converted[-1]["content"].extend(blocks)
+            else:
+                converted.append({"role": role, "content": blocks})
+        if pending or not converted:
+            raise ValueError()
+        return system, converted
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise ModelProtocolError("invalid_response") from None
 
 
 def _deadline_lines(lines: Iterable[str], deadline_at: float) -> Iterator[str]:
@@ -491,14 +540,17 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
             call["arguments"] = str(call["arguments"]) + fragment
         elif event.type == "usage":
             payload = event.payload
-            if 'provider_protocol' in payload:
-                protocol = payload['provider_protocol']
-                if protocol not in {'openai_chat_sse','anthropic_messages_sse'} or not isinstance(payload.get('raw'),dict):
-                    raise ModelProtocolError('invalid_response')
+            if "provider_protocol" in payload:
+                protocol = payload["provider_protocol"]
+                if protocol not in {
+                    "openai_chat_sse",
+                    "anthropic_messages_sse",
+                } or not isinstance(payload.get("raw"), dict):
+                    raise ModelProtocolError("invalid_response")
                 if usage_protocol is not None and usage_protocol != protocol:
-                    raise ModelProtocolError('invalid_response')
+                    raise ModelProtocolError("invalid_response")
                 usage_protocol = protocol
-                payload = payload['raw']
+                payload = payload["raw"]
             raw_usage.update(payload)
         elif event.type == "stop":
             reason = event.payload.get("reason")
@@ -509,10 +561,10 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
             raise ModelProtocolError("invalid_response")
     if stop_reason is None:
         raise ModelProtocolError("incomplete_response")
-    if stop_reason in {'length','max_tokens','max_output_tokens','pause_turn'}:
-        raise ModelProtocolError('incomplete_response')
-    if stop_reason in {'refusal','content_filter'}:
-        raise ModelTransportError('provider_refused')
+    if stop_reason in {"length", "max_tokens", "max_output_tokens", "pause_turn"}:
+        raise ModelProtocolError("incomplete_response")
+    if stop_reason in {"refusal", "content_filter"}:
+        raise ModelTransportError("provider_refused")
     tool_calls: list[ToolCall] = []
     for index in sorted(calls):
         call = calls[index]
@@ -537,7 +589,9 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
         dict(raw_usage) or None,
         input_total,
         output_total,
-        "reported" if input_total is not None and output_total is not None else "unknown",
+        "reported"
+        if input_total is not None and output_total is not None
+        else "unknown",
     )
     return ModelReply(final_text, tuple(tool_calls), stop_reason, usage)
 
@@ -563,16 +617,26 @@ def _usage_totals(raw: dict, protocol: str | None) -> tuple[int | None, int | No
     Untagged events are supported for internal scripted model fixtures only.
     """
     if protocol is None:
-        protocol = 'openai_chat_sse' if any(k in raw for k in ('prompt_tokens','completion_tokens')) else 'anthropic_messages_sse'
+        protocol = (
+            "openai_chat_sse"
+            if any(k in raw for k in ("prompt_tokens", "completion_tokens"))
+            else "anthropic_messages_sse"
+        )
 
     def counter(name, default=None):
-        value=raw.get(name,default)
+        value = raw.get(name, default)
         if value is not None and (type(value) is not int or value < 0):
-            raise ModelProtocolError('invalid_response')
+            raise ModelProtocolError("invalid_response")
         return value
 
-    if protocol == 'openai_chat_sse':
-        return counter('prompt_tokens'),counter('completion_tokens')
-    input_parts=[counter('input_tokens'),counter('cache_creation_input_tokens',0),counter('cache_read_input_tokens',0)]
-    input_total=sum(input_parts) if all(value is not None for value in input_parts) else None
-    return input_total,counter('output_tokens')
+    if protocol == "openai_chat_sse":
+        return counter("prompt_tokens"), counter("completion_tokens")
+    input_parts = [
+        counter("input_tokens"),
+        counter("cache_creation_input_tokens", 0),
+        counter("cache_read_input_tokens", 0),
+    ]
+    input_total = (
+        sum(input_parts) if all(value is not None for value in input_parts) else None
+    )
+    return input_total, counter("output_tokens")

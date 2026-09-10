@@ -8,7 +8,7 @@
 
 **技术基线：** Platform 本地 master `f6c9730`（代码基线 `6777d22`）；Python 后端、PostgreSQL、React/TypeScript 工作台。`38dfc7a` 只作为较新 HR 资产与另一种历史装载形状的核查基线，不整分支合入。FAE `b49eeed` 用于核查模型适配、直接工具调用的可复用部分。
 
-**状态：** A0 规格及接口样例已编写，自检完成后提交接口层评审；评审通过项尚未勾选。A1 运行代码、P1 现行修复、P2 生产盘点均未执行。P3 已写计量口径与工程候选配置，实测和产品取舍尚未完成。规格入口：[A0 接口层实施规格](../specs/2026-09-09-hr-cloud-loop-runtime-spec.md)。
+**状态：** 用户已给出 A0 可进入 A1 的技术评审结论；两个 Schema 尾项和自检已闭合。按用户最新指令，本批连续完成 A1.1a–A1.3 后统一验收，通过后才进入 B。工作分支 `feat/hr-cloud-loop-a1`，实施基线 `2bddc77`；P1 现行修复、P2 生产盘点、真实模型/业务审读仍未执行。A1 工程交付已完成，待用户阶段验收；最终核验记录见 §6；规格入口：[接口层实施规格](../specs/2026-09-09-hr-cloud-loop-runtime-spec.md)。
 
 ## 1. 两个选择与全局约束
 
@@ -138,11 +138,11 @@ cd backend
 - [x] 逐项记录 FAE 的实际可复用代码与 HR 专属替代部分；不继承 FAE 业务门控、固定取证要求或只靠内存保存运行状态。
 - [x] 明确迁移目录为 `backend/control_migrations/hr_agent/`、拟用096且提交前再查占用；根目录与子目录共用编号账本，094/095已占用。固定一次性数据库初始化、测试提供方与 Worker 启动/终止命令；所有命令可在隔离环境执行，不修改现行受理默认值。
 - [x] 将 A1 拆成带准确函数签名、失败测试、最小实现与验证命令的编码任务，直接写入本计划的 A1 段；API、模型记录和恢复任务必须引用 A0 同一份定义。
-- [ ] 接口层评审：工程负责人组织技术审阅，产品负责人（用户或指定负责人）确认场景/权限边界；记录两方结论后进入 A1。编写者已完成 W1–W12 映射自检，但不能自行勾选评审通过。2026-09-10评审补项见规格§2–6/§8.4/§9；修订不等于评审已通过，A1仍未启动。
+- [x] 接口层评审：2026-09-10 用户转交技术评审明确可进入 A1，随后授权实施并确定逐阶段验收；ExactRef 与确认冲突联合两项尾项、自检覆盖已闭合。A1 完成后的用户验收仍须单独记录，本勾选不替代 A1 验收。
 
 ## 5. A1 以后各批的交付边界
 
-以下表格规定交付边界，A1 的具体步骤见 §5.1；接口与文件名以 A0 §10 为准。尚未实施，不因规格出现函数签名就视为代码存在。
+以下表格规定交付边界，A1 的具体步骤与证据见 §5.1/§6；接口与文件名以 A0 §10 为准。B–E 尚未实施。
 
 | 任务 | 消费前项 | 交付与必须验证的失败路径 |
 | --- | --- | --- |
@@ -169,10 +169,10 @@ cd backend
 
 **文件：** 新增 `backend/app/hr_agent/{__init__,types,config,access}.py`、`backend/control_migrations/hr_agent/096_hr_agent_runtime.sql` 与README；修改 `backend/app/config.py`。测试新增 `backend/tests/hr_agent_support.py`、`test_hr_agent_contracts.py`、`test_hr_agent_repository.py`。
 
-- [ ] 写失败测试 `test_rejects_model_owner_field`、`test_disabled_relay_can_load_hr_codec`、`test_missing_schema_does_not_create_tables`、`test_proposal_conditions_and_positive_budget_addition`；从A0 Schema精确派生字段，未知字段/缺失ref摘要拒绝。
-- [ ] 按A0 §8复用migrator和ContentCodec接口，独立装配HR密钥；096前再次核对所有已用编号。fixture用一次性PostgreSQL，角色名/环境与现有migrator校验一致，显式跑根迁移及新目录，不执行hr_web 089–095。
-- [ ] 实现已声明的类型、配置/权限入口、表与约束；数据库就绪检查是只读，不因开关启用而迁移。密钥/数据库秘密不出现在repr或错误中。
-- [ ] 运行下列对应测试，要求首次失败可复现、修复后通过且数据库测试无skip；只提交本项文件与结果记录。
+- [x] 写失败测试 `test_rejects_model_owner_field`、`test_disabled_relay_can_load_hr_codec`、`test_missing_schema_does_not_create_tables`、`test_proposal_conditions_and_positive_budget_addition`；从A0 Schema精确派生字段，未知字段/缺失ref摘要拒绝。
+- [x] 按A0 §8复用migrator和ContentCodec接口，独立装配HR密钥；096前再次核对所有已用编号。fixture用一次性PostgreSQL，角色名/环境与现有migrator校验一致，显式跑根迁移及新目录，不执行hr_web 089–095。
+- [x] 实现已声明的类型、配置/权限入口、表与约束；数据库就绪检查是只读，不因开关启用而迁移。密钥/数据库秘密不出现在repr或错误中。
+- [x] 运行下列对应测试，要求首次失败可复现、修复后通过且数据库测试无skip；只提交本项文件与结果记录。
 
 ```sh
 cd backend
@@ -183,11 +183,11 @@ cd backend
 
 **文件：** 新增 `backend/app/hr_agent/{repository,service,context,routes,results,materials}.py`；修改 `backend/app/main.py`、`backend/app/control_plane/authorization.py`；测试新增 `test_hr_agent_routes.py`、`test_hr_agent_context.py`，扩展repository测试。
 
-- [ ] 写失败测试 `test_submit_without_position_and_replay`、`test_same_key_changed_payload_conflicts`、`test_owner_filter_precedes_decryption`；使用真实认证/CSRF链，不单独绕开中间件调用owner函数。
-- [ ] 实现A0 §3的work/thread/messages/events读取、受理和继续接口，以及repository同名方法。未开放的B能力明确503；GET messages必须在重开后返回已提交回答/问题正文，受限原文返回占位。
-- [ ] 写并实现 `test_candidate_b_excludes_a_message_and_summary`、`test_explicit_comparison_allows_both`、`test_unscoped_old_summary_is_not_imported`；观察build_model_context的实际messages和dependencies，不只检查附件元数据。
-- [ ] 写并实现 `test_upload_text_jd_without_conversation_resolves_material_ref`：真实附件begin/content/complete→materials查询→WorkInput；分别验processing/unsupported/删除和原文/解析身份，A1先UTF-8文本，B1补PDF/DOCX，不用假ref掩盖入口缺失。
-- [ ] 实现输入修订、来源范围标记、先筛后压缩和原方法身份校验；新输入失效旧执行权。测试通过后独立提交，不导入旧全局summary；summary必须记录derived_from，普通note无替换历史权限。增加 `test_mixed_summary_missing_originals_is_omitted` 和 `test_note_cannot_erase_personal_scope`。
+- [x] 写失败测试 `test_submit_without_position_and_replay`、`test_same_key_changed_payload_conflicts`、`test_owner_filter_precedes_decryption`；使用真实认证/CSRF链，不单独绕开中间件调用owner函数。
+- [x] 实现A0 §3的work/thread/messages/events读取、受理和继续接口，以及repository同名方法。未开放的B能力明确503；GET messages必须在重开后返回已提交回答/问题正文，受限原文返回占位。
+- [x] 写并实现 `test_candidate_b_excludes_a_message_and_summary`、`test_explicit_comparison_allows_both`、`test_unscoped_old_summary_is_not_imported`；观察build_model_context的实际messages和dependencies，不只检查附件元数据。
+- [x] 写并实现 `test_upload_text_jd_without_conversation_resolves_material_ref`：真实附件begin/content/complete→materials查询→WorkInput；分别验processing/unsupported/删除和原文/解析身份，A1先UTF-8文本，B1补PDF/DOCX，不用假ref掩盖入口缺失。
+- [x] 实现输入修订、来源范围标记、先筛后压缩和原方法身份校验；新输入失效旧执行权。测试通过后独立提交，不导入旧全局summary；summary必须记录derived_from，普通note无替换历史权限。增加 `test_mixed_summary_missing_originals_is_omitted` 和 `test_note_cannot_erase_personal_scope`。
 
 ```sh
 cd backend
@@ -198,12 +198,12 @@ cd backend
 
 **文件：** 新增 `backend/app/hr_agent/{model,resources,tools,runtime,observability,work_files,diagnostics}.py`；扩展repository；测试新增 `test_hr_agent_runtime.py`，扩展hr_agent_support中的本地脚本提供方。
 
-- [ ] 写失败测试 `test_incomplete_arguments_execute_nothing`、`test_unknown_tool_returns_invalid`、`test_asked_question_is_durable`；脚本提供方走实际HTTP，分别返回完整响应、半截参数与断流。
-- [ ] 实现ModelPort事件与完整ModelReply解析；每次网络尝试持久记录logical_step_id/retry_no，不允许适配器内部隐式重试。资源适配器在A1使用固定虚构文本和方法发布目录，B1再接真实内容。
-- [ ] 按原operation槽位分派list_resources/read_resource/save_note/save_result/ask_user，引用和写入由服务端验权；save_result在真实测试库落盘，不能只返回假的saved=true。
-- [ ] 写并实现 `test_first_request_logs_exclude_sensitive_payloads`、`test_work_files_cannot_escape_or_cross_scope`、`test_diagnostics_disabled_and_expired_unreadable`，观察Worker及HTTP适配器输出；W10基础边界在首条模型调用即生效。
-- [ ] 写并实现 `test_tool_error_and_recovery_are_visible_in_events`；事件输出安全分类，messages不伪造助手失败答案。
-- [ ] 实现终答投影与逐工具继续。调用顺序来自模型返回，不能把“先方法再保存”写成业务管道；固定终答可直接保存普通回答，不增加submit_answer门控。
+- [x] 写失败测试 `test_incomplete_arguments_execute_nothing`、`test_unknown_tool_returns_invalid`、`test_asked_question_is_durable`；脚本提供方走实际HTTP，分别返回完整响应、半截参数与断流。
+- [x] 实现ModelPort事件与完整ModelReply解析；每次网络尝试持久记录logical_step_id/retry_no，不允许适配器内部隐式重试。资源适配器在A1使用固定虚构文本和方法发布目录，B1再接真实内容。
+- [x] 按原operation槽位分派list_resources/read_resource/save_note/save_result/ask_user，引用和写入由服务端验权；save_result在真实测试库落盘，不能只返回假的saved=true。
+- [x] 写并实现 `test_first_request_logs_exclude_sensitive_payloads`、`test_work_files_cannot_escape_or_cross_scope`、`test_diagnostics_disabled_and_expired_unreadable`，观察Worker及HTTP适配器输出；W10基础边界在首条模型调用即生效。
+- [x] 写并实现 `test_tool_error_and_recovery_are_visible_in_events`；事件输出安全分类，messages不伪造助手失败答案。
+- [x] 实现终答投影与逐工具继续。调用顺序来自模型返回，不能把“先方法再保存”写成业务管道；固定终答可直接保存普通回答，不增加submit_answer门控。
 
 ```sh
 cd backend
@@ -214,13 +214,13 @@ cd backend
 
 **文件：** 新增 `backend/app/hr_agent/worker.py`、`backend/tests/test_hr_agent_worker_process.py`；扩展repository/runtime/config及测试support；修改 `deploy/cloud/compose.yaml`新增默认不启动的hr-agent profile。
 
-- [ ] 写失败测试 `test_committed_save_survives_lost_reply_and_kill`、`test_committed_final_answer_projects_without_new_model_call`、`test_prepared_attempt_is_not_double_charged`。故障钩子阻断回执或终答投影；kill真实子进程后重启同一测试库，核对模型请求数/操作ID/结果修订数。
-- [ ] 实现claim/renew/失效epoch、独立心跳与信号退出；先恢复prepared或committed步骤，不重发整份用户工作。终答从原reply投影，业务副作用只读取原回执。
-- [ ] 写并实现 `test_cancel_wins_before_new_side_effect`、`test_old_epoch_cannot_commit_after_new_input`、`test_late_usage_only_settles_budget`；取消/新输入使旧业务提交失效，迟到usage只能走受限结算。
-- [ ] 按A0 §9.3独立测试calls/token/time、usage缺失、重试累计；再测试research→finalizing→waiting_budget重启与显式追加。assert重点是没有下一次请求/重复副作用，而非最终回答中出现“预算”字样。
-- [ ] 用GET work/messages/events重开工作，验证已保存回答、问题、阶段与成果可找回；运行下面两组回归，记录模型替身/进程故障范围后独立提交。此时不启动生产profile。
+- [x] 写失败测试 `test_committed_save_survives_lost_reply_and_kill`、`test_committed_final_answer_projects_without_new_model_call`、`test_prepared_attempt_is_not_double_charged`。故障钩子阻断回执或终答投影；kill真实子进程后重启同一测试库，核对模型请求数/操作ID/结果修订数。
+- [x] 实现claim/renew/失效epoch、独立心跳与信号退出；先恢复prepared或committed步骤，不重发整份用户工作。终答从原reply投影，业务副作用只读取原回执。
+- [x] 写并实现 `test_cancel_wins_before_new_side_effect`、`test_old_epoch_cannot_commit_after_new_input`、`test_late_usage_only_settles_budget`；取消/新输入使旧业务提交失效，迟到usage只能走受限结算。
+- [x] 按A0 §9.3独立测试calls/token/time、usage缺失、重试累计；再测试research→finalizing→waiting_budget重启与显式追加。assert重点是没有下一次请求/重复副作用，而非最终回答中出现“预算”字样。
+- [x] 用GET work/messages/events重开工作，验证已保存回答、问题、阶段与成果可找回；运行下面两组回归，记录模型替身/进程故障范围后独立提交。此时不启动生产profile。
 
-- [ ] 增加 `test_growing_context_exhausts_tokens_before_call_cap`、`test_proactive_summary_preserves_sources_and_checkpoint`、`test_summary_reply_never_completes_work`：测试增长轨迹与12000/8000主动压缩，压缩/重试均累计；摘要来源、未读范围和待答问题在kill/restart后仍在。固定200/100样例仅证明扣记，不能作为长文预算校准。
+- [x] 增加 `test_growing_context_exhausts_tokens_before_call_cap`、`test_proactive_summary_preserves_sources_and_checkpoint`、`test_summary_reply_never_completes_work`：测试增长轨迹与12000/8000主动压缩，压缩/重试均累计；摘要来源、未读范围和待答问题在kill/restart后仍在。固定200/100样例仅证明扣记，不能作为长文预算校准。
 
 ```sh
 cd backend
@@ -236,4 +236,23 @@ A1验收由工程负责人基于上述实际证据组织技术审阅；A1通过�
 
 总体架构维护决策与边界，工作流维护行为及 W1–W12，本计划维护批次依赖与完成证据，A0 规格维护准确接口。首批验收只覆盖首批，不把 W3 的岗位/对话部分通过写成完整 W3 通过，也不把 B 批结束写成整个 HR 已迁移。
 
-本次未运行模型、未查询生产业务库、未修复 D1、未部署或推送远端。A0 文档与结构样例已交付，下一步是接口层评审；P1/P2 的执行与 P3 实测保持各自条件。
+本批运行的是隔离 PostgreSQL、本地 HTTP 模型替身和自有 Worker 子进程。未调用真实外部模型、未查询生产业务库、未修复现行 D1、未部署或推送远端。A1 的候选范围测试使用虚构对象；不能将其写成现行 D1 已修复。P1/P2 与真实材料闸门保持原截止条件。
+
+
+### A1 本地交付证据（2026-09-10）
+
+- [x] A1.1a–A1.3 工程实施与有界独立审查完成，相关阻塞项均已复现、修复并回归。
+- [ ] 用户 A1 阶段验收。验收前不进入 B；本勾选只能依据用户结论更新。
+
+| 检查 | 最终结果 | 范围与限制 |
+| --- | --- | --- |
+| `python docs/superpowers/specs/hr-cloud-loop/selfcheck.py` | 55 定义、133 正反例、18 条件规则、6 个正文证据 ID 通过 | 文档契约覆盖，不替代服务测试 |
+| `python -m pytest backend/tests/test_hr_agent_*.py backend/tests/test_hr_cloud_loop_docs_selfcheck.py -q` | **168 passed，89.89 秒，无 skip** | 一次性 PostgreSQL、真实 HTTP/Worker 进程与本地模型替身；含16项进程/配置用例 |
+| `python -m pytest backend/tests/test_hr_position_api.py backend/tests/test_main.py::test_create_app_without_pollers_does_not_create_default_operations_database -q` | **15 passed，0.59 秒** | 现行岗位接口与默认应用启动回归 |
+| `python -m ruff check backend/app/hr_agent`；`git diff --check` | 通过 | 新运行包静态检查及差异格式 |
+
+以上 `python` 使用 worktree 的 `backend/.venv/bin/python`。新增摘要恢复用例还单独复查非空未读范围、待答问题和来源身份。所有命名测试的完整位置与业务证据分类见[验收记录](../../reviews/2026-09-10-hr-cloud-loop-a1.md)；进程测试包含SIGKILL、事务未提交/已提交、在途调用、取消/输入更新及预算收尾，不将测试数量作为专业质量判据。
+
+阶段性提交：A0 自检 `d708c17`；基础 `fb352df`/`675fbe3`；模型与私有 I/O `ac8b4c5`/`90345b4`/`2ba68f1`；成果读取 `218ef69`；HTTP/材料 `7164dba`/`74465c8`；Worker 与进程证据 `0b29e7c`/`8559108`。本计划和两份主文档随最终 A1 集成提交一并保存，分支保留待用户验收，不自动合并或推送。
+
+A1 期间补充实施形状：使用运行包内独立 Schema 副本（测试保证与文档一致）、`repository_views.py` 拆出读取/关联职责、固定只读 manifest 发布。工具契约未新增确认或任意执行权限。真实专业内容、真实模型成本与业务质量、前端和生产部署仍按 B–E 与原闸门执行。

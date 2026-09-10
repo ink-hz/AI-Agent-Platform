@@ -14,3 +14,4 @@ reportlab==4.4.10
 defusedxml==0.7.1
 dingtalk-stream==0.24.3
 jcs==0.2.1
+jsonschema==4.26.0

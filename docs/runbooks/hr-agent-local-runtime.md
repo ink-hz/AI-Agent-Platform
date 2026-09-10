@@ -40,3 +40,27 @@ cd backend
 普通日志只包含允许的身份、状态、用量、耗时和错误码。测试故障观察器仅在测试模块内注入，没有生产环境变量、浏览器参数或模型工具入口。
 
 增长上下文测试使用明确标识的 UTF-8 字节上界估算与缺失 usage 的保守扣记，不称真实 tokenizer 或长任务成本校准。完整工具闭环另使用显式 24000/20000 输入触发/目标测试配置；调用数、累计 token 和活动时间总额不因此放宽。真实模型 profile 的 tokenizer、窗口和产品预算仍需校准并批准。
+
+## A1 不可变知识发布格式
+
+`PLATFORM_HR_AGENT_KNOWLEDGE_DIR` 指向一份只读发布目录，必须有 `manifest.json`。例如：
+
+```json
+{
+  "release_id": "hr-engineering-fixture-1",
+  "role": {"path": "role.md", "sha256": "角色文件UTF-8原始字节的64位SHA-256"},
+  "resources": [
+    {
+      "ref": {"kind": "method", "id": "evidence-review", "revision": "r1", "sha256": "正文文件UTF-8原始字节的64位SHA-256"},
+      "path": "methods/evidence-review.md",
+      "title": "证据审阅",
+      "description": "用途、适用边界与需要考虑的限制",
+      "objects": []
+    }
+  ]
+}
+```
+
+上例摘要为占位说明，不能直接作为有效发布加载。实际目录的全部正文摘要在启动时验证；路径不得为绝对路径、`..` 或符号链接。A1 支持 method/intelligence 的受控公开正文；真正的专业内容和已有情报包适配在 B1/C2 完成，不把测试样例作为正式方法库。
+
+工作输入固定配置修订、发布 ID 与 manifest 摘要。已有工作不会因为目录内容被替换而继续读新内容；部署另一份发布前需保留旧发布并规划旧工作的归属，A1 不实现跨发布自动切换。新工作/新输入只接受进程当前配置的完整有效发布。
