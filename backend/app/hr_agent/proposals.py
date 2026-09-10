@@ -3,8 +3,6 @@
 from copy import deepcopy
 from uuid import UUID, uuid4
 
-from psycopg.types.json import Jsonb
-
 from .types import canonical_json, content_sha256, problem, validate_contract
 
 
@@ -70,9 +68,18 @@ def validate_sources(
         if reject_personal and ref["kind"] == "material":
             # Persisted read and entry scopes mark known personal materials even if a
             # later proposal drops their candidate object or changes their title.
+            attachment_id = ref["id"].split(":", 1)[0]
             cursor.execute(
-                'SELECT 1 FROM platform_hr_agent.read_records WHERE owner_id=%s AND ref=%s AND objects @> \'[{"kind":"candidate"}]\'::jsonb UNION ALL SELECT 1 FROM platform_hr_agent.entries WHERE owner_id=%s AND source_refs @> %s AND objects @> \'[{"kind":"candidate"}]\'::jsonb LIMIT 1',
-                (_uuid(owner), Jsonb(ref), _uuid(owner), Jsonb([ref])),
+                """SELECT 1 FROM platform_hr_agent.read_records
+                WHERE owner_id=%s AND ref->>'kind'='material'
+                AND split_part(ref->>'id',':',1)=%s
+                AND objects @> '[{"kind":"candidate"}]'::jsonb
+                UNION ALL SELECT 1 FROM platform_hr_agent.entries e
+                WHERE owner_id=%s AND objects @> '[{"kind":"candidate"}]'::jsonb
+                AND EXISTS (SELECT 1 FROM jsonb_array_elements(e.source_refs) r
+                    WHERE r->>'kind'='material' AND split_part(r->>'id',':',1)=%s)
+                LIMIT 1""",
+                (_uuid(owner), attachment_id, _uuid(owner), attachment_id),
             )
             if cursor.fetchone():
                 raise problem("personal_source_not_allowed")

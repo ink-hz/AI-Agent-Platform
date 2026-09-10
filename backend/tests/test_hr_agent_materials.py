@@ -81,9 +81,8 @@ def uploaded(secured, database):
     app = FastAPI()
     app.state.conversation_attachment_upload_service = uploads
     app.include_router(build_conversation_attachment_router())
-    app.include_router(
-        build_hr_agent_router(HrAgentService(repo, access, materials=materials))
-    )
+    app.state.hr_agent_service = HrAgentService(repo, access, materials=materials)
+    app.include_router(build_hr_agent_router(app.state.hr_agent_service))
     app.add_middleware(
         IdentitySecurityMiddleware,
         auth=_SecurityAuth(owner),

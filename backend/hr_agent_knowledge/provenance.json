@@ -1,0 +1,58 @@
+{
+  "source_repository": "Orbbec-Agent-Team",
+  "source_commit": "7757ca4a2ce380206ff5019917b39de8bef10814",
+  "role_source_path": "bots/hr/CLAUDE.md",
+  "role_source_sha256": "b87ed6dd42347ad2b991f8c885b5f6c329241a24b4bc9796e7f09f2b2a94d4ac",
+  "files": [
+    {
+      "path": "sources/README.md",
+      "source_path": "bots/hr/knowledge/README.md",
+      "sha256": "8e2c7e68f54a507a6988ba864057a3c7edd480b3ae71f2a4b74d576aa9a96a81"
+    },
+    {
+      "path": "methods/comparison-and-learning.md",
+      "source_path": "bots/hr/knowledge/recruiting/comparison-and-learning.md",
+      "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+    },
+    {
+      "path": "methods/competency-and-profile.md",
+      "source_path": "bots/hr/knowledge/recruiting/competency-and-profile.md",
+      "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+    },
+    {
+      "path": "methods/evidence-informed-judgment.md",
+      "source_path": "bots/hr/knowledge/recruiting/evidence-informed-judgment.md",
+      "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+    },
+    {
+      "path": "methods/job-and-context.md",
+      "source_path": "bots/hr/knowledge/recruiting/job-and-context.md",
+      "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+    },
+    {
+      "path": "methods/requirement-calibration.md",
+      "source_path": "bots/hr/knowledge/recruiting/requirement-calibration.md",
+      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+    },
+    {
+      "path": "methods/selection-and-work-samples.md",
+      "source_path": "bots/hr/knowledge/recruiting/selection-and-work-samples.md",
+      "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+    },
+    {
+      "path": "methods/sourcing-and-transfer.md",
+      "source_path": "bots/hr/knowledge/recruiting/sourcing-and-transfer.md",
+      "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+    },
+    {
+      "path": "sources/2026-09-08-hr-methodology-sources.md",
+      "source_path": "bots/hr/knowledge/sources/2026-09-08-hr-methodology-sources.md",
+      "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+    },
+    {
+      "path": "sources/2026-09-09-jd-reading-cases.md",
+      "source_path": "bots/hr/knowledge/sources/2026-09-09-jd-reading-cases.md",
+      "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+    }
+  ]
+}

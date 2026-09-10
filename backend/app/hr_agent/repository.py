@@ -84,6 +84,7 @@ class HrAgentRepository(RepositoryViewsMixin):
         self.settings = settings
         self.scope_validator = scope_validator
         self.release_provider = None
+        self.release_validator = None
 
     @contextmanager
     def transaction(self):
@@ -184,7 +185,9 @@ class HrAgentRepository(RepositoryViewsMixin):
             self.settings, "configuration_revision", "a1-test"
         ):
             raise problem("configuration_unavailable", http_status=503)
-        if self.release_provider and any(
+        if self.release_validator:
+            self.release_validator(row)
+        elif self.release_provider and any(
             row[k] != v for k, v in self.release_provider().items()
         ):
             raise problem("configuration_unavailable", http_status=503)
@@ -1422,6 +1425,17 @@ class HrAgentRepository(RepositoryViewsMixin):
                     )
                     data = {"entry_id": str(identity), "saved": True}
                 elif name == "save_result":
+                    declared = (
+                        args["source_refs"]
+                        + args["preceding_refs"]
+                        + [b["ref"] for b in args["basis"] if b["ref"] is not None]
+                    )
+                    if args["base_standard_ref"] is not None:
+                        declared.append(args["base_standard_ref"])
+                    self._scope(
+                        work["owner_id"], current["objects"], declared, work["work_id"]
+                    )
+                    dependencies = _refs((*dependencies, *declared))
                     data = self._save_result(c, work, op, args, current, dependencies)
                 else:
                     identity = self._entry(
@@ -1478,11 +1492,13 @@ class HrAgentRepository(RepositoryViewsMixin):
                 raise problem(
                     "unsupported_kind"
                 )  # Official source verification is introduced at B1.
+        proposal_document = None
         if args["kind"] == "standard_proposal":
-            if any(obj["kind"] == "candidate" for obj in current["objects"]):
-                raise problem("personal_source_not_allowed")
-            # A1 does not open the B3 confirmation semantics.
-            raise problem("configuration_unavailable", http_status=503)
+            from .proposals import prepare_proposal
+
+            proposal_document = prepare_proposal(
+                self, c, work, op, args, current, dependencies
+            )
         if args["result_id"]:
             identity = _uuid(args["result_id"])
             c.execute(
@@ -1508,10 +1524,17 @@ class HrAgentRepository(RepositoryViewsMixin):
         else:
             identity = uuid4()
         revision = uuid4()
-        document = {
-            k: v for k, v in args.items() if k not in ("result_id", "expected_revision")
-        }
-        document["objects"] = list(_refs(current["objects"] + args["objects"]))
+        document = (
+            proposal_document
+            if proposal_document is not None
+            else {
+                k: v
+                for k, v in args.items()
+                if k not in ("result_id", "expected_revision")
+            }
+        )
+        if proposal_document is None:
+            document["objects"] = list(_refs(current["objects"] + args["objects"]))
         digest = content_sha256(document)
         ref = {
             "kind": "result",

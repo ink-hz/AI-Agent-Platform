@@ -46,6 +46,7 @@ class ProviderProfile:
     model: str
     credential_file: Path
     timeout_seconds: float = 120.0
+    auth_scheme: str = "provider_default"
 
     def __post_init__(self) -> None:
         try:
@@ -54,7 +55,8 @@ class ProviderProfile:
         except (ValueError, TypeError):
             raise ValueError("invalid provider profile") from None
         if (
-            not self.profile_id
+            self.auth_scheme not in {"provider_default", "bearer"}
+            or not self.profile_id
             or not self.revision
             or self.protocol not in {"openai_chat_sse", "anthropic_messages_sse"}
             or parsed.scheme not in {"http", "https"}
@@ -107,7 +109,7 @@ class ConfiguredHttpModelPort:
             "tokenizer",
             "context_window_tokens",
         }
-        allowed = required | {"timeout_seconds"}
+        allowed = required | {"timeout_seconds", "auth_scheme"}
         if (
             not isinstance(value, dict)
             or set(value) - allowed
@@ -128,6 +130,7 @@ class ConfiguredHttpModelPort:
                 model=str(value["model"]),
                 credential_file=Path(str(value["credential_file"])),
                 timeout_seconds=float(value.get("timeout_seconds", 120)),
+                auth_scheme=str(value.get("auth_scheme", "provider_default")),
             )
         )
 
@@ -173,7 +176,11 @@ class ConfiguredHttpModelPort:
         system, messages = _anthropic_messages(messages)
         return (
             {
-                "x-api-key": credential,
+                **(
+                    {"Authorization": f"Bearer {credential}"}
+                    if self._profile.auth_scheme == "bearer"
+                    else {"x-api-key": credential}
+                ),
                 "anthropic-version": "2023-06-01",
                 "Accept": "text/event-stream",
             },
@@ -600,12 +607,24 @@ def _anthropic_tool(tool: dict) -> dict:
     function = tool.get("function") if tool.get("type") == "function" else None
     if not isinstance(function, dict) or not isinstance(function.get("name"), str):
         raise ModelTransportError("configuration_unavailable")
-    converted = {
-        "name": function["name"],
-        "input_schema": function.get("parameters", {"type": "object"}),
+    # The Anthropic-compatible gateway rejects root schema combinators. Keep
+    # the runtime schema intact and describe cross-field rules to the model;
+    # validate_tool_arguments still enforces the full original on every call.
+    schema = json.loads(json.dumps(function.get("parameters", {"type": "object"})))
+    conditions = {
+        key: schema.pop(key) for key in ("allOf", "oneOf", "anyOf") if key in schema
     }
+    if conditions and (schema.get("type") != "object" or "properties" not in schema):
+        raise ModelTransportError("configuration_unavailable")
+    converted = {"name": function["name"], "input_schema": schema}
     if isinstance(function.get("description"), str):
         converted["description"] = function["description"]
+    if conditions:
+        converted["description"] = (
+            converted.get("description", "")
+            + "\nServer-enforced conditions: "
+            + json.dumps(conditions, ensure_ascii=False, separators=(",", ":"))
+        )
     return converted
 
 

@@ -540,3 +540,20 @@ backend/.venv/bin/python -m pytest backend/tests/test_hr_cloud_loop_docs_selfche
 - 角色/公开目录的 A1 落盘格式为 `manifest.json`（release_id、role.path/sha256、resources[].ref/path/title/description/objects），原始字节摘要逐份校验；具体格式及部署边界见[运行说明](../../runbooks/hr-agent-local-runtime.md)。A1 固定单份不可变发布，多发布数据承接另在 B1/C2 完成，不声称 W12 的完整业务旅程已验收。
 - A1 UTF-8 材料读取采用有界内存，保留真实附件归属/扫描状态/存储版本/摘要校验，不产生工作明文落盘；文件交付仍未开放。诊断启用时必须提供可信审计入口，缺失或审计失败拒绝访问。
 - `conservative_utf8` 的完整装配测试显式使用 24k/20k 压缩阈值/目标；它是字节上界估算配置。12k/8k 的真实 tokenizer 成本与专业长文表现仍待真实提供方配置校准，不能将工程替身误称为实测业务预算。
+
+
+## B 实施接口增补（2026-09-10）
+
+A1 段保留为当时交付快照；本节及 [B 计划](../plans/2026-09-10-hr-cloud-loop-b.md) 描述当前增补，不改变首批私有范围、用户确认或生产切换边界。
+
+- `GET /api/hr/agent/configuration` 仅返回可见预算 profile ID 和额度；模型端点及凭据不返回浏览器。
+- `GET /works/{id}/input` 返回当前 input_revision/text/objects/references 等冻结输入；用于恢复界面选择，仍先核验主体及当前来源权限，不返回其他工作历史。
+- `GET /knowledge` 返回当前发布 ID 与 ref/title/description 列表；`GET /knowledge/{id}/revisions/{revision}?sha256=...` 读取准确方法/案例/来源正文。新输入发现当前发布，旧任务按记录中的发布和 manifest 摘要解析，保留内容可继续；缺失拒绝，不切成 current。用户已选历史方法仍按准确引用读取。
+- `POST /materials/{attachment_id}/parse` 空对象、CSRF、Idempotency-Key，202 返回 parse_id/attachment_id/state/parser_release。GET 不启动解析。097 新增 material_parses 与 material_parse_requests；API/Worker 只读验证 096/097 摘要与权限，运行时不迁移。每个 Worker 周期先处理至多一份解析再处理工作。
+- MaterialView 增加 queued 及可选 coverage_notes/error_code/parse_id；ResourceText 增加 coverage_complete/coverage_notes，正文返回与解析覆盖分开。UTF8 canonical payload 保持不变；新 PDF/DOCX parser 的准确摘要包含 original_ref/parser_release/text/coverage_complete/**coverage_notes**，覆盖声明不能单独变更而保留旧引用。无 OCR；PDF 不宣称视觉与阅读顺序完整。
+- `GET /results/{id}/revisions/{revision}/file-info` 返回 result_ref/format=markdown/media_type/filename/sha256/size_bytes；`/file` 导出 `# title + 两换行 + body + 换行` 的 UTF8 字节。每次下载按正文同样检查当前主体与传递来源，no-store。线程与岗位只关联同一成果，文件不重新生成分析。
+- 标准确认启用既定用户 HTTP：仅选中 change_id 生效，真实用户身份由服务端取；所有确认 409 的 details.current_revision 均指**当前正式标准**的 UUID（不存在才 null），包括 proposal_revision 冲突。它不是新提案 ID，客户端不能据此重定旧提案。
+- 成果来源边保留模型上下文依赖与 source_refs/preceding_refs/basis/base 全集；同一 attachment_id 已知候选范围标记不因重解析或原件/正文切换而消失。无法从元数据判定的个人原话仍需专业/人工审读，不能把来源检查当完整脱敏检测。
+- Provider profile 可选 auth_scheme=provider_default/bearer，由服务端配置并参与配置身份。FAE 本地配置使用 Anthropic Bearer 网关。该网关实测拒绝工具 input_schema 顶层 allOf/oneOf/anyOf；传输适配保留字段 schema，并将顶层条件逐字序列化进工具说明。服务端和持久请求保留完整 Schema，工具执行前的条件验证不放宽；模型不能选择认证方式或跳过校验。
+
+B4 输入/输出与工程证据分开记录，真实模型生成不等于用户业务质量验收。

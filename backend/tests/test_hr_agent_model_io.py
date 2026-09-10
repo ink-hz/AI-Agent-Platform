@@ -567,3 +567,29 @@ def test_real_http_native_usage_is_normalized_by_profile(tmp_path,protocol,raw,e
     assert reply.usage.input_total+reply.usage.output_total==expected
     assert reply.usage.raw==raw
     assert len(seen)==1
+
+
+def test_anthropic_gateway_bearer_auth_is_explicit_profile_only(tmp_path):
+    from app.hr_agent.model import ConfiguredHttpModelPort
+    credential=tmp_path/'credential';credential.write_text('local-test-token');credential.chmod(0o600)
+    profile={'id':'test-profile','revision':'v1','protocol':'anthropic_messages_sse','endpoint':'https://example.test/v1/messages','model':'configured-model','credential_file':str(credential),'tokenizer':'conservative_utf8','context_window_tokens':32768,'auth_scheme':'bearer'}
+    port=ConfiguredHttpModelPort.from_mapping(profile)
+    headers,body=port._wire_request(request(),'local-test-token')
+    assert headers['Authorization']=='Bearer local-test-token'
+    assert 'x-api-key' not in headers
+    assert body['model']=='configured-model'
+    with pytest.raises(ValueError):ConfiguredHttpModelPort.from_mapping({**profile,'auth_scheme':'arbitrary-header'})
+
+
+def test_anthropic_wire_root_conditions_are_described_but_server_still_enforces():
+    from app.hr_agent.context import tools_for_phase
+    from app.hr_agent.model import _anthropic_tool
+    from app.hr_agent.types import validate_tool_arguments,HrAgentProblem
+    tool=next(t for t in tools_for_phase('research') if t['function']['name']=='save_result')
+    original=json.dumps(tool,sort_keys=True)
+    wire=_anthropic_tool(tool)
+    assert not {'allOf','oneOf','anyOf'} & set(wire['input_schema'])
+    assert 'Server-enforced conditions' in wire['description']
+    assert json.dumps(tool,sort_keys=True)==original
+    with pytest.raises(HrAgentProblem):
+        validate_tool_arguments('save_result',{'kind':'standard_proposal','changes':[]})

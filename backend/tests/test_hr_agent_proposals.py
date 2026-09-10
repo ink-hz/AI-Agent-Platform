@@ -218,3 +218,16 @@ def test_explicit_only_private_source_is_persisted_in_transitive_graph(repo):
     )
     assert outcome["status"] == "invalid"
     assert outcome["error"]["code"] == "personal_source_not_allowed"
+
+
+def test_material_personal_scope_survives_parser_revision_change(repo):
+    owner=uuid4();position={'kind':'position','id':str(uuid4())};candidate={'kind':'candidate','id':str(uuid4())}
+    attachment=str(uuid4())
+    old={'kind':'material','id':attachment+':text','revision':'a'*64+':parser-v1','sha256':'b'*64}
+    new={**old,'revision':'a'*64+':parser-v2','sha256':'c'*64}
+    args=proposal_args(position);args.update(kind='retrospective',changes=[],basis=[],objects=[candidate],source_refs=[old])
+    assert save(repo,owner,args,references=[old])['status']=='ok'
+    proposal=proposal_args(position);proposal['source_refs']=[new]
+    outcome=save(repo,owner,proposal,references=[new])
+    assert outcome['status']=='invalid'
+    assert outcome['error']['code']=='personal_source_not_allowed'

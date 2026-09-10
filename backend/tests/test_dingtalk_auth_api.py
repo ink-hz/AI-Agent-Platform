@@ -593,6 +593,7 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
         "/hr",
         "/hr/",
         "/hr/chat",
+        "/hr/agent",
         "/hr/positions/11111111-1111-4111-8111-111111111111",
         "/hr/positions/11111111-1111-4111-8111-111111111111/conversations/hr%3Aone",
         "/hr/conversations/hr%3Aone",

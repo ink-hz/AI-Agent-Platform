@@ -51,3 +51,15 @@ def test_runtime_accepts_valid_rfc3339_calendar(timestamp):
     value=next(c['value'].copy() for c in cases if c['valid'] and c['definition']=='Event')
     value['at']=timestamp
     assert validate_contract('Event',value)['at']==timestamp
+
+
+def test_invalid_tool_arguments_identify_contract_field_without_echoing_input():
+    from app.hr_agent.types import validate_tool_arguments,HrAgentProblem
+    with pytest.raises(HrAgentProblem) as error:
+        validate_tool_arguments('list_resources',{'kinds':['PRIVATE_INPUT_SENTINEL']})
+    assert error.value.problem['details']['field']=='kinds[0]'
+    assert 'method' in error.value.problem['message']
+    assert 'PRIVATE_INPUT_SENTINEL' not in str(error.value.problem)
+    with pytest.raises(HrAgentProblem) as error:
+        validate_tool_arguments('list_resources',{})
+    assert 'kinds' in error.value.problem['message']

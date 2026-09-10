@@ -61,6 +61,8 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
         service.results = results
     if materials is not None:
         service.materials = materials
+    if standards is not None:
+        service.standards = standards
     router = APIRouter(prefix="/api/hr/agent", route_class=HrAgentRoute)
 
     @router.post("/works")
@@ -83,6 +85,10 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
     @router.get("/works/{work_id}")
     def work(request: Request, work_id: UUID):
         return service.get_work(auth(request), work_id)
+
+    @router.get("/works/{work_id}/input")
+    def work_input(request: Request, work_id: UUID):
+        return service.work_input(auth(request), work_id)
 
     @router.get("/works/{work_id}/messages")
     def messages(
@@ -128,6 +134,36 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
             key(request),
         )
 
+    @router.get("/configuration")
+    def configuration(request: Request):
+        return service.configuration(auth(request))
+
+    @router.get("/knowledge")
+    def knowledge_catalog(request: Request):
+        return service.knowledge_catalog(auth(request))
+
+    @router.get("/knowledge/{resource_id}/revisions/{revision}")
+    def knowledge_text(request: Request, resource_id: str, revision: str, sha256: str):
+        return service.knowledge_text(
+            auth(request),
+            {
+                "kind": "method",
+                "id": resource_id,
+                "revision": revision,
+                "sha256": sha256,
+            },
+        )
+
+    @router.post("/materials/{attachment_id}/parse", status_code=202)
+    async def parse_material(request: Request, attachment_id: UUID):
+        return await run_in_threadpool(
+            service.parse_material,
+            auth(request),
+            attachment_id,
+            await body(request),
+            key(request),
+        )
+
     @router.get("/materials/{attachment_id}")
     def material(request: Request, attachment_id: UUID):
         return service.resolve_material(auth(request), attachment_id)
@@ -166,9 +202,13 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
     @router.get("/results/{result_id}/revisions/{revision}/file")
     def result_file(request: Request, result_id: UUID, revision: UUID):
         info, content = service.export_result(auth(request), result_id, revision)
-        return Response(content, media_type="text/markdown", headers={
-            "Content-Disposition": f'attachment; filename="{info["filename"]}"',
-        })
+        return Response(
+            content,
+            media_type="text/markdown",
+            headers={
+                "Content-Disposition": f'attachment; filename="{info["filename"]}"',
+            },
+        )
 
     @router.post("/results/{result_id}/links")
     async def link(request: Request, result_id: UUID):
@@ -181,12 +221,17 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
         )
 
     @router.post("/positions/{position_id}/standards/confirm")
-    def confirm(request: Request, position_id: UUID):
-        key(request)
-        return service.standards_unavailable(auth(request), True)
+    async def confirm(request: Request, position_id: UUID):
+        return await run_in_threadpool(
+            service.confirm_standard,
+            auth(request),
+            position_id,
+            await body(request),
+            key(request),
+        )
 
     @router.get("/positions/{position_id}/standards/current")
     def standard(request: Request, position_id: UUID):
-        return service.standards_unavailable(auth(request))
+        return service.current_standard(auth(request), position_id)
 
     return router

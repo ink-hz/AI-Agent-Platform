@@ -64,8 +64,56 @@ def problem(code, message=None, retryable=False, details=None, http_status=None)
 
 
 def validate_contract(name: str, value: Any) -> dict:
-    if name not in _VALIDATORS or not _VALIDATORS[name].is_valid(value):
+    if name not in _VALIDATORS:
         raise problem("invalid_input")
+    error = next(_VALIDATORS[name].iter_errors(value), None)
+    if error is not None:
+        # Return only schema-owned names/constraints, never jsonschema's raw
+        # message (which can quote private input and unexpected property names).
+        allowed_fields = set()
+
+        def collect_fields(schema):
+            if isinstance(schema, dict):
+                allowed_fields.update(schema.get("properties", {}).keys())
+                for child in schema.values():
+                    collect_fields(child)
+            elif isinstance(schema, list):
+                for child in schema:
+                    collect_fields(child)
+
+        collect_fields(_SCHEMA)
+        parts = []
+        for part in error.absolute_path:
+            if isinstance(part, int):
+                parts.append(f"[{part}]")
+            else:
+                safe = part if part in allowed_fields else "field"
+                parts.append(("." if parts else "") + safe)
+        location = "".join(parts) or "$"
+        expected = error.validator_value
+        if error.validator == "required" and isinstance(error.instance, dict):
+            expected = [field for field in expected if field not in error.instance]
+        constraint = (
+            json.dumps(expected, ensure_ascii=False)
+            if error.validator
+            in {
+                "required",
+                "enum",
+                "const",
+                "type",
+                "format",
+                "minItems",
+                "minLength",
+                "minimum",
+                "maximum",
+            }
+            else error.validator
+        )
+        raise problem(
+            "invalid_input",
+            f"{name}: {location} requires {error.validator} {constraint}",
+            details={"field": location},
+        )
     if (
         name == "ResourceText"
         and not 0 <= value["offset"] <= value["end"] <= value["total_characters"]
@@ -257,6 +305,7 @@ class MaterialText:
     parser_release: str
     text: str
     coverage_complete: bool
+    coverage_notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

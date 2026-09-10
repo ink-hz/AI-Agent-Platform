@@ -1,0 +1,23 @@
+{
+  "provenance": {
+    "representation": "saved_normalized_record",
+    "normalized_sha256": "89db450608da4aa40f06174071bc9350419a18f50a8fb7ed2c96e0ecb26f6a0d",
+    "bundle_id": "aebca08a-1715-536a-869a-39663b81c8e4",
+    "limitation": "本地保存的公开归档统一记录；未重新抓取官网，未回查缺失的原始证据包。"
+  },
+  "job": {
+    "company_key": "agibot",
+    "duty_excerpt": "1、研发多条件动作生成：文本/语音韵律/视觉条件→全身动作与手势； 2、研究可控生成：风格、人设、情绪、节奏、强约束（空间/安全/可执行）下的生成； 3、解决可执行性：动力学约束、接触与平衡、IK约束、动作拼接与过渡自然性； 4、评测与数据：动作自然度、稳定性、可执行性、审美与一致性指标；线上A/B与回归； 5、与TTS/对话/控制/安全协作：打通“说什么→怎么说→怎么动”的闭环；",
+    "evidence_sha256": "189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5",
+    "job_id": "921d9d76-6993-59af-a0d6-5f93278c166d",
+    "location": "深圳、上海",
+    "observed_at": "2026-09-06T14:38:22.792168+00:00",
+    "public_job_key": "7610278886073583914",
+    "raw_location": "深圳 / 上海",
+    "requirement_excerpt": "1、熟悉动作生成/扩散模型/序列模型等，有研究与落地能力； 2、具备运动学基础：IK/约束、动作拼接过渡、抖动/不稳定识别与处理思路； 3、有项目/科研：Text2Motion、Speech2Motion、风格控制、韵律对齐等任一方向； 加分项： 熟悉动作生成/扩散模型/序列模型等，有研究与落地能力； 具备运动学基础：IK/约束、动作拼接过渡、抖动/不稳定识别与处理思路； 有项目/科研：Text2Motion、Speech2Motion、风格控制、韵律对齐等任一方向。",
+    "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+    "source_url": "https://agirobot.jobs.feishu.cn/socialrecruitment/position/7610278886073583914/detail",
+    "status": "open",
+    "title": "多模态生成动作大模型工程师/专家"
+  }
+}

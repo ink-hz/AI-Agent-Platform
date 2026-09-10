@@ -25,6 +25,11 @@ def run_worker(
     stop_event = stop_event or threading.Event()
     worker_id = worker_id or "hr-" + str(uuid4())
     while not stop_event.is_set():
+        parser = getattr(getattr(resources, "materials", None), "parsing", None)
+        if parser is not None:
+            parser.process_one(worker_id, repository.settings.lease_seconds)
+        if stop_event.is_set():
+            break
         fence = repository.claim(worker_id, repository.settings.lease_seconds)
         if fence is None:
             stop_event.wait(poll_seconds)

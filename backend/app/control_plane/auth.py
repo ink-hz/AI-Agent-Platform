@@ -44,7 +44,7 @@ _SAFE_RETURN_EXACT = frozenset(
         "/", "/account", "/missions", "/conversations", "/agents",
         "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
         "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
-        "/hr/chat", "/marketing/", "/admin", "/admin/",
+        "/hr/chat", "/hr/agent", "/marketing/", "/admin", "/admin/",
     }
 )
 _SAFE_RETURN_PATTERNS = tuple(
@@ -311,6 +311,25 @@ def validate_return_path(value: str | None, *, route_prefix: str) -> str:
     selected = route_prefix if value is None else value
     if not isinstance(selected, str) or not selected.startswith("/"):
         raise ValueError("return path invalid")
+    # Only the new HR workspace carries exact work/position IDs through login.
+    # Validate the raw query: no aliases, encoding, repeated keys or other routes.
+    if "?" in selected:
+        base, query = selected.split("?", 1)
+        expected = route_prefix.rstrip("/") + "/hr/agent"
+        pairs = query.split("&")
+        seen = set()
+        if base != expected or not query:
+            raise ValueError("return path invalid")
+        for pair in pairs:
+            key, separator, identifier = pair.partition("=")
+            if (
+                not separator or key not in {"position", "work"} or key in seen
+                or re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", identifier) is None
+            ):
+                raise ValueError("return path invalid")
+            seen.add(key)
+        validate_return_path(base, route_prefix=route_prefix)
+        return selected
     try:
         decoded = unquote(selected, errors="strict")
     except (UnicodeError, ValueError):

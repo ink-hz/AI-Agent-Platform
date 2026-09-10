@@ -1690,10 +1690,14 @@ def create_app(
                 material_service=hr_materials,
                 agent_use_authorization=agent_use_authorization,
             )
+        from .hr_agent.standards import StandardService
+
         hr_agent_service = HrAgentService(
             hr_repository,
             HrAccess(agent_use_authorization),
             materials=hr_materials,
+            standards=StandardService(hr_repository) if hr_repository else None,
+            knowledge=_hr_resources.knowledge if hr_repository else None,
             ready=hr_ready,
         )
     if hr_agent_service is None:

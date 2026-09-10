@@ -18,6 +18,10 @@ from .types import canonical_json
 
 MIGRATION_SHA256 = "02241fb7872b598c67ea78e84fe5301d2797683680c8f7bf79770b3ae6c8f817"
 
+PARSING_MIGRATION_SHA256 = (
+    "4ba8a48d988e2c88293c371cc4c5b46f89270a7c3918df8cd172858027d59cc4"
+)
+
 TABLES = (
     "threads",
     "works",
@@ -34,6 +38,8 @@ TABLES = (
     "standard_revisions",
     "reference_edges",
     "budget_extensions",
+    "material_parses",
+    "material_parse_requests",
 )
 
 
@@ -118,7 +124,13 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
             "tokenizer",
             "context_window_tokens",
             "timeout_seconds",
+            "auth_scheme",
         }
+        if provider.get("auth_scheme", "provider_default") not in {
+            "provider_default",
+            "bearer",
+        }:
+            raise ValueError()
         if set(provider) - allowed:
             raise ValueError()
         if provider.get("protocol") not in {
@@ -227,6 +239,7 @@ def check_schema_ready(connection_factory) -> bool:
                 "budget_extensions",
                 "read_records",
                 "events",
+                "material_parse_requests",
             }
             for name in TABLES:
                 row = connection.execute(
@@ -249,6 +262,11 @@ def check_schema_ready(connection_factory) -> bool:
             row = connection.execute(
                 "select sha256 from platform_control.schema_migrations where version=96"
             ).fetchone()
-            return row is not None and row[0] == MIGRATION_SHA256
+            if row is None or row[0] != MIGRATION_SHA256:
+                return False
+            row = connection.execute(
+                "select sha256 from platform_control.schema_migrations where version=97"
+            ).fetchone()
+            return row is not None and row[0] == PARSING_MIGRATION_SHA256
     except Exception:  # noqa: BLE001 - startup and readiness fail closed without secrets
         return False

@@ -68,29 +68,74 @@
           }
         },
         {
-          "if": {"properties": {"kind": {"const": "material"}}, "required": ["kind"]},
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "material"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
           "then": {
             "properties": {
-              "id": {"pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}(?::(?:original|text))?$"},
-              "revision": {"pattern": "^(?:[a-f0-9]{64}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?|[A-Za-z0-9][A-Za-z0-9._-]{0,127})$"}
+              "id": {
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}(?::(?:original|text))?$"
+              },
+              "revision": {
+                "pattern": "^(?:[a-f0-9]{64}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?|[A-Za-z0-9][A-Za-z0-9._-]{0,127})$"
+              }
             }
           }
         },
         {
-          "if": {"properties": {"kind": {"enum": ["result", "standard"]}}, "required": ["kind"]},
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "result",
+                  "standard"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
           "then": {
             "properties": {
-              "id": {"format": "uuid"},
-              "revision": {"format": "uuid"}
+              "id": {
+                "format": "uuid"
+              },
+              "revision": {
+                "format": "uuid"
+              }
             }
           }
         },
         {
-          "if": {"properties": {"kind": {"enum": ["method", "intelligence"]}}, "required": ["kind"]},
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "method",
+                  "intelligence"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
           "then": {
             "properties": {
-              "id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$"},
-              "revision": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._:+/-]{0,199}$"}
+              "id": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$"
+              },
+              "revision": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+/-]{0,199}$"
+              }
             }
           }
         }
@@ -933,6 +978,17 @@
         "read_id": {
           "type": "string",
           "format": "uuid"
+        },
+        "coverage_complete": {
+          "type": "boolean"
+        },
+        "coverage_notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 100
         }
       },
       "required": [
@@ -2518,7 +2574,8 @@
             "processing",
             "ready",
             "failed",
-            "unsupported"
+            "unsupported",
+            "queued"
           ]
         },
         "parser_release": {
@@ -2534,6 +2591,31 @@
         },
         "coverage_complete": {
           "type": "boolean"
+        },
+        "coverage_notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 100
+        },
+        "error_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parse_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -2853,11 +2935,23 @@
     },
     "ConfirmError": {
       "oneOf": [
-        {"$ref": "#/$defs/StandardConflict"},
+        {
+          "$ref": "#/$defs/StandardConflict"
+        },
         {
           "allOf": [
-            {"$ref": "#/$defs/Problem"},
-            {"properties": {"code": {"not": {"const": "revision_conflict"}}}}
+            {
+              "$ref": "#/$defs/Problem"
+            },
+            {
+              "properties": {
+                "code": {
+                  "not": {
+                    "const": "revision_conflict"
+                  }
+                }
+              }
+            }
           ]
         }
       ]

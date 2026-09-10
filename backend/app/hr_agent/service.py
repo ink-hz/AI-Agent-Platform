@@ -4,11 +4,23 @@ from .types import problem, validate_contract
 
 
 class HrAgentService:
-    def __init__(self, repository, access, *, materials=None, results=None, ready=True):
+    def __init__(
+        self,
+        repository,
+        access,
+        *,
+        materials=None,
+        results=None,
+        standards=None,
+        knowledge=None,
+        ready=True,
+    ):
         self._repository = repository
         self.access = access
         self.materials = materials
         self.ready = ready
+        self.standards = standards
+        self.knowledge = knowledge
         from .results import ResultService
 
         self.results = results or (
@@ -90,3 +102,59 @@ class HrAgentService:
             "Standards confirmation is not enabled",
             http_status=503,
         )
+
+    def confirm_standard(self, auth, position_id, request, key):
+        owner = self._owner(auth, True)
+        if self.standards is None:
+            return self.standards_unavailable(auth, True)
+        return self.standards.confirm(owner, position_id, request, key)
+
+    def current_standard(self, auth, position_id):
+        owner = self._owner(auth)
+        if self.standards is None:
+            return self.standards_unavailable(auth)
+        return self.standards.current(owner, position_id)
+
+    def configuration(self, auth):
+        self._owner(auth)
+        if self.repository.settings is None:
+            raise problem("configuration_unavailable", http_status=503)
+        budget = self.repository.settings.budget_profile
+        return {"budget_profile": budget["id"], "budget_limits": budget["limits"]}
+
+    def knowledge_catalog(self, auth):
+        self._owner(auth)
+        if self.knowledge is None:
+            raise problem("configuration_unavailable", http_status=503)
+        published = self.knowledge.current()
+        return {
+            "release_id": published.release_id,
+            "items": [
+                {"ref": i["ref"], "title": i["title"], "description": i["description"]}
+                for i in published.items
+                if i["ref"]["kind"] == "method"
+            ],
+        }
+
+    def knowledge_text(self, auth, ref):
+        self._owner(auth)
+        if self.knowledge is None:
+            raise problem("configuration_unavailable", http_status=503)
+        ref = validate_contract("ExactRef", ref)
+        return {"ref": ref, "text": self.knowledge.read(ref)}
+
+    def parse_material(self, auth, attachment_id, request, key):
+        owner = self._owner(auth, True)
+        if request != {}:
+            raise problem("invalid_input")
+        parser = getattr(self.materials, "parsing", None)
+        if parser is None:
+            raise problem("temporarily_unavailable", http_status=503)
+        return parser.request(owner, attachment_id, key)
+
+    def work_input(self, auth, work_id):
+        owner = self._owner(auth)
+        with self.repository.transaction() as cursor:
+            work = self.repository._work(cursor, owner, work_id)
+            current, _ = self.repository._input(cursor, work)
+            return {"input_revision": work["input_revision"], **current}
