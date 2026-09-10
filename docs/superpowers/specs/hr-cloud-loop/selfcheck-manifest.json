@@ -1,0 +1,56 @@
+{
+  "manifest_version": 1,
+  "prose_coverage": [
+    {"id": "REF-EXACT-KIND", "contains": "result/standard 的 id 与 revision 均为 UUID"},
+    {"id": "HTTP-CONFIRM-ERROR", "contains": "409 ConfirmError"},
+    {"id": "LOG-VOCABULARIES", "contains": "日志提供方错误码"},
+    {"id": "FORMAT-RFC3339", "contains": "stdlib RFC 3339"},
+    {"id": "CAP-PARTITION", "contains": "能力分区"},
+    {"id": "CHECK-AUDIT", "contains": "selfcheck-manifest.json"}
+  ],
+  "condition_coverage": [
+    {"id": "COND-CHANGE-ADD", "definition": "Change", "positive": ["Change_add_valid"], "negative": ["Change_add_bad_target", "Change_add_bad_text"]},
+    {"id": "COND-CHANGE-REPLACE", "definition": "Change", "positive": ["Change_replace_valid"], "negative": ["Change_replace_bad_target", "Change_replace_bad_text"]},
+    {"id": "COND-CHANGE-REMOVE", "definition": "Change", "positive": ["Change_remove_valid"], "negative": ["Change_remove_bad_target", "Change_remove_bad_text"]},
+    {"id": "COND-PROPOSED-ADD", "definition": "ProposedChange", "positive": ["ProposedChange_add_valid"], "negative": ["ProposedChange_add_bad_target", "ProposedChange_add_bad_text"]},
+    {"id": "COND-PROPOSED-REPLACE", "definition": "ProposedChange", "positive": ["ProposedChange_replace_valid"], "negative": ["ProposedChange_replace_bad_target", "ProposedChange_replace_bad_text"]},
+    {"id": "COND-PROPOSED-REMOVE", "definition": "ProposedChange", "positive": ["ProposedChange_remove_valid"], "negative": ["ProposedChange_remove_bad_target", "ProposedChange_remove_bad_text"]},
+    {"id": "COND-RESULT-PROPOSAL", "definition": "SaveResultInput", "positive": ["save_proposal"], "negative": ["proposal_requires_changes", "proposal_rejects_material_base"]},
+    {"id": "COND-RESULT-ORDINARY", "definition": "SaveResultInput", "positive": ["save_calibration"], "negative": ["jd_rejects_changes", "jd_rejects_standard_base"]},
+    {"id": "COND-RESULT-REVISION-PAIR", "definition": "SaveResultInput", "positive": ["save_calibration"], "negative": ["new_result_rejects_expected_revision", "existing_result_requires_revision"]},
+    {"id": "COND-RESULT-BASIS", "definition": "SaveResultInput", "positive": ["save_calibration"], "negative": ["calibration_requires_basis"]},
+    {"id": "COND-BUDGET-ADDITION", "definition": "BudgetAddition", "positive": ["add_only_model_calls", "add_only_total_tokens", "add_only_active_seconds"], "negative": ["addition_cannot_be_zero"]},
+    {"id": "COND-SUMMARY-SOURCES", "definition": "SummaryProvenance", "positive": ["summary_has_sources"], "negative": ["summary_requires_sources"]},
+    {"id": "COND-MATERIAL-TEXT", "definition": "MaterialView", "positive": ["material_original_and_text"], "negative": ["material_ready_requires_text", "material_failed_cannot_claim_text"]},
+    {"id": "COND-BASIS-TEMPORARY", "definition": "ResultBasis", "positive": ["temporary_basis"], "negative": ["temporary_basis_requires_input"]},
+    {"id": "COND-BASIS-CONFIRMED", "definition": "ResultBasis", "positive": ["direct_ResultBasis_confirmed"], "negative": ["confirmed_basis_rejects_material"]},
+    {"id": "COND-WORK-WAITING", "definition": "WorkView", "positive": ["direct_WorkView_waiting_user"], "negative": ["waiting_user_requires_question"]},
+    {"id": "COND-STANDARD-CONFLICT", "definition": "StandardConflict", "positive": ["standard_conflict_current_revision"], "negative": ["standard_conflict_requires_current", "standard_conflict_rejects_integer_revision"]},
+    {"id": "COND-CONFIRM-ERROR-UNION", "definition": "ConfirmError", "positive": ["direct_ConfirmError_auth", "direct_ConfirmError_revision"], "negative": ["confirm_error_rejects_bare_revision_problem"]}
+  ],
+  "existing_paths": [
+    "AGENTS.md",
+    "HR总体架构设计.md",
+    "HR_Agent工作流.md",
+    "backend/app/attachments/conversation_routes.py",
+    "docs/superpowers/specs/2026-09-09-hr-cloud-loop-runtime-spec.md",
+    "docs/superpowers/specs/hr-cloud-loop/contracts.schema.json",
+    "docs/superpowers/specs/hr-cloud-loop/contract-examples.json"
+  ],
+  "planned_path_exclusions": [
+    "backend/app/hr_agent/",
+    "backend/migrations/096_hr_agent.sql"
+  ],
+  "commit_refs": ["2bddc77", "462b942", "ba979db", "6777d22", "38dfc7a"],
+  "workflow_states": ["queued", "running", "waiting_user", "waiting_budget", "completed", "cancelled", "failed", "blocked"],
+  "capability_partition": {
+    "model_tools": ["list_resources", "read_resource", "save_note", "save_result", "ask_user"],
+    "user_http_only": ["standards/confirm", "/cancel", "budget-extensions", "/inputs", "/links"],
+    "deferred": ["外部写工具", "文件交付", "任意 HTTP", "Bash"]
+  },
+  "budget_assertions": [
+    {"id": "BUDGET-TOKENS", "limit": 60000, "used": 21000, "reserved": 7000, "expected_remaining": 32000},
+    {"id": "BUDGET-CALLS", "limit": 12, "used": 4, "reserved": 2, "expected_remaining": 6},
+    {"id": "BUDGET-EXTENSION", "limit": 60000, "addition": 20000, "used": 21000, "reserved": 7000, "expected_remaining": 52000}
+  ]
+}

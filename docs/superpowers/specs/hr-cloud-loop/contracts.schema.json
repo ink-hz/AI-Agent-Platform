@@ -58,7 +58,43 @@
         "revision",
         "sha256"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "properties": {
+            "revision": {
+              "pattern": "^(?!(?:[Cc][Uu][Rr][Rr][Ee][Nn][Tt]|[Ll][Aa][Tt][Ee][Ss][Tt])$).+$"
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "material"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "id": {"pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}(?::(?:original|text))?$"},
+              "revision": {"pattern": "^(?:[a-f0-9]{64}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?|[A-Za-z0-9][A-Za-z0-9._-]{0,127})$"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"enum": ["result", "standard"]}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "id": {"format": "uuid"},
+              "revision": {"format": "uuid"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"enum": ["method", "intelligence"]}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$"},
+              "revision": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._:+/-]{0,199}$"}
+            }
+          }
+        }
+      ]
     },
     "BudgetLimits": {
       "type": "object",
@@ -2814,6 +2850,17 @@
         "details"
       ],
       "additionalProperties": false
+    },
+    "ConfirmError": {
+      "oneOf": [
+        {"$ref": "#/$defs/StandardConflict"},
+        {
+          "allOf": [
+            {"$ref": "#/$defs/Problem"},
+            {"properties": {"code": {"not": {"const": "revision_conflict"}}}}
+          ]
+        }
+      ]
     },
     "OrdinaryLogRecord": {
       "type": "object",

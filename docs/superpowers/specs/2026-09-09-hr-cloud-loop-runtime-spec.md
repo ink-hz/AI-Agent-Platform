@@ -19,7 +19,7 @@
 | 并发 | 每工作串行模型步骤及工具操作；不同工作可并行 | 第一批降低副作用恢复复杂度；并非固定 HR 思考流程 |
 | 迁移 | 独立 `hr_agent/`，占用统一账本中的 096，显式执行 | 094/095 已被旧链使用；运行开关不做 DDL |
 
-代码核查：master `ba979db` 的代码仍基于 `6777d22`；较新 HR 路径以 `38dfc7a` 核查。FAE `b49eeed` 有事件适配、工具调用和来源协议，但同时含产品门控、`submit_answer` 强制终稿和内存循环状态；不整体复制。选择“对象标记 + 筛选”是新链的明确设计，不宣称 P1 的现行修复已经选型或上线。
+代码核查：master `ba979db` 的代码仍基于 `6777d22`；较新 HR 路径以 `38dfc7a` 核查。FAE 历史设计有事件适配、工具调用和来源协议，但同时含产品门控、`submit_answer` 强制终稿和内存循环状态；不整体复制。选择“对象标记 + 筛选”是新链的明确设计，不宣称 P1 的现行修复已经选型或上线。
 
 依赖无环：总体架构 §4.1 给出预算单位 → 本文 §9 给出 P3 口径 → §6 落持久字段。P1 提供旧历史形状与处置比较；新链不等待旧链修复上线，也不继承旧 SQL。P2 生产计数影响承接与切换，不影响 A0。
 
@@ -32,7 +32,7 @@
 | 类型 | 字段与规则 |
 | --- | --- |
 | `ObjectRef` | `{kind,id}`；kind 为 position/candidate/company/topic。岗位与候选人 id 必须是现有 UUID，公司/专题用稳定键；同种对象去重、排序仅用于规范化，不表达业务重要性 |
-| `ExactRef` | `{kind,id,revision,sha256}`；kind 为 material/method/result/intelligence/standard。全部不可省略；sha256 为正文规范化表示的摘要，查询不能以 current 替换 revision |
+| `ExactRef` | `{kind,id,revision,sha256}`；kind 为 material/method/result/intelligence/standard。全部不可省略；sha256 为正文规范化表示的摘要。revision 大小写不敏感地拒绝 current/latest。result/standard 的 id 与 revision 均为 UUID；material 的规范稳定 id 为 `{attachment UUID}:original` 或 `{attachment UUID}:text`，原文 revision 为字节 hash，解析文为 `hash:parser_release`；method/intelligence 保留稳定键 id 和固定发布 release revision |
 | `WorkInput` | `thread_id:null\|UUID,text,objects[],references[],budget_profile`；owner、模型端点、角色包、工具权限均由服务端配置与校验，客户端不能注入 |
 | `AppendInput` | `expected_input_revision,text,objects[],references[],question_id:null\|UUID`；objects/references 是本轮完整选择，不是隐式追加。客户端可先呈现仍有效的选择供用户继续，服务端每次重新校验 |
 | `ResultView` | 精确 ref、kind/title/body、objects、source_refs、preceding_refs、base_standard_ref、changes、basis、access_state；basis 区分已确认标准、官网原文、用户临时要求，kind 不强制正文模板 |
@@ -45,7 +45,7 @@ ID 由服务端生成。客户端 Idempotency-Key 是 UUID；模型工具不填�
 
 `BudgetAmounts` 是可全零的非负额度（供 reserve 使用）；`BudgetAddition` 至少一项大于零，不能把独立闸门测试的全零 reserve 一并拒绝。`SaveResultInput` 的 result_id/expected_revision 必须同时为空或同时非空。standard_proposal 要求至少一个 change；其余 kind 的 changes 必须为空且 base_standard_ref=null。base_standard_ref 非空时只能是 standard 引用。
 
-`StandardConflict` 是确认端点的409基准/提案冲突正文：details.conflict_kind 必为 standard_revision 或 proposal_revision，current_revision 必须存在，值为当前可见 UUID（当前无标准才可为 null）。输入和预算修订冲突使用 Problem，current_revision 是正整数；其他错误不伪造标准修订。返回当前身份不代表客户端可直接替换旧提案基准。
+`ConfirmError` 是确认端点显式错误联合：修订冲突只能走 `StandardConflict`，普通认证、授权、输入和资源错误走不含 `revision_conflict` 的 `Problem`。`StandardConflict` 的 details.conflict_kind 必为 standard_revision 或 proposal_revision，current_revision 字段必须存在，值为当前可见 UUID（当前无标准才可为 null）；裸 `Problem(code=revision_conflict)` 不能绕过该字段。输入和预算修订冲突使用普通 Problem，current_revision 是正整数；其他错误不伪造标准修订。返回当前身份不代表客户端可直接替换旧提案基准。
 
 ### 2.2 最小授权算法
 
@@ -76,7 +76,7 @@ A0 不把自然语言意图识别改成关键词表。用户新输入改变对�
 | GET `/results?thread_id=…` 或 `?object_kind=…&object_id=…` | 两种范围恰选一种；可选 cursor/kind | 200 ResultPage；空为 items=[] | 不接无范围全库查询；对象无权404 |
 | GET `/results/{result_id}/revisions/{revision}` | revision 为准确 UUID | 200 ResultView | 非本人404；已知正文被删除410；来源失效403且无正文 |
 | POST `/results/{result_id}/links` | LinkResultInput | 200 LinkReceipt | 预期正文修订非当前409；错 owner404；对象范围不相容422 |
-| POST `/positions/{position_id}/standards/confirm` | ConfirmInput | 201 StandardView；重复200 | 基准/提案正文改变409 StandardConflict；未授权确认403；选择不存在/重复/相冲突条目422 |
+| POST `/positions/{position_id}/standards/confirm` | ConfirmInput | 201 StandardView；重复200 | 409 ConfirmError：基准/提案正文改变走 StandardConflict；普通未登录/未授权/输入错误走不含 revision_conflict 的 Problem；选择不存在/重复/相冲突条目422 |
 | GET `/positions/{position_id}/standards/current` | 无 | 200 StandardView | 当前无标准404；不自动回退到官网或未确认草稿 |
 
 messages接口只投影user/assistant/question条目，按entry seq稳定分页，question带question_id和所属input_revision。受当前范围或来源限制的条目保留visibility=restricted、body=null、options=[]，不暴露原文。浏览器重开先读WorkView，再读messages显示已提交回答或待答问题；问题正文不能只保存在内存里。
@@ -118,6 +118,14 @@ A1 的首个无岗位接口样例使用真实上传的 UTF-8 text/plain JD：解
 `ResourceItem` 统一补 state、visibility、representation、original_ref；私有 visibility 的 subject_id 为当前获准主体，公开资料为 public/null。parsed_text 必须回链 original_ref；方法/成果使用 authored_text。上传 JD 仍是用户私有文件，内容公开不意味着上传副本向全平台公开。state 是材料访问/处理状态，不冒充官网新鲜度状态。
 
 ## 4. 模型工具契约
+
+### 4.0 能力分区
+
+| 分区 | 首批能力 | 调用边界 |
+| --- | --- | --- |
+| 模型可见的五个工具 | `list_resources`、`read_resource`、`save_note`、`save_result`、`ask_user` | 只由已提交模型步骤建立稳定槽位执行 |
+| 仅用户 HTTP | `/standards/confirm`、`/cancel`、`/budget-extensions`、`/inputs`、`/links` | 真实登录身份、CSRF、权限与 HTTP 去重键 |
+| 明确延后或禁用 | 外部写工具、文件交付、任意 HTTP、Bash | A1 不注册；后续按 §4.1 与 §6 重新评审 |
 
 下表仅固定 A1/B 岗位校准阶段的五个模型工具，不是全部 HR 能力的最终集合。每个参数对象和输出对象均使用 Schema 对应 `$defs`，拒绝未声明字段。工具权限由当前工作状态与材料范围决定，方法选择由模型推理；不按场景关键词改变知识集合。
 
@@ -341,6 +349,8 @@ Worker子进程以 `sys.executable, '-m', 'app.hr_agent.worker'` 启动，fixtur
 | duration_ms、input_tokens、output_tokens | 数值；未知用量为null，不把凭据 token 混进 token 计量 |
 | error_code、profile_revision | 允许错误枚举与配置版本标识；没有 endpoint URL、header、provider 原始错误或配置正文 |
 
+这里存在两个有意分开的词表。`Problem.code` 是用户 HTTP/工具投影词表；日志提供方错误码另含 `rate_limited`、`transport_error`、`incomplete_response`、`provider_refused`、`invalid_response`。适配器把提供方错误保存为内部 attempt 分类并写日志；对用户只映射成适当的 `temporarily_unavailable` 或 `invalid_input` 等 Problem，不能断言两个对象的同名字段或枚举完全相同，也不能把原始提供方正文带入任一对象。
+
 **禁止进入普通日志**：token/签名私钥/完整凭据、Cookie/Authorization、未脱敏简历、联系方式、面试原话、完整提示词/模型响应、原文件名与内容、任意异常字符串。用户 Event 的 message 也用服务端固定模板，不直接写 logger；数据库 sealed_request/sealed_reply 是受限工作记录，并不因此成为可日志化内容。Schema 只能约束结构，字符串字段还须来源于服务器枚举/配置身份；供应商错误内容不能塞进 profile_revision。
 
 文件只写 `${WORK_DIR}/{服务端owner UUID}/{work UUID}/{attempt UUID}/`，根与子目录0700、文件0600，拒绝符号链接、路径穿越和跨任务读；上传名不拼接路径。测试 fixture 使用唯一临时根，Worker不读取宿主Home、平台密钥目录或其他work。材料解析入口禁用宏/主动内容、设置CPU/内存/时限，网络默认禁用；模型仅有§4列出的工具。任务临时文件默认结束后删除，崩溃遗留在租约失效且无运行者后按配置TTL清理；等待所需正文先进入私有持久记录，不能依赖临时文件续作。
@@ -508,27 +518,15 @@ P1现行处置与P2生产盘点保持未完成；P3已有口径/配置候选，�
 | 预算、展示及后续能力 | §4.1、§6检查点、§7事件、§9增长/压缩 | 真实进程/模型用量、专业审读及后续批次 |
 
 
-本次修订将提案条件、预算非零、材料/摘要/日志字段加入可重复的Schema正反例；读取区间的跨字段大小关系、摘要来源真实性和日志发送行为属于待实现服务测试，不再将临时脚本的“提案形状检查”写成Schema已有覆盖。下述命令验证54个定义、102个样例（44正例、58反例，含14项身份注入反例）；执行证据仅限文档，不替代A1故障测试。
+本次修订将提案条件、预算非零、准确引用、确认错误联合、材料/摘要/日志字段加入可重复的Schema正反例；读取区间的跨字段大小关系、摘要来源真实性和日志发送行为属于待实现服务测试。`selfcheck-manifest.json` 为不能自动理解的语义建立可审计覆盖 ID，并声明条件矩阵、状态、能力分区、路径/提交与预算算术断言。脚本使用 stdlib RFC 3339 日期解析器覆盖 jsonschema 的 `date-time` 检查，避免可选格式依赖缺失时静默放过非法日期。
+
+下述命令验证55个定义、133个样例（72正例、61反例）、18项条件规则和6项语义证据 ID；执行证据仅限文档，不替代A1故障测试。
 
 可在仓库根目录重复运行以下结构校验；它不调用模型、数据库或网络：
 
 ```sh
-backend/.venv/bin/python - <<'PYVALIDATE'
-import json
-from pathlib import Path
-from jsonschema import Draft202012Validator, FormatChecker
-base = Path('docs/superpowers/specs/hr-cloud-loop')
-schema = json.loads((base / 'contracts.schema.json').read_text())
-Draft202012Validator.check_schema(schema)
-cases = json.loads((base / 'contract-examples.json').read_text())
-for case in cases:
-    validator = Draft202012Validator(
-        {'$defs': schema['$defs'], '$ref': '#/$defs/' + case['definition']},
-        format_checker=FormatChecker(),
-    )
-    assert validator.is_valid(case['value']) == case['valid'], case['name']
-print(f'{len(cases)} contract examples checked')
-PYVALIDATE
+backend/.venv/bin/python docs/superpowers/specs/hr-cloud-loop/selfcheck.py
+backend/.venv/bin/python -m pytest backend/tests/test_hr_cloud_loop_docs_selfcheck.py -q
 ```
 
-预期输出为 `102 contract examples checked`。这只验证结构正反例，不证明虚构UUID对应真实对象、摘要已从真实原文算出或服务端已经实施授权。
+预期第一条输出为 `A0 docs self-check passed: 55 definitions, 133 examples, 18 condition rules, 6 prose evidence IDs`；第二条验证日期、定义覆盖、条件矩阵和预算清单的变异会被检出。这只验证文档结构与声明的覆盖关系，不证明虚构UUID对应真实对象、摘要已从真实原文算出、服务端已经实施授权，或 A0/A1 评审已经通过。
