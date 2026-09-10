@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from starlette.concurrency import run_in_threadpool
 
@@ -157,6 +157,18 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
     @router.get("/results/{result_id}/revisions/{revision}")
     def result(request: Request, result_id: UUID, revision: UUID):
         return service.read_result(auth(request), result_id, revision)
+
+    @router.get("/results/{result_id}/revisions/{revision}/file-info")
+    def result_file_info(request: Request, result_id: UUID, revision: UUID):
+        info, _ = service.export_result(auth(request), result_id, revision)
+        return info
+
+    @router.get("/results/{result_id}/revisions/{revision}/file")
+    def result_file(request: Request, result_id: UUID, revision: UUID):
+        info, content = service.export_result(auth(request), result_id, revision)
+        return Response(content, media_type="text/markdown", headers={
+            "Content-Disposition": f'attachment; filename="{info["filename"]}"',
+        })
 
     @router.post("/results/{result_id}/links")
     async def link(request: Request, result_id: UUID):

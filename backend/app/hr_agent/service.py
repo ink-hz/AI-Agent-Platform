@@ -75,6 +75,10 @@ class HrAgentService:
         owner = self._owner(auth)
         return self.results.read_revision(owner, result_id, revision)
 
+    def export_result(self, auth, result_id, revision):
+        owner = self._owner(auth)
+        return self.results.export(owner, result_id, revision)
+
     def link_result(self, auth, result_id, request, key):
         owner = self._owner(auth, True)
         return self.results.link(owner, result_id, request, key)

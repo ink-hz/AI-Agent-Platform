@@ -20,7 +20,7 @@ def request(**updates):
     return {'thread_id':None,'text':'虚构研究','objects':[],'references':[],'budget_profile':'calibration-test',**updates}
 
 def save_result(repo,owner,**updates):
-    work=repo.submit(owner,request(),uuid4())
+    work=repo.submit(owner,request(budget_profile=repo.settings.budget_profile["id"] if repo.settings else "calibration-test"),uuid4())
     fence=repo.claim('views-test',60)
     ctx=ModelContext('work',({'role':'user','content':'虚构'},),(),(),100,1)
     attempt=repo.prepare_model(fence,ctx); repo.mark_model_sending(fence,attempt.attempt_id)
