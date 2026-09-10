@@ -152,6 +152,7 @@ class ResourceReader:
             self.authorize_owner(owner)
         self.authorize_objects(owner, objects)
         current = None
+        knowledge = self.knowledge
         if work_id:
             with self.repository.transaction() as c:
                 work = self.repository._work(c, owner, work_id)
@@ -160,6 +161,8 @@ class ResourceReader:
                     (owner, UUID(str(work_id)), work["input_revision"]),
                 )
                 row = c.fetchone()
+                if hasattr(knowledge, "validate_record"):
+                    knowledge = knowledge.validate_record(row)
                 current = self.repository._unseal(
                     "inputs", row["input_id"], "sealed_input", row
                 )
@@ -172,8 +175,18 @@ class ResourceReader:
         for ref in refs:
             validate_contract("ExactRef", ref)
             if ref["kind"] in ("method", "intelligence"):
-                self.knowledge.read(ref)
-                item = next(i for i in self.knowledge.items if i["ref"] == ref)
+                if (
+                    current is not None
+                    and ref in current["references"]
+                    and hasattr(self.knowledge, "exact")
+                ):
+                    published = self.knowledge.exact(ref)
+                elif hasattr(knowledge, "exact"):
+                    published = knowledge.exact(ref)
+                else:
+                    published = knowledge
+                published.read(ref)
+                item = next(i for i in published.items if i["ref"] == ref)
                 # Published public intelligence is discoverable without preselecting a company.
                 if any(o["kind"] == "candidate" for o in item["objects"]):
                     raise problem("configuration_unavailable", http_status=503)
@@ -187,19 +200,30 @@ class ResourceReader:
                 with self.repository.transaction() as c:
                     self.repository._validate_result_sources(c, owner, ref, work_id)
             elif ref["kind"] == "standard":
-                # Standard confirmation/storage integration is B3; don't borrow legacy semantics.
-                raise problem("configuration_unavailable", http_status=503)
+                from .standards import StandardService
+
+                position = {"kind": "position", "id": ref["id"]}
+                if current is not None and position not in current["objects"]:
+                    raise problem("scope_denied", http_status=403)
+                StandardService(self.repository).read(owner, ref)
             else:
                 raise problem("unsupported_kind")
 
-    def for_work(self, fence):
-        current, record, view, owner = self.repository.context_input(fence)
+    def knowledge_for(self, fence):
+        _, record, _, _ = self.repository.context_input(fence)
+        if hasattr(self.knowledge, "validate_record"):
+            return self.knowledge.validate_record(record)
         self.knowledge.check()
         if record["role_manifest_sha"] not in (
             self.knowledge.manifest_sha,
             "0" * 64,
         ) or record["knowledge_release"] not in (self.knowledge.release_id, "a1-test"):
             raise problem("configuration_unavailable", http_status=503)
+        return self.knowledge
+
+    def for_work(self, fence):
+        current, _, view, owner = self.repository.context_input(fence)
+        self.knowledge_for(fence)
         return current, view, owner
 
     def list_resources(self, fence, args):
@@ -211,13 +235,14 @@ class ResourceReader:
         }:
             raise problem("scope_denied", http_status=403)
         items = []
-        for item in self.knowledge.items:
+        knowledge = self.knowledge_for(fence)
+        for item in knowledge.items:
             if item["ref"]["kind"] in args["kinds"] and (
                 not objects
                 or not item["objects"]
                 or any(o in item["objects"] for o in objects)
             ):
-                self.knowledge.read(item["ref"])
+                knowledge.read(item["ref"])
                 items.append(
                     {
                         "ref": item["ref"],
@@ -249,6 +274,43 @@ class ResourceReader:
                             "original_ref": text.original_ref,
                         }
                     )
+        if "standard" in args["kinds"]:
+            from .standards import StandardService
+
+            service = StandardService(self.repository)
+            selected = [
+                ref for ref in current["references"] if ref["kind"] == "standard"
+            ]
+            for obj in objects:
+                if obj["kind"] != "position":
+                    continue
+                try:
+                    refs = [ref for ref in selected if ref["id"] == obj["id"]]
+                    standards = (
+                        [service.read(owner, ref) for ref in refs]
+                        if refs
+                        else [service.current(owner, obj["id"])]
+                    )
+                    for standard in standards:
+                        items.append(
+                            {
+                                "ref": standard["ref"],
+                                "title": "已确认岗位标准",
+                                "objects": [obj],
+                                "description": "用户明确确认的岗位标准",
+                                "observed_at": None,
+                                "state": "available",
+                                "visibility": {
+                                    "kind": "private",
+                                    "subject_id": str(owner),
+                                },
+                                "representation": "authored_text",
+                                "original_ref": None,
+                            }
+                        )
+                except HrAgentProblem as error:
+                    if error.http_status != 404:
+                        raise
         if "result" in args["kinds"]:
             cursor = None
             seen = set()
@@ -326,14 +388,27 @@ class ResourceReader:
         current, _view, owner = self.for_work(fence)
         ref = args["ref"]
         self.validate_scope(owner, current["objects"], [ref], fence.work_id)
+        coverage_complete, coverage_notes = True, []
         if ref["kind"] in ("method", "intelligence"):
-            text = self.knowledge.read(ref)
+            published = (
+                self.knowledge
+                if ref in current["references"]
+                else self.knowledge_for(fence)
+            )
+            text = published.read(ref)
         elif ref["kind"] == "material":
-            text = self.materials.read_text(owner, ref).text
+            material = self.materials.read_text(owner, ref)
+            text = material.text
+            coverage_complete = material.coverage_complete
+            coverage_notes = list(getattr(material, "coverage_notes", ()))
         elif ref["kind"] == "result":
             text = self.repository.read_result(owner, ref["id"], ref["revision"])[
                 "body"
             ]
+        elif ref["kind"] == "standard":
+            from .standards import StandardService
+
+            text = canonical_json(StandardService(self.repository).read(owner, ref))
         else:
             raise problem("unsupported_kind")
         start = args.get("offset", 0)
@@ -343,6 +418,8 @@ class ResourceReader:
         end = min(len(text), start + limit)
         return {
             "ref": ref,
+            "coverage_complete": coverage_complete,
+            "coverage_notes": coverage_notes,
             "text": text[start:end],
             "offset": start,
             "end": end,
@@ -355,9 +432,10 @@ class ResourceReader:
 def build_runtime_services(
     settings, connection_factory, *, material_service=None, agent_use_authorization=None
 ):
+    from .knowledge import KnowledgeReleases
     from .repository import HrAgentRepository
 
-    knowledge = PublishedKnowledge(settings.knowledge_dir)
+    knowledge = KnowledgeReleases(settings.knowledge_dir)
     repository = HrAgentRepository(
         connection_factory, settings.create_codec(), settings=settings
     )
@@ -390,4 +468,9 @@ def build_runtime_services(
     )
     repository.scope_validator = resources.validate_scope
     repository.release_provider = knowledge.metadata
+    repository.release_validator = knowledge.validate_record
+    if material_service is not None:
+        from .material_parsing import MaterialParsingService
+
+        MaterialParsingService(repository, material_service)
     return repository, resources

@@ -1,7 +1,6 @@
 """One saved result identity across thread and business-object entrypoints."""
 
 import hashlib
-
 from uuid import UUID
 
 from .types import problem, validate_contract
