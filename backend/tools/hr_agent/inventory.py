@@ -53,6 +53,46 @@ EXECUTION_STATES = frozenset({
 })
 
 
+# EXISTS keeps one observation per job even when both historical linkage routes
+# point to the same turn. A terminal Relay status alone does not prove its
+# linked user work finished or its stop request was acknowledged.
+_JOB_TURN_REFERENCE = """(
+    EXISTS (SELECT 1 FROM platform_control.direct_command_bindings b
+            WHERE b.job_id=j.job_id AND b.conversation_id=t.conversation_id
+              AND EXISTS (SELECT 1 FROM platform_control.turn_attempts a
+                          WHERE a.attempt_id=b.attempt_id AND a.turn_id=t.turn_id))
+    OR EXISTS (SELECT 1 FROM platform_control.mission_runs r
+               WHERE r.run_id=j.run_id AND r.mission_id=t.mission_id)
+)"""
+_JOB_REFERENCE_FLAGS = (
+    "has_direct_binding", "has_mission_run", "has_turn_reference",
+    "has_nonterminal_turn", "has_nonterminal_attempt", "pending_stop", "terminal_recorded",
+)
+_JOB_REFERENCE_SQL = """
+WITH classified AS (
+ SELECT j.job_kind,j.status,
+   EXISTS (SELECT 1 FROM platform_control.direct_command_bindings b
+           WHERE b.job_id=j.job_id) AS has_direct_binding,
+   EXISTS (SELECT 1 FROM platform_control.mission_runs r
+           WHERE r.run_id=j.run_id) AS has_mission_run,
+   EXISTS (SELECT 1 FROM platform_control.conversation_turns t
+           WHERE {turn_ref}) AS has_turn_reference,
+   EXISTS (SELECT 1 FROM platform_control.conversation_turns t
+           WHERE {turn_ref} AND t.status NOT IN ('completed','failed','cancelled','interrupted'))
+     AS has_nonterminal_turn,
+   EXISTS (SELECT 1 FROM platform_control.conversation_turns t
+           JOIN platform_control.turn_attempts a USING(turn_id)
+           WHERE {turn_ref} AND a.status NOT IN ('completed','failed','cancelled','interrupted'))
+     AS has_nonterminal_attempt,
+   (j.stop_requested_status IS NOT NULL AND j.stop_acknowledged_at IS NULL) AS pending_stop,
+   (j.terminal_at IS NOT NULL) AS terminal_recorded
+ FROM platform_control.execution_jobs j WHERE j.agent_id='hr-bot'
+)
+SELECT job_kind,status,{flags},count(job_kind)::bigint AS count
+FROM classified GROUP BY job_kind,status,{flags}
+""".format(turn_ref=_JOB_TURN_REFERENCE, flags=",".join(_JOB_REFERENCE_FLAGS))
+
+
 QUERY_REGISTRY = (
     _spec("old_positions", "platform_hr.positions",
           ("source_kind", "internal_status", "official_status"),
@@ -125,6 +165,17 @@ QUERY_REGISTRY = (
           "select case when agent_id='hr-bot' then 'hr' else 'other' end as scope,"
           "status,count(agent_id)::bigint as count from platform_control.execution_jobs group by scope,status",
           ("scope", "status"), {"scope": frozenset({"hr", "other"}), "status": EXECUTION_STATES}),
+    _spec("old_hr_job_references", "platform_control.execution_jobs",
+          ("job_id", "run_id", "agent_id", "job_kind", "status", "stop_requested_status",
+           "stop_acknowledged_at", "terminal_at"), _JOB_REFERENCE_SQL,
+          ("job_kind", "status", *_JOB_REFERENCE_FLAGS),
+          {"job_kind": frozenset({"legacy_brain", "direct_agent", "metabot_local", "worker_direct_v5"}),
+           "status": EXECUTION_STATES,
+           **{key: frozenset({True, False}) for key in _JOB_REFERENCE_FLAGS}},
+          (("platform_control.direct_command_bindings", ("job_id", "attempt_id", "conversation_id")),
+           ("platform_control.mission_runs", ("run_id", "mission_id")),
+           ("platform_control.conversation_turns", ("turn_id", "conversation_id", "mission_id", "status")),
+           ("platform_control.turn_attempts", ("attempt_id", "turn_id", "status")))),
     _spec("old_hr_queued_age", "platform_control.execution_jobs",
           ("agent_id", "status", "cancel_requested", "created_at"),
           "select case when created_at>now()-interval '15 minutes' then 'under_15m' "

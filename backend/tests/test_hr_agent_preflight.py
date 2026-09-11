@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from tests.hr_agent_support import hr_agent_database
 from tools.hr_agent.preflight import build_report, main, read_environment_file
 
@@ -260,6 +259,7 @@ def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
         100,
         101,
         102,
+        103,
     ]
     assert all(item["match"] for item in report["database"]["migrations"])
     assert report["database"]["permissions_complete"] is True
@@ -306,3 +306,20 @@ def test_cli_stdout_is_json_and_scrubs_raw_exceptions(tmp_path, capsys):
     assert status == 1
     assert json.loads(output)["ok"] is False
     assert str(tmp_path) not in output
+
+
+@pytest.mark.parametrize("receipt", [None, "0" * 64])
+def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt):
+    knowledge = _knowledge(tmp_path / "knowledge")
+    environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+    with hr_agent_database() as database:
+        with database.admin_connection() as connection:
+            if receipt is None:
+                connection.execute("delete from platform_control.schema_migrations where version=103")
+            else:
+                connection.execute("update platform_control.schema_migrations set sha256=%s where version=103", (receipt,))
+        report = build_report(environment, dict(environment), connection_factory=database.connection)
+    assert report["ok"] is False
+    assert "migration_identity_mismatch" in report["blockers"]
+    entry = next(item for item in report["database"]["migrations"] if item["version"] == 103)
+    assert entry["match"] is False

@@ -1,0 +1,83 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_______ test_database_readiness_reports_exact_migrations_without_writes ________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9446/test_database_readiness_report0')
+
+    def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
+        knowledge = _knowledge(tmp_path / "knowledge")
+        api = _environment(tmp_path / "api", knowledge=knowledge)
+        worker = _environment(tmp_path / "worker", knowledge=knowledge)
+        with hr_agent_database() as database:
+            with database.connection() as connection:
+                before = connection.execute(
+                    "select version,sha256 from platform_control.schema_migrations order by version"
+                ).fetchall()
+            report = build_report(api, worker, connection_factory=database.connection)
+            with database.connection() as connection:
+                after = connection.execute(
+                    "select version,sha256 from platform_control.schema_migrations order by version"
+                ).fetchall()
+        assert before == after
+        assert report["database"]["schema_ready"] is True
+>       assert [item["version"] for item in report["database"]["migrations"]] == [
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+        ]
+E       assert [96, 97, 98, ...100, 101, ...] == [96, 97, 98, ...100, 101, ...]
+E         
+E         Right contains one more item: 103
+E         Use -v to get more diff
+
+backend/tests/test_hr_agent_preflight.py:255: AssertionError
+____ test_database_readiness_requires_exact_drain_occupancy_migration[None] ____
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9446/test_database_readiness_requir0')
+receipt = None
+
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt):
+        knowledge = _knowledge(tmp_path / "knowledge")
+        environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+        with hr_agent_database() as database:
+            with database.admin_connection() as connection:
+                if receipt is None:
+                    connection.execute("delete from platform_control.schema_migrations where version=103")
+                else:
+                    connection.execute("update platform_control.schema_migrations set sha256=%s where version=103", (receipt,))
+            report = build_report(environment, dict(environment), connection_factory=database.connection)
+>       assert report["database"]["schema_ready"] is False
+E       assert True is False
+
+backend/tests/test_hr_agent_preflight.py:323: AssertionError
+_ test_database_readiness_requires_exact_drain_occupancy_migration[0000000000000000000000000000000000000000000000000000000000000000] _
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9446/test_database_readiness_requir1')
+receipt = '0000000000000000000000000000000000000000000000000000000000000000'
+
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt):
+        knowledge = _knowledge(tmp_path / "knowledge")
+        environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+        with hr_agent_database() as database:
+            with database.admin_connection() as connection:
+                if receipt is None:
+                    connection.execute("delete from platform_control.schema_migrations where version=103")
+                else:
+                    connection.execute("update platform_control.schema_migrations set sha256=%s where version=103", (receipt,))
+            report = build_report(environment, dict(environment), connection_factory=database.connection)
+>       assert report["database"]["schema_ready"] is False
+E       assert True is False
+
+backend/tests/test_hr_agent_preflight.py:323: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_preflight.py::test_database_readiness_reports_exact_migrations_without_writes
+FAILED backend/tests/test_hr_agent_preflight.py::test_database_readiness_requires_exact_drain_occupancy_migration[None]
+FAILED backend/tests/test_hr_agent_preflight.py::test_database_readiness_requires_exact_drain_occupancy_migration[0000000000000000000000000000000000000000000000000000000000000000]
+3 failed, 9 deselected in 3.00s

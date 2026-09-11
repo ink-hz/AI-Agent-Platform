@@ -33,6 +33,9 @@ EXPECTED_MIGRATIONS = {
 CUTOVER_MIGRATION = (
     Path(__file__).parents[2] / "control_migrations" / ("102_hr_execution_cutover.sql")
 )
+DRAIN_OCCUPANCY_MIGRATION = (
+    Path(__file__).parents[2] / "control_migrations" / "103_hr_execution_drain_occupancy.sql"
+)
 ATTACHMENT_KEYS = (
     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
     "PLATFORM_ATTACHMENT_S3_BUCKET",
@@ -200,6 +203,7 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
     try:
         expected_migrations = dict(EXPECTED_MIGRATIONS)
         expected_migrations[102] = _fingerprint(CUTOVER_MIGRATION.read_bytes())
+        expected_migrations[103] = _fingerprint(DRAIN_OCCUPANCY_MIGRATION.read_bytes())
         with connection_factory() as connection:
             rows = connection.execute(
                 "select version,sha256 from platform_control.schema_migrations "
@@ -445,7 +449,6 @@ def main(argv=None) -> int:
         connection_factory = None
         if arguments.database_url_file:
             import psycopg
-
             from app.control_plane.dsn import validate_control_dsn
             from app.local_secrets import read_secret_file
 

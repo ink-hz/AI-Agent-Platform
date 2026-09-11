@@ -1,0 +1,80 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_hr_jobs_classified_by_kind_live_references_and_pending_stop _______
+
+database = HrTestDatabase()
+
+    def test_hr_jobs_classified_by_kind_live_references_and_pending_stop(database):
+        sentinel = _seed_aggregates(database)
+        with database.admin_connection() as connection:
+            connection.execute("set session_replication_role=replica")
+            job, run, turn = connection.execute(
+                "select j.job_id,j.run_id,a.turn_id from platform_control.execution_jobs j "
+                "join platform_control.direct_command_bindings b using(job_id) "
+                "join platform_control.turn_attempts a using(attempt_id) where j.agent_id='hr-bot'"
+            ).fetchone()
+            connection.execute(
+                "update platform_control.execution_jobs set job_kind='worker_direct_v5',status='interrupted',"
+                "lease_worker_id='inventory-hr-worker',stop_requested_status='interrupted',"
+                "stop_acknowledged_at=null,terminal_at=now() where job_id=%s", (job,),
+            )
+            mission = uuid4()
+>           connection.execute(
+                "insert into platform_control.mission_runs(run_id,mission_id,phase,agent_id,status,"
+                "input_ciphertext,encryption_key_version) values(%s,%s,'planning','hr-bot','interrupted',%s,1)",
+                (run, mission, b'x' * 29),
+            )
+
+backend/tests/test_hr_execution_inventory.py:34: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x105abd150>
+query = "insert into platform_control.mission_runs(run_id,mission_id,phase,agent_id,status,input_ciphertext,encryption_key_version) values(%s,%s,'planning','hr-bot','interrupted',%s,1)"
+params = (UUID('99b4c571-fe7c-4e53-8af6-93798232ceac'), UUID('93d86366-289f-4f88-b4cd-b9e4bd14ba2f'), b'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.CheckViolation: new row for relation "mission_runs" violates check constraint "mission_runs_check"
+E           DETAIL:  Failing row contains (99b4c571-fe7c-4e53-8af6-93798232ceac, 93d86366-289f-4f88-b4cd-b9e4bd14ba2f, null, planning, hr-bot, interrupted, \x7878787878787878787878787878787878787878787878787878787878, 1, null, null, 2026-09-11 19:46:25.298321+08, 2026-09-11 19:46:25.298321+08, null, null, 0).
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: CheckViolation
+_________ test_reference_classification_missing_dependency_is_not_zero _________
+
+database = HrTestDatabase()
+
+    def test_reference_classification_missing_dependency_is_not_zero(database):
+        with database.admin_connection() as connection:
+            connection.execute("alter table platform_control.mission_runs rename to mission_runs_saved")
+        report = run_inventory(database.connection)
+>       item = next(item for item in report['assets'] if item['name'] == 'old_hr_job_references')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       StopIteration
+
+backend/tests/test_hr_execution_inventory.py:75: StopIteration
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_execution_inventory.py::test_hr_jobs_classified_by_kind_live_references_and_pending_stop
+FAILED backend/tests/test_hr_execution_inventory.py::test_reference_classification_missing_dependency_is_not_zero
+2 failed in 2.03s
