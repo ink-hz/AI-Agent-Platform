@@ -1,0 +1,2575 @@
+{
+  "fixture_sha256": "06028c4f245f2355818c010500eb663c9547ea2163ea426c62c5fde45ce2fc2c",
+  "materials": {
+    "临时岗位要求": {
+      "text": "示例公司要招聘嵌入式现场诊断工程师。任务是复现客户现场的间歇断连，区分通信、供电、固件时序与硬件因素，并把复现条件和证据交给对应负责人。前三个月可以由导师协助定位，但必须独立写出可复核的诊断记录。熟悉 C 和示波器是基础；有机器人量产经验是加分项，可由工业传感器、医疗设备等相邻经历提供工作样本。没有正式确认的长期岗位标准。",
+      "ref": {
+        "kind": "material",
+        "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+        "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+        "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+      }
+    },
+    "虚构简历": {
+      "text": "姓名：示例候选人青禾（虚构）。在示例传感器项目中维护 C 固件，用逻辑分析仪排查过通信重试。简历称“负责解决现场断连”，但没有说明自己提出诊断假设还是按资深工程师方案执行。没有机器人经历。曾记录过温升与重启的关系，但材料没给出控制变量和最终根因。",
+      "ref": {
+        "kind": "material",
+        "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+        "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+        "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+      }
+    },
+    "用户追加的虚构招聘过程记录": {
+      "text": "本次只提供上述一位候选人的材料，尚未保存完整搜寻名单、发送记录、渠道转化、录用结果或多名面试官反馈。用人经理允许导师协助培养，但坚持诊断记录必须可以复核。",
+      "ref": {
+        "kind": "material",
+        "id": "ad034ac9-6515-4d55-b499-066f832eabf8:text",
+        "revision": "3228e46d58d12a3c7d1cffe5ab639e827f494627e881e0888137c825ff5345c0:utf8-v1",
+        "sha256": "f7de1bf5be78f5258b21b4ed7bdfd0e926d6e8a0642f1f2b2d47d8a46ae09919"
+      }
+    }
+  },
+  "knowledge_release": {
+    "release_id": "hr-cae002cd5894690857ab10e3",
+    "role": {
+      "path": "role.md",
+      "sha256": "27bff5782ed700ef295ca20b1a4ef91e1be2d137a38954d10d2185bbf76465c6"
+    },
+    "resources": [
+      {
+        "ref": {
+          "kind": "method",
+          "id": "2026-09-08-hr-methodology-sources",
+          "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+          "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+        },
+        "path": "sources/2026-09-08-hr-methodology-sources.md",
+        "title": "HR 场景方法论来源核验台账（2026-09-08）",
+        "description": "来源核验与适配边界",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "2026-09-09-jd-reading-cases",
+          "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+          "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+        },
+        "path": "sources/2026-09-09-jd-reading-cases.md",
+        "title": "岗位原文理解：已复核案例来源",
+        "description": "公开 JD 阅读案例与证据边界",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "comparison-and-learning",
+          "revision": "1",
+          "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+        },
+        "path": "methods/comparison-and-learning.md",
+        "title": "候选人比较与反馈",
+        "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "competency-and-profile",
+          "revision": "1",
+          "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+        },
+        "path": "methods/competency-and-profile.md",
+        "title": "胜任力与人才画像",
+        "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "evidence-informed-judgment",
+          "revision": "2",
+          "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+        },
+        "path": "methods/evidence-informed-judgment.md",
+        "title": "循证判断",
+        "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "job-and-context",
+          "revision": "2",
+          "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+        },
+        "path": "methods/job-and-context.md",
+        "title": "岗位与业务情境",
+        "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "requirement-calibration",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        },
+        "path": "methods/requirement-calibration.md",
+        "title": "要求校准与 AMO",
+        "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "selection-and-work-samples",
+          "revision": "1",
+          "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+        },
+        "path": "methods/selection-and-work-samples.md",
+        "title": "甄选与工作样本",
+        "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "sourcing-and-transfer",
+          "revision": "1",
+          "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+        },
+        "path": "methods/sourcing-and-transfer.md",
+        "title": "人才来源与能力迁移",
+        "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+        "objects": []
+      }
+    ]
+  },
+  "candidate_id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+  "objects": [
+    {
+      "kind": "position",
+      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f"
+    },
+    {
+      "kind": "candidate",
+      "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8"
+    }
+  ],
+  "candidate_initialization": "scripted_model_real_user_HTTP_confirmation",
+  "model_boundary": "real_configured_opus5",
+  "stages": [
+    {
+      "work": {
+        "work_id": "f61d661f-6ff7-4e32-a884-9112fb92b528",
+        "thread_id": "a348502f-1a29-4663-9384-b3cc45acaa28",
+        "input_revision": 1,
+        "state": "completed",
+        "phase": "research",
+        "answer_state": "ended",
+        "result_refs": [
+          {
+            "kind": "result",
+            "id": "f9ec8162-97e6-4b72-9483-e4580a5cd96a",
+            "revision": "6e9ac416-b849-4ca1-903d-6792f8c38fb9",
+            "sha256": "2a0db3baa105bf7d521b8a17f043d41c4d41dd9ef92cc3f9b3800a4a5c5c3bdd"
+          },
+          {
+            "kind": "result",
+            "id": "b6315360-75d1-421f-892a-c937a9f8aca8",
+            "revision": "6f8bab98-877d-4a1e-b550-435de39f181b",
+            "sha256": "05ebf5b3a58a3f2d3ea0099bddb04fb9cab5f24a4fb73e746ed42468630b495f"
+          }
+        ],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 282.165497,
+          "charged_calls": 8,
+          "charged_tokens": 394146,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 32,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 2,
+            "total_tokens": 16000
+          },
+          "revision": 1,
+          "usage_quality": "estimated"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                "kind": "material",
+                "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 162
+            },
+            {
+              "ref": {
+                "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                "kind": "material",
+                "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 123
+            },
+            {
+              "ref": {
+                "id": "sourcing-and-transfer",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1138
+            },
+            {
+              "ref": {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1562
+            },
+            {
+              "ref": {
+                "id": "job-and-context",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1889
+            },
+            {
+              "ref": {
+                "id": "selection-and-work-samples",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1133
+            },
+            {
+              "ref": {
+                "id": "requirement-calibration",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1787
+            }
+          ],
+          "revision": 19
+        },
+        "last_event_seq": 22
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "9803eb2c-5091-458d-96bc-135b90ff1fac",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "所有材料均为虚构验证。请根据临时岗位要求，形成搜寻策略和这位候选人的岗位评估，分别保存 sourcing 与 candidate_assessment。材料未知处可以保留，不必等待补充，不作录用决定。按问题自主选用方法。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          },
+          {
+            "entry_id": "0abd864b-18d3-4e19-8e5a-a63576b5c9f9",
+            "seq": 12,
+            "input_revision": 1,
+            "kind": "assistant",
+            "body": "两份成果已保存成功。\n\n**1. sourcing：嵌入式现场诊断工程师搜寻策略**\n\n- 从交付物反推任务：复现间歇断连 → 区分通信/供电/固件时序/硬件 → 移交可复核证据；\"独立写出诊断记录\"是原文的必需项，\"前三个月导师协助定位\"是原文给出的过渡条件，两者分开处理。\n- 严格保留要求强度：C + 示波器是并列基础项；机器人量产经验按原文是**加分项**，且明确可由工业传感器、医疗设备等相邻经历以工作样本替代 —— 因此不作为筛除依据。\n- 来源假设分五类（现场/售后调试、稳定性排查方向的固件工程师、硬件测试/EMC/可靠性、原文认可的相邻行业、有导师期支撑的培养型来源），每类同时写相似性与差异，差异作为提问点而非通过/淘汰理由。\n- 仅提一个会改变筛选口径的澄清项：诊断记录的独立性是入职即须，还是与定位能力一并在三个月内建立。未澄清前按暂行口径推进，并标明其为暂行。\n- 明确未做的事：没有任何投放或触达记录，所有渠道试验均为待用户决定的建议；市场稀缺程度不能从要求组合推断，也未据此建议放宽门槛。\n\n**2. candidate_assessment：候选人青禾**\n\n- 支持性线索：C 固件维护、通信重试排查、有书面记录习惯；行业背景正落在原文认可的替代来源内。\n- 关键未知（本次最重要的两点）：① \"负责解决现场断连\"是自述，材料明确未说明假设由谁提出，列出三种替代解释；② 温升—重启记录缺控制变量与根因，而这正是\"可复核\"的两个要件。\n- 证据缺口而非否定项：材料只提逻辑分析仪、未提示波器 —— 记为未核实，不当作已满足，也不据此认定不会。无机器人经历按原文不构成不利判断。\n- 给出共同核心行为题 + 统一案例包工作样本 + 针对本人缺口的中性追问（不与共同核心分数相加），控制候选人负担、不索取可直接使用的成果。\n- 未给总分、未排名、未作录用或淘汰结论。\n\n两份成果之间已建立引用关系（评估引用了搜寻策略中的口径澄清项）。这只是成果已保存，岗位标准仍未确认，后续是否推进由授权人员决定。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 12
+      },
+      "results": [
+        {
+          "base_standard_ref": null,
+          "basis": [
+            {
+              "input_revision": 1,
+              "kind": "user_temporary",
+              "ref": null
+            }
+          ],
+          "body": "说明：全部材料为虚构验证材料。岗位要求来自用户本次临时说明（材料原文明确\"没有正式确认的长期岗位标准\"），因此本策略是可审阅的假设集，不构成长期岗位标准，也不含任何联系或淘汰动作。\n\n一、从交付物反推的目标任务（材料支持）\n1. 复现客户现场的间歇性断连——核心难点是\"间歇\"，即在实验室或现场重建不稳定故障的触发条件。\n2. 在通信、供电、固件时序、硬件四类因素之间做区分——需要用可控变量把耦合现象拆开。\n3. 把复现条件和证据交给对应负责人——产出是可被他人接手复核的书面证据，而非仅口头结论。\n4. 独立写出可复核的诊断记录（原文表述为\"必须\"）。原文同时写明\"前三个月可以由导师协助定位\"。\n\n二、要求强度的原文逻辑，不做升级或降级\n- 基础项（并列）：熟悉 C；熟悉示波器。\n- 加分项：机器人量产经验；原文明确其可由工业传感器、医疗设备等相邻经历以\"工作样本\"替代。因此\"机器人经历\"不是硬门槛，缺少它不构成筛除理由。\n- 可培养/过渡条件：定位工作前三个月允许导师协助，说明\"独立完成根因定位\"不必在入职首日达到；但\"写出可复核诊断记录\"的独立性原文未给出过渡期。\n- 待岗位方澄清（仅一项，影响筛选口径）：诊断记录的独立性是入职即须达到，还是与定位能力一并在三个月内建立？两种理解会改变对经验年限和过往文档产物的要求强度。此问题未解答前，搜寻按\"有独立书面诊断产物者优先，无产物者以工作样本补证\"处理，并在成果中标明这是暂行口径而非确认门槛。\n\n三、人才来源假设（每类同时写相似性与差异）\nA. 复杂设备现场/售后调试、技术支持工程师\n- 相似：现场取证、客户环境约束下复现故障、向研发移交证据。\n- 差异：可能长期依赖厂内研发给方案，自己提出假设与设计验证的程度需核实。\nB. 嵌入式固件工程师中做 bring-up、稳定性/可靠性、老化与回归排查的人\n- 相似：C 代码与时序、复位/看门狗、通信重试机制的理解。\n- 差异：多在受控环境工作，现场变量（供电质量、线束、温湿度、电磁环境）经验可能不足。\nC. 硬件测试/验证、EMC 与可靠性工程师\n- 相似：仪器使用、控制变量、书面测试报告是日常产物。\n- 差异：固件时序与代码级排查深度可能有限。\nD. 相邻行业（原文已认可的替代来源）：工业传感器、医疗设备；可合理延伸探索的还有汽车电子、通信/电源设备、AGV 与自动化产线设备。\n- 相似：都存在间歇性断连、供电与温升相关失效、需留档的诊断证据。\n- 差异：医疗设备侧记录规范强但迭代节奏不同；工业传感器侧现场规模与客户交互方式不同。这些差异是提问点，不是通过或淘汰理由。\nE. 培养型来源：有硬件/嵌入式实验项目、故障复现类课程设计或实习的应届与低年限候选人。因原文给出三个月导师期，此来源不应被直接排除；但材料未说明可承受的培养比例，不能自行设定名额或年限门槛。\n\n四、可用于识别的能力线索（材料支持的方向）\n- 提出并证伪假设的痕迹：写过\"某条件下必现/不现\"的对照结论。\n- 仪器与手段组合：示波器、逻辑分析仪、协议分析、电源纹波/掉电观察、温箱或温升观测。\n- 长时间捕获间歇故障的手段：触发条件设计、长跑监测、日志与波形对齐。\n- 交付物形态：诊断报告、复现步骤、根因与责任归属结论、给对应负责人的移交记录。\n- 跨角色协作：把结论交给通信、电源、固件、硬件不同负责人的经历。\n\n五、仍需用人方或市场证据核实的假设（不得当作已知）\n1. 岗位所在业务是自有产品现场还是客户交付项目、出差与现场比例、可用的实验条件（温箱、电源仿真、线束模拟）——影响吸引力与来源优先级。\n2. 汇报关系与导师是谁、导师带人容量——影响能否吸纳培养型来源。\n3. 通信/电源/固件/硬件各方\"对应负责人\"是否已到位——影响该岗位是否还需承担部分修复而非仅定位。\n4. 上述四类来源的实际供给量与响应率：本次材料只有岗位要求与一份候选材料，不能据要求组合判断市场稀缺程度，也不能据此建议放宽或收紧门槛。\n5. 薪酬、地点、出差强度等吸引力条件：材料未提供，未纳入判断。\n\n六、建议的可逆试验（供用户决定，尚未执行）\n- 对相邻行业候选人统一提供同一份\"间歇断连案例包\"（含现象描述、日志片段、波形截图、环境信息），请其写出复现方案与诊断记录草稿；用同一评价视角看变量控制、证据与结论的对应、移交清晰度，而非文档美观度。任务量应控制在合理范围，不索取可直接使用的成果。\n- 抽样复核被初筛淘汰的相邻行业材料，检查是否因\"无机器人经历\"被误筛（该项按原文只是加分项）。\n以上均为待执行建议；本次没有任何渠道投放或触达记录，因此不能表述为渠道成效。",
+          "changes": [],
+          "kind": "sourcing",
+          "objects": [
+            {
+              "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+              "kind": "position"
+            },
+            {
+              "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+              "kind": "candidate"
+            }
+          ],
+          "preceding_refs": [],
+          "source_refs": [
+            {
+              "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+              "kind": "material",
+              "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+              "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+            },
+            {
+              "id": "sourcing-and-transfer",
+              "kind": "method",
+              "revision": "1",
+              "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+            },
+            {
+              "id": "job-and-context",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+            },
+            {
+              "id": "requirement-calibration",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+            }
+          ],
+          "title": "嵌入式现场诊断工程师（示例公司·虚构验证）搜寻策略",
+          "ref": {
+            "kind": "result",
+            "id": "f9ec8162-97e6-4b72-9483-e4580a5cd96a",
+            "revision": "6e9ac416-b849-4ca1-903d-6792f8c38fb9",
+            "sha256": "2a0db3baa105bf7d521b8a17f043d41c4d41dd9ef92cc3f9b3800a4a5c5c3bdd"
+          },
+          "access_state": "available"
+        },
+        {
+          "base_standard_ref": null,
+          "basis": [
+            {
+              "input_revision": 1,
+              "kind": "user_temporary",
+              "ref": null
+            }
+          ],
+          "body": "说明：材料为虚构验证材料。基准是用户本次临时岗位要求（原文注明无正式确认的长期岗位标准）。本文只做岗位相关的证据分析与验证建议，不含录用、淘汰或排名结论，也不给总分。\n\n一、逐项对照（区分\"看到什么\"与\"据此能推断什么\"）\n\n1. C 固件（基础项）\n- 材料显示：在示例传感器项目中\"维护 C 固件\"。\n- 判断：与基础项方向一致，属支持性线索。未知：负责的模块范围、是否涉及中断/时序/通信协议栈、独立改动的规模。\"维护\"不能推断为具备时序级排查深度。\n\n2. 示波器（基础项）\n- 材料显示：使用过逻辑分析仪。\n- 判断：仪器类排查有相邻线索，但示波器与逻辑分析仪解决的问题不同（模拟量、电源纹波、掉电与上升沿 vs 数字时序与协议解码）。原文把示波器列为基础项，而候选材料未提及示波器，这是明确的证据缺口。不能因简历没写就断定不会，也不能当作已满足；需要核实。\n\n3. 区分通信/供电/固件时序/硬件四类因素\n- 材料显示：排查过\"通信重试\"；曾记录温升与重启的关系。\n- 判断：通信方向有直接线索；温升—重启涉及供电/硬件方向的观察意识。但材料明确\"没给出控制变量和最终根因\"，因此只能说存在相关线索，不能确认其具备把耦合因素拆开并定位到某一类的能力。温升与重启的相关性观察与因果结论之间差距正是本岗位核心能力所在，需要重点验证。\n\n4. 复现间歇性断连\n- 材料显示：简历称\"负责解决现场断连\"。\n- 判断：这是自述，且材料明确未说明是自己提出诊断假设还是执行资深工程师的方案。\"负责\"一词在此不能支持个人主导的推断。团队/项目成果与个人行动必须分开。这是本次最关键的未知项。\n\n5. 独立写出可复核的诊断记录（原文\"必须\"）\n- 材料显示：曾\"记录过\"温升与重启的关系。\n- 判断：有书面记录习惯的线索，但缺少控制变量与根因，恰好是\"可复核\"的两个要件。当前证据不足以判断其记录是否达到可被他人接手复核的程度。需要看实际产物（脱敏）。\n\n6. 机器人量产经验（加分项）\n- 材料显示：无机器人经历。\n- 判断：按原文，此项为加分项，且可由工业传感器等相邻经历提供工作样本来替代。候选人的传感器项目经历正落在原文认可的替代来源内。因此\"无机器人经历\"不构成不利判断，只意味着需要用工作样本补证。不得把加分项当门槛使用。\n\n7. 三个月导师期\n- 原文允许前三个月由导师协助定位，但诊断记录的独立性未给过渡期。候选人若在\"提出假设\"上确为执行方，是否仍适配，取决于岗位方对该过渡期与记录独立性的口径（见搜寻策略中待澄清项）。这是岗位口径问题，不是候选人缺陷。\n\n二、当前可以说的与不能说的\n- 可以说：候选人在 C 固件维护、数字通信问题排查、以及故障现象的书面记录三个方向上存在与岗位任务相关的经历线索；其行业背景属岗位原文明确认可的相邻来源。\n- 不能说：不能说已证明具备独立提出诊断假设、区分四类因素并给出可复核根因的能力；不能说不具备——材料只是没有说明。示波器一项为未核实，而非不满足。\n- 材料边界：一份简历式描述，无产物、无第三方评价、无时间跨度与项目规模信息。\n\n三、替代解释（避免单向解读）\n- \"负责解决现场断连\"可能是：(a) 独立主导定位；(b) 在资深工程师方案下执行验证；(c) 作为对接人协调他人结论。三种情况对本岗位的适配差别很大，且现有材料无法区分。\n- 温升—重启记录未给控制变量，可能是：(a) 候选人当时确实只做到现象记录；(b) 做过对照但简历未写；(c) 根因由他人给出。同样无法区分。\n\n四、建议的核验方式（所有候选人使用共同核心，缺口处做中性追问）\n共同核心（行为题，同一评价视角）：\n1. 请描述一次间歇性、不稳定的故障：现象、你当时提出的假设、如何设计验证使其可控复现、每一步排除了什么。\n2. 你如何判断一个问题属于通信、供电、固件时序还是硬件？请举一次判断错误后被推翻的经历。\n3. 你写过的诊断记录里包含哪些要素？如何让别人不依赖你也能复现？\n4. 你把结论交给谁、以什么形式交接、对方是否复现成功。\n工作样本（同一份材料、同一时限、控制负担，不索取可直接使用的成果）：\n- 给出含日志片段、波形/时序截图与环境信息的间歇断连案例包，请其写出复现方案、需要控制的变量、判别各类因素的先后顺序与理由，以及一份诊断记录草稿。\n针对本人证据缺口的中性追问（不与共同核心分数相加）：\n- 示波器的实际使用场景（触发设置、观察对象、结论）；\n- 温升—重启那次：当时的对照条件、最终结论由谁给出、结论是否被后续验证；\n- \"负责解决现场断连\"中，哪些假设是本人提出、哪些方案来自他人；\n- 可否提供一份脱敏的诊断记录或测试报告作为产物。\n\n五、结论强度\n基于当前材料：与岗位任务相关的线索存在但关键能力未被证实，主要不确定性集中在\"假设提出的独立性\"与\"记录的可复核性\"两项，两项均可通过上述工作样本与行为追问在一次评估中获得直接证据。是否进入下一环节由授权人员决定。",
+          "changes": [],
+          "kind": "candidate_assessment",
+          "objects": [
+            {
+              "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+              "kind": "position"
+            },
+            {
+              "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+              "kind": "candidate"
+            }
+          ],
+          "preceding_refs": [
+            {
+              "id": "f9ec8162-97e6-4b72-9483-e4580a5cd96a",
+              "kind": "result",
+              "revision": "6e9ac416-b849-4ca1-903d-6792f8c38fb9",
+              "sha256": "2a0db3baa105bf7d521b8a17f043d41c4d41dd9ef92cc3f9b3800a4a5c5c3bdd"
+            }
+          ],
+          "source_refs": [
+            {
+              "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+              "kind": "material",
+              "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+              "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+            },
+            {
+              "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+              "kind": "material",
+              "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+              "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+            },
+            {
+              "id": "evidence-informed-judgment",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+            },
+            {
+              "id": "selection-and-work-samples",
+              "kind": "method",
+              "revision": "1",
+              "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+            },
+            {
+              "id": "requirement-calibration",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+            }
+          ],
+          "title": "候选人青禾（虚构）· 嵌入式现场诊断工程师岗位评估",
+          "ref": {
+            "kind": "result",
+            "id": "b6315360-75d1-421f-892a-c937a9f8aca8",
+            "revision": "6f8bab98-877d-4a1e-b550-435de39f181b",
+            "sha256": "05ebf5b3a58a3f2d3ea0099bddb04fb9cab5f24a4fb73e746ed42468630b495f"
+          },
+          "access_state": "available"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_id": "729e05e8-f3b5-4069-842d-c48d25c9a74d",
+          "ordinal": 1,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 22267,
+          "charged_tokens": 18171,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "I'll start by reading the two selected materials and checking what methods are available.",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                    "kind": "material",
+                    "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                    "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01SCkvAEUSv22PeCcx3bEqZk"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                    "kind": "material",
+                    "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                    "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01WYePheeh4V9bjN3Y4DyzZ8"
+              },
+              {
+                "arguments": {
+                  "kinds": [
+                    "method",
+                    "standard",
+                    "intelligence",
+                    "result",
+                    "material"
+                  ],
+                  "objects": [
+                    {
+                      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                      "kind": "position"
+                    },
+                    {
+                      "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                      "kind": "candidate"
+                    }
+                  ]
+                },
+                "name": "list_resources",
+                "provider_call_id": "toolu_bdrk_01MxFyrmRAdn6VCjBrz2xieC"
+              }
+            ],
+            "usage": {
+              "input_total": 8588,
+              "output_total": 607,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 8588,
+                "output_tokens": 607,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "1c92eb46-a009-4ba7-86fa-228532e200d9",
+          "ordinal": 2,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 33055,
+          "charged_tokens": 28959,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "sourcing-and-transfer",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_011xCFpasGh4pQqS9tDfxVzV"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_019oLYYSJMuiDgXUdsXBxLZJ"
+              }
+            ],
+            "usage": {
+              "input_total": 12996,
+              "output_total": 350,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 12996,
+                "output_tokens": 350,
+                "output_tokens_details": {
+                  "thinking_tokens": 48
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "ef6d12e9-9e04-48e2-9e12-698c5209cfc5",
+          "ordinal": 3,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 42086,
+          "charged_tokens": 37990,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01VRzYXUBz5NpvxHFz4jQnFW"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01BwNSv3TEK9EuhSjfYov2Z9"
+              }
+            ],
+            "usage": {
+              "input_total": 16478,
+              "output_total": 334,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 16478,
+                "output_tokens": 334,
+                "output_tokens_details": {
+                  "thinking_tokens": 48
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "5e51836c-ccfa-454a-bd59-b8a7e5ca3fb4",
+          "ordinal": 4,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 51758,
+          "charged_tokens": 47662,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01NSBfSbJkgVNdCdFw4C5Gtv"
+              }
+            ],
+            "usage": {
+              "input_total": 20147,
+              "output_total": 235,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 20147,
+                "output_tokens": 235,
+                "output_tokens_details": {
+                  "thinking_tokens": 84
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "d0be8a9d-cc9a-446e-aa62-ae2ef9c8ea14",
+          "ordinal": 5,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 57428,
+          "charged_tokens": 57428,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "58d8ab82-0cfe-417a-b180-ab172232482a",
+          "ordinal": 6,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 57428,
+          "charged_tokens": 53332,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "已读完两份材料与五个方法视角，下面直接产出两份成果。",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "base_standard_ref": null,
+                  "basis": [
+                    {
+                      "input_revision": 1,
+                      "kind": "user_temporary",
+                      "ref": null
+                    }
+                  ],
+                  "body": "说明：全部材料为虚构验证材料。岗位要求来自用户本次临时说明（材料原文明确\"没有正式确认的长期岗位标准\"），因此本策略是可审阅的假设集，不构成长期岗位标准，也不含任何联系或淘汰动作。\n\n一、从交付物反推的目标任务（材料支持）\n1. 复现客户现场的间歇性断连——核心难点是\"间歇\"，即在实验室或现场重建不稳定故障的触发条件。\n2. 在通信、供电、固件时序、硬件四类因素之间做区分——需要用可控变量把耦合现象拆开。\n3. 把复现条件和证据交给对应负责人——产出是可被他人接手复核的书面证据，而非仅口头结论。\n4. 独立写出可复核的诊断记录（原文表述为\"必须\"）。原文同时写明\"前三个月可以由导师协助定位\"。\n\n二、要求强度的原文逻辑，不做升级或降级\n- 基础项（并列）：熟悉 C；熟悉示波器。\n- 加分项：机器人量产经验；原文明确其可由工业传感器、医疗设备等相邻经历以\"工作样本\"替代。因此\"机器人经历\"不是硬门槛，缺少它不构成筛除理由。\n- 可培养/过渡条件：定位工作前三个月允许导师协助，说明\"独立完成根因定位\"不必在入职首日达到；但\"写出可复核诊断记录\"的独立性原文未给出过渡期。\n- 待岗位方澄清（仅一项，影响筛选口径）：诊断记录的独立性是入职即须达到，还是与定位能力一并在三个月内建立？两种理解会改变对经验年限和过往文档产物的要求强度。此问题未解答前，搜寻按\"有独立书面诊断产物者优先，无产物者以工作样本补证\"处理，并在成果中标明这是暂行口径而非确认门槛。\n\n三、人才来源假设（每类同时写相似性与差异）\nA. 复杂设备现场/售后调试、技术支持工程师\n- 相似：现场取证、客户环境约束下复现故障、向研发移交证据。\n- 差异：可能长期依赖厂内研发给方案，自己提出假设与设计验证的程度需核实。\nB. 嵌入式固件工程师中做 bring-up、稳定性/可靠性、老化与回归排查的人\n- 相似：C 代码与时序、复位/看门狗、通信重试机制的理解。\n- 差异：多在受控环境工作，现场变量（供电质量、线束、温湿度、电磁环境）经验可能不足。\nC. 硬件测试/验证、EMC 与可靠性工程师\n- 相似：仪器使用、控制变量、书面测试报告是日常产物。\n- 差异：固件时序与代码级排查深度可能有限。\nD. 相邻行业（原文已认可的替代来源）：工业传感器、医疗设备；可合理延伸探索的还有汽车电子、通信/电源设备、AGV 与自动化产线设备。\n- 相似：都存在间歇性断连、供电与温升相关失效、需留档的诊断证据。\n- 差异：医疗设备侧记录规范强但迭代节奏不同；工业传感器侧现场规模与客户交互方式不同。这些差异是提问点，不是通过或淘汰理由。\nE. 培养型来源：有硬件/嵌入式实验项目、故障复现类课程设计或实习的应届与低年限候选人。因原文给出三个月导师期，此来源不应被直接排除；但材料未说明可承受的培养比例，不能自行设定名额或年限门槛。\n\n四、可用于识别的能力线索（材料支持的方向）\n- 提出并证伪假设的痕迹：写过\"某条件下必现/不现\"的对照结论。\n- 仪器与手段组合：示波器、逻辑分析仪、协议分析、电源纹波/掉电观察、温箱或温升观测。\n- 长时间捕获间歇故障的手段：触发条件设计、长跑监测、日志与波形对齐。\n- 交付物形态：诊断报告、复现步骤、根因与责任归属结论、给对应负责人的移交记录。\n- 跨角色协作：把结论交给通信、电源、固件、硬件不同负责人的经历。\n\n五、仍需用人方或市场证据核实的假设（不得当作已知）\n1. 岗位所在业务是自有产品现场还是客户交付项目、出差与现场比例、可用的实验条件（温箱、电源仿真、线束模拟）——影响吸引力与来源优先级。\n2. 汇报关系与导师是谁、导师带人容量——影响能否吸纳培养型来源。\n3. 通信/电源/固件/硬件各方\"对应负责人\"是否已到位——影响该岗位是否还需承担部分修复而非仅定位。\n4. 上述四类来源的实际供给量与响应率：本次材料只有岗位要求与一份候选材料，不能据要求组合判断市场稀缺程度，也不能据此建议放宽或收紧门槛。\n5. 薪酬、地点、出差强度等吸引力条件：材料未提供，未纳入判断。\n\n六、建议的可逆试验（供用户决定，尚未执行）\n- 对相邻行业候选人统一提供同一份\"间歇断连案例包\"（含现象描述、日志片段、波形截图、环境信息），请其写出复现方案与诊断记录草稿；用同一评价视角看变量控制、证据与结论的对应、移交清晰度，而非文档美观度。任务量应控制在合理范围，不索取可直接使用的成果。\n- 抽样复核被初筛淘汰的相邻行业材料，检查是否因\"无机器人经历\"被误筛（该项按原文只是加分项）。\n以上均为待执行建议；本次没有任何渠道投放或触达记录，因此不能表述为渠道成效。",
+                  "changes": [],
+                  "expected_revision": null,
+                  "kind": "sourcing",
+                  "objects": [
+                    {
+                      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                      "kind": "position"
+                    }
+                  ],
+                  "preceding_refs": [],
+                  "result_id": null,
+                  "source_refs": [
+                    {
+                      "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                      "kind": "material",
+                      "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                      "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+                    },
+                    {
+                      "id": "sourcing-and-transfer",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                    },
+                    {
+                      "id": "job-and-context",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                    },
+                    {
+                      "id": "requirement-calibration",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                    }
+                  ],
+                  "title": "嵌入式现场诊断工程师（示例公司·虚构验证）搜寻策略"
+                },
+                "name": "save_result",
+                "provider_call_id": "toolu_bdrk_01BZZyDD2MXGt67KP9iUPRPC"
+              }
+            ],
+            "usage": {
+              "input_total": 22333,
+              "output_total": 3986,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 22333,
+                "output_tokens": 3986,
+                "output_tokens_details": {
+                  "thinking_tokens": 1158
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "17278534-bc6e-4627-b3e8-1dcc8c7eb963",
+          "ordinal": 7,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 71475,
+          "charged_tokens": 67379,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "base_standard_ref": null,
+                  "basis": [
+                    {
+                      "input_revision": 1,
+                      "kind": "user_temporary",
+                      "ref": null
+                    }
+                  ],
+                  "body": "说明：材料为虚构验证材料。基准是用户本次临时岗位要求（原文注明无正式确认的长期岗位标准）。本文只做岗位相关的证据分析与验证建议，不含录用、淘汰或排名结论，也不给总分。\n\n一、逐项对照（区分\"看到什么\"与\"据此能推断什么\"）\n\n1. C 固件（基础项）\n- 材料显示：在示例传感器项目中\"维护 C 固件\"。\n- 判断：与基础项方向一致，属支持性线索。未知：负责的模块范围、是否涉及中断/时序/通信协议栈、独立改动的规模。\"维护\"不能推断为具备时序级排查深度。\n\n2. 示波器（基础项）\n- 材料显示：使用过逻辑分析仪。\n- 判断：仪器类排查有相邻线索，但示波器与逻辑分析仪解决的问题不同（模拟量、电源纹波、掉电与上升沿 vs 数字时序与协议解码）。原文把示波器列为基础项，而候选材料未提及示波器，这是明确的证据缺口。不能因简历没写就断定不会，也不能当作已满足；需要核实。\n\n3. 区分通信/供电/固件时序/硬件四类因素\n- 材料显示：排查过\"通信重试\"；曾记录温升与重启的关系。\n- 判断：通信方向有直接线索；温升—重启涉及供电/硬件方向的观察意识。但材料明确\"没给出控制变量和最终根因\"，因此只能说存在相关线索，不能确认其具备把耦合因素拆开并定位到某一类的能力。温升与重启的相关性观察与因果结论之间差距正是本岗位核心能力所在，需要重点验证。\n\n4. 复现间歇性断连\n- 材料显示：简历称\"负责解决现场断连\"。\n- 判断：这是自述，且材料明确未说明是自己提出诊断假设还是执行资深工程师的方案。\"负责\"一词在此不能支持个人主导的推断。团队/项目成果与个人行动必须分开。这是本次最关键的未知项。\n\n5. 独立写出可复核的诊断记录（原文\"必须\"）\n- 材料显示：曾\"记录过\"温升与重启的关系。\n- 判断：有书面记录习惯的线索，但缺少控制变量与根因，恰好是\"可复核\"的两个要件。当前证据不足以判断其记录是否达到可被他人接手复核的程度。需要看实际产物（脱敏）。\n\n6. 机器人量产经验（加分项）\n- 材料显示：无机器人经历。\n- 判断：按原文，此项为加分项，且可由工业传感器等相邻经历提供工作样本来替代。候选人的传感器项目经历正落在原文认可的替代来源内。因此\"无机器人经历\"不构成不利判断，只意味着需要用工作样本补证。不得把加分项当门槛使用。\n\n7. 三个月导师期\n- 原文允许前三个月由导师协助定位，但诊断记录的独立性未给过渡期。候选人若在\"提出假设\"上确为执行方，是否仍适配，取决于岗位方对该过渡期与记录独立性的口径（见搜寻策略中待澄清项）。这是岗位口径问题，不是候选人缺陷。\n\n二、当前可以说的与不能说的\n- 可以说：候选人在 C 固件维护、数字通信问题排查、以及故障现象的书面记录三个方向上存在与岗位任务相关的经历线索；其行业背景属岗位原文明确认可的相邻来源。\n- 不能说：不能说已证明具备独立提出诊断假设、区分四类因素并给出可复核根因的能力；不能说不具备——材料只是没有说明。示波器一项为未核实，而非不满足。\n- 材料边界：一份简历式描述，无产物、无第三方评价、无时间跨度与项目规模信息。\n\n三、替代解释（避免单向解读）\n- \"负责解决现场断连\"可能是：(a) 独立主导定位；(b) 在资深工程师方案下执行验证；(c) 作为对接人协调他人结论。三种情况对本岗位的适配差别很大，且现有材料无法区分。\n- 温升—重启记录未给控制变量，可能是：(a) 候选人当时确实只做到现象记录；(b) 做过对照但简历未写；(c) 根因由他人给出。同样无法区分。\n\n四、建议的核验方式（所有候选人使用共同核心，缺口处做中性追问）\n共同核心（行为题，同一评价视角）：\n1. 请描述一次间歇性、不稳定的故障：现象、你当时提出的假设、如何设计验证使其可控复现、每一步排除了什么。\n2. 你如何判断一个问题属于通信、供电、固件时序还是硬件？请举一次判断错误后被推翻的经历。\n3. 你写过的诊断记录里包含哪些要素？如何让别人不依赖你也能复现？\n4. 你把结论交给谁、以什么形式交接、对方是否复现成功。\n工作样本（同一份材料、同一时限、控制负担，不索取可直接使用的成果）：\n- 给出含日志片段、波形/时序截图与环境信息的间歇断连案例包，请其写出复现方案、需要控制的变量、判别各类因素的先后顺序与理由，以及一份诊断记录草稿。\n针对本人证据缺口的中性追问（不与共同核心分数相加）：\n- 示波器的实际使用场景（触发设置、观察对象、结论）；\n- 温升—重启那次：当时的对照条件、最终结论由谁给出、结论是否被后续验证；\n- \"负责解决现场断连\"中，哪些假设是本人提出、哪些方案来自他人；\n- 可否提供一份脱敏的诊断记录或测试报告作为产物。\n\n五、结论强度\n基于当前材料：与岗位任务相关的线索存在但关键能力未被证实，主要不确定性集中在\"假设提出的独立性\"与\"记录的可复核性\"两项，两项均可通过上述工作样本与行为追问在一次评估中获得直接证据。是否进入下一环节由授权人员决定。",
+                  "changes": [],
+                  "expected_revision": null,
+                  "kind": "candidate_assessment",
+                  "objects": [
+                    {
+                      "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                      "kind": "candidate"
+                    },
+                    {
+                      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                      "kind": "position"
+                    }
+                  ],
+                  "preceding_refs": [
+                    {
+                      "id": "f9ec8162-97e6-4b72-9483-e4580a5cd96a",
+                      "kind": "result",
+                      "revision": "6e9ac416-b849-4ca1-903d-6792f8c38fb9",
+                      "sha256": "2a0db3baa105bf7d521b8a17f043d41c4d41dd9ef92cc3f9b3800a4a5c5c3bdd"
+                    }
+                  ],
+                  "result_id": null,
+                  "source_refs": [
+                    {
+                      "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                      "kind": "material",
+                      "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                      "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+                    },
+                    {
+                      "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                      "kind": "material",
+                      "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                      "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+                    },
+                    {
+                      "id": "evidence-informed-judgment",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                    },
+                    {
+                      "id": "selection-and-work-samples",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                    },
+                    {
+                      "id": "requirement-calibration",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                    }
+                  ],
+                  "title": "候选人青禾（虚构）· 嵌入式现场诊断工程师岗位评估"
+                },
+                "name": "save_result",
+                "provider_call_id": "toolu_bdrk_018DP8gQpqxxwCVHGLViFDgu"
+              }
+            ],
+            "usage": {
+              "input_total": 27980,
+              "output_total": 3213,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 27980,
+                "output_tokens": 3213,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "ccc3f77d-a34b-4780-b482-790a45d13f19",
+          "ordinal": 8,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 87321,
+          "charged_tokens": 83225,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "end_turn",
+            "text": "两份成果已保存成功。\n\n**1. sourcing：嵌入式现场诊断工程师搜寻策略**\n\n- 从交付物反推任务：复现间歇断连 → 区分通信/供电/固件时序/硬件 → 移交可复核证据；\"独立写出诊断记录\"是原文的必需项，\"前三个月导师协助定位\"是原文给出的过渡条件，两者分开处理。\n- 严格保留要求强度：C + 示波器是并列基础项；机器人量产经验按原文是**加分项**，且明确可由工业传感器、医疗设备等相邻经历以工作样本替代 —— 因此不作为筛除依据。\n- 来源假设分五类（现场/售后调试、稳定性排查方向的固件工程师、硬件测试/EMC/可靠性、原文认可的相邻行业、有导师期支撑的培养型来源），每类同时写相似性与差异，差异作为提问点而非通过/淘汰理由。\n- 仅提一个会改变筛选口径的澄清项：诊断记录的独立性是入职即须，还是与定位能力一并在三个月内建立。未澄清前按暂行口径推进，并标明其为暂行。\n- 明确未做的事：没有任何投放或触达记录，所有渠道试验均为待用户决定的建议；市场稀缺程度不能从要求组合推断，也未据此建议放宽门槛。\n\n**2. candidate_assessment：候选人青禾**\n\n- 支持性线索：C 固件维护、通信重试排查、有书面记录习惯；行业背景正落在原文认可的替代来源内。\n- 关键未知（本次最重要的两点）：① \"负责解决现场断连\"是自述，材料明确未说明假设由谁提出，列出三种替代解释；② 温升—重启记录缺控制变量与根因，而这正是\"可复核\"的两个要件。\n- 证据缺口而非否定项：材料只提逻辑分析仪、未提示波器 —— 记为未核实，不当作已满足，也不据此认定不会。无机器人经历按原文不构成不利判断。\n- 给出共同核心行为题 + 统一案例包工作样本 + 针对本人缺口的中性追问（不与共同核心分数相加），控制候选人负担、不索取可直接使用的成果。\n- 未给总分、未排名、未作录用或淘汰结论。\n\n两份成果之间已建立引用关系（评估引用了搜寻策略中的口径澄清项）。这只是成果已保存，岗位标准仍未确认，后续是否推进由授权人员决定。",
+            "tool_calls": [],
+            "usage": {
+              "input_total": 34411,
+              "output_total": 879,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 34411,
+                "output_tokens": 879,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "operation_id": "7d2c0629-b9b7-4b33-9cba-9e3cfca8ed02",
+          "attempt_id": "729e05e8-f3b5-4069-842d-c48d25c9a74d",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 162,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "31f60d4b-7c06-4854-9579-ce4c304cc91b",
+              "ref": {
+                "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                "kind": "material",
+                "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+              },
+              "text": "示例公司要招聘嵌入式现场诊断工程师。任务是复现客户现场的间歇断连，区分通信、供电、固件时序与硬件因素，并把复现条件和证据交给对应负责人。前三个月可以由导师协助定位，但必须独立写出可复核的诊断记录。熟悉 C 和示波器是基础；有机器人量产经验是加分项，可由工业传感器、医疗设备等相邻经历提供工作样本。没有正式确认的长期岗位标准。",
+              "total_characters": 162
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "259ba005-bd67-4056-a436-26af2d1df267",
+          "attempt_id": "729e05e8-f3b5-4069-842d-c48d25c9a74d",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 123,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "954f92be-47f2-498f-ac3c-38c5d192316b",
+              "ref": {
+                "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                "kind": "material",
+                "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+              },
+              "text": "姓名：示例候选人青禾（虚构）。在示例传感器项目中维护 C 固件，用逻辑分析仪排查过通信重试。简历称“负责解决现场断连”，但没有说明自己提出诊断假设还是按资深工程师方案执行。没有机器人经历。曾记录过温升与重启的关系，但材料没给出控制变量和最终根因。",
+              "total_characters": 123
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "263f7049-687c-45de-9d61-bef2359ea14a",
+          "attempt_id": "729e05e8-f3b5-4069-842d-c48d25c9a74d",
+          "namespace": "tool:list_resources",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "items": [
+                {
+                  "description": "用户为本次工作指定的材料正文",
+                  "objects": [
+                    {
+                      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                      "kind": "position"
+                    },
+                    {
+                      "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                      "kind": "candidate"
+                    }
+                  ],
+                  "observed_at": null,
+                  "original_ref": {
+                    "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:original",
+                    "kind": "material",
+                    "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5",
+                    "sha256": "d13dd9745397a01a2d191f4264a6b31036e2696d4e36b2251fb1bce771c7b8d6"
+                  },
+                  "ref": {
+                    "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                    "kind": "material",
+                    "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                    "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+                  },
+                  "representation": "parsed_text",
+                  "state": "available",
+                  "title": "已选材料",
+                  "visibility": {
+                    "kind": "private",
+                    "subject_id": "8e6c3cad-7fec-4a17-8254-8fc124054f45"
+                  }
+                },
+                {
+                  "description": "来源核验与适配边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-08-hr-methodology-sources",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "公开 JD 阅读案例与证据边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-09-jd-reading-cases",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位原文理解：已复核案例来源",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "用户为本次工作指定的材料正文",
+                  "objects": [
+                    {
+                      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                      "kind": "position"
+                    },
+                    {
+                      "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                      "kind": "candidate"
+                    }
+                  ],
+                  "observed_at": null,
+                  "original_ref": {
+                    "id": "74aced30-c458-4c9a-8126-666ce655ef3b:original",
+                    "kind": "material",
+                    "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61",
+                    "sha256": "ae139888c5d27cf6199df4343099551056225ee37ca264cd4c8bb991ecfe912c"
+                  },
+                  "ref": {
+                    "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                    "kind": "material",
+                    "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                    "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+                  },
+                  "representation": "parsed_text",
+                  "state": "available",
+                  "title": "已选材料",
+                  "visibility": {
+                    "kind": "private",
+                    "subject_id": "8e6c3cad-7fec-4a17-8254-8fc124054f45"
+                  }
+                },
+                {
+                  "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "comparison-and-learning",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "候选人比较与反馈",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "胜任力与人才画像",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "循证判断",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位与业务情境",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "要求校准与 AMO",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "甄选与工作样本",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "sourcing-and-transfer",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "人才来源与能力迁移",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                }
+              ],
+              "next_cursor": null
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "4aecc8b1-47b1-4017-8025-12cf133fcf97",
+          "attempt_id": "1c92eb46-a009-4ba7-86fa-228532e200d9",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1138,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "0545eb4a-352d-4979-a859-76ed84b75c23",
+              "ref": {
+                "id": "sourcing-and-transfer",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+              },
+              "text": "---\nid: sourcing-and-transfer\ntitle: 人才来源与能力迁移\nrevision: 1\ndomains: [recruiting, talent-development]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 人才来源与能力迁移：从公司名单转向任务相似性\n\n## 帮助理解什么\n\n本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。\n\n## 核心关系\n\n迁移判断可以区分底层任务机制、领域知识和环境条件。两段经历即使行业名称不同，也可能共享诊断问题、协调利益相关方或在约束下交付等任务；反过来，相同岗位名称在客户类型、决策周期、监管、规模和授权方式上也可能完全不同。\n\n人才来源是一组待验证假设：某类经历为何可能产生目标能力，哪些情境差异会削弱迁移，哪些知识可以在合理时间内补齐，以及用什么证据进一步了解。公司品牌只能说明经历背景，不能证明个人承担了什么任务。\n\n## 如何结合证据思考\n\n从目标任务和能力出发，探索同类岗位、相邻任务、可迁移行业及培养型来源。对每类来源同时记录相似性和差异，不只寻找支持理由。渠道回应、合格样本和后续评价可以更新来源假设，但短期漏斗不等于入职绩效。\n\n跨行业候选人可重点了解共同任务中的个人行为和新情境差异；应届生缺少正式经历时，可以看课程、项目、实习和负担适当的工作样本，但不应把成熟人才年限门槛原样套用。\n\n## 适用与局限\n\n适合供给狭窄、只搜竞品、岗位名称混乱或希望拓宽多元来源的情境。能力迁移具有不确定性，学习速度也不能从学校或公司名可靠推断；任何来源假设都需要真实招聘和工作结果复盘。\n\n## 可结合的视角\n\n可与“岗位与业务情境”明确目标任务，与“要求校准与 AMO”区分供给和吸引力，与“甄选与工作样本”探索迁移证据。\n\n## 案例\n\n工业软件实施顾问难招。除了同类软件公司，还可以探索流程咨询和复杂设备售后，因为它们可能共享现场诊断、多方协调和分阶段交付任务。流程咨询人才可能缺少产品配置经验，设备售后人才可能缺少企业软件知识；这些差异应成为学习和补证问题，而不是直接通过或淘汰理由。\n\n## 来源\n\n- O*NET Resource Center, *The O*NET Content Model*，任务、工作活动、知识、技能、能力与工作情境结构。\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，证据的可靠性、相关性与情境适用性 pp.1–4。\n",
+              "total_characters": 1138
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "0b442fa6-49c5-4bbf-be39-cfa9a9cf90f1",
+          "attempt_id": "1c92eb46-a009-4ba7-86fa-228532e200d9",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1562,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "f226490d-f183-4e20-931c-0de98f576e48",
+              "ref": {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              "text": "---\nid: evidence-informed-judgment\ntitle: 循证判断\nrevision: 2\ndomains: [recruiting, hr-analytics]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 循证判断：让结论强度不超过证据\n\n## 帮助理解什么\n\n本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。\n\n## 核心关系\n\nCEBMa 将循证实践概括为审慎、明确、合理地使用最佳可得证据，并强调可靠性和对当前情境的相关性。它提出 Ask、Acquire、Appraise、Aggregate、Apply、Assess 六个活动。对招聘而言，这不是机械流程，而是提醒：先形成可回答的问题，寻找多类证据，评价质量，整合一致与冲突，再作条件化判断并观察结果。\n\n证据可来自候选人陈述、可核材料、评估观察、组织数据、科学研究、专业经验及相关人员观点。不同来源能互相支持、质疑或澄清。数量多不代表质量高，缺少反证也不等于证实。\n\n## 如何结合证据思考\n\n对每项主张询问来源、与岗位任务的关系、时效、独立性和替代解释。团队成果需要和个人行动、决策权及外部条件分开。表达结论时可以使用“支持”“存在相关线索”“与另一证据冲突”“尚无法判断”等与证据强度相称的语言。\n\n## 让反证、冗余支持和材料缺陷各自发挥作用\n\n多个岗位可能独立支持同一判断，也可能只是复用一段招聘文案。重复文本不能按出现次数累加为更强事实；不同任务提供的支持则可能相互补充。删除一个引用后仍有其他依据支持结论，属于证据冗余，不是分析不依赖证据。要反问的是：承重证据整体失去支持后，结论是否仍被无依据地保留。\n\n主动寻找能收窄结论的材料。某个研究岗说数据生产由专门团队负责，同批却有算法岗同时参与采集与训练，说明前者是局部职责安排；不能推广成所有算法岗都不做数据。存在独立数采岗位可以与自述相互支持，但缺少共同团队或项目标识，仍不能确认它就是所指的支撑团队。\n\n记录缺陷与业务事实要分别解释。正文放错字段但文字完整时，可以恢复对任务的理解并指出原始位置；只有占位符或缺文时，需要补材料。公开岗位没有写某项职责不能证明组织没有该能力，简历没有写某段经历也不能直接认定候选人不具备；同时，未知也不能被包装成已证明匹配。说明当前能判断什么、还缺哪类相关证据。\n\n本节是招聘归档分析的适配总结，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不将这些具体案例归于文献作者。\n\n## 适用与局限\n\n适合候选人证据分析、人才来源假设、画像校准和多人比较。现实中常无法获得理想证据，评价本身也需要判断；循证不会消除价值取舍，也不能把小样本相关性变成因果结论。\n\n## 可结合的视角\n\n几乎可与所有资源结合。它尤其能约束“能力迁移”的乐观推断、“结构化甄选”的分数幻觉，以及比较时将未知当作不满足的倾向。\n\n## 案例\n\n候选人称“主导项目使营收增长 30%”。可确认的只有团队营收和候选人在项目中的任职时间。合理结论不是“已证明商业能力”，而是有相关线索；还需理解基线、个人决策、其他团队贡献、市场变化及候选人能提供的具体产物。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，完整 7 页，重点 pp.1–4。\n- CIPD, *Fair selection: An evidence review*，甄选程序与候选人体验 pp.5–16。\n",
+              "total_characters": 1562
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "b515359a-90c8-47e0-9b11-a8d80839f670",
+          "attempt_id": "ef6d12e9-9e04-48e2-9e12-698c5209cfc5",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1889,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "3e141186-aa6a-4343-bf0d-7f92848b3c19",
+              "ref": {
+                "id": "job-and-context",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+              },
+              "text": "---\nid: job-and-context\ntitle: 岗位与业务情境\nrevision: 2\ndomains: [recruiting, organization-design]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 岗位与业务情境：从结果、任务到能力\n\n## 帮助理解什么\n\n当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。\n\n## 核心关系\n\n岗位分析的基本链条是“业务结果—关键任务—工作情境—所需能力—可用证据”。OPM 将岗位分析描述为考察岗位任务、完成任务所需胜任力，以及任务与胜任力之间的联系。O*NET 则把任务、工作活动、知识、技能、能力、经验要求和工作情境分开表达。这提醒我们不要把学历、年限、公司品牌或性格形容词直接当成能力。\n\n战略与情境匹配提供更高一层的问题：同一任务在创业期和成熟期、强授权与弱授权、已有团队与从零组建中可能要求不同。岗位要求是关于未来工作的假设，而非对现任优秀员工特征的完整复制。\n\n## 如何结合证据思考\n\n可以先寻找业务负责人、上下游和现任岗位对实际工作的一致与分歧描述，再用历史成果、失败事件、流程材料和真实工作样本交叉检查。每项能力都应能解释它支撑什么任务；每项硬门槛都应能解释缺少它会带来什么岗位风险。信息不足时，应把未知写出来，而不是用常识补成事实。\n\n## 从文字重建任务，并保留结论的对象\n\n职位名和字段名是材料的组织方式，不保证含义正确。一段写在 requirement 中的工作交付可能仍是职责；空的 requirement 也可能只是要求已写在 description 内。先读完整材料，理解语句作用与相互关系，再说明哪些任务和条件有依据。不能因字段为空补默认门槛，也不能因标题含某技术就补出正文没有的工作。\n\n同样的要求文字被多个岗位复用时，要回到各自的交付物：一个岗位需要定义数据产品，另一个需要训练模型，共用编程要求并不解释两者的真实责任。它值得核实，但不证明复制方向或误贴。改写 JD 时，应围绕用户确认的任务与条件组织表达，区分既有要求和新增建议，不照搬另一岗位的筛选口径。\n\n作用域也是证据的一部分。集团招聘入口可能汇集子公司、业务部和归属未明的岗位；某个团队的研究任务不能自动推广到本部或全集团。比较时保留原文对象，确认候选人本人做了什么，而不是以任职公司代替经历。没有子公司标记不代表归属本部，相邻岗位也不证明实际汇报或项目交接关系。\n\n本节来自已复核招聘归档的工作台适配，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不称为 OPM 或 O*NET 原文规则。\n\n## 适用与局限\n\n适合新岗位、职责变化、多人描述不一致、画像缺少任务依据等情况。若用户只是希望润色已经确认的 JD，它可以作为背景而不必重新做完整分析。岗位分析会过时，O*NET 的美国职业数据也不能代替本组织访谈；业务负责人意见是重要证据，但仍可能含有偏好和既有做法偏差。\n\n## 可结合的视角\n\n可与“胜任力与人才画像”连接行为表达，与“要求校准与 AMO”检查环境约束，也可与“甄选与工作样本”思考什么证据更贴近实际任务。这些是建议关系，不是固定流程。\n\n## 案例\n\n一家企业把新客户成功岗描述为“沟通好、抗压强、懂客户”。进一步理解后，目标是提高上线采用率并提前发现续约风险；关键任务包括诊断使用障碍、与产品团队协调、向客户管理层解释取舍。原来的标签因此可以被重新理解为问题诊断、跨团队推进和面向不同受众沟通，并需要在复杂度、独立程度和结果上进一步求证。\n\n## 来源\n\n- U.S. OPM, *Job Analysis*，官方主页面正文。\n- O*NET Resource Center, *The O*NET Content Model*，Worker Requirements、Occupational Requirements、Occupation-Specific Information。\n- Armstrong, *Handbook of Human Resource Management Practice*, 13th ed.，仅使用本地文件可见范围内的战略匹配相关节选；未引用缺失章节。\n",
+              "total_characters": 1889
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "7b4ac7d9-7590-4c74-8ace-08d95cda1351",
+          "attempt_id": "ef6d12e9-9e04-48e2-9e12-698c5209cfc5",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1133,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "ab983995-cdd6-4bf3-8a0f-dc6bce7a4551",
+              "ref": {
+                "id": "selection-and-work-samples",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+              },
+              "text": "---\nid: selection-and-work-samples\ntitle: 甄选与工作样本\nrevision: 1\ndomains: [recruiting]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 甄选与工作样本：相关性、一致性和表达机会\n\n## 帮助理解什么\n\n本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。\n\n## 核心关系\n\nOPM 的结构化面试指南强调从岗位分析和待评能力出发，让候选人回答共同核心问题，并用共同量表评价。行为题探索过去做法，情境题探索面对假设情境的处理；两者都需要岗位专家形成与能力水平相关的行为参照。结构化的价值在于更一致、可解释的观察，而非让分数天然客观。\n\n工作样本把候选人置于接近实际岗位的任务中，观察其行为或成果。它适合考察入职时就应具备的能力。任务、材料、时间和评价视角需要可比，也要控制候选人负担，不应索取可直接用于公司的免费劳动。\n\nCIPD 的公平甄选综述提醒关注岗位相关性、信息透明、候选人表达机会、解释和评估者培训。共同核心保持一致，并不排斥围绕个人证据缺口进行中性追问；但难度不同的个性化问题不能被直接相加比较。\n\n## 如何结合证据思考\n\n先理解哪项能力更适合口头叙述、现场行为、作品或其他方式。评估者应记录具体回答或行为，先形成各自判断，再讨论理由和分歧。题目和行为参照需要试用，以发现歧义、时长、文化熟悉度和无障碍问题。\n\n## 适用与局限\n\n适合关键能力需要多位评估者判断、闲聊式面试差异大、经历证据不足等情境。面试叙述可能受记忆和表达影响；工作样本只能覆盖有限任务；结构化不能消除所有偏差。未经试用的自制工具不应称为已验证测评。\n\n## 可结合的视角\n\n可与“胜任力与人才画像”理解行为层级，与“循证判断”控制推断，与“候选人比较与反馈”理解哪些证据真正可比。\n\n## 案例\n\n为了解产品经理的需求取舍，可以给所有候选人同一组匿名客户反馈、资源限制和目标，请其说明优先级与理由。可观察信息整合、权衡和风险意识，而非文档是否精美。这个样本仍不能证明长期执行力，需与经历和其他观察共同理解。\n\n## 来源\n\n- U.S. OPM, *Structured Interviews: A Practical Guide*，完整 36 页。\n- U.S. OPM, *Work Samples and Simulations*，官方页面相关小节。\n- CIPD, *Fair selection: An evidence review*，完整 20 页。\n",
+              "total_characters": 1133
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "9ab888d1-d15c-406c-bf34-44f59a37ea08",
+          "attempt_id": "5e51836c-ccfa-454a-bd59-b8a7e5ca3fb4",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1787,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "fa541534-3e35-4321-95d9-34bcc418feca",
+              "ref": {
+                "id": "requirement-calibration",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+              },
+              "text": "---\nid: requirement-calibration\ntitle: 要求校准与 AMO\nrevision: 2\ndomains: [recruiting, performance]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 要求校准与 AMO：不要把所有问题都变成人才缺陷\n\n## 帮助理解什么\n\n当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。\n\n## 核心关系\n\n长期招不到人至少可能涉及四类解释：需求定义是否真实且清楚；目标人才供给是否存在；薪酬、地点、工作方式、发展机会和雇主信息是否有吸引力；甄选流程是否因门槛、速度或评价偏差误杀。四类因素可能同时发生，招聘时长本身不能证明“市场没人”。\n\nAMO 从能力、动机和机会三个方向拓宽诊断：一个人是否会做、是否愿意投入、环境是否允许他做出结果。它适合提出问题，不适合把候选人压缩成 A×M×O 总分或宣称单一因素造成绩效。\n\n## 如何结合证据思考\n\n查看漏斗各阶段的数量、等待时间、退出原因和评价分歧，并把组织数据与招聘人员、用人经理及候选人的观点并置。对每项要求追问业务理由、对应任务、失败风险和可接受的替代证据。把“必须”“有帮助”“可以培养”和“只是惯例”看作待论证判断，而非固定字段。\n\n如果建议调整，可以优先提出可逆、可观察的试验，例如重新表达岗位价值、抽样复核被筛掉材料、允许相邻行业以工作样本补证。结果只能支持或削弱当前假设，不能自动改写已确认画像。\n\n## 区分任务需要与文案写出的要求强度\n\n能力与任务相关，不等于已经证明它必须在入职前具备；原文明确给出的优先、可培养或替代经历也不能被自动升级成硬门槛。理解条件时，同时看它支撑什么交付、原文要求达到何种独立程度，以及用户是否已经确认适用条件。不要把一段宽技术清单读成每一项都要精通。\n\n若同一能力在同一条广告中既列为任职要求又列为加分，当前文本没有稳定说明缺少该经历是否仍可评估。可以继续分析任务相关性和候选材料，但不能默默选择更严或更松的一段作结论。只有当歧义影响当前判断时，才向岗位方澄清，例如这项经历是入职即须独立交付，还是允许在相邻经验基础上学习。\n\n相邻岗位若将任职要求与加分分开表达，可以帮助定位当前记录的局部问题，不代表它们的门槛可直接移植。岗位跨度、经验入口或用工形式不同，也可能合理地产生不同要求；不能把差异一律判为矛盾。\n\n用户说明目标岗位的实际条件后，应按该澄清继续当前工作，保留它相对原文改变了什么；分析建议本身不修改长期标准。切换岗位或业务团队时重新判断适用性，不能沿用上一岗位的硬门槛。\n\n本节依据真实文案冲突归纳，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)。这是思考材料，不是按“必需”“优先”等关键词执行的筛选程序。\n\n## 适用与局限\n\n适合长期空缺、漏斗异常、条件互相矛盾、用人经理反复加码等情境。漏斗数据可能受季节、渠道和岗位变化影响；候选人退出原因也常不完整。AMO 各因素相互作用，不能当精确因果模型。\n\n## 可结合的视角\n\n可与“岗位与业务情境”核查要求依据，与“人才来源与能力迁移”扩展供给假设，与“循证判断”评价漏斗解释。不存在必须依次采用的顺序。\n\n## 案例\n\n一个数据产品经理岗位空缺三个月。简历数量并不少，但业务初筛淘汰率很高；“同业五年”无法对应某项独有任务，而薪酬与地点的退出反馈也明显。较好的理解是：供给、要求和吸引力都有待验证。允许相邻行业候选人用复杂 B2B 发现与落地证据补充，只是一个可审阅假设，最终效果仍需观察录用和入职表现。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，pp.1–4。\n- CIPD, *People performance: An evidence review*，AMO 讨论 pp.14–17。\n- CIPD, *Fair selection: An evidence review*，公平框架与实践建议 pp.5–16。\n",
+              "total_characters": 1787
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "cf6bf73f-c0bb-405d-b10e-82173789585b",
+          "attempt_id": "58d8ab82-0cfe-417a-b180-ab172232482a",
+          "namespace": "tool:save_result",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "access_state": "available",
+              "base_standard_ref": null,
+              "basis": [
+                {
+                  "input_revision": 1,
+                  "kind": "user_temporary",
+                  "ref": null
+                }
+              ],
+              "body": "说明：全部材料为虚构验证材料。岗位要求来自用户本次临时说明（材料原文明确\"没有正式确认的长期岗位标准\"），因此本策略是可审阅的假设集，不构成长期岗位标准，也不含任何联系或淘汰动作。\n\n一、从交付物反推的目标任务（材料支持）\n1. 复现客户现场的间歇性断连——核心难点是\"间歇\"，即在实验室或现场重建不稳定故障的触发条件。\n2. 在通信、供电、固件时序、硬件四类因素之间做区分——需要用可控变量把耦合现象拆开。\n3. 把复现条件和证据交给对应负责人——产出是可被他人接手复核的书面证据，而非仅口头结论。\n4. 独立写出可复核的诊断记录（原文表述为\"必须\"）。原文同时写明\"前三个月可以由导师协助定位\"。\n\n二、要求强度的原文逻辑，不做升级或降级\n- 基础项（并列）：熟悉 C；熟悉示波器。\n- 加分项：机器人量产经验；原文明确其可由工业传感器、医疗设备等相邻经历以\"工作样本\"替代。因此\"机器人经历\"不是硬门槛，缺少它不构成筛除理由。\n- 可培养/过渡条件：定位工作前三个月允许导师协助，说明\"独立完成根因定位\"不必在入职首日达到；但\"写出可复核诊断记录\"的独立性原文未给出过渡期。\n- 待岗位方澄清（仅一项，影响筛选口径）：诊断记录的独立性是入职即须达到，还是与定位能力一并在三个月内建立？两种理解会改变对经验年限和过往文档产物的要求强度。此问题未解答前，搜寻按\"有独立书面诊断产物者优先，无产物者以工作样本补证\"处理，并在成果中标明这是暂行口径而非确认门槛。\n\n三、人才来源假设（每类同时写相似性与差异）\nA. 复杂设备现场/售后调试、技术支持工程师\n- 相似：现场取证、客户环境约束下复现故障、向研发移交证据。\n- 差异：可能长期依赖厂内研发给方案，自己提出假设与设计验证的程度需核实。\nB. 嵌入式固件工程师中做 bring-up、稳定性/可靠性、老化与回归排查的人\n- 相似：C 代码与时序、复位/看门狗、通信重试机制的理解。\n- 差异：多在受控环境工作，现场变量（供电质量、线束、温湿度、电磁环境）经验可能不足。\nC. 硬件测试/验证、EMC 与可靠性工程师\n- 相似：仪器使用、控制变量、书面测试报告是日常产物。\n- 差异：固件时序与代码级排查深度可能有限。\nD. 相邻行业（原文已认可的替代来源）：工业传感器、医疗设备；可合理延伸探索的还有汽车电子、通信/电源设备、AGV 与自动化产线设备。\n- 相似：都存在间歇性断连、供电与温升相关失效、需留档的诊断证据。\n- 差异：医疗设备侧记录规范强但迭代节奏不同；工业传感器侧现场规模与客户交互方式不同。这些差异是提问点，不是通过或淘汰理由。\nE. 培养型来源：有硬件/嵌入式实验项目、故障复现类课程设计或实习的应届与低年限候选人。因原文给出三个月导师期，此来源不应被直接排除；但材料未说明可承受的培养比例，不能自行设定名额或年限门槛。\n\n四、可用于识别的能力线索（材料支持的方向）\n- 提出并证伪假设的痕迹：写过\"某条件下必现/不现\"的对照结论。\n- 仪器与手段组合：示波器、逻辑分析仪、协议分析、电源纹波/掉电观察、温箱或温升观测。\n- 长时间捕获间歇故障的手段：触发条件设计、长跑监测、日志与波形对齐。\n- 交付物形态：诊断报告、复现步骤、根因与责任归属结论、给对应负责人的移交记录。\n- 跨角色协作：把结论交给通信、电源、固件、硬件不同负责人的经历。\n\n五、仍需用人方或市场证据核实的假设（不得当作已知）\n1. 岗位所在业务是自有产品现场还是客户交付项目、出差与现场比例、可用的实验条件（温箱、电源仿真、线束模拟）——影响吸引力与来源优先级。\n2. 汇报关系与导师是谁、导师带人容量——影响能否吸纳培养型来源。\n3. 通信/电源/固件/硬件各方\"对应负责人\"是否已到位——影响该岗位是否还需承担部分修复而非仅定位。\n4. 上述四类来源的实际供给量与响应率：本次材料只有岗位要求与一份候选材料，不能据要求组合判断市场稀缺程度，也不能据此建议放宽或收紧门槛。\n5. 薪酬、地点、出差强度等吸引力条件：材料未提供，未纳入判断。\n\n六、建议的可逆试验（供用户决定，尚未执行）\n- 对相邻行业候选人统一提供同一份\"间歇断连案例包\"（含现象描述、日志片段、波形截图、环境信息），请其写出复现方案与诊断记录草稿；用同一评价视角看变量控制、证据与结论的对应、移交清晰度，而非文档美观度。任务量应控制在合理范围，不索取可直接使用的成果。\n- 抽样复核被初筛淘汰的相邻行业材料，检查是否因\"无机器人经历\"被误筛（该项按原文只是加分项）。\n以上均为待执行建议；本次没有任何渠道投放或触达记录，因此不能表述为渠道成效。",
+              "changes": [],
+              "kind": "sourcing",
+              "objects": [
+                {
+                  "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                  "kind": "position"
+                },
+                {
+                  "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                  "kind": "candidate"
+                }
+              ],
+              "preceding_refs": [],
+              "ref": {
+                "id": "f9ec8162-97e6-4b72-9483-e4580a5cd96a",
+                "kind": "result",
+                "revision": "6e9ac416-b849-4ca1-903d-6792f8c38fb9",
+                "sha256": "2a0db3baa105bf7d521b8a17f043d41c4d41dd9ef92cc3f9b3800a4a5c5c3bdd"
+              },
+              "source_refs": [
+                {
+                  "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                  "kind": "material",
+                  "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                  "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+                },
+                {
+                  "id": "sourcing-and-transfer",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                },
+                {
+                  "id": "job-and-context",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                },
+                {
+                  "id": "requirement-calibration",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                }
+              ],
+              "title": "嵌入式现场诊断工程师（示例公司·虚构验证）搜寻策略"
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "5ff14f6e-121e-4b10-81dc-a7ca8530a7b8",
+          "attempt_id": "17278534-bc6e-4627-b3e8-1dcc8c7eb963",
+          "namespace": "tool:save_result",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "access_state": "available",
+              "base_standard_ref": null,
+              "basis": [
+                {
+                  "input_revision": 1,
+                  "kind": "user_temporary",
+                  "ref": null
+                }
+              ],
+              "body": "说明：材料为虚构验证材料。基准是用户本次临时岗位要求（原文注明无正式确认的长期岗位标准）。本文只做岗位相关的证据分析与验证建议，不含录用、淘汰或排名结论，也不给总分。\n\n一、逐项对照（区分\"看到什么\"与\"据此能推断什么\"）\n\n1. C 固件（基础项）\n- 材料显示：在示例传感器项目中\"维护 C 固件\"。\n- 判断：与基础项方向一致，属支持性线索。未知：负责的模块范围、是否涉及中断/时序/通信协议栈、独立改动的规模。\"维护\"不能推断为具备时序级排查深度。\n\n2. 示波器（基础项）\n- 材料显示：使用过逻辑分析仪。\n- 判断：仪器类排查有相邻线索，但示波器与逻辑分析仪解决的问题不同（模拟量、电源纹波、掉电与上升沿 vs 数字时序与协议解码）。原文把示波器列为基础项，而候选材料未提及示波器，这是明确的证据缺口。不能因简历没写就断定不会，也不能当作已满足；需要核实。\n\n3. 区分通信/供电/固件时序/硬件四类因素\n- 材料显示：排查过\"通信重试\"；曾记录温升与重启的关系。\n- 判断：通信方向有直接线索；温升—重启涉及供电/硬件方向的观察意识。但材料明确\"没给出控制变量和最终根因\"，因此只能说存在相关线索，不能确认其具备把耦合因素拆开并定位到某一类的能力。温升与重启的相关性观察与因果结论之间差距正是本岗位核心能力所在，需要重点验证。\n\n4. 复现间歇性断连\n- 材料显示：简历称\"负责解决现场断连\"。\n- 判断：这是自述，且材料明确未说明是自己提出诊断假设还是执行资深工程师的方案。\"负责\"一词在此不能支持个人主导的推断。团队/项目成果与个人行动必须分开。这是本次最关键的未知项。\n\n5. 独立写出可复核的诊断记录（原文\"必须\"）\n- 材料显示：曾\"记录过\"温升与重启的关系。\n- 判断：有书面记录习惯的线索，但缺少控制变量与根因，恰好是\"可复核\"的两个要件。当前证据不足以判断其记录是否达到可被他人接手复核的程度。需要看实际产物（脱敏）。\n\n6. 机器人量产经验（加分项）\n- 材料显示：无机器人经历。\n- 判断：按原文，此项为加分项，且可由工业传感器等相邻经历提供工作样本来替代。候选人的传感器项目经历正落在原文认可的替代来源内。因此\"无机器人经历\"不构成不利判断，只意味着需要用工作样本补证。不得把加分项当门槛使用。\n\n7. 三个月导师期\n- 原文允许前三个月由导师协助定位，但诊断记录的独立性未给过渡期。候选人若在\"提出假设\"上确为执行方，是否仍适配，取决于岗位方对该过渡期与记录独立性的口径（见搜寻策略中待澄清项）。这是岗位口径问题，不是候选人缺陷。\n\n二、当前可以说的与不能说的\n- 可以说：候选人在 C 固件维护、数字通信问题排查、以及故障现象的书面记录三个方向上存在与岗位任务相关的经历线索；其行业背景属岗位原文明确认可的相邻来源。\n- 不能说：不能说已证明具备独立提出诊断假设、区分四类因素并给出可复核根因的能力；不能说不具备——材料只是没有说明。示波器一项为未核实，而非不满足。\n- 材料边界：一份简历式描述，无产物、无第三方评价、无时间跨度与项目规模信息。\n\n三、替代解释（避免单向解读）\n- \"负责解决现场断连\"可能是：(a) 独立主导定位；(b) 在资深工程师方案下执行验证；(c) 作为对接人协调他人结论。三种情况对本岗位的适配差别很大，且现有材料无法区分。\n- 温升—重启记录未给控制变量，可能是：(a) 候选人当时确实只做到现象记录；(b) 做过对照但简历未写；(c) 根因由他人给出。同样无法区分。\n\n四、建议的核验方式（所有候选人使用共同核心，缺口处做中性追问）\n共同核心（行为题，同一评价视角）：\n1. 请描述一次间歇性、不稳定的故障：现象、你当时提出的假设、如何设计验证使其可控复现、每一步排除了什么。\n2. 你如何判断一个问题属于通信、供电、固件时序还是硬件？请举一次判断错误后被推翻的经历。\n3. 你写过的诊断记录里包含哪些要素？如何让别人不依赖你也能复现？\n4. 你把结论交给谁、以什么形式交接、对方是否复现成功。\n工作样本（同一份材料、同一时限、控制负担，不索取可直接使用的成果）：\n- 给出含日志片段、波形/时序截图与环境信息的间歇断连案例包，请其写出复现方案、需要控制的变量、判别各类因素的先后顺序与理由，以及一份诊断记录草稿。\n针对本人证据缺口的中性追问（不与共同核心分数相加）：\n- 示波器的实际使用场景（触发设置、观察对象、结论）；\n- 温升—重启那次：当时的对照条件、最终结论由谁给出、结论是否被后续验证；\n- \"负责解决现场断连\"中，哪些假设是本人提出、哪些方案来自他人；\n- 可否提供一份脱敏的诊断记录或测试报告作为产物。\n\n五、结论强度\n基于当前材料：与岗位任务相关的线索存在但关键能力未被证实，主要不确定性集中在\"假设提出的独立性\"与\"记录的可复核性\"两项，两项均可通过上述工作样本与行为追问在一次评估中获得直接证据。是否进入下一环节由授权人员决定。",
+              "changes": [],
+              "kind": "candidate_assessment",
+              "objects": [
+                {
+                  "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                  "kind": "position"
+                },
+                {
+                  "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                  "kind": "candidate"
+                }
+              ],
+              "preceding_refs": [
+                {
+                  "id": "f9ec8162-97e6-4b72-9483-e4580a5cd96a",
+                  "kind": "result",
+                  "revision": "6e9ac416-b849-4ca1-903d-6792f8c38fb9",
+                  "sha256": "2a0db3baa105bf7d521b8a17f043d41c4d41dd9ef92cc3f9b3800a4a5c5c3bdd"
+                }
+              ],
+              "ref": {
+                "id": "b6315360-75d1-421f-892a-c937a9f8aca8",
+                "kind": "result",
+                "revision": "6f8bab98-877d-4a1e-b550-435de39f181b",
+                "sha256": "05ebf5b3a58a3f2d3ea0099bddb04fb9cab5f24a4fb73e746ed42468630b495f"
+              },
+              "source_refs": [
+                {
+                  "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                  "kind": "material",
+                  "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                  "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+                },
+                {
+                  "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                  "kind": "material",
+                  "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                  "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+                },
+                {
+                  "id": "evidence-informed-judgment",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                },
+                {
+                  "id": "selection-and-work-samples",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                },
+                {
+                  "id": "requirement-calibration",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                }
+              ],
+              "title": "候选人青禾（虚构）· 嵌入式现场诊断工程师岗位评估"
+            },
+            "error": null,
+            "status": "ok"
+          }
+        }
+      ],
+      "name": "sourcing-assessment",
+      "prompt": "所有材料均为虚构验证。请根据临时岗位要求，形成搜寻策略和这位候选人的岗位评估，分别保存 sourcing 与 candidate_assessment。材料未知处可以保留，不必等待补充，不作录用决定。按问题自主选用方法。",
+      "selected_refs": [
+        {
+          "kind": "material",
+          "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+          "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+          "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+        },
+        {
+          "kind": "material",
+          "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+          "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+          "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+        }
+      ]
+    },
+    {
+      "work": {
+        "work_id": "ec7cd1d9-3bf9-4ac6-968d-d622a4fceafa",
+        "thread_id": "83240d11-cb69-4f94-9617-7b8554782f39",
+        "input_revision": 1,
+        "state": "failed",
+        "phase": "research",
+        "answer_state": "none",
+        "result_refs": [],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 375.232555,
+          "charged_calls": 8,
+          "charged_tokens": 348434,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 32,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 2,
+            "total_tokens": 16000
+          },
+          "revision": 1,
+          "usage_quality": "estimated"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                "kind": "material",
+                "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 162
+            },
+            {
+              "ref": {
+                "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                "kind": "material",
+                "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 123
+            },
+            {
+              "ref": {
+                "id": "b6315360-75d1-421f-892a-c937a9f8aca8",
+                "kind": "result",
+                "revision": "6f8bab98-877d-4a1e-b550-435de39f181b",
+                "sha256": "05ebf5b3a58a3f2d3ea0099bddb04fb9cab5f24a4fb73e746ed42468630b495f"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 2063
+            },
+            {
+              "ref": {
+                "id": "selection-and-work-samples",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1133
+            },
+            {
+              "ref": {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1562
+            },
+            {
+              "ref": {
+                "id": "competency-and-profile",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1113
+            }
+          ],
+          "revision": 12
+        },
+        "last_event_seq": 14
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "16ee76e4-8c75-43b3-a326-09514286f7bb",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "继续已选候选人的准确评估。请准备针对本人经历的面试方案，解释需要验证什么，保存 interview_plan。这是未来方案，尚未发生面试。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 1
+      },
+      "results": [],
+      "attempts": [
+        {
+          "attempt_id": "d796b515-6216-456a-8313-6cbf7f7ddf41",
+          "ordinal": 1,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 22289,
+          "charged_tokens": 18193,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "I'll start by reading the selected materials and the prior assessment result.",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                    "kind": "material",
+                    "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                    "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01CmufonCVrAuhs9MVMuTu5j"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                    "kind": "material",
+                    "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                    "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01PD5xb6HQ5gV6gUJaALA35S"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "b6315360-75d1-421f-892a-c937a9f8aca8",
+                    "kind": "result",
+                    "revision": "6f8bab98-877d-4a1e-b550-435de39f181b",
+                    "sha256": "05ebf5b3a58a3f2d3ea0099bddb04fb9cab5f24a4fb73e746ed42468630b495f"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01UrLDv2JS1avjVwPQhSiDgj"
+              },
+              {
+                "arguments": {
+                  "kinds": [
+                    "material",
+                    "method",
+                    "result",
+                    "intelligence",
+                    "standard"
+                  ],
+                  "objects": [
+                    {
+                      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                      "kind": "position"
+                    },
+                    {
+                      "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                      "kind": "candidate"
+                    }
+                  ]
+                },
+                "name": "list_resources",
+                "provider_call_id": "toolu_bdrk_012L1F5L1a8AeM6kQbfkgkE8"
+              }
+            ],
+            "usage": {
+              "input_total": 8632,
+              "output_total": 792,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 8632,
+                "output_tokens": 792,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "e2703465-acab-4d19-9046-2dcbc18e1485",
+          "ordinal": 2,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 40329,
+          "charged_tokens": 36233,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01SVGaE3MV2Dr57ixvhRKZ1v"
+              }
+            ],
+            "usage": {
+              "input_total": 15838,
+              "output_total": 192,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 15838,
+                "output_tokens": 192,
+                "output_tokens_details": {
+                  "thinking_tokens": 43
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "98eb3fd3-fb59-47a6-a274-7605f8b3fd08",
+          "ordinal": 3,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 44252,
+          "charged_tokens": 40156,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01PUZUSLJjrVgLXx3p61S3e6"
+              }
+            ],
+            "usage": {
+              "input_total": 17341,
+              "output_total": 221,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 17341,
+                "output_tokens": 221,
+                "output_tokens_details": {
+                  "thinking_tokens": 69
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "01e0a372-4d5d-4bcd-aa9e-0c6626cbfc9a",
+          "ordinal": 4,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 49315,
+          "charged_tokens": 49315,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "1a09d9e3-b560-4af2-8b85-964594e6e312",
+          "ordinal": 5,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 49315,
+          "charged_tokens": 45219,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01RrLWfn52Hnf52pznMV85C9"
+              }
+            ],
+            "usage": {
+              "input_total": 19280,
+              "output_total": 210,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 19280,
+                "output_tokens": 210,
+                "output_tokens_details": {
+                  "thinking_tokens": 70
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "f7af848b-cc9f-4760-8ea8-1250ba3b646b",
+          "ordinal": 6,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 53106,
+          "charged_tokens": 53106,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "8e9b0831-a524-40fd-a989-97b14512578f",
+          "ordinal": 7,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 53106,
+          "charged_tokens": 53106,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "a0c89a13-bf5f-4136-9e50-b14d4bd78878",
+          "ordinal": 8,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 53106,
+          "charged_tokens": 53106,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        }
+      ],
+      "tools": [
+        {
+          "operation_id": "234de4f3-dc23-4077-b42e-52fa63897cec",
+          "attempt_id": "d796b515-6216-456a-8313-6cbf7f7ddf41",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 162,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "194ed41c-5f7d-46e2-a9a9-f47f8b437cd2",
+              "ref": {
+                "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                "kind": "material",
+                "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+              },
+              "text": "示例公司要招聘嵌入式现场诊断工程师。任务是复现客户现场的间歇断连，区分通信、供电、固件时序与硬件因素，并把复现条件和证据交给对应负责人。前三个月可以由导师协助定位，但必须独立写出可复核的诊断记录。熟悉 C 和示波器是基础；有机器人量产经验是加分项，可由工业传感器、医疗设备等相邻经历提供工作样本。没有正式确认的长期岗位标准。",
+              "total_characters": 162
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "bcb6e977-4041-4488-b8e6-f6482dc1821c",
+          "attempt_id": "d796b515-6216-456a-8313-6cbf7f7ddf41",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 123,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "906dd03c-b304-4523-ae2d-a072edfa107f",
+              "ref": {
+                "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                "kind": "material",
+                "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+              },
+              "text": "姓名：示例候选人青禾（虚构）。在示例传感器项目中维护 C 固件，用逻辑分析仪排查过通信重试。简历称“负责解决现场断连”，但没有说明自己提出诊断假设还是按资深工程师方案执行。没有机器人经历。曾记录过温升与重启的关系，但材料没给出控制变量和最终根因。",
+              "total_characters": 123
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "1aa40af8-272a-4a07-a96d-be63d2b38d35",
+          "attempt_id": "d796b515-6216-456a-8313-6cbf7f7ddf41",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 2063,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "37697753-fe7c-4a13-8b89-b18dfe766738",
+              "ref": {
+                "id": "b6315360-75d1-421f-892a-c937a9f8aca8",
+                "kind": "result",
+                "revision": "6f8bab98-877d-4a1e-b550-435de39f181b",
+                "sha256": "05ebf5b3a58a3f2d3ea0099bddb04fb9cab5f24a4fb73e746ed42468630b495f"
+              },
+              "text": "说明：材料为虚构验证材料。基准是用户本次临时岗位要求（原文注明无正式确认的长期岗位标准）。本文只做岗位相关的证据分析与验证建议，不含录用、淘汰或排名结论，也不给总分。\n\n一、逐项对照（区分\"看到什么\"与\"据此能推断什么\"）\n\n1. C 固件（基础项）\n- 材料显示：在示例传感器项目中\"维护 C 固件\"。\n- 判断：与基础项方向一致，属支持性线索。未知：负责的模块范围、是否涉及中断/时序/通信协议栈、独立改动的规模。\"维护\"不能推断为具备时序级排查深度。\n\n2. 示波器（基础项）\n- 材料显示：使用过逻辑分析仪。\n- 判断：仪器类排查有相邻线索，但示波器与逻辑分析仪解决的问题不同（模拟量、电源纹波、掉电与上升沿 vs 数字时序与协议解码）。原文把示波器列为基础项，而候选材料未提及示波器，这是明确的证据缺口。不能因简历没写就断定不会，也不能当作已满足；需要核实。\n\n3. 区分通信/供电/固件时序/硬件四类因素\n- 材料显示：排查过\"通信重试\"；曾记录温升与重启的关系。\n- 判断：通信方向有直接线索；温升—重启涉及供电/硬件方向的观察意识。但材料明确\"没给出控制变量和最终根因\"，因此只能说存在相关线索，不能确认其具备把耦合因素拆开并定位到某一类的能力。温升与重启的相关性观察与因果结论之间差距正是本岗位核心能力所在，需要重点验证。\n\n4. 复现间歇性断连\n- 材料显示：简历称\"负责解决现场断连\"。\n- 判断：这是自述，且材料明确未说明是自己提出诊断假设还是执行资深工程师的方案。\"负责\"一词在此不能支持个人主导的推断。团队/项目成果与个人行动必须分开。这是本次最关键的未知项。\n\n5. 独立写出可复核的诊断记录（原文\"必须\"）\n- 材料显示：曾\"记录过\"温升与重启的关系。\n- 判断：有书面记录习惯的线索，但缺少控制变量与根因，恰好是\"可复核\"的两个要件。当前证据不足以判断其记录是否达到可被他人接手复核的程度。需要看实际产物（脱敏）。\n\n6. 机器人量产经验（加分项）\n- 材料显示：无机器人经历。\n- 判断：按原文，此项为加分项，且可由工业传感器等相邻经历提供工作样本来替代。候选人的传感器项目经历正落在原文认可的替代来源内。因此\"无机器人经历\"不构成不利判断，只意味着需要用工作样本补证。不得把加分项当门槛使用。\n\n7. 三个月导师期\n- 原文允许前三个月由导师协助定位，但诊断记录的独立性未给过渡期。候选人若在\"提出假设\"上确为执行方，是否仍适配，取决于岗位方对该过渡期与记录独立性的口径（见搜寻策略中待澄清项）。这是岗位口径问题，不是候选人缺陷。\n\n二、当前可以说的与不能说的\n- 可以说：候选人在 C 固件维护、数字通信问题排查、以及故障现象的书面记录三个方向上存在与岗位任务相关的经历线索；其行业背景属岗位原文明确认可的相邻来源。\n- 不能说：不能说已证明具备独立提出诊断假设、区分四类因素并给出可复核根因的能力；不能说不具备——材料只是没有说明。示波器一项为未核实，而非不满足。\n- 材料边界：一份简历式描述，无产物、无第三方评价、无时间跨度与项目规模信息。\n\n三、替代解释（避免单向解读）\n- \"负责解决现场断连\"可能是：(a) 独立主导定位；(b) 在资深工程师方案下执行验证；(c) 作为对接人协调他人结论。三种情况对本岗位的适配差别很大，且现有材料无法区分。\n- 温升—重启记录未给控制变量，可能是：(a) 候选人当时确实只做到现象记录；(b) 做过对照但简历未写；(c) 根因由他人给出。同样无法区分。\n\n四、建议的核验方式（所有候选人使用共同核心，缺口处做中性追问）\n共同核心（行为题，同一评价视角）：\n1. 请描述一次间歇性、不稳定的故障：现象、你当时提出的假设、如何设计验证使其可控复现、每一步排除了什么。\n2. 你如何判断一个问题属于通信、供电、固件时序还是硬件？请举一次判断错误后被推翻的经历。\n3. 你写过的诊断记录里包含哪些要素？如何让别人不依赖你也能复现？\n4. 你把结论交给谁、以什么形式交接、对方是否复现成功。\n工作样本（同一份材料、同一时限、控制负担，不索取可直接使用的成果）：\n- 给出含日志片段、波形/时序截图与环境信息的间歇断连案例包，请其写出复现方案、需要控制的变量、判别各类因素的先后顺序与理由，以及一份诊断记录草稿。\n针对本人证据缺口的中性追问（不与共同核心分数相加）：\n- 示波器的实际使用场景（触发设置、观察对象、结论）；\n- 温升—重启那次：当时的对照条件、最终结论由谁给出、结论是否被后续验证；\n- \"负责解决现场断连\"中，哪些假设是本人提出、哪些方案来自他人；\n- 可否提供一份脱敏的诊断记录或测试报告作为产物。\n\n五、结论强度\n基于当前材料：与岗位任务相关的线索存在但关键能力未被证实，主要不确定性集中在\"假设提出的独立性\"与\"记录的可复核性\"两项，两项均可通过上述工作样本与行为追问在一次评估中获得直接证据。是否进入下一环节由授权人员决定。",
+              "total_characters": 2063
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "1b3706e4-3da7-4043-862f-2f247e4f8d88",
+          "attempt_id": "d796b515-6216-456a-8313-6cbf7f7ddf41",
+          "namespace": "tool:list_resources",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "items": [
+                {
+                  "description": "用户为本次工作指定的材料正文",
+                  "objects": [
+                    {
+                      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                      "kind": "position"
+                    },
+                    {
+                      "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                      "kind": "candidate"
+                    }
+                  ],
+                  "observed_at": null,
+                  "original_ref": {
+                    "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:original",
+                    "kind": "material",
+                    "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5",
+                    "sha256": "d13dd9745397a01a2d191f4264a6b31036e2696d4e36b2251fb1bce771c7b8d6"
+                  },
+                  "ref": {
+                    "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+                    "kind": "material",
+                    "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+                    "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+                  },
+                  "representation": "parsed_text",
+                  "state": "available",
+                  "title": "已选材料",
+                  "visibility": {
+                    "kind": "private",
+                    "subject_id": "8e6c3cad-7fec-4a17-8254-8fc124054f45"
+                  }
+                },
+                {
+                  "description": "来源核验与适配边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-08-hr-methodology-sources",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "公开 JD 阅读案例与证据边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-09-jd-reading-cases",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位原文理解：已复核案例来源",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "用户为本次工作指定的材料正文",
+                  "objects": [
+                    {
+                      "id": "7d62a436-b26a-4fd7-8e01-c701e8a5e65f",
+                      "kind": "position"
+                    },
+                    {
+                      "id": "9a9ecd3d-fe26-5ca2-b525-bf74999c37f8",
+                      "kind": "candidate"
+                    }
+                  ],
+                  "observed_at": null,
+                  "original_ref": {
+                    "id": "74aced30-c458-4c9a-8126-666ce655ef3b:original",
+                    "kind": "material",
+                    "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61",
+                    "sha256": "ae139888c5d27cf6199df4343099551056225ee37ca264cd4c8bb991ecfe912c"
+                  },
+                  "ref": {
+                    "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+                    "kind": "material",
+                    "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+                    "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+                  },
+                  "representation": "parsed_text",
+                  "state": "available",
+                  "title": "已选材料",
+                  "visibility": {
+                    "kind": "private",
+                    "subject_id": "8e6c3cad-7fec-4a17-8254-8fc124054f45"
+                  }
+                },
+                {
+                  "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "comparison-and-learning",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "候选人比较与反馈",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "胜任力与人才画像",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "循证判断",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位与业务情境",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "要求校准与 AMO",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "甄选与工作样本",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "sourcing-and-transfer",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "人才来源与能力迁移",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                }
+              ],
+              "next_cursor": null
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "18953736-9ba9-47a2-bd2b-b9c8ac884163",
+          "attempt_id": "e2703465-acab-4d19-9046-2dcbc18e1485",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1133,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "ec9f6ae5-bebc-45ad-b339-7a816c263026",
+              "ref": {
+                "id": "selection-and-work-samples",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+              },
+              "text": "---\nid: selection-and-work-samples\ntitle: 甄选与工作样本\nrevision: 1\ndomains: [recruiting]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 甄选与工作样本：相关性、一致性和表达机会\n\n## 帮助理解什么\n\n本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。\n\n## 核心关系\n\nOPM 的结构化面试指南强调从岗位分析和待评能力出发，让候选人回答共同核心问题，并用共同量表评价。行为题探索过去做法，情境题探索面对假设情境的处理；两者都需要岗位专家形成与能力水平相关的行为参照。结构化的价值在于更一致、可解释的观察，而非让分数天然客观。\n\n工作样本把候选人置于接近实际岗位的任务中，观察其行为或成果。它适合考察入职时就应具备的能力。任务、材料、时间和评价视角需要可比，也要控制候选人负担，不应索取可直接用于公司的免费劳动。\n\nCIPD 的公平甄选综述提醒关注岗位相关性、信息透明、候选人表达机会、解释和评估者培训。共同核心保持一致，并不排斥围绕个人证据缺口进行中性追问；但难度不同的个性化问题不能被直接相加比较。\n\n## 如何结合证据思考\n\n先理解哪项能力更适合口头叙述、现场行为、作品或其他方式。评估者应记录具体回答或行为，先形成各自判断，再讨论理由和分歧。题目和行为参照需要试用，以发现歧义、时长、文化熟悉度和无障碍问题。\n\n## 适用与局限\n\n适合关键能力需要多位评估者判断、闲聊式面试差异大、经历证据不足等情境。面试叙述可能受记忆和表达影响；工作样本只能覆盖有限任务；结构化不能消除所有偏差。未经试用的自制工具不应称为已验证测评。\n\n## 可结合的视角\n\n可与“胜任力与人才画像”理解行为层级，与“循证判断”控制推断，与“候选人比较与反馈”理解哪些证据真正可比。\n\n## 案例\n\n为了解产品经理的需求取舍，可以给所有候选人同一组匿名客户反馈、资源限制和目标，请其说明优先级与理由。可观察信息整合、权衡和风险意识，而非文档是否精美。这个样本仍不能证明长期执行力，需与经历和其他观察共同理解。\n\n## 来源\n\n- U.S. OPM, *Structured Interviews: A Practical Guide*，完整 36 页。\n- U.S. OPM, *Work Samples and Simulations*，官方页面相关小节。\n- CIPD, *Fair selection: An evidence review*，完整 20 页。\n",
+              "total_characters": 1133
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "ed10450c-0d10-438c-9cb6-5a3b16b8d4fb",
+          "attempt_id": "98eb3fd3-fb59-47a6-a274-7605f8b3fd08",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1562,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "2f4d7d5e-993b-40b0-86e8-94a516543dba",
+              "ref": {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              "text": "---\nid: evidence-informed-judgment\ntitle: 循证判断\nrevision: 2\ndomains: [recruiting, hr-analytics]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 循证判断：让结论强度不超过证据\n\n## 帮助理解什么\n\n本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。\n\n## 核心关系\n\nCEBMa 将循证实践概括为审慎、明确、合理地使用最佳可得证据，并强调可靠性和对当前情境的相关性。它提出 Ask、Acquire、Appraise、Aggregate、Apply、Assess 六个活动。对招聘而言，这不是机械流程，而是提醒：先形成可回答的问题，寻找多类证据，评价质量，整合一致与冲突，再作条件化判断并观察结果。\n\n证据可来自候选人陈述、可核材料、评估观察、组织数据、科学研究、专业经验及相关人员观点。不同来源能互相支持、质疑或澄清。数量多不代表质量高，缺少反证也不等于证实。\n\n## 如何结合证据思考\n\n对每项主张询问来源、与岗位任务的关系、时效、独立性和替代解释。团队成果需要和个人行动、决策权及外部条件分开。表达结论时可以使用“支持”“存在相关线索”“与另一证据冲突”“尚无法判断”等与证据强度相称的语言。\n\n## 让反证、冗余支持和材料缺陷各自发挥作用\n\n多个岗位可能独立支持同一判断，也可能只是复用一段招聘文案。重复文本不能按出现次数累加为更强事实；不同任务提供的支持则可能相互补充。删除一个引用后仍有其他依据支持结论，属于证据冗余，不是分析不依赖证据。要反问的是：承重证据整体失去支持后，结论是否仍被无依据地保留。\n\n主动寻找能收窄结论的材料。某个研究岗说数据生产由专门团队负责，同批却有算法岗同时参与采集与训练，说明前者是局部职责安排；不能推广成所有算法岗都不做数据。存在独立数采岗位可以与自述相互支持，但缺少共同团队或项目标识，仍不能确认它就是所指的支撑团队。\n\n记录缺陷与业务事实要分别解释。正文放错字段但文字完整时，可以恢复对任务的理解并指出原始位置；只有占位符或缺文时，需要补材料。公开岗位没有写某项职责不能证明组织没有该能力，简历没有写某段经历也不能直接认定候选人不具备；同时，未知也不能被包装成已证明匹配。说明当前能判断什么、还缺哪类相关证据。\n\n本节是招聘归档分析的适配总结，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不将这些具体案例归于文献作者。\n\n## 适用与局限\n\n适合候选人证据分析、人才来源假设、画像校准和多人比较。现实中常无法获得理想证据，评价本身也需要判断；循证不会消除价值取舍，也不能把小样本相关性变成因果结论。\n\n## 可结合的视角\n\n几乎可与所有资源结合。它尤其能约束“能力迁移”的乐观推断、“结构化甄选”的分数幻觉，以及比较时将未知当作不满足的倾向。\n\n## 案例\n\n候选人称“主导项目使营收增长 30%”。可确认的只有团队营收和候选人在项目中的任职时间。合理结论不是“已证明商业能力”，而是有相关线索；还需理解基线、个人决策、其他团队贡献、市场变化及候选人能提供的具体产物。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，完整 7 页，重点 pp.1–4。\n- CIPD, *Fair selection: An evidence review*，甄选程序与候选人体验 pp.5–16。\n",
+              "total_characters": 1562
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "089b4aa3-f334-4232-b04c-0fabe24db265",
+          "attempt_id": "1a09d9e3-b560-4af2-8b85-964594e6e312",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1113,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "861a48f8-29e4-4ad4-99ac-823dc02d3c7d",
+              "ref": {
+                "id": "competency-and-profile",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+              },
+              "text": "---\nid: competency-and-profile\ntitle: 胜任力与人才画像\nrevision: 1\ndomains: [recruiting, talent-development]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 胜任力与人才画像：从标签转向可观察行为\n\n## 帮助理解什么\n\n本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。\n\n## 核心关系\n\n能力只有连接到岗位任务才有选择意义。可观察行为可以从情境难度、采取的行动、独立程度、判断质量和产生的结果来描述。不同水平不只是工作年限不同，而可能体现在能处理多大不确定性、需要多少指导、能否识别取舍并复盘。\n\nOPM 的结构化面试指南用不同熟练度的行为例子帮助评估者形成共同参照。它支持“用具体行为解释层级”的原则，但组织仍需让岗位专家结合自己的任务设计例子。行为例子是参照，不是所有合格行为的穷尽清单。\n\n## 如何结合证据思考\n\n先问抽象标签在一个近期关键任务里会让人做出什么不同动作。再检查这些动作是否能被候选人经历、工作样本、结构化问答或其他岗位相关材料观察。既要寻找支持证据，也要注意替代解释：结果可能来自团队、资源或运气，而一次行为也未必代表稳定能力。\n\n## 适用与局限\n\n适合画像条件多、评价者理解不一致、面试反馈停留在“感觉好”等情况。行为锚点可能偏向既有文化和现任者，且观察者仍会产生偏差；因此需要试用、讨论分歧并保留修订可能。\n\n## 可结合的视角\n\n可与“岗位与业务情境”保证能力有任务依据，与“甄选与工作样本”探索观察方式，与“循证判断”控制从一次回答到稳定能力的推断强度。\n\n## 案例\n\n团队把“跨团队影响力”列为画像核心。与其定义为“善于沟通”，可以探索候选人在目标不一致、没有正式权力时，如何识别各方约束、提出共同目标、调整方案并让风险显性化。较高水平可能表现为在复杂冲突中形成可持续机制，但这仍需多个情境的证据支持。\n\n## 来源\n\n- U.S. OPM, *Job Analysis*，任务与胜任力的岗位相关联系。\n- U.S. OPM, *Structured Interviews: A Practical Guide*，行为锚定与熟练度例子 pp.8–12。\n- O*NET Resource Center, *The O*NET Content Model*，Skills、Abilities、Work Activities。\n",
+              "total_characters": 1113
+            },
+            "error": null,
+            "status": "ok"
+          }
+        }
+      ],
+      "name": "interview-plan",
+      "prompt": "继续已选候选人的准确评估。请准备针对本人经历的面试方案，解释需要验证什么，保存 interview_plan。这是未来方案，尚未发生面试。",
+      "selected_refs": [
+        {
+          "kind": "result",
+          "id": "b6315360-75d1-421f-892a-c937a9f8aca8",
+          "revision": "6f8bab98-877d-4a1e-b550-435de39f181b",
+          "sha256": "05ebf5b3a58a3f2d3ea0099bddb04fb9cab5f24a4fb73e746ed42468630b495f"
+        },
+        {
+          "kind": "material",
+          "id": "06598306-e2ec-4e15-88fc-0231e7e710d5:text",
+          "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+          "sha256": "45922fed45d87cbf88f924f7a2906c8869ccac8fc97443efeb5ab591efe6f577"
+        },
+        {
+          "kind": "material",
+          "id": "74aced30-c458-4c9a-8126-666ce655ef3b:text",
+          "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+          "sha256": "9a9e42f6b75e36e825223888011802d05e64e0041fa666b6afe606fdbbb0e285"
+        }
+      ]
+    }
+  ],
+  "provider": {
+    "model": "claude-opus-5",
+    "protocol": "anthropic_messages_sse",
+    "profile_revision": "hr-opus5-20260911",
+    "profile": {
+      "id": "hr-cloud-loop",
+      "revision": "hr-opus5-20260911",
+      "protocol": "anthropic_messages_sse",
+      "model": "claude-opus-5",
+      "tokenizer": "conservative_utf8",
+      "context_window_tokens": 131072,
+      "timeout_seconds": 120.0,
+      "auth_scheme": "bearer"
+    },
+    "profile_fingerprint": "ae65de59d771717a816ee23393b160da1798986b37a0e6139ea1a19befc2c20a",
+    "fingerprint_scope": "allowlisted_nonsecret_profile_fields; endpoint_and_credentials_excluded",
+    "identity_assurance": "provider_self_report_only",
+    "source_configuration": {
+      "status": "read_from_explicit_local_profile",
+      "profile_file_sha256": "303001ff40572037e0b8ec9cbf888b27500c9bf1a919b3e285d897fb8aef21b4"
+    }
+  },
+  "validation_limits": {
+    "generation_calls": 24,
+    "per_call_output": 4096,
+    "per_call_seconds": 120,
+    "per_work": {
+      "model_calls": 32,
+      "total_tokens": 600000,
+      "active_seconds": 900
+    }
+  },
+  "generation_calls": 16
+}

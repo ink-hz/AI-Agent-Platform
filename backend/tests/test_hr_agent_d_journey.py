@@ -132,7 +132,16 @@ class BoundedRealPort:
             observation["duration_seconds"] = time.monotonic() - started
 
 
-def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=False):
+def journey(
+    uploaded,
+    intake,
+    database,
+    tmp_path,
+    *,
+    real=False,
+    without_plan=False,
+    review_history=None,
+):
     from app.hr.models import CreateManualPosition
     from app.hr.repository import HrPositionRepository
     from app.hr_agent.knowledge import KnowledgeReleases
@@ -229,7 +238,11 @@ def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=Fa
         "objects": objects,
         "candidate_initialization": "scripted_model_real_user_HTTP_confirmation",
         "model_boundary": "real_configured_opus5" if real else "scripted",
-        "scenario": "record_without_plan" if without_plan else "full_journey",
+        "scenario": "reviewed_record_retrospective"
+        if review_history
+        else "record_without_plan"
+        if without_plan
+        else "full_journey",
         "stages": [],
     }
     output = None
@@ -321,14 +334,14 @@ def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=Fa
         return found
 
     try:
-        if without_plan:
+        if without_plan or review_history:
             raw_text = content["用户提供的虚构面试原始记录"]
             _, raw_ref = upload_text(uploaded, database, raw_text)
             record = post(
                 "/candidates/" + cid + "/interview-records",
                 {
                     "material_ref": raw_ref,
-                    "title": "虚构原始记录（未提供方案）",
+                    "title": "虚构原始记录",
                     "occurred_at": None,
                     "position_id": pobj["id"],
                     "interview_plan_ref": None,
@@ -341,6 +354,57 @@ def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=Fa
                 + record["record_id"]
             )
             evidence["original_record"] = client.get(record_path).json()
+            if review_history:
+                source = Path(review_history)
+                previous = json.loads((source / "evidence.json").read_text())
+                assert previous["fixture_sha256"] == evidence["fixture_sha256"]
+                refs = [
+                    raw_ref,
+                    source_refs["临时岗位要求"],
+                    source_refs["用户追加的虚构招聘过程记录"],
+                ]
+                copies = []
+                for index, previous_stage in enumerate(previous["stages"], 1):
+                    for result in previous_stage["results"]:
+                        if result["kind"] not in (
+                            "candidate_assessment",
+                            "interview_plan",
+                        ):
+                            continue
+                        path = source / f"stage-{index}-{result['kind']}.md"
+                        text = path.read_text()
+                        assert text == result["body"]
+                        _, ref = upload_text(
+                            uploaded, database, text, "historical-ai-material.txt"
+                        )
+                        refs.append(ref)
+                        copies.append(
+                            {
+                                "original_result_ref": result["ref"],
+                                "copied_material_ref": ref,
+                                "body_sha256": hashlib.sha256(
+                                    text.encode()
+                                ).hexdigest(),
+                            }
+                        )
+                assert len(copies) == 2
+                evidence["historical_AI_copies"] = copies
+                found = stage(
+                    "reviewed-record-retrospective",
+                    "全部为虚构验证。用户提供实际面试原始记录、岗位临时要求和招聘过程说明，另提供两份历史 AI 评估/面试方案的原文副本作为参考。请重新整理实际记录并做本次招聘复盘，分别保存 interview_record 和 retrospective。历史方案是预期安排，不是已发生记录；这些是新工作的成果，不宣称改写原历史成果。",
+                    refs,
+                    [
+                        ("interview_record", "用户自述与实际提问分开保留。"),
+                        ("retrospective", "未提供的记录保持未知；所有基础要求仍保留。"),
+                    ],
+                )
+                for result in found.values():
+                    assert raw_ref in result["source_refs"]
+                assert client.get(record_path).json()["text"] == raw_text
+                evidence["engineering_assertions"] = (
+                    "passed; semantic_quality_requires_separate_review"
+                )
+                return evidence
             found = stage(
                 "record-without-plan",
                 "这是虚构验证。用户仅提供这份实际面试记录，没有提供面试方案。请整理已有记录并保存 interview_record，分清记录陈述和未知。无需先生成方案或等待其他材料。",
@@ -519,6 +583,14 @@ def test_d_validation_port_limits_are_explicit(monkeypatch, extended, seconds, o
         list(port.stream(request))
 
 
+def test_reviewed_record_retrospective_uses_exact_history_copies(
+    uploaded, intake, database, tmp_path
+):
+    history = Path(__file__).parents[2] / "artifacts/2026-09-11-hr-d-journey/run-3"
+    evidence = journey(uploaded, intake, database, tmp_path, review_history=history)
+    assert len(evidence["historical_AI_copies"]) == 2
+
+
 @pytest.mark.skipif(
     not os.getenv("HR_D_REAL_PROFILE_FILE"),
     reason="explicit synthetic D real-model profile and evidence directory required",
@@ -531,4 +603,5 @@ def test_fictional_d_real_model_evidence(uploaded, intake, database, tmp_path):
         tmp_path,
         real=True,
         without_plan=os.getenv("HR_D_WITHOUT_PLAN") == "1",
+        review_history=os.getenv("HR_D_REVIEW_HISTORY"),
     )
