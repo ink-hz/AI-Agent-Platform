@@ -7,10 +7,27 @@
 - **发布负责人：** 下一次附件发布或应用100之前，确认production及存在的preview旧消费者确实停止；只启动修复镜像，不能先迁移再停旧版本。
 - **数据库/存储维护方：** 若发现异常任务，先做状态与字节核对再提出逐项处置；未获授权不重排、删除或恢复。确认实际用户影响后，按组织既有流程处理，不由本手册虚构签收或通知完成。
 
+暂停 `platform-attachments` 会同时停止上传完成后的校验/扫描/派生解析、保留期调度与擦除消费。API 和对象存储仍可接收上传不代表附件能变为 ready；正常任务按既有 `available_at, created_at` 次序留在队列，恢复前后都不批量改状态或重排。服务负责人必须在操作前批准一个写明开始、最晚恢复/重新决策时点的最长窗口，并确认现有隐私请求处理时限能容纳该窗口；仓库没有组织或法定时限数字，操作人必须引用组织现行记录，不能在此临时编造。暂停起计后至少监测各队列状态计数、最老 `available_at` 年龄、上传中数量及磁盘/对象存储容量；到达批准窗口或积压阈值仍未满足恢复门禁时，保持 worker 停止并升级给服务负责人重新决策。
+
 ## 1. 先暂停并保全证据
 
-1. 先以只读检查确认实际版本、权限与队列。发布获批后暂停目标环境的 `platform-attachments` 服务；不要先应用迁移100，旧Worker与新权限并存会打开错配删除路径。
-2. 确认没有该模块的 `worker_runtime all` 进程或容器仍在运行。仅看到停止命令成功不够。
+1. 先以只读检查确认实际版本、权限与队列。发布获批后在云宿主执行以下仓库实际布局对应的命令；production 与 preview 分别执行并留档，不能用一处结果代替另一处。不要先应用迁移100，旧Worker与新权限并存会打开错配删除路径。
+
+   ```bash
+   cd /opt/orbbec-agent-platform
+   COMPOSE=/opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml
+   ENV_FILE=/opt/orbbec-agent-platform/private/platform.env
+   test -f "$COMPOSE" && test ! -L "$COMPOSE"
+   test -f "$ENV_FILE" && test ! -L "$ENV_FILE"
+   /usr/bin/docker compose --env-file "$ENV_FILE" -f "$COMPOSE" stop platform-attachments
+   ```
+
+2. 用以下两个独立检查确认没有该模块容器，也没有脱离 compose 的 `python -m app.attachments.worker_runtime all` 进程。两个命令都必须无输出；仅看到 stop 成功不够。若环境使用其他经批准编排器，用该编排器的等价“期望副本数为0 + 实际进程为0”证据替代。
+
+   ```bash
+   /usr/bin/docker ps --filter label=com.docker.compose.service=platform-attachments --format '{{.ID}} {{.Image}} {{.Status}}'
+   /usr/bin/pgrep -af 'python(3)?[[:space:]]+-m[[:space:]]+app\.attachments\.worker_runtime[[:space:]]+all'
+   ```
 3. 记录当前 release SHA、镜像不可变标识、部署时间、迁移目录清单和 worker 最近日志时间窗。日志输出须脱敏，不复制对象键、密文或材料正文。
 4. 保持 API 对已申请擦除材料的不可读约束。暂停消费不等于撤销擦除申请，也不允许把任务直接改回 queued。
 
@@ -51,6 +68,8 @@
 7. 孤立 running 项在完成逐项状态与字节分类后，使用单独、审计化且幂等的迁移方案处置；它不属于迁移 100，也不能夹带在正常发布中。
 
 仓库的常规 cloud 流程会在服务重建前运行控制库迁移，不能原样用于本事件首次修复，除非已另行证明旧附件 worker停止并持续保持停止。
+
+迁移 100 已应用但修复镜像无法启动时，必须维持 `platform-attachments` 停止。不得通过 `docker compose up`、重启策略、回滚整套 release 或手工运行模块让旧镜像复活，因为新增列权限会使旧的错误领取路径重新可达。恢复顺序固定为：确认所有附件 worker 仍为零；确认候选镜像不可变标识与补丁；核对 100 回执和最小权限；只启动一个修复镜像消费者；执行合成单任务验证并观察相邻任务未领取；核对状态与对象计数；经服务负责人批准后再恢复正常副本数及队列监测。上传处理、解析、保留清扫只随这个模块一起恢复，不能绕过上述门禁先单独启动 `worker_runtime all`。
 
 ## 5. 回滚
 
