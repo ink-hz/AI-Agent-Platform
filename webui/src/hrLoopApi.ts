@@ -232,8 +232,14 @@ export function createHrLoopApi(csrf: string) {
         {},
         key,
       ),
-    knowledge: () =>
-      request<{ release_id: string; items: ResourceItem[] }>("/knowledge"),
+    knowledge: (kind: "method" | "intelligence" = "method") =>
+      request<{ release_id: string; items: ResourceItem[] }>(
+        "/knowledge" + (kind === "intelligence" ? "?kind=intelligence" : ""),
+      ),
+    intelligence: (ref: ExactRef) =>
+      request<{ ref: ExactRef; text: string }>(
+        `/knowledge/${enc(ref.id)}/revisions/${enc(ref.revision)}?sha256=${enc(ref.sha256)}&kind=intelligence`,
+      ),
     method: (ref: ExactRef) =>
       request<{ ref: ExactRef; text: string }>(
         `/knowledge/${enc(ref.id)}/revisions/${enc(ref.revision)}?sha256=${enc(ref.sha256)}`,

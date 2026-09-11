@@ -29,6 +29,7 @@ import {
 } from "../../attachmentApi";
 import { MessageMarkdown } from "../../components/MessageMarkdown";
 import { HrLoopMethodPreview } from "./HrLoopMethodPreview";
+import { HrLoopIntelligencePicker } from "./HrLoopIntelligencePicker";
 import { HrPositionPicker } from "./HrPositionPicker";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
 import "./HrLoopWorkspace.css";
@@ -118,6 +119,10 @@ function Workspace({
     ReturnType<HrLoopApi["configuration"]>
   > | null>(null);
   const [methods, setMethods] = useState<ResourceItem[]>([]);
+  const [intelligence, setIntelligence] = useState<{
+    ref?: ExactRef;
+    request: number;
+  } | null>(null);
   const [method, setMethod] = useState<{
     ref: ExactRef;
     text: string;
@@ -135,6 +140,9 @@ function Workspace({
     initialPositionId ? [{ kind: "position", id: initialPositionId }] : [],
   );
   const [references, setReferences] = useState<ExactRef[]>([]);
+  const [unavailableIntelligence, setUnavailableIntelligence] = useState<
+    string[]
+  >([]);
   const [text, setText] = useState("");
   const [previousInput, setPreviousInput] = useState("");
   const [position, setPosition] = useState<HrPosition | null>(null);
@@ -177,6 +185,9 @@ function Workspace({
   };
   const current = (value: number) => active.current && epoch.current === value;
   const disabled = account.hard_stale_read_only || busy;
+  const hasUnavailableIntelligence = references.some((ref) =>
+    unavailableIntelligence.includes(identity(ref)),
+  );
   function clearPrivate() {
     revision.current = 0;
     setObjects([]);
@@ -186,9 +197,11 @@ function Workspace({
     setPositionResults([]);
     setStandard(null);
     setReferences([]);
+    setUnavailableIntelligence([]);
     setPreviousInput("");
     setWork(null);
     setMethod(null);
+    setIntelligence(null);
     setUploads([]);
   }
   function report(error: unknown) {
@@ -408,7 +421,13 @@ function Workspace({
     );
   }
   async function submit() {
-    if (!text.trim() || !configuration || disabled) return;
+    if (
+      !text.trim() ||
+      !configuration ||
+      disabled ||
+      hasUnavailableIntelligence
+    )
+      return;
     const content = { text: text.trim(), objects, references };
     if (work) {
       const body = {
@@ -620,6 +639,15 @@ function Workspace({
               <small>{m.description}</small>
             </button>
           ))}
+          <h2>公开研究</h2>
+          <button
+            type="button"
+            onClick={() =>
+              setIntelligence((old) => ({ request: (old?.request ?? 0) + 1 }))
+            }
+          >
+            公司与专题情报
+          </button>
         </aside>
         <section className="hr-loop-conversation" aria-label="HR Agent 对话">
           <header>
@@ -685,6 +713,29 @@ function Workspace({
                 带此方法讨论
               </button>
             </section>
+          )}
+          {intelligence && (
+            <HrLoopIntelligencePicker
+              key={intelligence.request}
+              api={api}
+              initialRef={intelligence.ref}
+              disabled={disabled}
+              onClose={() => setIntelligence(null)}
+              onAccessError={report}
+              onAvailability={(ref, available) =>
+                setUnavailableIntelligence((old) =>
+                  available
+                    ? old.filter((value) => value !== identity(ref))
+                    : old.includes(identity(ref))
+                      ? old
+                      : [...old, identity(ref)],
+                )
+              }
+              onSelect={(ref) => {
+                addReference(ref);
+                setNotice("情报已加入本次参考。");
+              }}
+            />
           )}
           {work && (
             <section className="hr-loop-status" aria-label="工作状态">
@@ -907,18 +958,34 @@ function Workspace({
               <div className="hr-loop-references" aria-label="本次参考">
                 {references.map((r, i) => (
                   <span key={identity(r)}>
-                    {methods.find((m) => identity(m.ref) === identity(r))
-                      ?.title ??
-                      (r.kind === "material"
-                        ? r.id.endsWith(":text")
-                          ? "材料正文"
-                          : "材料原件"
-                        : r.kind === "method"
-                          ? "已选方法"
-                          : r.kind === "result"
-                            ? "已存成果"
-                            : "已选参考")}{" "}
-                    {i + 1}
+                    {r.kind === "intelligence" ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setIntelligence((old) => ({
+                            ref: r,
+                            request: (old?.request ?? 0) + 1,
+                          }))
+                        }
+                      >
+                        已选情报 {i + 1}
+                      </button>
+                    ) : (
+                      <>
+                        {methods.find((m) => identity(m.ref) === identity(r))
+                          ?.title ??
+                          (r.kind === "material"
+                            ? r.id.endsWith(":text")
+                              ? "材料正文"
+                              : "材料原件"
+                            : r.kind === "method"
+                              ? "已选方法"
+                              : r.kind === "result"
+                                ? "已存成果"
+                                : "已选参考")}{" "}
+                        {i + 1}
+                      </>
+                    )}
                     <button
                       type="button"
                       disabled={disabled}
@@ -934,6 +1001,11 @@ function Workspace({
                   </span>
                 ))}
               </div>
+            )}
+            {hasUnavailableIntelligence && (
+              <p role="alert">
+                本次参考中有不可读取的情报，请重试读取或移除后继续。
+              </p>
             )}
             {uploads.map((u, i) => (
               <div key={i} className="hr-loop-upload">
@@ -990,6 +1062,7 @@ function Workspace({
                 disabled={
                   disabled ||
                   !configuration ||
+                  hasUnavailableIntelligence ||
                   !text.trim() ||
                   Boolean(workId && !work) ||
                   work?.state === "waiting_budget"

@@ -166,6 +166,48 @@
   justify-content: space-between;
   align-items: center;
 }
+.hr-loop-intelligence-search {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.hr-loop-intelligence-search label {
+  flex: 1;
+  min-width: 150px;
+  font-size: 13px;
+}
+.hr-loop-intelligence-search input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #c5d5cd;
+  border-radius: 6px;
+}
+.hr-loop-intelligence-list {
+  list-style: none;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.hr-loop-intelligence-list li {
+  margin: 10px 0;
+}
+.hr-loop-intelligence-list small {
+  display: block;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.hr-loop-intelligence-meta {
+  font-size: 13px;
+  color: #526b62;
+}
+.hr-loop-intelligence article {
+  border-top: 1px solid #cbded3;
+  padding-top: 12px;
+  overflow-wrap: anywhere;
+}
 .hr-loop-composer {
   border: 1px solid #bad0c2;
   border-radius: 12px;

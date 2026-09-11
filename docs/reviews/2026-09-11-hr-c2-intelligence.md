@@ -63,3 +63,32 @@ HR_TEST_INTELLIGENCE_BUNDLE='/Users/neo/Library/Application Support/OrbbecAI-Age
 仅复制 Agent Markdown，不把 `analysis.json` 的完整模型请求、原始证据归档、PDF/XLSX 自动开放为模型工具。用户可看到正文中的源链接和哈希；底层证据全文交付不在此子任务完成。
 
 生产发布、保留期/清除规则和页面资料时点/范围验收仍未完成。未进行自动清除；W7 工程证据不关闭这些交付条件。
+
+## C2 工作台情报入口：实施前设计
+
+沿用工作台的方法预览样式，新建独立 `HrLoopIntelligencePicker`；在侧栏提供“公司与专题情报”入口，在对话区域展开目录与正文，不修改上传或候选人表单。目录可搜索与重新加载，来源为已发布情报API，不预置公司/专题名单。展示目录描述；正文预览从实际返回的原文元数据展示研究范围、资料时间与覆盖，并复用安全Markdown呈现。
+
+hrLoopApi 增加情报目录类型参数和精确情报读取方法；发送 revision/sha，校验响应ref与请求完全一致。选择按钮只在准确正文读取成功后可用，将同一ExactRef加入工作台references。已选情报标签可重新打开原引用；刷新目录只更新目录，不改变已选正文或references。旧引用删除/暂不可读在局部预览明确提示并保留选择供用户移除，401/403仍交由工作台处理当前身份失效。旧引用不按同id匹配最新目录。
+
+仅修改webui与本记录，先写API/交互失败测试，再最小实现；组件验证覆盖B1选择/B2目录、精确正文、不可用、迟到响应、恢复已有输入。生产、真实浏览器与保留期授权不在本子任务执行。
+
+### 前端实现与验证结果
+
+新增 `webui/src/workspaces/hr/HrLoopIntelligencePicker.tsx` 及独立组件测试；hrLoopApi 增加 `knowledge("intelligence")` 和 `intelligence(ref)`，默认方法调用不变。工作台仅新增情报入口、预览、已选引用再读和不可用引用的发送保护；原上传表单未修改。
+
+目录、正文请求各有独立序号与卸载检查；迟到B1响应不能覆盖用户已明确打开的另一份报告。正文时间取实际返回正文的 observed_at，使用 time 元素保留原时区字符串并按浏览器时区显示；范围/覆盖用中文标签呈现，缺少元数据时明确未提供/见正文，不用当前目录推测旧报告时间。前端不显示 Bundle UUID、正文hash或新增“版本管理”控件；原始Markdown及完整引用保持原样。
+
+已选B1与当前B2按完整ExactRef区分。刷新目录不改正文或本次references；响应若返回另一个ref，按不可用处理。410/503在情报预览局部提示，保留未发送草稿和旧引用供移除/重试；已知不可读取且仍选中的引用阻止发送，明确移除或重试成功后解除。401/403继续使用工作台原有身份/权限失效处理。
+
+先观察API方法缺失、工作台入口缺失和不可读旧引用仍可发送的失败，再实现对应行为。最终验证：
+
+```bash
+npm test -- src/hrLoopApi.test.ts \
+  src/workspaces/hr/HrLoopIntelligencePicker.test.tsx \
+  src/workspaces/hr/HrLoopWorkspace.test.tsx
+./node_modules/.bin/tsc -b
+```
+
+结果：**37 passed**，TypeScript检查通过。覆盖精确kind/revision/hash请求、源正文范围/时间/未知项、B2目录刷新保留B1、410/503不替换、异常响应ref、403撤权、迟到响应、真实工作台提交原引用、恢复旧输入、不可用引用保留草稿并阻止发送、手动移除恢复发送。
+
+这组为Vitest/jsdom组件与客户端协议验证，fetch/业务API为测试替身；不称为浏览器布局验收、生产验收或真实HR研究质量验收。前端入口与元数据呈现已实现，但真实浏览器最终验收及生产保留期/新版语义资产核对仍需root统一处理。本次未启动站点、访问网络或部署。

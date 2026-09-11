@@ -3,6 +3,32 @@ import { createHrLoopApi, HrLoopError } from "./hrLoopApi";
 
 afterEach(() => vi.unstubAllGlobals());
 describe("HR loop API", () => {
+  it("reads intelligence by explicit kind and exact revision/hash", async () => {
+    const fetcher = vi
+      .fn()
+      .mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ items: [] }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    const api = createHrLoopApi("csrf");
+    await api.knowledge("intelligence");
+    await api.intelligence({
+      kind: "intelligence",
+      id: "company:example",
+      revision: "b1",
+      sha256: "a".repeat(64),
+    });
+    expect(fetcher.mock.calls[0][0]).toContain("/knowledge?kind=intelligence");
+    const url = new URL(fetcher.mock.calls[1][0], "https://local.test");
+    expect(url.pathname).toContain("/knowledge/company%3Aexample/revisions/b1");
+    expect(url.searchParams.get("kind")).toBe("intelligence");
+    expect(url.searchParams.get("sha256")).toBe("a".repeat(64));
+    expect(fetcher.mock.calls[1][1]).toMatchObject({
+      credentials: "include",
+      cache: "no-store",
+    });
+  });
   it("submits explicit references and retains caller mutation identity", async () => {
     const fetcher = vi
       .fn()

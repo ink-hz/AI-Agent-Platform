@@ -49,6 +49,7 @@ function api(overrides = {}) {
       budget_limits: work.budget.limits,
     }),
     knowledge: vi.fn().mockResolvedValue({ release_id: "release", items: [] }),
+    intelligence: vi.fn().mockRejectedValue(new HrLoopError(410, "reference_unavailable", {})),
     threads: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
     work: vi.fn().mockResolvedValue(work),
     input: vi.fn().mockResolvedValue({
@@ -945,4 +946,90 @@ it("labels real parsed material refs and can add the exact current standard", as
   await type("继续");
   await act(async () => button("发送").click());
   expect(client.append.mock.calls[0][1].references).toContainEqual(standardRef);
+});
+
+it("selects a published intelligence body into the submitted input", async () => {
+  const intelligenceRef = { ...ref, kind: "intelligence" };
+  const client = api({
+    knowledge: vi
+      .fn()
+      .mockImplementation(async (kind?: string) => ({
+        release_id: "publication",
+        items:
+          kind === "intelligence"
+            ? [
+                {
+                  ref: intelligenceRef,
+                  title: "公司研究",
+                  description: "公开资料",
+                  objects: [{ kind: "company", id: "example" }],
+                },
+              ]
+            : [],
+      })),
+    intelligence: vi
+      .fn()
+      .mockResolvedValue({
+        ref: intelligenceRef,
+        text: "---\nscope: company\nobserved_at: 2026-09-06T08:00:00+00:00\n---\n# 公司研究\n公开证据与未知项。",
+      }),
+  });
+  await act(async () =>
+    root.render(<HrLoopWorkspace account={account} api={client as never} />),
+  );
+  await act(async () => button("公司与专题情报").click());
+  await act(async () => button("阅读：公司研究").click());
+  await act(async () => button("带此情报讨论").click());
+  await type("结合这份研究讨论");
+  await act(async () => button("发送").click());
+  expect(client.submit.mock.calls[0][0].references).toEqual([intelligenceRef]);
+});
+
+it("reopens an old restored intelligence ref and retains it when unavailable", async () => {
+  const old = { ...ref, kind: "intelligence", revision: "b1" };
+  const latest = { ...old, revision: "b2", sha256: "b" };
+  const client = api({
+    input: vi
+      .fn()
+      .mockResolvedValue({
+        input_revision: 2,
+        text: "old",
+        objects: [],
+        references: [old],
+      }),
+    knowledge: vi
+      .fn()
+      .mockImplementation(async (kind?: string) => ({
+        release_id: "publication",
+        items:
+          kind === "intelligence"
+            ? [{ ref: latest, title: "新研究", description: "" }]
+            : [],
+      })),
+    intelligence: vi
+      .fn()
+      .mockRejectedValue(new HrLoopError(410, "reference_unavailable", {})),
+  });
+  await act(async () =>
+    root.render(
+      <HrLoopWorkspace
+        account={account}
+        api={client as never}
+        initialWorkId="w"
+      />,
+    ),
+  );
+  await type("未提交的问题");
+  await act(async () => button("已选情报 1").click());
+  expect(client.intelligence).toHaveBeenCalledWith(old);
+  expect(el.textContent).toContain("这份情报已不可用");
+  expect(el.querySelector("textarea")?.value).toBe("未提交的问题");
+  expect(button("已选情报 1")).toBeDefined();
+  expect(button("发送").disabled).toBe(true);
+  expect(client.intelligence).not.toHaveBeenCalledWith(latest);
+  await act(async () =>
+    el.querySelector<HTMLButtonElement>('[aria-label="移除参考 1"]')!.click(),
+  );
+  expect(el.querySelector('[aria-label="本次参考"]')).toBeNull();
+  expect(button("发送").disabled).toBe(false);
 });
