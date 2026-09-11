@@ -1,0 +1,202 @@
+{
+  "capture_program_sha256": "70a9096ef21cb10ea6c977a34ac7823738a67c21d35502db9b46f45c4276c462",
+  "container_image": "sha256:ee24975e38f8ef51cac4e6036aa92c42e46d508c91615773eeba181ee38eb1b1",
+  "environment": "production_attachment_maintenance",
+  "inventory": {
+    "assets": [
+      {
+        "name": "old_positions",
+        "relation": "platform_hr.positions",
+        "status": "query_error"
+      },
+      {
+        "name": "old_candidates",
+        "relation": "platform_hr.candidates",
+        "status": "query_error"
+      },
+      {
+        "name": "old_candidate_relations",
+        "relation": "platform_hr.position_candidates",
+        "status": "query_error"
+      },
+      {
+        "name": "old_candidate_documents",
+        "relation": "platform_hr.candidate_documents",
+        "status": "query_error"
+      },
+      {
+        "name": "old_candidate_drafts",
+        "relation": "platform_hr.candidate_drafts",
+        "status": "query_error"
+      },
+      {
+        "name": "old_parse_attempts",
+        "relation": "platform_hr.candidate_draft_processing_attempts",
+        "status": "query_error"
+      },
+      {
+        "name": "new_candidates",
+        "relation": "platform_hr_agent.candidates",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_candidate_relations",
+        "relation": "platform_hr_agent.candidate_positions",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_candidate_documents",
+        "relation": "platform_hr_agent.candidate_documents",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_candidate_intake",
+        "relation": "platform_hr_agent.candidate_intake_items",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_material_parses",
+        "relation": "platform_hr_agent.material_parses",
+        "status": "missing_table"
+      },
+      {
+        "groups": [
+          {
+            "count": 2,
+            "state": {
+              "source_kind": "user_input",
+              "state": "uploading"
+            }
+          }
+        ],
+        "name": "attachments",
+        "relation": "platform_attachments.attachments",
+        "scope": "complete",
+        "status": "ok",
+        "total": 2
+      },
+      {
+        "name": "old_position_artifacts",
+        "relation": "platform_hr.position_artifacts",
+        "status": "query_error"
+      },
+      {
+        "name": "old_artifact_versions",
+        "relation": "platform_attachments.artifact_versions",
+        "status": "unreadable"
+      },
+      {
+        "name": "old_candidate_analyses",
+        "relation": "platform_hr.candidate_analysis_versions",
+        "status": "query_error"
+      },
+      {
+        "name": "old_context_versions",
+        "relation": "platform_hr.position_context_versions",
+        "status": "query_error"
+      },
+      {
+        "name": "old_result_projections",
+        "relation": "platform_hr.hr_task_result_projections",
+        "status": "query_error"
+      },
+      {
+        "name": "old_result_intents",
+        "relation": "platform_control.result_artifact_intents",
+        "status": "unreadable"
+      },
+      {
+        "name": "new_results",
+        "relation": "platform_hr_agent.results",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_result_revisions",
+        "relation": "platform_hr_agent.result_revisions",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_standards",
+        "relation": "platform_hr_agent.standards",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_standard_revisions",
+        "relation": "platform_hr_agent.standard_revisions",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_works",
+        "relation": "platform_hr_agent.works",
+        "status": "missing_table"
+      },
+      {
+        "name": "old_execution_jobs",
+        "relation": "platform_control.execution_jobs",
+        "status": "unreadable"
+      },
+      {
+        "name": "old_hr_queued_age",
+        "relation": "platform_control.execution_jobs",
+        "status": "unreadable"
+      },
+      {
+        "name": "active_hr_workers",
+        "relation": "platform_control.execution_workers",
+        "status": "unreadable"
+      },
+      {
+        "name": "old_hr_turn_attempts",
+        "relation": "platform_control.turn_attempts",
+        "status": "unreadable"
+      },
+      {
+        "name": "new_candidate_position_refs",
+        "relation": "platform_hr_agent.candidate_positions",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_result_link_refs",
+        "relation": "platform_hr_agent.result_links",
+        "status": "missing_table"
+      },
+      {
+        "name": "new_reference_edges",
+        "relation": "platform_hr_agent.reference_edges",
+        "status": "missing_table"
+      },
+      {
+        "name": "intelligence_bundles",
+        "relation": "platform_hr.intelligence_bundles",
+        "status": "query_error"
+      },
+      {
+        "name": "intelligence_jobs",
+        "relation": "platform_hr.intelligence_bundle_jobs",
+        "status": "query_error"
+      },
+      {
+        "name": "intelligence_current",
+        "relation": "platform_hr.intelligence_current_publication",
+        "status": "query_error"
+      }
+    ],
+    "diagnostics": {
+      "missing_column": 0,
+      "missing_table": 13,
+      "query_error": 13,
+      "unreadable": 6
+    },
+    "schema_version": 1,
+    "transaction": "read_only_rolled_back",
+    "transaction_read_only": true
+  },
+  "maintenance_identity_verified": true,
+  "metadata_transaction_read_only": true,
+  "migration_ledger_readable": false,
+  "migrations": [],
+  "observed_at": "2026-09-11T10:41:55.162597+00:00",
+  "query_source_sha256": "4b35db553bdbd1d8a7346ff09db1f4d7fae26d3207add3bf0b77e06ddd6eed30",
+  "release_sha": "03e60f83cddcfffe704cce627c1ca62d29da0327",
+  "scope": "fixed aggregate SELECTs and schema metadata; no row exports, content reads, model calls, migrations or service actions"
+}

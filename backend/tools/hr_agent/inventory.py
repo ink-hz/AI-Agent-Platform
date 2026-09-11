@@ -7,15 +7,14 @@ content fields and always rolls its transaction back.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import stat
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
 import psycopg
-from psycopg import sql
 
 
 @dataclass(frozen=True)

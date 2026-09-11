@@ -3,9 +3,8 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from psycopg.conninfo import conninfo_to_dict, make_conninfo
-
 from hr_agent_support import hr_agent_database
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 
 @pytest.fixture(scope="module")

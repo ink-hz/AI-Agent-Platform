@@ -1,0 +1,14 @@
+{
+  "environment": "production_postgres_four_counts",
+  "observed_at": "2026-09-11T10:45:40.523438+00:00",
+  "query_sha256": "dcc26a06f89471c8e45da52a8dfe1693fcc4ac378108a5af66a4c508ca43cf98",
+  "result": {
+    "intelligence_bundles": 2,
+    "intelligence_current": 1,
+    "intelligence_jobs": 6874,
+    "old_result_projections": 0,
+    "role_verified": true,
+    "transaction_read_only": true
+  },
+  "scope": "four fixed count-only SELECTs via existing database administrator; no role grants or migrations"
+}

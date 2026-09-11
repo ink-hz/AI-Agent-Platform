@@ -1,0 +1,8 @@
+{
+  "status": "failed",
+  "remote_exit_code": 1,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "scope": "ephemeral read-only container; four fixed aggregate queries; no migration or grants",
+  "cause": "not established by scrubbed response; bootstrap source revokes migrator owner membership at rest",
+  "subsequent_evidence": "production-four-counts.json"
+}

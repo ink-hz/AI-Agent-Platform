@@ -1,0 +1,439 @@
+{
+  "baseline": "6a9cef6",
+  "source_worktree": "hr-intelligence-experience",
+  "source_directory": "docs/research/hr-intelligence/analysis",
+  "referenced_archive_id": "2ed2262c-63a0-47e5-996c-7d00eb0be1a0",
+  "files": [
+    {
+      "path": "README.md",
+      "exists": true,
+      "bytes": 7234,
+      "sha256": "3272253d80f8d62edd39f03e5bcbb1f9efa76939c0c0aa213d3fd06b1fcefebb",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "agibot/README.md",
+      "exists": true,
+      "bytes": 2983,
+      "sha256": "65c75b17f501a0a9ed0af354d4b4ad55007e368ab69dbc28670e6e0e5fac31b2",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "agibot/q10-gaps-boundaries.md",
+      "exists": true,
+      "bytes": 10220,
+      "sha256": "93ae39bd91d398fd2d32b8c318b0b3af2ab2ef937ebbde440dcf099e445ad497",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "agibot/q11-internal-consistency.md",
+      "exists": true,
+      "bytes": 12342,
+      "sha256": "4ed66c7e9463e1dc2218bf67bd26a762807c269b7b20f3e6aa0c009168f9d2c7",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "agibot/q3-requirement-strength.md",
+      "exists": true,
+      "bytes": 9607,
+      "sha256": "d390eb42056c355a5e2db726c3b6daae0bf17b2b492fad55cd76d72662400df9",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "agibot/q4-delivery-stages.md",
+      "exists": true,
+      "bytes": 8467,
+      "sha256": "ae97512c60396d3a0cf8a309a38fc81586bc4d3016b84696ecac7a7e79e49c72",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "agibot/q5-customers-applications.md",
+      "exists": true,
+      "bytes": 10615,
+      "sha256": "5d7f7ff41533098bd3e4e721c580bae9026d9912c4efb377f55c0fb95e2e334f",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "agibot/q9-technical-intent.md",
+      "exists": true,
+      "bytes": 13707,
+      "sha256": "9bd0bd0f7cdfb44f8db8dfbdd834667082495baa15585ca76767bc58fbbc7803",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "agibot/read-ledger.md",
+      "exists": true,
+      "bytes": 4051,
+      "sha256": "bae158ac515c9fe28cce2f1b8ba33f7b1d7e0722735f037e4974f194a36e86e2",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "bambu-lab/README.md",
+      "exists": true,
+      "bytes": 1972,
+      "sha256": "ad990d11d61912cc33c46be45778e51abee8b6667f450c9f8c1931114f0174c1",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "bambu-lab/q10-gap-boundaries.md",
+      "exists": true,
+      "bytes": 10472,
+      "sha256": "5aa1bfa26aebabccd199b70144c6f59b4499c6140c9c48ab16e06134a972e59c",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "bambu-lab/q11-internal-consistency.md",
+      "exists": true,
+      "bytes": 11438,
+      "sha256": "d0fdb93d76842fecf51dcf0da6d7c2ca6f7d0234ee8535b021f5a011ff344674",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "bambu-lab/q3-requirement-strength.md",
+      "exists": true,
+      "bytes": 9655,
+      "sha256": "10bc9ffd7c70fd5ade962c11760d18546a061900a75c0a3eadc81dee218a93cc",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "bambu-lab/q4-delivery-stage.md",
+      "exists": true,
+      "bytes": 9903,
+      "sha256": "39dcc7e0301d36e839848fae47c5955a1e30427744522de1b95f3989a34b95b0",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "bambu-lab/q5-customer-applications.md",
+      "exists": true,
+      "bytes": 9420,
+      "sha256": "bfa6a6feded5a45144dd7dea2c0695b63152987c6f39eaca622db3db708100a6",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "bambu-lab/q9-technical-intent.md",
+      "exists": true,
+      "bytes": 12000,
+      "sha256": "0202bc23ba891bd31af2f17696c1dc224b203b6df46c0b2fa4e5e8a83743b538",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "comparisons/q12-reconstruction-handoffs.md",
+      "exists": true,
+      "bytes": 8642,
+      "sha256": "3030dda47387372572987529e20cc8ac895df5a80d527743f9fbdf549eb9a0fd",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "comparisons/q8-creator-commerce.md",
+      "exists": true,
+      "bytes": 6447,
+      "sha256": "16013f9886c28f7125ce686c189a6b060b2c8da591acac65ac51082cd41179a4",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "evidence-index.md",
+      "exists": true,
+      "bytes": 39048,
+      "sha256": "d7181cd8164050558afbf8fd4bf30a47813bf127723e049caf5de1c39d841047",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "hannah-design-inputs.md",
+      "exists": true,
+      "bytes": 4856,
+      "sha256": "a499e73a61af515413506c7912de9c87e2772b5227b9aa54fef44f1735999967",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "hesai/README.md",
+      "exists": true,
+      "bytes": 2023,
+      "sha256": "7ab7216d55da29299fa72255311dbf7dc3358e73816b98144cc27fdc9b5b77f0",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "hesai/citation-validation.md",
+      "exists": true,
+      "bytes": 1817,
+      "sha256": "64c3dc1ea47925de7fa357737b280aac05dec5aa6f61994d24a90e9e49f3f45d",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "hesai/q10-gaps-responsibility-boundaries.md",
+      "exists": true,
+      "bytes": 7228,
+      "sha256": "a3de2dfbd3d4ae48822ba7e7986ed23353fe6ef041e2bd367beeef3e7b53af89",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "hesai/q11-internal-consistency.md",
+      "exists": true,
+      "bytes": 7999,
+      "sha256": "1b2f9e8c538f9319014a3ad1feb75dae8720533954bbeedc75c54c1fdd6fc1db",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "hesai/q3-task-requirements.md",
+      "exists": true,
+      "bytes": 9545,
+      "sha256": "14aa56fdb517b0ecce30900b53b1340c72b4aaf9ad3369ef16f65bceca6d8636",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "hesai/q4-product-stages.md",
+      "exists": true,
+      "bytes": 8309,
+      "sha256": "2b0d3aed2cd7eb2033b0222f0e2f908ab1a3a5ed9a47186292673f7533b292a5",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "hesai/q5-customers-applications.md",
+      "exists": true,
+      "bytes": 8105,
+      "sha256": "cb5ab43c93161fbf8d61b41fff20921745eaeaed6d27c91b2c9f5c7b24a5ff26",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "hesai/q9-technical-intent.md",
+      "exists": true,
+      "bytes": 12489,
+      "sha256": "960e36385631963268743529703d2e64ab3a7c419855fc1f7a2dc8d55cad8cad",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "hesai/read-ledger.md",
+      "exists": true,
+      "bytes": 5285,
+      "sha256": "b138316e41737e2d2fff2e1406341b7b91697d4e2eaf93c50d90f4b0b589d907",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "insta360/README.md",
+      "exists": true,
+      "bytes": 1672,
+      "sha256": "48754ee04a801cc6173a11a53651b729e5405c9b79dedea4f65c8eca5924a9bd",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "insta360/q10-unproven-gaps-and-responsibilities.md",
+      "exists": true,
+      "bytes": 6992,
+      "sha256": "91208585f94c7478f83b4502f9750fe1cbd57cb96adda4f7006649a4fb13ad9e",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "insta360/q11-internal-mismatches.md",
+      "exists": true,
+      "bytes": 8705,
+      "sha256": "0200270fe6faf67aa9db78325bd462456dc9a677314961340e7d7131c509bf8e",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "insta360/q3-requirement-strength.md",
+      "exists": true,
+      "bytes": 7867,
+      "sha256": "deaf35d733b0e6d2fff32af5837d010ee2eb0e654db9ef5d6ab99a585133646e",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "insta360/q4-delivery-stages.md",
+      "exists": true,
+      "bytes": 7010,
+      "sha256": "a5be6835ae03826bcee55914b08f93c17b991243669172cccafc0507346a2d98",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "insta360/q5-customers-and-scenarios.md",
+      "exists": true,
+      "bytes": 8036,
+      "sha256": "07cc3007e1352aa1524be78b12a12ca630250d1e2123a07d7555aa3f296126e2",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "insta360/q9-technical-intent.md",
+      "exists": true,
+      "bytes": 11317,
+      "sha256": "743cde8ad03719bea61afb55e1e7c509b01e5f6429c91321bd390c1817ed92ad",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q1-robosense-work-division.md",
+      "exists": true,
+      "bytes": 15566,
+      "sha256": "6facd3718c3d269c428fbd3821febaa2a0cc81c61611d47f22c1ae308cb6788a",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q10-unproven-capability-gaps.md",
+      "exists": true,
+      "bytes": 9867,
+      "sha256": "0dcccfc1b754cb510bac1ab52f75e1747a9651eebaea5c01a941b08926f77236",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q11-internal-job-mismatches.md",
+      "exists": true,
+      "bytes": 13344,
+      "sha256": "144162faa5ec07921639789c7b885b330d2da105de81e39687bbfdfb14af6a21",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q12-reconstruction-approaches.md",
+      "exists": true,
+      "bytes": 6899,
+      "sha256": "ad14fb6ee94cb09a202dd072803f117b67cd8653f1ac9868c7a096b477a66780",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q2-responsibility-and-level.md",
+      "exists": true,
+      "bytes": 4853,
+      "sha256": "4dc21925154dfc6c6127e68fb537a1754e9f9981c52a77624c838b66004af59e",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q3-requirements-with-task-basis.md",
+      "exists": true,
+      "bytes": 4298,
+      "sha256": "43f22554885034c2bf31f262b3365967c12b227de2f53e2c4f63eb7ca5a427c4",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q4-product-stage-and-delivery.md",
+      "exists": true,
+      "bytes": 3777,
+      "sha256": "59884b58d35e93893691c045407013e902186fda494f1cd982ea5fa87271c670",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q5-customers-and-workflows.md",
+      "exists": true,
+      "bytes": 7553,
+      "sha256": "743ed02042b921ede618b3062aa0e76aa5673053e2670e2caf56f9613034363f",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q6-salary-and-responsibility.md",
+      "exists": true,
+      "bytes": 7969,
+      "sha256": "1fd75729814f7406d819d3ba34e58d2991bb5f61f69e64f7a6a15e6b67d5b04f",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q7-hot-and-continuing-recruitment.md",
+      "exists": true,
+      "bytes": 5830,
+      "sha256": "e2edc2871c863b0642f3426143896ba8900b4b02a7dc9aa516e5ab559ee4ad51",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q8-gtm-responsibility-comparison.md",
+      "exists": true,
+      "bytes": 4801,
+      "sha256": "1ba9ccb47c192996e4ef532d4e539025b498abfde44f3f43fe703e2cca33ce36",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "q9-technical-intent.md",
+      "exists": true,
+      "bytes": 15040,
+      "sha256": "0bb2abe4ecc6f56686f664e617556c298766d32b184da50fe8677af3405e6c9e",
+      "matches_C_inventory": true,
+      "kind": "analysis"
+    },
+    {
+      "path": "review-notes.md",
+      "exists": true,
+      "bytes": 5454,
+      "sha256": "32d304932ccd9edf71bce8bb36a67aefa4513cfadbee05b1e9f5ee3d6ef9f9ef",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "review-revisions.md",
+      "exists": true,
+      "bytes": 3229,
+      "sha256": "401d4edb64c1b26360e92680ed85079ff831101b7ffbfa4a6f9a24d8e908b2b0",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "text-led-evidence-index.md",
+      "exists": true,
+      "bytes": 68443,
+      "sha256": "040687f8c4cb6979718ba4dc4b251680f3127aa1b44dcb348dd8acee03ac971b",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "text-led-expansion.md",
+      "exists": true,
+      "bytes": 7991,
+      "sha256": "c2a0f230d3985fce30570d05cc51e5f800f0a439709f84f791390495c70d2a94",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    },
+    {
+      "path": "text-led-review-revisions.md",
+      "exists": true,
+      "bytes": 3673,
+      "sha256": "c875ceef554d01b3bc880ee3bba301dfccd9a50294fc8442554ae64c6489c096",
+      "matches_C_inventory": true,
+      "kind": "index_or_review"
+    }
+  ],
+  "counts": {
+    "files": 53,
+    "analysis": 38,
+    "missing": 0,
+    "different_from_C": 0
+  },
+  "scope": "local public file identity only; no copy or publication; not semantic approval"
+}
