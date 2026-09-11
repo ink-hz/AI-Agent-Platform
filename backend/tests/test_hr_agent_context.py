@@ -936,6 +936,9 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
     settings = make_hr_settings(tmp_path / "settings")
     settings = replace(
         settings,
+        # Deliberately exercise legacy/small-window hard-pressure compaction;
+        # production configuration loading now rejects this window.
+        provider_profile={**settings.provider_profile, "context_window_tokens": 32768},
         budget_profile={
             **settings.budget_profile,
             "input_target_tokens": 20000,

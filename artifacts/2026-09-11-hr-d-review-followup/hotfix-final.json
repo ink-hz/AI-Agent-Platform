@@ -1,0 +1,7 @@
+{
+  "base": "2bddc77f49bb823bfc4d0271605990eb8bebad46",
+  "patch_sha256": "58504d4bce3802ca063bd9e08d32b6dd4256575d80fc31f9307815c827f5685b",
+  "apply_check": true,
+  "all_five_files_exact": true,
+  "test_exit_code": 0
+}

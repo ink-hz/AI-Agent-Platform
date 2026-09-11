@@ -1,0 +1,14 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_config_reserves_full_unicode_read_capacity_before_start[28672] ______
+backend/tests/test_hr_agent_foundation.py:191: in test_config_reserves_full_unicode_read_capacity_before_start
+    with pytest.raises(ValueError, match='^HR configuration invalid$'):
+E   Failed: DID NOT RAISE ValueError
+_____ test_config_reserves_full_unicode_read_capacity_before_start[88191] ______
+backend/tests/test_hr_agent_foundation.py:191: in test_config_reserves_full_unicode_read_capacity_before_start
+    with pytest.raises(ValueError, match='^HR configuration invalid$'):
+E   Failed: DID NOT RAISE ValueError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_foundation.py::test_config_reserves_full_unicode_read_capacity_before_start[28672]
+FAILED backend/tests/test_hr_agent_foundation.py::test_config_reserves_full_unicode_read_capacity_before_start[88191]
+2 failed, 1 passed, 44 deselected in 0.18s

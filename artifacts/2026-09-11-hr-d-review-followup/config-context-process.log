@@ -1,0 +1,62 @@
+...................................................................F.... [ 81%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+___________ test_proactive_summary_preserves_sources_and_checkpoint ____________
+
+repo = <app.hr_agent.repository.HrAgentRepository object at 0x104462150>
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9321/test_proactive_summary_preserv0')
+
+    def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
+        from dataclasses import replace
+    
+        from hr_agent_support import make_hr_settings
+    
+        settings = make_hr_settings(tmp_path / "settings")
+        settings = replace(
+            settings,
+            budget_profile={
+                **settings.budget_profile,
+                "input_target_tokens": 20000,
+                "input_trigger_tokens": 24000,
+            },
+        )
+        repo.settings = settings
+        root = tmp_path / "release"
+        ref = publication(root)
+        resources = ResourceReader(
+            repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+        )
+        repo.scope_validator = resources.validate_scope
+        owner = uuid4()
+        position = {"kind": "position", "id": str(uuid4())}
+        work = repo.submit(
+            owner,
+            request(
+                text="继续当前获准研究目标",
+                objects=[position],
+                references=[ref],
+                budget_profile="test",
+            ),
+            uuid4(),
+        )
+        fence = repo.claim("w", 60)
+        read_attempt = repo.prepare_model(fence, model_context())
+        repo.mark_model_sending(fence, read_attempt.attempt_id)
+        read_args = {"ref": ref, "offset": 0, "limit": 5}
+        operation = repo.commit_model(
+            fence,
+            read_attempt.attempt_id,
+            reply("", [ToolCall("read", "read_resource", read_args)]),
+        )[0]
+        repo.commit_read(fence, operation, resources.read_resource(fence, read_args))
+        for i in range(4):
+            note(repo, fence, "重要证据正文" + str(i) + "x" * 4200)
+        context = build_model_context(repo, resources, fence)
+>       assert context.purpose == "summary"
+E       AssertionError: assert 'work' == 'summary'
+E         
+E         - summary
+E         + work
+
+backend/tests/test_hr_agent_context.py:977: AssertionError
+1 failed, 87 passed in 80.07s (0:01:20)

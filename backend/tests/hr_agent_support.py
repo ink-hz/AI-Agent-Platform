@@ -61,7 +61,7 @@ def make_hr_settings(tmp_path, **overrides):
     credential=root/'credential'; credential.write_text('fake-local-secret'); credential.chmod(0o600)
     documents={
         'CONTENT_KEYRING_FILE':{'purpose':'platform-content-encryption','active_version':1,'keys':{'1':base64.b64encode(b'x'*32).decode()}},
-        'PROVIDER_PROFILE_FILE':{'id':'local-fake','revision':'local-v1','protocol':'openai_chat_sse','endpoint':'http://127.0.0.1:1/v1/chat/completions','model':'fake','credential_file':str(credential),'tokenizer':'conservative_utf8','context_window_tokens':32768},
+        'PROVIDER_PROFILE_FILE':{'id':'local-fake','revision':'local-v1','protocol':'openai_chat_sse','endpoint':'http://127.0.0.1:1/v1/chat/completions','model':'fake','credential_file':str(credential),'tokenizer':'conservative_utf8','context_window_tokens':100000},
         'BUDGET_PROFILE_FILE':{'id':'test','service_limits':{'model_calls':64,'total_tokens':1200000,'active_seconds':1800},'limits':{'model_calls':32,'total_tokens':600000,'active_seconds':900},'reserve':{'model_calls':2,'total_tokens':16000,'active_seconds':30},'max_output_tokens':4096,'input_target_tokens':8000,'input_trigger_tokens':12000,'work_retention_seconds':3600},
         'DIAGNOSTIC_PROFILE_FILE':{'enabled':False},
     }

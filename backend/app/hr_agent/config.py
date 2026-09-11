@@ -20,6 +20,12 @@ from .types import (
     canonical_json,
 )
 
+# Startup floor for a full 20,000-codepoint ordinary Unicode read (4 UTF-8
+# bytes/codepoint), plus 8 KiB of framing capacity. This is NOT a bound on
+# arbitrary escaped JSON, goals or checkpoints: commit_read must still check
+# the exact serialized summary request before accepting any read receipt.
+MIN_READ_INPUT_CAPACITY = 20_000 * 4 + 8_192
+
 MIGRATION_SHA256 = "02241fb7872b598c67ea78e84fe5301d2797683680c8f7bf79770b3ae6c8f817"
 
 PARSING_MIGRATION_SHA256 = (
@@ -207,7 +213,10 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
         output = integer(budget["max_output_tokens"])
         target = integer(budget["input_target_tokens"])
         trigger = integer(budget["input_trigger_tokens"])
-        if not 0 < target < trigger < window - output:
+        if (
+            not 0 < target < trigger < window - output
+            or window - output < MIN_READ_INPUT_CAPACITY
+        ):
             raise ValueError()
         for name in ("model_calls", "total_tokens", "active_seconds"):
             if integer(budget["limits"][name]) <= 0:

@@ -1,10 +1,14 @@
 from pathlib import Path
 
 import psycopg
+import pytest
+
 from test_control_plane_migration import (
     control_database as control_database,  # noqa: PLC0414 - pytest fixture
 )
 from test_conversation_attachment_migration import _insert_attachment, _seed_task
+
+pytestmark = pytest.mark.postgres
 
 
 def test_readonly_census_does_not_depend_on_queue_and_checks_reviewed_migrations(
@@ -57,3 +61,23 @@ def test_readonly_census_does_not_depend_on_queue_and_checks_reviewed_migrations
     ]
     assert len(receipts) == 1
     assert any(row[0] == 64 and row[3] is True for row in receipts[0])
+
+
+def test_readonly_script_enforces_database_write_rejection(control_database):
+    environment = control_database["environments"]["production"]
+    script = (Path(__file__).parents[2] / "docs/runbooks/2026-09-11-platform-erasure-readonly.sql").read_text()
+    script = "\n".join(line for line in script.splitlines() if not line.startswith("\\"))
+    # Leave the script's own transaction open solely for this isolated DB probe.
+    prefix, ending = script.rsplit("ROLLBACK;", 1)
+    assert not ending.strip()
+    with psycopg.connect(environment["admin"], autocommit=True) as conn:
+        try:
+            cursor = conn.execute(prefix)
+            while cursor.nextset():
+                pass
+            assert conn.execute("SHOW transaction_read_only").fetchone() == ("on",)
+            with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+                conn.execute("UPDATE platform_attachments.attachments SET state=state WHERE false")
+        finally:
+            conn.execute("ROLLBACK")
+        assert conn.execute("SHOW transaction_read_only").fetchone() == ("off",)

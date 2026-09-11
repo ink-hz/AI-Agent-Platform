@@ -173,3 +173,23 @@ def test_readiness_rejects_missing_erasure_maintenance_column(table, column):
         with db.admin_connection() as c:
             c.execute(sql.SQL("REVOKE SELECT ({}) ON platform_attachments.{} FROM platform_control_maintenance").format(sql.Identifier(column),sql.Identifier(table)))
         assert not check_schema_ready(db)
+
+
+@pytest.mark.parametrize('input_capacity', [28672, 88191, 88192])
+def test_config_reserves_full_unicode_read_capacity_before_start(tmp_path, input_capacity):
+    import json
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / 'seed')
+    path = tmp_path / 'provider.json'
+    path.write_text(json.dumps({
+        **settings.provider_profile,
+        'context_window_tokens': input_capacity + settings.budget_profile['max_output_tokens'],
+    }))
+    path.chmod(0o600)
+    if input_capacity < 88192:
+        with pytest.raises(ValueError, match='^HR configuration invalid$'):
+            make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+    else:
+        loaded = make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+        assert loaded.provider_profile['context_window_tokens'] == input_capacity + 4096

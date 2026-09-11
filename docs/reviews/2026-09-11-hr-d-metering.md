@@ -48,3 +48,7 @@
 ## Runner 复审修订
 
 独立复审指出配置和字符边界未被完全强制：现已在创建模型端口前拒绝非 claude-opus-5 / anthropic_messages_sse 配置，并按 messages + tools 的规范 JSON 总字符限制输入。原始六样本证据不回填；原 unicode_characters 字段只计算消息正文，新 runner 另记 payload_unicode_characters。原样本的完整 payload 也均小于 12,000，修改未追加任何真实调用。三条失败用例先复现，修复后六条测试通过。
+
+## 准入风险补充
+
+工具样本实报822高于估算654不仅否定估算上界：请求按估算预留，可能在剩余额度不足以覆盖真实消耗时仍被准入。结算max(reported,floor)保留了不低于实报的扣记，但只能事后补账，不能撤回请求。当前计量不构成严格事前费用上限；与缓存/中文校准及供应商计数接口一起留在D7待决，本次不改floor。

@@ -1,0 +1,6 @@
+{
+  "base": "2bddc77f49bb823bfc4d0271605990eb8bebad46",
+  "checkout": "/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/hr-erasure-review-44nt6jk9",
+  "apply_check": true,
+  "archive_note": "stdlib python lacks extractall filter argument; retried trusted git archive extraction without it"
+}

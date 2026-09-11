@@ -83,3 +83,18 @@
 ## 6. 关闭标准
 
 关闭处置至少需要：实际部署环境版本与迁移证据；缺陷暴露时窗及其未知项；队列核查与必要对象核对结果；异常任务的明确去向；修复验证与回滚方案，由服务负责人按既有流程确认。工程测试通过只能证明候选实现，不能替代这些证据。
+
+## 7. 独立hotfix包本地验收
+
+当前补丁同时包含FROM领取修复、公共100、两份测试及只读SQL；以干净master应用即可运行以下命令，不需要HR分支。2026-09-11早先只含四项回归的补丁验证是历史记录，当前包应重新验证。此处仅本地一次性数据库，不授予生产迁移/停机权限。
+
+```bash
+git apply --check /absolute/path/to/2026-09-11-platform-erasure-hotfix.patch
+git apply /absolute/path/to/2026-09-11-platform-erasure-hotfix.patch
+cd backend
+command -v initdb
+command -v pg_ctl
+.venv/bin/python -m pytest tests/test_attachment_erasure_hotfix_database.py tests/test_attachment_erasure_readonly_runbook.py -q -rs
+```
+
+两份测试均标记postgres；标记便于通过`-m`筛选，不自动启动或跳过数据库。缺少initdb/pg_ctl时夹具显式失败。只读性除执行原SQL外，还在其实际事务内断言transaction_read_only=on，并验证UPDATE被数据库以25006拒绝；最终ROLLBACK后回到非只读状态。输出的计数普查仍与队列是否为空无关。

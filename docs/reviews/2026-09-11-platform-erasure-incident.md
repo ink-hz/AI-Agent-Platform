@@ -58,4 +58,4 @@
 
 配套只读 SQL 已通过 `psql -X -v ON_ERROR_STOP=1 -f` 在临时 PostgreSQL 全文执行。100 存在时回执 checksum 与审阅文件一致且六项权限为真；临时撤销回执与六项授权后再次全文执行，回执为空且六项权限为假，随后在 `finally` 恢复 fixture。结果为 **1 passed in 1.45s**。命令、摘要和捕获输出见 `artifacts/2026-09-11-hr-c-review/platform-erasure-evidence.md`。
 
-独立 hotfix 审阅包为 `docs/runbooks/2026-09-11-platform-erasure-hotfix.patch`，相对 master 仅包含 `backend/app/attachments/erasure.py` 与公共迁移 100；未应用到 master、未部署。
+独立 hotfix 审阅包为 `docs/runbooks/2026-09-11-platform-erasure-hotfix.patch`，早期相对 master 仅包含 `backend/app/attachments/erasure.py` 与公共迁移 100；当前修订包另含独立hotfix数据库测试、只读runbook数据库测试及所需SQL（见D复审修订记录）；未应用到 master、未部署。

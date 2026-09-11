@@ -71,8 +71,8 @@ def tools_for_phase(phase):
 def estimate_input_tokens(messages, tools, tokenizer):
     payload = canonical_json({"messages": messages, "tools": tools})
     if tokenizer == "conservative_utf8":
-        # Explicit tested upper-bound profile: at most one token per UTF-8 byte,
-        # plus framing reserve. This is an estimate, never reported provider usage.
+        # Byte-based estimate plus framing reserve, not a provider token upper bound.
+        # Gateway tool-schema overhead can exceed it; settlement is retrospective.
         return len(payload.encode("utf8")) + 256 + 32 * len(messages)
     try:
         import tiktoken

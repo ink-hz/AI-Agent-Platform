@@ -1,0 +1,12 @@
+{
+  "base": "5872f34",
+  "unchanged_paths": [
+    "artifacts/2026-09-11-hr-d-journey",
+    "artifacts/2026-09-11-hr-d-validation",
+    "docs/reviews/artifacts/2026-09-11-hr-c3",
+    "artifacts/2026-09-11-hr-c-followup",
+    "backend/hr_agent_knowledge/role.md",
+    "docs/reviews/2026-09-11-hr-d-professional-review.md",
+    "docs/reviews/2026-09-11-hr-d-engineering-review.md"
+  ]
+}
