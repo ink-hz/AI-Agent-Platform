@@ -776,7 +776,9 @@ function Workspace({
               </span>
               {work.block_reason && (
                 <p>
-                  所需资料、权限或执行配置发生变化，请检查后重新加载或发起新工作。
+                  {work.block_reason === "context_too_large"
+                    ? "当前输入或单份材料超过模型上下文限制。请缩短输入、移除过大材料，或按较小范围发起新工作。"
+                    : "所需资料、权限或执行配置发生变化，请检查后重新加载或发起新工作。"}
                 </p>
               )}
               {events

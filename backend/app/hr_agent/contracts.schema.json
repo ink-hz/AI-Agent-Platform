@@ -1072,7 +1072,8 @@
             "configuration_unavailable",
             "dependency_revoked",
             "unsupported_kind",
-            "personal_source_not_allowed"
+            "personal_source_not_allowed",
+            "context_too_large"
           ]
         },
         "message": {

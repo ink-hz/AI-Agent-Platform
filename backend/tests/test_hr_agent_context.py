@@ -304,6 +304,28 @@ def unread_tool_batch(repo, resources, fence, ref):
     return attempt
 
 
+def large_unread_tool_batch(repo, resources, fence, ref, count=3):
+    attempt = repo.prepare_model(fence, model_context(revision=fence.input_revision))
+    repo.mark_model_sending(fence, attempt.attempt_id)
+    arguments = [
+        {"ref": ref, "offset": index * 20000, "limit": 20000} for index in range(count)
+    ]
+    operations = repo.commit_model(
+        fence,
+        attempt.attempt_id,
+        reply(
+            "",
+            [
+                ToolCall(str(index), "read_resource", args)
+                for index, args in enumerate(arguments)
+            ],
+        ),
+    )
+    for operation, args in zip(operations, arguments, strict=True):
+        repo.commit_read(fence, operation, resources.read_resource(fence, args))
+    return attempt
+
+
 def tool_consumption_setup(repo, tmp_path, *, context_window_tokens=32768):
     from dataclasses import replace
 
@@ -331,21 +353,15 @@ def tool_consumption_setup(repo, tmp_path, *, context_window_tokens=32768):
     )
     repo.scope_validator = resources.validate_scope
     owner = uuid4()
-    work = repo.submit(
-        owner, request(references=[ref], budget_profile="test"), uuid4()
-    )
+    work = repo.submit(owner, request(references=[ref], budget_profile="test"), uuid4())
     fence = repo.claim("w", 60)
     producer = unread_tool_batch(repo, resources, fence, ref)
     return owner, work, fence, resources, producer
 
 
 def test_soft_trigger_keeps_latest_multi_tool_batch_for_one_work_call(repo, tmp_path):
-    _owner, _work, fence, resources, _producer = tool_consumption_setup(
-        repo, tmp_path
-    )
-    selected, unconsumed = repo.read_selected_entries(
-        fence, include_unconsumed=True
-    )
+    _owner, _work, fence, resources, _producer = tool_consumption_setup(repo, tmp_path)
+    selected, unconsumed = repo.read_selected_entries(fence, include_unconsumed=True)
     assert len(unconsumed) == 2, [(entry.kind, entry.entry_id) for entry in selected]
 
     context = build_model_context(repo, resources, fence)
@@ -393,9 +409,7 @@ def test_summary_retries_do_not_mark_latest_tool_batch_consumed(repo, tmp_path):
 
 
 def test_later_committed_work_allows_consumed_tool_batch_to_compact(repo, tmp_path):
-    _owner, _work, fence, resources, _producer = tool_consumption_setup(
-        repo, tmp_path
-    )
+    _owner, _work, fence, resources, _producer = tool_consumption_setup(repo, tmp_path)
     direct = build_model_context(repo, resources, fence)
     attempt = repo.prepare_model(fence, direct)
     repo.mark_model_sending(fence, attempt.attempt_id)
@@ -406,7 +420,7 @@ def test_later_committed_work_allows_consumed_tool_batch_to_compact(repo, tmp_pa
     assert context.purpose == "summary"
 
 
-def test_hard_window_never_compacts_only_unconsumed_tool_batch(repo, tmp_path):
+def test_indivisible_unconsumed_tool_batch_blocks_with_context_reason(repo, tmp_path):
     owner, work, fence, resources, _producer = tool_consumption_setup(
         repo, tmp_path, context_window_tokens=7000
     )
@@ -414,7 +428,129 @@ def test_hard_window_never_compacts_only_unconsumed_tool_batch(repo, tmp_path):
     with pytest.raises(WorkPaused):
         build_model_context(repo, resources, fence)
 
-    assert repo.get_work(owner, work["work_id"])["state"] == "waiting_budget"
+    blocked = repo.get_work(owner, work["work_id"])
+    assert blocked["state"] == "blocked"
+    assert blocked["block_reason"] == "context_too_large"
+
+
+def test_hard_window_progressively_summarizes_large_unconsumed_batch_after_resume(
+    repo, tmp_path
+):
+    from dataclasses import replace
+
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / "large-batch-settings")
+    settings = replace(
+        settings,
+        budget_profile={
+            **settings.budget_profile,
+            "input_target_tokens": 50000,
+            "input_trigger_tokens": 60000,
+            "max_output_tokens": 2000,
+        },
+        provider_profile={
+            **settings.provider_profile,
+            "context_window_tokens": 75000,
+        },
+    )
+    repo.settings = settings
+    root = tmp_path / "large-batch-release"
+    ref = publication(root, "中" * 60000)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    work = repo.submit(owner, request(references=[ref], budget_profile="test"), uuid4())
+    fence = repo.claim("w", 60)
+    large_unread_tool_batch(repo, resources, fence, ref)
+
+    repo.wait_for_budget(fence)
+    waiting = repo.get_work(owner, work["work_id"])
+    assert waiting["state"] == "waiting_budget"
+    repo.extend_budget(
+        owner,
+        work["work_id"],
+        {
+            "expected_budget_revision": waiting["budget"]["revision"],
+            "addition": {
+                "model_calls": 1,
+                "total_tokens": 1,
+                "active_seconds": 1,
+            },
+            "reason": "继续同一批次",
+        },
+        uuid4(),
+    )
+    fence = repo.claim("w-resume", 60)
+
+    summaries = 0
+    while True:
+        context = build_model_context(repo, resources, fence)
+        if context.purpose == "work":
+            break
+        assert len(context.summary_provenance["derived_from"]) == 1
+        attempt = repo.prepare_model(fence, context)
+        repo.mark_model_sending(fence, attempt.attempt_id)
+        repo.commit_model(fence, attempt.attempt_id, reply("保留完整来源的阶段摘要"))
+        repo.commit_summary(fence, attempt.attempt_id, context.summary_provenance)
+        summaries += 1
+
+    assert summaries == 2
+    assert sum(message["role"] == "tool" for message in context.messages) == 1
+    assert repo.get_work(owner, work["work_id"])["state"] == "running"
+
+
+@pytest.mark.parametrize("oversize", ["prefix", "entry"])
+def test_indivisible_context_overflow_blocks_with_recoverable_reason(
+    repo, tmp_path, oversize
+):
+    from dataclasses import replace
+
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / ("oversize-" + oversize))
+    settings = replace(
+        settings,
+        budget_profile={
+            **settings.budget_profile,
+            "input_target_tokens": 3000,
+            "input_trigger_tokens": 4000,
+            "max_output_tokens": 1000,
+        },
+        provider_profile={
+            **settings.provider_profile,
+            "context_window_tokens": 7000,
+        },
+    )
+    repo.settings = settings
+    root = tmp_path / ("oversize-release-" + oversize)
+    ref = publication(root, "中" * 10000)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    text = "中" * 10000 if oversize == "prefix" else "当前目标"
+    references = [] if oversize == "prefix" else [ref]
+    work = repo.submit(
+        owner,
+        request(text=text, references=references, budget_profile="test"),
+        uuid4(),
+    )
+    fence = repo.claim("w", 60)
+    if oversize == "entry":
+        large_unread_tool_batch(repo, resources, fence, ref, count=1)
+
+    with pytest.raises(WorkPaused) as paused:
+        build_model_context(repo, resources, fence)
+
+    assert paused.value.view["state"] == "blocked"
+    assert paused.value.view["block_reason"] == "context_too_large"
+    assert repo.get_work(owner, work["work_id"])["budget"]["charged_calls"] == (
+        1 if oversize == "entry" else 0
+    )
 
 
 def test_explicit_comparison_allows_both(repo, tmp_path):
@@ -568,8 +704,7 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
         context.messages, (), settings.provider_profile["tokenizer"]
     )
     assert (
-        context.estimated_input_tokens
-        + settings.budget_profile["max_output_tokens"]
+        context.estimated_input_tokens + settings.budget_profile["max_output_tokens"]
         <= settings.provider_profile["context_window_tokens"]
     )
     assert attempt.messages[-1] == {
@@ -602,7 +737,7 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
         assert any(message["role"] == "tool" for message in next_context.messages)
 
 
-def test_summary_prefix_that_leaves_no_history_window_waits_for_budget(
+def test_summary_prefix_that_leaves_no_history_window_blocks_for_input_change(
     repo, tmp_path
 ):
     from dataclasses import replace
@@ -641,7 +776,9 @@ def test_summary_prefix_that_leaves_no_history_window_waits_for_budget(
     with pytest.raises(WorkPaused):
         build_model_context(repo, resources, fence)
 
-    assert repo.get_work(owner, work["work_id"])["state"] == "waiting_budget"
+    blocked = repo.get_work(owner, work["work_id"])
+    assert blocked["state"] == "blocked"
+    assert blocked["block_reason"] == "context_too_large"
 
 
 def test_mixed_summary_missing_originals_is_omitted(repo, database):

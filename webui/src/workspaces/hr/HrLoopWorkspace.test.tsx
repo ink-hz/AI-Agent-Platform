@@ -96,6 +96,27 @@ async function type(text: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+it("explains how to recover when context is structurally too large", async () => {
+  const client = api({
+    work: vi.fn().mockResolvedValue({
+      ...work,
+      state: "blocked",
+      block_reason: "context_too_large",
+    }),
+  });
+  await act(async () =>
+    root.render(
+      <HrLoopWorkspace
+        account={account}
+        api={client as never}
+        initialWorkId="w"
+      />,
+    ),
+  );
+
+  expect(el.textContent).toContain("缩短输入、移除过大材料");
+  expect(el.textContent).not.toContain("追加工作预算");
+});
 it("starts without a position using server budget and retains key after network failure", async () => {
   const client = api({
     submit: vi

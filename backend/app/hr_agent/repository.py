@@ -2061,6 +2061,7 @@ class HrAgentRepository(RepositoryViewsMixin):
             "reference_unavailable",
             "scope_denied",
             "hash_mismatch",
+            "context_too_large",
         ):
             code = "configuration_unavailable"
         with self.transaction() as c:
