@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from hr_agent_support import hr_agent_database
 
@@ -21,6 +22,17 @@ def _seed_aggregates(database):
     sentinel = "PRIVATE-CANDIDATE-SENTINEL"
     with database.admin_connection() as connection:
         connection.execute("set session_replication_role=replica")
+        if connection.execute("select to_regclass('platform_control.turn_attempts')").fetchone()[0] is None:
+            connection.execute(
+                "create table platform_control.turn_attempts(attempt_id uuid primary key,turn_id uuid not null,"
+                "attempt_no integer not null,executor_kind text not null,status text not null)"
+            )
+            connection.execute("grant select on platform_control.turn_attempts to platform_control_app")
+        if connection.execute("select to_regclass('platform_control.direct_command_bindings')").fetchone()[0] is None:
+            connection.execute(
+                "create table platform_control.direct_command_bindings(attempt_id uuid primary key,job_id uuid not null)"
+            )
+            connection.execute("grant select on platform_control.direct_command_bindings to platform_control_app")
         owner = uuid4()
         connection.execute(
             "insert into platform_hr.candidates(candidate_id,owner_internal_user_id,"
@@ -44,19 +56,22 @@ def _seed_aggregates(database):
             (owner, result_id, uuid4()),
         )
         owned_position, foreign_position = uuid4(), uuid4()
+        v7_position = "00000000-0000-7000-8000-000000000001"
         connection.execute(
             "insert into platform_hr.positions(position_id,owner_internal_user_id,client_request_id,"
             "source_kind,title) values (%s,%s,%s,'manual','sensitive-title'),"
-            "(%s,%s,%s,'manual','other-sensitive-title')",
-            (owned_position, owner, uuid4(), foreign_position, uuid4(), uuid4()),
+            "(%s,%s,%s,'manual','other-sensitive-title'),(%s,%s,%s,'manual','v7-title')",
+            (owned_position, owner, uuid4(), foreign_position, uuid4(), uuid4(),
+             v7_position, owner, uuid4()),
         )
         connection.execute(
             "insert into platform_hr_agent.result_links(owner_id,result_id,object_kind,object_id,"
             "linked_by_operation) values (%s,%s,'position',%s,%s),(%s,%s,'position',%s,%s),"
-            "(%s,%s,'position',%s,%s)",
+            "(%s,%s,'position',%s,%s),(%s,%s,'position',%s,%s)",
             (owner, result_id, str(owned_position).upper(), uuid4(),
              owner, result_id, "-" * 36, uuid4(),
-             owner, result_id, str(foreign_position), uuid4()),
+             owner, result_id, str(foreign_position), uuid4(),
+             owner, result_id, v7_position.upper(), uuid4()),
         )
         connection.execute(
             "insert into platform_hr_agent.candidate_positions(owner_id,candidate_id,"
@@ -76,6 +91,42 @@ def _seed_aggregates(database):
                 "values (%s,%s,%s,%s,1,'queued')",
                 (uuid4(), uuid4(), agent, sentinel.encode()),
             )
+        bound_hr_job = uuid4()
+        connection.execute(
+            "insert into platform_control.execution_jobs(job_id,run_id,agent_id,payload_ciphertext,"
+            "encryption_key_version,status,cancel_requested,created_at) "
+            "values (%s,%s,'hr-bot',%s,1,'queued',true,now()-interval '2 days')",
+            (bound_hr_job, uuid4(), sentinel.encode()),
+        )
+        connection.execute(
+            "insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status,last_seen_at) "
+            "values ('inventory-hr-worker',array['hr-bot'],'active',now()-interval '2 hours'),"
+            "('inventory-other-worker',array['marketing-bot'],'active',now())",
+        )
+        for suffix, agent in (("hr", "hr-bot"), ("other", "marketing-bot")):
+            conversation, turn = uuid4(), uuid4()
+            connection.execute(
+                "insert into platform_control.conversations(conversation_id,owner_internal_user_id,"
+                "started_by_client_request_id,mode,direct_agent_id,title) "
+                "values (%s,%s,%s,'direct_agent',%s,%s)",
+                (conversation, owner, uuid4(), agent, f"{suffix}-sensitive"),
+            )
+            connection.execute(
+                "insert into platform_control.conversation_turns(turn_id,conversation_id,user_message_id,"
+                "client_request_id,status) values (%s,%s,%s,%s,'running')",
+                (turn, conversation, uuid4(), uuid4()),
+            )
+            attempt = uuid4()
+            connection.execute(
+                "insert into platform_control.turn_attempts(attempt_id,turn_id,attempt_no,executor_kind,status) "
+                "values (%s,%s,1,'legacy_api_v1','queued')",
+                (attempt, turn),
+            )
+            if suffix == "other":
+                connection.execute(
+                    "insert into platform_control.direct_command_bindings(attempt_id,job_id) values (%s,%s)",
+                    (attempt, bound_hr_job),
+                )
     return sentinel
 
 
@@ -103,7 +154,7 @@ def test_inventory_aggregates_old_new_and_classifies_hr_execution(database):
     assert result_refs["status"] == "ok"
     assert {tuple(sorted(group["state"].items())): group["count"] for group in result_refs["groups"]} == {
         (("kind", "position"), ("resolution", "missing")): 1,
-        (("kind", "position"), ("resolution", "resolvable")): 1,
+        (("kind", "position"), ("resolution", "resolvable")): 2,
         (("kind", "position"), ("resolution", "wrong_owner")): 1,
         (("kind", "unsupported"), ("resolution", "unsupported")): 1,
     }
@@ -111,6 +162,16 @@ def test_inventory_aggregates_old_new_and_classifies_hr_execution(database):
     assert {tuple(sorted(group["state"].items())): group["count"] for group in execution["groups"]}[
         (("scope", "hr"), ("status", "queued"))
     ] >= 1
+    queued_age = _asset(report, "old_hr_queued_age")
+    assert {tuple(sorted(group["state"].items())): group["count"] for group in queued_age["groups"]}[
+        (("age", "24h_plus"), ("cancel_requested", True))
+    ] >= 1
+    assert _asset(report, "active_hr_workers")["groups"] == [
+        {"state": {"last_seen_age": "1h_to_24h"}, "count": 1}
+    ]
+    assert _asset(report, "old_hr_turn_attempts")["groups"] == [
+        {"state": {"executor_kind": "legacy_api_v1", "status": "queued"}, "count": 2}
+    ]
     assert {tuple(sorted(group["state"].items())): group["count"] for group in execution["groups"]}[
         (("scope", "other"), ("status", "queued"))
     ] >= 2
@@ -222,6 +283,43 @@ def test_join_dependency_missing_column_and_permission_are_prechecked(database):
     finally:
         with database.admin_connection() as connection:
             connection.execute("grant select on platform_hr.positions to platform_control_app")
+
+    with database.admin_connection() as connection:
+        connection.execute(
+            "alter table platform_control.direct_command_bindings rename to direct_command_bindings_saved"
+        )
+    try:
+        report = run_inventory(database.connection)
+        assert _asset(report, "old_hr_turn_attempts")["status"] == "missing_table"
+        assert _asset(report, "old_hr_turn_attempts").get("total") is None
+    finally:
+        with database.admin_connection() as connection:
+            connection.execute(
+                "alter table platform_control.direct_command_bindings_saved rename to direct_command_bindings"
+            )
+
+
+@pytest.mark.postgres
+def test_column_level_select_can_inventory_only_required_columns(database):
+    from tools.hr_agent.inventory import run_inventory
+
+    role = "hr_inventory_column_reader"
+    with database.admin_connection() as connection:
+        connection.execute(f"drop role if exists {role}")
+        connection.execute(f"create role {role} login")
+        connection.execute(f"grant usage on schema platform_hr to {role}")
+        connection.execute(f"grant select(candidate_id) on platform_hr.candidates to {role}")
+    details = conninfo_to_dict(database.dsn)
+    details["user"] = role
+    try:
+        report = run_inventory(lambda: psycopg.connect(make_conninfo(**details)))
+        assert _asset(report, "old_candidates")["status"] == "ok"
+        assert _asset(report, "old_candidates")["total"] >= 1
+        assert _asset(report, "old_candidate_documents")["status"] == "unreadable"
+    finally:
+        with database.admin_connection() as connection:
+            connection.execute(f"drop owned by {role}")
+            connection.execute(f"drop role {role}")
 
 
 def test_cli_rejects_unsafe_dsn_file_and_output(tmp_path, capsys, monkeypatch):
