@@ -208,8 +208,14 @@ class InterviewRecordService:
     def read(self, owner, candidate_id, record_id):
         owner, rows = self._authorized_row(owner, candidate_id, record_id)
         row = rows[0]
-        view = self._view(row)
         text = self.materials.read_text(owner, row["material_ref"])
+        # Attachment I/O can race with revocation of any other authority edge.
+        # Revalidate all candidate/position/plan scope before decrypting metadata
+        # or returning the plaintext body.
+        candidate = self._candidate(owner, candidate_id)
+        self._authorize_relations(
+            owner, candidate, row["position_id"], row["interview_plan_ref"]
+        )
         with self.repo.transaction() as c:
             self._lock(c, owner, row["attachment_id"], row["source_identity"])
-        return {**view, "text": text.text}
+        return {**self._view(row), "text": text.text}

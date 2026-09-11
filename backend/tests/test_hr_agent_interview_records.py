@@ -10,6 +10,7 @@ from tests.test_hr_agent_candidate_intake import (
     finish_profile,
     intake,
 )
+from tests.test_hr_agent_material_parsing import upload_document
 from tests.test_hr_agent_materials import database, secured, uploaded
 
 _FIXTURES = (database, secured, uploaded, intake)
@@ -177,3 +178,131 @@ def test_request_requires_rfc3339_and_rejects_false_or_empty_optional_refs(
         with pytest.raises(HrAgentProblem) as error:
             service.register(owner, candidate_id, {**base, **changes}, uuid4())
         assert error.value.problem["code"] == "invalid_input"
+
+
+def test_fresh_attachment_uses_record_marker_and_existing_privacy_gates(
+    uploaded, intake, database
+):
+    from app.hr_agent.interview_records import InterviewRecordService
+    from app.hr_agent.proposals import validate_sources
+    from app.hr_agent.runtime import run_work
+    from app.hr_agent.types import ResultQuery
+    from tests.test_hr_agent_runtime import ScriptModel, answer, tool
+
+    client, _, repo, owner, materials, _, _, _ = uploaded
+    candidate_id = _candidate(uploaded, intake)
+    aid = upload_document(
+        uploaded,
+        database,
+        b"Candidate answered from first principles.",
+        "text/plain",
+        "interview.txt",
+    )
+    request = _request(client, aid)
+    service = InterviewRecordService(repo, materials, intake[0])
+    created = service.register(owner, candidate_id, request, uuid4())
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT registered_by_item,registered_by_record FROM platform_hr_agent.personal_materials WHERE owner_id=%s AND attachment_id=%s",
+            (owner, UUID(aid)),
+        )
+        marker = c.fetchone()
+        assert marker["registered_by_item"] is None
+        assert str(marker["registered_by_record"]) == created["record_id"]
+        with pytest.raises(HrAgentProblem) as error:
+            validate_sources(repo, c, owner, [request["material_ref"]])
+        assert error.value.problem["code"] == "personal_source_not_allowed"
+
+    candidate_object = {"kind": "candidate", "id": candidate_id}
+    repo.submit(
+        owner,
+        {
+            "thread_id": None,
+            "text": "保存派生整理",
+            "objects": [candidate_object],
+            "references": [request["material_ref"]],
+            "budget_profile": "test",
+        },
+        uuid4(),
+    )
+    derived_model = ScriptModel(
+        [
+            tool(
+                "save_result",
+                {
+                    "kind": "interview_record",
+                    "title": "派生整理",
+                    "body": "仅供候选人工作使用。",
+                    "result_id": None,
+                    "expected_revision": None,
+                    "objects": [candidate_object],
+                    "source_refs": [request["material_ref"]],
+                    "preceding_refs": [],
+                    "base_standard_ref": None,
+                    "changes": [],
+                    "basis": [],
+                },
+            ),
+            answer(),
+        ]
+    )
+    assert (
+        run_work(repo, derived_model, intake[1], repo.claim("record-derived", 60))[
+            "state"
+        ]
+        == "completed"
+    )
+    derived = repo.list_results(owner, ResultQuery(object_ref=candidate_object))[
+        "items"
+    ][0]["ref"]
+    with repo.transaction() as c, pytest.raises(HrAgentProblem) as error:
+        validate_sources(repo, c, owner, [derived])
+    assert error.value.problem["code"] == "personal_source_not_allowed"
+
+    repo.personal_processing_authorizer = None
+    work = repo.submit(
+        owner,
+        {
+            "thread_id": None,
+            "text": "整理已登记面试记录",
+            "objects": [],
+            "references": [request["material_ref"]],
+            "budget_profile": "test",
+        },
+        uuid4(),
+    )
+    model = ScriptModel([answer()])
+    done = run_work(repo, model, intake[1], repo.claim("record-gate", 60))
+    assert done["work_id"] == work["work_id"] and done["state"] == "blocked"
+    assert model.requests == []
+
+
+def test_exact_read_rechecks_candidate_after_attachment_io(
+    uploaded, intake, database, monkeypatch
+):
+    from app.hr_agent.interview_records import InterviewRecordService
+
+    client, _, repo, owner, materials, candidate_aid, _, _ = uploaded
+    candidate_id = _candidate(uploaded, intake)
+    interview_aid = upload_document(
+        uploaded, database, b"Exact interview transcript.", "text/plain", "race.txt"
+    )
+    service = InterviewRecordService(repo, materials, intake[0])
+    created = service.register(
+        owner, candidate_id, _request(client, interview_aid), uuid4()
+    )
+    original = materials.read_text
+
+    def revoke_candidate_after_read(selected_owner, ref):
+        text = original(selected_owner, ref)
+        with database.admin_connection() as c:
+            c.execute(
+                "UPDATE platform_attachments.attachments SET retained_until=now()-interval '1 second' WHERE attachment_id=%s",
+                (UUID(candidate_aid),),
+            )
+        return text
+
+    monkeypatch.setattr(materials, "read_text", revoke_candidate_after_read)
+    with pytest.raises(HrAgentProblem) as error:
+        service.read(owner, candidate_id, created["record_id"])
+    assert error.value.problem["code"] == "reference_unavailable"
