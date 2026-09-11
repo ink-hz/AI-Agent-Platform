@@ -57,9 +57,14 @@
       "sha256": "498486f5505a2361058830929e04f3cd4433e23e3ba69c585182f31e20d7654a"
     },
     {
+      "path": "evidence-retention-gap.md",
+      "size_bytes": 1537,
+      "sha256": "621fee5382975fbabfc81fffc4b1f886d5bef085dad0fb66e8483fa7f257956a"
+    },
+    {
       "path": "final/README.md",
-      "size_bytes": 4654,
-      "sha256": "369ba5d9487be8f8bd88049f0a68c69e3c9c8fdfff20ecb6355bf1375ec083c7"
+      "size_bytes": 4927,
+      "sha256": "4053eca1680efbbcc79263fd7f01e62117b5b02c21bafc92405bc4ab635a9d45"
     },
     {
       "path": "final/code-fingerprints.json",
@@ -406,5 +411,6 @@
       "size_bytes": 2601,
       "sha256": "1e53a993c8eff6e62cc575b586d7f7e07dd8fd676e0814522b7c81739fa14774"
     }
-  ]
+  ],
+  "retention_limit": "evidence-retention-gap.md"
 }
