@@ -1,0 +1,764 @@
+{
+  "analyzed_at": "2026-09-09",
+  "companies": [
+    {
+      "id": "robosense",
+      "name": "速腾聚创"
+    },
+    {
+      "id": "shining3d",
+      "name": "先临三维"
+    },
+    {
+      "id": "creality",
+      "name": "创想三维"
+    },
+    {
+      "id": "agibot",
+      "name": "智元集团招聘集合"
+    },
+    {
+      "id": "bambu-lab",
+      "name": "拓竹"
+    },
+    {
+      "id": "insta360",
+      "name": "影石"
+    },
+    {
+      "id": "hesai",
+      "name": "禾赛"
+    }
+  ],
+  "covered_job_identities": 3355,
+  "documents": [
+    {
+      "companies": [],
+      "excerpt": "日期：2026-09-09。对应 Codex CLI 分析任务书。",
+      "id": "readme",
+      "kind": "support",
+      "path": "README.md",
+      "question": null,
+      "sha256": "3272253d80f8d62edd39f03e5bcbb1f9efa76939c0c0aa213d3fd06b1fcefebb",
+      "size_bytes": 7234,
+      "title": "HR 情报语义分析答复"
+    },
+    {
+      "companies": [],
+      "excerpt": "本目录的“智元”指数据源 agibot 汇集的招聘记录，包含标题明示的子公司与业务部，不是智元本部或单一用人团队的样本。原文有觅蜂、酷拓、临界点、擎天租、智鼎“子公司”标记，以及 Genie、通用、灵犀“业务部”标记。它们是招聘归属线索，尚不足以核实法律主体、汇报链或劳动合同主体；未标记的岗位归属待核，不能默认归入本部…",
+      "id": "agibot--readme",
+      "kind": "support",
+      "path": "agibot/README.md",
+      "question": null,
+      "sha256": "65c75b17f501a0a9ed0af354d4b4ad55007e368ab69dbc28670e6e0e5fac31b2",
+      "size_bytes": 2983,
+      "title": "智元集团招聘集合：从模型能力到现场可交付的责任区别"
+    },
+    {
+      "companies": [
+        "agibot"
+      ],
+      "excerpt": "本篇“智元”指集团招聘集合，包含子公司、业务部及归属未明岗位。各结论作用于所引记录，不默认属于本部或同一团队；见 归属声明。",
+      "id": "agibot--q10-gaps-boundaries",
+      "kind": "analysis",
+      "path": "agibot/q10-gaps-boundaries.md",
+      "question": 10,
+      "sha256": "93ae39bd91d398fd2d32b8c318b0b3af2ab2ef937ebbde440dcf099e445ad497",
+      "size_bytes": 10220,
+      "title": "Q10 智元：可识别招聘明示的补齐目标，不能据此诊断真实人才缺口"
+    },
+    {
+      "companies": [
+        "agibot"
+      ],
+      "excerpt": "本文识别具体记录的歧义；觅蜂子公司岗位的比较只约束对应记录，不推广成集团或本部的统一招聘习惯。未明示归属的岗位不默认属于本部，见 归属声明。",
+      "id": "agibot--q11-internal-consistency",
+      "kind": "analysis",
+      "path": "agibot/q11-internal-consistency.md",
+      "question": 11,
+      "sha256": "4ed66c7e9463e1dc2218bf67bd26a762807c269b7b20f3e6aa0c009168f9d2c7",
+      "size_bytes": 12342,
+      "title": "Q11 智元集团招聘集合：先修正会改变筛选与交付预期的文案信号"
+    },
+    {
+      "companies": [
+        "agibot"
+      ],
+      "excerpt": "本篇“智元”指集团招聘集合，包含子公司、业务部及归属未明岗位。各结论作用于所引记录，不默认属于本部或同一团队；见 归属声明。",
+      "id": "agibot--q3-requirement-strength",
+      "kind": "analysis",
+      "path": "agibot/q3-requirement-strength.md",
+      "question": 3,
+      "sha256": "d390eb42056c355a5e2db726c3b6daae0bf17b2b492fad55cd76d72662400df9",
+      "size_bytes": 9607,
+      "title": "Q3 智元：先确定交付责任，再决定哪些经历不能放宽"
+    },
+    {
+      "companies": [
+        "agibot"
+      ],
+      "excerpt": "本篇“智元”指集团招聘集合，包含子公司、业务部及归属未明岗位。各结论作用于所引记录，不默认属于本部或同一团队；见 归属声明。",
+      "id": "agibot--q4-delivery-stages",
+      "kind": "analysis",
+      "path": "agibot/q4-delivery-stages.md",
+      "question": 4,
+      "sha256": "ae97512c60396d3a0cf8a309a38fc81586bc4d3016b84696ecac7a7e79e49c72",
+      "size_bytes": 8467,
+      "title": "Q4 智元：阶段差异体现在放行、升级与移交的交付物上"
+    },
+    {
+      "companies": [
+        "agibot"
+      ],
+      "excerpt": "本篇“智元”指集团招聘集合，包含子公司、业务部及归属未明岗位。各结论作用于所引记录，不默认属于本部或同一团队；见 归属声明。",
+      "id": "agibot--q5-customers-applications",
+      "kind": "analysis",
+      "path": "agibot/q5-customers-applications.md",
+      "question": 5,
+      "sha256": "5d7f7ff41533098bd3e4e721c580bae9026d9912c4efb377f55c0fb95e2e334f",
+      "size_bytes": 10615,
+      "title": "Q5 智元：客户要验收的东西，决定应找哪一种商业与交付人才"
+    },
+    {
+      "companies": [
+        "agibot"
+      ],
+      "excerpt": "结论作用域：本篇并读集团招聘入口下不同子公司、业务部及归属未明的岗位，不把它们当作本部单一团队。觅蜂的研究任务、灵犀的工具接口与 Genie 的工业集成分别保留原文归属；未标注者待核。详见 归属声明。",
+      "id": "agibot--q9-technical-intent",
+      "kind": "analysis",
+      "path": "agibot/q9-technical-intent.md",
+      "question": 9,
+      "sha256": "9bd0bd0f7cdfb44f8db8dfbdd834667082495baa15585ca76767bc58fbbc7803",
+      "size_bytes": 13707,
+      "title": "Q9 智元集团招聘集合：数据价值、模型决策与真实执行的责任边界"
+    },
+    {
+      "companies": [],
+      "excerpt": "采用情报包 2ed2262c-63a0-47e5-996c-7d00eb0be1a0 中的三份飞书原始归档。团队分段通读全部已取得的职责、要求及各组内标题、招聘类型，主分析者综合分段笔记并回查承重原文。这是团队全文覆盖，不是主分析者独自读完所有岗位。",
+      "id": "agibot--read-ledger",
+      "kind": "support",
+      "path": "agibot/read-ledger.md",
+      "question": null,
+      "sha256": "bae158ac515c9fe28cce2f1b8ba33f7b1d7e0722735f037e4974f194a36e86e2",
+      "size_bytes": 4051,
+      "title": "智元集团招聘集合：全文阅读与来源范围"
+    },
+    {
+      "companies": [],
+      "excerpt": "本次通读 558 条岗位的全部原始职责与要求；其中 15 条经完整正文逐字一致核验后复用阅读，共 543 种不同正文。记录数不等于招聘人数。来源为本包飞书社招与校招归档；官网采集失败，产品名称与意图均按招聘自述理解。",
+      "id": "bambu-lab--readme",
+      "kind": "support",
+      "path": "bambu-lab/README.md",
+      "question": null,
+      "sha256": "ad990d11d61912cc33c46be45778e51abee8b6667f450c9f8c1931114f0174c1",
+      "size_bytes": 1972,
+      "title": "拓竹：从数字创作到可重复实物输出"
+    },
+    {
+      "companies": [
+        "bambu-lab"
+      ],
+      "excerpt": "“拓竹缺哪种能力”目前不可直接回答；“哪些交接责任需要进一步核实”可以回答。 全量正文已经出现数据生产、算法评测、物理仿真、系统可观测性、发布回滚以及安全运营。把 AI 招聘只看成建模和 Agent，然后说它缺数据、仿真或安全，是漏读正文后的假缺口。真正仍需补材料的地方，是这些职责如何连接成一次可验证的实物质量改进，以…",
+      "id": "bambu-lab--q10-gap-boundaries",
+      "kind": "analysis",
+      "path": "bambu-lab/q10-gap-boundaries.md",
+      "question": 10,
+      "sha256": "5aa1bfa26aebabccd199b70144c6f59b4499c6140c9c48ab16e06134a972e59c",
+      "size_bytes": 10472,
+      "title": "Q10 拓竹：不能判定公司缺能力，可以校准跨岗位的交接条件"
+    },
+    {
+      "companies": [
+        "bambu-lab"
+      ],
+      "excerpt": "拓竹正文中，最能直接改变招聘动作的不是笼统说“要求太高”，而是确认哪些条件和任务真的错位。全文并读后，国内/海外职责复制、任职画像与加分项的强度冲突，以及职责/要求字段倒置，都有具体原文依据。实习生职责宽泛则只能提示校准，不能单凭头衔断言不合理用人。",
+      "id": "bambu-lab--q11-internal-consistency",
+      "kind": "analysis",
+      "path": "bambu-lab/q11-internal-consistency.md",
+      "question": 11,
+      "sha256": "d0fdb93d76842fecf51dcf0da6d7c2ca6f7d0234ee8535b021f5a011ff344674",
+      "size_bytes": 11438,
+      "title": "Q11 拓竹：有可确认的文案错位，也有需要保留判断的责任歧义"
+    },
+    {
+      "companies": [
+        "bambu-lab"
+      ],
+      "excerpt": "拓竹正文里可以明确区分“现在就要能做”和“可以迁移或补齐”。最容易造成误筛的做法，是把所有涉及 3D 打印的岗位都加上深度打印经验，或把所有带 AI 的岗位都加上模型训练、编程门槛。不同岗位明确允许不同的进入路径；这不是降低要求，而是把要求放回实际交付任务。",
+      "id": "bambu-lab--q3-requirement-strength",
+      "kind": "analysis",
+      "path": "bambu-lab/q3-requirement-strength.md",
+      "question": 3,
+      "sha256": "10bc9ffd7c70fd5ade962c11760d18546a061900a75c0a3eadc81dee218a93cc",
+      "size_bytes": 9655,
+      "title": "Q3 拓竹：真门槛取决于入职后立即要完成什么"
+    },
+    {
+      "companies": [
+        "bambu-lab"
+      ],
+      "excerpt": "不能给拓竹贴一个统一的“预研期”或“量产爬坡期”标签。正文呈现的实质差别，是不同岗位在为不同交付对象负责：有的要证明物理解释是否成立，有的要交出试产样机，有的要保证首批上市质量，还有的持续承接量产变更与维修。招聘校准需要先确认这个岗位必须交出什么，再决定要研究经历、试产排障还是长期维护经历。",
+      "id": "bambu-lab--q4-delivery-stage",
+      "kind": "analysis",
+      "path": "bambu-lab/q4-delivery-stage.md",
+      "question": 4,
+      "sha256": "39dcc7e0301d36e839848fae47c5955a1e30427744522de1b95f3989a34b95b0",
+      "size_bytes": 9903,
+      "title": "Q4 拓竹：研发、试产交接和长期维护并行，服务还被前移到设计阶段"
+    },
+    {
+      "companies": [
+        "bambu-lab"
+      ],
+      "excerpt": "本题可答的是招聘文本指向的客户与使用情境，不能确认实际客户名单、已销售产品组合或应用成效。拓竹官网目标 https://bambulab.com 在本包中为 failed / source_rejected，没有官网正文作第二来源。以下 MakerLab、MakerWorld、MakerMarket 和 CyberBr…",
+      "id": "bambu-lab--q5-customer-applications",
+      "kind": "analysis",
+      "path": "bambu-lab/q5-customer-applications.md",
+      "question": 5,
+      "sha256": "bfa6a6feded5a45144dd7dea2c0695b63152987c6f39eaca622db3db708100a6",
+      "size_bytes": 9420,
+      "title": "Q5 拓竹：同是 3D 打印，创作、履约和教学面对的是不同用户任务"
+    },
+    {
+      "companies": [
+        "bambu-lab"
+      ],
+      "excerpt": "全量阅读拓竹社招、校招的原始职责和要求后，我的判断是：这些技术岗位正在围绕同一件难事拆解工作——用户输入模型、选择材料或提出创作意图之后，怎样少靠个人反复调机，也能得到稳定、可解释、符合预期的实体结果。这个判断同时得到 FDM 的机理研究、Bambu Studio 参数固化、生成模型的可打印性，以及 UV 的画质归因支…",
+      "id": "bambu-lab--q9-technical-intent",
+      "kind": "analysis",
+      "path": "bambu-lab/q9-technical-intent.md",
+      "question": 9,
+      "sha256": "0202bc23ba891bd31af2f17696c1dc224b203b6df46c0b2fa4e5e8a83743b538",
+      "size_bytes": 12000,
+      "title": "Q9 拓竹：把数字模型和调参经验变成可重复的实物输出"
+    },
+    {
+      "companies": [
+        "hesai",
+        "insta360"
+      ],
+      "excerpt": "两家公司都出现三维重建、神经渲染、显存与评测任务。有招聘价值的区别在于这次交付要对谁负责：禾赛 Kosmo 的客户端与应用岗位把客户设备及实际操作写得很具体；影石所引算法岗位把仿真与感知训练写成下游。这个差别首先来自岗位责任。继续读禾赛解决方案岗位会发现，它也服务机器人训练与仿真需求，因此本题不能证明两家公司采取了不同…",
+      "id": "comparisons--q12-reconstruction-handoffs",
+      "kind": "analysis",
+      "path": "comparisons/q12-reconstruction-handoffs.md",
+      "question": 12,
+      "sha256": "3030dda47387372572987529e20cc8ac895df5a80d527743f9fbdf549eb9a0fd",
+      "size_bytes": 8642,
+      "title": "Q12 禾赛与影石：重建结果在客户部署与模型训练中的交付责任"
+    },
+    {
+      "companies": [
+        "bambu-lab",
+        "insta360"
+      ],
+      "excerpt": "“做过海外创作者营销”还不足以判断能否迁移。拓竹 MakerWorld 众筹运营要把创作者模型及相关硬件组织成可购买的首发商品；影石北美营销要让合适的创作者展示无人机的飞行与创作能力。两者都要促成商业结果，差异在候选人亲自改变交易的哪一环，不能概括成“拓竹重转化、影石重品牌”。",
+      "id": "comparisons--q8-creator-commerce",
+      "kind": "analysis",
+      "path": "comparisons/q8-creator-commerce.md",
+      "question": 8,
+      "sha256": "16013f9886c28f7125ce686c189a6b060b2c8da591acac65ac51082cd41179a4",
+      "size_bytes": 6447,
+      "title": "Q8 拓竹与影石：都借助创作者促成购买，候选人究竟要设计交易还是组织内容合作？"
+    },
+    {
+      "companies": [],
+      "excerpt": "供 Q1–Q12 复核原文使用。这里仅保存引用定位与原始字段，不参与分析打分或 Agent 路由。",
+      "id": "evidence-index",
+      "kind": "support",
+      "path": "evidence-index.md",
+      "question": null,
+      "sha256": "d7181cd8164050558afbf8fd4bf30a47813bf127723e049caf5de1c39d841047",
+      "size_bytes": 39048,
+      "title": "岗位证据定位"
+    },
+    {
+      "companies": [],
+      "excerpt": "这份清单提取两批原始岗位分析中已经验证的问题，供简历筛选、岗位校准和 JD 生成设计使用。它记录需要支持的理解能力及证据，不预设关键词路由、固定分类器、扣分表或自动拒绝规则；输入清单对应的角色与方法内容改动已在 Team 独立提交准备完成，见内容接入与交付记录。业务工具及线上行为尚未改动。",
+      "id": "hannah-design-inputs",
+      "kind": "support",
+      "path": "hannah-design-inputs.md",
+      "question": null,
+      "sha256": "a499e73a61af515413506c7912de9c87e2772b5227b9aa54fef44f1735999967",
+      "size_bytes": 4856,
+      "title": "给 Hannah 角色与工具设计的分析输入"
+    },
+    {
+      "companies": [],
+      "excerpt": "完整读取 370 个原始渠道行，对应 364 个岗位；25 行经完整正文逐字一致确认后复用阅读，共 345 种不同正文。原始记录的观察时间为 2026-09-06 北京时间 22:10:58–22:10:59。官网采集失败，本文没有用当前官网或产品印象填补证据。",
+      "id": "hesai--readme",
+      "kind": "support",
+      "path": "hesai/README.md",
+      "question": null,
+      "sha256": "7ab7216d55da29299fa72255311dbf7dc3358e73816b98144cc27fdc9b5b77f0",
+      "size_bytes": 2023,
+      "title": "禾赛：从测量与重建，到客户设备及制造交付"
+    },
+    {
+      "companies": [],
+      "excerpt": "执行时间：2026-09-09T04:05:47.571359+00:00。校验脚本：verify_sources.py。",
+      "id": "hesai--citation-validation",
+      "kind": "support",
+      "path": "hesai/citation-validation.md",
+      "question": null,
+      "sha256": "64c3dc1ea47925de7fa357737b280aac05dec5aa6f61994d24a90e9e49f3f45d",
+      "size_bytes": 1817,
+      "title": "禾赛引用与身份核验"
+    },
+    {
+      "companies": [
+        "hesai"
+      ],
+      "excerpt": "目前不能据这批岗位断定禾赛缺少哪项技术能力。可以确认若干任务接口，但不能把没有独立岗位名称的环节当成缺口。通读后，最需要纠正的两个潜在误判是“没有数据闭环”和“出现采购/代工就没有自研”。",
+      "id": "hesai--q10-gaps-responsibility-boundaries",
+      "kind": "analysis",
+      "path": "hesai/q10-gaps-responsibility-boundaries.md",
+      "question": 10,
+      "sha256": "a3de2dfbd3d4ae48822ba7e7986ed23353fe6ef041e2bd367beeef3e7b53af89",
+      "size_bytes": 7228,
+      "title": "Q10 禾赛岗位里缺什么？能否判断能力缺口？"
+    },
+    {
+      "companies": [
+        "hesai"
+      ],
+      "excerpt": "最值得在招聘需求会上核实的是地区范围和实习门槛；另有可以直接确认的粘贴残留。它们影响候选池与筛选口径，但不能据此判断禾赛普遍虚写 JD，也不推测实际面试标准。",
+      "id": "hesai--q11-internal-consistency",
+      "kind": "analysis",
+      "path": "hesai/q11-internal-consistency.md",
+      "question": 11,
+      "sha256": "1b2f9e8c538f9319014a3ad1feb75dae8720533954bbeedc75c54c1fdd6fc1db",
+      "size_bytes": 7999,
+      "title": "Q11 禾赛同一岗位内部，职责和要求是否对得上？"
+    },
+    {
+      "companies": [
+        "hesai"
+      ],
+      "excerpt": "禾赛 JD 的“必须、优先、至少之一”值得原样保留，但真正的筛选含义要与任务并读。这里判断的是招聘文本承诺的门槛，不是推测实际面试是否放宽。",
+      "id": "hesai--q3-task-requirements",
+      "kind": "analysis",
+      "path": "hesai/q3-task-requirements.md",
+      "question": 3,
+      "sha256": "14aa56fdb517b0ecce30900b53b1340c72b4aaf9ad3369ef16f65bceca6d8636",
+      "size_bytes": 9545,
+      "title": "Q3 禾赛岗位里，什么要求真正决定能不能交付？"
+    },
+    {
+      "companies": [
+        "hesai"
+      ],
+      "excerpt": "不能给禾赛贴一个“量产期”或“预研期”的总标签。正文把不同岗位的交付终点写得很具体：有的结束于可行性原型，有的把产品送过试产和爬坡，有的接手稳定后的维护。招聘画像应跟着这个终点走，不能只跟岗位名称走。",
+      "id": "hesai--q4-product-stages",
+      "kind": "analysis",
+      "path": "hesai/q4-product-stages.md",
+      "question": 4,
+      "sha256": "2b0d3aed2cd7eb2033b0222f0e2f908ab1a3a5ed9a47186292673f7533b292a5",
+      "size_bytes": 8309,
+      "title": "Q4 禾赛在为哪些产品阶段招人？"
+    },
+    {
+      "companies": [
+        "hesai"
+      ],
+      "excerpt": "禾赛官网 https://www.hesaitech.com 在本包中采集失败（source_rejected），没有可用官网正文。以下只能回答“招聘岗位被要求面向谁、完成什么应用任务”，不能确认某客户已签约、某产品已量产，或把 JD 的目标市场写成已实现收入。",
+      "id": "hesai--q5-customers-applications",
+      "kind": "analysis",
+      "path": "hesai/q5-customers-applications.md",
+      "question": 5,
+      "sha256": "cb5ab43c93161fbf8d61b41fff20921745eaeaed6d27c91b2c9f5c7b24a5ff26",
+      "size_bytes": 8105,
+      "title": "Q5 禾赛这些岗位面向什么客户与应用？"
+    },
+    {
+      "companies": [
+        "hesai"
+      ],
+      "excerpt": "通读禾赛 364 个统一岗位对应的全部原始职责与要求后，我的判断是：这批招聘同时追求三种交付——让三维重建在客户机器上可用、让光电与芯片设计经过制造后仍兑现整机指标、让机器人驱动器的系统性能在微型材料与装配条件下成立。这些判断来自不同岗位对同一问题的相互约束，不代表禾赛已经解决了它们。",
+      "id": "hesai--q9-technical-intent",
+      "kind": "analysis",
+      "path": "hesai/q9-technical-intent.md",
+      "question": 9,
+      "sha256": "960e36385631963268743529703d2e64ab3a7c419855fc1f7a2dc8d55cad8cad",
+      "size_bytes": 12489,
+      "title": "Q9 禾赛在解决什么技术问题？"
+    },
+    {
+      "companies": [],
+      "excerpt": "本会话逐段完整读取三个飞书原始归档的职责 description 与要求 requirement，覆盖全部 364 个统一岗位。未用标题选样，也没有跳过销售、职能、校招或实习正文。",
+      "id": "hesai--read-ledger",
+      "kind": "support",
+      "path": "hesai/read-ledger.md",
+      "question": null,
+      "sha256": "b138316e41737e2d2fff2e1406341b7b91697d4e2eaf93c50d90f4b0b589d907",
+      "size_bytes": 5285,
+      "title": "禾赛完整阅读台账"
+    },
+    {
+      "companies": [],
+      "excerpt": "阅读范围：2026-09-06归档的socialENG与campus全部375条原始职责、要求，以及一份官网首页文本。按原始招聘类型核查入口；保留正式字段与实习正文的冲突。分析顺序及建议阅读顺序：",
+      "id": "insta360--readme",
+      "kind": "support",
+      "path": "insta360/README.md",
+      "question": null,
+      "sha256": "48754ee04a801cc6173a11a53651b729e5405c9b79dedea4f65c8eca5924a9bd",
+      "size_bytes": 1672,
+      "title": "影石原始岗位语义分析"
+    },
+    {
+      "companies": [
+        "insta360"
+      ],
+      "excerpt": "“公开招聘没有安排数据工程、仿真或评测任务”这一判断被影石正文反驳。企业究竟缺哪项能力、是否缺人，目前不可答。全部375条正文中，有用于算法训练/评估的数据生成，有规划评测和数据闭环工具链，有重建几何评价，也有软件数据回灌和回归用例。不能因为主部门字段空，或者岗位名没有统一叫“数据闭环”，就把这些工作抹掉。",
+      "id": "insta360--q10-unproven-gaps-and-responsibilities",
+      "kind": "analysis",
+      "path": "insta360/q10-unproven-gaps-and-responsibilities.md",
+      "question": 10,
+      "sha256": "91208585f94c7478f83b4502f9750fe1cbd57cb96adda4f7006649a4fb13ad9e",
+      "size_bytes": 6992,
+      "title": "Q10 影石：不能判定企业能力缺口，但能看清要追问的数据责任接口"
+    },
+    {
+      "companies": [
+        "insta360"
+      ],
+      "excerpt": "最直接的职责—要求错位出现在社媒视觉设计。“国内社媒”和“海外社媒”两条岗位的职责、要求分别逐字相同：职责指向ins、twitter、LinkedIn、youtube，要求却只具体列小红书、抖音、微博的平台趋势经验。对于国内标题，任务对象与标题不符；对于海外标题，要求没有说明海外内容判断依据。可以确认文案复用和平台范围…",
+      "id": "insta360--q11-internal-mismatches",
+      "kind": "analysis",
+      "path": "insta360/q11-internal-mismatches.md",
+      "question": 11,
+      "sha256": "0200270fe6faf67aa9db78325bd462456dc9a677314961340e7d7131c509bf8e",
+      "size_bytes": 8705,
+      "title": "Q11 影石：确认的文案错位与尚待澄清的责任跨度必须分开"
+    },
+    {
+      "companies": [
+        "insta360"
+      ],
+      "excerpt": "相机产品量产经历与某个芯片平台经历不能同权筛选。相机嵌入式岗明确要求深度参与至少一款相机产品或芯片从开发到量产；因为它要负责影像功能量产集成、性能功耗与算法库稳定性，完整交付经历有直接任务依据。RTOS、防抖、多目拼接经验则分别写“优先”。色彩调试专家也把安霸、高通、海思平台经验列为优先，真正贯穿职责的是IQ调试、IS…",
+      "id": "insta360--q3-requirement-strength",
+      "kind": "analysis",
+      "path": "insta360/q3-requirement-strength.md",
+      "question": 3,
+      "sha256": "deaf35d733b0e6d2fff32af5837d010ee2eb0e654db9ef5d6ab99a585133646e",
+      "size_bytes": 7867,
+      "title": "Q3 影石：先认交付门槛，再看同一个词究竟是必需还是加分"
+    },
+    {
+      "companies": [
+        "insta360"
+      ],
+      "excerpt": "本包不能给影石贴上一个统一产品阶段。南京影像算法实习生的对象是画质增强、图像编辑、配准的预研；VLA实习生探索多模态模型与动作生成，尚未写清具体产品与量产验收。而相机嵌入式岗已经要求量产集成和完整量产经历，光学测试岗跨EVT到量产还要处理售后。不同岗位的阶段是并存关系，不能由VLA一条前沿广告把全公司描述为探索期。",
+      "id": "insta360--q4-delivery-stages",
+      "kind": "analysis",
+      "path": "insta360/q4-delivery-stages.md",
+      "question": 4,
+      "sha256": "a5be6835ae03826bcee55914b08f93c17b991243669172cccafc0507346a2d98",
+      "size_bytes": 7010,
+      "title": "Q4 影石：新算法的预研、产品量产与全球维修同时有明确交付物"
+    },
+    {
+      "companies": [
+        "insta360"
+      ],
+      "excerpt": "影石岗位里的“用户”至少包含亲自拍摄剪辑的人、负责成交和教育的零售渠道，以及把音视频方案交付给企业的服务商。这三类对象需要不同的候选经历，不能把“消费电子出海”当统一客户画像。",
+      "id": "insta360--q5-customers-and-scenarios",
+      "kind": "analysis",
+      "path": "insta360/q5-customers-and-scenarios.md",
+      "question": 5,
+      "sha256": "07cc3007e1352aa1524be78b12a12ca630250d1e2123a07d7555aa3f296126e2",
+      "size_bytes": 8036,
+      "title": "Q5 影石：运动与航拍创作者之外，还有依赖服务商的会议与专业影像场景"
+    },
+    {
+      "companies": [
+        "insta360"
+      ],
+      "excerpt": "通读本包影石375条岗位的全部原始职责与要求后，最明确的技术意图是：影像效果必须在具体硬件的性能、发热、续航约束下成立，并继续成为用户能控制、能剪辑的体验。这不是把算法名并排摆放：影像系统岗直接要求协调效果、性能、功耗之间的取舍；相机嵌入式岗把算法库工程实现和整机资源预算放在同一岗位；技术产品岗又把防抖、拼接的需求转成…",
+      "id": "insta360--q9-technical-intent",
+      "kind": "analysis",
+      "path": "insta360/q9-technical-intent.md",
+      "question": 9,
+      "sha256": "743cde8ad03719bea61afb55e1e7c509b01e5f6429c91321bd390c1817ed92ad",
+      "size_bytes": 11317,
+      "title": "Q9 影石：把稳定影像、受限设备与实际创作接起来，无人机又增加了自主运动的约束"
+    },
+    {
+      "companies": [
+        "robosense"
+      ],
+      "excerpt": "分析日期：2026-09-09。材料：情报包 2ed2262c-63a0-47e5-996c-7d00eb0be1a0 中速腾聚创的全部招聘记录。本题仅回答速腾聚创。",
+      "id": "q1-robosense-work-division",
+      "kind": "analysis",
+      "path": "q1-robosense-work-division.md",
+      "question": 1,
+      "sha256": "6facd3718c3d269c428fbd3821febaa2a0cc81c61611d47f22c1ae308cb6788a",
+      "size_bytes": 15566,
+      "title": "Q1 速腾聚创怎样切分工作，以及搜寻人才时该如何使用这些信息"
+    },
+    {
+      "companies": [
+        "robosense",
+        "shining3d",
+        "creality"
+      ],
+      "excerpt": "无法证明“哪家公司缺少某项技术能力”。Q9 已通读速腾聚创、先临三维、创想三维在本包的全部可见岗位正文，但这是公开招聘材料，现有团队、外部服务和未公开职位没有出现在同一张完整能力图里。下面给出可以排除的错误判断，以及一个值得进一步核实的具体责任接口；不将它们伪装成缺岗名单。",
+      "id": "q10-unproven-capability-gaps",
+      "kind": "analysis",
+      "path": "q10-unproven-capability-gaps.md",
+      "question": 10,
+      "sha256": "0dcccfc1b754cb510bac1ab52f75e1747a9651eebaea5c01a941b08926f77236",
+      "size_bytes": 9867,
+      "title": "Q10 能否从这些岗位认定技术能力缺口？目前不能"
+    },
+    {
+      "companies": [
+        "robosense",
+        "shining3d",
+        "creality"
+      ],
+      "excerpt": "通读三家公司正文后，可以确认一些标题、职责、要求之间的具体错位。但“文案不一致”不能直接证明是假招聘，也不能让我们替用人方删除要求。正确的用法是识别哪段材料能支持岗位判断，哪处需要澄清，避免把明显复制的描述当成确定的人才标准。",
+      "id": "q11-internal-job-mismatches",
+      "kind": "analysis",
+      "path": "q11-internal-job-mismatches.md",
+      "question": 11,
+      "sha256": "144162faa5ec07921639789c7b885b330d2da105de81e39687bbfdfb14af6a21",
+      "size_bytes": 13344,
+      "title": "Q11 岗位内部的不一致，应该改变什么搜寻动作"
+    },
+    {
+      "companies": [
+        "robosense",
+        "shining3d"
+      ],
+      "excerpt": "前置已完成：Q9 技术意图 通读两家公司全部可见岗位正文。本题比较“重建结果怎样进入可用的产品流程”，不评技术胜负，也不宣称两家公司各只有一条路线。",
+      "id": "q12-reconstruction-approaches",
+      "kind": "analysis",
+      "path": "q12-reconstruction-approaches.md",
+      "question": 12,
+      "sha256": "ad14fb6ee94cb09a202dd072803f117b67cd8653f1ac9868c7a096b477a66780",
+      "size_bytes": 6899,
+      "title": "Q12 同样让三维重建可用，速腾聚创与先临三维的交付约束有何不同"
+    },
+    {
+      "companies": [
+        "robosense"
+      ],
+      "excerpt": "它同时在寻找能独立完成技术交付的人，以及能建立团队和技术治理的人；这两种责任不能按“普通/高级”职称划分。公开职级可以帮助定位对照，但不能替代职责判断。",
+      "id": "q2-responsibility-and-level",
+      "kind": "analysis",
+      "path": "q2-responsibility-and-level.md",
+      "question": 2,
+      "sha256": "4dc21925154dfc6c6127e68fb537a1754e9f9981c52a77624c838b66004af59e",
+      "size_bytes": 4853,
+      "title": "Q2 速腾聚创在买哪一种责任层级的人"
+    },
+    {
+      "companies": [
+        "robosense"
+      ],
+      "excerpt": "速腾聚创的要求需要按具体交付物理解，并保留“必备、至少一种、优先”的区别。正文能支持某项要求有直接任务依据；实际面试是否一票否决，还需要用人方确认。",
+      "id": "q3-requirements-with-task-basis",
+      "kind": "analysis",
+      "path": "q3-requirements-with-task-basis.md",
+      "question": 3,
+      "sha256": "43f22554885034c2bf31f262b3365967c12b227de2f53e2c4f63eb7ca5a427c4",
+      "size_bytes": 4298,
+      "title": "Q3 岗位要求中，哪些约束有任务依据"
+    },
+    {
+      "companies": [
+        "robosense"
+      ],
+      "excerpt": "当前招聘同时覆盖新型传感器的概念验证、既有技术的可制造性转化和整机稳定交付；这些工作不能压成公司的一个“所处阶段”。同一岗位也可能贯穿多个阶段。",
+      "id": "q4-product-stage-and-delivery",
+      "kind": "analysis",
+      "path": "q4-product-stage-and-delivery.md",
+      "question": 4,
+      "sha256": "59884b58d35e93893691c045407013e902186fda494f1cd982ea5fa87271c670",
+      "size_bytes": 3777,
+      "title": "Q4 速腾聚创的岗位分别在解决哪一个产品阶段的问题"
+    },
+    {
+      "companies": [
+        "robosense",
+        "shining3d",
+        "creality"
+      ],
+      "excerpt": "先临三维的齿科岗位在解决“设备进入诊室以后，能否嵌入病例采集、设计和日常使用”；创想三维的消费业务岗位在解决“用户找到想打印的内容以后，能否买到设备、耗材并完成创作”；速腾聚创的机器人应用岗在解决“客户的软硬件现场，能否把产品搭起来并验收”。同叫应用、销售或生态，实际交付对象不同。以下是岗位意图的推断，不是已实现的客户…",
+      "id": "q5-customers-and-workflows",
+      "kind": "analysis",
+      "path": "q5-customers-and-workflows.md",
+      "question": 5,
+      "sha256": "743ed02042b921ede618b3062aa0e76aa5673053e2670e2caf56f9613034363f",
+      "size_bytes": 7553,
+      "title": "Q5 客户场景决定要找哪种应用与商业人才"
+    },
+    {
+      "companies": [
+        "shining3d",
+        "creality"
+      ],
+      "excerpt": "部分可答。可以解释先临三维和创想三维个别岗位明示的招聘报价与职责的关系；不能从这里得出实际薪酬、能力市场价或跨公司薪酬排名。速腾聚创的金额判断暂不可答。",
+      "id": "q6-salary-and-responsibility",
+      "kind": "analysis",
+      "path": "q6-salary-and-responsibility.md",
+      "question": 6,
+      "sha256": "1fd75729814f7406d819d3ba34e58d2991bb5f61f69e64f7a6a15e6b67d5b04f",
+      "size_bytes": 7969,
+      "title": "Q6 报价对应什么责任，哪些价格不能用"
+    },
+    {
+      "companies": [
+        "shining3d",
+        "creality"
+      ],
+      "excerpt": "先临三维的标记至少同时覆盖了设备底层、打印软件与机械、齿科材料、图像算法、云测试等性质不同的工作。结合全部正文，“热招主要说明量产紧迫度”不能成立。这里可识别的是企业在渠道上如何标注这些职位，不能据此恢复内部缺口、招聘难度或优先级。",
+      "id": "q7-hot-and-continuing-recruitment",
+      "kind": "analysis",
+      "path": "q7-hot-and-continuing-recruitment.md",
+      "question": 7,
+      "sha256": "e2edc2871c863b0642f3426143896ba8900b4b02a7dc9aa516e5ab559ee4ad51",
+      "size_bytes": 5830,
+      "title": "Q7 热招标记不足以证明在量产爬坡，常年也不等于低优先级"
+    },
+    {
+      "companies": [
+        "shining3d",
+        "creality"
+      ],
+      "excerpt": "比较问题是：新品走向海外市场时，GTM 要对哪一个交付结果负责？先临三维与创想三维都有可回答的岗位，Q5 已解释客户场景。本题只比较这两个岗位的工作授权，不把它们扩展成两家公司完整组织模式。",
+      "id": "q8-gtm-responsibility-comparison",
+      "kind": "analysis",
+      "path": "q8-gtm-responsibility-comparison.md",
+      "question": 8,
+      "sha256": "1ba9ccb47c192996e4ef532d4e539025b498abfde44f3f43fe703e2cca33ce36",
+      "size_bytes": 4801,
+      "title": "Q8 同样招聘 GTM，真正购买的责任不同"
+    },
+    {
+      "companies": [
+        "robosense",
+        "shining3d",
+        "creality"
+      ],
+      "excerpt": "本题通读本包速腾聚创 291 条记录中的全部 287 条非空正文、先临三维 173 条和创想三维 55 条正文。下文不是全包 12 家的画像，也不是已实现能力的鉴定；解释的是这些公司通过具体岗位准备承担什么技术责任。引用是通读后选出的判断依据，不是阅读抽样。",
+      "id": "q9-technical-intent",
+      "kind": "analysis",
+      "path": "q9-technical-intent.md",
+      "question": 9,
+      "sha256": "0bb2abe4ecc6f56686f664e617556c298766d32b184da50fe8677af3405e6c9e",
+      "size_bytes": 15040,
+      "title": "Q9 通读后看到的技术问题：测得准、交付得出、用户用得成"
+    },
+    {
+      "companies": [],
+      "excerpt": "日期：2026-09-09。复核对象为本目录 Q1–Q12；这是作者自检记录，不是独立业务验收，也不是运行时规则。",
+      "id": "review-notes",
+      "kind": "support",
+      "path": "review-notes.md",
+      "question": null,
+      "sha256": "32d304932ccd9edf71bce8bb36a67aefa4513cfadbee05b1e9f5ee3d6ef9f9ef",
+      "size_bytes": 5454,
+      "title": "提交前复核说明"
+    },
+    {
+      "companies": [],
+      "excerpt": "依据用户转来的 Claude 评审，逐项回查原始数据后修订。本记录说明采用范围，便于再次评审；没有将评审中的推断直接当成事实。",
+      "id": "review-revisions",
+      "kind": "support",
+      "path": "review-revisions.md",
+      "question": null,
+      "sha256": "401d4edb64c1b26360e92680ed85079ff831101b7ffbfa4a6f9a24d8e908b2b0",
+      "size_bytes": 3229,
+      "title": "外部评审后的修订记录"
+    },
+    {
+      "companies": [],
+      "excerpt": "情报包：2ed2262c-63a0-47e5-996c-7d00eb0be1a0。",
+      "id": "text-led-evidence-index",
+      "kind": "support",
+      "path": "text-led-evidence-index.md",
+      "question": null,
+      "sha256": "040687f8c4cb6979718ba4dc4b251680f3127aa1b44dcb348dd8acee03ac971b",
+      "size_bytes": 68443,
+      "title": "正文分析扩展：证据索引"
+    },
+    {
+      "companies": [],
+      "excerpt": "日期：2026-09-09。承接首批三家公司分析及评审修订，继续阅读智元、拓竹、影石、禾赛。成果按公司呈现，每家公司回答 Q9、Q3、Q4、Q5、Q10、Q11，另有 Q8、Q12 两篇跨公司比较。原先十二题保留，不将不同公司的材料强行填进统一篇幅或结论模板。此处沿用的数据源“智元”实际汇集集团子公司、业务部及归属未明…",
+      "id": "text-led-expansion",
+      "kind": "support",
+      "path": "text-led-expansion.md",
+      "question": null,
+      "sha256": "c2a0f230d3985fce30570d05cc51e5f800f0a439709f84f791390495c70d2a94",
+      "size_bytes": 7991,
+      "title": "四个招聘集合的正文分析与复核说明"
+    },
+    {
+      "companies": [],
+      "excerpt": "根据用户转来的 Claude 评审，回读对应岗位原始职责与要求后修订。仍使用同一归档包，未新增公司分析，也未核实法律主体、真实汇报链或在岗人员安排。",
+      "id": "text-led-review-revisions",
+      "kind": "support",
+      "path": "text-led-review-revisions.md",
+      "question": null,
+      "sha256": "c875ceef554d01b3bc880ee3bba301dfccd9a50294fc8442554ae64c6489c096",
+      "size_bytes": 3673,
+      "title": "扩展分析的实体归属与评审修订"
+    }
+  ],
+  "edition": "research-031381c6ce46fc1bfa27",
+  "observed_at": "2026-09-06",
+  "questions": [
+    {
+      "id": 1,
+      "name": "工作分工"
+    },
+    {
+      "id": 2,
+      "name": "责任层级"
+    },
+    {
+      "id": 3,
+      "name": "要求与任务"
+    },
+    {
+      "id": 4,
+      "name": "产品阶段与交付"
+    },
+    {
+      "id": 5,
+      "name": "客户与应用场景"
+    },
+    {
+      "id": 6,
+      "name": "薪酬与责任"
+    },
+    {
+      "id": 7,
+      "name": "热招与持续招聘"
+    },
+    {
+      "id": 8,
+      "name": "商业责任比较"
+    },
+    {
+      "id": 9,
+      "name": "技术意图"
+    },
+    {
+      "id": 10,
+      "name": "能力缺口与边界"
+    },
+    {
+      "id": 11,
+      "name": "岗位内部矛盾"
+    },
+    {
+      "id": 12,
+      "name": "技术解法比较"
+    }
+  ],
+  "schema_version": 1,
+  "source_archive_id": "2ed2262c-63a0-47e5-996c-7d00eb0be1a0",
+  "source_job_identities": 3437
+}

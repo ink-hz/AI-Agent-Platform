@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import companies from "../../../../backend/tests/fixtures/hr_intelligence_company/companies.json";
 import detail from "../../../../backend/tests/fixtures/hr_intelligence_company/company-insta360.json";
 import type { Account } from "../../auth";
-import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
+import { HrLegacyPanoramaWorkspace as HrPanoramaWorkspace } from "./HrLegacyPanoramaWorkspace";
 
 const account: Account = { internal_user_id: "member", display_name: "HR", role: "member", departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf" };
 afterEach(() => vi.restoreAllMocks());
