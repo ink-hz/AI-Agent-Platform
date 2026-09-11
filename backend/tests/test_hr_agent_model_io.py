@@ -253,6 +253,47 @@ def test_provider_refusal_has_stable_classification(tmp_path: Path) -> None:
     assert caught.value.code == "provider_refused"
 
 
+@pytest.mark.parametrize("text", ["", " \n\t"])
+def test_complete_empty_answer_has_retryable_specific_classification(text) -> None:
+    from app.hr_agent.model import ModelProtocolError, collect_reply
+    from app.hr_agent.types import ModelEvent
+
+    events = []
+    if text:
+        events.append(ModelEvent("text_delta", {"text": text}))
+    events.append(ModelEvent("stop", {"reason": "end_turn"}))
+
+    with pytest.raises(ModelProtocolError) as caught:
+        collect_reply(events)
+
+    assert caught.value.code == "empty_response"
+
+
+def test_tool_stop_without_a_tool_call_remains_invalid_response() -> None:
+    from app.hr_agent.model import ModelProtocolError, collect_reply
+    from app.hr_agent.types import ModelEvent
+
+    with pytest.raises(ModelProtocolError) as caught:
+        collect_reply([ModelEvent("stop", {"reason": "tool_use"})])
+
+    assert caught.value.code == "invalid_response"
+
+
+def test_unknown_complete_stop_remains_invalid_response() -> None:
+    from app.hr_agent.model import ModelProtocolError, collect_reply
+    from app.hr_agent.types import ModelEvent
+
+    with pytest.raises(ModelProtocolError) as caught:
+        collect_reply(
+            [
+                ModelEvent("text_delta", {"text": "正文"}),
+                ModelEvent("stop", {"reason": "unknown_complete_stop"}),
+            ]
+        )
+
+    assert caught.value.code == "invalid_response"
+
+
 def test_first_request_logs_exclude_sensitive_payloads(tmp_path: Path, caplog) -> None:
     credential = tmp_path / "credential"
     write_credential(credential)

@@ -1,4 +1,5 @@
 """Real HR persistence; only the model provider and public context are scripted."""
+from threading import Event
 from uuid import uuid4
 
 import pytest
@@ -46,6 +47,11 @@ class ScriptModel:
 
 def answer(text='已有结论'):
     return [ModelEvent('text_delta', {'text': text}), ModelEvent('usage', {'prompt_tokens': 10, 'completion_tokens': 5}), ModelEvent('stop', {'reason': 'stop'})]
+
+
+def empty_answer(text=''):
+    events = [] if not text else [ModelEvent('text_delta', {'text': text})]
+    return [*events, ModelEvent('usage', {'prompt_tokens': 10, 'completion_tokens': 5}), ModelEvent('stop', {'reason': 'end_turn'})]
 
 
 def test_normal_answer_is_persisted_without_fixed_steps(setup):
@@ -100,6 +106,140 @@ def test_retry_limit_is_three_actual_sends(setup, database):
     assert done['budget']['charged_calls'] == 3
     with database.connection() as c:
         assert [r[0] for r in c.execute('select retry_no from platform_hr_agent.model_attempts order by ordinal').fetchall()] == [0, 1, 2]
+
+
+def test_empty_response_retries_same_logical_step_then_succeeds(setup, database):
+    repo, owner, view, fence = setup
+    model = ScriptModel([empty_answer(' \n'), answer('重试后的有效回答')])
+
+    done = run_work(repo, model, None, fence, context_builder=context)
+
+    assert done['state'] == 'completed'
+    assert done['budget']['charged_calls'] == 2
+    assert repo.list_messages(owner, view['work_id'])['items'][-1]['body'] == '重试后的有效回答'
+    with database.connection() as c:
+        rows = c.execute('select logical_step_id,retry_no,status from platform_hr_agent.model_attempts order by ordinal').fetchall()
+    assert rows[0][0] == rows[1][0]
+    assert [row[1] for row in rows] == [0, 1]
+    assert [row[2] for row in rows] == ['interrupted', 'committed']
+
+
+def test_empty_response_retry_count_survives_runtime_restart(setup, database):
+    repo, owner, view, fence = setup
+    stopped = Event()
+
+    class StopAfterEmpty:
+        def stream(self, request):
+            yield from empty_answer()
+            stopped.set()
+
+    first = run_work(
+        repo,
+        StopAfterEmpty(),
+        None,
+        fence,
+        context_builder=context,
+        stop_event=stopped,
+    )
+    assert first['state'] == 'running'
+    assert first['budget']['charged_calls'] == 1
+
+    done = run_work(
+        repo, ScriptModel([answer('恢复后的有效回答')]), None, fence,
+        context_builder=context,
+    )
+
+    assert done['state'] == 'completed'
+    assert done['budget']['charged_calls'] == 2
+    with database.connection() as c:
+        rows = c.execute('select logical_step_id,retry_no from platform_hr_agent.model_attempts order by ordinal').fetchall()
+    assert rows[0][0] == rows[1][0]
+    assert [row[1] for row in rows] == [0, 1]
+
+
+def test_real_http_empty_response_retries_with_real_persistence(setup, database):
+    import json
+    from dataclasses import replace
+
+    from test_hr_agent_worker_process import Provider, wire
+
+    from app.hr_agent.model import ConfiguredHttpModelPort
+
+    repo, owner, view, fence = setup
+    empty_wire = 'data: ' + json.dumps(
+        {
+            'choices': [{'delta': {}, 'finish_reason': 'stop'}],
+            'usage': {'prompt_tokens': 10, 'completion_tokens': 1},
+        }
+    ) + '\n\ndata: [DONE]\n\n'
+    with Provider([empty_wire, wire()]) as provider:
+        repo.settings = replace(
+            repo.settings,
+            provider_profile={
+                **repo.settings.provider_profile,
+                'endpoint': provider.endpoint,
+            },
+        )
+        model = ConfiguredHttpModelPort.from_mapping(repo.settings.provider_profile)
+        done = run_work(repo, model, None, fence, context_builder=context)
+
+    assert done['state'] == 'completed'
+    assert done['budget']['charged_calls'] == 2
+    assert repo.list_messages(owner, view['work_id'])['items'][-1]['body'] == '本地模拟结论'
+    assert len(provider.requests) == 2
+    with database.connection() as c:
+        rows = c.execute('select logical_step_id,retry_no,status from platform_hr_agent.model_attempts order by ordinal').fetchall()
+    assert rows[0][0] == rows[1][0]
+    assert [row[1] for row in rows] == [0, 1]
+
+
+def test_three_empty_responses_fail_without_answer_or_operations(setup, database):
+    repo, owner, view, fence = setup
+    model = ScriptModel([empty_answer(), empty_answer(' '), empty_answer('\n')])
+
+    done = run_work(repo, model, None, fence, context_builder=context)
+
+    assert done['state'] == 'failed'
+    assert done['answer_state'] == 'none'
+    assert done['budget']['charged_calls'] == 3
+    assert len(repo.list_messages(owner, view['work_id'])['items']) == 1
+    with database.connection() as c:
+        assert c.execute('select count(*) from platform_hr_agent.operations where attempt_id is not null').fetchone()[0] == 0
+        rows = c.execute('select logical_step_id,retry_no,status from platform_hr_agent.model_attempts order by ordinal').fetchall()
+    assert len({row[0] for row in rows}) == 1
+    assert [row[1] for row in rows] == [0, 1, 2]
+
+
+def test_empty_response_retry_stops_at_budget_before_retry_limit(setup):
+    repo, owner, view, fence = setup
+    with repo.transaction() as c:
+        work = repo._fence(c, fence)
+        budget = repo._unseal('works', work['work_id'], 'sealed_budget', work)
+        budget['limits']['model_calls'] = 2
+        budget['reserve']['model_calls'] = 0
+        repo._save_budget(c, work, budget)
+    model = ScriptModel([empty_answer(), empty_answer()])
+
+    done = run_work(repo, model, None, fence, context_builder=context)
+
+    assert done['state'] == 'waiting_budget'
+    assert done['budget']['charged_calls'] == 2
+    assert len(model.requests) == 2
+
+
+def test_incomplete_tool_retry_has_no_tool_side_effect(setup, database):
+    repo, owner, view, fence = setup
+    incomplete = [
+        ModelEvent('tool_delta', {'index': 0, 'provider_call_id': 'x', 'name': 'save_result', 'arguments_delta': '{'}),
+        ModelEvent('stop', {'reason': 'tool_use'}),
+    ]
+    model = ScriptModel([incomplete, ModelTransportError('provider_refused')])
+
+    done = run_work(repo, model, None, fence, context_builder=context)
+
+    assert done['state'] == 'failed'
+    with database.connection() as c:
+        assert c.execute('select count(*) from platform_hr_agent.operations where attempt_id is not null').fetchone()[0] == 0
 
 
 def test_appended_input_during_provider_call_rejects_old_answer_but_settles_usage(setup):

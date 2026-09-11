@@ -191,7 +191,7 @@ entries 增加 `kind=summary`，以及 nullable `summary_provenance`（SummaryPr
 
 模型接口 `ModelPort.stream(request: ModelRequest) -> Iterator[ModelEvent]`：事件为 text_delta、tool_delta、usage、stop；最终构建 `ModelReply(text, tool_calls, stop_reason, usage)`。只有完整 stop、有效参数和提供方完成标记俱全才提交步骤、执行工具。正文可作为正常回答，不要求通过 FAE 的 submit_answer 工具。中间 delta 只是临时进度，不能形成“回答结束”。
 
-适配层不自动重试网络请求：一次实际 HTTP 请求对应一个持久 model_attempt，循环决定是否重试并重新扣预算。单次超时默认120秒，模型 profile 可显式设置1–600秒，实际请求不得超过工作剩余活动预算，恢复后重新计算较小值。2026-09-11 C3 的真实 Opus 5 研究多次在持续输出时达到120秒截止，因此将原硬上限改为明确的研究配置能力；本地公开试验使用300秒，未改本机 HR 默认 profile 或生产取舍。此变更不增加任务总预算、不自动延时/切换提供方、不保留半截工具副作用。新工作测试模型配置只有一个指定端点，不自动 fallback。错误分类为 rate_limited、transport_error、incomplete_response、provider_refused、invalid_response；无完整工具参数不执行任何副作用。
+适配层不自动重试网络请求：一次实际 HTTP 请求对应一个持久 model_attempt，循环决定是否重试并重新扣预算。单次超时默认120秒，模型 profile 可显式设置1–600秒，实际请求不得超过工作剩余活动预算，恢复后重新计算较小值。2026-09-11 C3 的真实 Opus 5 研究多次在持续输出时达到120秒截止，因此将原硬上限改为明确的研究配置能力；本地公开试验使用300秒，未改本机 HR 默认 profile 或生产取舍。此变更不增加任务总预算、不自动延时/切换提供方、不保留半截工具副作用。新工作测试模型配置只有一个指定端点，不自动 fallback。错误分类为 rate_limited、transport_error、incomplete_response、empty_response、provider_refused、invalid_response；无完整工具参数不执行任何副作用。empty_response 只表示完整普通 stop/end_turn 后正文为空或纯空白且无工具调用，按同一 logical step 最多实际发送三次；每次仍新建 attempt、扣预算并重新经过取消与预算闸门。
 
 上下文窗口以配置模型 profile 的 context_window_tokens 为准，预留本次 max_output_tokens；首批另设主动压缩 input_trigger_tokens=12000、压缩后输入目标 input_target_tokens=8000（按 tokenizer 测量，不按字符数）。筛选并纳入新工具内容后的预计普通输入超过12000即尝试压缩已处理的历史，不等撑满模型窗口。优先保留当前问题、准确基准、未完成位置和待处理工具配对；替换正文使用 §5.1 的有来源 summary。仍不足则暂停说明，不能裁剪成假完整。压缩调用同样经过 ModelPort、持久步骤与预算，不开预算外的“摘要模型”。单次压缩输入必须小于模型窗口减输出预留；若待压缩集合过大，按完整条目/工具对分组，每组单独记账。无法在剩余额度内压到目标则保留检查点，转收尾/等待预算，不无限重压，也不把截断称完整读取。阶段笔记正文是否保留了承重证据仍需业务审读。
 
@@ -349,7 +349,7 @@ Worker子进程以 `sys.executable, '-m', 'app.hr_agent.worker'` 启动，fixtur
 | duration_ms、input_tokens、output_tokens | 数值；未知用量为null，不把凭据 token 混进 token 计量 |
 | error_code、profile_revision | 允许错误枚举与配置版本标识；没有 endpoint URL、header、provider 原始错误或配置正文 |
 
-这里存在两个有意分开的词表。`Problem.code` 是用户 HTTP/工具投影词表；日志提供方错误码另含 `rate_limited`、`transport_error`、`incomplete_response`、`provider_refused`、`invalid_response`。适配器把提供方错误保存为内部 attempt 分类并写日志；对用户只映射成适当的 `temporarily_unavailable` 或 `invalid_input` 等 Problem，不能断言两个对象的同名字段或枚举完全相同，也不能把原始提供方正文带入任一对象。
+这里存在两个有意分开的词表。`Problem.code` 是用户 HTTP/工具投影词表；日志提供方错误码另含 `rate_limited`、`transport_error`、`incomplete_response`、`empty_response`、`provider_refused`、`invalid_response`。适配器把提供方错误保存为内部 attempt 分类并写日志；对用户只映射成适当的 `temporarily_unavailable` 或 `invalid_input` 等 Problem，不能断言两个对象的同名字段或枚举完全相同，也不能把原始提供方正文带入任一对象。
 
 **禁止进入普通日志**：token/签名私钥/完整凭据、Cookie/Authorization、未脱敏简历、联系方式、面试原话、完整提示词/模型响应、原文件名与内容、任意异常字符串。用户 Event 的 message 也用服务端固定模板，不直接写 logger；数据库 sealed_request/sealed_reply 是受限工作记录，并不因此成为可日志化内容。Schema 只能约束结构，字符串字段还须来源于服务器枚举/配置身份；供应商错误内容不能塞进 profile_revision。
 
@@ -438,7 +438,7 @@ A1 `test_first_request_logs_exclude_sensitive_payloads` 给本地提供方的输
 
 `RuntimeAction(kind: str, attempt_id: UUID|None, operation_id: UUID|None)`的kind仅为build_context/resume_prepared/execute_tool/project_answer/project_summary/wait/done；后四种动作不会重新问模型。`StoredToolOperation`含operation_id/name/arguments/status/receipt；`ScopedEntry`含entry_id/seq/kind/body/objects/source_refs/input_revision/summary_provenance，只有通过筛选的内容能进入ModelContext。
 
-内部状态控制：普通准入切换finalizing后抛`ContextRebuildRequired`，runtime按新phase重新组装受限工具集合；等待/blocked抛`WorkPaused(view: WorkView)`结束本次认领，不伪装为ModelRequest。业务错误抛`HrAgentProblem(problem: Problem, http_status: int)`由routes/tools映射。没有工具且text为空的完整模型响应是invalid_response，不能finish为成功。
+内部状态控制：普通准入切换finalizing后抛`ContextRebuildRequired`，runtime按新phase重新组装受限工具集合；等待/blocked抛`WorkPaused(view: WorkView)`结束本次认领，不伪装为ModelRequest。业务错误抛`HrAgentProblem(problem: Problem, http_status: int)`由routes/tools映射。没有工具且正文为空或纯空白的完整普通模型响应是empty_response，不能finish为成功；工具 stop 缺调用、stop/调用不匹配、未知 stop 仍是invalid_response，拒绝与截断也不归入空响应重试。
 
 `ResultQuery`含 thread_id或ObjectRef（二选一）、kind可空、cursor可空；`ProgressEvent`直接使用Schema Event。所有UUID/ExactRef由解析层转类型，数据库类型不以任意dict拼SQL。
 

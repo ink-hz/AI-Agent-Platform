@@ -1535,6 +1535,24 @@
     }
   },
   {
+    "name": "ordinary_log_empty_response",
+    "definition": "OrdinaryLogRecord",
+    "valid": true,
+    "value": {
+      "at": "2026-09-11T00:00:00Z",
+      "event": "model_usage",
+      "work_id": "00000000-0000-4000-8000-000000000005",
+      "attempt_id": "00000000-0000-4000-8000-000000000052",
+      "operation_id": null,
+      "state": null,
+      "duration_ms": 10,
+      "input_tokens": null,
+      "output_tokens": null,
+      "error_code": "empty_response",
+      "profile_revision": "test-v1"
+    }
+  },
+  {
     "name": "ordinary_log_rejects_prompt",
     "definition": "OrdinaryLogRecord",
     "valid": false,

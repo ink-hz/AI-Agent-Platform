@@ -1294,7 +1294,13 @@ class HrAgentRepository(RepositoryViewsMixin):
                 {"status": "interrupted", "ended_at": datetime.now(UTC)},
             )
             if (
-                reason not in ("rate_limited", "transport_error", "incomplete_response")
+                reason
+                not in (
+                    "rate_limited",
+                    "transport_error",
+                    "incomplete_response",
+                    "empty_response",
+                )
                 or attempt["retry_no"] >= 2
             ):
                 self._state(c, work, "failed")

@@ -652,11 +652,14 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             raise ModelProtocolError("incomplete_response") from None
     final_text = "".join(text)
-    if not final_text and not tool_calls:
-        raise ModelProtocolError("invalid_response")
     tool_stop_reasons = {"tool_calls", "tool_use"}
+    normal_stop_reasons = {"stop", "end_turn"}
+    if stop_reason not in tool_stop_reasons | normal_stop_reasons:
+        raise ModelProtocolError("invalid_response")
     if bool(tool_calls) != (stop_reason in tool_stop_reasons):
         raise ModelProtocolError("invalid_response")
+    if not final_text.strip() and not tool_calls:
+        raise ModelProtocolError("empty_response")
     input_total, output_total = _usage_totals(raw_usage, usage_protocol)
     usage = Usage(
         dict(raw_usage) or None,
