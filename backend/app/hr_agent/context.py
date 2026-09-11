@@ -187,22 +187,42 @@ def build_model_context(repository, resources, fence):
         }
         footer = {"role": "user", "content": instruction["content"]}
         selected = []
-        # Summaries compress selected history entries, but still need the current
-        # authorized work state to preserve the task and checkpoint boundaries.
-        # This prefix is request context, not an entry covered by provenance.
-        summary_messages = [instruction, base[1]]
+        records = []
+        # Historical assistant/tool messages are evidence to summarize, not an
+        # active conversation to continue. Keep every selected entry intact in
+        # one data block while preserving entry-level provenance separately.
+        prefix = [instruction, base[1]]
+
+        def record(entry, group):
+            return {
+                "entry_id": str(entry.entry_id),
+                "seq": entry.seq,
+                "input_revision": entry.input_revision,
+                "kind": entry.kind,
+                "messages": group,
+            }
+
+        def packed(candidate_records):
+            return {
+                "role": "user",
+                "content": canonical_json(
+                    {"historical_records": candidate_records}
+                ),
+            }
+
         for entry, group in candidates:
+            candidate_records = records + [record(entry, group)]
             if (
-                count(summary_messages + group + [footer], ())
+                count(prefix + [packed(candidate_records), footer], ())
                 + config["max_output_tokens"]
                 > profile["context_window_tokens"]
             ):
                 break
             selected.append(entry)
-            summary_messages.extend(group)
+            records = candidate_records
         if not selected or (len(selected) == 1 and selected[0].kind == "summary"):
             raise WorkPaused(repository.wait_for_budget(fence, "budget_exhausted"))
-        summary_messages.append(footer)
+        summary_messages = prefix + [packed(records), footer]
         provenance = {
             "derived_from": [
                 {

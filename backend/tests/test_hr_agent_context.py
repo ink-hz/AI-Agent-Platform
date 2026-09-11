@@ -11,7 +11,7 @@ from test_hr_agent_repository import (
     repo as repo,  # noqa: PLC0414 - pytest fixture export
 )
 
-from app.hr_agent.context import build_model_context
+from app.hr_agent.context import build_model_context, estimate_input_tokens
 from app.hr_agent.resources import PublishedKnowledge, ResourceReader
 from app.hr_agent.types import HrAgentProblem, ModelContext, ToolCall, WorkPaused
 
@@ -409,6 +409,33 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
         "checkpoint": before["checkpoint"],
     }
     assert attempt.tools == ()
+    assert [message["role"] for message in attempt.messages] == [
+        "system",
+        "user",
+        "user",
+        "user",
+    ]
+    historical = json.loads(attempt.messages[2]["content"])["historical_records"]
+    assert [record["entry_id"] for record in historical] == [
+        source["entry_id"] for source in context.summary_provenance["derived_from"]
+    ]
+    assert all(
+        set(record) == {"entry_id", "seq", "input_revision", "kind", "messages"}
+        for record in historical
+    )
+    assert any(
+        message["role"] == "tool"
+        for record in historical
+        for message in record["messages"]
+    )
+    assert context.estimated_input_tokens == estimate_input_tokens(
+        context.messages, (), settings.provider_profile["tokenizer"]
+    )
+    assert (
+        context.estimated_input_tokens
+        + settings.budget_profile["max_output_tokens"]
+        <= settings.provider_profile["context_window_tokens"]
+    )
     assert attempt.messages[-1] == {
         "role": "user",
         "content": attempt.messages[0]["content"],
