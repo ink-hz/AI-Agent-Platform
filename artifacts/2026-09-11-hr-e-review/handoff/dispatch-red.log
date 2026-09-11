@@ -1,0 +1,317 @@
+EEEEEFF..                                                                [100%]
+==================================== ERRORS ====================================
+__ ERROR at setup of test_signed_handoff_rejects_residual_old_dispatch[cloud] __
+
+database = HrTestDatabase()
+
+    @pytest.fixture()
+    def attempt_repository(database):
+        worker_id = "readiness-" + uuid4().hex
+        with database.admin_connection() as c:
+            c.execute("insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) values(%s,array['hr-bot'],'active')", (worker_id,))
+        observed = observation()
+        observed["version"] = "hr_v6_readiness_v1"
+        observed["service"]["contractVersion"] = "core_chat_collaboration_v6"
+>       record_observation(ExecutionRelayRepository(database.dsn, content_codec=_codec()), worker_id, observed)
+
+backend/tests/test_hr_cutover_dispatch_review.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/execution_relay/readiness_v5.py:140: in record_observation
+    sampled = parse_observation(value)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/readiness_v5.py:131: in parse_observation
+    parse_service(value["service"])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = {'contractVersion': 'core_chat_collaboration_v6', 'callbackOrigin': 'http://127.0.0.1:19191', 'durableTerminal': True, 'healthy': True, ...}
+
+    def parse_service(value):
+        v6 = type(value) is dict and value.get('contractVersion') in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
+        extra={'rolePackage','toolCapabilities'} if v6 else set()
+        if type(value) is not dict or set(value)-extra != {
+            "contractVersion",
+            "callbackOrigin",
+            "durableTerminal",
+            "healthy",
+            "capacity",
+            "reason",
+            "config",
+        }:
+            raise ValueError("v5 readiness invalid")
+        if (
+            value["contractVersion"] not in {"core_chat_collaboration_v5","core_chat_collaboration_v6","core_chat_collaboration_v7"}
+            or type(value["durableTerminal"]) is not bool
+            or type(value["healthy"]) is not bool
+            or type(value["capacity"]) is not str
+            or value["capacity"] not in {"available", "busy", "unavailable"}
+            or type(value["reason"]) is not str
+            or value["reason"] not in REASONS
+        ):
+            raise ValueError("v5 readiness invalid")
+        if v6:
+            from .contracts_v6 import HrRolePackageRef
+>           HrRolePackageRef.model_validate_json(json.dumps(value['rolePackage']),strict=True)
+                                                            ^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'rolePackage'
+
+backend/app/execution_relay/readiness_v5.py:60: KeyError
+_ ERROR at setup of test_signed_handoff_rejects_residual_old_dispatch[draining_cloud] _
+
+database = HrTestDatabase()
+
+    @pytest.fixture()
+    def attempt_repository(database):
+        worker_id = "readiness-" + uuid4().hex
+        with database.admin_connection() as c:
+            c.execute("insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) values(%s,array['hr-bot'],'active')", (worker_id,))
+        observed = observation()
+        observed["version"] = "hr_v6_readiness_v1"
+        observed["service"]["contractVersion"] = "core_chat_collaboration_v6"
+>       record_observation(ExecutionRelayRepository(database.dsn, content_codec=_codec()), worker_id, observed)
+
+backend/tests/test_hr_cutover_dispatch_review.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/execution_relay/readiness_v5.py:140: in record_observation
+    sampled = parse_observation(value)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/readiness_v5.py:131: in parse_observation
+    parse_service(value["service"])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = {'contractVersion': 'core_chat_collaboration_v6', 'callbackOrigin': 'http://127.0.0.1:19191', 'durableTerminal': True, 'healthy': True, ...}
+
+    def parse_service(value):
+        v6 = type(value) is dict and value.get('contractVersion') in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
+        extra={'rolePackage','toolCapabilities'} if v6 else set()
+        if type(value) is not dict or set(value)-extra != {
+            "contractVersion",
+            "callbackOrigin",
+            "durableTerminal",
+            "healthy",
+            "capacity",
+            "reason",
+            "config",
+        }:
+            raise ValueError("v5 readiness invalid")
+        if (
+            value["contractVersion"] not in {"core_chat_collaboration_v5","core_chat_collaboration_v6","core_chat_collaboration_v7"}
+            or type(value["durableTerminal"]) is not bool
+            or type(value["healthy"]) is not bool
+            or type(value["capacity"]) is not str
+            or value["capacity"] not in {"available", "busy", "unavailable"}
+            or type(value["reason"]) is not str
+            or value["reason"] not in REASONS
+        ):
+            raise ValueError("v5 readiness invalid")
+        if v6:
+            from .contracts_v6 import HrRolePackageRef
+>           HrRolePackageRef.model_validate_json(json.dumps(value['rolePackage']),strict=True)
+                                                            ^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'rolePackage'
+
+backend/app/execution_relay/readiness_v5.py:60: KeyError
+____ ERROR at setup of test_same_lane_drain_handoff_acceptance_and_callback ____
+
+database = HrTestDatabase()
+
+    @pytest.fixture()
+    def attempt_repository(database):
+        worker_id = "readiness-" + uuid4().hex
+        with database.admin_connection() as c:
+            c.execute("insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) values(%s,array['hr-bot'],'active')", (worker_id,))
+        observed = observation()
+        observed["version"] = "hr_v6_readiness_v1"
+        observed["service"]["contractVersion"] = "core_chat_collaboration_v6"
+>       record_observation(ExecutionRelayRepository(database.dsn, content_codec=_codec()), worker_id, observed)
+
+backend/tests/test_hr_cutover_dispatch_review.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/execution_relay/readiness_v5.py:140: in record_observation
+    sampled = parse_observation(value)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/readiness_v5.py:131: in parse_observation
+    parse_service(value["service"])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = {'contractVersion': 'core_chat_collaboration_v6', 'callbackOrigin': 'http://127.0.0.1:19191', 'durableTerminal': True, 'healthy': True, ...}
+
+    def parse_service(value):
+        v6 = type(value) is dict and value.get('contractVersion') in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
+        extra={'rolePackage','toolCapabilities'} if v6 else set()
+        if type(value) is not dict or set(value)-extra != {
+            "contractVersion",
+            "callbackOrigin",
+            "durableTerminal",
+            "healthy",
+            "capacity",
+            "reason",
+            "config",
+        }:
+            raise ValueError("v5 readiness invalid")
+        if (
+            value["contractVersion"] not in {"core_chat_collaboration_v5","core_chat_collaboration_v6","core_chat_collaboration_v7"}
+            or type(value["durableTerminal"]) is not bool
+            or type(value["healthy"]) is not bool
+            or type(value["capacity"]) is not str
+            or value["capacity"] not in {"available", "busy", "unavailable"}
+            or type(value["reason"]) is not str
+            or value["reason"] not in REASONS
+        ):
+            raise ValueError("v5 readiness invalid")
+        if v6:
+            from .contracts_v6 import HrRolePackageRef
+>           HrRolePackageRef.model_validate_json(json.dumps(value['rolePackage']),strict=True)
+                                                            ^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'rolePackage'
+
+backend/app/execution_relay/readiness_v5.py:60: KeyError
+_ ERROR at setup of test_callback_for_accepted_work_is_not_a_new_dispatch_gate _
+
+database = HrTestDatabase()
+
+    @pytest.fixture()
+    def attempt_repository(database):
+        worker_id = "readiness-" + uuid4().hex
+        with database.admin_connection() as c:
+            c.execute("insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) values(%s,array['hr-bot'],'active')", (worker_id,))
+        observed = observation()
+        observed["version"] = "hr_v6_readiness_v1"
+        observed["service"]["contractVersion"] = "core_chat_collaboration_v6"
+>       record_observation(ExecutionRelayRepository(database.dsn, content_codec=_codec()), worker_id, observed)
+
+backend/tests/test_hr_cutover_dispatch_review.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/execution_relay/readiness_v5.py:140: in record_observation
+    sampled = parse_observation(value)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/readiness_v5.py:131: in parse_observation
+    parse_service(value["service"])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = {'contractVersion': 'core_chat_collaboration_v6', 'callbackOrigin': 'http://127.0.0.1:19191', 'durableTerminal': True, 'healthy': True, ...}
+
+    def parse_service(value):
+        v6 = type(value) is dict and value.get('contractVersion') in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
+        extra={'rolePackage','toolCapabilities'} if v6 else set()
+        if type(value) is not dict or set(value)-extra != {
+            "contractVersion",
+            "callbackOrigin",
+            "durableTerminal",
+            "healthy",
+            "capacity",
+            "reason",
+            "config",
+        }:
+            raise ValueError("v5 readiness invalid")
+        if (
+            value["contractVersion"] not in {"core_chat_collaboration_v5","core_chat_collaboration_v6","core_chat_collaboration_v7"}
+            or type(value["durableTerminal"]) is not bool
+            or type(value["healthy"]) is not bool
+            or type(value["capacity"]) is not str
+            or value["capacity"] not in {"available", "busy", "unavailable"}
+            or type(value["reason"]) is not str
+            or value["reason"] not in REASONS
+        ):
+            raise ValueError("v5 readiness invalid")
+        if v6:
+            from .contracts_v6 import HrRolePackageRef
+>           HrRolePackageRef.model_validate_json(json.dumps(value['rolePackage']),strict=True)
+                                                            ^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'rolePackage'
+
+backend/app/execution_relay/readiness_v5.py:60: KeyError
+_ ERROR at setup of test_handoff_waits_for_transition_lock_then_rechecks_phase _
+
+database = HrTestDatabase()
+
+    @pytest.fixture()
+    def attempt_repository(database):
+        worker_id = "readiness-" + uuid4().hex
+        with database.admin_connection() as c:
+            c.execute("insert into platform_control.execution_workers(worker_id,allowed_agent_ids,status) values(%s,array['hr-bot'],'active')", (worker_id,))
+        observed = observation()
+        observed["version"] = "hr_v6_readiness_v1"
+        observed["service"]["contractVersion"] = "core_chat_collaboration_v6"
+>       record_observation(ExecutionRelayRepository(database.dsn, content_codec=_codec()), worker_id, observed)
+
+backend/tests/test_hr_cutover_dispatch_review.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/execution_relay/readiness_v5.py:140: in record_observation
+    sampled = parse_observation(value)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/readiness_v5.py:131: in parse_observation
+    parse_service(value["service"])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = {'contractVersion': 'core_chat_collaboration_v6', 'callbackOrigin': 'http://127.0.0.1:19191', 'durableTerminal': True, 'healthy': True, ...}
+
+    def parse_service(value):
+        v6 = type(value) is dict and value.get('contractVersion') in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
+        extra={'rolePackage','toolCapabilities'} if v6 else set()
+        if type(value) is not dict or set(value)-extra != {
+            "contractVersion",
+            "callbackOrigin",
+            "durableTerminal",
+            "healthy",
+            "capacity",
+            "reason",
+            "config",
+        }:
+            raise ValueError("v5 readiness invalid")
+        if (
+            value["contractVersion"] not in {"core_chat_collaboration_v5","core_chat_collaboration_v6","core_chat_collaboration_v7"}
+            or type(value["durableTerminal"]) is not bool
+            or type(value["healthy"]) is not bool
+            or type(value["capacity"]) is not str
+            or value["capacity"] not in {"available", "busy", "unavailable"}
+            or type(value["reason"]) is not str
+            or value["reason"] not in REASONS
+        ):
+            raise ValueError("v5 readiness invalid")
+        if v6:
+            from .contracts_v6 import HrRolePackageRef
+>           HrRolePackageRef.model_validate_json(json.dumps(value['rolePackage']),strict=True)
+                                                            ^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'rolePackage'
+
+backend/app/execution_relay/readiness_v5.py:60: KeyError
+=================================== FAILURES ===================================
+_______ test_ready_legacy_draft_cannot_write_after_real_cutover[confirm] _______
+
+database = HrTestDatabase(), operation = 'confirm'
+
+    @pytest.mark.parametrize("operation", ["confirm", "dismiss"])
+    def test_ready_legacy_draft_cannot_write_after_real_cutover(database, operation):
+        ids = _seed_candidate_scope({"admin": database.admin_dsn})
+        repo = CandidateRepository(database.dsn)
+        with database.admin_connection() as c:
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+>       with pytest.raises(CandidateUnavailable):
+E       Failed: DID NOT RAISE CandidateUnavailable
+
+backend/tests/test_hr_cutover_dispatch_review.py:147: Failed
+_______ test_ready_legacy_draft_cannot_write_after_real_cutover[dismiss] _______
+
+database = HrTestDatabase(), operation = 'dismiss'
+
+    @pytest.mark.parametrize("operation", ["confirm", "dismiss"])
+    def test_ready_legacy_draft_cannot_write_after_real_cutover(database, operation):
+        ids = _seed_candidate_scope({"admin": database.admin_dsn})
+        repo = CandidateRepository(database.dsn)
+        with database.admin_connection() as c:
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+>       with pytest.raises(CandidateUnavailable):
+E       Failed: DID NOT RAISE CandidateUnavailable
+
+backend/tests/test_hr_cutover_dispatch_review.py:147: Failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_ready_legacy_draft_cannot_write_after_real_cutover[confirm]
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_ready_legacy_draft_cannot_write_after_real_cutover[dismiss]
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_signed_handoff_rejects_residual_old_dispatch[cloud]
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_signed_handoff_rejects_residual_old_dispatch[draining_cloud]
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_same_lane_drain_handoff_acceptance_and_callback
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_callback_for_accepted_work_is_not_a_new_dispatch_gate
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_handoff_waits_for_transition_lock_then_rechecks_phase
+2 failed, 2 passed, 5 errors in 9.26s

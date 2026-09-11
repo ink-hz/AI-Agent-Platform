@@ -1,0 +1,19 @@
+DIAGNOSTIC UndefinedFunction function platform_hr.record_turn_scope_v6(uuid, uuid, uuid, jsonb) does not exist
+LINE 1: select platform_hr.record_turn_scope_v6($1,$2,$3,$4)
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+DIAGNOSTIC ConversationRepositoryError conversation repository unavailable
+E
+==================================== ERRORS ====================================
+_ ERROR at setup of test_atomic_encrypted_binding_reuses_actual_attempt_without_consuming_sequence _
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+backend/app/agent_brain/conversation_repository.py:1444: in append_turn
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+=========================== short test summary info ============================
+ERROR backend/tests/test_hr_direct_command_binding.py::test_atomic_encrypted_binding_reuses_actual_attempt_without_consuming_sequence
+1 error in 2.06s

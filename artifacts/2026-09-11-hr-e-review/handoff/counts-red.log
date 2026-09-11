@@ -1,0 +1,81 @@
+F....FFFF                                                                [100%]
+=================================== FAILURES ===================================
+_ test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover __
+
+database = HrTestDatabase()
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+conversation_database = ({'admin': 'host=/tmp/hr-agent-a1-2ljc6nzk/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('675f30a6-2353-495d-9fb2-a31366004637'), UUID('6caf3750-68d4-41bc-b844-c5b2ec91cd65'))
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x108a59810>
+bindings = <app.agent_brain.direct_command_binding.DirectCommandBindingRepository object at 0x108a693d0>
+signed_api = (<httpx.Client object at 0x108c7a110>, WorkerRequestSigner(worker_id='v5-transport-f5d56c1690a64eab85c2a175f2118e8b', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x108a68650>)
+transport_worker = 'v5-transport-f5d56c1690a64eab85c2a175f2118e8b'
+
+    def test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover(database, repository, conversation_database, attempt_repository, bindings, signed_api, transport_worker):
+        for _ in range(3):
+            complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
+        with database.admin_connection() as c:
+            assert c.execute("select count(*) from platform_control.execution_jobs where job_kind='worker_direct_v5' and status='queued'").fetchone()[0] == 3
+            assert c.execute("select count(*) from platform_control.turn_attempts where status='completed'").fetchone()[0] == 3
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 0
+E           assert 3 == 0
+
+backend/tests/test_hr_cutover_count_review.py:47: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local] ______
+
+database = HrTestDatabase(), kind = 'metabot_local'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain] _______
+
+database = HrTestDatabase(), kind = 'legacy_brain'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent] _______
+
+database = HrTestDatabase(), kind = 'direct_agent'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+____ test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job _____
+
+database = HrTestDatabase()
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+conversation_database = ({'admin': 'host=/tmp/hr-agent-a1-1ubly288/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('bfdc1e82-02cc-4d6c-8a01-e379b8cdad26'), UUID('0cb3419f-6aae-4b1f-968e-0fe1ae27191f'))
+
+    def test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job(database, repository, conversation_database):
+        created = repository.start(conversation_database[1], uuid4(), 'Synthetic related work', mode='direct_agent', direct_agent_id='fae-bot')
+        with database.admin_connection() as c:
+            # Historical linkage fixture: job's agent is HR, its related user turn
+            # is still active even though conversation classification is another Bot.
+>           task = c.execute("select task_id from platform_control.mission_tasks where mission_id=%s", (created.mission.mission_id,)).fetchone()[0]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: 'NoneType' object is not subscriptable
+
+backend/tests/test_hr_cutover_count_review.py:105: TypeError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cutover_count_review.py::test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job
+5 failed, 4 passed in 10.09s

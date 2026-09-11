@@ -1,0 +1,169 @@
+FF..FFF..F.                                                              [100%]
+=================================== FAILURES ===================================
+___________ test_signed_handoff_rejects_residual_old_dispatch[cloud] ___________
+
+database = HrTestDatabase()
+signed_api = (<starlette.testclient.TestClient object at 0x1069c43d0>, WorkerRequestSigner(worker_id='v5-transport-1b08e08ee6334770a597f783beb72154', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x106874a90>)
+bindings = <app.agent_brain.direct_command_binding.DirectCommandBindingRepository object at 0x10685f490>
+prepared = (Lease(attempt_id=UUID('fa96b22e-6976-4884-aa8f-10fec68f9055'), executor_kind='worker_direct', executor_id=UUID('ea74f...backOrigin': 'http://127.0.0.1:19191'}), <app.agent_brain.direct_command_binding.CommandBinding object at 0x1069b2f50>)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x1069dbcd0>
+transport_worker = 'v5-transport-1b08e08ee6334770a597f783beb72154'
+phase = 'cloud'
+
+    @pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
+    def test_signed_handoff_rejects_residual_old_dispatch(database, signed_api, bindings, prepared, attempt_repository, transport_worker, phase):
+        client, signer, _ = signed_api
+        authorize(bindings, prepared, attempt_repository, transport_worker)
+        set_residual_phase(database, phase)
+        result = post(client, signer, PREFIX + "/handoff", b"{}")
+>       assert result.status_code == 204
+E       assert 200 == 204
+E        +  where 200 = <Response [200 OK]>.status_code
+
+backend/tests/test_hr_cutover_dispatch_review.py:90: AssertionError
+______ test_signed_handoff_rejects_residual_old_dispatch[draining_cloud] _______
+
+database = HrTestDatabase()
+signed_api = (<starlette.testclient.TestClient object at 0x106a10090>, WorkerRequestSigner(worker_id='v5-transport-e99989b48675475dbb18d17140b0605a', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x1069c5690>)
+bindings = <app.agent_brain.direct_command_binding.DirectCommandBindingRepository object at 0x1069c6490>
+prepared = (Lease(attempt_id=UUID('11247120-a51d-481b-9c68-4cf247432d27'), executor_kind='worker_direct', executor_id=UUID('d9d7d...backOrigin': 'http://127.0.0.1:19191'}), <app.agent_brain.direct_command_binding.CommandBinding object at 0x106a13290>)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x106a13ad0>
+transport_worker = 'v5-transport-e99989b48675475dbb18d17140b0605a'
+phase = 'draining_cloud'
+
+    @pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
+    def test_signed_handoff_rejects_residual_old_dispatch(database, signed_api, bindings, prepared, attempt_repository, transport_worker, phase):
+        client, signer, _ = signed_api
+        authorize(bindings, prepared, attempt_repository, transport_worker)
+        set_residual_phase(database, phase)
+        result = post(client, signer, PREFIX + "/handoff", b"{}")
+>       assert result.status_code == 204
+E       assert 200 == 204
+E        +  where 200 = <Response [200 OK]>.status_code
+
+backend/tests/test_hr_cutover_dispatch_review.py:90: AssertionError
+__________ test_handoff_waits_for_transition_lock_then_rechecks_phase __________
+
+database = HrTestDatabase()
+signed_api = (<starlette.testclient.TestClient object at 0x106b09350>, WorkerRequestSigner(worker_id='v5-transport-f4de4686d80f4e668cbb1f1e2f6553b5', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x106aa8210>)
+bindings = <app.agent_brain.direct_command_binding.DirectCommandBindingRepository object at 0x106aaa710>
+prepared = (Lease(attempt_id=UUID('c8679b81-87d8-47b5-ac69-c91dcf7df481'), executor_kind='worker_direct', executor_id=UUID('1c05b...backOrigin': 'http://127.0.0.1:19191'}), <app.agent_brain.direct_command_binding.CommandBinding object at 0x106ac2d50>)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x106af1d90>
+transport_worker = 'v5-transport-f4de4686d80f4e668cbb1f1e2f6553b5'
+
+    def test_handoff_waits_for_transition_lock_then_rechecks_phase(database, signed_api, bindings, prepared, attempt_repository, transport_worker):
+        client, signer, _ = signed_api
+        authorize(bindings, prepared, attempt_repository, transport_worker)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with database.admin_connection() as c:
+                c.execute("select pg_advisory_xact_lock(%s)", (ADVISORY_LOCK_KEY,))
+                pending = pool.submit(post, client, signer, PREFIX + "/handoff", b"{}")
+                deadline = monotonic() + 5
+                blocked = False
+                while monotonic() < deadline and not pending.done():
+                    blocked = c.execute("select exists(select 1 from pg_locks where locktype='advisory' and not granted)").fetchone()[0]
+                    if blocked:
+                        break
+                    sleep(.01)
+                c.execute("update platform_control.hr_execution_cutover set phase='cloud'")
+            result = pending.result(timeout=5)
+>       assert blocked, "handoff must serialize before any offer with the transition lock"
+E       AssertionError: handoff must serialize before any offer with the transition lock
+E       assert False
+
+backend/tests/test_hr_cutover_dispatch_review.py:138: AssertionError
+_______ test_ready_legacy_draft_cannot_write_after_real_cutover[confirm] _______
+
+database = HrTestDatabase(), operation = 'confirm'
+
+    @pytest.mark.parametrize("operation", ["confirm", "dismiss"])
+    def test_ready_legacy_draft_cannot_write_after_real_cutover(database, operation):
+        ids = _seed_candidate_scope({"admin": database.admin_dsn})
+        repo = CandidateRepository(database.dsn)
+        with database.admin_connection() as c:
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+>       with pytest.raises(CandidateUnavailable):
+E       Failed: DID NOT RAISE CandidateUnavailable
+
+backend/tests/test_hr_cutover_dispatch_review.py:149: Failed
+_______ test_ready_legacy_draft_cannot_write_after_real_cutover[dismiss] _______
+
+database = HrTestDatabase(), operation = 'dismiss'
+
+    @pytest.mark.parametrize("operation", ["confirm", "dismiss"])
+    def test_ready_legacy_draft_cannot_write_after_real_cutover(database, operation):
+        ids = _seed_candidate_scope({"admin": database.admin_dsn})
+        repo = CandidateRepository(database.dsn)
+        with database.admin_connection() as c:
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+>       with pytest.raises(CandidateUnavailable):
+E       Failed: DID NOT RAISE CandidateUnavailable
+
+backend/tests/test_hr_cutover_dispatch_review.py:149: Failed
+_____ test_append_reclassifies_binding_committed_before_conversation_lock ______
+
+database = HrTestDatabase()
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+conversation_database = ({'admin': 'host=/tmp/hr-agent-a1-9cd0_pc9/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('5127ce89-0c04-40b5-8462-9bdb378698ed'), UUID('a248311a-1f22-4c64-b8cf-6cb14ad3148a'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106af0b10>
+
+    def test_append_reclassifies_binding_committed_before_conversation_lock(database, repository, conversation_database, monkeypatch):
+        from contextlib import contextmanager
+        from app.agent_brain.conversation_repository import ConversationRepository
+        owner = conversation_database[1]
+        created = repository.start(owner, uuid4(), 'Historical synthetic conversation')
+        cid = created.conversation.conversation_id
+        with database.admin_connection() as c:
+            # Terminal historical fixture; no execution result is asserted by this test.
+            c.execute("update platform_control.conversation_turns set status='completed' where turn_id=%s", (created.turn.turn_id,))
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+        before_lock, release = Event(), Event()
+        original = repository._connection
+    
+        class CursorProxy:
+            def __init__(self, cursor): self.cursor = cursor
+            def __getattr__(self, key): return getattr(self.cursor, key)
+            def execute(self, query, params=()):
+                if 'select * from platform_control.conversations ' in query and 'for update' in query:
+                    before_lock.set()
+                    assert release.wait(5)
+                return self.cursor.execute(query, params)
+    
+        class ConnectionProxy:
+            def __init__(self, c): self.c = c
+            @contextmanager
+            def cursor(self):
+                with self.c.cursor() as cursor:
+                    yield CursorProxy(cursor)
+    
+        @contextmanager
+        def paused_connection():
+            with original() as c:
+                yield ConnectionProxy(c)
+    
+        monkeypatch.setattr(repository, '_connection', paused_connection)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(repository.append_turn, owner, cid, uuid4(), 'Late HR input')
+            try:
+                assert before_lock.wait(5)
+                with database.admin_connection() as c:
+                    position = uuid4()
+                    c.execute("insert into platform_hr.positions(position_id,owner_internal_user_id,client_request_id,source_kind,title) values(%s,%s,%s,'manual','Synthetic')", (position, owner, uuid4()))
+                    c.execute("insert into platform_hr.position_conversations(conversation_id,owner_internal_user_id,position_id,client_request_id,binding_kind) values(%s,%s,%s,%s,'historical_exact')", (cid, owner, position, uuid4()))
+            finally:
+                release.set()
+>           with pytest.raises(ConversationRepositoryError):
+E           Failed: DID NOT RAISE ConversationRepositoryError
+
+backend/tests/test_hr_cutover_dispatch_review.py:218: Failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_signed_handoff_rejects_residual_old_dispatch[cloud]
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_signed_handoff_rejects_residual_old_dispatch[draining_cloud]
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_handoff_waits_for_transition_lock_then_rechecks_phase
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_ready_legacy_draft_cannot_write_after_real_cutover[confirm]
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_ready_legacy_draft_cannot_write_after_real_cutover[dismiss]
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_append_reclassifies_binding_committed_before_conversation_lock
+6 failed, 5 passed in 11.49s

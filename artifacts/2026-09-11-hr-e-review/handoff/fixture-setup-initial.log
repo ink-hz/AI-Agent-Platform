@@ -1,0 +1,334 @@
+EEEEEFFF.                                                                [100%]
+==================================== ERRORS ====================================
+__ ERROR at setup of test_signed_handoff_rejects_residual_old_dispatch[cloud] __
+
+fixturedef = <FixtureDef argname='prepared' scope='function' baseid='tests/test_hr_cutover_dispatch_review.py'>
+request = <SubRequest 'prepared' for <Function test_signed_handoff_rejects_residual_old_dispatch[cloud]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_command_binding.py:113: in prepared
+    binding = bindings.prepare(
+backend/app/agent_brain/direct_command_binding.py:304: in prepare
+    c, t, a = self._lock(lease, connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lease = None, connection = <psycopg.Connection [BAD] at 0x10a9cf5d0>
+
+    @staticmethod
+    def _lock(lease, connection):
+        if connection.autocommit:
+            raise BindingRejected()
+        c = connection.execute(
+            "select c.* from platform_control.conversations c where conversation_id=("
+            "select t.conversation_id from platform_control.conversation_turns t "
+            "join platform_control.turn_attempts a using(turn_id) where a.attempt_id=%s) for update",
+>           (lease.attempt_id,),
+             ^^^^^^^^^^^^^^^^
+        ).fetchone()
+E       AttributeError: 'NoneType' object has no attribute 'attempt_id'
+
+backend/app/agent_brain/direct_command_binding.py:626: AttributeError
+_ ERROR at setup of test_signed_handoff_rejects_residual_old_dispatch[draining_cloud] _
+
+fixturedef = <FixtureDef argname='prepared' scope='function' baseid='tests/test_hr_cutover_dispatch_review.py'>
+request = <SubRequest 'prepared' for <Function test_signed_handoff_rejects_residual_old_dispatch[draining_cloud]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_command_binding.py:113: in prepared
+    binding = bindings.prepare(
+backend/app/agent_brain/direct_command_binding.py:304: in prepare
+    c, t, a = self._lock(lease, connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lease = None, connection = <psycopg.Connection [BAD] at 0x10aa17390>
+
+    @staticmethod
+    def _lock(lease, connection):
+        if connection.autocommit:
+            raise BindingRejected()
+        c = connection.execute(
+            "select c.* from platform_control.conversations c where conversation_id=("
+            "select t.conversation_id from platform_control.conversation_turns t "
+            "join platform_control.turn_attempts a using(turn_id) where a.attempt_id=%s) for update",
+>           (lease.attempt_id,),
+             ^^^^^^^^^^^^^^^^
+        ).fetchone()
+E       AttributeError: 'NoneType' object has no attribute 'attempt_id'
+
+backend/app/agent_brain/direct_command_binding.py:626: AttributeError
+____ ERROR at setup of test_same_lane_drain_handoff_acceptance_and_callback ____
+
+fixturedef = <FixtureDef argname='prepared' scope='function' baseid='tests/test_hr_cutover_dispatch_review.py'>
+request = <SubRequest 'prepared' for <Function test_same_lane_drain_handoff_acceptance_and_callback>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_command_binding.py:113: in prepared
+    binding = bindings.prepare(
+backend/app/agent_brain/direct_command_binding.py:304: in prepare
+    c, t, a = self._lock(lease, connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lease = None, connection = <psycopg.Connection [BAD] at 0x10a9fe590>
+
+    @staticmethod
+    def _lock(lease, connection):
+        if connection.autocommit:
+            raise BindingRejected()
+        c = connection.execute(
+            "select c.* from platform_control.conversations c where conversation_id=("
+            "select t.conversation_id from platform_control.conversation_turns t "
+            "join platform_control.turn_attempts a using(turn_id) where a.attempt_id=%s) for update",
+>           (lease.attempt_id,),
+             ^^^^^^^^^^^^^^^^
+        ).fetchone()
+E       AttributeError: 'NoneType' object has no attribute 'attempt_id'
+
+backend/app/agent_brain/direct_command_binding.py:626: AttributeError
+_ ERROR at setup of test_callback_for_accepted_work_is_not_a_new_dispatch_gate _
+
+fixturedef = <FixtureDef argname='prepared' scope='function' baseid='tests/test_hr_cutover_dispatch_review.py'>
+request = <SubRequest 'prepared' for <Function test_callback_for_accepted_work_is_not_a_new_dispatch_gate>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_command_binding.py:113: in prepared
+    binding = bindings.prepare(
+backend/app/agent_brain/direct_command_binding.py:304: in prepare
+    c, t, a = self._lock(lease, connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lease = None, connection = <psycopg.Connection [BAD] at 0x10aa05510>
+
+    @staticmethod
+    def _lock(lease, connection):
+        if connection.autocommit:
+            raise BindingRejected()
+        c = connection.execute(
+            "select c.* from platform_control.conversations c where conversation_id=("
+            "select t.conversation_id from platform_control.conversation_turns t "
+            "join platform_control.turn_attempts a using(turn_id) where a.attempt_id=%s) for update",
+>           (lease.attempt_id,),
+             ^^^^^^^^^^^^^^^^
+        ).fetchone()
+E       AttributeError: 'NoneType' object has no attribute 'attempt_id'
+
+backend/app/agent_brain/direct_command_binding.py:626: AttributeError
+_ ERROR at setup of test_handoff_waits_for_transition_lock_then_rechecks_phase _
+
+fixturedef = <FixtureDef argname='prepared' scope='function' baseid='tests/test_hr_cutover_dispatch_review.py'>
+request = <SubRequest 'prepared' for <Function test_handoff_waits_for_transition_lock_then_rechecks_phase>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_command_binding.py:113: in prepared
+    binding = bindings.prepare(
+backend/app/agent_brain/direct_command_binding.py:304: in prepare
+    c, t, a = self._lock(lease, connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lease = None, connection = <psycopg.Connection [BAD] at 0x106f1e4d0>
+
+    @staticmethod
+    def _lock(lease, connection):
+        if connection.autocommit:
+            raise BindingRejected()
+        c = connection.execute(
+            "select c.* from platform_control.conversations c where conversation_id=("
+            "select t.conversation_id from platform_control.conversation_turns t "
+            "join platform_control.turn_attempts a using(turn_id) where a.attempt_id=%s) for update",
+>           (lease.attempt_id,),
+             ^^^^^^^^^^^^^^^^
+        ).fetchone()
+E       AttributeError: 'NoneType' object has no attribute 'attempt_id'
+
+backend/app/agent_brain/direct_command_binding.py:626: AttributeError
+=================================== FAILURES ===================================
+_______ test_ready_legacy_draft_cannot_write_after_real_cutover[confirm] _______
+
+database = HrTestDatabase(), operation = 'confirm'
+
+    @pytest.mark.parametrize("operation", ["confirm", "dismiss"])
+    def test_ready_legacy_draft_cannot_write_after_real_cutover(database, operation):
+        ids = _seed_candidate_scope({"admin": database.admin_dsn})
+        repo = CandidateRepository(database.dsn)
+        with database.admin_connection() as c:
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+        with pytest.raises(CandidateUnavailable):
+>           mutate_draft(repo, ids, operation)
+
+backend/tests/test_hr_cutover_dispatch_review.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_cutover_dispatch_review.py:154: in mutate_draft
+    return repo.confirm_draft(ConfirmCandidateDraft(ids['owner'], ids['draft'], ids['confirmation'], 2, ids['candidate'], 'Synthetic Candidate', {'skills': ['Python']}, None), document_id=ids['document'], position_candidate_id=ids['relation'], context_version_id=uuid4())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/hr/candidate_repository.py:562: in confirm_draft
+    self._raise_repository_error(error)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+error = NoDataFound('no_data_found\nCONTEXT:  PL/pgSQL function confirm_candidate_draft_v70(uuid,uuid,uuid,bigint,uuid,uuid,uuid,uuid,uuid,text,jsonb) line 59 at RAISE')
+
+    @staticmethod
+    def _raise_repository_error(error: Exception) -> None:
+        if isinstance(error, psycopg.errors.NoDataFound):
+>           raise CandidateNotFound("candidate resource not found") from None
+E           app.hr.candidate_repository.CandidateNotFound: candidate resource not found
+
+backend/app/hr/candidate_repository.py:214: CandidateNotFound
+_______ test_ready_legacy_draft_cannot_write_after_real_cutover[dismiss] _______
+
+database = HrTestDatabase(), operation = 'dismiss'
+
+    @pytest.mark.parametrize("operation", ["confirm", "dismiss"])
+    def test_ready_legacy_draft_cannot_write_after_real_cutover(database, operation):
+        ids = _seed_candidate_scope({"admin": database.admin_dsn})
+        repo = CandidateRepository(database.dsn)
+        with database.admin_connection() as c:
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+>       with pytest.raises(CandidateUnavailable):
+E       Failed: DID NOT RAISE CandidateUnavailable
+
+backend/tests/test_hr_cutover_dispatch_review.py:144: Failed
+______ test_ready_legacy_draft_can_finish_during_same_lane_drain[confirm] ______
+
+database = HrTestDatabase(), operation = 'confirm'
+
+    @pytest.mark.parametrize("operation", ["confirm", "dismiss"])
+    def test_ready_legacy_draft_can_finish_during_same_lane_drain(database, operation):
+        ids = _seed_candidate_scope({"admin": database.admin_dsn})
+        with database.admin_connection() as c:
+            c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+>       mutate_draft(CandidateRepository(database.dsn), ids, operation)
+
+backend/tests/test_hr_cutover_dispatch_review.py:162: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_cutover_dispatch_review.py:154: in mutate_draft
+    return repo.confirm_draft(ConfirmCandidateDraft(ids['owner'], ids['draft'], ids['confirmation'], 2, ids['candidate'], 'Synthetic Candidate', {'skills': ['Python']}, None), document_id=ids['document'], position_candidate_id=ids['relation'], context_version_id=uuid4())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/hr/candidate_repository.py:562: in confirm_draft
+    self._raise_repository_error(error)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+error = NoDataFound('no_data_found\nCONTEXT:  PL/pgSQL function confirm_candidate_draft_v70(uuid,uuid,uuid,bigint,uuid,uuid,uuid,uuid,uuid,text,jsonb) line 59 at RAISE')
+
+    @staticmethod
+    def _raise_repository_error(error: Exception) -> None:
+        if isinstance(error, psycopg.errors.NoDataFound):
+>           raise CandidateNotFound("candidate resource not found") from None
+E           app.hr.candidate_repository.CandidateNotFound: candidate resource not found
+
+backend/app/hr/candidate_repository.py:214: CandidateNotFound
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_ready_legacy_draft_cannot_write_after_real_cutover[confirm]
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_ready_legacy_draft_cannot_write_after_real_cutover[dismiss]
+FAILED backend/tests/test_hr_cutover_dispatch_review.py::test_ready_legacy_draft_can_finish_during_same_lane_drain[confirm]
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_signed_handoff_rejects_residual_old_dispatch[cloud]
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_signed_handoff_rejects_residual_old_dispatch[draining_cloud]
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_same_lane_drain_handoff_acceptance_and_callback
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_callback_for_accepted_work_is_not_a_new_dispatch_gate
+ERROR backend/tests/test_hr_cutover_dispatch_review.py::test_handoff_waits_for_transition_lock_then_rechecks_phase
+3 failed, 1 passed, 5 errors in 9.56s

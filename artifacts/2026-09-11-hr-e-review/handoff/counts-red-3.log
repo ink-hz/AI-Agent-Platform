@@ -1,0 +1,83 @@
+F....FFFF                                                                [100%]
+=================================== FAILURES ===================================
+_ test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover __
+
+database = HrTestDatabase()
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+conversation_database = ({'admin': 'host=/tmp/hr-agent-a1-lf6rjr57/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('42afc07c-61c7-4e4a-8edc-b0be8bc5880d'), UUID('2de8bad9-ee1c-4f08-bbd5-aacaa942b259'))
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10acf0d50>
+bindings = <app.agent_brain.direct_command_binding.DirectCommandBindingRepository object at 0x10acf3a90>
+signed_api = (<httpx.Client object at 0x10aefe110>, WorkerRequestSigner(worker_id='v5-transport-2af52143d69044f1800c33b7f635673e', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x10acf2010>)
+transport_worker = 'v5-transport-2af52143d69044f1800c33b7f635673e'
+
+    def test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover(database, repository, conversation_database, attempt_repository, bindings, signed_api, transport_worker):
+        for _ in range(3):
+            complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
+        with database.admin_connection() as c:
+            assert c.execute("select count(*) from platform_control.execution_jobs where job_kind='worker_direct_v5' and status='queued'").fetchone()[0] == 3
+            assert c.execute("select count(*) from platform_control.turn_attempts where status='completed'").fetchone()[0] == 3
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 0
+E           assert 3 == 0
+
+backend/tests/test_hr_cutover_count_review.py:47: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local] ______
+
+database = HrTestDatabase(), kind = 'metabot_local'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain] _______
+
+database = HrTestDatabase(), kind = 'legacy_brain'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent] _______
+
+database = HrTestDatabase(), kind = 'direct_agent'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+____ test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job _____
+
+database = HrTestDatabase()
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+conversation_database = ({'admin': 'host=/tmp/hr-agent-a1-rdc2529g/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('04be865d-5b6f-4783-a41c-674b3c3f1992'), UUID('7b4ea6bd-16b3-4d38-87f4-c99a3abd3d2b'))
+
+    def test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job(database, repository, conversation_database):
+        created = repository.start(conversation_database[1], uuid4(), 'Synthetic related work', mode='direct_agent', direct_agent_id='fae-bot')
+        with database.admin_connection() as c:
+            # Historical linkage fixture: job's agent is HR, its related user turn
+            # is still active even though conversation classification is another Bot.
+            run_id = uuid4()
+            c.execute("insert into platform_control.mission_runs(run_id,mission_id,phase,agent_id,status,input_ciphertext,encryption_key_version,terminal_at) values(%s,%s,'planning','agent-brain-bot','interrupted',%s,1,clock_timestamp())", (run_id, created.mission.mission_id, b'x' * 29))
+            interrupted_job(c, 'direct_agent', run_id=run_id)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] > 0
+E           assert 0 > 0
+
+backend/tests/test_hr_cutover_count_review.py:108: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cutover_count_review.py::test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job
+5 failed, 4 passed in 10.25s

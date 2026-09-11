@@ -1,0 +1,115 @@
+F....FFFF                                                                [100%]
+=================================== FAILURES ===================================
+_ test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover __
+
+database = HrTestDatabase()
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+conversation_database = ({'admin': 'host=/tmp/hr-agent-a1-qzma0340/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('fe07ba83-c448-49ed-a18f-567895d1a149'), UUID('eb136ef5-6bb6-4671-891b-71bbfcdd5464'))
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10b404650>
+bindings = <app.agent_brain.direct_command_binding.DirectCommandBindingRepository object at 0x10b6692d0>
+signed_api = (<httpx.Client object at 0x10b876790>, WorkerRequestSigner(worker_id='v5-transport-08a7835c38494f7cb6edbac67fb85821', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x10b669ed0>)
+transport_worker = 'v5-transport-08a7835c38494f7cb6edbac67fb85821'
+
+    def test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover(database, repository, conversation_database, attempt_repository, bindings, signed_api, transport_worker):
+        for _ in range(3):
+            complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
+        with database.admin_connection() as c:
+            assert c.execute("select count(*) from platform_control.execution_jobs where job_kind='worker_direct_v5' and status='queued'").fetchone()[0] == 3
+            assert c.execute("select count(*) from platform_control.turn_attempts where status='completed'").fetchone()[0] == 3
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 0
+E           assert 3 == 0
+
+backend/tests/test_hr_cutover_count_review.py:47: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local] ______
+
+database = HrTestDatabase(), kind = 'metabot_local'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain] _______
+
+database = HrTestDatabase(), kind = 'legacy_brain'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+______ test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent] _______
+
+database = HrTestDatabase(), kind = 'direct_agent'
+
+    @pytest.mark.parametrize('kind', ['metabot_local', 'legacy_brain', 'direct_agent'])
+    def test_interrupted_unacknowledged_stop_blocks_cutover(database, kind):
+        with database.admin_connection() as c:
+            interrupted_job(c, kind, pending_stop=True)
+>           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+E           assert 0 == 1
+
+backend/tests/test_hr_cutover_count_review.py:93: AssertionError
+____ test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job _____
+
+database = HrTestDatabase()
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+conversation_database = ({'admin': 'host=/tmp/hr-agent-a1-nr0cwjy0/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('25c20083-c207-4a22-ab79-d48b87404906'), UUID('2445aa81-cf87-4f97-b54c-bcc55a91e220'))
+
+    def test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job(database, repository, conversation_database):
+        created = repository.start(conversation_database[1], uuid4(), 'Synthetic related work', mode='direct_agent', direct_agent_id='fae-bot')
+        with database.admin_connection() as c:
+            # Historical linkage fixture: job's agent is HR, its related user turn
+            # is still active even though conversation classification is another Bot.
+            run_id = uuid4()
+>           c.execute("insert into platform_control.mission_runs(run_id,mission_id,phase,agent_id,status,input_ciphertext,encryption_key_version) values(%s,%s,'planning','agent-brain-bot','interrupted',%s,1)", (run_id, created.mission.mission_id, b'x' * 29))
+
+backend/tests/test_hr_cutover_count_review.py:106: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x10b8e6c50>
+query = "insert into platform_control.mission_runs(run_id,mission_id,phase,agent_id,status,input_ciphertext,encryption_key_version) values(%s,%s,'planning','agent-brain-bot','interrupted',%s,1)"
+params = (UUID('c54ffe4f-c625-4505-832b-6c443798f090'), UUID('1fbfcf03-684b-4371-a5e1-f9ef97b3788a'), b'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.CheckViolation: new row for relation "mission_runs" violates check constraint "mission_runs_check3"
+E           DETAIL:  Failing row contains (c54ffe4f-c625-4505-832b-6c443798f090, 1fbfcf03-684b-4371-a5e1-f9ef97b3788a, null, planning, agent-brain-bot, interrupted, \x7878787878787878787878787878787878787878787878787878787878, 1, null, null, 2026-09-11 19:57:53.434348+08, 2026-09-11 19:57:53.434348+08, null, null, 0).
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: CheckViolation
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cutover_count_review.py::test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent]
+FAILED backend/tests/test_hr_cutover_count_review.py::test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job
+5 failed, 4 passed in 10.50s

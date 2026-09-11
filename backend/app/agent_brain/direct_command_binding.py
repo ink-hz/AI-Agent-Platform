@@ -8,6 +8,7 @@ from datetime import datetime
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
+from app.hr_agent.cutover import CutoverRejected, lock_admission
 from app.execution_relay.acceptance_v5 import AcceptanceV5
 from app.execution_relay.content_crypto import SealedContent
 from app.execution_relay.frozen_command_v5 import FrozenCommandV5, parse_frozen_command
@@ -149,6 +150,10 @@ class DirectCommandBindingRepository:
             for candidate in candidates:
                 try:
                     with connection.transaction():
+                        # Discovery grants no dispatch authority. Serialize each
+                        # offer with cutover before acquiring domain row locks.
+                        # Existing legacy work may finish during its own drain.
+                        lock_admission(connection, "legacy", continuing=True)
                         try:
                             lease, row, transport = self._authorized(
                                 connection, worker_id, candidate["attempt_id"]
@@ -188,6 +193,8 @@ class DirectCommandBindingRepository:
                             "callbackOrigin": transport["callbackOrigin"],
                             "command": command.model_dump(mode="json", by_alias=True),
                         }
+                except CutoverRejected:
+                    return None
                 except (BindingRejected, LeaseRejected):
                     continue
         return None

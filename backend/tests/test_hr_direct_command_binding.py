@@ -10,19 +10,19 @@ import pytest
 from test_agent_brain_conversation_repository import _codec
 from test_execution_acceptance_v5 import response
 from test_execution_worker_v5_receiver import event as source_event
-from test_hr_direct_worker import (  # actual P03 fixture chain
+from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
     attempt_repository as attempt_repository,  # noqa: PLC0414
 )
-from test_hr_direct_worker import (
+from tests.helpers.hr_direct_database import (
     control_database as control_database,  # noqa: PLC0414
 )
-from test_hr_direct_worker import (
+from tests.helpers.hr_direct_database import (
     conversation_database as conversation_database,  # noqa: PLC0414
 )
-from test_hr_direct_worker import (
+from tests.helpers.hr_direct_database import (
     direct_database as direct_database,  # noqa: PLC0414
 )
-from test_hr_direct_worker import (
+from tests.helpers.hr_direct_database import (
     repository as repository,  # noqa: PLC0414
 )
 from test_hr_direct_worker import (

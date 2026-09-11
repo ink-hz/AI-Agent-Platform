@@ -3,7 +3,6 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
-from pathlib import Path
 from threading import Event
 from time import monotonic
 
@@ -94,15 +93,7 @@ def result_source(signed_api, prepared, bindings, attempt_repository, transport_
 def projector(bindings, attempt_repository, direct_database):
     from app.agent_brain.turn_result_projection import TurnResultProjector
 
-    environment, _, _ = direct_database
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute("set local role platform_control_owner")
-        connection.execute(
-            (
-                Path(__file__).parents[1]
-                / "control_migrations/pending/hr_web_result_recovery.sql"
-            ).read_text()
-        )
+    # The shared binding fixture applies the deployed hr_web schema once.
     return TurnResultProjector(attempt_repository, bindings)
 
 

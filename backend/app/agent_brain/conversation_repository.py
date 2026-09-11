@@ -1359,18 +1359,10 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 cursor.execute("set constraints all deferred")
-                identity = cursor.execute(
-                    "select c.mode,c.direct_agent_id,exists(select 1 from "
-                    "platform_hr.position_conversations p where p.conversation_id="
-                    "c.conversation_id) as hr_bound from platform_control.conversations c "
-                    "where c.conversation_id=%s and c.owner_internal_user_id=%s",
-                    (conversation_id, internal_user_id),
-                ).fetchone()
-                cutover = lock_state(cursor) if identity is not None and (
-                    (identity["mode"] == "direct_agent"
-                     and identity["direct_agent_id"] == "hr-bot")
-                    or identity.get("hr_bound", False)
-                ) else None
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
                 conversation_row = cursor.execute(
                     "select * from platform_control.conversations "
                     "where conversation_id=%s and owner_internal_user_id=%s "
@@ -1379,6 +1371,10 @@ class ConversationRepository:
                 ).fetchone()
                 if conversation_row is None:
                     raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
                 existing = cursor.execute(
                     "select turn_id from platform_control.conversation_turns "
                     "where conversation_id=%s and client_request_id=%s",
@@ -1393,7 +1389,7 @@ class ConversationRepository:
                 else:
                     if ((conversation_row["mode"] == "direct_agent"
                          and conversation_row["direct_agent_id"] == "hr-bot")
-                            or (identity is not None and identity.get("hr_bound", False))):
+                            or hr_bound):
                         require_lane(cutover, "legacy")
                     if conversation_row["status"] != "active":
                         raise ConversationRepositoryConflict()
@@ -1461,18 +1457,10 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 cursor.execute("set constraints all deferred")
-                identity = cursor.execute(
-                    "select c.mode,c.direct_agent_id,exists(select 1 from "
-                    "platform_hr.position_conversations p where p.conversation_id="
-                    "c.conversation_id) as hr_bound from platform_control.conversations c "
-                    "where c.conversation_id=%s and c.owner_internal_user_id=%s",
-                    (conversation_id, internal_user_id),
-                ).fetchone()
-                cutover = lock_state(cursor) if identity is not None and (
-                    (identity["mode"] == "direct_agent"
-                     and identity["direct_agent_id"] == "hr-bot")
-                    or identity.get("hr_bound", False)
-                ) else None
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
                 conversation_row = cursor.execute(
                     "select * from platform_control.conversations "
                     "where conversation_id=%s and owner_internal_user_id=%s "
@@ -1481,9 +1469,13 @@ class ConversationRepository:
                 ).fetchone()
                 if conversation_row is None:
                     raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
                 if ((conversation_row["mode"] == "direct_agent"
                      and conversation_row["direct_agent_id"] == "hr-bot")
-                        or (identity is not None and identity.get("hr_bound", False))):
+                        or hr_bound):
                     require_lane(cutover, "legacy")
                 if (
                     conversation_row["status"] != "active"

@@ -478,12 +478,13 @@ class CandidateRepository:
         expected_row_version: int,
         *extra: object,
         require_admission: bool = False,
+        continuing: bool = False,
     ) -> CandidateDraft:
         placeholders = ",".join("%s" for _ in range(4 + len(extra)))
         try:
             with self._connection() as connection:
                 if require_admission:
-                    lock_admission(connection, "legacy")
+                    lock_admission(connection, "legacy", continuing=continuing)
                 row = connection.execute(
                     f"select (platform_hr.{function_name}({placeholders})).*",
                     (
@@ -510,6 +511,7 @@ class CandidateRepository:
         return self._draft_transition(
             "dismiss_candidate_draft_v70", command.owner_id, command.draft_id,
             command.client_request_id, command.expected_row_version,
+            require_admission=True, continuing=True,
         )
 
     def confirm_draft(
@@ -522,6 +524,9 @@ class CandidateRepository:
     ) -> ConfirmedCandidate:
         try:
             with self._connection() as connection:
+                # Ready drafts are terminal for drain accounting, but a user
+                # confirmation still writes legacy business records.
+                lock_admission(connection, "legacy", continuing=True)
                 relation_row = connection.execute(
                     "select (platform_hr.confirm_candidate_draft_v70("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)).*",
