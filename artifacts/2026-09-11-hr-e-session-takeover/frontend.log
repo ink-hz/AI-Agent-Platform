@@ -1,0 +1,16 @@
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run --run src/workspaces/hr/HrCandidateWorkspace.test.tsx src/workspaces/hr/HrP0Combined.acceptance.test.tsx
+
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+ ✓ src/workspaces/hr/HrCandidateWorkspace.test.tsx (28 tests) 290ms
+ ✓ src/workspaces/hr/HrP0Combined.acceptance.test.tsx (1 test) 330ms
+   ✓ keeps one recruiting conversation while importing candidates, scoping drafts, and reopening results  329ms
+
+ Test Files  2 passed (2)
+      Tests  29 passed (29)
+   Start at  20:57:02
+   Duration  1.59s (transform 612ms, setup 0ms, collect 1.03s, tests 620ms, environment 502ms, prepare 75ms)
+

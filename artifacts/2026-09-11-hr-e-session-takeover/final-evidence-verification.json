@@ -1,0 +1,26 @@
+{
+  "reviewed_head": "bed9024fc820b2bbde7af1e78d45beb7d976d029",
+  "manifest_files_checked": 81,
+  "code_fingerprints_checked": 11,
+  "historical_checks": [
+    {
+      "baseline": "6a9cef6",
+      "files_checked": 99,
+      "changed": []
+    },
+    {
+      "baseline": "b974a87",
+      "files_checked": 76,
+      "changed": []
+    }
+  ],
+  "unchanged_migrations": [
+    "backend/control_migrations/hr_web/094_hr_role_tools_v6.sql",
+    "backend/control_migrations/hr_web/095_hr_deliverable_inputs.sql",
+    "backend/control_migrations/100_attachment_erasure_worker_access.sql",
+    "backend/control_migrations/hr_agent/101_hr_agent_interview_records.sql",
+    "backend/control_migrations/102_hr_execution_cutover.sql"
+  ],
+  "local_document_links_checked": 56,
+  "problems": []
+}

@@ -1,0 +1,20 @@
+{
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_cutover_dispatch_review.py",
+    "backend/tests/test_hr_cutover_count_review.py",
+    "backend/tests/test_hr_agent_migration_deployment.py",
+    "backend/tests/test_hr_agent_preflight.py",
+    "backend/tests/test_agent_brain_hr_history_isolation.py",
+    "backend/tests/test_agent_brain_conversation_context.py",
+    "backend/tests/test_hr_cloud_loop_docs_selfcheck.py",
+    "-q",
+    "--tb=short"
+  ],
+  "started_at": "2026-09-11T12:57:01.935810+00:00",
+  "finished_at": "2026-09-11T12:58:10.543294+00:00",
+  "exit_code": 0,
+  "provider": "no model calls; Docker CLI substituted; disposable PostgreSQL and OS signals real"
+}

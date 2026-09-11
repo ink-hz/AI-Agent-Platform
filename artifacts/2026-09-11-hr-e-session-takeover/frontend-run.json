@@ -1,0 +1,15 @@
+{
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "--run",
+    "src/workspaces/hr/HrCandidateWorkspace.test.tsx",
+    "src/workspaces/hr/HrP0Combined.acceptance.test.tsx"
+  ],
+  "cwd": "webui",
+  "started_at": "2026-09-11T12:57:01.934726+00:00",
+  "finished_at": "2026-09-11T12:57:03.823186+00:00",
+  "exit_code": 0,
+  "boundary": "frontend component tests with mocked APIs; not browser acceptance"
+}

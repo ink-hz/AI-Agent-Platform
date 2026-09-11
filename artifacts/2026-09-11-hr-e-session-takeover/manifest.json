@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "reviewed_commit": "bed9024fc820b2bbde7af1e78d45beb7d976d029",
+  "excludes": [
+    "manifest.json"
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "size_bytes": 4198,
+      "sha256": "ff9d2380f5a26d9cf63907216a5b7a9ba5aff2f0c77fc41b12b00352d687fb35"
+    },
+    {
+      "path": "backend-run.json",
+      "size_bytes": 726,
+      "sha256": "e88e6d3b17d8500ceb8da38bc4bed4bcf2bc7abc5c10212c199d003eb82e1e01"
+    },
+    {
+      "path": "backend.log",
+      "size_bytes": 190,
+      "sha256": "ee698be4f914e9e93dfbb9bbaf9370c2fa1bd1d0308cea52c04c99ca95b4dcda"
+    },
+    {
+      "path": "evidence-verification.json",
+      "size_bytes": 781,
+      "sha256": "2c8105cdebbc2ffdbe8cdd7e5659d8f919657806da91ce2a165ed065f13df1d6"
+    },
+    {
+      "path": "final-evidence-verification.json",
+      "size_bytes": 781,
+      "sha256": "355e8adf1f4dcf6ab6874556cf14c71ab1b4ef6cf4d2d6fe01e5c3db9e6686ae"
+    },
+    {
+      "path": "frontend-run.json",
+      "size_bytes": 405,
+      "sha256": "0b4f9ac3580cdedff734f6457f16804b9ed781996e6695ebae544bb12a1fb52e"
+    },
+    {
+      "path": "frontend.log",
+      "size_bytes": 703,
+      "sha256": "3c165a705ff7871772595562f27cbe65f8fec19d55d1a10fbc668dfda9bfa268"
+    },
+    {
+      "path": "runbook-mock-results.json",
+      "size_bytes": 1238,
+      "sha256": "aa374deb41ddbf4503a4aa96787511a65b18684297806577ef6f65d4bda13744"
+    },
+    {
+      "path": "verify_evidence.py",
+      "size_bytes": 3624,
+      "sha256": "ea96c312302bfc15dd361faf5b20467bec9c852e7548ae666b2d8c87cf6964fc"
+    }
+  ]
+}
