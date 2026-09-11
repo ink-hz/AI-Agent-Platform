@@ -26,7 +26,7 @@
 | multi_turn | 100 | 569 | 94 | 0.165 | 6 | end_turn |
 | long_chinese | 6,489 | 19,808 | 12,990 | 0.656 | 6 | end_turn |
 
-所有响应的 `response_model` 均为 `claude-opus-5`，这只是 provider 自报。两个请求虽设置输出上限 128，provider usage 实报为 131 和 132，并以 `max_tokens` 停止；本证据不能区分可见输出与隐藏推理或网关计量开销。
+所有响应的 `response_model` 均为 `claude-opus-5`，这只是 provider 自报。三个请求虽设置输出上限 128，provider usage 实报为 130、131 和 132，并以 `max_tokens` 停止；本证据不能区分可见输出与隐藏推理或网关计量开销。
 
 六次的 `cache_creation_input_tokens` 和 `cache_read_input_tokens` 均为 0。样本没有设计重复稳定前缀的成对请求，因而缓存命中、缓存创建计费和跨请求稳定性均未验证。
 
@@ -44,3 +44,7 @@
 - `backend/tests/test_hr_metering_validation.py`：runner 的边界、清洗与缺失 usage 失败行为。
 
 未执行生产调用、业务消息发送、数据库写入、部署或页面验收。
+
+## Runner 复审修订
+
+独立复审指出配置和字符边界未被完全强制：现已在创建模型端口前拒绝非 claude-opus-5 / anthropic_messages_sse 配置，并按 messages + tools 的规范 JSON 总字符限制输入。原始六样本证据不回填；原 unicode_characters 字段只计算消息正文，新 runner 另记 payload_unicode_characters。原样本的完整 payload 也均小于 12,000，修改未追加任何真实调用。三条失败用例先复现，修复后六条测试通过。

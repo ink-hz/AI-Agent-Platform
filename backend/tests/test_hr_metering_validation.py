@@ -10,7 +10,12 @@ def test_manifest_has_six_bounded_hashed_synthetic_requests(tmp_path: Path) -> N
     manifest = prepare_manifest(tmp_path / "requests.json", profile_revision="r1")
 
     assert [item["case"] for item in manifest["requests"]] == [
-        "english", "chinese", "mixed_json", "tool_schema", "multi_turn", "long_chinese"
+        "english",
+        "chinese",
+        "mixed_json",
+        "tool_schema",
+        "multi_turn",
+        "long_chinese",
     ]
     assert manifest["call_budget"] == 6
     assert all(item["max_output_tokens"] == 128 for item in manifest["requests"])
@@ -25,17 +30,35 @@ def test_attempt_record_keeps_only_safe_usage_and_reported_model() -> None:
 
     result = collect_metering_events(
         [
-            ModelEvent("usage", {"provider_protocol": "anthropic_messages_sse", "raw": {
-                "input_tokens": 17,
-                "cache_creation_input_tokens": 3,
-                "secret": "PROMPT_SENTINEL",
-            }}),
-            ModelEvent("usage", {"provider_protocol": "anthropic_messages_sse", "raw": {
-                "output_tokens": 4,
-            }}),
-            ModelEvent("usage", {"provider_protocol": "anthropic_messages_sse", "raw": {
-                "_response_metadata": {"reported_models": ["claude-opus-5"]}
-            }}),
+            ModelEvent(
+                "usage",
+                {
+                    "provider_protocol": "anthropic_messages_sse",
+                    "raw": {
+                        "input_tokens": 17,
+                        "cache_creation_input_tokens": 3,
+                        "secret": "PROMPT_SENTINEL",
+                    },
+                },
+            ),
+            ModelEvent(
+                "usage",
+                {
+                    "provider_protocol": "anthropic_messages_sse",
+                    "raw": {
+                        "output_tokens": 4,
+                    },
+                },
+            ),
+            ModelEvent(
+                "usage",
+                {
+                    "provider_protocol": "anthropic_messages_sse",
+                    "raw": {
+                        "_response_metadata": {"reported_models": ["claude-opus-5"]}
+                    },
+                },
+            ),
             ModelEvent("text_delta", {"text": "PROMPT_SENTINEL"}),
             ModelEvent("stop", {"reason": "end_turn"}),
         ]
@@ -64,3 +87,47 @@ def test_missing_usage_is_a_failed_attempt() -> None:
 
     with pytest.raises(ValueError, match="usage_missing"):
         collect_metering_events([ModelEvent("stop", {"reason": "end_turn"})])
+
+
+@pytest.mark.parametrize(
+    "changes", [{"model": "other"}, {"protocol": "openai_chat_sse"}]
+)
+def test_unapproved_profile_rejected_before_port_or_manifest(
+    tmp_path, monkeypatch, changes
+):
+    from tools.hr_agent import metering_validation as runner
+
+    path = tmp_path / "provider.json"
+    path.write_text(
+        json.dumps(
+            {"model": "claude-opus-5", "protocol": "anthropic_messages_sse", **changes}
+        )
+    )
+    monkeypatch.setattr(runner, "PROFILE", path)
+    monkeypatch.setattr(
+        runner.ConfiguredHttpModelPort,
+        "from_mapping",
+        lambda _: pytest.fail("port created before validation"),
+    )
+    with pytest.raises(ValueError, match="profile_not_authorized"):
+        runner.run(tmp_path / "evidence")
+    assert not (tmp_path / "evidence").exists()
+
+
+def test_tools_count_toward_full_input_bound(tmp_path, monkeypatch):
+    from tools.hr_agent import metering_validation as runner
+
+    monkeypatch.setattr(
+        runner,
+        "_cases",
+        lambda: [
+            {
+                "case": "oversized",
+                "messages": ({"role": "user", "content": "short"},),
+                "tools": ({"description": "界" * 12000},),
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="input_character_limit"):
+        runner.prepare_manifest(tmp_path / "manifest.json", profile_revision="r1")
+    assert not (tmp_path / "manifest.json").exists()
