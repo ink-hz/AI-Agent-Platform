@@ -18,9 +18,9 @@
 
 Files: `scripts/build_hr_source_manifest.py`, `backend/app/hr/source_library.py`, `backend/app/hr/source_content/`, `backend/app/hr/panorama_routes.py`, `backend/app/control_plane/authorization.py`, `backend/tests/test_hr_source_library.py`, `backend/tests/test_hr_source_http.py`。
 
-- [ ] 先写离线代表样本清洗、固定版本/权限和分页的失败用例；只运行新用例。
-- [ ] 从本机确定归档构建资料包，保留 3437 统一身份，将原始职责/要求/公开字段按真实来源关联，提供 12 公司覆盖与官网可读文本。输出哈希清单。
-- [ ] 提供下述 snake_case JSON 接口，支持现有登录/中央 HR grant；针对新接口运行一次真实 HTTP 一次性库回归。
+- [x] 先写离线代表样本清洗、固定版本/权限和分页的失败用例；只运行新用例。
+- [x] 从本机确定归档构建资料包，保留 3437 统一身份，将原始职责/要求/公开字段按真实来源关联，提供 12 公司覆盖与官网可读文本。输出哈希清单。
+- [x] 提供下述 snake_case JSON 接口，支持现有登录/中央 HR grant；针对新接口运行一次真实 HTTP 一次性库回归。
 
 Contract:
 
@@ -36,15 +36,17 @@ Contract:
 
 Files: `webui/src/workspaces/hr/HrSourceWorkspace.tsx`, `hrSources.css`, `hrSourceTypes.ts`, `HrPanoramaWorkspace.tsx`, `HrResearchWorkspace.tsx`, 对应组件测试。
 
-- [ ] 先写默认资料层、切报告保留公司、详情关闭保留筛选、拒绝响应不显示旧正文测试。
-- [ ] wrapper 增加「原始资料」「AI 分析报告」导航，query layer=sources/research；research/edition 老链接优先报告，历史参数仍旧页。共享 research_company；保留 source_q/source_location/source_channel/source_offset/source_job/source_edition。
-- [ ] 资料页展示公司目录、渠道覆盖、可读官网资料、岗位分页/搜索/筛选和详情。报告层只复用已有报告，使用其 source_bundle_id 对应固定资料版本，不假定当前新包可替代旧来源。
-- [ ] 现有源 URL 能唯一对应来源岗位时链接具体详情，含多个同源岗位时链接公司/搜索范围并标明定位粒度；其他引用保持原行为。
-- [ ] 运行新相关组件与 TypeScript/Vite 构建，浏览器可用时做最后一轮关键交互。
+- [x] 先写默认资料层、切报告保留公司、详情关闭保留筛选、拒绝响应不显示旧正文测试。
+- [x] wrapper 增加「原始资料」「AI 分析报告」导航，query layer=sources/research；research/edition 老链接优先报告，历史参数仍旧页。共享 research_company；保留 source_q/source_location/source_channel/source_offset/source_job/source_edition。
+- [x] 资料页展示公司目录、渠道覆盖、可读官网资料、岗位分页/搜索/筛选和详情。报告层只复用已有报告，使用其 source_bundle_id 对应固定资料版本，不假定当前新包可替代旧来源。
+- [x] 现有源 URL 能唯一对应来源岗位时链接具体详情，含多个同源岗位时链接公司/搜索范围并标明定位粒度；其他引用保持原行为。
+- [x] 运行新相关组件与 TypeScript/Vite 构建，浏览器可用时做最后一轮关键交互。
 
 ## Task 3：审查、定向发布与交付
 
-- [ ] 汇总差异进行一次范围明确的代码审查，修复重要问题，不重跑已通过用例。
-- [ ] 核对线上 current/API 仍为 fe10fae，准备源码与 dist。基于确切运行镜像的增量层发布新增 source 包/接口、研究引用扩展与静态资源，不更新其他运行服务。
-- [ ] 复用既有发布锁、磁盘阈值、失败回滚、staging 清理与当前加两版保留。匿名页面原有 401 不误判发布故障。
-- [ ] 发布后确认实际内容 12/3437、哈希、API 健康、匿名保护、公网 JS/CSS 与非 API 容器 ID 不变，更新续接与验证边界。
+- [x] 汇总差异进行一次范围明确的代码审查，修复重要问题，不重跑已通过用例。
+- [x] 核对线上 current/API 仍为 fe10fae，准备源码与 dist。基于确切运行镜像的增量层发布新增 source 包/接口、研究引用扩展与静态资源，不更新其他运行服务。
+- [x] 复用既有发布锁、磁盘阈值、失败回滚、staging 清理与当前加两版保留。匿名页面原有 401 不误判发布故障。
+- [x] 发布后确认实际内容 12/3437、哈希、API 健康、匿名保护、公网 JS/CSS 与非 API 容器 ID 不变，更新续接与验证边界。
+
+完成于 2026-09-11。实际发布 `bb5faa5cc59410b52c618b0e7acbc1fe613b3c17`，详见交付记录；浏览器无可用连接，页面实际外观未验收，其他已完成检查不重复。

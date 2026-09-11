@@ -2,6 +2,8 @@
 
 ## 最新续接（覆盖下方旧版布局与版本描述）
 
+- **2026-09-11：情报两层展示已上线。** API/current `bb5faa5cc59410b52c618b0e7acbc1fe613b3c17`。`/hr/panorama` 默认原始资料：12 公司/3,437 岗位；第二层复用 38 篇 AI 研究。资料版本 `source-97a485975027ae0f6479`，正文按源归档恢复，版本引用与切层位置保留。只更新 API/静态资源，其他容器未重启，无模型、抓取或数据库迁移。相关真实 HTTP/组件和生产内容核对通过，浏览器未连接。见 [两层交付](../reviews/2026-09-11-hr-intelligence-two-layer-release.md)，不重复本次发布或已完成检查。
+
 - **2026-09-11：新版语义研究情报页已上线。** API/current `fe10fae1969b4c42f8c05d48c8eaf507a787b2b5`，`/hr/panorama` 默认展示 38 篇/7 公司原文研究与可展开依据，材料 09-06、分析 09-09；历史模板情报保留。只更新 API/静态资源，其他容器不变；未调用模型或接入对话。本地 HTTP/阅读组件、生产文档摘要及资源检查通过，浏览器不可用未验收。详见 [发布记录](../reviews/2026-09-11-hr-research-reading-release.md)。不要重复本次发布或已完成检查。
 
 - **2026-09-09：场景成果与连续引用 v7 已实现并上线。** Platform API / 独立 HR Worker / 本地 Signed Worker `1a705ebb4b6598c61bc0d767ff44e2afc038a539`，MetaBot `672058ca5d316c9ada2a460e211f8ec5cca1b70a`，Team role/knowledge `a87500e2d0b4d35eb28713fb04b8274964e76d23`。新候选人成果类型、非空基准、本次参考与冻结输入引用、结果读取授权、用户正文复核已生效；候选人成果不能直接成岗位标准。Hannah 场景原位补交付声明，不恢复已删入口。页面 `index-K0JwF2ER.js` / `index-UreVbVab.css`。正式 095 与本地 callback v7 约束已应用，历史冻结命令不改写。详见 [v7 交付记录](../reviews/2026-09-09-hr-deliverables-v7-delivery.md)。
