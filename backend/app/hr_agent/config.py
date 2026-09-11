@@ -26,6 +26,10 @@ MATERIAL_AUTHORITY_MIGRATION_SHA256 = (
     "8981330f48c9ed3673d9377e678c44e9b0494f5aae615793023c363eb8018267"
 )
 
+CANDIDATE_INTAKE_MIGRATION_SHA256 = (
+    "abb6b25c61e9031181f41093958a8ccf535fa9467b47b9f9d4cc5c97f6f2d184"
+)
+
 TABLES = (
     "threads",
     "works",
@@ -45,6 +49,12 @@ TABLES = (
     "material_parses",
     "material_parse_requests",
     "material_authority_proofs",
+    "candidate_batches",
+    "candidate_intake_items",
+    "personal_materials",
+    "candidates",
+    "candidate_documents",
+    "candidate_positions",
 )
 
 
@@ -258,6 +268,11 @@ def check_schema_ready(connection_factory) -> bool:
                 "events",
                 "material_parse_requests",
                 "material_authority_proofs",
+                "candidate_batches",
+                "personal_materials",
+                "candidates",
+                "candidate_documents",
+                "candidate_positions",
             }
             for name in TABLES:
                 row = connection.execute(
@@ -290,6 +305,16 @@ def check_schema_ready(connection_factory) -> bool:
             row = connection.execute(
                 "select sha256 from platform_control.schema_migrations where version=98"
             ).fetchone()
-            return row is not None and row[0] == MATERIAL_AUTHORITY_MIGRATION_SHA256
+            if row is None or row[0] != MATERIAL_AUTHORITY_MIGRATION_SHA256:
+                return False
+            row = connection.execute(
+                "select sha256 from platform_control.schema_migrations where version=99"
+            ).fetchone()
+            if row is None or row[0] != CANDIDATE_INTAKE_MIGRATION_SHA256:
+                return False
+            row = connection.execute(
+                "SELECT has_function_privilege(current_user,'platform_hr_agent.lock_candidate_source(uuid,uuid,jsonb)','EXECUTE')"
+            ).fetchone()
+            return row is not None and row[0] is True
     except Exception:  # noqa: BLE001 - startup and readiness fail closed without secrets
         return False

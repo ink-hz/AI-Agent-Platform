@@ -249,6 +249,58 @@ class MaterialParsingService:
             )
         return receipt
 
+    def retry(self, owner_id, attachment_id, key, *, cursor=None):
+        """Explicit failed-parse retry; caller may include it in an item CAS transaction.
+
+        Attempts remain monotonic so an expired worker cannot regain its fence.
+        Ready output is immutable and never reset by this operation.
+        """
+        self.repo._scope(owner_id, [], [])
+        row = self.materials._row(owner_id, attachment_id)
+        if row["state"] != "ready":
+            raise problem("reference_unavailable", http_status=410)
+        self.materials._assert_current(owner_id, row)
+        request = {"attachment_id": str(row["attachment_id"])}
+
+        def apply(c):
+            op, replay = self.repo._idempotency(
+                c, owner_id, "material_parse_retry", key, request
+            )
+            if replay:
+                return replay
+            c.execute(
+                "SELECT * FROM platform_hr_agent.material_parses WHERE owner_id=%s AND attachment_id=%s AND source_sha256=%s AND parser_release=%s FOR UPDATE",
+                (
+                    owner_id,
+                    row["attachment_id"],
+                    row["sha256"],
+                    RELEASES.get(row["detected_mime"]),
+                ),
+            )
+            task = c.fetchone()
+            if not task or task["state"] != "failed":
+                raise problem("revision_conflict", http_status=409)
+            if task["source_identity"] != source_identity(row):
+                raise problem("reference_unavailable", http_status=410)
+            c.execute(
+                "UPDATE platform_hr_agent.material_parses SET state='queued',retry_generation=retry_generation+1,generation_attempts=0,lease_owner=NULL,lease_until=NULL,error_code=NULL,sealed_content=NULL,sealed_content_key_version=NULL WHERE parse_id=%s",
+                (task["parse_id"],),
+            )
+            return self.repo._receipt(
+                c,
+                op,
+                {
+                    "parse_id": str(task["parse_id"]),
+                    "state": "queued",
+                    "retry_generation": task["retry_generation"] + 1,
+                },
+            )
+
+        if cursor is not None:
+            return apply(cursor)
+        with self.repo.transaction() as c:
+            return apply(c)
+
     def process_one(self, worker_id, lease_seconds=60):
         with self.repo.transaction() as c:
             c.execute(
@@ -258,10 +310,11 @@ class MaterialParsingService:
             if not task:
                 return False
             c.execute(
-                "UPDATE platform_hr_agent.material_parses SET state='processing',attempts=attempts+1,lease_owner=%s,lease_until=now()+(%s * interval '1 second') WHERE parse_id=%s RETURNING attempts",
+                "UPDATE platform_hr_agent.material_parses SET state='processing',attempts=attempts+1,generation_attempts=CASE WHEN retry_generation=0 THEN attempts+1 ELSE generation_attempts+1 END,lease_owner=%s,lease_until=now()+(%s * interval '1 second') WHERE parse_id=%s RETURNING attempts,generation_attempts",
                 (worker_id, max(1, lease_seconds), task["parse_id"]),
             )
-            attempt = c.fetchone()["attempts"]
+            claimed = c.fetchone()
+            attempt = claimed["attempts"]
         try:
             self.repo._scope(task["owner_id"], [], [])
             row = self.materials._row(task["owner_id"], task["attachment_id"])
@@ -276,7 +329,7 @@ class MaterialParsingService:
                 parse_bytes(
                     data, row["detected_mime"], timeout_seconds=self.timeout_seconds
                 )
-                if attempt <= 3
+                if claimed["generation_attempts"] <= 3
                 else _failure("attempt_limit")
             )
             self.materials._assert_current(task["owner_id"], row)

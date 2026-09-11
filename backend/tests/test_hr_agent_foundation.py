@@ -13,7 +13,7 @@ def test_database_schema_has_contract_tables_and_restricted_app():
     from hr_agent_support import hr_agent_database
     with hr_agent_database() as db:
         with db.connection() as conn:
-            assert conn.execute("select count(*) from information_schema.tables where table_schema='platform_hr_agent'").fetchone()[0] == 18
+            assert conn.execute("select count(*) from information_schema.tables where table_schema='platform_hr_agent'").fetchone()[0] == 24
             with pytest.raises(Exception):
                 conn.execute('create table platform_hr_agent.forbidden(id int)')
 
@@ -78,7 +78,7 @@ def test_database_constraints_reject_cross_owner_and_mutable_history():
             with pytest.raises(psycopg.errors.CheckViolation):
                 c.execute('INSERT INTO platform_hr_agent.threads(owner_id,thread_id,sealed_title,sealed_title_key_version) VALUES(%s,%s,%s,0)',(owner,uuid4(),b'fake'))
 
-@pytest.mark.parametrize("version", [96, 97, 98])
+@pytest.mark.parametrize("version", [96, 97, 98, 99])
 def test_readiness_rejects_different_migration_checksum(version):
     from app.hr_agent.config import check_schema_ready
     from hr_agent_support import hr_agent_database
