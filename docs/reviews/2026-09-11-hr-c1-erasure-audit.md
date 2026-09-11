@@ -19,7 +19,7 @@
 
 root五项测试本地重跑5 passed（2.78s）。个人出站门先执行当前来源授权，再沿reference_edges寻找personal_materials，默认无callback拒绝，callback异常同样拒绝；新增临时真实持久测试仅选择派生research引用时也阻断，模型请求数0。ResourceReader的新候选分支通过read_candidate验证全部来源，且没有candidate对象授权递归。HTTP入口仍经身份、Origin/CSRF及HR权限；服务将身份owner传入，不从请求接受owner。
 
-覆盖边界：五项测试中“foreign item”使用随机不存在ID，不是第二个已认证owner的真实existing item；retry路由、确认同键HTTP重放及真实独立worker进程故障尚未在该五项中覆盖。服务层相关用例不能替代这些HTTP/进程证据。后台个人处理callback抛出非HrAgentProblem异常时，intake.advance_one尚无本项错误隔离，worker会退出；真实处理回调仍未配置，因此不作为已开放生产能力。
+覆盖边界：五项测试中“foreign item”使用随机不存在ID，不是第二个已认证owner的真实existing item；retry路由、确认同键HTTP重放及真实独立worker进程故障尚未在该五项中覆盖。服务层相关用例不能替代这些HTTP/进程证据。审计时后台个人处理callback抛出非HrAgentProblem异常会逸出intake.advance_one并使worker退出；此项已由下文后续补强修复。真实处理回调仍未配置，因此不作为已开放生产能力。
 
 ## 结果
 
@@ -27,4 +27,14 @@ root五项测试本地重跑5 passed（2.78s）。个人出站门先执行当前
 
 最终命令：`cd backend && .venv/bin/python -m pytest -q tests/test_hr_agent_candidate_erasure.py tests/test_attachment_erasure.py tests/test_hr_agent_candidate_routes.py tests/test_hr_agent_foundation.py`，47 passed（17.46s）。新文件三项验证真实maintenance全链、兄弟任务领取隔离及列级权限；原始对象存储为空，attachment/erasure状态为deleted/completed，candidate、派生research、解析text和candidate对象scope均不可读，候选列表仅保留ID与available=false。维护角色不能读取uploads.declared_mime、不能UPDATE附件；普通app附件UPDATE仍为false。新测试Ruff与本次diff检查通过。
 
-100 SHA256：`15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177`。100须按公共控制面迁移路径应用，现有HR就绪检查仅核096–099，不会自动检查100。未修改既有迁移、未授予普通app新权限。上述回归是本地API/服务/数据库/真实对象删除验证；模型仍是脚本边界，没有独立OS进程kill测试。真实资料、浏览器和生产验收仍关闭。
+100 SHA256：`15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177`。100须按公共控制面迁移路径应用，首次擦除修复时HR就绪检查仅核096–099；下文后续补强已加入100与实际列权限校验。未修改既有迁移、未授予普通app新权限。上述回归是本地API/服务/数据库/真实对象删除验证；模型仍是脚本边界，没有独立OS进程kill测试。真实资料、浏览器和生产验收仍关闭。
+
+## 后续有界补强：逐项授权故障与100就绪要求
+
+root授权后续修复，先写真实服务失败回归，再修改实现。文件仅 candidates.py、config.py、test_hr_agent_candidate_intake.py、test_hr_agent_foundation.py 与本记录。已核对现有config的timeout修改属于root，本任务只修改迁移常量和check_schema_ready，不覆盖其改动。
+
+设计决策：processing_authorizer异常应与返回False一样拒绝该项。仅包围授权回调调用捕获Exception，转换为已有固定processing_not_authorized错误码并走现有失败状态/CAS；不记录异常内容、不将未知异常当作允许、不捕获系统退出信号。数据库与其他处理错误仍保持原有恢复路径。真实双文件batch测试以一个文件的回调抛私密sentinel异常，另一个文件仍通过同一服务推进并产生实际research成果；失败项不创建work，日志/输出和持久元数据不得包含sentinel。
+
+100应纳入新链readiness：新链已接入个人档案且W8要求源删除后不可用，缺少100会使真实维护链不能完成，因此不能仍报告完整就绪。除校验公共100迁移记录与准确checksum，还验证与当前app/preview身份对应的maintenance角色实际具备100要求的六列SELECT，防止迁移记录存在但权限漂移。该检查不建立维护连接、不读私人材料，不替代维护进程存活/真实删除验收。原有099表数24及校验和不变。
+
+补强验证：最小9项先全部失败（授权异常逸出、缺100回执、100异checksum、六个必要列逐项撤权），修复后9 passed（10.30s）。最终 `cd backend && .venv/bin/python -m pytest -q tests/test_hr_agent_candidate_intake.py tests/test_hr_agent_foundation.py tests/test_hr_agent_candidate_erasure.py`，63 passed（32.96s）。业务文件和候选测试Ruff通过；只纳入自己的config就绪检查hunks，root超时配置保持未改。无生产、真实模型或真实个人资料调用。

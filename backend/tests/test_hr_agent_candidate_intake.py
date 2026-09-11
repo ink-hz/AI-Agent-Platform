@@ -539,3 +539,47 @@ def test_saved_narrative_survives_final_answer_failure(uploaded, intake):
         ]
         == "confirmed"
     )
+
+
+def test_processing_authorizer_failure_is_private_and_item_scoped(
+    uploaded, intake, database, caplog, capsys
+):
+    service, _ = intake
+    _, _, repo, owner, _, aid, _, _ = uploaded
+    second = upload_document(
+        uploaded, database, b"Synthetic sibling document", "text/plain", "sibling.txt"
+    )
+    private_error = "PRIVATE_AUTHORITY_ERROR_SENTINEL"
+
+    def authorize(actor, attachment):
+        assert actor == owner
+        if str(attachment) == aid:
+            raise RuntimeError(private_error)
+        return True
+
+    service.processing_authorizer = authorize
+    batch = service.create_batch(owner, batch_request([aid, second]), uuid4())
+    assert service.advance_one("same-worker")
+    assert service.advance_one("same-worker")
+    items = service.get_batch(owner, batch["batch_id"])["items"]
+    failed = next(item for item in items if item["attachment_id"] == aid)
+    healthy = next(item for item in items if item["attachment_id"] == second)
+    assert failed["state"] == "failed"
+    assert failed["error_code"] == "processing_not_authorized"
+    assert failed["failed_stage"] == "profile" and failed["work_id"] is None
+    assert healthy["work_id"] and healthy["state"] == "profiling"
+    healthy, model = finish_profile(uploaded, intake, healthy)
+    assert healthy["state"] == "awaiting_review" and model.requests
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT row_to_json(t)::text AS body FROM platform_hr_agent.candidate_intake_items t"
+        )
+        assert private_error not in str(c.fetchall())
+        c.execute(
+            "SELECT count(*) AS count FROM platform_hr_agent.works WHERE owner_id=%s",
+            (owner,),
+        )
+        assert c.fetchone()["count"] == 1
+    assert private_error not in caplog.text
+    captured = capsys.readouterr()
+    assert private_error not in captured.out + captured.err

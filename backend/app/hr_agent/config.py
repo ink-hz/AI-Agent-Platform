@@ -30,6 +30,10 @@ CANDIDATE_INTAKE_MIGRATION_SHA256 = (
     "abb6b25c61e9031181f41093958a8ccf535fa9467b47b9f9d4cc5c97f6f2d184"
 )
 
+ERASURE_ACCESS_MIGRATION_SHA256 = (
+    "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177"
+)
+
 TABLES = (
     "threads",
     "works",
@@ -312,6 +316,33 @@ def check_schema_ready(connection_factory) -> bool:
             ).fetchone()
             if row is None or row[0] != CANDIDATE_INTAKE_MIGRATION_SHA256:
                 return False
+            row = connection.execute(
+                "select sha256 from platform_control.schema_migrations where version=100"
+            ).fetchone()
+            if row is None or row[0] != ERASURE_ACCESS_MIGRATION_SHA256:
+                return False
+            row = connection.execute(
+                "SELECT CASE current_user "
+                "WHEN 'platform_control_app' THEN 'platform_control_maintenance' "
+                "WHEN 'platform_control_app_preview' THEN 'platform_control_maintenance_preview' END"
+            ).fetchone()
+            if row is None or row[0] is None:
+                return False
+            maintenance_role = row[0]
+            for table, column in (
+                ("uploads", "attachment_id"),
+                ("uploads", "write_attempt_id"),
+                ("upload_write_attempts", "attachment_id"),
+                ("upload_write_attempts", "attempt_id"),
+                ("upload_write_attempts", "object_ref_ciphertext"),
+                ("upload_write_attempts", "object_ref_key_version"),
+            ):
+                row = connection.execute(
+                    "SELECT has_column_privilege(%s,%s,%s,'SELECT')",
+                    (maintenance_role, "platform_attachments." + table, column),
+                ).fetchone()
+                if row is None or row[0] is not True:
+                    return False
             row = connection.execute(
                 "SELECT has_function_privilege(current_user,'platform_hr_agent.lock_candidate_source(uuid,uuid,jsonb)','EXECUTE')"
             ).fetchone()

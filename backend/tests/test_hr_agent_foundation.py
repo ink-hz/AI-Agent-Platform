@@ -78,7 +78,7 @@ def test_database_constraints_reject_cross_owner_and_mutable_history():
             with pytest.raises(psycopg.errors.CheckViolation):
                 c.execute('INSERT INTO platform_hr_agent.threads(owner_id,thread_id,sealed_title,sealed_title_key_version) VALUES(%s,%s,%s,0)',(owner,uuid4(),b'fake'))
 
-@pytest.mark.parametrize("version", [96, 97, 98, 99])
+@pytest.mark.parametrize("version", [96, 97, 98, 99, 100])
 def test_readiness_rejects_different_migration_checksum(version):
     from app.hr_agent.config import check_schema_ready
     from hr_agent_support import hr_agent_database
@@ -149,3 +149,27 @@ def test_hr_model_environment_rejects_invalid_value(tmp_path,value):
     from hr_agent_support import make_hr_settings
     with pytest.raises(ValueError,match='^HR configuration invalid$'):
         make_hr_settings(tmp_path,PLATFORM_HR_AGENT_MODEL=value)
+
+
+def test_readiness_rejects_missing_erasure_migration_receipt():
+    from hr_agent_support import hr_agent_database
+    from app.hr_agent.config import check_schema_ready
+    with hr_agent_database() as db:
+        with db.admin_connection() as c:
+            c.execute("DELETE FROM platform_control.schema_migrations WHERE version=100")
+        assert not check_schema_ready(db)
+
+
+@pytest.mark.parametrize("table,column", [
+    ("uploads", "attachment_id"), ("uploads", "write_attempt_id"),
+    ("upload_write_attempts", "attachment_id"), ("upload_write_attempts", "attempt_id"),
+    ("upload_write_attempts", "object_ref_ciphertext"), ("upload_write_attempts", "object_ref_key_version"),
+])
+def test_readiness_rejects_missing_erasure_maintenance_column(table, column):
+    from psycopg import sql
+    from hr_agent_support import hr_agent_database
+    from app.hr_agent.config import check_schema_ready
+    with hr_agent_database() as db:
+        with db.admin_connection() as c:
+            c.execute(sql.SQL("REVOKE SELECT ({}) ON platform_attachments.{} FROM platform_control_maintenance").format(sql.Identifier(column),sql.Identifier(table)))
+        assert not check_schema_ready(db)

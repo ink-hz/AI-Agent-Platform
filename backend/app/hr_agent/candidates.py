@@ -325,10 +325,14 @@ class CandidateIntakeService:
             batch = self._batch(owner, row["batch_id"])
             self._owner(owner, batch["position_id"])
             self._source_current(owner, row)
-            if (
-                self.processing_authorizer is None
-                or self.processing_authorizer(owner, row["attachment_id"]) is not True
-            ):
+            try:
+                allowed = (
+                    self.processing_authorizer is not None
+                    and self.processing_authorizer(owner, row["attachment_id"]) is True
+                )
+            except Exception:  # noqa: BLE001 - authority failures deny only this item
+                allowed = False
+            if not allowed:
                 raise problem("processing_not_authorized")
             if row["state"] == "profiling":
                 self._profile(row)
