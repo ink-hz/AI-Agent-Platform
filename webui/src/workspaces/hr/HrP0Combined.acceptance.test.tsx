@@ -22,8 +22,6 @@ const fixture = vi.hoisted(() => ({
     csrf_token: "csrf",
   },
   conversation: "10000000-0000-4000-8000-000000000001",
-  draft: "10000000-0000-4000-8000-000000000002",
-  draftVersion: "10000000-0000-4000-8000-000000000003",
   position: "10000000-0000-4000-8000-000000000004",
   context: "10000000-0000-4000-8000-000000000005",
   upload: "20000000-0000-4000-8000-000000000001",
@@ -72,19 +70,11 @@ const fixture = vi.hoisted(() => ({
     "72100000-0000-4000-8000-000000000003",
   ],
   batch: "72200000-0000-4000-8000-000000000001",
-  taskIds: [
-    "74000000-0000-4000-8000-000000000001",
-    "74000000-0000-4000-8000-000000000002",
-    "74000000-0000-4000-8000-000000000003",
-  ],
   analyses: [
     "73000000-0000-4000-8000-000000000001",
     "73000000-0000-4000-8000-000000000002",
     "73000000-0000-4000-8000-000000000003",
   ],
-  artifact: "80000000-0000-4000-8000-000000000001",
-  artifactVersion: "80000000-0000-4000-8000-000000000002",
-  pdfAttachment: "80000000-0000-4000-8000-000000000003",
 }));
 
 const account = fixture.account as Account;
@@ -234,11 +224,20 @@ function rawContext() {
   };
 }
 
-function initialModules() {
+function rawPosition() {
   return {
-    mission: { text: "交付精密挤出结构。" },
-    jd: { text: "负责精密结构设计。" },
-    jr: { text: "具备机械设计经验。" },
+    position_id: fixture.position,
+    source_kind: "manual",
+    official_job_id: null,
+    title: "高级结构工程师",
+    department: "研发",
+    locations: ["深圳"],
+    official_status: null,
+    internal_status: "active",
+    source_version: null,
+    row_version: 1,
+    created_at: now,
+    updated_at: now,
   };
 }
 
@@ -436,59 +435,6 @@ function rawResumeAttachment(index: number) {
   };
 }
 
-function rawAnalyses(index: number) {
-  const match = {
-    analysis_version_id: fixture.analyses[index],
-    position_candidate_id: fixture.relations[index],
-    position_id: fixture.position,
-    candidate_id: fixture.candidates[index],
-    context_version_id: fixture.context,
-    version_number: 1,
-    analysis_kind: "match",
-    document_ids: [fixture.documents[index]],
-    feedback_ids: [],
-    result: {
-      summary: `匿名候选人${index === 0 ? "甲" : "乙"}匹配分析`,
-      dimensions: { technical: index === 0 ? "强匹配" : "相邻能力" },
-      evidence: [{ resume_fact: index === 0 ? "负责挤出系统量产" : "负责精密机械设计" }],
-      gaps: [index === 0 ? "海外交付经历未说明" : "挤出工艺经验待验证"],
-      risks: ["量产规模待核实"],
-      unknowns: ["团队规模待验证"],
-      verification_questions: ["请说明一次量产指标改进。"],
-    },
-    evidence: [{ resume_fact: index === 0 ? "负责挤出系统量产" : "负责精密机械设计" }],
-    unknowns: ["团队规模待验证"],
-    conflicts: [],
-    verification_questions: ["请说明一次量产指标改进。"],
-    agent_version: "hr-bot",
-    model_version: "combined-p0",
-    created_at: now,
-    source_artifact_version_id: null,
-  };
-  if (index !== 0) return [match];
-  return [match, {
-    ...match,
-    analysis_version_id: fixture.analyses[2],
-    version_number: 2,
-    analysis_kind: "candidate_interview_plan",
-    result: {
-      title: "高级结构工程师-匿名候选人甲-面试题",
-      questions: [{
-        verification_goal: "验证挤出系统量产经验",
-        candidate_reason: "简历提及挤出系统量产",
-        question: "请复盘一次喷嘴或挤出系统从设计到量产的完整过程。",
-        follow_ups: ["关键失效模式是什么？"],
-        strong_evidence: ["给出基线、措施和量化结果"],
-        risk_signals: ["无法说明个人贡献"],
-      }],
-    },
-    evidence: [],
-    unknowns: [],
-    verification_questions: ["请复盘一次喷嘴或挤出系统从设计到量产的完整过程。"],
-    source_artifact_version_id: fixture.artifactVersion,
-  }];
-}
-
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
@@ -556,6 +502,7 @@ async function follow(container: HTMLElement, label: string) {
 
 async function completeCurrentTurn(content: string) {
   expect(currentTurn).not.toBeNull();
+  const completedTurn = currentTurn!;
   const assistantMessage: ConversationMessage = {
     message_id: `message-assistant-${messages.length + 1}`,
     conversation_id: fixture.conversation,
@@ -572,11 +519,25 @@ async function completeCurrentTurn(content: string) {
   };
   messages = [...messages, assistantMessage];
   currentTurn = {
-    ...currentTurn!,
+    ...completedTurn,
     assistant_message_id: assistantMessage.message_id,
     status: "completed",
     updated_at: now,
   };
+  const scope = messageBodies[messageBodies.length - 1]?.scope as {
+    positionCandidateIds?: string[];
+  } | undefined;
+  const candidateIndex = fixture.relations.indexOf(scope?.positionCandidateIds?.[0] ?? "");
+  if (candidateIndex >= 0) {
+    const interview = content.includes("面试");
+    savedResults.push({
+      turnId: completedTurn.turn_id,
+      resultId: fixture.analyses[interview ? 2 : candidateIndex],
+      schemaId: interview ? "hr.candidate-interview-plan.v1" : "hr.candidate-analysis.v2",
+      contentSha256: `${candidateIndex + 5}`.repeat(64),
+      candidateIndex,
+    });
+  }
   await act(async () => streamResolvers.splice(0).forEach((resolve) => resolve()));
   await settle();
 }
@@ -596,33 +557,31 @@ function expectSafeUi(container: HTMLElement) {
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
-let confirmed: boolean;
-let ticketRequests: string[];
-let opened: Array<{ replace: ReturnType<typeof vi.fn> }>;
 let requests: string[];
 let drafts: Array<ReturnType<typeof rawDraft>>;
 let confirmedCandidates: number[];
-let readyAnalyses: Map<number, "none" | "match" | "interview">;
 let messages: ConversationMessage[];
 let currentTurn: ConversationTurn | null;
 let streamResolvers: Array<() => void>;
 let messageBodies: Record<string, unknown>[];
-let positionRevised: boolean;
+let savedResults: Array<{
+  turnId: string;
+  resultId: string;
+  schemaId: "hr.candidate-analysis.v2" | "hr.candidate-interview-plan.v1";
+  contentSha256: string;
+  candidateIndex: number;
+}>;
 
 beforeEach(() => {
   window.history.replaceState({}, "", `/hr/conversations/${fixture.conversation}`);
-  confirmed = false;
-  ticketRequests = [];
-  opened = [];
   requests = [];
   drafts = [];
   confirmedCandidates = [];
-  readyAnalyses = new Map([[0, "none"], [1, "none"]]);
   messages = [...initialMessages];
   currentTurn = null;
   streamResolvers = [];
   messageBodies = [];
-  positionRevised = false;
+  savedResults = [];
   vi.mocked(fetchAgentCatalog).mockResolvedValue([card]);
   vi.mocked(reconnectDelay).mockResolvedValue(undefined);
   vi.mocked(listConversationAttachments).mockResolvedValue([]);
@@ -646,11 +605,6 @@ beforeEach(() => {
     })
   ));
   Object.defineProperty(window, "scrollTo", { configurable: true, value: () => undefined });
-  vi.spyOn(window, "open").mockImplementation(() => {
-    const target = { replace: vi.fn() };
-    opened.push(target);
-    return { opener: null, close: vi.fn(), location: { replace: target.replace } } as unknown as Window;
-  });
 
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(
@@ -660,6 +614,42 @@ beforeEach(() => {
     const path = `${url.pathname}${url.search}`;
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     requests.push(`${method} ${path}`);
+    if (path === `/api/v1/hr/conversations/${fixture.conversation}/results` && method === "GET") {
+      return json({
+        turns: savedResults.map((item) => ({
+          turnId: item.turnId,
+          positionTitle: "高级结构工程师",
+          scope: {
+            positionId: fixture.position,
+            positionCandidateIds: [fixture.relations[item.candidateIndex]],
+            attachmentIds: [fixture.resumeAttachments[item.candidateIndex]],
+          },
+        })),
+        results: savedResults.map(({ candidateIndex: _candidateIndex, ...item }) => item),
+      });
+    }
+    const savedResult = /^\/api\/v1\/hr\/results\/([^/]+)$/.exec(path);
+    if (savedResult && method === "GET") {
+      const item = savedResults.find((candidate) => candidate.resultId === savedResult[1]);
+      expect(item).toBeTruthy();
+      const candidateName = `匿名候选人${item!.candidateIndex === 0 ? "甲" : "乙"}`;
+      const interview = item!.schemaId === "hr.candidate-interview-plan.v1";
+      return json({
+        positionId: fixture.position,
+        positionTitle: "高级结构工程师",
+        candidateNames: [candidateName],
+        positionCandidateIds: [fixture.relations[item!.candidateIndex]],
+        attachmentIds: [fixture.resumeAttachments[item!.candidateIndex]],
+        candidateDerived: true,
+        result: {
+          schemaId: item!.schemaId,
+          title: interview ? `${candidateName}专属面试方案` : `${candidateName}匹配分析`,
+          markdown: interview
+            ? "请复盘一次喷嘴或挤出系统从设计到量产的完整过程。"
+            : `${candidateName}：负责挤出系统量产，证据与差距已整理。`,
+        },
+      });
+    }
     if (path === "/api/v1/attachments/uploads" && method === "POST") {
       const request = body(init);
       const resumeIndex = resumeNames.indexOf(String(request.original_name));
@@ -755,55 +745,22 @@ beforeEach(() => {
       messages = [...messages, userMessage];
       return json({ conversation, message: userMessage, turn: currentTurn }, 201);
     }
-    if (path === `/api/hr/conversations/${fixture.conversation}/position-package`) {
-      return json({
-        draft_id: fixture.draft,
-        draft_version_id: fixture.draftVersion,
-        conversation_id: fixture.conversation,
-        version_number: positionRevised ? 2 : 1,
-        title: "高级结构工程师",
-        modules: positionRevised ? rawContext().modules : initialModules(),
-        row_version: positionRevised ? 2 : 1,
-        created_at: now,
-        updated_at: now,
-      });
-    }
-    if (path === `/api/hr/position-drafts/${fixture.draft}/versions/${fixture.draftVersion}/confirm` && method === "POST") {
-      expect(positionRevised).toBe(true);
-      expect(body(init)).toEqual({ expected_row_version: 2 });
-      confirmed = true;
-      return json({
-        position_id: fixture.position,
-        context_version_id: fixture.context,
-        conversation_id: fixture.conversation,
-      });
+    if (path === "/api/hr/positions?internal_status=active&limit=100" && method === "GET") {
+      return json({ items: [rawPosition()], next_cursor: null });
     }
     if (path === `/api/hr/positions/${fixture.position}`) {
-      expect(confirmed).toBe(true);
       return json({
-        position_id: fixture.position,
-        source_kind: "manual",
-        official_job_id: null,
-        title: "高级结构工程师",
-        department: "研发",
-        locations: ["深圳"],
-        official_status: null,
-        internal_status: "active",
-        source_version: null,
-        row_version: 1,
-        created_at: now,
-        updated_at: now,
+        ...rawPosition(),
         conversation_count: 1,
         material_count: 3,
-        artifact_count: 1,
+        artifact_count: 0,
         conversation_ids: [fixture.conversation],
         material_attachment_ids: fixture.resumeAttachments,
-        artifact_ids: [fixture.artifact],
-        artifact_attachment_ids: [fixture.pdfAttachment],
+        artifact_ids: [],
+        artifact_attachment_ids: [],
       });
     }
     if (path === `/api/hr/positions/${fixture.position}/context`) {
-      expect(positionRevised).toBe(true);
       return json({ current: rawContext(), drafts: [] });
     }
     if (path === `/api/hr/positions/${fixture.position}/context/versions`) {
@@ -811,6 +768,17 @@ beforeEach(() => {
     }
     if (path === "/api/hr/panorama/reports?limit=100" && method === "GET") {
       return json({ items: [{ publication: panoramaPublication(), insight: insight() }] });
+    }
+    if (path === "/api/hr/panorama/research" && method === "GET") {
+      return json({
+        edition: "2026-09-05",
+        analyzed_at: now,
+        observed_at: now,
+        covered_job_identities: 2,
+        articles: [],
+        companies: [],
+        questions: [],
+      });
     }
     if (path === "/api/hr/panorama/current" && method === "GET") {
       return json(panoramaReport());
@@ -872,79 +840,12 @@ beforeEach(() => {
     if (analyses) {
       const index = fixture.relations.indexOf(analyses[1]);
       expect(index).toBeGreaterThanOrEqual(0);
-      const state = readyAnalyses.get(index);
-      return json({
-        items: state === "none" ? [] : state === "match"
-          ? [rawAnalyses(index)[0]] : rawAnalyses(index),
-      });
+      return json({ items: [] });
     }
     const feedback = /^\/api\/hr\/position-candidates\/([^/]+)\/feedback$/.exec(path);
     if (feedback) return json({ items: [] });
-    if (path === `/api/hr/positions/${fixture.position}/tasks?status=active`) {
-      return json({ items: [] });
-    }
-    if (path === `/api/hr/positions/${fixture.position}/tasks` && method === "POST") {
-      const request = body(init);
-      const index = fixture.candidates.indexOf(String(request.candidate_id));
-      const kind = String(request.task_kind);
-      expect(index).toBeGreaterThanOrEqual(0);
-      expect(request).toEqual({
-        task_kind: kind,
-        context_version_id: fixture.context,
-        candidate_id: fixture.candidates[index],
-        position_candidate_id: fixture.relations[index],
-        material_ids: [],
-        conversation_id: fixture.conversation,
-      });
-      if (kind === "candidate_interview_plan") {
-        expect(index).toBe(0);
-        readyAnalyses.set(0, "interview");
-      } else {
-        expect(kind).toBe("candidate_match");
-        readyAnalyses.set(index, "match");
-      }
-      const taskIndex = kind === "candidate_interview_plan" ? 2 : index;
-      return json({
-        task_id: fixture.taskIds[taskIndex],
-        status: "completed",
-        task_kind: kind,
-        error: null,
-        conversation_id: fixture.conversation,
-        turn_id: fixture.taskIds[taskIndex],
-        position_candidate_id: fixture.relations[index],
-        candidate_id: fixture.candidates[index],
-      }, 202);
-    }
     if (path === `/api/hr/positions/${fixture.position}/resources`) {
-      return json({
-        materials: [],
-        artifacts: readyAnalyses.get(0) === "interview" ? [{
-          artifact_id: fixture.artifact,
-          artifact_version_id: fixture.artifactVersion,
-          attachment_id: fixture.pdfAttachment,
-          artifact_version: 1,
-          filename: "高级结构工程师-匿名候选人甲-面试题.pdf",
-          media_type: "application/pdf",
-          state: "ready",
-          size_bytes: 128,
-          created_at: now,
-          source_conversation_id: fixture.conversation,
-          source_turn_id: "90000000-0000-4000-8000-000000000003",
-          preview_available: true,
-          download_available: true,
-        }] : [],
-      });
-    }
-    if (path === `/api/hr/positions/${fixture.position}/resources/${fixture.pdfAttachment}/ticket` && method === "POST") {
-      expect(body(init)).toEqual({ purpose: "download" });
-      const requestId = new Headers(init?.headers).get("Idempotency-Key");
-      expect(requestId).toMatch(/^[0-9a-f-]{36}$/i);
-      ticketRequests.push(requestId!);
-      const token = (ticketRequests.length === 1 ? "a" : "b").repeat(32);
-      return json({
-        content_path: `/api/v1/attachments/content/${token}`,
-        expires_at: retainedUntil,
-      }, 201);
+      return json({ materials: [], artifacts: [] });
     }
     throw new Error(`unexpected request: ${method} ${path}`);
   }));
@@ -963,7 +864,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-it("reopens the combined P0 results without losing the mounted recruiting conversation", async () => {
+it("keeps one recruiting conversation while importing candidates, scoping drafts, and reopening results", async () => {
   await act(async () => root.render(<App />));
   await waitFor(() => expect(container.textContent).toContain("岗位需求初版已生成"));
   const chatHost = container.querySelector<HTMLElement>('.agent-use-workspace[data-agent-id="hr-bot"]');
@@ -977,14 +878,11 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
     text: "请补充量产良率与失效分析要求，修订 JD/JR",
     attachment_ids: [],
     active_attachment_ids: [],
+    inputResultRefs: [],
+    scope: { attachmentIds: [], positionCandidateIds: [], positionId: null },
   });
-  positionRevised = true;
-  await completeCurrentTurn("已补充量产良率和失效分析要求，并生成第 2 版 JD/JR。");
+  await completeCurrentTurn("已补充量产良率和失效分析要求。");
   await waitFor(() => expect(container.textContent).toContain("已补充量产良率和失效分析要求"));
-  await waitFor(() => expect(container.textContent).toContain("POSITION PACKAGE · V2"));
-  await click(container, "JD");
-  expect(container.textContent).toContain("负责喷嘴、挤出系统、可靠性验证和量产良率改进");
-  expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(chatHost);
 
   const retainedComposer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
   await act(async () => setInput(retainedComposer, "保留这段岗位对话草稿"));
@@ -996,43 +894,30 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   await act(async () => upload.dispatchEvent(new Event("change", { bubbles: true })));
   await waitFor(() => expect(container.textContent).toContain("岗位补充.pdf已就绪"));
 
-  await click(container, "确认并加入岗位库");
-  await waitFor(() => expect(window.location.pathname).toBe(
-    `/hr/positions/${fixture.position}/conversations/${fixture.conversation}`,
-  ));
-  await waitFor(() => expect(container.textContent).toContain("已加入岗位库"));
-  expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(chatHost);
-  await waitFor(() => expect(
-    chatHost?.classList.contains("is-focused"), JSON.stringify(requests),
-  ).toBe(true));
-
   await follow(container, "HR 情报");
   await waitFor(() => expect(window.location.pathname).toBe("/hr/panorama"));
-  expect(container.textContent).toContain("HR 情报");
   expectSafeUi(container);
-
   await follow(container, "对话");
-  await waitFor(() => expect(window.location.pathname).toBe(
-    `/hr/positions/${fixture.position}/conversations/${fixture.conversation}`,
-  ));
+  await waitFor(() => expect(window.location.pathname).toBe(`/hr/conversations/${fixture.conversation}`));
   expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(chatHost);
   expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')?.value)
     .toBe("保留这段岗位对话草稿");
   expect(container.textContent).toContain("岗位补充.pdf已就绪");
 
   const intelligenceRequest = "只读取示例光学甲公开招聘情报并说明来源";
-  const preservedComposer = container.querySelector<HTMLTextAreaElement>(
-    'textarea[aria-label="继续对话"]',
-  )!;
+  const preservedComposer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
   await act(async () => setInput(preservedComposer, intelligenceRequest));
   await click(container, "✨ 发送");
-  expect(window.location.pathname).toBe(
-    `/hr/positions/${fixture.position}/conversations/${fixture.conversation}`,
-  );
   expect(messageBodies[1]).toEqual({
     text: intelligenceRequest,
     attachment_ids: [fixture.attachment],
     active_attachment_ids: [fixture.attachment],
+    inputResultRefs: [],
+    scope: {
+      attachmentIds: [fixture.attachment],
+      positionCandidateIds: [],
+      positionId: null,
+    },
   });
   const namedSourceAnswer = [
     `已读取${companies[0]}公开招聘情报。`,
@@ -1043,22 +928,31 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   await waitFor(() => expect(container.textContent).toContain(namedSourceAnswer));
   const intelligenceMessage = [...container.querySelectorAll<HTMLElement>(".conversation-assistant")]
     .find((item) => item.textContent?.includes(namedSourceAnswer));
-  expect(intelligenceMessage).toBeTruthy();
   expect(intelligenceMessage?.textContent).toContain(companies[0]);
   expect(intelligenceMessage?.textContent).toContain(fixture.insight);
   expect(intelligenceMessage?.textContent).toContain("https://example.com/company-1/jobs/structure");
   expect(intelligenceMessage?.textContent).not.toContain(companies[1]);
   expect(intelligenceMessage?.textContent).not.toContain(companies[2]);
-  expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(chatHost);
 
-  await click(container, "JD");
-  expect(container.textContent).toContain("负责喷嘴、挤出系统、可靠性验证和量产良率改进");
-  await click(container, "JR");
-  expect(container.textContent).toContain("掌握挤出工艺与失效分析");
-
-  await click(container, "岗位资料");
+  await click(container, "选择本轮岗位");
+  await waitFor(() => {
+    expect([...container.querySelectorAll<HTMLButtonElement>(".hr-position-picker-option")]
+      .some((item) => item.querySelector("strong")?.textContent === "高级结构工程师")).toBe(true);
+  });
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>(".hr-position-picker-option")]
+      .find((item) => item.querySelector("strong")?.textContent === "高级结构工程师")!.click();
+  });
+  await settle();
+  await waitFor(() => expect(container.textContent).toContain("查看 JD / JR"));
+  await click(container, "查看 JD / JR");
   await waitFor(() => expect(container.textContent).toContain("已参考全景招聘证据修订 JD/JR"));
-  await click(container, "候选人");
+  expect(container.textContent).toContain("负责喷嘴、挤出系统、可靠性验证和量产良率改进");
+  expect(container.textContent).toContain("掌握挤出工艺与失效分析");
+  await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="关闭岗位资料"]')!.click());
+  await settle();
+
+  await click(container, "候选人 / 面试");
   const resumeInput = container.querySelector<HTMLInputElement>(
     'section[aria-label="批量简历导入"] input[type="file"]',
   );
@@ -1074,90 +968,86 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
   expect(container.textContent).toContain("未能识别这份简历的内容");
   expect(container.textContent).not.toContain("parser_response_invalid");
   await click(container, "重试解析");
+  await waitFor(() => expect(button(container, "审阅候选人丙").disabled).toBe(false));
+  expect(container.textContent).not.toContain("解析失败");
+  expect(container.textContent).not.toContain("未能识别这份简历的内容");
   for (const name of ["候选人甲", "候选人乙"]) {
     await click(container, `审阅${name}`);
     await click(container, "确认候选人");
   }
   await waitFor(() => expect(container.textContent).toContain("2 位已确认"));
-  await click(container, "查看匿名候选人甲");
-  await click(container, "生成匹配分析");
-  await waitFor(() => expect(container.textContent).toContain("匿名候选人甲匹配分析"));
-  expect(container.textContent).toContain("负责挤出系统量产");
-  await click(container, "生成专属面试题");
-  expect(container.textContent).toContain("请复盘一次喷嘴或挤出系统从设计到量产的完整过程");
-  expect(container.querySelector('article[aria-label="候选人专属面试题 v2"]')).not.toBeNull();
-  expectSafeUi(container);
 
-  await click(container, "关闭详情");
+  await click(container, "查看匿名候选人甲");
+  await click(container, "在对话中分析");
+  const candidateAComposer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
+  expect(candidateAComposer.value).toContain("匿名候选人甲");
+  expect(candidateAComposer.value).not.toContain("匿名候选人乙");
+  await click(container, "✨ 发送");
+  expect(messageBodies[2]).toEqual({
+    text: expect.stringMatching(/匿名候选人甲.*分析匹配证据、差距和待验证项/),
+    attachment_ids: [],
+    active_attachment_ids: [fixture.attachment],
+    inputResultRefs: [],
+    scope: {
+      attachmentIds: [fixture.resumeAttachments[0], fixture.attachment],
+      positionCandidateIds: [fixture.relations[0]],
+      positionId: fixture.position,
+    },
+  });
+  await completeCurrentTurn("匿名候选人甲匹配分析完成。");
+  await waitFor(() => expect(container.textContent).toContain("匿名候选人甲匹配分析完成"));
+
+  await click(container, "候选人 / 面试");
+  await waitFor(() => expect(container.textContent).toContain("2 位已确认"));
   await click(container, "查看匿名候选人乙");
-  await click(container, "生成匹配分析");
-  await waitFor(() => expect(container.textContent).toContain("匿名候选人乙匹配分析"));
-  expect(container.textContent).toContain("负责精密机械设计");
-  await click(container, "关闭详情");
-  await click(container, "查看匿名候选人甲");
-
-  const download = container.querySelector<HTMLButtonElement>('button[aria-label="下载面试题 PDF"]')!;
-  await act(async () => download.click());
-  await waitFor(() => expect(opened).toHaveLength(1));
-  await act(async () => download.click());
-  await waitFor(() => expect(opened).toHaveLength(2));
-  expect(ticketRequests).toHaveLength(2);
-  expect(ticketRequests[0]).not.toBe(ticketRequests[1]);
-  expect(opened[0].replace).toHaveBeenCalledWith(
-    `/api/v1/attachments/content/${"a".repeat(32)}`,
-  );
-  expect(opened[1].replace).toHaveBeenCalledWith(
-    `/api/v1/attachments/content/${"b".repeat(32)}`,
-  );
+  await click(container, "在对话中设计面试");
+  const candidateBComposer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
+  expect(candidateBComposer.value).toContain("匿名候选人乙");
+  expect(candidateBComposer.value).not.toContain("匿名候选人甲");
+  await click(container, "✨ 发送");
+  expect(messageBodies[3]).toEqual({
+    text: expect.stringMatching(/匿名候选人乙.*设计面试问题与证据标准/),
+    attachment_ids: [],
+    active_attachment_ids: [fixture.attachment],
+    inputResultRefs: [],
+    scope: {
+      attachmentIds: [fixture.resumeAttachments[1], fixture.attachment],
+      positionCandidateIds: [fixture.relations[1]],
+      positionId: fixture.position,
+    },
+  });
+  await completeCurrentTurn("匿名候选人乙面试方案完成。");
+  await waitFor(() => expect(container.textContent).toContain("匿名候选人乙面试方案完成"));
 
   await act(async () => root.unmount());
   root = createRoot(container);
-  window.history.replaceState(
-    {},
-    "",
-    `/hr/positions/${fixture.position}/conversations/${fixture.conversation}`,
-  );
+  window.history.replaceState({}, "", `/hr/conversations/${fixture.conversation}`);
   await act(async () => root.render(<App />));
-  await waitFor(() => expect(container.textContent).toContain("POSITION PACKAGE · V2"));
-  expect(container.textContent).toContain(namedSourceAnswer);
+  await waitFor(() => expect(container.textContent).toContain("匿名候选人甲匹配分析完成"));
+  expect(container.textContent).toContain("匿名候选人乙面试方案完成");
   expect(container.querySelectorAll('.agent-use-workspace[data-agent-id="hr-bot"]')).toHaveLength(1);
-  await click(container, "JD");
-  expect(container.textContent).toContain("负责喷嘴、挤出系统、可靠性验证和量产良率改进");
-  await click(container, "JR");
-  expect(container.textContent).toContain("掌握挤出工艺与失效分析");
-  await click(container, "岗位资料");
-  await click(container, "候选人");
-  await waitFor(() => expect(container.textContent).toContain("2 位已确认"));
-  await click(container, "查看匿名候选人甲");
+  await waitFor(() => expect(container.querySelectorAll("details.hr-turn-result")).toHaveLength(2));
+  const reopenedResults = [...container.querySelectorAll<HTMLDetailsElement>("details.hr-turn-result")];
+  await act(async () => {
+    reopenedResults[0].open = true;
+    reopenedResults[0].dispatchEvent(new Event("toggle"));
+  });
   await waitFor(() => expect(container.textContent).toContain("匿名候选人甲匹配分析"));
-  expect(container.querySelector('article[aria-label="候选人专属面试题 v2"]')).not.toBeNull();
-  expect(container.querySelector('button[aria-label="下载面试题 PDF"]')).not.toBeNull();
-  await click(container, "关闭详情");
-  await click(container, "查看匿名候选人乙");
-  await waitFor(() => expect(container.textContent).toContain("匿名候选人乙匹配分析"));
-  expect(container.textContent).toContain("负责精密机械设计");
+  expect(container.textContent).toContain("负责挤出系统量产，证据与差距已整理");
+  await act(async () => {
+    reopenedResults[1].open = true;
+    reopenedResults[1].dispatchEvent(new Event("toggle"));
+  });
+  await waitFor(() => expect(container.textContent).toContain("匿名候选人乙专属面试方案"));
+  expect(container.textContent).toContain("请复盘一次喷嘴或挤出系统从设计到量产的完整过程");
   expectSafeUi(container);
-  await click(container, "关闭详情");
-  await act(async () => container.querySelector<HTMLButtonElement>(
-    'button[aria-label="关闭岗位资料"]',
-  )!.click());
-  await settle();
-  await follow(container, "HR 情报");
-  await waitFor(() => expect(window.location.pathname).toBe("/hr/panorama"));
-  expectSafeUi(container);
-  expect(requests.some((request) => request.startsWith("POST /api/hr/panorama/")))
-    .toBe(false);
-  expect(requests).toContain(
-    `POST /api/hr/positions/${fixture.position}/candidate-drafts:batch`,
-  );
-  expect(requests).toContain(
-    `POST /api/hr/candidate-drafts/${fixture.candidateDrafts[2]}:retry`,
-  );
-  expect(requests.filter((request) => (
-    request === `POST /api/v1/conversations/${fixture.conversation}/messages`
-  ))).toHaveLength(2);
-  expect(messageBodies).toHaveLength(2);
-  expect(requests.filter((request) => (
-    request === `POST /api/hr/positions/${fixture.position}/tasks`
-  ))).toHaveLength(3);
+
+  expect(requests).toContain(`POST /api/hr/positions/${fixture.position}/candidate-drafts:batch`);
+  expect(requests).toContain(`POST /api/hr/candidate-drafts/${fixture.candidateDrafts[2]}:retry`);
+  expect(requests.filter((request) => request === (
+    `POST /api/v1/conversations/${fixture.conversation}/messages`
+  ))).toHaveLength(4);
+  expect(messageBodies).toHaveLength(4);
+  expect(requests.some((request) => request.includes("/position-package"))).toBe(false);
+  expect(requests.some((request) => request.includes(`/positions/${fixture.position}/tasks`))).toBe(false);
 });

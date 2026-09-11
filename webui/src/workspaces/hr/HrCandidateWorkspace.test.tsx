@@ -174,7 +174,7 @@ it("uploads ready resume files and creates one recoverable batch", async () => {
   expect(client.createCandidateDraftBatch).toHaveBeenCalledWith(positionId, [attachmentIds[0]], expect.any(String), expect.any(AbortSignal));
 });
 
-it("starts a new task conversation when no preserved chat is supplied", async () => {
+it("disables conversation drafting without onDraft and never calls retired task APIs", async () => {
   const client = api();
   await act(async () => root.render(<HrCandidateWorkspace
     api={client as never} csrfToken="csrf" currentContextVersionId={contextId}
@@ -182,44 +182,62 @@ it("starts a new task conversation when no preserved chat is supplied", async ()
   />));
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent === "查看候选人1")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent === "生成匹配分析")?.click());
-
-  expect(client.startTask).toHaveBeenCalledWith(
-    positionId,
-    "candidate_match",
-    expect.any(String),
-    {
-      contextVersionId: contextId,
-      candidate: {
-        candidateId: candidateIds[0],
-        positionCandidateId: relationIds[0],
-      },
-      materialIds: [],
-    },
-    expect.any(AbortSignal),
-  );
+  const match = [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "在对话中分析")!;
+  const interview = [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "在对话中设计面试")!;
+  expect(match.disabled).toBe(true);
+  expect(interview.disabled).toBe(true);
+  expect(client.startTask).not.toHaveBeenCalled();
+  expect(client.taskStatus).not.toHaveBeenCalled();
+  expect(client.compareCandidates).not.toHaveBeenCalled();
 });
 
-it("renders the frozen comparison contract with candidate summaries and coverage instead of dropping nested data", async () => {
+it("drafts a comparison with exact candidate scope and each newest active resume", async () => {
+  const client = api(); const onDraft = vi.fn();
+  client.candidateDocuments.mockImplementation((id: string) => Promise.resolve(id === candidateIds[0] ? [
+    { ...candidateDocument, documentId: "resume-old-a", attachmentId: "attachment-old-a", versionNumber: 1 },
+    { ...candidateDocument, documentId: "resume-erased-a", attachmentId: "attachment-erased-a", versionNumber: 9, status: "erased" },
+    { ...candidateDocument, documentId: "resume-current-a", attachmentId: attachmentIds[0], versionNumber: 3 },
+  ] : [
+    { ...candidateDocument, candidateId: candidateIds[1], documentId: "resume-current-b", attachmentId: attachmentIds[1], versionNumber: 4 },
+  ]));
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} onDraft={onDraft} />));
+  for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]')) await act(async () => checkbox.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "比较已选候选人")?.click());
+  expect(onDraft).toHaveBeenCalledWith(
+    expect.stringMatching(/候选人1、候选人2.*当前岗位.*匹配证据.*未知项.*不自动做出录用或淘汰决定/),
+    relationIds,
+    [attachmentIds[0], attachmentIds[1]],
+  );
+  expect(client.compareCandidates).not.toHaveBeenCalled();
+});
+
+it("renders persisted comparison history with candidate summaries, coverage, unknowns, and null ranking", async () => {
   const client = api();
-  client.compareCandidates.mockResolvedValue({ ...analysis, analysisKind: "comparison", result: {
+  client.candidateAnalyses.mockResolvedValue([{ ...analysis, analysisKind: "comparison", result: {
     candidates: [
       { position_candidate_id: relationIds[0], candidate_id: candidateIds[0], summary: "量产经验更完整", evidence_coverage: 3, unknown_count: 1 },
       { position_candidate_id: relationIds[1], candidate_id: candidateIds[1], summary: "海外交付更突出", evidence_coverage: 2, unknown_count: 2 },
     ],
     ranking: null,
     comparison_basis: "same_position_context",
-  } });
-  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
-  for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]')) await act(async () => checkbox.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "比较已选候选人")?.click());
+  } }]);
+  await act(async () => root.render(<HrCandidateWorkspace
+    api={client as never} csrfToken="csrf" currentContextVersionId={contextId}
+    positionId={positionId} onDraft={vi.fn()}
+  />));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "查看候选人1")?.click());
 
-  for (const text of ["同一岗位上下文", "候选人1", "量产经验更完整", "证据覆盖", "3 条", "待验证项", "1 项", "候选人2", "海外交付更突出", "未提供单一排序"]) {
-    expect(container.textContent).toContain(text);
-  }
-  expect(container.querySelector(".hr-candidate-comparison pre")).toBeNull();
-  expect(container.textContent).not.toContain('"candidates":');
+  const rendered = container.querySelector<HTMLElement>(".hr-candidate-comparison-result");
+  expect(rendered).not.toBeNull();
+  for (const text of [
+    "同一岗位上下文", "候选人1", "量产经验更完整", "证据覆盖", "3 条", "待验证项", "1 项",
+    "候选人2", "海外交付更突出", "2 条", "2 项", "未提供单一排序",
+  ]) expect(rendered?.textContent).toContain(text);
+  expect(rendered?.querySelector("pre")).toBeNull();
+  expect(rendered?.textContent).not.toContain('"candidates":');
 });
 
 it("renders the frozen resume-extract envelope and bounds unknown nested fallback content", async () => {
@@ -347,27 +365,40 @@ it("starts a fresh polling budget after retrying a failed draft", async () => {
   expect(client.candidateDrafts.mock.calls.length).toBeGreaterThan(exhaustedCalls);
 });
 
-it("reuses the candidate task idempotency key after an uncertain start failure", async () => {
-  const client = api();
-  client.startTask.mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ taskId: "task", status: "running", taskKind: "candidate_match", error: null });
-  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+it("keeps repeated candidate actions as scoped composer drafts without old task writes", async () => {
+  const client = api(); const onDraft = vi.fn();
+  client.candidateDocuments.mockResolvedValue([
+    { ...candidateDocument, documentId: "resume-old", attachmentId: attachmentIds[2], versionNumber: 1 },
+    { ...candidateDocument, documentId: "resume-current", attachmentId: attachmentIds[0], versionNumber: 2 },
+  ]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} onDraft={onDraft} />));
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  const launch = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")!;
+  const launch = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "在对话中分析")!;
   await act(async () => launch.click());
   await act(async () => launch.click());
-  expect(client.startTask.mock.calls[0]?.[2]).toBe(client.startTask.mock.calls[1]?.[2]);
+  expect(onDraft).toHaveBeenCalledTimes(2);
+  expect(onDraft.mock.calls[0]).toEqual(onDraft.mock.calls[1]);
+  expect(onDraft).toHaveBeenLastCalledWith(expect.stringContaining("候选人1"), [relationIds[0]], [attachmentIds[0]]);
+  expect(client.startTask).not.toHaveBeenCalled();
 });
 
-it("retains separate idempotency keys for interleaved uncertain task starts", async () => {
-  const client = api();
-  client.startTask.mockRejectedValueOnce({ status: 503 }).mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ taskId: "task", status: "running", taskKind: "candidate_match", error: null });
-  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+it("keeps drafts for different candidates independently scoped", async () => {
+  const client = api(); const onDraft = vi.fn();
+  client.candidateDocuments.mockImplementation((id: string) => Promise.resolve([{
+    ...candidateDocument,
+    candidateId: id,
+    documentId: id === candidateIds[0] ? "resume-a" : "resume-b",
+    attachmentId: id === candidateIds[0] ? attachmentIds[0] : attachmentIds[1],
+  }]));
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} onDraft={onDraft} />));
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  const match = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")!;
-  const interview = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成专属面试题")!;
-  await act(async () => match.click()); await act(async () => interview.click()); await act(async () => match.click());
-  expect(client.startTask.mock.calls[0]?.[2]).toBe(client.startTask.mock.calls[2]?.[2]);
-  expect(client.startTask.mock.calls[0]?.[2]).not.toBe(client.startTask.mock.calls[1]?.[2]);
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "在对话中分析")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人2")?.click());
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "在对话中设计面试")?.click());
+  expect(onDraft).toHaveBeenNthCalledWith(1, expect.stringMatching(/候选人1.*分析匹配证据、差距和待验证项/), [relationIds[0]], [attachmentIds[0]]);
+  expect(onDraft).toHaveBeenNthCalledWith(2, expect.stringMatching(/候选人2.*设计面试问题与证据标准/), [relationIds[1]], [attachmentIds[1]]);
+  expect(onDraft.mock.calls[0]?.[0]).not.toContain("候选人2");
+  expect(onDraft.mock.calls[1]?.[0]).not.toContain("候选人1");
 });
 
 it("previews and edits extracted facts and requires an explicit identity decision", async () => {
@@ -393,7 +424,7 @@ it("previews and edits extracted facts and requires an explicit identity decisio
   expect(client.confirmDraft).toHaveBeenLastCalledWith(draftIds[0], expect.objectContaining({ stableName: "候选人甲", confirmedFacts: { skills: ["Python", "C++"], unknowns: [] }, mergeCandidateId: candidateIds[1] }), expect.any(String), expect.any(AbortSignal));
 });
 
-it("binds feedback to the maximum analysis version and excludes another context from comparison", async () => {
+it("binds feedback to the newest analysis and uses active relation status for comparison", async () => {
   const client = api();
   const newest = { ...analysis, analysisVersionId: newestAnalysisId, versionNumber: 5, createdAt: "2026-09-04T02:00:00Z" };
   client.candidateAnalyses.mockResolvedValue([analysis, newest]);
@@ -406,69 +437,85 @@ it("binds feedback to the maximum analysis version and excludes another context 
   expect(client.appendCandidateFeedback).toHaveBeenCalledWith(relationIds[0], expect.objectContaining({ analysisVersionId: newestAnalysisId }), expect.any(String), expect.any(AbortSignal));
   const comparisons = container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]');
   expect(comparisons[0]?.disabled).toBe(false);
-  expect(comparisons[1]?.disabled).toBe(true);
-  expect(container.textContent).toContain("上下文版本不同，需重算后比较");
+  expect(comparisons[1]?.disabled).toBe(false);
+  expect(container.textContent).not.toContain("上下文版本不同，需重算后比较");
+
+  await act(async () => root.unmount()); root = createRoot(container);
+  const archived = api();
+  archived.positionCandidates.mockResolvedValue([relation(0), { ...relation(1), status: "archived", contextVersionId: otherContextId }]);
+  await act(async () => root.render(<HrCandidateWorkspace api={archived as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} onDraft={vi.fn()} />));
+  expect(container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]')[1]?.disabled).toBe(true);
+  expect(container.textContent).toContain("已归档");
 });
 
-it("refreshes analysis after a durable candidate task reaches completion", async () => {
-  vi.useFakeTimers(); const client = api();
+it("refreshes analysis explicitly and shows the newest persisted version", async () => {
+  const client = api();
   const refreshed = { ...analysis, analysisVersionId: newestAnalysisId, versionNumber: 3 };
   client.candidateAnalyses.mockResolvedValueOnce([analysis]).mockResolvedValueOnce([analysis, refreshed]);
   await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
-  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "刷新分析")?.click());
   expect(container.textContent).toContain("分析版本 v3");
+  expect(container.textContent).toContain("分析版本已刷新");
 });
 
-it("refreshes analysis when an idempotent candidate task replay is already completed", async () => {
+it("keeps the persisted analysis visible when an explicit refresh is unavailable", async () => {
   const client = api();
-  const refreshed = { ...analysis, analysisVersionId: newestAnalysisId, versionNumber: 3 };
-  client.startTask.mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null });
-  client.candidateAnalyses.mockResolvedValueOnce([analysis]).mockResolvedValueOnce([analysis, refreshed]);
-  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
-  expect(container.textContent).toContain("分析版本 v3");
-  expect(container.textContent).toContain("已完成，分析版本已刷新");
-});
-
-it("does not claim a completed candidate task failed to start when analysis refresh is unavailable", async () => {
-  const client = api();
-  client.startTask.mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_match", error: null });
   client.candidateAnalyses.mockResolvedValueOnce([analysis]).mockRejectedValueOnce(new Error("temporarily unavailable"));
   await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
-  expect(container.textContent).toContain("任务已完成，分析暂时无法刷新");
-  expect(container.textContent).not.toContain("任务未启动");
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "刷新分析")?.click());
+  expect(container.textContent).toContain("分析版本 v2");
+  expect(container.textContent).toContain("分析版本暂时无法刷新");
 });
 
-it("fails closed when terminal task kind does not match the launched candidate task", async () => {
-  vi.useFakeTimers(); const client = api();
-  client.taskStatus.mockResolvedValue({ taskId: "task", status: "completed", taskKind: "candidate_interview_plan", error: null, positionCandidateId: relationIds[0], candidateId: candidateIds[0] });
-  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+it("drafts a match prompt with the current candidate scope and newest active resume", async () => {
+  const client = api(); const onDraft = vi.fn();
+  client.candidateDocuments.mockResolvedValue([
+    { ...candidateDocument, documentId: "resume-v1", attachmentId: attachmentIds[2], versionNumber: 1 },
+    { ...candidateDocument, documentId: "resume-v4-erased", attachmentId: "erased", versionNumber: 4, status: "erased" },
+    { ...candidateDocument, documentId: "resume-v3", attachmentId: attachmentIds[0], versionNumber: 3 },
+  ]);
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} onDraft={onDraft} />));
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
-  await act(async () => vi.advanceTimersByTimeAsync(1_000));
-  expect(client.candidateAnalyses).toHaveBeenCalledTimes(1);
-  expect(container.textContent).toContain("任务绑定异常");
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "在对话中分析")?.click());
+  expect(onDraft).toHaveBeenCalledWith(
+    expect.stringMatching(/读取当前岗位要求.*已有已确认标准.*候选人1.*分析匹配证据、差距和待验证项/),
+    [relationIds[0]],
+    [attachmentIds[0]],
+  );
+  expect(onDraft.mock.calls[0]?.[0]).not.toContain("候选人2");
 });
 
-it("uses authoritative terminal failure and keeps it isolated from another selected candidate", async () => {
-  vi.useFakeTimers(); const client = api();
-  client.taskStatus.mockResolvedValue({ taskId: "task", status: "failed", taskKind: "candidate_match", error: "模型失败", positionCandidateId: relationIds[0], candidateId: candidateIds[0] });
-  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} />));
+it("drafts an interview prompt without widening beyond the selected candidate", async () => {
+  const client = api(); const onDraft = vi.fn();
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} onDraft={onDraft} />));
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "生成匹配分析")?.click());
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人2")?.click());
-  await act(async () => vi.advanceTimersByTimeAsync(1_000));
-  expect(client.taskStatus).toHaveBeenCalledWith(positionId, "task", expect.any(AbortSignal));
-  expect(client.candidateAnalyses).toHaveBeenCalledTimes(2);
-  expect(container.textContent).not.toContain("模型失败");
-  expect(container.textContent).not.toContain("已完成，分析版本已刷新");
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "查看候选人1")?.click());
-  expect(container.textContent).toContain("模型失败");
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "在对话中设计面试")?.click());
+  expect(onDraft).toHaveBeenCalledWith(
+    expect.stringMatching(/读取当前岗位要求.*已有已确认标准.*候选人1.*设计面试问题与证据标准/),
+    [relationIds[0]],
+    [attachmentIds[0]],
+  );
+  expect(onDraft.mock.calls[0]?.[0]).not.toContain("候选人2");
+  expect(client.taskStatus).not.toHaveBeenCalled();
+});
+
+it("does not emit a partial comparison draft when one candidate material read fails", async () => {
+  const client = api(); const onDraft = vi.fn(); let failFirst = true;
+  client.candidateDocuments.mockImplementation((id: string) => {
+    if (failFirst && id === candidateIds[0]) return Promise.reject(new Error("temporarily unavailable"));
+    return Promise.resolve([{ ...candidateDocument, candidateId: id, attachmentId: id === candidateIds[0] ? attachmentIds[0] : attachmentIds[1] }]);
+  });
+  await act(async () => root.render(<HrCandidateWorkspace api={client as never} csrfToken="csrf" currentContextVersionId={contextId} positionId={positionId} onDraft={onDraft} />));
+  for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[name="candidate-comparison"]')) await act(async () => checkbox.click());
+  const compare = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "比较已选候选人")!;
+  await act(async () => compare.click());
+  expect(onDraft).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("候选人材料暂时无法读取");
+  failFirst = false;
+  await act(async () => compare.click());
+  expect(onDraft).toHaveBeenCalledWith(expect.stringContaining("候选人1、候选人2"), relationIds, [attachmentIds[0], attachmentIds[1]]);
 });
 
 it("shows complete structured result, evidence and exact provenance identifiers", async () => {
