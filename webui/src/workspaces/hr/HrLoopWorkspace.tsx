@@ -29,6 +29,8 @@ import {
 } from "../../attachmentApi";
 import { MessageMarkdown } from "../../components/MessageMarkdown";
 import { HrLoopMethodPreview } from "./HrLoopMethodPreview";
+import type { HrLoopCandidatesApi } from "../../hrLoopCandidatesApi";
+import { HrLoopCandidatesPanel } from "./HrLoopCandidatesPanel";
 import { HrLoopIntelligencePicker } from "./HrLoopIntelligencePicker";
 import { HrPositionPicker } from "./HrPositionPicker";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
@@ -38,6 +40,7 @@ type Props = {
   account: Account;
   api?: HrLoopApi;
   positionApi?: HrApi;
+  candidatesApi?: HrLoopCandidatesApi;
   initialPositionId?: string;
   initialWorkId?: string;
 };
@@ -104,6 +107,7 @@ function Workspace({
   account,
   api: injectedApi,
   positionApi: injectedPositions,
+  candidatesApi,
   initialPositionId,
   initialWorkId,
 }: Props) {
@@ -118,6 +122,7 @@ function Workspace({
   const [configuration, setConfiguration] = useState<Awaited<
     ReturnType<HrLoopApi["configuration"]>
   > | null>(null);
+  const [showCandidates, setShowCandidates] = useState(false);
   const [methods, setMethods] = useState<ResourceItem[]>([]);
   const [intelligence, setIntelligence] = useState<{
     ref?: ExactRef;
@@ -202,6 +207,7 @@ function Workspace({
     setWork(null);
     setMethod(null);
     setIntelligence(null);
+    setShowCandidates(false);
     setUploads([]);
   }
   function report(error: unknown) {
@@ -639,6 +645,10 @@ function Workspace({
               <small>{m.description}</small>
             </button>
           ))}
+          <h2>候选人材料</h2>
+          <button type="button" onClick={() => setShowCandidates(true)}>
+            批量简历材料
+          </button>
           <h2>公开研究</h2>
           <button
             type="button"
@@ -713,6 +723,19 @@ function Workspace({
                 带此方法讨论
               </button>
             </section>
+          )}
+          {showCandidates && (
+            <HrLoopCandidatesPanel
+              api={candidatesApi}
+              csrf={account.csrf_token}
+              disabled={disabled}
+              budgetProfile={configuration?.budget_profile ?? null}
+              positionId={positionId}
+              positionTitle={position?.title}
+              onClose={() => setShowCandidates(false)}
+              onAccessError={report}
+              onOpenWork={selectWork}
+            />
           )}
           {intelligence && (
             <HrLoopIntelligencePicker

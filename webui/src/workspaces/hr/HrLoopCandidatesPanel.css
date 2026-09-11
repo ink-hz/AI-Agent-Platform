@@ -1,0 +1,49 @@
+.hr-loop-candidates > label,
+.hr-loop-candidate-review label {
+  display: block;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.hr-loop-candidates input:not([type="checkbox"]),
+.hr-loop-candidates select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #c5d5cd;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+.hr-loop-candidate-item {
+  border-top: 1px solid #cbded3;
+  padding: 14px 0;
+  margin-top: 18px;
+  overflow-wrap: anywhere;
+}
+.hr-loop-candidates button,
+.hr-loop-candidate-review > a {
+  margin: 4px 6px 4px 0;
+}
+.hr-loop-candidate-review fieldset {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #bbd1c4;
+  border-radius: 8px;
+  min-width: 0;
+}
+.hr-loop-candidate-review .hr-loop-review-limit {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+}
+.hr-loop-candidate-review .hr-loop-review-limit input {
+  margin-top: 4px;
+}
+.hr-loop-candidates time {
+  font-size: 12px;
+  color: #526b62;
+}

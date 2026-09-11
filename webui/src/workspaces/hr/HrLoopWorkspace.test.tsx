@@ -1033,3 +1033,15 @@ it("reopens an old restored intelligence ref and retains it when unavailable", a
   expect(el.querySelector('[aria-label="本次参考"]')).toBeNull();
   expect(button("发送").disabled).toBe(false);
 });
+
+it("opens the batch material panel lazily and clears it when starting a new conversation", async () => {
+  const candidates = {batches: vi.fn().mockResolvedValue({items: []}), candidates: vi.fn().mockResolvedValue({items: []})};
+  await act(async () => root.render(<HrLoopWorkspace account={account} api={api() as never} candidatesApi={candidates as never} />));
+  expect(candidates.batches).not.toHaveBeenCalled();
+  expect(button("批量简历材料")).toBeDefined();
+  await act(async () => button("批量简历材料").click());
+  expect(candidates.batches).toHaveBeenCalledOnce();
+  expect(el.querySelector('section[aria-label="批量简历材料"]')).not.toBeNull();
+  await act(async () => button("新工作").click());
+  expect(el.querySelector('section[aria-label="批量简历材料"]')).toBeNull();
+});
