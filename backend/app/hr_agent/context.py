@@ -138,6 +138,9 @@ def ensure_read_result_fits_summary(
     checkpoint=None,
     entry_id,
     entry_seq,
+    overflow_message=(
+        "read_resource range is too large for this work context; retry with a smaller limit"
+    ),
 ):
     """Reject an exact read receipt that cannot enter even one summary request."""
     if current is None or checkpoint is None:
@@ -206,7 +209,7 @@ def ensure_read_result_fits_summary(
     if required_tokens > profile["context_window_tokens"]:
         raise problem(
             "invalid_input",
-            "read_resource range is too large for this work context; retry with a smaller limit",
+            overflow_message,
         )
     return required_tokens
 

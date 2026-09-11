@@ -1,0 +1,8 @@
+Independent reproduction before the follow-up fix:
+
+REPRODUCED: both reads accepted, first summary fit before second, then context_too_large. required= [21998, 7223]
+.
+1 passed in 1.34s
+
+Source: /tmp/test_hr_followup_checkpoint_growth.py
+Original run: /tmp/hr-followup-checkpoint-growth-repro.log

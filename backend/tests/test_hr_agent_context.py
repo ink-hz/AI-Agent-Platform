@@ -581,6 +581,90 @@ def test_read_resource_guard_accounts_for_transactional_checkpoint_growth(
     assert repo.get_work(owner, str(fence.work_id))["checkpoint"]["readings"] == []
 
 
+def test_second_read_cannot_grow_existing_unconsumed_receipt_out_of_window(
+    repo, tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / "same-batch-settings")
+    repo.settings = replace(
+        settings,
+        provider_profile={
+            **settings.provider_profile,
+            "context_window_tokens": 100000,
+        },
+    )
+    root = tmp_path / "same-batch-release"
+    first_ref = publication(root, "中" * 5000)
+    manifest = json.loads((root / "manifest.json").read_text())
+    second_ref = {**first_ref, "id": "second-evidence"}
+    manifest["resources"].append({**manifest["resources"][0], "ref": second_ref})
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    work = repo.submit(
+        owner,
+        request(
+            text="核对",
+            references=[first_ref, second_ref],
+            budget_profile="test",
+        ),
+        uuid4(),
+    )
+    fence = repo.claim("w", 60)
+    attempt = repo.prepare_model(fence, model_context(revision=fence.input_revision))
+    repo.mark_model_sending(fence, attempt.attempt_id)
+    operations = repo.commit_model(
+        fence,
+        attempt.attempt_id,
+        reply(
+            "",
+            [
+                ToolCall("first", "read_resource", {"ref": first_ref, "limit": 5000}),
+                ToolCall("second", "read_resource", {"ref": second_ref, "limit": 1}),
+            ],
+        ),
+    )
+    observed = []
+
+    def fix_window_after_first(*args, **kwargs):
+        required = ensure_read_result_fits_summary(*args, **kwargs)
+        observed.append(required)
+        if len(observed) == 1:
+            repo.settings = replace(
+                repo.settings,
+                provider_profile={
+                    **repo.settings.provider_profile,
+                    "context_window_tokens": required,
+                },
+            )
+        return required
+
+    monkeypatch.setattr(
+        "app.hr_agent.context.ensure_read_result_fits_summary",
+        fix_window_after_first,
+    )
+    assert execute_tool(repo, resources, fence, operations[0])["error"] is None
+    assert build_model_context(repo, resources, fence).purpose == "summary"
+
+    rejected = execute_tool(repo, resources, fence, operations[1])
+
+    assert rejected["error"]["code"] == "invalid_input"
+    assert "existing tool content" in rejected["error"]["message"]
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT count(*) AS count FROM platform_hr_agent.read_records WHERE work_id=%s",
+            (UUID(work["work_id"]),),
+        )
+        assert c.fetchone()["count"] == 1
+    assert build_model_context(repo, resources, fence).purpose == "summary"
+
+
 def test_hard_window_progressively_summarizes_large_unconsumed_batch_after_resume(
     repo, tmp_path
 ):

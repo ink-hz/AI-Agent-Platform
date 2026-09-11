@@ -28,20 +28,24 @@ def execute_tool(repository, resources, fence, operation_id):
         if operation.name == "read_resource":
             from .context import ensure_read_result_fits_summary
 
-            def receipt_validator(
-                current, checkpoint, exact_payload, entry_id, entry_seq
-            ):
-                ensure_read_result_fits_summary(
-                    repository,
-                    resources,
-                    fence,
-                    operation,
-                    exact_payload,
-                    current=current,
-                    checkpoint=checkpoint,
-                    entry_id=entry_id,
-                    entry_seq=entry_seq,
-                )
+            def receipt_validator(current, checkpoint, records, new_entry_id):
+                for record in records:
+                    ensure_read_result_fits_summary(
+                        repository,
+                        resources,
+                        fence,
+                        record["operation"],
+                        record["payload"],
+                        current=current,
+                        checkpoint=checkpoint,
+                        entry_id=record["entry_id"],
+                        entry_seq=record["entry_seq"],
+                        overflow_message=(
+                            "read_resource cannot add this range until existing tool content is processed"
+                            if record["entry_id"] != new_entry_id
+                            else "read_resource range is too large for this work context; retry with a smaller limit"
+                        ),
+                    )
 
         return repository.commit_read(
             fence, operation_id, payload, receipt_validator=receipt_validator

@@ -1782,13 +1782,46 @@ class HrAgentRepository(RepositoryViewsMixin):
             self._event(c, work, "tool_finished")
             checkpoint = self._checkpoint(c, work)
             if receipt_validator is not None:
+                # _dependencies above reauthorized current objects and every
+                # tool source_ref before this path may decrypt an older entry.
                 c.execute(
-                    "SELECT seq FROM platform_hr_agent.entries WHERE entry_id=%s",
-                    (entry_id,),
+                    "SELECT e.*,o.namespace,o.sealed_arguments,o.sealed_arguments_key_version FROM platform_hr_agent.entries e JOIN platform_hr_agent.operations o ON o.operation_id=e.operation_id WHERE e.owner_id=%s AND e.work_id=%s AND e.input_revision=%s AND e.kind='tool' AND o.attempt_id=%s ORDER BY e.seq",
+                    (
+                        work["owner_id"],
+                        work["work_id"],
+                        work["input_revision"],
+                        op["attempt_id"],
+                    ),
                 )
-                receipt_validator(
-                    current, checkpoint, payload, entry_id, c.fetchone()["seq"]
-                )
+                records = []
+                for row in c.fetchall():
+                    if row["namespace"] != "tool:read_resource":
+                        continue
+                    body = self._unseal(
+                        "entries", row["entry_id"], "sealed_body", row
+                    )
+                    if body["outcome"]["error"] is not None:
+                        continue
+                    records.append(
+                        {
+                            "entry_id": row["entry_id"],
+                            "entry_seq": row["seq"],
+                            "operation": StoredToolOperation(
+                                row["operation_id"],
+                                "read_resource",
+                                self._unseal(
+                                    "operations",
+                                    row["operation_id"],
+                                    "sealed_arguments",
+                                    row,
+                                ),
+                                "committed",
+                                body["outcome"],
+                            ),
+                            "payload": body["outcome"]["data"],
+                        }
+                    )
+                receipt_validator(current, checkpoint, records, entry_id)
             return outcome
 
     def pending_operations(self, fence):
