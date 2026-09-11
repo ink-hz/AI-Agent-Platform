@@ -14,6 +14,7 @@ class HrAgentService:
         standards=None,
         knowledge=None,
         candidates=None,
+        interviews=None,
         ready=True,
     ):
         self._repository = repository
@@ -23,6 +24,7 @@ class HrAgentService:
         self.standards = standards
         self.knowledge = knowledge
         self.candidates = candidates
+        self.interviews = interviews
         from .results import ResultService
 
         self.results = results or (
@@ -173,3 +175,15 @@ class HrAgentService:
         if self.candidates is None:
             raise problem("temporarily_unavailable", http_status=503)
         return getattr(self.candidates, method)(owner, *args)
+
+    def interview_call(self, method, auth, *args, writable=False):
+        owner = self._owner(auth, writable)
+        if self.interviews is None:
+            if self.candidates is None or self.materials is None:
+                raise problem("temporarily_unavailable", http_status=503)
+            from .interview_records import InterviewRecordService
+
+            self.interviews = InterviewRecordService(
+                self.repository, self.materials, self.candidates
+            )
+        return getattr(self.interviews, method)(owner, *args)

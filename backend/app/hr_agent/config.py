@@ -33,6 +33,9 @@ MATERIAL_AUTHORITY_MIGRATION_SHA256 = (
 CANDIDATE_INTAKE_MIGRATION_SHA256 = (
     "abb6b25c61e9031181f41093958a8ccf535fa9467b47b9f9d4cc5c97f6f2d184"
 )
+INTERVIEW_RECORD_MIGRATION_SHA256 = (
+    "9080e664256748eb5972c92478c5aea9b09a4a56ddd40395dff9266a81c582fa"
+)
 
 ERASURE_ACCESS_MIGRATION_SHA256 = (
     "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177"
@@ -63,6 +66,7 @@ TABLES = (
     "candidates",
     "candidate_documents",
     "candidate_positions",
+    "candidate_interview_records",
 )
 
 
@@ -285,6 +289,7 @@ def check_schema_ready(connection_factory) -> bool:
                 "candidates",
                 "candidate_documents",
                 "candidate_positions",
+                "candidate_interview_records",
             }
             for name in TABLES:
                 row = connection.execute(
@@ -330,6 +335,11 @@ def check_schema_ready(connection_factory) -> bool:
             if row is None or row[0] != ERASURE_ACCESS_MIGRATION_SHA256:
                 return False
             row = connection.execute(
+                "select sha256 from platform_control.schema_migrations where version=101"
+            ).fetchone()
+            if row is None or row[0] != INTERVIEW_RECORD_MIGRATION_SHA256:
+                return False
+            row = connection.execute(
                 "SELECT CASE current_user "
                 "WHEN 'platform_control_app' THEN 'platform_control_maintenance' "
                 "WHEN 'platform_control_app_preview' THEN 'platform_control_maintenance_preview' END"
@@ -353,6 +363,11 @@ def check_schema_ready(connection_factory) -> bool:
                     return False
             row = connection.execute(
                 "SELECT has_function_privilege(current_user,'platform_hr_agent.lock_candidate_source(uuid,uuid,jsonb)','EXECUTE')"
+            ).fetchone()
+            if row is None or row[0] is not True:
+                return False
+            row = connection.execute(
+                "SELECT has_function_privilege(current_user,'platform_hr_agent.lock_user_input_source(uuid,uuid,jsonb)','EXECUTE')"
             ).fetchone()
             return row is not None and row[0] is True
     except Exception:  # noqa: BLE001 - startup and readiness fail closed without secrets

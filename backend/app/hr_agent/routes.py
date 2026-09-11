@@ -121,6 +121,26 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
     def candidate(request: Request, candidate_id: UUID):
         return service.candidate_call("read_candidate", auth(request), candidate_id)
 
+    @router.post("/candidates/{candidate_id}/interview-records", status_code=201)
+    async def register_interview_record(request: Request, candidate_id: UUID):
+        return await run_in_threadpool(
+            service.interview_call,
+            "register",
+            auth(request),
+            candidate_id,
+            await body(request),
+            key(request),
+            writable=True,
+        )
+
+    @router.get("/candidates/{candidate_id}/interview-records")
+    def interview_records(request: Request, candidate_id: UUID):
+        return service.interview_call("list", auth(request), candidate_id)
+
+    @router.get("/candidates/{candidate_id}/interview-records/{record_id}")
+    def interview_record(request: Request, candidate_id: UUID, record_id: UUID):
+        return service.interview_call("read", auth(request), candidate_id, record_id)
+
     @router.post("/works")
     async def submit(request: Request):
         result = await run_in_threadpool(

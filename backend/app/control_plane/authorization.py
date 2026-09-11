@@ -158,6 +158,9 @@ _HR_POSITION_ROUTES = frozenset({
     ("POST", "/api/hr/agent/candidate-items/{item_id}/confirm"),
     ("GET", "/api/hr/agent/candidates"),
     ("GET", "/api/hr/agent/candidates/{candidate_id}"),
+    ("POST", "/api/hr/agent/candidates/{candidate_id}/interview-records"),
+    ("GET", "/api/hr/agent/candidates/{candidate_id}/interview-records"),
+    ("GET", "/api/hr/agent/candidates/{candidate_id}/interview-records/{record_id}"),
 
     ("GET", "/api/hr/positions"),
     ("GET", "/api/hr/positions/{position_id}"),

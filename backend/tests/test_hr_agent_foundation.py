@@ -13,7 +13,7 @@ def test_database_schema_has_contract_tables_and_restricted_app():
     from hr_agent_support import hr_agent_database
     with hr_agent_database() as db:
         with db.connection() as conn:
-            assert conn.execute("select count(*) from information_schema.tables where table_schema='platform_hr_agent'").fetchone()[0] == 24
+            assert conn.execute("select count(*) from information_schema.tables where table_schema='platform_hr_agent'").fetchone()[0] == 25
             with pytest.raises(Exception):
                 conn.execute('create table platform_hr_agent.forbidden(id int)')
 
