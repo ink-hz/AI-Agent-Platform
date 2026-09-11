@@ -1893,7 +1893,7 @@ class HrAgentRepository(RepositoryViewsMixin):
             self._event(c, work, "state_changed")
             return self._view(c, work)
 
-    def read_selected_entries(self, fence):
+    def read_selected_entries(self, fence, *, include_unconsumed=False):
         # Capture immutable encrypted entries under a short work fence. No
         # attachment/object-store access may run while this work lock is held.
         with self.transaction() as c:
@@ -1948,6 +1948,7 @@ class HrAgentRepository(RepositoryViewsMixin):
         )
         self._scope(work["owner_id"], current["objects"], refs, work["work_id"])
         required = {e.entry_id for e in selected} | covered
+        unconsumed = set()
         with self.transaction() as c:
             self._fence(c, fence)
             if required:
@@ -1957,7 +1958,28 @@ class HrAgentRepository(RepositoryViewsMixin):
                 )
                 if {r["entry_id"] for r in c.fetchall()} != required:
                     raise ContextRebuildRequired()
-        return tuple(reversed(selected))
+            if include_unconsumed:
+                c.execute(
+                    "SELECT e.entry_id,a.ordinal FROM platform_hr_agent.entries e JOIN platform_hr_agent.operations o ON o.operation_id=e.operation_id JOIN platform_hr_agent.model_attempts a ON a.attempt_id=o.attempt_id WHERE e.owner_id=%s AND e.work_id=%s AND e.input_revision=%s AND e.kind='tool' AND a.purpose='work' ORDER BY a.ordinal DESC,e.seq",
+                    (work["owner_id"], work["work_id"], work["input_revision"]),
+                )
+                produced = c.fetchall()
+                if produced:
+                    latest_ordinal = produced[0]["ordinal"]
+                    c.execute(
+                        "SELECT 1 FROM platform_hr_agent.model_attempts WHERE work_id=%s AND input_revision=%s AND purpose='work' AND status='committed' AND ordinal>%s LIMIT 1",
+                        (work["work_id"], work["input_revision"], latest_ordinal),
+                    )
+                    if not c.fetchone():
+                        selected_ids = {entry.entry_id for entry in selected}
+                        unconsumed = {
+                            row["entry_id"]
+                            for row in produced
+                            if row["ordinal"] == latest_ordinal
+                            and row["entry_id"] in selected_ids
+                        }
+        result = tuple(reversed(selected))
+        return (result, frozenset(unconsumed)) if include_unconsumed else result
 
     def commit_summary(self, fence, attempt_id, provenance):
         provenance = validate_contract("SummaryProvenance", provenance)

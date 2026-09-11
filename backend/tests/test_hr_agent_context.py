@@ -16,12 +16,12 @@ from app.hr_agent.resources import PublishedKnowledge, ResourceReader
 from app.hr_agent.types import HrAgentProblem, ModelContext, ToolCall, WorkPaused
 
 
-def publication(path):
+def publication(path, method_text="先检验假设，再比较证据。"):
     path.mkdir(exist_ok=True)
     (path / "role.md").write_text(
         "你是 HR 助理。根据任务自主选取参考知识，证据不足时说明缺口。"
     )
-    (path / "method.md").write_text("先检验假设，再比较证据。")
+    (path / "method.md").write_text(method_text)
     sha = lambda name: hashlib.sha256((path / name).read_bytes()).hexdigest()
     ref = {
         "kind": "method",
@@ -281,6 +281,142 @@ def note(repo, fence, body):
     return op
 
 
+def unread_tool_batch(repo, resources, fence, ref):
+    attempt = repo.prepare_model(fence, model_context(revision=fence.input_revision))
+    repo.mark_model_sending(fence, attempt.attempt_id)
+    arguments = [
+        {"ref": ref, "offset": 0, "limit": 4000},
+        {"ref": ref, "offset": 4000, "limit": 4000},
+    ]
+    operations = repo.commit_model(
+        fence,
+        attempt.attempt_id,
+        reply(
+            "",
+            [
+                ToolCall(str(index), "read_resource", args)
+                for index, args in enumerate(arguments)
+            ],
+        ),
+    )
+    for operation, args in zip(operations, arguments, strict=True):
+        repo.commit_read(fence, operation, resources.read_resource(fence, args))
+    return attempt
+
+
+def tool_consumption_setup(repo, tmp_path, *, context_window_tokens=32768):
+    from dataclasses import replace
+
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / "tool-consumption-settings")
+    settings = replace(
+        settings,
+        budget_profile={
+            **settings.budget_profile,
+            "input_target_tokens": 2000,
+            "input_trigger_tokens": 3000,
+            "max_output_tokens": 1000,
+        },
+        provider_profile={
+            **settings.provider_profile,
+            "context_window_tokens": context_window_tokens,
+        },
+    )
+    repo.settings = settings
+    root = tmp_path / "tool-consumption-release"
+    ref = publication(root, "证据正文" + "x" * 7992)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    work = repo.submit(
+        owner, request(references=[ref], budget_profile="test"), uuid4()
+    )
+    fence = repo.claim("w", 60)
+    producer = unread_tool_batch(repo, resources, fence, ref)
+    return owner, work, fence, resources, producer
+
+
+def test_soft_trigger_keeps_latest_multi_tool_batch_for_one_work_call(repo, tmp_path):
+    _owner, _work, fence, resources, _producer = tool_consumption_setup(
+        repo, tmp_path
+    )
+    selected, unconsumed = repo.read_selected_entries(
+        fence, include_unconsumed=True
+    )
+    assert len(unconsumed) == 2, [(entry.kind, entry.entry_id) for entry in selected]
+
+    context = build_model_context(repo, resources, fence)
+
+    assert context.purpose == "work"
+    assert sum(message["role"] == "tool" for message in context.messages) == 2
+
+
+def test_summary_retries_do_not_mark_latest_tool_batch_consumed(repo, tmp_path):
+    _owner, _work, fence, resources, producer = tool_consumption_setup(repo, tmp_path)
+    entry = repo.read_selected_entries(fence)[0]
+    provenance = {
+        "derived_from": [
+            {
+                "entry_id": str(entry.entry_id),
+                "seq": entry.seq,
+                "input_revision": entry.input_revision,
+            }
+        ],
+        "policy_revision": "test",
+    }
+    summary = ModelContext(
+        "summary",
+        ({"role": "user", "content": "摘要旧历史"},),
+        (),
+        (),
+        20,
+        fence.input_revision,
+        summary_provenance=provenance,
+    )
+    for _ in range(2):
+        attempt = repo.prepare_model(fence, summary)
+        repo.mark_model_sending(fence, attempt.attempt_id)
+        repo.interrupt_model(fence, attempt.attempt_id, "empty_response")
+    assert producer.attempt_id != attempt.attempt_id
+    uncommitted_work = repo.prepare_model(
+        fence, model_context(revision=fence.input_revision)
+    )
+    repo.mark_model_sending(fence, uncommitted_work.attempt_id)
+
+    context = build_model_context(repo, resources, fence)
+
+    assert context.purpose == "work"
+    assert sum(message["role"] == "tool" for message in context.messages) == 2
+
+
+def test_later_committed_work_allows_consumed_tool_batch_to_compact(repo, tmp_path):
+    _owner, _work, fence, resources, _producer = tool_consumption_setup(
+        repo, tmp_path
+    )
+    direct = build_model_context(repo, resources, fence)
+    attempt = repo.prepare_model(fence, direct)
+    repo.mark_model_sending(fence, attempt.attempt_id)
+    repo.commit_model(fence, attempt.attempt_id, reply("已直接消费工具正文"))
+
+    context = build_model_context(repo, resources, fence)
+
+    assert context.purpose == "summary"
+
+
+def test_hard_window_never_compacts_only_unconsumed_tool_batch(repo, tmp_path):
+    owner, work, fence, resources, _producer = tool_consumption_setup(
+        repo, tmp_path, context_window_tokens=7000
+    )
+
+    with pytest.raises(WorkPaused):
+        build_model_context(repo, resources, fence)
+
+    assert repo.get_work(owner, work["work_id"])["state"] == "waiting_budget"
+
+
 def test_explicit_comparison_allows_both(repo, tmp_path):
     publication(tmp_path)
     resources = ResourceReader(
@@ -458,7 +594,12 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
     next_context = build_model_context(repo, resources, fence)
     assert next_context.purpose in ("summary", "work")
     if next_context.purpose == "work":
-        assert next_context.estimated_input_tokens <= 20000
+        assert (
+            next_context.estimated_input_tokens
+            + settings.budget_profile["max_output_tokens"]
+            <= settings.provider_profile["context_window_tokens"]
+        )
+        assert any(message["role"] == "tool" for message in next_context.messages)
 
 
 def test_summary_prefix_that_leaves_no_history_window_waits_for_budget(

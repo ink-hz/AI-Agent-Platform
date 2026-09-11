@@ -124,7 +124,9 @@ def _entry_messages(repository, fence, entry):
 
 def build_model_context(repository, resources, fence):
     current, view, _owner = resources.for_work(fence)
-    entries = repository.read_selected_entries(fence)
+    entries, unconsumed_tool_ids = repository.read_selected_entries(
+        fence, include_unconsumed=True
+    )
     settings = repository.settings
     config = (
         settings.budget_profile
@@ -174,9 +176,16 @@ def build_model_context(repository, resources, fence):
         if any(e.kind == "summary" for e in entries)
         else config["input_trigger_tokens"]
     )
-    if tokens > target:
+    hard_window_fits = (
+        tokens + config["max_output_tokens"] <= profile["context_window_tokens"]
+    )
+    if tokens > target and not (unconsumed_tool_ids and hard_window_fits):
         latest_user = max((e.seq for e in entries if e.kind == "user"), default=0)
-        candidates = [(e, g) for e, g in groups if e.seq != latest_user]
+        candidates = [
+            (e, g)
+            for e, g in groups
+            if e.seq != latest_user and e.entry_id not in unconsumed_tool_ids
+        ]
         if not candidates or (
             len(candidates) == 1 and candidates[0][0].kind == "summary"
         ):

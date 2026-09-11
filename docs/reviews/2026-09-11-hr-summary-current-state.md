@@ -10,4 +10,6 @@
 
 真实请求复现进一步显示，把待压缩历史保留成活动 assistant/tool 对话时会稳定返回空响应；相同内容作为 `historical_records` 用户数据块可正常摘要。因此 summary 请求把每个选中 entry 的原消息完整放入单个 JSON 数据块，不让旧工具调用继续充当活动会话。每次加入候选 entry 都按实际包装后的完整输入重新测量窗口，entry 级 `derived_from`、作用域标签和普通 work 的工具消息格式保持不变。
 
+新返回的工具正文还必须先被一次后续已提交 work 请求直接消费，才能进入压缩候选。repository 以同 input revision 的持久 attempt ordinal 判定：最新产出 tool entries 的 work attempt 之后没有更大的已提交 work attempt 时，整批工具 entry 均为未消费；summary、重试及未提交 work 不算消费。未消费批次超过软触发但仍满足硬窗口与输出预留时允许一次 work；硬窗口无法容纳且没有其他旧历史可压缩时进入 `waiting_budget`，不把未消费正文先压成摘要。
+
 真实数据库回归覆盖：实际持久化的 summary ModelRequest 包含当前状态；提交模型摘要后 checkpoint 不被摘要正文覆盖；公开旧历史压缩时，仅在当前前缀出现的候选人和材料仍成为摘要标签，切换候选人或撤销材料后摘要不可读；候选 A/B 历史隔离保持；前缀与输出预算导致窗口不足时进入 `waiting_budget`，不发送缺失上下文的摘要请求。
