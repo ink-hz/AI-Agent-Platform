@@ -19,8 +19,8 @@ def repo(database):
 def request(**updates):
     return {'thread_id':None,'text':'虚构研究','objects':[],'references':[],'budget_profile':'calibration-test',**updates}
 
-def save_result(repo,owner,**updates):
-    work=repo.submit(owner,request(budget_profile=repo.settings.budget_profile["id"] if repo.settings else "calibration-test"),uuid4())
+def save_result(repo,owner,work_objects=None,**updates):
+    work=repo.submit(owner,request(objects=work_objects or [],budget_profile=repo.settings.budget_profile["id"] if repo.settings else "calibration-test"),uuid4())
     fence=repo.claim('views-test',60)
     ctx=ModelContext('work',({'role':'user','content':'虚构'},),(),(),100,1)
     attempt=repo.prepare_model(fence,ctx); repo.mark_model_sending(fence,attempt.attempt_id)
@@ -30,6 +30,16 @@ def save_result(repo,owner,**updates):
     assert result['status']=='ok'
     repo.cancel(owner,work['work_id'],'fixture complete',uuid4())
     return work,result['data']
+
+def test_save_result_automatically_links_server_verified_work_objects(repo):
+    owner=uuid4()
+    position={'kind':'position','id':str(uuid4())}
+    candidate={'kind':'candidate','id':str(uuid4())}
+    work,result=save_result(repo,owner,[position,candidate])
+    ref=result['ref']
+    assert repo.list_results(owner,ResultQuery(thread_id=work['thread_id']))['items'][0]['ref']==ref
+    assert repo.list_results(owner,ResultQuery(object_ref=position))['items'][0]['ref']==ref
+    assert repo.list_results(owner,ResultQuery(object_ref=candidate))['items'][0]['ref']==ref
 
 def test_thread_and_work_discovery_only_returns_owned_records(repo):
     owner=uuid4();work=repo.submit(owner,request(),uuid4())

@@ -672,6 +672,13 @@ class CandidateIntakeService:
                     ),
                 },
             )
+            self.repo._link_result_objects(
+                c,
+                owner,
+                _uuid(ref["id"]),
+                [{"kind": "candidate", "id": str(candidate_id)}],
+                op,
+            )
             if batch["position_id"]:
                 c.execute(
                     "INSERT INTO platform_hr_agent.candidate_positions(owner_id,candidate_id,position_id,created_by_operation) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
@@ -715,6 +722,13 @@ class CandidateIntakeService:
                 (owner, candidate["candidate_id"]),
             )
             documents = c.fetchall()
+            c.execute(
+                "SELECT position_id FROM platform_hr_agent.candidate_positions WHERE owner_id=%s AND candidate_id=%s ORDER BY position_id",
+                (owner, candidate["candidate_id"]),
+            )
+            positions = [row["position_id"] for row in c.fetchall()]
+        for position in positions:
+            self._owner(owner, position)
         self.materials.authorize_refs(owner, [d["source_ref"] for d in documents])
         for document in documents:
             self.results.read(owner, document["result_ref"])
@@ -723,6 +737,7 @@ class CandidateIntakeService:
         )
         return {
             "candidate_id": str(candidate["candidate_id"]),
+            "position_ids": [str(position) for position in positions],
             **profile,
             "documents": [
                 {

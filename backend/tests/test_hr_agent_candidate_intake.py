@@ -5,8 +5,9 @@ from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
+from psycopg.types.json import Jsonb
 
-from app.hr_agent.types import HrAgentProblem
+from app.hr_agent.types import HrAgentProblem, ResultQuery, content_sha256
 from tests import test_hr_agent_materials as fixtures
 from tests.test_hr_agent_material_parsing import pdf, upload_document
 
@@ -178,6 +179,20 @@ def test_loop_narrative_human_confirm_and_encrypted_replay(uploaded, intake, dat
     candidate = service.read_candidate(owner, receipt["candidate_id"])
     assert candidate["display_name"] == request["display_name"]
     assert candidate["documents"][0]["summary"] == request["summary"]
+    assert candidate["position_ids"] == []
+    discovered = service.results.list(
+        owner,
+        ResultQuery(object_ref={"kind": "candidate", "id": receipt["candidate_id"]}),
+    )
+    assert [entry["ref"] for entry in discovered["items"]] == [request["result_ref"]]
+    with database.admin_connection() as c:
+        assert (
+            c.execute(
+                "SELECT count(*) FROM platform_hr_agent.result_links WHERE owner_id=%s AND result_id=%s AND object_kind='candidate' AND object_id=%s",
+                (owner, UUID(request["result_ref"]["id"]), receipt["candidate_id"]),
+            ).fetchone()[0]
+            == 1
+        )
     assert (
         service.list_candidates(owner)["items"][0]["candidate_id"]
         == receipt["candidate_id"]
@@ -200,6 +215,75 @@ def test_loop_narrative_human_confirm_and_encrypted_replay(uploaded, intake, dat
             )
             assert request["display_name"] not in raw and request["summary"] not in raw
             assert batch_request([aid])["text"] not in raw
+
+
+def test_confirmed_candidate_discovers_exact_draft_after_later_revision(
+    uploaded, intake, database
+):
+    service, _ = intake
+    _, _, repo, owner, _, aid, _, _ = uploaded
+    batch = service.create_batch(owner, batch_request([aid]), uuid4())
+    service.advance_one("profile")
+    item, _ = finish_profile(
+        uploaded, intake, service.get_batch(owner, batch["batch_id"])["items"][0]
+    )
+    exact = item["result_ref"]
+    original = repo.read_result(owner, exact["id"], exact["revision"])
+    later_revision = uuid4()
+    later_document = {
+        key: value
+        for key, value in original.items()
+        if key not in ("ref", "access_state")
+    }
+    later_document.update(title="后来修订", body="不得替换此前确认的准确草稿。")
+    with repo.transaction() as c:
+        operation, _ = repo._idempotency(c, owner, "test_later_revision", uuid4(), {})
+        repo._insert(
+            c,
+            "result_revisions",
+            {
+                "revision_id": later_revision,
+                "owner_id": owner,
+                "result_id": UUID(exact["id"]),
+                "sha256": content_sha256(later_document),
+                "objects": Jsonb(later_document["objects"]),
+                "created_by_operation": operation,
+                **repo._seal(
+                    "result_revisions",
+                    later_revision,
+                    "sealed_document",
+                    later_document,
+                ),
+            },
+        )
+        repo._update(
+            c,
+            "results",
+            "result_id",
+            UUID(exact["id"]),
+            {"current_revision": later_revision},
+        )
+    confirmed = service.confirm_item(
+        owner, item["item_id"], confirmation(item), uuid4()
+    )
+    # Simulate a candidate_document confirmed before candidate result links existed.
+    with database.admin_connection() as c:
+        c.execute(
+            "DELETE FROM platform_hr_agent.result_links WHERE owner_id=%s AND result_id=%s AND object_kind='candidate' AND object_id=%s",
+            (owner, UUID(exact["id"]), confirmed["candidate_id"]),
+        )
+    assert repo.read_result(owner, exact["id"], later_revision)["ref"][
+        "revision"
+    ] == str(later_revision)
+    candidate = repo.list_results(
+        owner,
+        ResultQuery(object_ref={"kind": "candidate", "id": confirmed["candidate_id"]}),
+    )
+    assert candidate["items"][0]["ref"]["revision"] == str(later_revision)
+    confirmed_candidate = service.read_candidate(owner, confirmed["candidate_id"])
+    assert [
+        document["result_ref"] for document in confirmed_candidate["documents"]
+    ] == [exact]
 
 
 def test_unread_and_revoked_source_prevent_unreviewed_confirmation(
@@ -495,6 +579,7 @@ def test_optional_owned_position_relation_is_persisted(uploaded, intake, databas
     from app.hr.repository import HrPositionRepository
 
     service, _ = intake
+    repo = service.repo
     _, _, _, owner, _, aid, _, _ = uploaded
     positions = HrPositionRepository(database.dsn)
     position = positions.create_manual(
@@ -517,6 +602,26 @@ def test_optional_owned_position_relation_is_persisted(uploaded, intake, databas
             ).fetchone()[0]
             == position.position_id
         )
+    assert service.read_candidate(owner, created["candidate_id"])["position_ids"] == [
+        str(position.position_id)
+    ]
+
+    def revoked_position(_owner, objects, _refs, _work=None):
+        if objects:
+            raise HrAgentProblem(
+                {
+                    "code": "scope_denied",
+                    "message": "revoked",
+                    "retryable": False,
+                    "details": {},
+                },
+                403,
+            )
+
+    repo.scope_validator = revoked_position
+    with pytest.raises(HrAgentProblem) as error:
+        service.read_candidate(owner, created["candidate_id"])
+    assert error.value.http_status == 403
 
 
 def test_saved_narrative_survives_final_answer_failure(uploaded, intake):

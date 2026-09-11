@@ -224,8 +224,14 @@ class RepositoryViewsMixin:
                 params.append(_uuid(query.thread_id))
             else:
                 self._scope(owner, [query.object_ref], [])
-                scope = " AND EXISTS (SELECT 1 FROM platform_hr_agent.result_links l WHERE l.owner_id=r.owner_id AND l.result_id=r.result_id AND l.object_kind=%s AND l.object_id=%s)"
-                params.extend((query.object_ref["kind"], query.object_ref["id"]))
+                if query.object_ref["kind"] == "candidate":
+                    scope = " AND (EXISTS (SELECT 1 FROM platform_hr_agent.result_links l WHERE l.owner_id=r.owner_id AND l.result_id=r.result_id AND l.object_kind='candidate' AND l.object_id=%s) OR EXISTS (SELECT 1 FROM platform_hr_agent.candidate_documents d WHERE d.owner_id=r.owner_id AND d.candidate_id=%s AND d.result_ref->>'id'=r.result_id::text))"
+                    params.extend(
+                        (query.object_ref["id"], _uuid(query.object_ref["id"]))
+                    )
+                else:
+                    scope = " AND EXISTS (SELECT 1 FROM platform_hr_agent.result_links l WHERE l.owner_id=r.owner_id AND l.result_id=r.result_id AND l.object_kind=%s AND l.object_id=%s)"
+                    params.extend((query.object_ref["kind"], query.object_ref["id"]))
             if query.kind is not None:
                 scope += " AND r.kind=%s"
                 params.append(query.kind)
@@ -332,11 +338,7 @@ class RepositoryViewsMixin:
                 for obj in request["objects"]
             ):
                 raise problem("scope_denied", http_status=422)
-            for obj in request["objects"]:
-                c.execute(
-                    "INSERT INTO platform_hr_agent.result_links(owner_id,result_id,object_kind,object_id,linked_by_operation) VALUES(%s,%s,%s,%s,%s) ON CONFLICT(result_id,object_kind,object_id) DO NOTHING",
-                    (owner, result, obj["kind"], obj["id"], operation),
-                )
+            self._link_result_objects(c, owner, result, request["objects"], operation)
             return self._receipt(
                 c,
                 operation,

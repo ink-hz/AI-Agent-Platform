@@ -51,10 +51,15 @@ def test_batch_http_confirmed_candidate_and_scope(uploaded, intake, database):
         == response.json()
     )
     candidate_id = response.json()["candidate_id"]
-    assert (
-        client.get("/api/hr/agent/candidates/" + candidate_id).json()["display_name"]
-        == confirmation(item)["display_name"]
+    candidate = client.get("/api/hr/agent/candidates/" + candidate_id).json()
+    assert candidate["display_name"] == confirmation(item)["display_name"]
+    assert candidate["position_ids"] == []
+    results = client.get(
+        "/api/hr/agent/results",
+        params={"object_kind": "candidate", "object_id": candidate_id},
     )
+    assert results.status_code == 200, results.text
+    assert [entry["ref"] for entry in results.json()["items"]] == [item["result_ref"]]
     assert (
         client.get("/api/hr/agent/candidates").json()["items"][0]["candidate_id"]
         == candidate_id

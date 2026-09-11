@@ -146,6 +146,14 @@ class HrAgentRepository(RepositoryViewsMixin):
             (*values.values(), identity),
         )
 
+    @staticmethod
+    def _link_result_objects(c, owner, result_id, objects, operation_id):
+        for obj in objects:
+            c.execute(
+                "INSERT INTO platform_hr_agent.result_links(owner_id,result_id,object_kind,object_id,linked_by_operation) VALUES(%s,%s,%s,%s,%s) ON CONFLICT(result_id,object_kind,object_id) DO NOTHING",
+                (owner, result_id, obj["kind"], obj["id"], operation_id),
+            )
+
     def _scope(self, owner, objects, refs, work_id=None):
         if self.scope_validator:
             self.scope_validator(_uuid(owner), tuple(objects), tuple(refs), work_id)
@@ -1689,6 +1697,13 @@ class HrAgentRepository(RepositoryViewsMixin):
                 "created_by_operation": op["operation_id"],
                 **self._seal("result_revisions", revision, "sealed_document", document),
             },
+        )
+        self._link_result_objects(
+            c,
+            work["owner_id"],
+            identity,
+            document["objects"],
+            op["operation_id"],
         )
         self._update(
             c, "results", "result_id", identity, {"current_revision": revision}
