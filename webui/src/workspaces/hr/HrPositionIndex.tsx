@@ -50,10 +50,12 @@ export function HrPositionIndex({
   account,
   api: injectedApi,
   startDraftConversation,
+  onSelect,
 }: {
   account: Account;
   api?: HrApi;
   startDraftConversation?: DraftStarter;
+  onSelect?: (position: HrPosition) => void;
 }) {
   const api = useMemo(
     () => injectedApi ?? createHrApi(account.csrf_token),
@@ -191,8 +193,8 @@ export function HrPositionIndex({
     {account.hard_stale_read_only && <p className="hr-position-notice" role="status">账号目录信息已过期，岗位数据暂时只读。</p>}
     {notice && <p className="hr-position-notice" role="status">{notice}</p>}
 
-    <PositionSection title="官网岗位" caption="来自官网同步，状态与内部工作状态分开显示。" positions={official} />
-    <PositionSection title="内部岗位" caption="由招聘对话确认创建，不会写回官网注册表。" positions={internal} />
+    <PositionSection title="官网岗位" caption="来自官网同步，状态与内部工作状态分开显示。" positions={official} onSelect={onSelect} />
+    <PositionSection title="内部岗位" caption="由招聘对话确认创建，不会写回官网注册表。" positions={internal} onSelect={onSelect} />
 
     <section className="hr-position-section" aria-labelledby="hr-drafts-title">
       <div className="hr-position-section-heading"><div><h2 id="hr-drafts-title">待确认</h2><p>识别结果仍是草稿，确认前不会成为正式岗位。</p></div><span>{drafts.length}</span></div>
@@ -223,7 +225,7 @@ export function HrPositionIndex({
 }
 
 
-function PositionSection({ title, caption, positions }: { title: string; caption: string; positions: HrPosition[] }) {
+function PositionSection({ title, caption, positions, onSelect }: { title: string; caption: string; positions: HrPosition[]; onSelect?: (position: HrPosition) => void }) {
   return <section className="hr-position-section">
     <div className="hr-position-section-heading"><div><h2>{title}</h2><p>{caption}</p></div><span>{positions.length}</span></div>
     {positions.length === 0 ? <div className="hr-position-empty">没有匹配的岗位。</div>
@@ -231,7 +233,10 @@ function PositionSection({ title, caption, positions }: { title: string; caption
         <div><span className={`hr-position-chip hr-position-chip--${position.sourceKind}`}>{sourceLabel(position)}</span>{position.officialStatus && <span className={`hr-position-status hr-position-status--${position.officialStatus}`}>{officialStatus(position.officialStatus)}</span>}</div>
         <h3><PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>{position.title}</PlatformLink></h3><p>{[position.department, ...position.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
         <footer><span>{position.officialJobId ?? "内部岗位"}</span><span>{position.sourceVersion ? `官网版本 ${position.sourceVersion}` : "内部上下文"}</span></footer>
-      <PlatformLink href={`/hr/agent?position=${encodeURIComponent(position.positionId)}`}>与 Hannah 讨论岗位</PlatformLink>
+      <div className="hr-position-card-actions">
+        {onSelect && <button type="button" disabled={position.internalStatus !== "active"} onClick={() => onSelect(position)}>在主对话中继续</button>}
+        <PlatformLink href={`/hr/agent?position=${encodeURIComponent(position.positionId)}`}>与 Hannah 讨论岗位</PlatformLink>
+      </div>
       </article>)}</div>}
   </section>;
 }

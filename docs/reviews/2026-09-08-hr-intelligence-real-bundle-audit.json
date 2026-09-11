@@ -1,0 +1,146 @@
+{
+  "checked_at": "2026-09-08",
+  "code_baseline": "80305f47abca02b8c28da70322c3bc03a940c6ea",
+  "bundle_id": "2b49ecc4-42fe-45ae-80ac-26891f42ac6c",
+  "manifest_sha256": "5d446fe136a3fe2d3d1bb06873f9584e4a357f9546e9f66e686e14950dab98a3",
+  "verification": "verify_import_bundle passed; in-process _project; no DB, HTTP, browser, model call or production timing",
+  "projection_timestamp_note": "imported_at supplied from generated_at for local projection only; not evidence of production import time",
+  "companies": 12,
+  "jobs": 3437,
+  "analysis_units": 86,
+  "unit_kinds": {
+    "secondary-direction": 50,
+    "direction": 10,
+    "task": 5,
+    "comparison": 1,
+    "company": 12,
+    "topic": 4,
+    "track": 3,
+    "executive-summary": 1
+  },
+  "before": {
+    "summaries": 86,
+    "facts": 410,
+    "inferences": 104,
+    "recommendations": 86,
+    "alternatives": 86
+  },
+  "after": {
+    "summaries": 1,
+    "facts": 332,
+    "inferences": 88,
+    "recommendations": 0,
+    "alternatives": 0
+  },
+  "statistics": {
+    "aggregate_schema_version": 3,
+    "has_v2_key": false,
+    "legacy_numeric_items": {
+      "schema_version": 3
+    },
+    "matrix_count": 11,
+    "matrix_keys_are_company_keys": true,
+    "matrix_keys_overlap_projected_source_ids": false,
+    "trend": {
+      "message": "基线版本：尚不能判断月度变化",
+      "state": "baseline_only"
+    },
+    "projected_version_number": 2
+  },
+  "company": {
+    "documents": 12,
+    "chunks": 84,
+    "all_chunks_have_companies": true
+  },
+  "topic": {
+    "chunks": 49,
+    "chunks_with_companies": 0,
+    "documents": [
+      {
+        "file": "campus-recruiting.md",
+        "h1": "# campus-recruiting 招聘专题"
+      },
+      {
+        "file": "geography.md",
+        "h1": "# geography 招聘专题"
+      },
+      {
+        "file": "internships.md",
+        "h1": "# internships 招聘专题"
+      },
+      {
+        "file": "product-routes.md",
+        "h1": "# product-routes 招聘专题"
+      },
+      {
+        "file": "social-recruiting.md",
+        "h1": "# social-recruiting 招聘专题"
+      },
+      {
+        "file": "talent-competition.md",
+        "h1": "# talent-competition 招聘专题"
+      },
+      {
+        "file": "trends.md",
+        "h1": "# trends 招聘专题"
+      }
+    ],
+    "placeholder_documents_in_this_sample": [],
+    "response_keys": [
+      "alternatives",
+      "confidence",
+      "facts",
+      "inferences",
+      "recommendations",
+      "schema_version",
+      "summary",
+      "unknowns"
+    ],
+    "units": [
+      {
+        "scope_key": "trends",
+        "input_evidence_count": 3445,
+        "companies_resolved_from_job_facts": [
+          "agibot",
+          "bambu-lab",
+          "creality",
+          "elegoo"
+        ],
+        "facts_not_resolved_by_job_lookup": 1
+      },
+      {
+        "scope_key": "product-routes",
+        "input_evidence_count": 3445,
+        "companies_resolved_from_job_facts": [
+          "agibot",
+          "bambu-lab",
+          "creality",
+          "elegoo"
+        ],
+        "facts_not_resolved_by_job_lookup": 1
+      },
+      {
+        "scope_key": "talent-competition",
+        "input_evidence_count": 3445,
+        "companies_resolved_from_job_facts": [
+          "agibot",
+          "bambu-lab",
+          "creality",
+          "elegoo"
+        ],
+        "facts_not_resolved_by_job_lookup": 1
+      },
+      {
+        "scope_key": "geography",
+        "input_evidence_count": 3445,
+        "companies_resolved_from_job_facts": [
+          "agibot",
+          "bambu-lab",
+          "creality",
+          "elegoo"
+        ],
+        "facts_not_resolved_by_job_lookup": 1
+      }
+    ]
+  }
+}

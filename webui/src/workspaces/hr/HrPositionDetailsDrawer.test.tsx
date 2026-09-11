@@ -48,10 +48,10 @@ describe("HrPositionDetailsDrawer", () => {
     />));
 
     expect(container.querySelector('[role="dialog"][aria-label="岗位资料"]')).not.toBeNull();
-    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("岗位信息");
-    expect(container.textContent).toContain("内部岗位理解");
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("JD / JR");
+    expect(container.textContent).toContain("对话中已确认的岗位标准");
     expect(container.textContent).toContain("官网岗位原文");
-    expect(container.textContent).toContain("尚未形成内部岗位理解");
+    expect(container.textContent).toContain("尚无已确认标准");
     expect(client.positionCandidates).not.toHaveBeenCalled();
     expect(client.resources).not.toHaveBeenCalled();
 
@@ -105,14 +105,16 @@ describe("HrPositionDetailsDrawer", () => {
   });
 
   it("keeps Shift+Tab inside the active panel after another panel has been visited", async () => {
+    const client = api();
+    client.context.mockRejectedValue(new Error("temporarily unavailable"));
     await act(async () => root.render(<HrPositionDetailsDrawer
-      api={api() as never} csrfToken="csrf" detail={detail} open
+      api={client as never} csrfToken="csrf" detail={detail} open
       onClose={vi.fn()} onConfirmed={vi.fn()} readOnly={false}
     />));
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
       .find((button) => button.textContent === "候选人")?.click());
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-      .find((button) => button.textContent === "岗位信息")?.click());
+      .find((button) => button.textContent === "JD / JR")?.click());
 
     const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="岗位资料"]')!;
     const activePanel = dialog.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')!;

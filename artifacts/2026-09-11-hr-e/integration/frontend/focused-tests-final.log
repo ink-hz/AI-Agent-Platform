@@ -1,0 +1,20 @@
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run --run src/auth.test.ts src/workspaces/hr/HrPositionIndex.test.tsx src/workspaces/hr/HrWorkspaceShell.test.tsx src/documentTitle.test.tsx
+
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+ ✓ src/documentTitle.test.tsx (2 tests) 8ms
+ ✓ src/auth.test.ts (101 tests) 26ms
+ ✓ src/workspaces/hr/HrWorkspaceShell.test.tsx (4 tests) 32ms
+stderr | src/workspaces/hr/HrPositionIndex.test.tsx > uses the default API client once instead of refetching after every render
+Not implemented: Window's scrollTo() method
+
+ ✓ src/workspaces/hr/HrPositionIndex.test.tsx (11 tests) 132ms
+
+ Test Files  4 passed (4)
+      Tests  118 passed (118)
+   Start at  18:50:16
+   Duration  645ms (transform 193ms, setup 0ms, collect 384ms, tests 198ms, environment 1.02s, prepare 135ms)
+

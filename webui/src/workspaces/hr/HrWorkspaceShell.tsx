@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowUpRight, BriefcaseBusiness, ChartNoAxesCombined, MessageSquare } from "lucide-react";
+import { ArrowUpRight, BookOpen, BriefcaseBusiness, ChartNoAxesCombined, MessageSquare } from "lucide-react";
 
 import { platformPath, type Account } from "../../auth";
 import { PlatformLink } from "../../components/PlatformLink";
@@ -13,11 +13,13 @@ export function HrWorkspaceShell({
   chatHref = "/hr/",
   current,
   children,
+  onOpenKnowledge,
 }: {
   account: Account;
   chatHref?: string;
   current: HrWorkspaceSection;
   children: ReactNode;
+  onOpenKnowledge?: () => void;
 }) {
   return <section className="hr-workspace-shell">
     <header className="hr-workspace-topbar">
@@ -29,7 +31,8 @@ export function HrWorkspaceShell({
         <PlatformLink aria-current={current === "agent" ? "page" : undefined} href="/hr/agent">Hannah 试用</PlatformLink>
         <PlatformLink aria-current={current === "chat" ? "page" : undefined} href={chatHref}><MessageSquare size={17} aria-hidden="true" />对话</PlatformLink>
         <PlatformLink aria-current={current === "positions" ? "page" : undefined} href="/hr/positions"><BriefcaseBusiness size={17} aria-hidden="true" />岗位</PlatformLink>
-        <PlatformLink aria-current={current === "panorama" ? "page" : undefined} href="/hr/panorama"><ChartNoAxesCombined size={17} aria-hidden="true" />全景分析</PlatformLink>
+        <PlatformLink aria-current={current === "panorama" ? "page" : undefined} href="/hr/panorama"><ChartNoAxesCombined size={17} aria-hidden="true" />HR 情报</PlatformLink>
+        <button onClick={onOpenKnowledge} type="button"><BookOpen size={17} aria-hidden="true" />方法与模型</button>
       </nav>
       <div className="hr-workspace-actions">
         <span className="hr-workspace-identity"><span aria-hidden="true">{account.display_name.slice(0, 1)}</span><strong>{account.display_name}</strong></span>

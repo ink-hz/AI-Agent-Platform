@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from .acceptance_v5 import parse_v5_acceptance
-from .contracts_v5 import parse_v5_command
+from .core_contract import parse_core_command
 from .worker_v5_receiver import TrustedV5CallbackBinding
 
 
@@ -48,7 +48,7 @@ class V5TransportAdapter:
                 or str(UUID(handoff["jobId"])) != handoff["jobId"]
             ):
                 raise ValueError
-            command = parse_v5_command(handoff["command"])
+            command = parse_core_command(handoff["command"])
             url = urlsplit(command.event_callback_url)
             if f"{url.scheme}://{url.netloc}" != handoff["callbackOrigin"]:
                 raise ValueError

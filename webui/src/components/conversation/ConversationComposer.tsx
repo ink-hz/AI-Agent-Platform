@@ -19,6 +19,7 @@ export function ConversationComposer({
   tools,
   compact = false,
   navigation,
+  context,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -34,6 +35,7 @@ export function ConversationComposer({
   tools?: ReactNode;
   compact?: boolean;
   navigation?: ReactNode;
+  context?: ReactNode;
 }) {
   const inputTooLarge = conversationInputTooLarge(value.trim());
   const submitDisabled = disabled || pending || attachmentPending
@@ -44,6 +46,7 @@ export function ConversationComposer({
   };
   return <form className={`conversation-composer${compact ? " is-compact" : ""}`} onSubmit={submit}>
     {navigation}
+    {context}
     <label htmlFor="conversation-message">{label}</label>
     <ComposerTextarea
       autoSize={compact}

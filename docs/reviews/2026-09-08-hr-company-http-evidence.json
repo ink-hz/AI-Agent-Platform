@@ -1,0 +1,254 @@
+{
+  "scope": "Disposable localhost actual-app measurements, not production benchmark",
+  "before_narrow_database_read": {
+    "bundle_id": "2b49ecc4-42fe-45ae-80ac-26891f42ac6c",
+    "manifest_sha256": "5d446fe136a3fe2d3d1bb06873f9584e4a357f9546e9f66e686e14950dab98a3",
+    "transport": "loopback HTTP / actual app / persisted session / disposable PostgreSQL",
+    "requests": [
+      {
+        "path": "/api/hr/panorama/companies",
+        "status": 200,
+        "bytes": 6367,
+        "elapsed_ms": 786.65
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360",
+        "status": 200,
+        "bytes": 12769,
+        "elapsed_ms": 765.42
+      },
+      {
+        "path": "/api/hr/panorama/companies/hesai",
+        "status": 200,
+        "bytes": 10908,
+        "elapsed_ms": 757.16
+      },
+      {
+        "path": "/api/hr/panorama/companies/huawei",
+        "status": 200,
+        "bytes": 9427,
+        "elapsed_ms": 784.35
+      },
+      {
+        "path": "/api/hr/panorama/companies/agibot",
+        "status": 200,
+        "bytes": 10939,
+        "elapsed_ms": 757.01
+      },
+      {
+        "path": "/api/hr/panorama/companies/robosense",
+        "status": 200,
+        "bytes": 12382,
+        "elapsed_ms": 777.52
+      },
+      {
+        "path": "/api/hr/panorama/companies/revopoint",
+        "status": 200,
+        "bytes": 11647,
+        "elapsed_ms": 758.84
+      },
+      {
+        "path": "/api/hr/panorama/companies/scantech",
+        "status": 200,
+        "bytes": 3381,
+        "elapsed_ms": 794.06
+      },
+      {
+        "path": "/api/hr/panorama/companies/shining3d",
+        "status": 200,
+        "bytes": 12095,
+        "elapsed_ms": 762.52
+      },
+      {
+        "path": "/api/hr/panorama/companies/union-optech",
+        "status": 200,
+        "bytes": 7982,
+        "elapsed_ms": 770.69
+      },
+      {
+        "path": "/api/hr/panorama/companies/bambu-lab",
+        "status": 200,
+        "bytes": 11378,
+        "elapsed_ms": 804.41
+      },
+      {
+        "path": "/api/hr/panorama/companies/elegoo",
+        "status": 200,
+        "bytes": 11863,
+        "elapsed_ms": 771.21
+      },
+      {
+        "path": "/api/hr/panorama/companies/creality",
+        "status": 200,
+        "bytes": 12383,
+        "elapsed_ms": 775.77
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360/jobs",
+        "status": 200,
+        "bytes": 3790,
+        "elapsed_ms": 783.6
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360/jobs",
+        "status": 200,
+        "bytes": 3771,
+        "elapsed_ms": 804.62
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360/jobs",
+        "status": 200,
+        "bytes": 120,
+        "elapsed_ms": 767.63
+      },
+      {
+        "path": "/api/v1/conversations/85a0d51c-61d2-4c32-b54b-6df9004d97fb/messages",
+        "status": 200,
+        "bytes": 1861,
+        "elapsed_ms": 8.59
+      },
+      {
+        "path": "/api/hr/panorama/current",
+        "status": 200,
+        "bytes": 7982188,
+        "elapsed_ms": 915.36
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360",
+        "status": 200,
+        "bytes": 12769,
+        "elapsed_ms": 766.94
+      }
+    ],
+    "non_job_evidence_read_and_verified": true,
+    "selected_reference_persisted_and_replayed": true,
+    "pinned_read_survives_current_publication_removal": true,
+    "real_permission_denial": true
+  },
+  "after_narrow_database_read": {
+    "bundle_id": "2b49ecc4-42fe-45ae-80ac-26891f42ac6c",
+    "manifest_sha256": "5d446fe136a3fe2d3d1bb06873f9584e4a357f9546e9f66e686e14950dab98a3",
+    "transport": "loopback HTTP / actual app / persisted session / disposable PostgreSQL",
+    "requests": [
+      {
+        "path": "/api/hr/panorama/companies",
+        "status": 200,
+        "bytes": 6367,
+        "elapsed_ms": 277.62
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360",
+        "status": 200,
+        "bytes": 12769,
+        "elapsed_ms": 284.66
+      },
+      {
+        "path": "/api/hr/panorama/companies/hesai",
+        "status": 200,
+        "bytes": 10908,
+        "elapsed_ms": 296.7
+      },
+      {
+        "path": "/api/hr/panorama/companies/huawei",
+        "status": 200,
+        "bytes": 9427,
+        "elapsed_ms": 275.41
+      },
+      {
+        "path": "/api/hr/panorama/companies/agibot",
+        "status": 200,
+        "bytes": 10939,
+        "elapsed_ms": 274.25
+      },
+      {
+        "path": "/api/hr/panorama/companies/robosense",
+        "status": 200,
+        "bytes": 12382,
+        "elapsed_ms": 275.81
+      },
+      {
+        "path": "/api/hr/panorama/companies/revopoint",
+        "status": 200,
+        "bytes": 11647,
+        "elapsed_ms": 272.3
+      },
+      {
+        "path": "/api/hr/panorama/companies/scantech",
+        "status": 200,
+        "bytes": 3381,
+        "elapsed_ms": 279.13
+      },
+      {
+        "path": "/api/hr/panorama/companies/shining3d",
+        "status": 200,
+        "bytes": 12095,
+        "elapsed_ms": 274.4
+      },
+      {
+        "path": "/api/hr/panorama/companies/union-optech",
+        "status": 200,
+        "bytes": 7982,
+        "elapsed_ms": 272.84
+      },
+      {
+        "path": "/api/hr/panorama/companies/bambu-lab",
+        "status": 200,
+        "bytes": 11378,
+        "elapsed_ms": 274.76
+      },
+      {
+        "path": "/api/hr/panorama/companies/elegoo",
+        "status": 200,
+        "bytes": 11863,
+        "elapsed_ms": 275.19
+      },
+      {
+        "path": "/api/hr/panorama/companies/creality",
+        "status": 200,
+        "bytes": 12383,
+        "elapsed_ms": 276.57
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360/jobs",
+        "status": 200,
+        "bytes": 3790,
+        "elapsed_ms": 16.44
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360/jobs",
+        "status": 200,
+        "bytes": 3771,
+        "elapsed_ms": 15.51
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360/jobs",
+        "status": 200,
+        "bytes": 120,
+        "elapsed_ms": 16.58
+      },
+      {
+        "path": "/api/v1/conversations/26c50a38-ffb5-4a08-955d-ad2b3e02e0e3/messages",
+        "status": 200,
+        "bytes": 2089,
+        "elapsed_ms": 7.89
+      },
+      {
+        "path": "/api/hr/panorama/current",
+        "status": 200,
+        "bytes": 7982188,
+        "elapsed_ms": 948.43
+      },
+      {
+        "path": "/api/hr/panorama/companies/insta360",
+        "status": 200,
+        "bytes": 12769,
+        "elapsed_ms": 265.69
+      }
+    ],
+    "non_job_evidence_read_and_verified": true,
+    "reference_source": "actual frontend parser and shared composer formatter",
+    "selected_reference_persisted_and_replayed": true,
+    "pinned_read_survives_current_publication_removal": true,
+    "real_permission_denial": true
+  }
+}

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import pytest
-
 from app.hr_agent.cutover import CutoverRejected, lock_admission
 from hr_agent_support import hr_agent_database
 
 
 class Cursor:
-    def __init__(self, phase):
+    def __init__(self, phase, *, relation_exists=True):
         self.phase = phase
+        self.relation_exists = relation_exists
         self.calls = []
 
     def execute(self, query, parameters=()):
@@ -17,7 +17,11 @@ class Cursor:
 
     def fetchone(self):
         if "to_regclass" in self.calls[-1][0]:
-            return {"relation": "platform_control.hr_execution_cutover"}
+            return {
+                "relation": "platform_control.hr_execution_cutover"
+                if self.relation_exists
+                else None
+            }
         if "hr_execution_cutover" in self.calls[-1][0]:
             return None if self.phase is None else {"phase": self.phase, "epoch": 7}
         return {"pg_advisory_xact_lock": None}
@@ -25,7 +29,7 @@ class Cursor:
 
 @pytest.mark.parametrize(
     ("phase", "lane"),
-    [(None, "legacy"), (None, "cloud"), ("legacy", "legacy"),
+    [(None, "legacy"), ("legacy", "legacy"),
      ("draining_legacy", "legacy"), ("cloud", "cloud"),
      ("draining_cloud", "cloud")],
 )
@@ -40,7 +44,8 @@ def test_admission_locks_before_reading_phase_and_allows_owned_lane(phase, lane)
 
 @pytest.mark.parametrize(
     ("phase", "lane", "continuing"),
-    [("draining_legacy", "legacy", False), ("cloud", "legacy", True),
+    [(None, "cloud", False), (None, "cloud", True),
+     ("draining_legacy", "legacy", False), ("cloud", "legacy", True),
      ("draining_cloud", "cloud", False), ("legacy", "cloud", True)],
 )
 def test_admission_rejects_new_work_during_drain_and_wrong_lane(phase, lane, continuing):
@@ -54,15 +59,27 @@ def test_cutover_rejection_maps_through_old_domain_value_error_boundaries():
     assert error.http_status == 503
 
 
+def test_missing_gate_table_preserves_legacy_only():
+    assert lock_admission(Cursor(None, relation_exists=False), "legacy") is None
+    with pytest.raises(CutoverRejected):
+        lock_admission(Cursor(None, relation_exists=False), "cloud")
+
+
 def test_real_postgres_requires_drain_and_preserves_exact_cloud_replay():
+    from pathlib import Path
     from uuid import uuid4
+
     from app.control_plane.crypto import IdentityKeyring
+    from app.control_plane.migrate import migrate_control_database
     from app.execution_relay.content_crypto import ContentCodec
     from app.hr_agent.repository import HrAgentRepository
-    from app.control_plane.migrate import migrate_control_database
-    from pathlib import Path
 
-    with hr_agent_database() as database:
+    with hr_agent_database(migrate_hr=False) as database:
+        migrate_control_database(
+            database.migrator_dsn,
+            Path(__file__).parents[1] / "control_migrations" / "hr_agent",
+            owner_role="platform_control_owner",
+        )
         migrate_control_database(
             database.migrator_dsn,
             Path(__file__).parents[1] / "control_migrations" / "hr_web",

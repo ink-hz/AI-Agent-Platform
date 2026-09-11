@@ -274,13 +274,8 @@ def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
 def test_database_permission_probe_fails_when_maintenance_cannot_transition(tmp_path):
     knowledge = _knowledge(tmp_path / "knowledge")
     environment = _environment(tmp_path / "runtime", knowledge=knowledge)
-    with hr_agent_database() as database:
+    with hr_agent_database(cutover_phase="legacy") as database:
         with database.admin_connection() as connection:
-            connection.execute(
-                "insert into platform_control.hr_execution_cutover "
-                "(phase,epoch,transition_request_id) values "
-                "('legacy',1,'11111111-1111-4111-8111-111111111111')"
-            )
             connection.execute(
                 "revoke execute on function "
                 "platform_control.transition_hr_execution_cutover_v102(text,uuid) "

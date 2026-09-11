@@ -1,0 +1,7 @@
+
+> orbbec-agent-platform-webui@0.1.0 build
+> tsc -b && vite build
+
+src/workspaces/hr/HrWorkspacePage.tsx(98,65): error TS2322: Type '{ account: Account; onSelect: (value: any) => void; }' is not assignable to type 'IntrinsicAttributes & { account: Account; api?: { listPositions(filters: { query?: string | undefined; source?: PositionSource | undefined; internalStatus?: InternalPositionStatus | undefined; cursor?: string | undefined; limit?: number | undefined; }, signal?: AbortSignal | undefined): Promise<...>; ... 10 more ......'.
+  Property 'onSelect' does not exist on type 'IntrinsicAttributes & { account: Account; api?: { listPositions(filters: { query?: string | undefined; source?: PositionSource | undefined; internalStatus?: InternalPositionStatus | undefined; cursor?: string | undefined; limit?: number | undefined; }, signal?: AbortSignal | undefined): Promise<...>; ... 10 more ......'.
+src/workspaces/hr/HrWorkspacePage.tsx(98,75): error TS7006: Parameter 'value' implicitly has an 'any' type.

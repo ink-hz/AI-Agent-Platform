@@ -1,0 +1,32 @@
+F
+=================================== FAILURES ===================================
+_________ test_member_conversation_payloads_omit_internal_mission_ids __________
+
+conversation_database = ({'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'pla...nt_platform_control', ...}, UUID('44783740-2bbb-4dd9-a12c-c202938c5ed7'), UUID('2b22e721-9515-420f-97c0-37480135e413'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+
+    @pytest.mark.postgres
+    def test_member_conversation_payloads_omit_internal_mission_ids(
+        conversation_database,
+        repository,
+    ) -> None:
+        _environment, owner, _ = conversation_database
+        app, auth, _agent_use = _app(owner, repository)
+        client = TestClient(app)
+
+        started = _post(
+            client,
+            auth,
+            "/api/v1/agents/fae-bot/conversations",
+            "定义候选人画像",
+        )
+
+>       assert started.status_code == 201
+E       assert 403 == 201
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+backend/tests/test_agent_brain_conversation_api.py:252: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_agent_brain_conversation_api.py::test_member_conversation_payloads_omit_internal_mission_ids
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 1 warning in 1.75s

@@ -1006,10 +1006,9 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
     chatHost?.classList.contains("is-focused"), JSON.stringify(requests),
   ).toBe(true));
 
-  await follow(container, "全景分析");
-  await waitFor(() => expect(container.textContent).toContain("全景招聘分析已完成"));
-  expect(container.textContent).toContain("示例光学甲公开招聘研发岗位");
-  expect(container.textContent).toContain("两家公司持续投入精密结构方向");
+  await follow(container, "HR 情报");
+  await waitFor(() => expect(window.location.pathname).toBe("/hr/panorama"));
+  expect(container.textContent).toContain("HR 情报");
   expectSafeUi(container);
 
   await follow(container, "对话");
@@ -1143,8 +1142,8 @@ it("reopens the combined P0 results without losing the mounted recruiting conver
     'button[aria-label="关闭岗位资料"]',
   )!.click());
   await settle();
-  await follow(container, "全景分析");
-  await waitFor(() => expect(container.textContent).toContain("全景招聘分析已完成"));
+  await follow(container, "HR 情报");
+  await waitFor(() => expect(window.location.pathname).toBe("/hr/panorama"));
   expectSafeUi(container);
   expect(requests.some((request) => request.startsWith("POST /api/hr/panorama/")))
     .toBe(false);

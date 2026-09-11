@@ -1,17 +1,18 @@
 """Disposable local PostgreSQL; no existing service or business data is used."""
-from contextlib import contextmanager
-from dataclasses import dataclass, field
-from pathlib import Path
 import base64
 import json
 import os
-import shutil
-import socket
 import subprocess
 import tempfile
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from uuid import uuid4
+
 import psycopg
-from psycopg import sql
 from app.control_plane.migrate import migrate_control_database
+from psycopg import sql
+
 
 @dataclass
 class HrTestDatabase:
@@ -24,7 +25,9 @@ class HrTestDatabase:
         return psycopg.connect(self.admin_dsn)
 
 @contextmanager
-def hr_agent_database(*, migrate_hr=True):
+def hr_agent_database(*, migrate_hr=True, cutover_phase="cloud"):
+    if cutover_phase not in {"legacy", "cloud"}:
+        raise ValueError("test cutover phase invalid")
     binary=Path(os.environ.get('HR_TEST_POSTGRES_BIN','/opt/homebrew/opt/postgresql@17/bin'))
     if not (binary/'initdb').is_file():
         raise RuntimeError('local PostgreSQL binaries required for HR tests')
@@ -48,7 +51,22 @@ def hr_agent_database(*, migrate_hr=True):
             migrations=Path(__file__).parents[1]/'control_migrations'
             migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
             if migrate_hr:
+                migrate_control_database(db.migrator_dsn,migrations/'hr_web',owner_role='platform_control_owner')
                 migrate_control_database(db.migrator_dsn,migrations/'hr_agent',owner_role='platform_control_owner')
+                with db.admin_connection() as connection:
+                    connection.execute(
+                        "select platform_control.initialize_hr_execution_cutover_v102(%s)",
+                        (uuid4(),),
+                    )
+                    if cutover_phase == "cloud":
+                        connection.execute(
+                            "select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)",
+                            (uuid4(),),
+                        )
+                        connection.execute(
+                            "select platform_control.transition_hr_execution_cutover_v102('cloud',%s)",
+                            (uuid4(),),
+                        )
             yield db
         finally:
             subprocess.run([str(binary/'pg_ctl'),'-D',str(data),'-m','immediate','-w','stop'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)

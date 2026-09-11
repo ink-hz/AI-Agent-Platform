@@ -16,11 +16,12 @@ from test_agent_brain_conversation_repository import (
 from test_control_plane_migration import control_database  # noqa: F401
 
 
-def _v2_client(owner: UUID, repository):
+def _v2_client(owner: UUID, repository, *, agent_use=None):
     service = ConversationCommandService(repository, v2_enabled=True)
     app, auth, agent_use = _app(
         owner,
         repository,
+        agent_use=agent_use,
         command_service=service,
     )
     return TestClient(app), auth, agent_use
@@ -282,12 +283,15 @@ def test_direct_agent_conversation_still_uses_v1_mission_path(
     repository,
 ) -> None:
     environment, owner, _other = conversation_database
-    client, auth, _agent_use = _v2_client(owner, repository)
+    from test_agent_brain_conversation_api import _fae_agent_use
+    client, auth, _agent_use = _v2_client(
+        owner, repository, agent_use=_fae_agent_use()
+    )
 
     response = _post(
         client,
         auth,
-        "/api/v1/agents/hr-bot/conversations",
+        "/api/v1/agents/fae-bot/conversations",
         "直接评估简历",
     )
 

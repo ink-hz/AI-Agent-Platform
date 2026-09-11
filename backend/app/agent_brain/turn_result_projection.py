@@ -9,7 +9,8 @@ from uuid import uuid4
 
 from app.attachments.result_artifact_recovery import freeze_artifact_intents
 from app.execution_relay.content_crypto import SealedContent
-from app.execution_relay.contracts_v5 import CoreChatEventV5, parse_v5_event
+from app.execution_relay.contracts_v5 import CoreChatEventV5
+from app.execution_relay.core_contract import parse_core_event
 
 from .conversation_repository import event_subject, message_subject
 from .turn_attempts import TerminalEvidence
@@ -54,7 +55,7 @@ class TurnResultProjector:
                 bytes(source["payload_ciphertext"]), source["encryption_key_version"]
             ),
         )
-        persisted = parse_v5_event(json.loads(payload["raw"]))
+        persisted = parse_core_event(json.loads(payload["raw"]))
         if persisted != event or source["event_type"] != event.event_type:
             raise ValueError("authenticated source mismatch")
         if event.event_type != "result":
@@ -168,7 +169,7 @@ class TurnResultProjector:
                 bytes(row["payload_ciphertext"]), row["encryption_key_version"]
             ),
         )
-        marker = parse_v5_event(json.loads(stored["raw"]))
+        marker = parse_core_event(json.loads(stored["raw"]))
         if (
             marker.event_type != "raw_progress"
             or (marker.run_id, marker.command_id, marker.attempt_id, marker.lease_epoch)

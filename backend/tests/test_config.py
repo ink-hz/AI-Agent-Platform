@@ -624,6 +624,8 @@ def test_hr_web_worker_enables_without_brain_or_other_execution_changes(monkeypa
     monkeypatch.setenv("PLATFORM_DIRECT_AGENT_ENABLED", "1")
     monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "0")
     monkeypatch.setenv("PLATFORM_HR_WEB_WORKER_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_HR_ROLE_PACKAGE_ROOT", str(tmp_path / "roles"))
+    monkeypatch.setenv("PLATFORM_HR_ROLE_PACKAGE_COMMIT", "a" * 40)
     config = load_config()
     assert config.hr_web_worker_enabled and config.direct_agent_enabled and config.execution_relay_enabled
     assert not config.agent_brain_enabled

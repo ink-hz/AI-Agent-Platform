@@ -12,7 +12,7 @@ from app.agent_brain.direct_command_binding import BindingRejected
 from app.agent_brain.turn_attempts import LeaseRejected
 
 from .content_crypto import ContentCryptoError
-from .contracts_v5 import parse_v5_event
+from .core_contract import parse_core_event
 from .readiness_v5 import record_observation
 from .recovery_v5 import record_recovery, recovery_work
 from .source_v5 import accept_source
@@ -113,7 +113,7 @@ def attach_v5_routes(router, authenticated, bindings):
             # Validate the entire envelope first. Commit each original source with
             # the existing identity/sequence checks; a lost partial ACK is replayed
             # safely from its original bytes, never by regenerating an event.
-            parsed = [parse_v5_event(json.loads(item)) for item in value["events"]]
+            parsed = [parse_core_event(json.loads(item)) for item in value["events"]]
             if any(item.run_id != run_id or item.seq != parsed[0].seq + index
                 for index, item in enumerate(parsed)):
                 raise ValueError("v5 event batch invalid")

@@ -1,0 +1,407 @@
+....................................................FF.................. [ 35%]
+...................................F.................................... [ 71%]
+..........................................................               [100%]
+=================================== FAILURES ===================================
+_________________ test_hr_web_worker_requires_direct_and_relay _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105a6e190>
+
+    def test_hr_web_worker_requires_direct_and_relay(monkeypatch):
+        monkeypatch.setenv("PLATFORM_HR_WEB_WORKER_ENABLED", "1")
+        monkeypatch.setenv("PLATFORM_DIRECT_AGENT_ENABLED", "0")
+        monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "0")
+>       with pytest.raises(RuntimeError, match="requires direct Agent and Relay"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'requires direct Agent and Relay'
+E         Actual message: 'HR v6 requires its immutable role package'
+
+backend/tests/test_config.py:616: AssertionError
+_____ test_hr_web_worker_enables_without_brain_or_other_execution_changes ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105a6e8d0>
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9391/test_hr_web_worker_enables_wit0')
+
+    def test_hr_web_worker_enables_without_brain_or_other_execution_changes(monkeypatch, tmp_path):
+        _enable_production_identity(monkeypatch, tmp_path)
+        monkeypatch.setenv("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", _content_keyring(tmp_path / "content-keyring.json"))
+        monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "1")
+        monkeypatch.setenv("PLATFORM_DIRECT_AGENT_ENABLED", "1")
+        monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "0")
+        monkeypatch.setenv("PLATFORM_HR_WEB_WORKER_ENABLED", "1")
+>       config = load_config()
+                 ^^^^^^^^^^^^^
+
+backend/tests/test_config.py:627: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_config() -> Config:
+        (
+            execution_relay_enabled,
+            content_encryption_keyring_file,
+            execution_relay_lease_seconds,
+            execution_relay_max_body_bytes,
+        ) = _execution_relay_settings()
+        (
+            environment,
+            partner_provider_kind,
+            partner_callback_method,
+            partner_callback_path,
+            partner_identity_enabled,
+            partner_provider_release_file,
+            partner_provider_release_sha256,
+        ) = _partner_provider_settings()
+        config = Config(
+            deployment_mode=os.getenv("PLATFORM_DEPLOYMENT_MODE", "local"),
+            cloud_auth_mode=os.getenv("PLATFORM_CLOUD_AUTH_MODE", "ssh-tunnel"),
+            registry_path=os.getenv("PLATFORM_REGISTRY_PATH", "../registry.yaml"),
+            metabot_contract_path=os.getenv(
+                "PLATFORM_METABOT_CONTRACT_PATH",
+                "/Users/neo/Developer/work/Orbbec-Agent-Team/deploy/metabot.runtime-contract.json",
+            ),
+            poll_interval_seconds=float(os.getenv("PLATFORM_POLL_INTERVAL", "30")),
+            cluster_poll_interval_seconds=float(
+                os.getenv("PLATFORM_CLUSTER_POLL_INTERVAL", "10")
+            ),
+            probe_timeout_seconds=float(os.getenv("PLATFORM_PROBE_TIMEOUT", "3")),
+            static_dir=os.getenv("PLATFORM_STATIC_DIR", "app/static"),
+            host=os.getenv("PLATFORM_HOST", "0.0.0.0"),
+            port=int(os.getenv("PLATFORM_PORT", "80")),
+            flywheel_enabled=os.getenv("PLATFORM_FLYWHEEL_ENABLED", "1") not in {
+                "0",
+                "false",
+                "False",
+            },
+            flywheel_database_url=os.getenv("PLATFORM_FLYWHEEL_DATABASE_URL"),
+            flywheel_database_url_file=os.getenv(
+                "PLATFORM_FLYWHEEL_DATABASE_URL_FILE",
+                str(DEFAULT_SECRETS_DIR / "flywheel-analyst-database-url"),
+            ),
+            review_enabled=os.getenv("PLATFORM_REVIEW_ENABLED", "1") not in {
+                "0",
+                "false",
+                "False",
+            },
+            review_database_url=os.getenv("PLATFORM_REVIEW_DATABASE_URL"),
+            review_database_url_file=os.getenv(
+                "PLATFORM_REVIEW_DATABASE_URL_FILE",
+                str(DEFAULT_SECRETS_DIR / "platform-review-writer-database-url"),
+            ),
+            review_request_timeout_seconds=float(
+                os.getenv("PLATFORM_REVIEW_REQUEST_TIMEOUT", "1200")
+            ),
+            usage_cache_seconds=float(os.getenv("PLATFORM_USAGE_CACHE_SECONDS", "60")),
+            active_window_minutes=int(os.getenv("PLATFORM_ACTIVE_WINDOW_MINUTES", "15")),
+            sync_database_url=os.getenv("PLATFORM_SYNC_DATABASE_URL"),
+            sync_database_url_file=os.getenv(
+                "PLATFORM_SYNC_DATABASE_URL_FILE",
+                str(DEFAULT_SECRETS_DIR / "platform-sync-writer-database-url"),
+            ),
+            remote_ssh_host=os.getenv(
+                "PLATFORM_REMOTE_SSH_HOST",
+                "root@47.106.112.69",
+            ),
+            remote_ssh_key_path=os.getenv(
+                "PLATFORM_REMOTE_SSH_KEY_PATH",
+                "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+            ),
+            remote_poll_interval_seconds=float(
+                os.getenv("PLATFORM_REMOTE_POLL_INTERVAL", "60")
+            ),
+            feedback_closure_outbox_dir=_feedback_closure_outbox_dir(),
+            operations_database_path=os.getenv(
+                "PLATFORM_OPERATIONS_DATABASE_PATH", "../data/platform-operations.db"
+            ),
+            operations_usage_interval_seconds=float(
+                os.getenv("PLATFORM_OPERATIONS_USAGE_INTERVAL", "300")
+            ),
+            operations_execution_interval_seconds=float(
+                os.getenv("PLATFORM_OPERATIONS_EXECUTION_INTERVAL", "300")
+            ),
+            operations_lifecycle_interval_seconds=float(
+                os.getenv("PLATFORM_OPERATIONS_LIFECYCLE_INTERVAL", "600")
+            ),
+            attachment_enabled=_enabled("PLATFORM_ATTACHMENT_ENABLED"),
+            conversation_attachment_enabled=_enabled(
+                "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED"
+            ),
+            attachment_s3_endpoint=os.getenv(
+                "PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://127.0.0.1:9000"
+            ),
+            attachment_s3_bucket=os.getenv(
+                "PLATFORM_ATTACHMENT_S3_BUCKET", "orbbec-agent-attachments"
+            ),
+            attachment_s3_access_key_file=os.getenv(
+                "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
+                str(DEFAULT_SECRETS_DIR / "attachment-s3-access-key"),
+            ),
+            attachment_s3_secret_key_file=os.getenv(
+                "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+                str(DEFAULT_SECRETS_DIR / "attachment-s3-secret-key"),
+            ),
+            attachment_control_database_url_file=os.getenv(
+                "PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE",
+                str(DEFAULT_SECRETS_DIR / "platform-control-app-database-url"),
+            ),
+            attachment_upload_ttl_seconds=_bounded_attachment_int(
+                "PLATFORM_ATTACHMENT_UPLOAD_TTL_SECONDS", 24 * 60 * 60, 24 * 60 * 60
+            ),
+            attachment_max_file_bytes=_bounded_attachment_int(
+                "PLATFORM_ATTACHMENT_MAX_FILE_BYTES", 50 * 1024 * 1024, 50 * 1024 * 1024
+            ),
+            attachment_max_message_files=_bounded_attachment_int(
+                "PLATFORM_ATTACHMENT_MAX_MESSAGE_FILES", 5, 5
+            ),
+            attachment_max_message_bytes=_bounded_attachment_int(
+                "PLATFORM_ATTACHMENT_MAX_MESSAGE_BYTES", 50 * 1024 * 1024, 50 * 1024 * 1024
+            ),
+            attachment_max_conversation_files=_bounded_attachment_int(
+                "PLATFORM_ATTACHMENT_MAX_CONVERSATION_FILES", 50, 50
+            ),
+            attachment_max_conversation_bytes=_bounded_attachment_int(
+                "PLATFORM_ATTACHMENT_MAX_CONVERSATION_BYTES", 500 * 1024 * 1024, 500 * 1024 * 1024
+            ),
+            attachment_max_task_output_files=_bounded_attachment_int(
+                "PLATFORM_ATTACHMENT_MAX_TASK_OUTPUT_FILES", 20, 20
+            ),
+            attachment_max_task_output_bytes=_bounded_attachment_int(
+                "PLATFORM_ATTACHMENT_MAX_TASK_OUTPUT_BYTES", 250 * 1024 * 1024, 250 * 1024 * 1024
+            ),
+            attachment_ticket_seconds=int(
+                os.getenv("PLATFORM_ATTACHMENT_TICKET_SECONDS", "300")
+            ),
+            trusted_attachment_proxy=_enabled("PLATFORM_TRUSTED_ATTACHMENT_PROXY"),
+            replica_database_url_file=os.getenv(
+                "PLATFORM_REPLICA_DATABASE_URL_FILE",
+                str(DEFAULT_SECRETS_DIR / "replica-database-url"),
+            ),
+            replica_encryption_key_file=os.getenv(
+                "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE",
+                str(DEFAULT_SECRETS_DIR / "replica-encryption-key"),
+            ),
+            replica_signing_public_key_file=os.getenv(
+                "PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE",
+                str(DEFAULT_SECRETS_DIR / "replica-signing-public-key"),
+            ),
+            replica_stale_seconds=int(
+                os.getenv("PLATFORM_REPLICA_STALE_SECONDS", "900")
+            ),
+            execution_relay_enabled=execution_relay_enabled,
+            direct_agent_enabled=_enabled("PLATFORM_DIRECT_AGENT_ENABLED"),
+            agent_brain_enabled=_enabled("PLATFORM_AGENT_BRAIN_ENABLED"),
+            agent_brain_v2_enabled=_enabled("PLATFORM_AGENT_BRAIN_V2_ENABLED"),
+            brain_model_enabled=_enabled("PLATFORM_BRAIN_MODEL_ENABLED"),
+            brain_provider_base_url=os.getenv(
+                "PLATFORM_BRAIN_PROVIDER_BASE_URL", ""
+            ).strip(),
+            brain_provider_api_key_file=os.getenv(
+                "PLATFORM_BRAIN_PROVIDER_API_KEY_FILE", ""
+            ).strip(),
+            brain_model_manifest_path=os.getenv(
+                "PLATFORM_BRAIN_MODEL_MANIFEST_PATH", ""
+            ).strip(),
+            office_recipient_directory_enabled=_enabled(
+                "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"
+            ),
+            office_recipient_bearer_file=os.getenv(
+                "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", ""
+            ).strip(),
+            voc_extension_enabled=_enabled("PLATFORM_VOC_EXTENSION_ENABLED"),
+            voc_extension_base_url=os.getenv(
+                "PLATFORM_VOC_EXTENSION_BASE_URL", "http://127.0.0.1:18130"
+            ).strip(),
+            voc_extension_signing_key_file=os.getenv(
+                "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE",
+                str(DEFAULT_SECRETS_DIR / "voc-extension-signing-key"),
+            ).strip(),
+            voc_extension_timeout_seconds=float(
+                os.getenv("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "10")
+            ),
+            content_encryption_keyring_file=content_encryption_keyring_file,
+            execution_relay_lease_seconds=execution_relay_lease_seconds,
+            execution_relay_max_body_bytes=execution_relay_max_body_bytes,
+            environment=environment,
+            partner_identity_enabled=partner_identity_enabled,
+            partner_provider_kind=partner_provider_kind,
+            partner_provider_release_file=partner_provider_release_file,
+            partner_provider_release_sha256=partner_provider_release_sha256,
+            partner_callback_method=partner_callback_method,
+            partner_callback_path=partner_callback_path,
+            control_plane=_load_control_plane_config(),
+            hr_agent_settings=load_hr_agent_settings(os.environ),
+            hr_role_package_root=os.getenv("PLATFORM_HR_ROLE_PACKAGE_ROOT", "").strip(),
+            hr_role_package_commit=os.getenv("PLATFORM_HR_ROLE_PACKAGE_COMMIT", "").strip(),
+            hr_knowledge_root=os.getenv("PLATFORM_HR_KNOWLEDGE_ROOT", "").strip(),
+            hr_knowledge_agent_root=os.getenv("PLATFORM_HR_KNOWLEDGE_AGENT_ROOT", "").strip(),
+            hr_knowledge_commit=os.getenv("PLATFORM_HR_KNOWLEDGE_COMMIT", "").strip(),
+            hr_web_worker_enabled=_strict_flag("PLATFORM_HR_WEB_WORKER_ENABLED", "hr_web_worker_flag_invalid"),
+        )
+        if config.hr_web_worker_enabled and (not config.hr_role_package_root or not re.fullmatch(r"[a-f0-9]{40}",config.hr_role_package_commit)):
+>           raise RuntimeError("HR v6 requires its immutable role package")
+E           RuntimeError: HR v6 requires its immutable role package
+
+backend/app/config.py:1031: RuntimeError
+_____________ test_compose_is_isolated_loopback_only_and_hardened ______________
+
+    def test_compose_is_isolated_loopback_only_and_hardened():
+        value = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
+        services = value["services"]
+    
+        assert set(services) == {
+            "platform-api",
+            "platform-attachment-storage-init",
+            "platform-attachments",
+            "platform-loopback",
+            "platform-minio",
+            "platform-postgres",
+            "platform-directory",
+            "platform-dingtalk-stream",
+            "platform-brain",
+            "platform-hr-web-worker",
+            "platform-hr-agent-worker",
+        }
+        hr_worker = services["platform-hr-agent-worker"]
+        assert hr_worker["profiles"] == ["hr-agent"]
+        assert "ports" not in hr_worker
+        assert hr_worker["read_only"] is True
+        assert hr_worker["cap_drop"] == ["ALL"]
+        assert hr_worker["security_opt"] == ["no-new-privileges:true"]
+        assert hr_worker["user"] == "10001:10001"
+        assert "ports" not in services["platform-postgres"]
+        assert "ports" not in services["platform-api"]
+        assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
+        assert services["platform-loopback"]["command"] == [
+            "uvicorn",
+            "app.cloud_replica.loopback_proxy:create_app",
+            "--factory",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8080",
+            "--no-proxy-headers",
+        ]
+        assert services["platform-loopback"]["volumes"] == [
+            {
+                "type": "bind",
+                "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+                "target": "/run/office-recipient/platform-office-recipient-bearer",
+                "read_only": True,
+                "bind": {"create_host_path": False},
+            }
+        ]
+        assert services["platform-loopback"]["read_only"] is True
+        assert services["platform-loopback"]["cap_drop"] == ["ALL"]
+        assert set(services["platform-loopback"]["networks"]) == {
+            "platform-edge",
+            "platform-internal",
+        }
+        assert (
+            services["platform-postgres"]["networks"]["platform-internal"]["ipv4_address"]
+            == "172.30.0.2"
+        )
+        assert (
+            services["platform-loopback"]["networks"]["platform-internal"]["ipv4_address"]
+            == "172.30.0.3"
+        )
+        assert (
+            services["platform-api"]["networks"]["platform-internal"]["ipv4_address"]
+            == "172.30.0.4"
+        )
+        assert services["platform-api"]["read_only"] is True
+        assert services["platform-api"]["cap_drop"] == ["ALL"]
+        assert services["platform-api"]["security_opt"] == ["no-new-privileges:true"]
+        assert services["platform-api"]["user"] not in {"0", "root", "0:0"}
+        assert (
+            services["platform-api"]["environment"]["PLATFORM_DEPLOYMENT_MODE"]
+            == "cloud-replica"
+        )
+        assert (
+            services["platform-api"]["environment"]["PLATFORM_CLOUD_AUTH_MODE"]
+            == "dingtalk"
+        )
+        assert services["platform-api"]["environment"]["PLATFORM_HOST"] == "127.0.0.1"
+        assert services["platform-api"]["environment"]["PLATFORM_REVIEW_ENABLED"] == "0"
+        assert services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_ENABLED"] == "0"
+        assert (
+            services["platform-api"]["environment"][
+                "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED"
+            ]
+            == "1"
+        )
+        assert (
+            services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_S3_ENDPOINT"]
+            == "http://platform-minio:9000"
+        )
+        assert (
+            services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_ENABLED"] == "1"
+        )
+        assert (
+            services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_BASE_URL"]
+            == "http://172.29.0.3:18130"
+        )
+        assert (
+            services["platform-api"]["environment"][
+                "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE"
+            ]
+            == "/run/secrets/voc-extension-signing-key"
+        )
+        assert (
+            services["platform-api"]["environment"]["PLATFORM_VOC_SERVICE_BEARER_FILE"]
+            == "/run/secrets/voc-service-bearer"
+        )
+        assert (
+            services["platform-api"]["environment"]["PLATFORM_AGENT_BRAIN_V2_ENABLED"]
+            == "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
+        )
+        assert "ports" not in services["platform-brain"]
+        assert services["platform-brain"]["read_only"] is True
+        assert services["platform-brain"]["user"] == "10001:10001"
+        assert services["platform-brain"]["cap_drop"] == ["ALL"]
+        assert services["platform-brain"]["security_opt"] == ["no-new-privileges:true"]
+        assert set(services["platform-brain"]["networks"]) == {
+            "platform-edge",
+            "platform-internal",
+            "voc-extension",
+        }
+        assert (
+            services["platform-brain"]["networks"]["voc-extension"]["ipv4_address"]
+            == "172.29.0.4"
+        )
+        assert (
+            services["platform-brain"]["environment"]["PLATFORM_VOC_EXTENSION_BASE_URL"]
+            == "http://172.29.0.3:18130"
+        )
+        assert (
+            services["platform-brain"]["environment"][
+                "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE"
+            ]
+            == "/run/secrets/voc-extension-signing-key"
+        )
+        assert (
+            services["platform-api"]["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"]
+            == "172.30.0.3/32"
+        )
+        assert (
+            services["platform-loopback"]["environment"][
+                "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS"
+            ]
+            == "127.0.0.1/32,172.31.0.1/32,172.31.0.8/32"
+        )
+>       assert services["platform-api"]["volumes"] == [
+            "platform-api-secrets:/run/secrets:ro",
+            "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
+            {
+                "type": "bind",
+                "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+                "target": "/run/office-recipient/platform-office-recipient-bearer",
+                "read_only": True,
+                "bind": {"create_host_path": False},
+            },
+        ]
+E       AssertionError: assert ['platform-ap...': True, ...}] == ['platform-ap...': True, ...}]
+E         
+E         At index 2 diff: '/data/orbbec-agent-platform/hr-role-packages:/data/agent-platform/hr-role-packages:ro' != {'type': 'bind', 'source': '/opt/orbbec-agent-platform/private/platform-office-recipient-bearer', 'target': '/run/office-recipient/platform-office-recipient-bearer', 'read_only': True, 'bind': {'create_host_path': False}}
+E         Left contains 2 more items, first extra item: '/data/orbbec-agent-platform/hr-knowledge:/data/agent-platform/hr-knowledge:ro'
+E         Use -v to get more diff
+
+backend/tests/test_cloud_deployment.py:184: AssertionError
+3 failed, 199 passed in 57.41s

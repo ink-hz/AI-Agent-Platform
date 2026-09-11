@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-08",
+  "model_requested": "claude-opus-5",
+  "cli_version": "2.1.258",
+  "hr_instructions_commit": "e791caa",
+  "source_commit": "6cea3c8877c3c66e5e3310e22f10b72032cbeaab",
+  "baseline": {
+    "returncode": 0,
+    "elapsed_seconds": 46.21
+  },
+  "with_knowledge": {
+    "returncode": 0,
+    "elapsed_seconds": 46.45
+  },
+  "observed_tool_calls": [
+    {
+      "id": "toolu_bdrk_013GXC1wuL1Ju4Xo5PHzqTPq",
+      "tool": "Read",
+      "file": "requirement-calibration.md"
+    },
+    {
+      "id": "toolu_bdrk_01AgHkju7TivFFFoeTuxMe7D",
+      "tool": "Read",
+      "file": "sourcing-and-transfer.md"
+    },
+    {
+      "id": "toolu_bdrk_01HjdERjw6WDGBxotBbCn2eL",
+      "tool": "Read",
+      "file": "comparison-and-learning.md"
+    }
+  ],
+  "observed_tool_results": [
+    {
+      "id": "toolu_bdrk_013GXC1wuL1Ju4Xo5PHzqTPq",
+      "is_error": false
+    },
+    {
+      "id": "toolu_bdrk_01AgHkju7TivFFFoeTuxMe7D",
+      "is_error": false
+    },
+    {
+      "id": "toolu_bdrk_01HjdERjw6WDGBxotBbCn2eL",
+      "is_error": false
+    }
+  ],
+  "production_validation": false,
+  "sample": "one paired run of three synthetic cases",
+  "artifacts_sha256": {
+    "input.md": "2b78b90ac173ff25206645cafd58e41a04bfba844c0464c7d6a888c3bdb7b715",
+    "with-knowledge.md": "14d37f4b50fd6b3cab189412067046247418a6ce7f8dd56e9444f9df88880abf",
+    "baseline.md": "b529927db6bf9625e67e41196bbc605839e7e24decd2cb30eeca5070be5dd91e"
+  }
+}

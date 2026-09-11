@@ -18,6 +18,7 @@ import type {
   TurnSnapshot,
 } from "../conversationTypes";
 import { ConversationPage, type ConversationPageClient } from "./ConversationPage";
+import type { HrIntelligenceReference } from "../workspaces/hr/hrIntelligenceReference";
 
 
 const conversationId = "8c13c965-1b60-472e-b275-199987d1d109";
@@ -473,6 +474,76 @@ describe("ConversationPage", () => {
 
     expect(createMessageSubmission).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows removable selected intelligence and freezes its serialized text across a failed retry", async () => {
+    const reference: HrIntelligenceReference = {
+      key: "fact:bundle-7:unit-2:fact-9", bundleId: "bundle-7", companyKey: "acme",
+      companyName: "Acme Robotics", label: "海外岗位增长", generatedAt: "2026-09-08T06:00:00Z",
+      excerpt: "招聘岗位主要分布于深圳。", sourceUrls: ["https://example.com/jobs/9"],
+      unitId: "unit-2", claimType: "fact", localId: "fact-9",
+    };
+    const send = vi.fn().mockRejectedValueOnce(new TypeError("offline")).mockResolvedValueOnce(submissionResult("继续"));
+    const createMessageSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
+    const onRemove = vi.fn();
+    const onSubmitted = vi.fn();
+    await act(async () => root.render(<ConversationPage
+      account={account} client={client({ createMessageSubmission })} conversationId={conversationId}
+      intelligenceReferences={[reference]} onRemoveIntelligenceReference={onRemove}
+      onIntelligenceReferencesSubmitted={onSubmitted}
+    />));
+
+    expect(container.textContent).toContain("Acme Robotics · 海外岗位增长");
+    expect(container.querySelector<HTMLButtonElement>(".conversation-send")?.disabled).toBe(false);
+    await setTextarea(container, "请继续分析");
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-retry")?.click());
+
+    expect(createMessageSubmission).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    const submitted = createMessageSubmission.mock.calls[0]?.[1] as string;
+    expect(submitted).toContain("请继续分析\n\n---\n");
+    expect(submitted).toContain('bundle_id: "bundle-7"');
+    expect(onSubmitted).toHaveBeenCalledWith([reference.key]);
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "移除")?.click());
+    expect(onRemove).toHaveBeenCalledWith(reference.key);
+  });
+
+  it("shows topic material with a pinned return link and waits for explicit send", async () => {
+    const reference: HrIntelligenceReference = { kind: "topic", key: "topic-ref", bundleId: "bundle-7", topicId: "study", topicTitle: "人才布局", question: "样本说明什么？", scope: { description: "公开岗位", companyKeys: ["acme"], tracks: [] }, analysisState: "limited", limitations: ["样本有限"], label: "专题判断", generatedAt: "2026-09-08T06:00:00Z", excerpt: "研发岗位集中", sourceUrls: [] };
+    const send = vi.fn().mockResolvedValue(submissionResult("参考材料"));
+    const createMessageSubmission = vi.fn().mockReturnValue({ idempotencyKey: "topic-selection", send });
+    await act(async () => root.render(<ConversationPage account={account} client={client({ createMessageSubmission })} conversationId={conversationId} intelligenceReferences={[reference]} />));
+    expect(container.textContent).toContain("人才布局 · 专题判断");
+    expect(container.querySelector('[aria-label="已选 HR 情报"] a')?.getAttribute("href")).toBe("/hr/panorama?bundle_id=bundle-7&view=topics&topic=study");
+    expect(createMessageSubmission).not.toHaveBeenCalled();
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")!.click());
+    expect(createMessageSubmission.mock.calls[0]?.[1]).toContain('topic_id: "study"');
+    expect(createMessageSubmission.mock.calls[0]?.[1]).toContain('limitations: ["样本有限"]');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("submits a selected intelligence reference without typed text", async () => {
+    const reference: HrIntelligenceReference = { key: "ref-only", bundleId: "bundle-7", companyKey: "acme", companyName: "Acme", label: "公司判断", generatedAt: "2026-09-08T06:00:00Z", excerpt: "研发岗位增加。", sourceUrls: ["https://example.com/source"] };
+    const send = vi.fn().mockResolvedValue(submissionResult("参考材料"));
+    const createMessageSubmission = vi.fn().mockReturnValue({ idempotencyKey: "reference-only", send });
+    await act(async () => root.render(<ConversationPage account={account} client={client({ createMessageSubmission })} conversationId={conversationId} intelligenceReferences={[reference]} />));
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")!.click());
+    expect(createMessageSubmission).toHaveBeenCalledTimes(1);
+    expect(createMessageSubmission.mock.calls[0]?.[1]).toEqual(expect.stringContaining('reference_key: "ref-only"'));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects reference plus text exceeding the serialized 32 KiB limit", async () => {
+    const reference: HrIntelligenceReference = { key: "ref-size", bundleId: "bundle-7", companyKey: "acme", companyName: "Acme", label: "公司判断", generatedAt: "2026-09-08T06:00:00Z", excerpt: "材料".repeat(1000), sourceUrls: [] };
+    const createMessageSubmission = vi.fn();
+    await act(async () => root.render(<ConversationPage account={account} client={client({ createMessageSubmission })} conversationId={conversationId} intelligenceReferences={[reference]} />));
+    await setTextarea(container, "a".repeat(30 * 1024));
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")!.click());
+    expect(createMessageSubmission).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("正文与所选情报合计超过 32 KiB");
   });
 
   it("stops the current turn without hiding the conversation", async () => {

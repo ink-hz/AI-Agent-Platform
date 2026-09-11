@@ -107,6 +107,11 @@ class Config:
     control_plane: ControlPlaneConfig
     hr_web_worker_enabled: bool = False
     hr_agent_settings: HrAgentSettings = field(default_factory=HrAgentSettings)
+    hr_role_package_root: str = ""
+    hr_role_package_commit: str = ""
+    hr_knowledge_root: str = ""
+    hr_knowledge_agent_root: str = ""
+    hr_knowledge_commit: str = ""
 
 
 def _enabled(name: str, default: str = "0") -> bool:
@@ -1015,13 +1020,25 @@ def load_config() -> Config:
         partner_callback_path=partner_callback_path,
         control_plane=_load_control_plane_config(),
         hr_agent_settings=load_hr_agent_settings(os.environ),
+        hr_role_package_root=os.getenv("PLATFORM_HR_ROLE_PACKAGE_ROOT", "").strip(),
+        hr_role_package_commit=os.getenv("PLATFORM_HR_ROLE_PACKAGE_COMMIT", "").strip(),
+        hr_knowledge_root=os.getenv("PLATFORM_HR_KNOWLEDGE_ROOT", "").strip(),
+        hr_knowledge_agent_root=os.getenv("PLATFORM_HR_KNOWLEDGE_AGENT_ROOT", "").strip(),
+        hr_knowledge_commit=os.getenv("PLATFORM_HR_KNOWLEDGE_COMMIT", "").strip(),
         hr_web_worker_enabled=_strict_flag("PLATFORM_HR_WEB_WORKER_ENABLED", "hr_web_worker_flag_invalid"),
     )
+    knowledge_settings = (config.hr_knowledge_root, config.hr_knowledge_agent_root, config.hr_knowledge_commit)
+    if any(knowledge_settings) and not all(knowledge_settings):
+        raise RuntimeError("HR knowledge configuration must include both roots and commit")
+    if all(knowledge_settings) and not (config.hr_web_worker_enabled or config.hr_agent_settings.enabled):
+        raise RuntimeError("HR knowledge requires an enabled HR runtime")
     _validate_cloud_config(config)
     _validate_attachment_config(config)
     _validate_execution_relay_config(config)
     if config.hr_web_worker_enabled and not (config.execution_relay_enabled and config.direct_agent_enabled):
         raise RuntimeError("HR web worker requires direct Agent and Relay configuration")
+    if config.hr_web_worker_enabled and (not config.hr_role_package_root or not re.fullmatch(r"[a-f0-9]{40}",config.hr_role_package_commit)):
+        raise RuntimeError("HR v6 requires its immutable role package")
     _validate_agent_brain_config(config)
     _validate_brain_model_config(config)
     _validate_office_recipient_directory_config(config)

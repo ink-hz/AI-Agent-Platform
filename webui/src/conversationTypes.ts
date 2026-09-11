@@ -59,10 +59,35 @@ export interface SearchRecovery {
   coverageNote: string | null;
 }
 
+export interface HrTurnScope {
+  positionId: string | null;
+  positionCandidateIds: string[];
+  attachmentIds: string[];
+}
+export interface HrInputResultRef {resultId:string; schemaId:string; contentSha256:string; title:string}
+export interface HrStandardConsent {
+  bodyReviewed?: true;
+  proposalResultId: string;
+  proposalContentSha256: string;
+  expectedContextVersionId: string | null;
+  selectedChangeIds: string[];
+}
+export interface HrComposerDraft { id:string; text:string; positionId?:string|null; standardConsent?:HrStandardConsent; inputResults?:HrInputResultRef[]; positionCandidateIds?:string[]; attachmentIds?:string[] }
 export interface TurnSubmission {
   text: string;
   attachmentIds: string[];
   activeAttachmentIds: string[];
+  userSelectedResources?: HrKnowledgeSelection[];
+  scope?: HrTurnScope;
+  standardConsent?: HrStandardConsent;
+  inputResultRefs?: Omit<HrInputResultRef,"title">[];
+}
+
+export interface HrKnowledgeSelection {
+  sourceCommit: string;
+  id: string;
+  revision: number;
+  sha256: string;
 }
 export type ConversationTurnStatus =
   | "accepted"
@@ -121,6 +146,7 @@ export interface ConversationMessage {
   search_recovery?: SearchRecovery;
   citations?: ConversationCitation[];
   artifact_versions?: ArtifactVersion[];
+  userSelectedResources?: HrKnowledgeSelection[];
 }
 
 export interface ConversationTurn {

@@ -1,0 +1,73 @@
+Release integration worktree: feat/hr-cloud-loop-e-release
+
+Owned merge resolution:
+- backend/app/agent_brain/conversation_context.py
+
+Reviewed auto-merges:
+- backend/app/agent_brain/conversation_repository.py
+- backend/app/agent_brain/conversation_service.py
+- backend/app/agent_brain/direct_admission.py
+- backend/app/hr/candidate_parser_runtime.py
+
+Command:
+python3 -m py_compile backend/app/agent_brain/conversation_context.py backend/app/agent_brain/conversation_repository.py backend/app/agent_brain/conversation_service.py backend/app/agent_brain/direct_admission.py backend/app/hr/candidate_parser_runtime.py
+
+Result: exit 0.
+
+Resolution note: v6/v7 turns retain history only when the frozen HR scope has
+a non-null positionId, and history remains limited to that exact position.
+Unpositioned HR v6 turns, including candidate-parser turns carrying only an
+attachment scope, keep only the current user input and no shared summary. This
+preserves the production frozen scope fields without reintroducing candidate
+history or summary leakage.
+
+Command:
+git diff --check -- backend/app/agent_brain/conversation_context.py backend/app/agent_brain/conversation_repository.py backend/app/agent_brain/conversation_service.py backend/app/agent_brain/direct_admission.py backend/app/hr/candidate_parser_runtime.py
+
+Result: exit 0.
+
+Compatibility fix: context construction detects whether the v6 turn column and
+position binding table exist before composing its query. This keeps non-HR
+traffic working on the legacy schema while using frozen v6/v7 scope data when
+those migrations are present.
+
+Focused isolated regression:
+../hr-cloud-loop-c/backend/.venv/bin/pytest -q backend/tests/test_agent_brain_conversation_context.py::test_non_hr_direct_context_bounds_120_persisted_messages_without_losing_current_input --disable-warnings --maxfail=1
+
+Result: 1 passed in 1.90s.
+
+Focused integration command:
+../hr-cloud-loop-c/backend/.venv/bin/pytest -q backend/tests/test_hr_execution_cutover.py backend/tests/test_hr_turn_scope_v6_database.py backend/tests/test_hr_candidate_parser_runtime.py backend/tests/test_agent_brain_conversation_repository.py backend/tests/test_hr_v6_execution_loop.py backend/tests/test_hr_v7_execution_loop.py --disable-warnings --continue-on-collection-errors
+
+Result: 44 passed, 2 skipped, 2 failed in 5.12s. Both failures are stale
+pre-cutover expectations: candidate_parser_runtime expects a plain string and
+no parser-proof keyword although the v6 implementation sends a scoped
+ConversationTurnSubmission; conversation_repository admits a fresh HR request
+without installing/initializing migration 102 although new HR admission is
+deliberately fail closed. Full output is focused-followup.log. The earlier
+maxfail run (15 passed before the same parser expectation failed) is retained
+in cutover-and-v6-database.log.
+
+The two stale tests were corrected without loosening runtime behavior. Parser
+submission now asserts the attachment-only HrTurnScope and the internal attempt
+proof. The generic replay identity test uses FAE for the initial legacy-schema
+admission; the HR parser context case moved to the real hr_web v6 fixture.
+
+Passing focused v6/cutover command:
+../hr-cloud-loop-c/backend/.venv/bin/pytest -q backend/tests/test_hr_execution_cutover.py backend/tests/test_hr_turn_scope_v6_database.py backend/tests/test_hr_candidate_parser_runtime.py backend/tests/test_agent_brain_conversation_repository.py backend/tests/test_hr_v6_execution_loop.py backend/tests/test_hr_v7_execution_loop.py --disable-warnings --maxfail=1
+
+Result: 47 passed, 2 skipped in 5.47s. Full output is
+focused-release-v6-cutover.log.
+
+A separate context/knowledge command reached 6 passed, then its legacy worker
+fixture was rejected by cutover state persisted in the shared test database.
+That fixture-state issue is being corrected in the independently owned gate
+fixture work; output is retained in focused-release-context.log and is not
+reported as passing.
+
+D1 correction: the first identity-regression.log collection failure was
+previously overwritten by the initial passing replacement run, so that original
+file is unavailable; this is disclosed rather than reconstructed. A new
+same-position candidate A-to-B test was captured RED in
+integration/backend/identity-same-position-red.log, then GREEN with the full
+D1/context suite in identity-same-position-green.log (16 passed in 5.43s).

@@ -1,0 +1,299 @@
+........................................................................ [  9%]
+........................................................................ [ 19%]
+........................................................................ [ 28%]
+........................................................................ [ 38%]
+........................................................................ [ 47%]
+........................................................................ [ 57%]
+........................................................................ [ 66%]
+........................................................................ [ 76%]
+........................................................................ [ 85%]
+...........F.......FF.F............F.................................... [ 95%]
+.....................................                                    [100%]
+=================================== FAILURES ===================================
+_________ test_member_conversation_payloads_omit_internal_mission_ids __________
+
+conversation_database = ({'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'pla...nt_platform_control', ...}, UUID('023006df-4586-4328-a880-06a09fdcf1f8'), UUID('576eb60e-7bd1-476a-95b5-4f1531c2d6b5'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+
+    @pytest.mark.postgres
+    def test_member_conversation_payloads_omit_internal_mission_ids(
+        conversation_database,
+        repository,
+    ) -> None:
+        _environment, owner, _ = conversation_database
+        app, auth, _agent_use = _app(owner, repository)
+        client = TestClient(app)
+    
+        started = _post(
+            client,
+            auth,
+            "/api/v1/agents/hr-bot/conversations",
+            "定义候选人画像",
+        )
+    
+>       assert started.status_code == 201
+E       assert 503 == 201
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+backend/tests/test_agent_brain_conversation_api.py:252: AssertionError
+_________ test_direct_agent_authorization_is_rechecked_for_every_turn __________
+
+conversation_database = ({'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'pla...nt_platform_control', ...}, UUID('af2c072f-ef86-4d7e-8ded-bdc837d556be'), UUID('008b2f62-6a0e-4df6-b1ae-4db2dde83876'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+
+    @pytest.mark.postgres
+    def test_direct_agent_authorization_is_rechecked_for_every_turn(
+        conversation_database,
+        repository,
+    ) -> None:
+        _environment, owner, _ = conversation_database
+        grants = FakeAgentUse()
+        app, auth, _agent_use = _app(owner, repository, agent_use=grants)
+        client = TestClient(app)
+        first = _post(
+            client,
+            auth,
+            "/api/v1/agents/hr-bot/conversations",
+            "评估简历",
+        )
+>       assert first.status_code == 201
+E       assert 503 == 201
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+backend/tests/test_agent_brain_conversation_api.py:514: AssertionError
+__ test_direct_conversation_remains_available_while_brain_intake_is_disabled ___
+
+conversation_database = ({'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'pla...nt_platform_control', ...}, UUID('c56dc5bf-b7ed-4403-bc20-d49148879032'), UUID('f0647fd5-1097-41dd-aae3-4a630d6d7729'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+
+    @pytest.mark.postgres
+    def test_direct_conversation_remains_available_while_brain_intake_is_disabled(
+        conversation_database,
+        repository,
+    ) -> None:
+        _environment, owner, _ = conversation_database
+        app, auth, _agent_use = _app(owner, repository, brain_enabled=False)
+        client = TestClient(app)
+    
+        direct = _post(
+            client, auth, "/api/v1/agents/hr-bot/conversations", "评估简历"
+        )
+        brain = _post(client, auth, "/api/v1/conversations", "请统一调度")
+    
+>       assert direct.status_code == 201
+E       assert 503 == 201
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+backend/tests/test_agent_brain_conversation_api.py:545: AssertionError
+_ test_history_can_be_scoped_to_one_direct_agent_without_exposing_other_owners _
+
+conversation_database = ({'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'pla...nt_platform_control', ...}, UUID('0ed55ea3-0d0b-436e-9cbc-98d7c1f1afe8'), UUID('b48cf377-add4-4f4e-acab-32b215e78b9d'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+
+    @pytest.mark.postgres
+    def test_history_can_be_scoped_to_one_direct_agent_without_exposing_other_owners(
+        conversation_database,
+        repository,
+    ) -> None:
+        _environment, owner, other = conversation_database
+>       repository.start(owner, uuid4(), "HR 一", mode="direct_agent", direct_agent_id="hr-bot")
+
+backend/tests/test_agent_brain_conversation_api.py:588: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('0ed55ea3-0d0b-436e-9cbc-98d7c1f1afe8')
+client_request_id = UUID('1c921fda-4cbf-452b-bd0f-7e284b666643')
+submission = ConversationTurnSubmission(text='HR 一', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+mode = 'direct_agent', direct_agent_id = 'hr-bot', hr_position_scope = None
+position_id = None, position_draft_id = None
+_candidate_parser_attempt_id = None
+
+    def start(
+        self,
+        internal_user_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+        *,
+        mode: Literal["brain", "direct_agent"] = "brain",
+        direct_agent_id: str | None = None,
+        hr_position_scope=None,
+        position_id: UUID | None = None,
+        position_draft_id: UUID | None = None,
+        _candidate_parser_attempt_id: UUID | None = None,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        text = submission.text
+        mode, direct_agent_id = _require_mode(mode, direct_agent_id)
+        if position_id is not None or position_draft_id is not None:
+            raise ValueError("Use per-turn HR scope")
+        scoped = position_id is not None or position_draft_id is not None
+        hr_scope_callback = getattr(
+            hr_position_scope, "bind_new_conversation_locked", None
+        )
+        if scoped and (
+            direct_agent_id != "hr-bot"
+            or (position_id is None) == (position_draft_id is None)
+            or not callable(hr_scope_callback)
+        ):
+            raise ValueError("HR position scope invalid")
+        conversation_id = uuid4()
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                cutover = (
+                    lock_state(cursor)
+                    if mode == "direct_agent" and direct_agent_id == "hr-bot"
+                    else None
+                )
+                existing = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where owner_internal_user_id=%s "
+                    "and started_by_client_request_id=%s for update",
+                    (internal_user_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor,
+                        existing,
+                        client_request_id,
+                        submission,
+                        expected_mode=mode,
+                        expected_direct_agent_id=direct_agent_id,
+                    )
+                    created = False
+                    mission = None
+                else:
+                    if mode == "direct_agent" and direct_agent_id == "hr-bot":
+                        continuing = False
+                        if _candidate_parser_attempt_id is not None:
+                            proof = None if cutover is None else cursor.execute(
+                                "select platform_control."
+                                "verify_legacy_candidate_parser_admission_v102(%s,%s) "
+                                "as allowed", (_candidate_parser_attempt_id, internal_user_id),
+                            ).fetchone()
+                            if (_candidate_parser_attempt_id != client_request_id
+                                    or (cutover is not None and
+                                        (proof is None or proof["allowed"] is not True))):
+                                raise ConversationRepositoryConflict()
+                            continuing = True
+                        require_lane(cutover, "legacy", continuing=continuing)
+                    worker_intake = self.worker_direct_enabled and mode == "direct_agent" and direct_agent_id == "hr-bot"
+                    owner_columns = ",execution_owner,route_epoch" if worker_intake else ""
+                    owner_values = ",'worker_direct',1" if worker_intake else ""
+                    conversation_row = cursor.execute(
+                        "insert into platform_control.conversations "
+                        "(conversation_id,owner_internal_user_id,"
+                        f"started_by_client_request_id,mode,direct_agent_id,title,status{owner_columns}) "
+                        f"values (%s,%s,%s,%s,%s,%s,'active'{owner_values}) returning *",
+                        (
+                            conversation_id,
+                            internal_user_id,
+                            client_request_id,
+                            mode,
+                            direct_agent_id,
+                            _title_for(text) or "新对话",
+                        ),
+                    ).fetchone()
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=1,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+                if direct_agent_id == "hr-bot" and scoped and callable(hr_scope_callback):
+                    scope_matches = hr_scope_callback(
+                        cursor,
+                        internal_user_id,
+                        conversation.conversation_id,
+                        client_request_id,
+                        created=created,
+                        position_id=position_id,
+                        draft_id=position_draft_id,
+                    )
+                    if scope_matches is not True:
+                        raise ConversationRepositoryConflict()
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except psycopg.errors.UniqueViolation:
+            return self._replay_start_after_race(
+                internal_user_id,
+                client_request_id,
+                submission,
+                mode=mode,
+                direct_agent_id=direct_agent_id,
+                hr_position_scope=hr_position_scope,
+                position_id=position_id,
+                position_draft_id=position_draft_id,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1152: ConversationRepositoryError
+__________ test_direct_agent_conversation_still_uses_v1_mission_path ___________
+
+conversation_database = ({'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'pla...nt_platform_control', ...}, UUID('874fcb4d-3b52-497b-af6a-367eda05348f'), UUID('205f2c4b-6ab7-460a-9d29-058913f6a412'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+
+    @pytest.mark.postgres
+    def test_direct_agent_conversation_still_uses_v1_mission_path(
+        conversation_database,
+        repository,
+    ) -> None:
+        environment, owner, _other = conversation_database
+        client, auth, _agent_use = _v2_client(owner, repository)
+    
+        response = _post(
+            client,
+            auth,
+            "/api/v1/agents/hr-bot/conversations",
+            "直接评估简历",
+        )
+    
+>       assert response.status_code == 201
+E       assert 503 == 201
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+backend/tests/test_agent_brain_v2_conversation_api.py:294: AssertionError
+=============================== warnings summary ===============================
+tests/test_agent_brain_conversation_api.py: 40 warnings
+tests/test_agent_brain_v2_conversation_api.py: 20 warnings
+tests/test_identity_rate_limits.py: 3 warnings
+  /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/starlette/testclient.py:454: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/test_agent_brain_conversation_api.py::test_member_conversation_payloads_omit_internal_mission_ids
+FAILED backend/tests/test_agent_brain_conversation_api.py::test_direct_agent_authorization_is_rechecked_for_every_turn
+FAILED backend/tests/test_agent_brain_conversation_api.py::test_direct_conversation_remains_available_while_brain_intake_is_disabled
+FAILED backend/tests/test_agent_brain_conversation_api.py::test_history_can_be_scoped_to_one_direct_agent_without_exposing_other_owners
+FAILED backend/tests/test_agent_brain_v2_conversation_api.py::test_direct_agent_conversation_still_uses_v1_mission_path
+5 failed, 752 passed, 63 warnings in 14.63s

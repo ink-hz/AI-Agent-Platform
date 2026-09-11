@@ -1,0 +1,348 @@
+[
+  {
+    "topic_id": "campus-recruiting",
+    "title": "校招布局",
+    "question": "当前校招岗位集中在哪些公司和城市，怎样支持校招搜寻？",
+    "scope": {
+      "description": "当前采集范围内的 1213 条校招岗位，涉及 9 家公司。",
+      "company_keys": [
+        "agibot",
+        "bambu-lab",
+        "hesai",
+        "huawei",
+        "insta360",
+        "revopoint",
+        "robosense",
+        "shining3d",
+        "union-optech"
+      ],
+      "tracks": [
+        "campus"
+      ]
+    },
+    "analysis_state": "limited",
+    "unit_ids": [
+      "7d5d6974-425f-5ff4-9ce8-fc99ee3d8a4d"
+    ],
+    "discussed_companies": [
+      {
+        "company_key": "agibot",
+        "unit_id": "7d5d6974-425f-5ff4-9ce8-fc99ee3d8a4d",
+        "claim_ids": [
+          "I-track-campus-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "insta360",
+        "unit_id": "7d5d6974-425f-5ff4-9ce8-fc99ee3d8a4d",
+        "claim_ids": [
+          "I-track-campus-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "bambu-lab",
+        "unit_id": "7d5d6974-425f-5ff4-9ce8-fc99ee3d8a4d",
+        "claim_ids": [
+          "I-track-campus-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "hesai",
+        "unit_id": "7d5d6974-425f-5ff4-9ce8-fc99ee3d8a4d",
+        "claim_ids": [
+          "I-track-campus-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "robosense",
+        "unit_id": "7d5d6974-425f-5ff4-9ce8-fc99ee3d8a4d",
+        "claim_ids": [
+          "I-track-campus-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      }
+    ],
+    "limitations": [
+      "当前为单次公开样本，不能说明招聘增长、收缩或真实编制。",
+      "现有分析以样本分布和待验证假设为主，尚未形成完整的公司能力比较。"
+    ]
+  },
+  {
+    "topic_id": "social-recruiting",
+    "title": "社招布局",
+    "question": "当前社招需求分布如何，哪些公司和地域值得进一步研究？",
+    "scope": {
+      "description": "当前采集范围内的 1848 条社招岗位，涉及 10 家公司。",
+      "company_keys": [
+        "agibot",
+        "bambu-lab",
+        "creality",
+        "elegoo",
+        "hesai",
+        "huawei",
+        "insta360",
+        "revopoint",
+        "robosense",
+        "shining3d"
+      ],
+      "tracks": [
+        "social"
+      ]
+    },
+    "analysis_state": "limited",
+    "unit_ids": [
+      "d5218a0c-9e23-5e67-86e9-9d22dec5296c"
+    ],
+    "discussed_companies": [
+      {
+        "company_key": "agibot",
+        "unit_id": "d5218a0c-9e23-5e67-86e9-9d22dec5296c",
+        "claim_ids": [
+          "I-track-social-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "bambu-lab",
+        "unit_id": "d5218a0c-9e23-5e67-86e9-9d22dec5296c",
+        "claim_ids": [
+          "I-track-social-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "robosense",
+        "unit_id": "d5218a0c-9e23-5e67-86e9-9d22dec5296c",
+        "claim_ids": [
+          "I-track-social-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "hesai",
+        "unit_id": "d5218a0c-9e23-5e67-86e9-9d22dec5296c",
+        "claim_ids": [
+          "I-track-social-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "shining3d",
+        "unit_id": "d5218a0c-9e23-5e67-86e9-9d22dec5296c",
+        "claim_ids": [
+          "I-track-social-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      }
+    ],
+    "limitations": [
+      "当前为单次公开样本，不能说明招聘增长、收缩或真实编制。",
+      "现有分析以样本分布和待验证假设为主，尚未形成完整的公司能力比较。"
+    ]
+  },
+  {
+    "topic_id": "internships",
+    "title": "实习招聘",
+    "question": "已观察到的实习招聘分布在哪里，能支持哪些培养与搜寻判断？",
+    "scope": {
+      "description": "当前采集范围内的 376 条实习岗位，涉及 2 家公司。",
+      "company_keys": [
+        "agibot",
+        "hesai"
+      ],
+      "tracks": [
+        "intern"
+      ]
+    },
+    "analysis_state": "limited",
+    "unit_ids": [
+      "b5f3e85d-df9a-581a-bd5b-e4fad3e5dab8"
+    ],
+    "discussed_companies": [
+      {
+        "company_key": "agibot",
+        "unit_id": "b5f3e85d-df9a-581a-bd5b-e4fad3e5dab8",
+        "claim_ids": [
+          "I-track-intern-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "hesai",
+        "unit_id": "b5f3e85d-df9a-581a-bd5b-e4fad3e5dab8",
+        "claim_ids": [
+          "I-track-intern-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      }
+    ],
+    "limitations": [
+      "当前为单次公开样本，不能说明招聘增长、收缩或真实编制。",
+      "现有分析以样本分布和待验证假设为主，尚未形成完整的公司能力比较。"
+    ]
+  },
+  {
+    "topic_id": "talent-competition",
+    "title": "人才需求与竞争",
+    "question": "如何结合公开岗位规模与覆盖差异理解人才竞争信号？",
+    "scope": {
+      "description": "当前采集范围内的 3437 条公开岗位；11 家公司有岗位样本，思看科技尚缺有效岗位样本。",
+      "company_keys": [
+        "agibot",
+        "bambu-lab",
+        "creality",
+        "elegoo",
+        "hesai",
+        "huawei",
+        "insta360",
+        "revopoint",
+        "robosense",
+        "shining3d",
+        "union-optech"
+      ],
+      "tracks": []
+    },
+    "analysis_state": "limited",
+    "unit_ids": [
+      "a43bb310-a786-523e-8e4f-977e1060d8fe"
+    ],
+    "discussed_companies": [
+      {
+        "company_key": "agibot",
+        "unit_id": "a43bb310-a786-523e-8e4f-977e1060d8fe",
+        "claim_ids": [
+          "I-topic-talent-competition-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "bambu-lab",
+        "unit_id": "a43bb310-a786-523e-8e4f-977e1060d8fe",
+        "claim_ids": [
+          "I-topic-talent-competition-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "insta360",
+        "unit_id": "a43bb310-a786-523e-8e4f-977e1060d8fe",
+        "claim_ids": [
+          "I-topic-talent-competition-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "hesai",
+        "unit_id": "a43bb310-a786-523e-8e4f-977e1060d8fe",
+        "claim_ids": [
+          "I-topic-talent-competition-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "robosense",
+        "unit_id": "a43bb310-a786-523e-8e4f-977e1060d8fe",
+        "claim_ids": [
+          "I-topic-talent-competition-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "shining3d",
+        "unit_id": "a43bb310-a786-523e-8e4f-977e1060d8fe",
+        "claim_ids": [
+          "I-topic-talent-competition-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "creality",
+        "unit_id": "a43bb310-a786-523e-8e4f-977e1060d8fe",
+        "claim_ids": [
+          "I-topic-talent-competition-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      },
+      {
+        "company_key": "elegoo",
+        "unit_id": "a43bb310-a786-523e-8e4f-977e1060d8fe",
+        "claim_ids": [
+          "I-topic-talent-competition-1"
+        ],
+        "explanation": "该结论明确列示了此公司的公开岗位样本数量；用于核查招聘分布，不代表编制、投入或能力强弱排名。"
+      }
+    ],
+    "limitations": [
+      "当前为单次公开样本，不能说明招聘增长、收缩或真实编制。",
+      "现有分析以样本分布和待验证假设为主，尚未形成完整的公司能力比较。"
+    ]
+  },
+  {
+    "topic_id": "product-routes",
+    "title": "产品路线与能力信号",
+    "question": "岗位能力组合能提出哪些产品路线假设，还需要哪些产品证据？",
+    "scope": {
+      "description": "当前采集范围内的 3437 条岗位能力统计与已归档公开产品材料。公司列表仅表示岗位统计样本；公开产品材料的覆盖另见证据。",
+      "company_keys": [
+        "agibot",
+        "bambu-lab",
+        "creality",
+        "elegoo",
+        "hesai",
+        "huawei",
+        "insta360",
+        "revopoint",
+        "robosense",
+        "shining3d",
+        "union-optech"
+      ],
+      "tracks": []
+    },
+    "analysis_state": "limited",
+    "unit_ids": [
+      "421e2646-1419-57fe-b790-c771538f1084"
+    ],
+    "discussed_companies": [],
+    "limitations": [
+      "当前为单次公开样本，不能说明招聘增长、收缩或真实编制。",
+      "现有分析以样本分布和待验证假设为主，尚未形成完整的公司能力比较。",
+      "本专题正文未逐家公司展开比较，因此不提供实质分析公司的回链。"
+    ]
+  },
+  {
+    "topic_id": "geography",
+    "title": "招聘地域分布",
+    "question": "岗位需求集中在哪些地域，怎样设定人才搜寻半径？",
+    "scope": {
+      "description": "当前采集范围内的 3437 条公开岗位地点；多地、全国和未公开地点应单独理解。",
+      "company_keys": [
+        "agibot",
+        "bambu-lab",
+        "creality",
+        "elegoo",
+        "hesai",
+        "huawei",
+        "insta360",
+        "revopoint",
+        "robosense",
+        "shining3d",
+        "union-optech"
+      ],
+      "tracks": []
+    },
+    "analysis_state": "limited",
+    "unit_ids": [
+      "d0293b80-5f1f-5ce7-8318-1199edf3529a"
+    ],
+    "discussed_companies": [],
+    "limitations": [
+      "当前为单次公开样本，不能说明招聘增长、收缩或真实编制。",
+      "现有分析以样本分布和待验证假设为主，尚未形成完整的公司能力比较。",
+      "本专题正文未逐家公司展开比较，因此不提供实质分析公司的回链。"
+    ]
+  }
+]

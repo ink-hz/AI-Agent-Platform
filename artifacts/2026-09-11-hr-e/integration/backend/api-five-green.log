@@ -1,0 +1,53 @@
+F
+=================================== FAILURES ===================================
+_________ test_member_conversation_payloads_omit_internal_mission_ids __________
+
+conversation_database = ({'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'pla...nt_platform_control', ...}, UUID('271e17f6-4ef8-4477-bd2c-bf08a93df315'), UUID('30891f66-58c5-41e9-89f7-543b512a9615'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+
+    @pytest.mark.postgres
+    def test_member_conversation_payloads_omit_internal_mission_ids(
+        conversation_database,
+        repository,
+    ) -> None:
+        _environment, owner, _ = conversation_database
+>       app, auth, _agent_use = _app(owner, repository, agent_use=_fae_agent_use())
+                                                                  ^^^^^^^^^^^^^^^^
+
+backend/tests/test_agent_brain_conversation_api.py:249:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend/tests/test_agent_brain_conversation_api.py:132: in _fae_agent_use
+    card = replace(FakeAgentUse().cards[0], agent_id="fae-bot")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+obj = AgentCapabilityCard(agent_id='hr-bot', display_name='HR', domain_group='hr', mission='寻找人才', capabilities=('人才定位',), e... execution_pool='metabot_local', pool_concurrency=1, output_contract='normalized_task_result_v1', capability_version=1)
+changes = {'agent_id': 'fae-bot'}
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+
+        This is especially useful for frozen classes.  Example usage::
+
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+
+        if not _is_dataclass_instance(obj):
+>           raise TypeError("replace() should be called on dataclass instances")
+E           TypeError: replace() should be called on dataclass instances
+
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/dataclasses.py:1474: TypeError
+=========================== short test summary info ============================
+FAILED backend/tests/test_agent_brain_conversation_api.py::test_member_conversation_payloads_omit_internal_mission_ids
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 1.63s

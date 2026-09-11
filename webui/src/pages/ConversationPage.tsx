@@ -1,3 +1,4 @@
+import { hrReferenceTitle, hrReferenceHref } from "../workspaces/hr/hrIntelligenceReference";
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Account } from "../auth";
@@ -9,6 +10,7 @@ import {
 } from "../attachmentApi";
 import {
   cancelCurrentTurn,
+  conversationInputTooLarge,
   confirmConversationAction,
   createConversationMessageSubmission,
   fetchConversation,
@@ -38,6 +40,8 @@ import type {
   ConversationSubmissionResult,
   ConversationTaskDetail,
   ConversationAttachment,
+  HrKnowledgeSelection,
+  HrTurnScope, HrComposerDraft, HrStandardConsent,
   TurnSubmission,
   TurnSnapshot,
 } from "../conversationTypes";
@@ -56,6 +60,10 @@ import { PublicProgress } from "../components/conversation/PublicProgress";
 import { UserInputRequest } from "../components/conversation/UserInputRequest";
 import { projectWorkroom } from "../workroomProjection";
 import { scheduleSnapshotPolling } from "./snapshotPolling";
+import {
+  serializeHrConversationText, type HrIntelligenceReference,
+} from "../workspaces/hr/hrIntelligenceReference";
+import { PlatformLink } from "../components/PlatformLink";
 
 
 export interface ConversationPageClient {
@@ -186,11 +194,18 @@ export function ConversationPage({
   onPositionMaterialChange,
   composerTools,
   threadSupplement,
+  turnScope, composerDraft, renderTurnContext, inputResults = [], onInputResultsSubmitted,
   materialsPresentation = "sidebar",
   materialsOpen,
   onMaterialsOpenChange,
   showMaterialsTrigger = true,
   messageActionsPresentation = "legacy",
+  selectedKnowledgeResources = [],
+  onRemoveKnowledgeResource,
+  onKnowledgeResourcesSubmitted,
+  intelligenceReferences = [],
+  onRemoveIntelligenceReference,
+  onIntelligenceReferencesSubmitted,
 }: {
   conversationId: string;
   account: Account;
@@ -206,11 +221,22 @@ export function ConversationPage({
   onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
   composerTools?: ReactNode;
   threadSupplement?: ReactNode;
+  turnScope?:HrTurnScope;
+  inputResults?: import("../conversationTypes").HrInputResultRef[];
+  onInputResultsSubmitted?:(ids:readonly string[])=>void;
+  composerDraft?:HrComposerDraft;
+  renderTurnContext?:(turnId:string)=>ReactNode;
   materialsPresentation?: "sidebar" | "drawer" | "hidden";
   materialsOpen?: boolean;
   onMaterialsOpenChange?: (open: boolean) => void;
   showMaterialsTrigger?: boolean;
   messageActionsPresentation?: MessageActionsPresentation;
+  selectedKnowledgeResources?: HrKnowledgeSelection[];
+  onRemoveKnowledgeResource?: (id: string) => void;
+  onKnowledgeResourcesSubmitted?: () => void;
+  intelligenceReferences?: readonly HrIntelligenceReference[];
+  onRemoveIntelligenceReference?: (key: string) => void;
+  onIntelligenceReferencesSubmitted?: (keys: readonly string[]) => void;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [workerSnapshot, setWorkerSnapshot] = useState<TurnSnapshot | null>(null);
@@ -224,6 +250,9 @@ export function ConversationPage({
   const messagesRef = useRef<ConversationMessage[]>([]);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [text, setText] = useState("");
+  const [standardConsent,setStandardConsent]=useState<HrStandardConsent|undefined>();
+  useEffect(()=>{if(composerDraft){setText(composerDraft.text);setStandardConsent(composerDraft.standardConsent);}},[composerDraft]);
+  useEffect(()=>{if(composerDraft?.positionId!==turnScope?.positionId)setStandardConsent(undefined);},[turnScope?.positionId,composerDraft]);
   const [loading, setLoading] = useState(true);
   const [loadFailure, setLoadFailure] = useState(false);
   const [connection, setConnection] = useState<"connecting" | "live" | "offline">("connecting");
@@ -244,6 +273,7 @@ export function ConversationPage({
   );
   const retained = useRef<{
     text: string;
+    referenceKeys: string[];
     submission: ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
   } | null>(null);
   const writeController = useRef<AbortController | null>(null);
@@ -548,7 +578,19 @@ export function ConversationPage({
   }, [account.csrf_token, account.hard_stale_read_only, client, conversationId, onConversationSettled, streamEpoch]);
 
   const sendValue = async (value: string) => {
-    const normalized = value.trim();
+    let normalized: string;
+    try {
+      normalized = serializeHrConversationText(value, intelligenceReferences);
+    } catch {
+      setSendFailure(false);
+      setAttachmentError("所选情报超过 12 KiB，请移除部分引用后再发送。");
+      return;
+    }
+    if (conversationInputTooLarge(normalized)) {
+      setSendFailure(false);
+      setAttachmentError("正文与所选情报合计超过 32 KiB，请精简后再发送。");
+      return;
+    }
     const waitingUser = detail?.current_turn?.status === "waiting_user";
     if ((!normalized && newAttachmentIds.length === 0) || inFlight.current || readOnly
       || ((workerOwned ? workerActive : turnIsActive(detail)) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
@@ -556,15 +598,19 @@ export function ConversationPage({
       text: normalized,
       attachmentIds: [...newAttachmentIds],
       activeAttachmentIds: [...activeAttachmentIds],
+      ...(turnScope ? {inputResultRefs:inputResults.map(({title,...ref})=>ref),scope:{...turnScope,attachmentIds:[...new Set([...turnScope.attachmentIds,...newAttachmentIds,...activeAttachmentIds])]}} : {}),
+      ...(standardConsent && normalized===`确认所选的 ${standardConsent.selectedChangeIds.length} 项岗位标准。${standardConsent.bodyReviewed?"已核对所选正文，仅保留岗位级标准，不含候选人个人信息或逐人评价。":""}` ? {standardConsent} : {}),
+      ...(selectedKnowledgeResources.length ? { userSelectedResources: selectedKnowledgeResources } : {}),
     };
     const submissionKey = JSON.stringify(submissionInput);
     let selected = retained.current;
     if (!selected || selected.text !== submissionKey) {
       selected = {
         text: submissionKey,
+        referenceKeys: intelligenceReferences.map((item) => item.key),
         submission: client.createMessageSubmission(
           conversationId,
-          attachmentLimits || newAttachmentIds.length > 0 || activeAttachmentIds.length > 0 ? submissionInput : normalized,
+          attachmentLimits || turnScope || newAttachmentIds.length > 0 || activeAttachmentIds.length > 0 || selectedKnowledgeResources.length > 0 ? submissionInput : normalized,
           account.csrf_token,
         ),
       };
@@ -578,7 +624,10 @@ export function ConversationPage({
       if (controller.signal.aborted) return;
       if (expectedAgentId === "hr-bot") jumpToLatest();
       retained.current = null;
-      setText("");
+      setText(""); setStandardConsent(undefined);
+      if (selectedKnowledgeResources.length) onKnowledgeResourcesSubmitted?.();
+      onIntelligenceReferencesSubmitted?.(selected.referenceKeys);
+      onInputResultsSubmitted?.(inputResults.map(r=>r.resultId));
       setNewAttachmentIds([]); setUploadQueue([]);
       mergeIntoMessages([result.message]);
       if ("conversation" in result) {
@@ -789,7 +838,7 @@ export function ConversationPage({
       onRetry={readOnly ? undefined : (message) => void resumeSearch(message)}
       renderAfterUserTurn={(turnId) => {
         const workroom = workrooms.get(turnId);
-        return workroom ? <MultiAgentWorkroom
+        return <>{renderTurnContext?.(turnId)}{workroom ? <MultiAgentWorkroom
           loadTaskDetail={loadTaskDetail}
           onConfirmAction={readOnly ? undefined : (actionId, actionDigest) => client.confirmAction(
             conversationId, actionId, actionDigest, account.csrf_token,
@@ -798,7 +847,7 @@ export function ConversationPage({
             conversationId, actionId, account.csrf_token,
           )}
           workroom={workroom}
-        /> : null;
+        /> : null}</>;
       }}
     />
     {group.answer && <article className="conversation-message conversation-message-assistant" aria-label={`${assistantLabel} 回答`}>
@@ -847,6 +896,10 @@ export function ConversationPage({
         conversationFileCount={attachments.filter((item) => item.source === "user").length} onError={setAttachmentError}
         onQueueChange={setUploadQueue} onReady={addReadyAttachment}
       /> : undefined}
+      context={selectedKnowledgeResources.length > 0 ? <div className="hr-knowledge-selection" aria-label="本轮指定方法">
+        {selectedKnowledgeResources.map((item) => <span key={`${item.sourceCommit}:${item.id}`}><strong>{item.id}</strong><small>版本 {item.revision}</small>
+          <button aria-label={`移除方法 ${item.id}`} onClick={() => onRemoveKnowledgeResource?.(item.id)} type="button">×</button></span>)}
+      </div> : undefined}
       attachmentPending={uploadPending}
       disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || readOnly}
       disabledMessage={account.hard_stale_read_only
@@ -860,18 +913,27 @@ export function ConversationPage({
               : undefined}
       label={active && detail.conversation.mode === "brain" ? "补充当前任务" : "继续对话"}
       onChange={(value) => {
-        setText(value); setSendFailure(false);
+        setText(value); setStandardConsent(undefined); setSendFailure(false);
         if (retained.current?.text !== value.trim()) retained.current = null;
       }}
       onSubmit={() => void send()}
       pending={pending}
-      hasReadyAttachment={newAttachmentIds.length > 0}
+      hasReadyAttachment={newAttachmentIds.length > 0 || intelligenceReferences.length > 0}
       placeholder={active && detail.conversation.mode === "brain"
         ? "补充范围、修改优先级，或给正在协作的 Agent 新指令…"
         : undefined}
       value={text}
       tools={expectedAgentId === "hr-bot" ? <>{composerTools}{materialsTrigger}</> : composerTools}
     />
+    {intelligenceReferences.length > 0 && <section className="hr-intelligence-reference-selection" aria-label={intelligenceReferences.some((item) => item.kind === "topic") ? "已选 HR 情报" : "已选公司情报"}>
+      <header><strong>{intelligenceReferences.some((item) => item.kind === "topic") ? "已选 HR 情报" : "已选公司情报"}</strong><PlatformLink href={hrReferenceHref(intelligenceReferences[0])}>{intelligenceReferences[0].kind === "topic" ? "返回专题情报" : "返回公司情报"}</PlatformLink></header>
+      {intelligenceReferences.map((reference) => <details key={reference.key}>
+        <summary>{hrReferenceTitle(reference)} · {reference.label}</summary>
+        <p>{reference.excerpt}</p>
+        {reference.sourceUrls.map((url) => <a href={url} key={url} rel="noreferrer" target="_blank">查看来源</a>)}
+        {onRemoveIntelligenceReference && <button disabled={pending || readOnly} onClick={() => { retained.current = null; onRemoveIntelligenceReference(reference.key); }} type="button">移除</button>}
+      </details>)}
+    </section>}
     {readOnly && <p className="conversation-read-only" role="status">当前为只读状态，已有对话仍可查看。</p>}
     {sendFailure && <div className="conversation-action-error" role="alert"><span>消息暂未发送成功，可以使用同一次请求安全重试。</span><button className="conversation-retry" disabled={pending} onClick={() => void send()} type="button">重新发送</button></div>}
     {attachmentError && <p className="conversation-action-error" role="alert">{attachmentError}</p>}

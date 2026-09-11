@@ -1,0 +1,83 @@
+{
+  "bundle_id": "2b49ecc4-42fe-45ae-80ac-26891f42ac6c",
+  "company": {
+    "aliases": [
+      "SCANTECH",
+      "思看科技（杭州）股份有限公司"
+    ],
+    "canonical_name": "思看科技",
+    "company_key": "scantech",
+    "coverage": {
+      "document_limitations": [],
+      "job_count": 0,
+      "limitations": [
+        "一个或多个公开招聘渠道未能完成采集"
+      ],
+      "observed_at": "2026-09-06T14:38:21.125743+00:00",
+      "state": "partial"
+    },
+    "summary": "思看科技：以 0 条公开岗位和 1 份非招聘公开材料为证据，从工业 3D 测量产品与国际化应用场景审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。"
+  },
+  "generated_at": "2026-09-06T14:37:42.467393+00:00",
+  "metrics": null,
+  "units": [
+    {
+      "kind": "company",
+      "response": {
+        "alternatives": [
+          {
+            "alternative_id": "X-company-a1cf0672-1",
+            "basis_fact_ids": [
+              "F-company-a1cf0672-1"
+            ],
+            "challenged_inference_ids": [
+              "I-company-scantech-coverage"
+            ],
+            "text": "思看科技的常年岗位、渠道重复、雇主品牌储备或招聘系统分页差异，也可能造成当前方向和规模分布；需用后续月份及岗位状态变化复核。"
+          }
+        ],
+        "confidence": "low",
+        "facts": [
+          {
+            "evidence_sha256": "9b32d0007234c5dfa8f457ee3e07450011b173437c4a9ac95e05f653c167cbbf",
+            "fact_id": "F-company-a1cf0672-1",
+            "observed_at": "2026-09-06T14:38:21.303253+00:00",
+            "source_url": "https://www.3d-scantech.com.cn",
+            "text": "思看科技的official_product公开材料“思看科技官网-3D激光扫描仪|工业|蓝光|计量级|手持式激光三维扫描仪”已归档；清洗文本摘录：思看科技官网-3D激光扫描仪|工业|蓝光|计量级|手持式激光三维扫描仪 info@3d-scantech.com 科创板上市 股票代码: 688583 中 英语 法语 德语 葡萄牙语 西班牙语 俄罗斯语 日语 韩语 意大利语 工业级 便携式三坐标测量机 手持式3D视觉数字化产品 跟踪式3D视觉数字化产品 跟踪式光笔测量系统 工业级自动化3D视觉检测系统 三维软件 查看更多 > AccuArm 复合式三维扫描仪 KSCAN-E 掌上三维扫描仪 SIMSCAN-E/S Gen2 SIMSCAN-E SIMSCAN 全局式三维扫描仪 KSCAN-X 摄影测量系统 MSCAN-L15 TrackScan GO NimbleTrack NimbleTrack-CR TrackScan Sharp-Z TrackScan…。"
+          }
+        ],
+        "inferences": [
+          {
+            "basis_fact_ids": [
+              "F-company-a1cf0672-1"
+            ],
+            "claim_type": "recruiting_signal",
+            "inference_id": "I-company-scantech-coverage",
+            "text": "思看科技本轮仅取得可核验的公司公开材料，未取得可用岗位样本；因此只能确认公司信息来源存在，不能据此判断其没有招聘或判断人才投入方向。"
+          }
+        ],
+        "recommendations": [
+          {
+            "basis_fact_ids": [
+              "F-company-a1cf0672-1"
+            ],
+            "recommendation_id": "R-company-a1cf0672-1",
+            "target_tasks": [
+              "talent_profile",
+              "sourcing_strategy"
+            ],
+            "text": "围绕思看科技的暂无有效计数建立竞对人才标签，优先核验候选人的真实项目边界、量产阶段和可量化结果。"
+          }
+        ],
+        "summary": "思看科技：以 0 条公开岗位和 1 份非招聘公开材料为证据，从工业 3D 测量产品与国际化应用场景审视人才信号；所有结论均受公开渠道覆盖与单次观测限制。",
+        "unknowns": [
+          "公开岗位数不等于真实 HC、预算、产量或研发投入。",
+          "单次基线不能判断月度增长、收缩或资源迁移。",
+          "非招聘官网产品来源与招聘证据未完整交叉时，产品路线判断必须保持中低置信度。"
+        ]
+      },
+      "scope_key": "scantech",
+      "unit_id": "a1cf0672-e4e1-5089-9b6d-c0d080ec70ba"
+    }
+  ]
+}

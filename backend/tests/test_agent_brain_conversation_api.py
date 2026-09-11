@@ -128,6 +128,13 @@ def _post(client, auth, path: str, text: str, request_id: UUID | None = None):
     )
 
 
+def _fae_agent_use() -> FakeAgentUse:
+    card = FakeAgentUse().cards[0].model_copy(update={"agent_id": "fae-bot"})
+    grants = FakeAgentUse((card,))
+    grants.permitted_catalog_for_user_id = lambda _owner: (card,)
+    return grants
+
+
 def test_conversation_body_normalizes_text_and_attachment_sets() -> None:
     first, second = uuid4(), uuid4()
 
@@ -239,13 +246,13 @@ def test_member_conversation_payloads_omit_internal_mission_ids(
     repository,
 ) -> None:
     _environment, owner, _ = conversation_database
-    app, auth, _agent_use = _app(owner, repository)
+    app, auth, _agent_use = _app(owner, repository, agent_use=_fae_agent_use())
     client = TestClient(app)
 
     started = _post(
         client,
         auth,
-        "/api/v1/agents/hr-bot/conversations",
+        "/api/v1/agents/fae-bot/conversations",
         "定义候选人画像",
     )
 
@@ -502,13 +509,13 @@ def test_direct_agent_authorization_is_rechecked_for_every_turn(
     repository,
 ) -> None:
     _environment, owner, _ = conversation_database
-    grants = FakeAgentUse()
+    grants = _fae_agent_use()
     app, auth, _agent_use = _app(owner, repository, agent_use=grants)
     client = TestClient(app)
     first = _post(
         client,
         auth,
-        "/api/v1/agents/hr-bot/conversations",
+        "/api/v1/agents/fae-bot/conversations",
         "评估简历",
     )
     assert first.status_code == 201
@@ -534,11 +541,13 @@ def test_direct_conversation_remains_available_while_brain_intake_is_disabled(
     repository,
 ) -> None:
     _environment, owner, _ = conversation_database
-    app, auth, _agent_use = _app(owner, repository, brain_enabled=False)
+    app, auth, _agent_use = _app(
+        owner, repository, agent_use=_fae_agent_use(), brain_enabled=False
+    )
     client = TestClient(app)
 
     direct = _post(
-        client, auth, "/api/v1/agents/hr-bot/conversations", "评估简历"
+        client, auth, "/api/v1/agents/fae-bot/conversations", "评估简历"
     )
     brain = _post(client, auth, "/api/v1/conversations", "请统一调度")
 
@@ -585,26 +594,26 @@ def test_history_can_be_scoped_to_one_direct_agent_without_exposing_other_owners
     repository,
 ) -> None:
     _environment, owner, other = conversation_database
-    repository.start(owner, uuid4(), "HR 一", mode="direct_agent", direct_agent_id="hr-bot")
+    repository.start(owner, uuid4(), "FAE 一", mode="direct_agent", direct_agent_id="fae-bot")
     repository.start(owner, uuid4(), "市场", mode="direct_agent", direct_agent_id="marketing-gtm-bot")
-    repository.start(owner, uuid4(), "HR 二", mode="direct_agent", direct_agent_id="hr-bot")
-    repository.start(other, uuid4(), "他人的 HR", mode="direct_agent", direct_agent_id="hr-bot")
-    app, auth, _agent_use = _app(owner, repository)
+    repository.start(owner, uuid4(), "FAE 二", mode="direct_agent", direct_agent_id="fae-bot")
+    repository.start(other, uuid4(), "他人的 FAE", mode="direct_agent", direct_agent_id="fae-bot")
+    app, auth, _agent_use = _app(owner, repository, agent_use=_fae_agent_use())
     client = TestClient(app)
 
     first = client.get(
-        "/api/v1/conversations?limit=1&direct_agent_id=hr-bot",
+        "/api/v1/conversations?limit=1&direct_agent_id=fae-bot",
         **_credentials(auth),
     )
     assert first.status_code == 200
-    assert [item["title"] for item in first.json()["items"]] == ["HR 二"]
-    assert all(item["direct_agent_id"] == "hr-bot" for item in first.json()["items"])
+    assert [item["title"] for item in first.json()["items"]] == ["FAE 二"]
+    assert all(item["direct_agent_id"] == "fae-bot" for item in first.json()["items"])
     cursor = first.json()["next_cursor"]
     second = client.get(
-        f"/api/v1/conversations?limit=10&direct_agent_id=hr-bot&before={cursor}",
+        f"/api/v1/conversations?limit=10&direct_agent_id=fae-bot&before={cursor}",
         **_credentials(auth),
     )
-    assert [item["title"] for item in second.json()["items"]] == ["HR 一"]
+    assert [item["title"] for item in second.json()["items"]] == ["FAE 一"]
     assert client.get(
         f"/api/v1/conversations?direct_agent_id=marketing-gtm-bot&before={cursor}",
         **_credentials(auth),

@@ -506,7 +506,7 @@ def test_direct_agent_replay_cannot_change_agent(
         request_id,
         "评估简历",
         mode="direct_agent",
-        direct_agent_id="hr-bot",
+        direct_agent_id="fae-bot",
     )
     with pytest.raises(ConversationRepositoryConflict):
         repository.start(
@@ -514,7 +514,7 @@ def test_direct_agent_replay_cannot_change_agent(
             request_id,
             "评估简历",
             mode="direct_agent",
-            direct_agent_id="fae-bot",
+            direct_agent_id="hr-bot",
         )
 
 

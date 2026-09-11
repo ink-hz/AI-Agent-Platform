@@ -184,6 +184,8 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert services["platform-api"]["volumes"] == [
         "platform-api-secrets:/run/secrets:ro",
         "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
+        "/data/orbbec-agent-platform/hr-role-packages:/data/agent-platform/hr-role-packages:ro",
+        "/data/orbbec-agent-platform/hr-knowledge:/data/agent-platform/hr-knowledge:ro",
         {
             "type": "bind",
             "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",

@@ -1,0 +1,65 @@
+F
+=================================== FAILURES ===================================
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[False-build] _
+
+scoped_database = {'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'plat...orm_control_maintenance', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:56802/agent_platform_control', ...}
+build_method = 'build', summarized = False
+
+    @pytest.mark.postgres
+    @pytest.mark.parametrize("build_method", ["build", "build_direct"])
+    @pytest.mark.parametrize("summarized", [False, True])
+    def test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b(
+        scoped_database, build_method, summarized,
+    ):
+        environment = scoped_database
+        seeded = _seed_candidate_scope(environment)
+        owner = seeded["owner"]
+        position = seeded["position"]
+        candidate_a, candidate_b, relation_a, relation_b = (uuid4() for _ in range(4))
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "insert into platform_hr.candidates(candidate_id,owner_internal_user_id,"
+                "confirmation_request_id,stable_name,facts) values"
+                "(%s,%s,%s,'A','{}'),(%s,%s,%s,'B','{}')",
+                (candidate_a, owner, uuid4(), candidate_b, owner, uuid4()),
+            )
+            connection.execute(
+                "insert into platform_hr.position_candidates(position_candidate_id,"
+                "owner_internal_user_id,position_id,candidate_id,context_version_id,"
+                "source_draft_id,client_request_id) values"
+                "(%s,%s,%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s,%s,%s)",
+                (relation_a, owner, position, candidate_a, seeded["context"], seeded["draft"], uuid4(),
+                 relation_b, owner, position, candidate_b, seeded["context"], seeded["draft"], uuid4()),
+            )
+        scope_a = HrTurnScope(positionId=position, positionCandidateIds=(relation_a,), attachmentIds=())
+        scope_b = HrTurnScope(positionId=position, positionCandidateIds=(relation_b,), attachmentIds=())
+        repo = repository(environment)
+        first = repo.start(
+            owner, uuid4(), ConversationTurnSubmission(A_FACT, hr_scope=scope_a),
+            mode="direct_agent", direct_agent_id="hr-bot",
+        )
+        _complete(environment, repo, first.turn.turn_id, A_ANALYSIS)
+        second = repo.append_turn(
+            owner, first.conversation.conversation_id, uuid4(),
+            ConversationTurnSubmission(B_FACT, hr_scope=scope_b),
+        )
+        if summarized:
+            repo.store_summary(first.conversation.conversation_id, second.turn.turn_id, 2, MIXED_SUMMARY)
+
+        context = getattr(ConversationContextBuilder(repo), build_method)(
+            second.conversation.conversation_id, second.turn.turn_id
+        )
+        rendered = "\n".join(message.content for message in context.messages)
+        assert context.summary is None
+>       assert rendered == B_FACT
+E       AssertionError: assert '虚构甲独有经历：紫铜海鸥...乙独有经历：青石机器人量产' == '虚构乙独有经历：青石机器人量产'
+E
+E         + 虚构甲独有经历：紫铜海鸥项目七次冷启动
+E         + 虚构甲助手分析：紫铜海鸥贡献尚待验证
+E           虚构乙独有经历：青石机器人量产
+
+backend/tests/test_agent_brain_hr_history_isolation.py:81: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[False-build]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 1.74s

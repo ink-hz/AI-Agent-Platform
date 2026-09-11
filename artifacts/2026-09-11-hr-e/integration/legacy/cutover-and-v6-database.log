@@ -1,0 +1,38 @@
+...............F
+=================================== FAILURES ===================================
+_______ test_submission_coordinator_starts_exact_unbound_hr_conversation _______
+
+    def test_submission_coordinator_starts_exact_unbound_hr_conversation() -> None:
+        attempt = _attempt()
+        selected = CandidateParserSubmission.from_attempt(attempt)
+
+        class Repository:
+            def next_submission(self):
+                return selected
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def start(self, *args, **kwargs):
+                self.calls.append((args, kwargs))
+                return object()
+
+        commands = Commands()
+        coordinator = CandidateParserSubmissionCoordinator(Repository(), commands)
+
+        assert coordinator.submit_one() is True
+        assert commands.calls[0][0][:2] == (
+            attempt.owner_id,
+            attempt.attempt_id,
+        )
+        prompt = commands.calls[0][0][2]
+>       assert "extracted_facts" in prompt
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: argument of type 'ConversationTurnSubmission' is not iterable
+
+backend/tests/test_hr_candidate_parser_runtime.py:73: TypeError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_candidate_parser_runtime.py::test_submission_coordinator_starts_exact_unbound_hr_conversation
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 15 passed in 2.65s

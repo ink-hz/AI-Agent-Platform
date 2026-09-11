@@ -10,6 +10,8 @@ from datetime import datetime
 from types import MappingProxyType
 from uuid import UUID
 
+from app.hr.topic_catalog import validate_topic_catalog
+
 from .chunk_index import MarkdownChunk, build_chunk_index, validate_chunk_index
 
 _COMPANY_KEY = re.compile(r"[a-z0-9][a-z0-9_-]{0,127}\Z")
@@ -391,6 +393,7 @@ def compile_agent_markdown(
     coverage: Mapping[str, object],
     aggregates: Mapping[str, object],
     analyses: tuple[Mapping[str, object], ...],
+    analysis_bundle_id: UUID | None = None,
 ) -> AgentMarkdownPackage:
     if not isinstance(bundle_id, UUID):
         raise MarkdownContractError("Markdown bundle identity invalid")
@@ -402,6 +405,8 @@ def compile_agent_markdown(
         not isinstance(item, Mapping) for item in analyses
     ):
         raise MarkdownContractError("Markdown analyses invalid")
+    if analysis_bundle_id is not None and not isinstance(analysis_bundle_id, UUID):
+        raise MarkdownContractError("Markdown analysis origin invalid")
     companies = _mappings(catalog.get("companies"), "companies")
     coverage_items = _mappings(coverage.get("companies"), "coverage")
     coverage_by_company = {
@@ -410,7 +415,7 @@ def compile_agent_markdown(
     }
     units: dict[tuple[str, str], Mapping[str, object]] = {}
     for unit in analyses:
-        if str(unit.get("bundle_id")) != str(bundle_id):
+        if str(unit.get("bundle_id")) != str(analysis_bundle_id or bundle_id):
             raise MarkdownContractError("Markdown analysis bundle mismatch")
         kind = str(unit.get("kind", ""))
         scope_key = str(unit.get("scope_key", ""))
@@ -518,24 +523,59 @@ def compile_agent_markdown(
             "priority": 175,
         }
 
-    for topic_key, filename in _TOPIC_FILES.items():
-        unit = units.get(("track", topic_key)) or units.get(("topic", topic_key))
-        if topic_key == "talent-competition":
-            unit = unit or units.get(("comparison", "all-companies"))
-        path = f"agent/topics/{filename}.md"
-        files[path] = _render_unit(
-            bundle_id=bundle_id,
-            generated_at=generated_at,
-            scope="topic",
-            scope_key=filename,
-            title=f"{filename} 招聘专题",
-            coverage="succeeded",
-            unit=unit,
-        )
-        routing[path] = {
-            "tracks": [topic_key] if topic_key in {"social", "campus", "intern"} else []
-        }
-
+    if "topics" in catalog:
+        topics = validate_topic_catalog(catalog, analyses)
+        units_by_id = {str(unit["unit_id"]): unit for unit in analyses}
+        for topic in topics:
+            topic_id = topic["topic_id"]
+            path = f"agent/topics/{topic_id}.md"
+            selected_units = [units_by_id[unit_id] for unit_id in topic["unit_ids"]]
+            body = _render_unit(
+                bundle_id=bundle_id, generated_at=generated_at,
+                scope="topic", scope_key=topic_id, title=topic["title"],
+                coverage="succeeded" if topic["analysis_state"] == "available" else "partial",
+                unit=selected_units[0] if selected_units else None,
+            ).decode("utf-8")
+            marker = "\n## 核心判断\n"
+            metadata = [
+                "", "## 研究问题与范围", "",
+                _text(topic["question"]), "", _text(topic["scope"]["description"]), "",
+                f"分析状态：{topic['analysis_state']}", "",
+                "统计样本公司：" + (", ".join(topic["scope"]["company_keys"]) or "未声明"), "",
+                "## 阅读边界", "",
+                *[f"- {_text(item)}" for item in topic["limitations"]], "",
+            ]
+            body = body.replace(marker, "\n".join(metadata) + marker, 1)
+            for unit in selected_units[1:]:
+                extra = _render_unit(
+                    bundle_id=bundle_id, generated_at=generated_at,
+                    scope="topic", scope_key=topic_id, title=topic["title"],
+                    coverage="succeeded" if topic["analysis_state"] == "available" else "partial", unit=unit,
+                ).decode("utf-8")
+                body += f"\n## 分析单元 {unit['unit_id']}\n" + extra[extra.index(marker):]
+            files[path] = body.encode("utf-8")
+            routing[path] = {
+                "companies": sorted({item["company_key"] for item in topic["discussed_companies"]}),
+                "tracks": topic["scope"]["tracks"],
+            }
+    else:
+        for topic_key, filename in _TOPIC_FILES.items():
+            unit = units.get(("track", topic_key)) or units.get(("topic", topic_key))
+            if topic_key == "talent-competition":
+                unit = unit or units.get(("comparison", "all-companies"))
+            path = f"agent/topics/{filename}.md"
+            files[path] = _render_unit(
+                bundle_id=bundle_id,
+                generated_at=generated_at,
+                scope="topic",
+                scope_key=filename,
+                title=f"{filename} 招聘专题",
+                coverage="succeeded",
+                unit=unit,
+            )
+            routing[path] = {
+                "tracks": [topic_key] if topic_key in {"social", "campus", "intern"} else []
+            }
     executive = units.get(("executive-summary", "all-companies"))
     files["agent/executive-brief.md"] = _render_unit(
         bundle_id=bundle_id,
@@ -651,6 +691,11 @@ def compile_agent_markdown(
     files["agent/index.md"] = "\n".join(index_lines).encode("utf-8")
     routing["agent/index.md"] = {"priority": 1000}
 
+    if analysis_bundle_id is not None:
+        for path, body in files.items():
+            files[path] = body.replace(
+                b"---\n", f"---\nanalysis_bundle_id: {analysis_bundle_id}\n".encode(), 1
+            )
     chunks = build_chunk_index(files, routing)
     index = (_canonical_json([item.as_dict() for item in chunks]) + "\n").encode(
         "utf-8"

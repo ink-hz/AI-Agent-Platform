@@ -21,17 +21,6 @@ def _seed_aggregates(database):
     sentinel = "PRIVATE-CANDIDATE-SENTINEL"
     with database.admin_connection() as connection:
         connection.execute("set session_replication_role=replica")
-        if connection.execute("select to_regclass('platform_control.turn_attempts')").fetchone()[0] is None:
-            connection.execute(
-                "create table platform_control.turn_attempts(attempt_id uuid primary key,turn_id uuid not null,"
-                "attempt_no integer not null,executor_kind text not null,status text not null)"
-            )
-            connection.execute("grant select on platform_control.turn_attempts to platform_control_app")
-        if connection.execute("select to_regclass('platform_control.direct_command_bindings')").fetchone()[0] is None:
-            connection.execute(
-                "create table platform_control.direct_command_bindings(attempt_id uuid primary key,job_id uuid not null)"
-            )
-            connection.execute("grant select on platform_control.direct_command_bindings to platform_control_app")
         owner = uuid4()
         connection.execute(
             "insert into platform_hr.candidates(candidate_id,owner_internal_user_id,"
@@ -123,17 +112,24 @@ def _seed_aggregates(database):
             )
             if suffix == "other":
                 connection.execute(
-                    "insert into platform_control.direct_command_bindings(attempt_id,job_id) values (%s,%s)",
-                    (attempt, bound_hr_job),
+                    "insert into platform_control.direct_command_bindings("
+                    "attempt_id,command_id,job_id,conversation_id,command_seq,command_hash) "
+                    "values (%s,%s,%s,%s,1,%s)",
+                    (attempt, uuid4(), bound_hr_job, conversation, "a" * 64),
                 )
     return sentinel
 
 
+@pytest.fixture(scope="module")
+def seeded_database(database):
+    return database, _seed_aggregates(database)
+
+
 @pytest.mark.postgres
-def test_inventory_aggregates_old_new_and_classifies_hr_execution(database):
+def test_inventory_aggregates_old_new_and_classifies_hr_execution(seeded_database):
     from tools.hr_agent.inventory import run_inventory
 
-    sentinel = _seed_aggregates(database)
+    database, sentinel = seeded_database
     report = run_inventory(database.connection)
     rendered = json.dumps(report, ensure_ascii=False)
 
@@ -203,9 +199,10 @@ def test_inventory_distinguishes_missing_table_and_column(database):
 
 
 @pytest.mark.postgres
-def test_missing_new_schema_preserves_old_inventory(database):
+def test_missing_new_schema_preserves_old_inventory(seeded_database):
     from tools.hr_agent.inventory import run_inventory
 
+    database, _sentinel = seeded_database
     with database.admin_connection() as connection:
         connection.execute("alter schema platform_hr_agent rename to platform_hr_agent_saved")
     try:
@@ -299,9 +296,10 @@ def test_join_dependency_missing_column_and_permission_are_prechecked(database):
 
 
 @pytest.mark.postgres
-def test_column_level_select_can_inventory_only_required_columns(database):
+def test_column_level_select_can_inventory_only_required_columns(seeded_database):
     from tools.hr_agent.inventory import run_inventory
 
+    database, _sentinel = seeded_database
     role = "hr_inventory_column_reader"
     with database.admin_connection() as connection:
         connection.execute(f"drop role if exists {role}")

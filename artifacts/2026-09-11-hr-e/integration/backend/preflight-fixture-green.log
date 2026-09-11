@@ -1,0 +1,55 @@
+........F.                                                               [100%]
+=================================== FAILURES ===================================
+___ test_database_permission_probe_fails_when_maintenance_cannot_transition ____
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9421/test_database_permission_probe0')
+
+    def test_database_permission_probe_fails_when_maintenance_cannot_transition(tmp_path):
+        knowledge = _knowledge(tmp_path / "knowledge")
+        environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+        with hr_agent_database() as database:
+            with database.admin_connection() as connection:
+>               connection.execute(
+                    "insert into platform_control.hr_execution_cutover "
+                    "(phase,epoch,transition_request_id) values "
+                    "('legacy',1,'11111111-1111-4111-8111-111111111111')"
+                )
+
+tests/test_hr_agent_preflight.py:279: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x104909e10>
+query = "insert into platform_control.hr_execution_cutover (phase,epoch,transition_request_id) values ('legacy',1,'11111111-1111-4111-8111-111111111111')"
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.UniqueViolation: duplicate key value violates unique constraint "hr_execution_cutover_pkey"
+E           DETAIL:  Key (singleton)=(t) already exists.
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: UniqueViolation
+=========================== short test summary info ============================
+FAILED tests/test_hr_agent_preflight.py::test_database_permission_probe_fails_when_maintenance_cannot_transition
+1 failed, 9 passed in 2.18s

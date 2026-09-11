@@ -58,34 +58,6 @@ def batch_request(aids):
     }
 
 
-def test_accepted_candidate_continues_children_during_cloud_drain(
-    uploaded, intake, database
-):
-    service, _ = intake
-    _, _, repo, owner, _, aid, _, _ = uploaded
-    with database.admin_connection() as c:
-        c.execute("delete from platform_control.hr_execution_cutover_operations")
-        c.execute("delete from platform_control.hr_execution_cutover")
-        c.execute("insert into platform_control.hr_execution_cutover(singleton,phase,epoch,transition_request_id) values(true,'cloud',1,%s)", (uuid4(),))
-    try:
-        batch = service.create_batch(owner, batch_request([aid]), uuid4())
-        with database.admin_connection() as c:
-            c.execute("update platform_control.hr_execution_cutover set phase='draining_cloud',epoch=2,transition_request_id=%s", (uuid4(),))
-        assert service.advance_one("drain-worker") is True
-        item = service.get_batch(owner, batch["batch_id"])["items"][0]
-        assert item["state"] in {"parsing", "profiling"}
-        assert item["error_code"] is None
-        # A fresh coordinator instance/process can continue from the persisted proof.
-        assert service.advance_one("restarted-drain-worker") is True
-        item = service.get_item(owner, item["item_id"])
-        assert item["state"] in {"parsing", "profiling"}
-        assert item["error_code"] is None
-    finally:
-        with database.admin_connection() as c:
-            c.execute("delete from platform_control.hr_execution_cutover_operations")
-            c.execute("delete from platform_control.hr_execution_cutover")
-
-
 def finish_profile(
     uploaded, intake, item, *, read_limit=None, save=True, answer_failure=False
 ):

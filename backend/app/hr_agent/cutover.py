@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from .types import HrAgentProblem
 
-
 ADVISORY_LOCK_KEY = 0x485245584954  # "HREXIT"
 
 
@@ -44,7 +43,9 @@ def lock_state(cursor) -> CutoverState | None:
 def require_lane(state: CutoverState | None, lane: str, *, continuing: bool = False):
     """Validate a state already locked by ``lock_state``."""
     if state is None:
-        return
+        if lane == "legacy":
+            return
+        raise CutoverRejected()
     allowed = state.phase == lane or (
         continuing and state.phase == f"draining_{lane}"
     )
@@ -55,9 +56,10 @@ def require_lane(state: CutoverState | None, lane: str, *, continuing: bool = Fa
 def lock_admission(cursor, lane: str, *, continuing: bool = False) -> CutoverState | None:
     """Serialize an admission with activation/transition before domain locks.
 
-    A missing singleton preserves the behavior predating migration 102. Once
-    initialized, a drain accepts continuations owned by that lane, but no new
-    root admission. Work from the other lane is never adopted.
+    A missing singleton preserves only legacy behavior predating migration 102;
+    cloud admission requires an explicitly initialized gate. Once initialized,
+    a drain accepts continuations owned by that lane, but no new root admission.
+    Work from the other lane is never adopted.
     """
     if lane not in {"legacy", "cloud"} or type(continuing) is not bool:
         raise ValueError("HR cutover admission invalid")

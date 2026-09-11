@@ -18,6 +18,7 @@ from app.hr.candidate_parser_runtime import (
     decode_candidate_parser_response,
 )
 from app.hr.candidate_repository import CandidateNotFound, CandidateUnavailable
+from app.agent_brain.conversation_models import ConversationTurnSubmission
 
 
 def _attempt(**changes) -> CandidateDraftProcessingAttempt:
@@ -69,11 +70,15 @@ def test_submission_coordinator_starts_exact_unbound_hr_conversation() -> None:
         attempt.owner_id,
         attempt.attempt_id,
     )
-    prompt = commands.calls[0][0][2]
-    assert "extracted_facts" in prompt
-    assert "identity_candidate_ids" in prompt
-    assert "必须始终为空数组" in prompt
-    assert str(attempt.attachment_id) not in prompt
+    submission = commands.calls[0][0][2]
+    assert isinstance(submission, ConversationTurnSubmission)
+    assert "extracted_facts" in submission.text
+    assert "identity_candidate_ids" in submission.text
+    assert "必须始终为空数组" in submission.text
+    assert str(attempt.attachment_id) not in submission.text
+    assert submission.hr_scope.position_id is None
+    assert submission.hr_scope.position_candidate_ids == ()
+    assert submission.hr_scope.attachment_ids == (attempt.attachment_id,)
     assert commands.calls[0][1] == {
         "mode": "direct_agent",
         "direct_agent_id": "hr-bot",

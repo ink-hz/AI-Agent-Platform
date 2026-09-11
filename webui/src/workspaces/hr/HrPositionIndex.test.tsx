@@ -278,3 +278,14 @@ it('offers opt in Hannah work for each existing position',async()=>{
  await act(async()=>root.render(<HrPositionIndex account={account} api={api() as never}/>));
  expect(container.querySelector(`a[href="/hr/agent?position=${official.positionId}"]`)).not.toBeNull();
 });
+
+it("retains production selection into the main conversation", async () => {
+  const onSelect = vi.fn();
+  await act(async () => root.render(
+    <HrPositionIndex account={account} api={api() as never} onSelect={onSelect} />,
+  ));
+  const continueButton = [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "在主对话中继续")!;
+  await act(async () => continueButton.click());
+  expect(onSelect).toHaveBeenCalledWith(official);
+});

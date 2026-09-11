@@ -1,0 +1,6 @@
+.s.....ss............................................................... [ 12%]
+.........s..................
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+96 passed, 4 skipped in 103.98s (0:01:43)
