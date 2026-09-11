@@ -3,9 +3,6 @@ import json
 from uuid import uuid4
 
 import pytest
-from app.hr_agent.context import build_model_context
-from app.hr_agent.resources import PublishedKnowledge, ResourceReader
-from app.hr_agent.types import HrAgentProblem, ModelContext, ToolCall
 from test_hr_agent_repository import (
     database as database,  # noqa: PLC0414 - pytest fixture export
 )
@@ -13,6 +10,10 @@ from test_hr_agent_repository import model_context, reply, request
 from test_hr_agent_repository import (
     repo as repo,  # noqa: PLC0414 - pytest fixture export
 )
+
+from app.hr_agent.context import build_model_context
+from app.hr_agent.resources import PublishedKnowledge, ResourceReader
+from app.hr_agent.types import HrAgentProblem, ModelContext, ToolCall, WorkPaused
 
 
 def publication(path):
@@ -268,7 +269,17 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
     )
     repo.scope_validator = resources.validate_scope
     owner = uuid4()
-    work = repo.submit(owner, request(budget_profile="test"), uuid4())
+    position = {"kind": "position", "id": str(uuid4())}
+    work = repo.submit(
+        owner,
+        request(
+            text="继续当前获准研究目标",
+            objects=[position],
+            references=[ref],
+            budget_profile="test",
+        ),
+        uuid4(),
+    )
     fence = repo.claim("w", 60)
     read_attempt = repo.prepare_model(fence, model_context())
     repo.mark_model_sending(fence, read_attempt.attempt_id)
@@ -288,6 +299,13 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
     assert before["checkpoint"]["readings"][0]["remaining_ranges"]
     assert before["checkpoint"]["open_questions"] == ["尚待证据"]
     attempt = repo.prepare_model(fence, context)
+    summary_state = json.loads(attempt.messages[1]["content"])
+    assert summary_state == {
+        "current_goal": "继续当前获准研究目标",
+        "objects": [position],
+        "selected_references": [ref],
+        "checkpoint": before["checkpoint"],
+    }
     repo.mark_model_sending(fence, attempt.attempt_id)
     repo.commit_model(
         fence, attempt.attempt_id, reply("阶段观察：保留尚待证据的问题。")
@@ -307,6 +325,48 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
     assert next_context.purpose in ("summary", "work")
     if next_context.purpose == "work":
         assert next_context.estimated_input_tokens <= 20000
+
+
+def test_summary_prefix_that_leaves_no_history_window_waits_for_budget(
+    repo, tmp_path
+):
+    from dataclasses import replace
+
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / "settings-small-window")
+    settings = replace(
+        settings,
+        budget_profile={
+            **settings.budget_profile,
+            "input_target_tokens": 2000,
+            "input_trigger_tokens": 3000,
+            "max_output_tokens": 1000,
+        },
+        provider_profile={
+            **settings.provider_profile,
+            "context_window_tokens": 2200,
+        },
+    )
+    repo.settings = settings
+    root = tmp_path / "release-small-window"
+    publication(root)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    work = repo.submit(
+        owner,
+        request(text="目标" + "x" * 2400, budget_profile="test"),
+        uuid4(),
+    )
+    fence = repo.claim("w", 60)
+
+    with pytest.raises(WorkPaused):
+        build_model_context(repo, resources, fence)
+
+    assert repo.get_work(owner, work["work_id"])["state"] == "waiting_budget"
 
 
 def test_mixed_summary_missing_originals_is_omitted(repo, database):
