@@ -1,0 +1,127 @@
+Refs
+b974a87318955f14c21a26bbcad386dc8ea93ad1
+fe10fae1969b4c42f8c05d48c8eaf507a787b2b5
+96f412fcb05e6d8a770c2ece7968f0a893a8ed8d
+Blob matrix (b974a87 fe10fae HEAD INDEX WORKTREE)
+b974a87 webui/src/workspaces/hr/HrCandidateWorkspace.tsx 8718a6d6a8320fc4ee9258fb34f8824fe109365d
+fe10fae webui/src/workspaces/hr/HrCandidateWorkspace.tsx 8718a6d6a8320fc4ee9258fb34f8824fe109365d
+HEAD webui/src/workspaces/hr/HrCandidateWorkspace.tsx 8718a6d6a8320fc4ee9258fb34f8824fe109365d
+INDEX webui/src/workspaces/hr/HrCandidateWorkspace.tsx 8718a6d6a8320fc4ee9258fb34f8824fe109365d
+WORKTREE webui/src/workspaces/hr/HrCandidateWorkspace.tsx 8718a6d6a8320fc4ee9258fb34f8824fe109365d
+b974a87 webui/src/workspaces/hr/HrCandidateWorkspace.test.tsx 079b13eae0ee341ab1ca430085c084823b02d5b0
+fe10fae webui/src/workspaces/hr/HrCandidateWorkspace.test.tsx 079b13eae0ee341ab1ca430085c084823b02d5b0
+HEAD webui/src/workspaces/hr/HrCandidateWorkspace.test.tsx 079b13eae0ee341ab1ca430085c084823b02d5b0
+INDEX webui/src/workspaces/hr/HrCandidateWorkspace.test.tsx 079b13eae0ee341ab1ca430085c084823b02d5b0
+WORKTREE webui/src/workspaces/hr/HrCandidateWorkspace.test.tsx 079b13eae0ee341ab1ca430085c084823b02d5b0
+b974a87 webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx 3cbdf59ba16f3ec6466688fe8bffba9b03679684
+fe10fae webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx 3cbdf59ba16f3ec6466688fe8bffba9b03679684
+HEAD webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx 3cbdf59ba16f3ec6466688fe8bffba9b03679684
+INDEX webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx 3cbdf59ba16f3ec6466688fe8bffba9b03679684
+WORKTREE webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx 3cbdf59ba16f3ec6466688fe8bffba9b03679684
+b974a87 webui/src/conversationApi.ts 6c96306b90ca12821bda8d8fdc2c762849af5233
+fe10fae webui/src/conversationApi.ts 6c96306b90ca12821bda8d8fdc2c762849af5233
+HEAD webui/src/conversationApi.ts 6c96306b90ca12821bda8d8fdc2c762849af5233
+INDEX webui/src/conversationApi.ts 6c96306b90ca12821bda8d8fdc2c762849af5233
+WORKTREE webui/src/conversationApi.ts 6c96306b90ca12821bda8d8fdc2c762849af5233
+b974a87 webui/src/workspaces/hr/HrPositionDetailsDrawer.tsx 0acae4be4aa19c60bbf518f89798627b91fe250a
+fe10fae webui/src/workspaces/hr/HrPositionDetailsDrawer.tsx 0acae4be4aa19c60bbf518f89798627b91fe250a
+HEAD webui/src/workspaces/hr/HrPositionDetailsDrawer.tsx 0acae4be4aa19c60bbf518f89798627b91fe250a
+INDEX webui/src/workspaces/hr/HrPositionDetailsDrawer.tsx 0acae4be4aa19c60bbf518f89798627b91fe250a
+WORKTREE webui/src/workspaces/hr/HrPositionDetailsDrawer.tsx 0acae4be4aa19c60bbf518f89798627b91fe250a
+b974a87 webui/src/workspaces/hr/HrCandidateAnalysisCard.tsx cd805cbdc2159fee9052640cab53d69867a78a95
+fe10fae webui/src/workspaces/hr/HrCandidateAnalysisCard.tsx cd805cbdc2159fee9052640cab53d69867a78a95
+HEAD webui/src/workspaces/hr/HrCandidateAnalysisCard.tsx cd805cbdc2159fee9052640cab53d69867a78a95
+INDEX webui/src/workspaces/hr/HrCandidateAnalysisCard.tsx cd805cbdc2159fee9052640cab53d69867a78a95
+WORKTREE webui/src/workspaces/hr/HrCandidateAnalysisCard.tsx cd805cbdc2159fee9052640cab53d69867a78a95
+b974a87 webui/src/workspaces/hr/hrMutationRequest.ts c81b8976aa776f03ae634d6b710dca47269bd300
+fe10fae webui/src/workspaces/hr/hrMutationRequest.ts c81b8976aa776f03ae634d6b710dca47269bd300
+HEAD webui/src/workspaces/hr/hrMutationRequest.ts c81b8976aa776f03ae634d6b710dca47269bd300
+INDEX webui/src/workspaces/hr/hrMutationRequest.ts c81b8976aa776f03ae634d6b710dca47269bd300
+WORKTREE webui/src/workspaces/hr/hrMutationRequest.ts c81b8976aa776f03ae634d6b710dca47269bd300
+b974a87 webui/package.json 647016ab1fc8e69f91114f37c63320ad47a61c0b
+fe10fae webui/package.json 647016ab1fc8e69f91114f37c63320ad47a61c0b
+HEAD webui/package.json 647016ab1fc8e69f91114f37c63320ad47a61c0b
+INDEX webui/package.json 647016ab1fc8e69f91114f37c63320ad47a61c0b
+WORKTREE webui/package.json 647016ab1fc8e69f91114f37c63320ad47a61c0b
+b974a87 webui/package-lock.json e6ddc474a3cc364817beae849275972621d8b609
+fe10fae webui/package-lock.json e6ddc474a3cc364817beae849275972621d8b609
+HEAD webui/package-lock.json e6ddc474a3cc364817beae849275972621d8b609
+INDEX webui/package-lock.json e6ddc474a3cc364817beae849275972621d8b609
+WORKTREE webui/package-lock.json e6ddc474a3cc364817beae849275972621d8b609
+b974a87 webui/vite.config.ts 3961444d1376c98dc1151a28e3f01360d2ad5ffd
+fe10fae webui/vite.config.ts 3961444d1376c98dc1151a28e3f01360d2ad5ffd
+HEAD webui/vite.config.ts 3961444d1376c98dc1151a28e3f01360d2ad5ffd
+INDEX webui/vite.config.ts 3961444d1376c98dc1151a28e3f01360d2ad5ffd
+WORKTREE webui/vite.config.ts 3961444d1376c98dc1151a28e3f01360d2ad5ffd
+Failure summaries
+artifacts/2026-09-11-hr-e-review/final/frontend-current-targeted.log
+   × starts a new task conversation when no preserved chat is supplied 16ms
+   × renders the frozen comparison contract with candidate summaries and coverage instead of dropping nested data 13ms
+   × reuses the candidate task idempotency key after an uncertain start failure 10ms
+   × retains separate idempotency keys for interleaved uncertain task starts 8ms
+   × binds feedback to the maximum analysis version and excludes another context from comparison 17ms
+   × refreshes analysis after a durable candidate task reaches completion 8ms
+   × refreshes analysis when an idempotent candidate task replay is already completed 8ms
+   × does not claim a completed candidate task failed to start when analysis refresh is unavailable 9ms
+   × fails closed when terminal task kind does not match the launched candidate task 7ms
+   × uses authoritative terminal failure and keeps it isolated from another selected candidate 10ms
+   × reopens the combined P0 results without losing the mounted recruiting conversation 78ms
+ Test Files  2 failed (2)
+      Tests  11 failed | 17 passed (28)
+artifacts/2026-09-11-hr-e-review/final/frontend-b974a87-targeted.log
+   × starts a new task conversation when no preserved chat is supplied 12ms
+   × renders the frozen comparison contract with candidate summaries and coverage instead of dropping nested data 11ms
+   × reuses the candidate task idempotency key after an uncertain start failure 8ms
+   × retains separate idempotency keys for interleaved uncertain task starts 7ms
+   × binds feedback to the maximum analysis version and excludes another context from comparison 17ms
+   × refreshes analysis after a durable candidate task reaches completion 9ms
+   × refreshes analysis when an idempotent candidate task replay is already completed 8ms
+   × does not claim a completed candidate task failed to start when analysis refresh is unavailable 8ms
+   × fails closed when terminal task kind does not match the launched candidate task 7ms
+   × uses authoritative terminal failure and keeps it isolated from another selected candidate 12ms
+   × reopens the combined P0 results without losing the mounted recruiting conversation 73ms
+ Test Files  2 failed (2)
+      Tests  11 failed | 17 passed (28)
+artifacts/2026-09-11-hr-e-review/final/frontend-fe10fae-targeted.log
+   × starts a new task conversation when no preserved chat is supplied 13ms
+   × renders the frozen comparison contract with candidate summaries and coverage instead of dropping nested data 12ms
+   × reuses the candidate task idempotency key after an uncertain start failure 10ms
+   × retains separate idempotency keys for interleaved uncertain task starts 8ms
+   × binds feedback to the maximum analysis version and excludes another context from comparison 16ms
+   × refreshes analysis after a durable candidate task reaches completion 9ms
+   × refreshes analysis when an idempotent candidate task replay is already completed 8ms
+   × does not claim a completed candidate task failed to start when analysis refresh is unavailable 9ms
+   × fails closed when terminal task kind does not match the launched candidate task 7ms
+   × uses authoritative terminal failure and keeps it isolated from another selected candidate 10ms
+   × reopens the combined P0 results without losing the mounted recruiting conversation 73ms
+ Test Files  2 failed (2)
+      Tests  11 failed | 17 passed (28)
+Origin blame
+7b041174 (neo 2026-09-08 21:51:11 +0800 176) export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContextVersionId, onDraft, uploadClient, readOnly = false }: {
+7a5d37ff (neo 2026-09-04 10:24:22 +0800 177)   api: CandidateApi; positionId: string; csrfToken: string;
+7b041174 (neo 2026-09-08 21:51:11 +0800 178)   currentContextVersionId: string | null; onDraft?:(text:string,ids:string[],attachments:string[])=>void;
+d4969c56 (neo 2026-09-05 05:57:05 +0800 179)   uploadClient?: AttachmentUploadClient; readOnly?: boolean;
+7a5d37ff (neo 2026-09-04 10:24:22 +0800 180) }) {
+7a5d37ff (neo 2026-09-04 10:24:22 +0800 181)   const [drafts, setDrafts] = useState<HrCandidateDraft[]>([]);
+7a5d37ff (neo 2026-09-04 10:24:22 +0800 182)   const [relations, setRelations] = useState<NamedRelation[]>([]);
+7a5d37ff (neo 2026-09-04 10:24:22 +0800 183)   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
+92785e46 (neo 2026-09-04 11:06:43 +0800 184)   const [selected, setSelected] = useState<CandidateDetail | null>(null);
+7a5d37ff (neo 2026-09-04 10:24:22 +0800 185)   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+92785e46 (neo 2026-09-04 11:06:43 +0800 186)   const [comparison, setComparison] = useState<HrCandidateAnalysisVersion | null>(null);
+92785e46 (neo 2026-09-04 11:06:43 +0800 187)   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+92785e46 (neo 2026-09-04 11:06:43 +0800 188)   const [edits, setEdits] = useState<Record<string, DraftEdit>>({});
+7a5d37ff (neo 2026-09-04 10:24:22 +0800 189)   const [correction, setCorrection] = useState("");
+b5fda463 (neo 2026-09-05 03:37:26 +0800 190)   const [analysisFeedback, setAnalysisFeedback] = useState<Record<string, ConversationFeedbackRating | "pending" | "error">>({});
+7a5d37ff (neo 2026-09-04 10:24:22 +0800 347)   async function launch(kind: "candidate_match" | "candidate_interview_plan") {
+7b041174 (neo 2026-09-08 21:51:11 +0800 348)     if(readOnly||!selected||!onDraft)return;
+44de9209 (neo 2026-09-09 17:24:49 +0800 349)     onDraft(`请读取当前岗位要求和已有已确认标准（若有），结合简历为 ${selected.candidate.stableName} ${kind==='candidate_match'?'分析匹配证据、差距和待验证项':'设计面试问题与证据标准'}。`,
+7b041174 (neo 2026-09-08 21:51:11 +0800 350)       [selected.relation.positionCandidateId],selected.documents.filter(item=>item.status==='active').sort((a,b)=>b.versionNumber-a.versionNumber).slice(0,1).map(item=>item.attachmentId));
+7b041174 (neo 2026-09-08 21:51:11 +0800 418)     <section aria-label="已确认候选人"><h3>已确认候选人</h3>{loadState === "ready" && relations.length === 0 && <p>暂无候选人</p>}{relations.map((item) => { const comparable = item.relation.status === "active"; return <article key={item.relation.positionCandidateId}><label><input disabled={readOnly || !comparable} name="candidate-comparison" type="checkbox" checked={comparisonIds.includes(item.relation.positionCandidateId)} onChange={() => setComparisonIds((ids) => ids.includes(item.relation.positionCandidateId) ? ids.filter((id) => id !== item.relation.positionCandidateId) : [...ids, item.relation.positionCandidateId])} />加入比较</label><button type="button" onClick={() => void openCandidate(item)}>查看{item.candidate.stableName}</button><small>岗位上下文 {item.relation.contextVersionId.slice(0, 8)}{!comparable && " · 已归档"}</small></article>; })}<button disabled={readOnly || comparisonIds.length < 2 || !onDraft} type="button" onClick={() => void compare()}>比较已选候选人</button></section>
+7b041174 (neo 2026-09-08 21:51:11 +0800 603)     ...(value.scope ? {scope:value.scope} : scope?.positionId ? {scope:{positionId:scope.positionId,positionCandidateIds:[],attachmentIds:[...new Set([...value.attachmentIds,...value.activeAttachmentIds])]}} : {}),
+7b041174 (neo 2026-09-08 21:51:11 +0800 604)     ...(value.standardConsent ? {standardConsent:value.standardConsent} : {}),
+1a705ebb (neo 2026-09-09 11:42:36 +0800 605)     ...(value.inputResultRefs ? {inputResultRefs:value.inputResultRefs} : {}),
+7ba7656c (neo 2026-09-05 13:50:20 +0800 976)   expect(messageBodies[0]).toEqual({
+7ba7656c (neo 2026-09-05 13:50:20 +0800 977)     text: "请补充量产良率与失效分析要求，修订 JD/JR",
+7ba7656c (neo 2026-09-05 13:50:20 +0800 978)     attachment_ids: [],
+7ba7656c (neo 2026-09-05 13:50:20 +0800 979)     active_attachment_ids: [],
+7ba7656c (neo 2026-09-05 13:50:20 +0800 980)   });

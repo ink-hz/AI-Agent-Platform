@@ -1,0 +1,28 @@
+{
+  "runtime_code_commit": "96f412fcb05e6d8a770c2ece7968f0a893a8ed8d",
+  "file_sha256": {
+    "backend/app/agent_brain/conversation_context.py": "c0cc97462f2321e6aa2c3df19b202a1942db7abd802a520b7885e0a435485bf3",
+    "backend/app/agent_brain/conversation_repository.py": "eadfbee00ecc5224c5b35a63d905ff2df589486925c54947fbd528bc5c0bc395",
+    "backend/app/agent_brain/direct_command_binding.py": "e3e130268f4fd3fb3ee13e6c9d04b513fc64486686cae930b155f7d78bd89aa0",
+    "backend/app/hr/candidate_repository.py": "e4adc3a20abd2670dcee6548f38e8ae14883a5f60fbadb84efa58c36589576b8",
+    "backend/control_migrations/103_hr_execution_drain_occupancy.sql": "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+    "backend/tools/hr_agent/inventory.py": "559bb50521529b0fec858574f366a880b956dbef681f54453f979dd221c7c96d",
+    "backend/tools/hr_agent/preflight.py": "a1979f7093490fb87cc5103f4eaf68c103a8cebb987df98dea4b1cf7e28552a1",
+    "deploy/cloud/hr_agent_migrate.py": "4747d3452224e155a3c41fd52434bc10903118c7e8c59aa8cb1d4a7c07099b2b",
+    "deploy/cloud/migrate-hr-agent.sh": "c1083d5c65132ecf2ebf8b9ea72099add56a66619491b8900c80c681dd4e65cf"
+  },
+  "skip_baseline": "b974a87",
+  "skip_markers_unchanged_in_hr_agent_tests": true,
+  "conditional_test_files": [
+    "backend/tests/test_hr_agent_b_public_model.py",
+    "backend/tests/test_hr_agent_c_public_research.py",
+    "backend/tests/test_hr_agent_d_journey.py",
+    "backend/tests/test_hr_agent_intelligence_build.py",
+    "backend/tests/test_hr_agent_intelligence_releases.py"
+  ],
+  "frontend_test_commit": "e93aeb9",
+  "frontend_test_sha256": {
+    "webui/src/workspaces/hr/HrCandidateWorkspace.test.tsx": "f15cb45d01e033a3b50e27e42597ba0df98efc1e4b16b45165915a69b02d8832",
+    "webui/src/workspaces/hr/HrP0Combined.acceptance.test.tsx": "62ac73dae13dc25961e55e143da6cbf8c03c1cb1cbb24f6cee28440056482f34"
+  }
+}

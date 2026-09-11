@@ -1,0 +1,14 @@
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run --run src/workspaces/hr/HrP0Combined.acceptance.test.tsx
+
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+ ✓ src/workspaces/hr/HrP0Combined.acceptance.test.tsx (1 test) 288ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  20:40:21
+   Duration  1.35s (transform 443ms, setup 0ms, collect 704ms, tests 288ms, environment 209ms, prepare 35ms)
+

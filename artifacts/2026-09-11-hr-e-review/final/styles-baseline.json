@@ -1,0 +1,15 @@
+{
+  "baseline": "b974a87",
+  "files": [
+    {
+      "path": "webui/src/styles.css",
+      "sha256": "6503ac2b267ccf1e73164757dcb1d2e0bdc0da0d0bc8a9e18f55d7e7d4f00308",
+      "unchanged": true
+    },
+    {
+      "path": "webui/src/styles.test.ts",
+      "sha256": "4d592f98d02aabb6df6b4e16cc85d07da01cf37bd6b0c3dd4712cb62a35ce7bf",
+      "unchanged": true
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "release_code": "96f412fcb05e6d8a770c2ece7968f0a893a8ed8d",
+  "historical_checks": [
+    {
+      "baseline": "6a9cef6",
+      "paths": [
+        "artifacts/2026-09-11-hr-d-metering",
+        "artifacts/2026-09-11-hr-d-journey",
+        "artifacts/2026-09-11-hr-c-review",
+        "artifacts/2026-09-11-hr-c-followup",
+        "artifacts/2026-09-11-hr-d-validation",
+        "artifacts/2026-09-11-hr-d-review-followup"
+      ],
+      "files_checked": 99,
+      "changed_files": []
+    },
+    {
+      "baseline": "b974a87",
+      "paths": [
+        "artifacts/2026-09-11-hr-e"
+      ],
+      "files_checked": 76,
+      "changed_files": []
+    }
+  ],
+  "existing_migrations_unchanged": [
+    94,
+    95,
+    100,
+    101,
+    102
+  ]
+}

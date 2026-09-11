@@ -31,7 +31,7 @@ hr_compose=(
 )
 ```
 
-运行时快照须为 root 所有、0600、普通文件且非 symlink。API 和 Worker 可分别生成实际容器环境快照供 preflight 读取，但不得包含在发布证据正文；证据只保存 preflight 去敏 JSON。`platform-hr-agent-secrets`、`hr-knowledge` 和 `hr-work` 必须在服务启动前单独 provision，`hr-work` 为运行 uid/gid 所有且 0700。两类 keyring 分别验证 purpose/fingerprint：HR 工作记录 keyring 与附件 content keyring 不互相替代。
+供宿主 compose 读取的 runtime.env 须为 root 所有、0600、普通文件且非 symlink。容器内供 preflight 读取的 api-runtime.env / worker-runtime.env 是另外两份快照，须由实际检查用户 uid10001 所有、0600；不能把 root-owned 文件直接拿给 uid10001 的 preflight。API 和 Worker 可分别生成实际容器环境快照供 preflight 读取，但不得包含在发布证据正文；证据只保存 preflight 去敏 JSON。`platform-hr-agent-secrets`、`hr-knowledge` 和 `hr-work` 必须在服务启动前单独 provision，`hr-work` 为运行 uid/gid 所有且 0700。两类 keyring 分别验证 purpose/fingerprint：HR 工作记录 keyring 与附件 content keyring 不互相替代。
 
 附件能力必须显式选择。完整候选人链要求 API 与 Worker 都是 `PLATFORM_CONVERSATION_ATTACHMENT_ENABLED=1` 且 storage/keyring 身份完全一致。公开/虚构无附件隔离模式可显式为 0，但不能称完整 HR ready。
 
@@ -52,7 +52,7 @@ preflight 从待发布镜像内运行；镜像必须包含 `backend/tools/hr_age
   --worker-env-file /run/hr-agent-secrets/worker-runtime.env
 ```
 
-已获相应数据库只读检查授权时，增加 app 身份 DSN 文件。工具为连接设置只读事务，调用现有 `load_hr_agent_settings`、`KnowledgeReleases` 和 `check_schema_ready`，并读取 096–101 回执及 public 102 cutover gate：
+已获相应数据库只读检查授权时，增加 app 身份 DSN 文件。工具为连接设置只读事务，调用现有 `load_hr_agent_settings`、`KnowledgeReleases` 和 `check_schema_ready`，并读取 096–103 回执及 public 102 cutover gate（103 修正排空函数）：
 
 ```bash
 /usr/bin/docker run --rm --read-only --user 10001:10001 \
@@ -75,7 +75,7 @@ preflight 从待发布镜像内运行；镜像必须包含 `backend/tools/hr_age
 
 ## 4. 控制库迁移（需单独执行授权）
 
-以下是获准窗口内的具体命令形态。根迁移由现有 `bootstrap-control-db.sh` 的短时 owner membership 生命周期负责；它必须已经应用并验证 102。根目录中的 100 必须更早由第 1 节独立附件热修复完成，不能在旧附件 Worker 仍可恢复时首次应用。HR opt-in 096–099/101 只由 `migrate-hr-agent.sh` 应用；它不会运行根迁移目录。
+以下是获准窗口内的具体命令形态。根迁移由现有 `bootstrap-control-db.sh` 的短时 owner membership 生命周期负责；它必须已经应用并验证 102、103。根目录中的 100 必须更早由第 1 节独立附件热修复完成，不能在旧附件 Worker 仍可恢复时首次应用。HR opt-in 096–099/101 只由 `migrate-hr-agent.sh` 应用；它不会运行根迁移目录。
 
 Production：
 
@@ -87,9 +87,15 @@ Production：
   PLATFORM_POSTGRES_CONTAINER_ID
 ```
 
-`PLATFORM_IMAGE_SHA` 和 `PLATFORM_POSTGRES_CONTAINER_ID` 必须替换为已核验的准确值，镜像不能使用浮动 tag。助手要求 production/preview 两个 migrator DSN 都是现有 root-owned mode-0600 文件，并先验证：owner membership at rest 为 0；production/preview 的根迁移 100、102 checksum 与当前 release 一致。任一条件不满足时，它在授予权限前失败，不尝试补跑根迁移。
+`PLATFORM_IMAGE_SHA` 和 `PLATFORM_POSTGRES_CONTAINER_ID` 必须替换为已核验的准确值，镜像不能使用浮动 tag。provisioning须确认两个 migrator DSN 为root-owned mode-0600文件；助手实际检查普通文件和0600，未检查owner UID，这一项仍是外部前置。助手先验证：owner membership at rest 为0且没有migrator会话；production/preview 的根迁移100、102、103 checksum与当前release一致。任一条件不满足时，在授予权限前失败，不补跑根迁移。
 
-助手在发起 GRANT 前安装 EXIT cleanup，然后只向两个 migrator 短时授予各自 production/preview owner role，使用 root 容器和各自 DSN 显式运行 HR 子目录，最后撤销两个 membership 并验证总数回到 0。任一 HR 迁移、Docker 或远程调用边界、撤销步骤失败时整体失败；即使 GRANT 已生效但调用回执丢失，cleanup 仍尝试双重撤销。失败后必须以平台 owner 只读核对 membership 为 0，不能把“脚本退出”当撤销证据。
+助手由 `hr_agent_migrate.py` 监督实际具名迁移容器。授予的是**整个控制库 owner 的角色成员身份**，不是 HR 表级权限，也不是会话级权限。production 清理并核实后才授予 preview；不跨两个迁移同时持权。同部署主机的文件锁阻止本助手并发；其他部署工具仍须遵守独占维护窗口。开始前必须核实两个 owner 的所有 membership 为 0、两个 migrator 的数据库会话为 0。
+
+每个环境的迁移等待默认 900 秒，`--migration-timeout` 可明确设为不超过 3600 秒；单个管理命令默认 10 秒，`--command-timeout` 不超过 30 秒，SQL 另有 statement/lock timeout。容器使用不可变镜像、`--read-only`、受限 tmpfs 和该环境唯一的 DSN 文件。INT/TERM/HUP、SQL 失败和超时均进入清理：检查并停止准确容器，必要时 kill，再撤销 membership、核实容器停止且两个 migrator 会话及 membership 均为 0。不能用 Docker CLI 已退出代替容器停止，不能用 REVOKE 代替已 SET ROLE 会话结束。
+
+回执保存于 private 下 `hr-agent-migration-receipts/<run UUID>.json`（目录 0700，文件 0600），在 GRANT 前记录可能的授权与具名容器，包含阶段、环境、容器身份、时间及 `cleanup_verified`，不含 DSN、SQL 输出或异常原文。`cleanup_verified=false` 或 `HR_AGENT_MIGRATIONS_CLEANUP_UNRESOLVED` 是必须交给发布监控处理的失败信号；本轮没有装配生产告警系统。成功回执证明本次监督范围内的清理，不证明 HR 业务上线。
+
+SIGKILL、主机掉电、Docker daemon 长期不可用不能被进程内 trap 保证恢复；上述超时也不是这类故障下的角色 TTL。出现此情况禁止直接重跑或恢复旧发布。值班管理员按最后一份 private 回执：用 `docker inspect <准确 container_id/name>` 确认并停止对应容器；检查 `pg_stat_activity` 中两个 migrator 的会话，核实身份后终止残留会话；撤销准确 owner/migrator membership；复核容器、会话与 membership 三项均为空或已停止，并另存人工恢复回执。恢复操作需要维护窗口的数据库/容器权限，不由助手自动扩大权限。对未确认归属的容器或会话不得猜测后删除。
 
 public 102 提供 `platform_control.hr_execution_cutover` 单例状态、幂等操作记录和只读在途计数。迁移不会自动创建单例行；在 operational activation 前必须通过经授权的 `platform_control.initialize_hr_execution_cutover_v102(uuid)` 创建 `legacy` gate。状态切换只使用 `platform_control.transition_hr_execution_cutover_v102(text,uuid)`；在途计数只使用 `platform_control.hr_execution_cutover_counts_v102()`。三个函数均由 maintenance 身份执行，app 只对 gate 有 SELECT，不能写 gate 或执行管理函数。preflight 读取 gate 的 `singleton, phase, epoch, transitioned_at, row_version` 并核对这些权限；无行、多行或权限偏移均不 ready。不得手写 gate/operations 表。
 
@@ -116,7 +122,7 @@ PY
 
 进入 drain 或完成切换时，Python 参数化 SQL 使用 `select platform_control.transition_hr_execution_cutover_v102(%s,%s)`，参数依次为准确目标 phase 和新的显式 request UUID。这里的命令是受权后的操作形态，不是本手册授予的执行许可。
 
-迁移后再次运行带数据库的 preflight。096–102 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
+迁移后再次运行带数据库的 preflight。096–103 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
 
 ## 5. 隔离启动与验证
 
@@ -152,7 +158,7 @@ PY
 
 1. `legacy -> draining_legacy`：暂停旧 HR 新根请求和新简历批次受理；读取旧链与新链非终态计数及准确清单。旧 Worker 继续领取/恢复转换前已经 accepted/queued 的本 lane 工作及其派生解析，直至完成或有明确取消证据。
 2. owner-preserving drain：已受理工作留给原执行者完成、认领、恢复或明确取消；只拒绝新的 root admission，不停止已有 continuation 的领取。不得将旧命令改写为新任务，不得同一附件双解析。
-3. 旧链非终态为 0 且证据完整后，`draining_legacy -> cloud`，只允许云端 Loop 新受理。
+3. 按下节停止旧 HR Worker 并核实后，旧链非终态为 0 且证据完整，才执行 `draining_legacy -> cloud`，只允许云端 Loop 新受理。
 4. 切换后持续核对新链任务、等待、恢复和解析归属；不能把单次 health 当稳定性证明。
 
 回滚不回退数据库、不删除或覆盖成果，也不把同一 work 自动交给旧执行器：
@@ -164,11 +170,59 @@ PY
 
 所有状态切换使用唯一 transition request id，记录前后 epoch/row_version 和只读计数；不得直接 UPDATE 102 表或伪造“零在途”。
 
+
+### 6.1 排空记录与旧 HR 执行器停止
+
+103 不改历史状态。v5 queued 只是命令记录时，只有 job/binding/transport-run/Attempt/Turn 准确关联且 Attempt、Turn 都已终结才从占用中排除；孤立或关联不明仍阻断。任何未确认停止或关联活跃 Turn/Attempt 均阻断，包括 interrupted。旧 interrupted 有 terminal_at、无待确认停止及活跃关联时按技术终态排除，**不代表任务已成功，也不证明远端进程停止**。2026-09-11 11:51 UTC 的聚合盘点有 3 条终结轮次关联的 queued v5 记录，以及 28 条满足上述聚合技术终态条件的 interrupted；没有修改或重放这些记录。正式窗口仍须运行 103 的准确计数及原执行器停止核验，不能把聚合结果当作已经切换。
+
+ready 旧简历草稿仍需在切换前逐批决定：在 `draining_legacy` 内确认/放弃，或明确保留只读历史；保留只读不自动转成新链待办。cloud 激活后旧 confirm/dismiss（含重放）被拒绝。切换不自动重新上传或重新解析同一材料。
+
+下列命令只在已批准窗口内执行。先保持 draining_legacy，让已有工作和派生解析完成，再停云端旧 HR direct Worker；保持与 §2 完全相同的 compose 数组，并为该服务显式启用其旧 profile：
+
+```bash
+(
+set -euo pipefail
+legacy_hr_ids=$("${hr_compose[@]}" --profile hr-web ps -q platform-hr-web-worker)
+test -n "$legacy_hr_ids"
+"${hr_compose[@]}" --profile hr-web stop platform-hr-web-worker
+for legacy_hr_id in $legacy_hr_ids; do
+  test "$(/usr/bin/docker inspect --format '{{.State.Running}}' "$legacy_hr_id")" = false
+done
+)
+```
+
+私有运行配置必须持久化 `PLATFORM_HR_WEB_WORKER_ENABLED=0`，发布/回滚清单不得再启动 `platform-hr-web-worker`；核实 API 实际配置与镜像。没有匹配容器时上面的步骤失败而非推定已经停用，须由服务负责人提供“该环境不存在旧 HR direct Worker”的准确进程/服务证据。
+
+本机 Team 仓库已核实 HR Bot 独立映射为 PM2 `metabot-hr`，不是整个共享 MetaBot 进程。内网具体控制能力见[只读审计](../../artifacts/2026-09-11-hr-e-review/final/legacy-worker-stop-audit.md)。在已核实实际主机、部署 wrapper/checksum、无外部 watchdog 重建及批准目标为 absent 后，采用以下退出操作；命令未执行：
+
+```bash
+(
+set -euo pipefail
+OPS_PM2=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
+hr_stop_evidence=/Users/agentops/AgentRuntime/release-evidence/APPROVED_CHANGE
+test -d "$hr_stop_evidence"
+sudo -n -H -u agentops /bin/bash "$OPS_PM2" state-one metabot-hr > "$hr_stop_evidence/hr-before.txt"
+sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_stop_evidence/others-before.json"
+sudo -n -H -u agentops /bin/bash "$OPS_PM2" delete-one metabot-hr
+test "$(sudo -n -H -u agentops /bin/bash "$OPS_PM2" state-one metabot-hr)" = absent
+sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_stop_evidence/others-after.json"
+cmp "$hr_stop_evidence/others-before.json" "$hr_stop_evidence/others-after.json"
+sudo -n -H -u agentops /bin/bash "$OPS_PM2" save
+)
+```
+
+证据目录须在窗口前创建并限制权限；APPROVED_CHANGE 换成准确变更号。只有 HR absent、其他实例快照一致才 save；任一步失败停止切换并调查，不自动全量恢复。选择 delete-one 是因为 wrapper 的 restore-one stopped 会先重新启动该实例再停止，不适合作为“退出过程中不重启旧HR”的默认命令。禁止 replace-all/delete-all；后续 fleet 发布和回滚清单必须排除 HR，避免重新创建。实际主机和持久状态未在本轮验证，仓库提供操作能力不等于已停止。
+
+Relay 注册仍通常共用于多个 Bot，现有 register_worker CLI 固定非验收 Worker 的完整 agent 列表，不能假设支持只移除 hr-bot。保留共享 Relay 及其他 Bot，依赖活 handoff gate 拒绝其 HR 派发；禁止整体 revoke 来冒充 HR 退出。若实际存在 HR 专用 Worker，维护者才可按已确认 worker_id 使用 `python -m app.execution_relay.register_worker revoke-worker <worker_id> <change_reference>` 注销，并保留维护回执。
+
+活的 `/v5/handoff` 已在每次 offer 前取共享闸门锁；cloud/draining_cloud 不再发 HR 命令，legacy/draining_legacy 允许准确已受理工作的续作。已接受工作回调保留原身份/租约校验，避免因切换丢掉完成回执。确认门控代码已在实际 API 镜像生效；本地签名 HTTP 测试不能替代这一步。Feishu HR 的用户入口、存量会话去向与 HR Bot 停用必须由产品/服务负责人一起确认，仍未知时不能进入 cloud。
+
 ## 7. 当前明确未完成
 
 - 发布窗口、停服授权和执行责任人未知。
 - 真实候选人模型服务、传输、保留、训练与日志策略未获确认；生产 personal-processing authorizer 不存在。
 - D7 的 300 秒/16384 输出候选配置尚未由产品确认延迟和成本，计量校准也未完成。
-- public 102 checksum 和最终操作接口需随实现回执核对，不能从本文草案推断已发布。
-- 生产/私有配置、实际容器、在途清单和数据库状态未在本地 E1c 中读取。
+- 100/102/103 的发布回执、103 准确排空计数和实际 handoff 镜像未在生产验收。
+- 已做受限只读聚合盘点，但本机已核实内网metabot-hr单实例退出能力；实际主机部署指纹、持久停止证据、共享Worker不受影响及独立HR飞书去向仍待验。
+- 最新只读观察生产为 fe10fae；发布分支已在96f412f承接该生产代码；发布窗口仍须复查最新生产HEAD，不能覆盖随后上线的能力。
 - 浏览器验收、真实模型专业审读和生产验收均未完成。

@@ -1,0 +1,252 @@
+revision=b974a87318955f14c21a26bbcad386dc8ea93ad1
+candidate_source_blob=8718a6d6a8320fc4ee9258fb34f8824fe109365d
+candidate_test_blob=079b13eae0ee341ab1ca430085c084823b02d5b0
+combined_test_blob=3cbdf59ba16f3ec6466688fe8bffba9b03679684
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run --run src/workspaces/hr/HrCandidateWorkspace.test.tsx src/workspaces/hr/HrP0Combined.acceptance.test.tsx
+
+
+ RUN  v3.2.6 /private/tmp/hr-frontend-b974-review.z1l5j1/worktree/webui
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx (27 tests | 10 failed) 271ms
+   ✓ lists each resume version and safely preopens preview and retryable download tickets 40ms
+   ✓ resolves each interview PDF download through a fresh Position resource and ticket request 15ms
+   ✓ does not retain a failed interview PDF ticket request for the next retry 14ms
+   ✓ keeps successful resume drafts when a sibling fails and retries only that item 12ms
+   ✓ uploads ready resume files and creates one recoverable batch 11ms
+   × starts a new task conversation when no preserved chat is supplied 12ms
+     → expected "spy" to be called with arguments: [ …(5) ]
+
+Number of calls: 0
+
+   × renders the frozen comparison contract with candidate summaries and coverage instead of dropping nested data 11ms
+     → expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '同一岗位上下文'
+   ✓ renders the frozen resume-extract envelope and bounds unknown nested fallback content 11ms
+   ✓ normalizes and filters protected legacy keys while bounding and escaping safe fallback text 13ms
+   ✓ polls processing drafts with bounded delay and stops at a terminal state 4ms
+   ✓ stops automatic draft polling after the bounded retry budget and leaves manual refresh available 6ms
+   ✓ starts a fresh polling budget after retrying a failed draft 8ms
+   × reuses the candidate task idempotency key after an uncertain start failure 8ms
+     → Cannot read properties of undefined (reading 'click')
+   × retains separate idempotency keys for interleaved uncertain task starts 7ms
+     → Cannot read properties of undefined (reading 'click')
+   ✓ previews and edits extracted facts and requires an explicit identity decision 12ms
+   × binds feedback to the maximum analysis version and excludes another context from comparison 17ms
+     → expected false to be true // Object.is equality
+   × refreshes analysis after a durable candidate task reaches completion 9ms
+     → expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '分析版本 v3'
+   × refreshes analysis when an idempotent candidate task replay is already completed 8ms
+     → expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '分析版本 v3'
+   × does not claim a completed candidate task failed to start when analysis refresh is unavailable 8ms
+     → expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '任务已完成，分析暂时无法刷新'
+   × fails closed when terminal task kind does not match the launched candidate task 7ms
+     → expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '任务绑定异常'
+   × uses authoritative terminal failure and keeps it isolated from another selected candidate 12ms
+     → expected "spy" to be called with arguments: [ …(3) ]
+
+Number of calls: 0
+
+   ✓ shows complete structured result, evidence and exact provenance identifiers 6ms
+   ✓ renders candidate facts as labeled text instead of a raw JSON dump 3ms
+   ✓ explains why analysis retry is unavailable instead of exposing a silent no-op 5ms
+   ✓ disables upload and all candidate mutations in hard-stale read-only mode 3ms
+   ✓ distinguishes an empty candidate set from a local read failure 2ms
+   ✓ drafts a first interview without a confirmed standard and preserves the exact candidate 6ms
+ ❯ src/workspaces/hr/HrP0Combined.acceptance.test.tsx (1 test | 1 failed) 73ms
+   × reopens the combined P0 results without losing the mounted recruiting conversation 73ms
+     → expected { …(5) } to deeply equal { …(3) }
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > starts a new task conversation when no preserved chat is supplied
+AssertionError: expected "spy" to be called with arguments: [ …(5) ]
+
+Number of calls: 0
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:188:28
+    186|     .find((button) => button.textContent === "生成匹配分析")?.click());
+    187| 
+    188|   expect(client.startTask).toHaveBeenCalledWith(
+       |                            ^
+    189|     positionId,
+    190|     "candidate_match",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > renders the frozen comparison contract with candidate summaries and coverage instead of dropping nested data
+AssertionError: expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '同一岗位上下文'
+
+Expected: "同一岗位上下文"
+Received: "CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状态批量上传简历每份简历独立解析；单份失败不会影响其他文件。＋ 添加文件或图片支持选择、拖放或粘贴；单条最多 100 个、合计 500 MB开始解析 0 份简历解析与确认候选人1待确认材料 00000000审阅候选人1候选人2待确认材料 00000000审阅候选人2候选人 00000000解析失败材料 00000000失败原因：这份简历暂未解析完成，请重试。重试解析已确认候选人加入比较查看候选人1岗位上下文 00000000加入比较查看候选人2岗位上下文 00000000比较已选候选人"
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:219:35
+    217| 
+    218|   for (const text of ["同一岗位上下文", "候选人1", "量产经验更完整", "证据覆盖", "3 条", "待验…
+    219|     expect(container.textContent).toContain(text);
+       |                                   ^
+    220|   }
+    221|   expect(container.querySelector(".hr-candidate-comparison pre")).toBe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > reuses the candidate task idempotency key after an uncertain start failure
+TypeError: Cannot read properties of undefined (reading 'click')
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:356:32
+    354|   await act(async () => [...container.querySelectorAll<HTMLButtonEleme…
+    355|   const launch = [...container.querySelectorAll<HTMLButtonElement>("bu…
+    356|   await act(async () => launch.click());
+       |                                ^
+    357|   await act(async () => launch.click());
+    358|   expect(client.startTask.mock.calls[0]?.[2]).toBe(client.startTask.mo…
+ ❯ process.env.NODE_ENV.exports.act ../../../../../Users/neo/Developer/work/AI-Agent-Platform/webui/node_modules/react/cjs/react.development.js:814:22
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:356:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > retains separate idempotency keys for interleaved uncertain task starts
+TypeError: Cannot read properties of undefined (reading 'click')
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:368:31
+    366|   const match = [...container.querySelectorAll<HTMLButtonElement>("but…
+    367|   const interview = [...container.querySelectorAll<HTMLButtonElement>(…
+    368|   await act(async () => match.click()); await act(async () => intervie…
+       |                               ^
+    369|   expect(client.startTask.mock.calls[0]?.[2]).toBe(client.startTask.mo…
+    370|   expect(client.startTask.mock.calls[0]?.[2]).not.toBe(client.startTas…
+ ❯ process.env.NODE_ENV.exports.act ../../../../../Users/neo/Developer/work/AI-Agent-Platform/webui/node_modules/react/cjs/react.development.js:814:22
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:368:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > binds feedback to the maximum analysis version and excludes another context from comparison
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:409:36
+    407|   const comparisons = container.querySelectorAll<HTMLInputElement>('in…
+    408|   expect(comparisons[0]?.disabled).toBe(false);
+    409|   expect(comparisons[1]?.disabled).toBe(true);
+       |                                    ^
+    410|   expect(container.textContent).toContain("上下文版本不同，需重算后比较");
+    411| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > refreshes analysis after a durable candidate task reaches completion
+AssertionError: expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '分析版本 v3'
+
+Expected: "分析版本 v3"
+Received: "CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状态批量上传简历每份简历独立解析；单份失败不会影响其他文件。＋ 添加文件或图片支持选择、拖放或粘贴；单条最多 100 个、合计 500 MB开始解析 0 份简历解析与确认候选人1待确认材料 00000000审阅候选人1候选人2待确认材料 00000000审阅候选人2候选人 00000000解析失败材料 00000000失败原因：这份简历暂未解析完成，请重试。重试解析已确认候选人加入比较查看候选人1岗位上下文 00000000加入比较查看候选人2岗位上下文 00000000比较已选候选人CANDIDATE候选人1关闭详情候选人事实技能Python候选人材料（1）简历 v1可预览和下载预览简历 v1下载简历 v1在对话中分析在对话中设计面试刷新分析分析历史分析版本 v2岗位匹配分析2026/9/4 08:00:00匹配结论技能匹配匹配维度技术能力匹配匹配证据简历事实：Python能力差距未发现明确差距风险提示未发现明确风险待验证信息量产规模核实问题请说明量产规模来源岗位版本00000000-0000-4000-8000-000000000002来源简历版本00000000-0000-4000-8000-000000000006生成方hr-r12 · model下载匹配分析人工纠正记录人工纠正人工反馈"
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:421:33
+    419|   await act(async () => [...container.querySelectorAll<HTMLButtonEleme…
+    420|   await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    421|   expect(container.textContent).toContain("分析版本 v3");
+       |                                 ^
+    422| });
+    423| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > refreshes analysis when an idempotent candidate task replay is already completed
+AssertionError: expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '分析版本 v3'
+
+Expected: "分析版本 v3"
+Received: "CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状态批量上传简历每份简历独立解析；单份失败不会影响其他文件。＋ 添加文件或图片支持选择、拖放或粘贴；单条最多 100 个、合计 500 MB开始解析 0 份简历解析与确认候选人1待确认材料 00000000审阅候选人1候选人2待确认材料 00000000审阅候选人2候选人 00000000解析失败材料 00000000失败原因：这份简历暂未解析完成，请重试。重试解析已确认候选人加入比较查看候选人1岗位上下文 00000000加入比较查看候选人2岗位上下文 00000000比较已选候选人CANDIDATE候选人1关闭详情候选人事实技能Python候选人材料（1）简历 v1可预览和下载预览简历 v1下载简历 v1在对话中分析在对话中设计面试刷新分析分析历史分析版本 v2岗位匹配分析2026/9/4 08:00:00匹配结论技能匹配匹配维度技术能力匹配匹配证据简历事实：Python能力差距未发现明确差距风险提示未发现明确风险待验证信息量产规模核实问题请说明量产规模来源岗位版本00000000-0000-4000-8000-000000000002来源简历版本00000000-0000-4000-8000-000000000006生成方hr-r12 · model下载匹配分析人工纠正记录人工纠正人工反馈"
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:432:33
+    430|   await act(async () => [...container.querySelectorAll<HTMLButtonEleme…
+    431|   await act(async () => [...container.querySelectorAll<HTMLButtonEleme…
+    432|   expect(container.textContent).toContain("分析版本 v3");
+       |                                 ^
+    433|   expect(container.textContent).toContain("已完成，分析版本已刷新");
+    434| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > does not claim a completed candidate task failed to start when analysis refresh is unavailable
+AssertionError: expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '任务已完成，分析暂时无法刷新'
+
+Expected: "任务已完成，分析暂时无法刷新"
+Received: "CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状态批量上传简历每份简历独立解析；单份失败不会影响其他文件。＋ 添加文件或图片支持选择、拖放或粘贴；单条最多 100 个、合计 500 MB开始解析 0 份简历解析与确认候选人1待确认材料 00000000审阅候选人1候选人2待确认材料 00000000审阅候选人2候选人 00000000解析失败材料 00000000失败原因：这份简历暂未解析完成，请重试。重试解析已确认候选人加入比较查看候选人1岗位上下文 00000000加入比较查看候选人2岗位上下文 00000000比较已选候选人CANDIDATE候选人1关闭详情候选人事实技能Python候选人材料（1）简历 v1可预览和下载预览简历 v1下载简历 v1在对话中分析在对话中设计面试刷新分析分析历史分析版本 v2岗位匹配分析2026/9/4 08:00:00匹配结论技能匹配匹配维度技术能力匹配匹配证据简历事实：Python能力差距未发现明确差距风险提示未发现明确风险待验证信息量产规模核实问题请说明量产规模来源岗位版本00000000-0000-4000-8000-000000000002来源简历版本00000000-0000-4000-8000-000000000006生成方hr-r12 · model下载匹配分析人工纠正记录人工纠正人工反馈"
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:443:33
+    441|   await act(async () => [...container.querySelectorAll<HTMLButtonEleme…
+    442|   await act(async () => [...container.querySelectorAll<HTMLButtonEleme…
+    443|   expect(container.textContent).toContain("任务已完成，分析暂时无法刷新");
+       |                                 ^
+    444|   expect(container.textContent).not.toContain("任务未启动");
+    445| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > fails closed when terminal task kind does not match the launched candidate task
+AssertionError: expected 'CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状…' to contain '任务绑定异常'
+
+Expected: "任务绑定异常"
+Received: "CANDIDATE INTELLIGENCE候选人2 位已确认刷新候选人状态批量上传简历每份简历独立解析；单份失败不会影响其他文件。＋ 添加文件或图片支持选择、拖放或粘贴；单条最多 100 个、合计 500 MB开始解析 0 份简历解析与确认候选人1待确认材料 00000000审阅候选人1候选人2待确认材料 00000000审阅候选人2候选人 00000000解析失败材料 00000000失败原因：这份简历暂未解析完成，请重试。重试解析已确认候选人加入比较查看候选人1岗位上下文 00000000加入比较查看候选人2岗位上下文 00000000比较已选候选人CANDIDATE候选人1关闭详情候选人事实技能Python候选人材料（1）简历 v1可预览和下载预览简历 v1下载简历 v1在对话中分析在对话中设计面试刷新分析分析历史分析版本 v2岗位匹配分析2026/9/4 08:00:00匹配结论技能匹配匹配维度技术能力匹配匹配证据简历事实：Python能力差距未发现明确差距风险提示未发现明确风险待验证信息量产规模核实问题请说明量产规模来源岗位版本00000000-0000-4000-8000-000000000002来源简历版本00000000-0000-4000-8000-000000000006生成方hr-r12 · model下载匹配分析人工纠正记录人工纠正人工反馈"
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:455:33
+    453|   await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    454|   expect(client.candidateAnalyses).toHaveBeenCalledTimes(1);
+    455|   expect(container.textContent).toContain("任务绑定异常");
+       |                                 ^
+    456| });
+    457| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯
+
+ FAIL  src/workspaces/hr/HrCandidateWorkspace.test.tsx > uses authoritative terminal failure and keeps it isolated from another selected candidate
+AssertionError: expected "spy" to be called with arguments: [ …(3) ]
+
+Number of calls: 0
+
+ ❯ src/workspaces/hr/HrCandidateWorkspace.test.tsx:466:29
+    464|   await act(async () => [...container.querySelectorAll<HTMLButtonEleme…
+    465|   await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    466|   expect(client.taskStatus).toHaveBeenCalledWith(positionId, "task", e…
+       |                             ^
+    467|   expect(client.candidateAnalyses).toHaveBeenCalledTimes(2);
+    468|   expect(container.textContent).not.toContain("模型失败");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯
+
+ FAIL  src/workspaces/hr/HrP0Combined.acceptance.test.tsx > reopens the combined P0 results without losing the mounted recruiting conversation
+AssertionError: expected { …(5) } to deeply equal { …(3) }
+
+- Expected
++ Received
+
+  {
+    "active_attachment_ids": [],
+    "attachment_ids": [],
++   "inputResultRefs": [],
++   "scope": {
++     "attachmentIds": [],
++     "positionCandidateIds": [],
++     "positionId": null,
++   },
+    "text": "请补充量产良率与失效分析要求，修订 JD/JR",
+  }
+
+ ❯ src/workspaces/hr/HrP0Combined.acceptance.test.tsx:976:28
+    974|   await act(async () => setInput(composer, "请补充量产良率与失效分析要求，修订 JD/JR"));
+    975|   await click(container, "✨ 发送");
+    976|   expect(messageBodies[0]).toEqual({
+       |                            ^
+    977|     text: "请补充量产良率与失效分析要求，修订 JD/JR",
+    978|     attachment_ids: [],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/11]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  11 failed | 17 passed (28)
+   Start at  20:16:00
+   Duration  1.22s (transform 514ms, setup 0ms, collect 929ms, tests 344ms, environment 462ms, prepare 74ms)
+

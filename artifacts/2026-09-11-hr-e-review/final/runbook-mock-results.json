@@ -1,0 +1,55 @@
+{
+  "runbook_sha256": "6357a6202c9cd4626a920f871c0b8edb91ab2ce85b1fc664d0e9352625b9e082",
+  "pure_mocks_only": true,
+  "results": [
+    {
+      "scenario": "pm2_state_failure",
+      "exit_code": 1,
+      "save_called": false,
+      "stop_called": false,
+      "inspect_called": false
+    },
+    {
+      "scenario": "pm2_cmp_failure",
+      "exit_code": 1,
+      "save_called": false,
+      "stop_called": false,
+      "inspect_called": false
+    },
+    {
+      "scenario": "pm2_success",
+      "exit_code": 0,
+      "save_called": true,
+      "stop_called": false,
+      "inspect_called": false
+    },
+    {
+      "scenario": "cloud_missing",
+      "exit_code": 1,
+      "save_called": false,
+      "stop_called": false,
+      "inspect_called": false
+    },
+    {
+      "scenario": "cloud_stop_failure",
+      "exit_code": 2,
+      "save_called": false,
+      "stop_called": true,
+      "inspect_called": false
+    },
+    {
+      "scenario": "cloud_still_running",
+      "exit_code": 1,
+      "save_called": false,
+      "stop_called": true,
+      "inspect_called": true
+    },
+    {
+      "scenario": "cloud_success",
+      "exit_code": 0,
+      "save_called": false,
+      "stop_called": true,
+      "inspect_called": true
+    }
+  ]
+}

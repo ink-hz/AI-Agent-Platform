@@ -1,0 +1,17 @@
+{
+  "local_repository": "Orbbec-Agent-Team",
+  "checkout_head": "e791caa4d78757e5209fe69a4ea6fac9f5fb51e2",
+  "production_identity_verified": false,
+  "sources": [
+    {
+      "path": "deploy/metabot.runtime-contract.json",
+      "sha256": "81a68bcd023403676e5b1a44bd71143125c58cbd122cccedfe41a05ea155f6cc",
+      "matches_checkout_head": true
+    },
+    {
+      "path": "scripts/reliability/sanitized-pm2.sh",
+      "sha256": "a0097fc5465c945fcb007799b5367b974558f0a0fc36fb7334eccabe76878680",
+      "matches_checkout_head": true
+    }
+  ]
+}

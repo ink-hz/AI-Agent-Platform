@@ -1,0 +1,5 @@
+
+> orbbec-agent-platform-webui@0.1.0 build
+> tsc -b && vite build
+
+src/workspaces/hr/HrP0Combined.acceptance.test.tsx(527,31): error TS2550: Property 'at' does not exist on type 'Record<string, unknown>[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.

@@ -1,0 +1,12 @@
+{
+  "files": [
+    "HR总体架构设计.md",
+    "HR_Agent工作流.md",
+    "docs/reviews/2026-09-11-hr-e-review-followup.md",
+    "docs/reviews/2026-09-11-hr-cloud-loop-e.md",
+    "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md",
+    "docs/superpowers/plans/2026-09-11-hr-e-execution.md"
+  ],
+  "local_links_checked": 53,
+  "missing": []
+}

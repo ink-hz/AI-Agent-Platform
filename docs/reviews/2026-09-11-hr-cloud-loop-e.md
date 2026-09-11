@@ -2,13 +2,15 @@
 
 > 本批用户已授权持续推进上线准备。E2尚未执行；本文件不把工程通过、AI审读或配置存在等同于专业验收和生产验收。
 
+> 当前修订与上线条件以 [E复审收尾](2026-09-11-hr-e-review-followup.md) 为准；下文测试数仍是 b974a87 前交付的历史记录。历史原始材料不回填，三处记录解读见[勘误](../../artifacts/2026-09-11-hr-e-review/record-corrections.md)。
+
 ## 发布基线与实际资产
 
 D保留在 `feat/hr-cloud-loop-d` / `6a9cef6`；E开发分支为 `feat/hr-cloud-loop-e`。只读发现生产实际是 `44de9209b77343facf3117fe3ab4d3450eaf2062`，与E分叉于 `6777d22`。另建 `feat/hr-cloud-loop-e-release` 承接该生产提交。兼容旧v6/v7及旧成果读取用于在途排空和历史访问，不恢复旧文档的实施授权，也不改变最终退出HR旧执行器的方向。
 
 生产已应用089–095；整合保留094/095原文件，SHA分别为 `e742c86cb6f0e80b20c3f90e338c11fe4c968653140455bde57032422e3f1784`、`3cbcb95271d068e297e8577431943c44a92175c79a0e30fc6463dfa047016560`，与44de920字节一致。
 
-固定只读盘点及原始失败回执见 [inventory目录](../../artifacts/2026-09-11-hr-e/inventory/)。岗位1332、附件2且均uploading；所查旧候选及成果相关表为0，但不代表所有旧存储均已盘点。HR Relay有3条超过24小时的queued任务、均未请求取消；1个近期在线HR Worker。direct的3条completed不能当作这3条Relay已完成。新链13项表未部署。管理员补充4条固定只读COUNT得到成果投影0、情报包2、跨包岗位6874、current指针1；6874不是当前包去重岗位数。
+固定只读盘点及原始失败回执见 [inventory目录](../../artifacts/2026-09-11-hr-e/inventory/)。岗位1332、附件2且均uploading；所查旧候选及成果相关表为0，但不代表所有旧存储均已盘点。HR Relay有3条超过24小时的queued任务、均未请求取消；1个近期在线HR Worker。direct的3条completed不能当作这3条Relay已完成。新链13个查询项所涉及的12张不同表未部署。管理员补充4条固定只读COUNT得到成果投影0、情报包2、跨包 intelligence_bundle_jobs 行数6874、current指针1；6874不是当前包去重岗位数。
 
 本次没有生产数据库写入、授权变更、迁移、服务停止或部署。曾启动自动删除的隔离只读盘点容器，失败回执保留；不能表述为“未启动过任何容器”。没有导出业务正文或任务身份。3条排队任务的用途、归属及处置仍未确定，不自动取消或重放。
 
@@ -19,7 +21,7 @@ D保留在 `feat/hr-cloud-loop-d` / `6a9cef6`；E开发分支为 `feat/hr-cloud-
 - 已受理简历批次继续产生解析/研究子任务时，必须核对持久化的批次代次、材料、owner和状态，没有客户端通用绕过开关。
 - 云端只读预检核对配置、角色/方法、迁移与权限。研究配置及真实个人材料许可未决仍明确返回未就绪。
 - 公共100发布与旧附件Worker停用必须成组，迁移开始后的回滚禁止恢复旧擦除Worker。HR专用迁移助手临时授予迁移角色成员身份，退出时撤销并复查，不先行应用100。
-- 合并生产代码曾重开同岗位历史，真实A/B范围的失败测试复现D1；修复后旧HR只用当前输入及独立核实的本轮材料，岗位标签不当作候选人隔离证明。其他Bot历史策略保留。
+- 未提交的合并解决方案曾重开同岗位历史，真实A/B范围的失败测试复现D1；修复后旧HR只用当前输入及独立核实的本轮材料，岗位标签不当作候选人隔离证明。其他Bot历史策略保留。
 - 整合保留公司/专题页面、旧成果GET、方法GET及v6/v7在途兼容。关闭旧HR Worker后，历史读取仍经服务端HR授权，旧Worker写入工具不因此重开。
 
 ## 本批验证边界
@@ -40,7 +42,7 @@ D保留在 `feat/hr-cloud-loop-d` / `6a9cef6`；E开发分支为 `feat/hr-cloud-
 .venv/bin/python -m pytest tests/test_agent_use_authorization.py tests/test_r1_authorization.py tests/test_agent_brain_conversation_api.py tests/test_agent_brain_v2_conversation_api.py tests/test_agent_brain_hr_history_isolation.py tests/test_identity_crypto.py tests/test_identity_rate_limits.py -q
 ```
 
-对应日志分别为 `integration/backend/release-final-verified.log` 和 `integration/backend/identity-verified.log`。首次全组4 failed/560 passed/6 skipped与身份5 failed/752 passed的日志保留：前者是真实hr_web约束与共享gate初始化后的测试夹具不符，后者是通用direct-agent测试使用未配置v6的HR入口。修复只改合法fixture/测试输入，最终组已重新全跑；没有为通过而放宽授权或吞掉异常。
+对应日志分别为 `integration/backend/release-final-verified.log` 和 `integration/backend/identity-verified.log`。首次全组4 failed/560 passed/6 skipped与身份5 failed/752 passed的日志保留：前者是真实hr_web约束与共享gate初始化后的测试夹具不符，后者是通用direct-agent测试使用未配置v6的HR入口。上述两组失败对应的修复改了合法fixture/测试输入，最终组已重新全跑；这不概括全部合并改动。config.py 同时把知识配置支持的运行底座扩为旧 Worker 或云端 HR Agent；受控异常映射的合并回退在本次复审修复，见勘误。
 
 ## W1–W12对应状态
 
@@ -61,8 +63,12 @@ D保留在 `feat/hr-cloud-loop-d` / `6a9cef6`；E开发分支为 `feat/hr-cloud-
 
 ## 正式切换前尚需落定
 
-1. 3条旧HR排队任务的处置及排空证据；不由年龄推断无主。
+1. 3条queued命令与28条interrupted的准确关联、技术终态处置、103排空及实际旧Worker停止证据；最新聚合定性见复审收尾。
 2. 上线业务范围：D记录的三项语义缺陷未消除，人类尚未签收；真实候选人发送许可与服务端授权装配缺失。
 3. 研究超时/输出/预算配置与计量误差边界。Opus5 env保持用户指定，既有试验值不是生产配置审批。
 4. 100停Worker顺序、101锁表、102初始化、HR迁移与回滚的具体窗口；本机无Docker，尚无实际发布镜像构建证据。
 5. 实際容器预检、浏览器关键交互与生产canary。未完成这些，不声明“已可完整上线”。
+
+6. 实际 `/v5/handoff` 闸门及旧 HR direct Worker/内网 HR Bot 停用必须在发布镜像与部署环境验证；共享 Worker 不得整机注销。
+7. 独立 HR 飞书去向须产品确认，不能从 Web 切换自动推定。
+8. 生产已前进到 fe10fae；承接其情报阅读与权限修订后重新验证，不能用本包旧基线覆盖。

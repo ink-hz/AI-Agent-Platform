@@ -1,0 +1,49 @@
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run --run src/workspaces/hr src/hrAgentApi.test.ts src/auth.test.ts src/documentTitle.test.tsx
+
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+ ✓ src/workspaces/hr/HrPositionResourcesPanel.test.tsx (7 tests) 95ms
+ ✓ src/workspaces/hr/HrCandidateAnalysisCard.test.tsx (3 tests) 109ms
+stderr | src/workspaces/hr/HrPositionIndex.test.tsx > uses the default API client once instead of refetching after every render
+Not implemented: Window's scrollTo() method
+
+ ✓ src/workspaces/hr/HrPanorama.acceptance.test.tsx (1 test) 89ms
+ ✓ src/workspaces/hr/HrPositionProposalCard.test.tsx (5 tests) 115ms
+ ✓ src/workspaces/hr/HrResearchWorkspace.test.tsx (5 tests) 141ms
+ ✓ src/workspaces/hr/HrLoopIntelligencePicker.test.tsx (5 tests) 110ms
+ ✓ src/workspaces/hr/HrTopicWorkspace.test.tsx (10 tests) 199ms
+ ✓ src/workspaces/hr/HrLoopCandidateWorkspace.test.tsx (4 tests) 114ms
+ ✓ src/workspaces/hr/HrPositionIndex.test.tsx (11 tests) 227ms
+ ✓ src/workspaces/hr/HrPositionDetailsDrawer.test.tsx (4 tests) 136ms
+ ✓ src/workspaces/hr/HrLoopCandidatesPanel.test.tsx (13 tests) 331ms
+ ✓ src/workspaces/hr/HrPanoramaReport.test.tsx (23 tests) 522ms
+ ✓ src/workspaces/hr/HrPanoramaWorkspace.test.tsx (28 tests) 469ms
+ ✓ src/workspaces/hr/hrIntelligenceReference.test.ts (5 tests) 3ms
+ ✓ src/workspaces/hr/HrCandidateWorkspace.test.tsx (28 tests) 599ms
+ ✓ src/auth.test.ts (101 tests) 32ms
+ ✓ src/workspaces/hr/HrOfficialPositionPanel.test.tsx (1 test) 39ms
+ ✓ src/workspaces/hr/modalFocus.test.ts (2 tests) 17ms
+ ✓ src/workspaces/hr/HrWorkspaceShell.test.tsx (4 tests) 40ms
+ ✓ src/workspaces/hr/HrKnowledgePanel.test.tsx (2 tests) 48ms
+ ✓ src/workspaces/hr/HrTaskReferences.test.tsx (3 tests) 23ms
+ ✓ src/workspaces/hr/HrPositionActions.test.tsx (1 test) 24ms
+ ✓ src/workspaces/hr/HrPositionHeader.test.tsx (2 tests) 25ms
+ ✓ src/documentTitle.test.tsx (2 tests) 11ms
+ ✓ src/workspaces/hr/HrTurnResults.test.tsx (2 tests) 46ms
+ ✓ src/workspaces/hr/hrMutationRequest.test.ts (2 tests) 7ms
+ ✓ src/workspaces/hr/HrWorkspacePage.test.tsx (13 tests) 409ms
+ ✓ src/workspaces/hr/HrP0Combined.acceptance.test.tsx (1 test) 296ms
+ ✓ src/workspaces/hr/HrLoopWorkspace.test.tsx (29 tests) 10139ms
+   ✓ clears prior private content when a refresh reports revoked access  2619ms
+   ✓ uploads before parsing and clearly marks partial PDF coverage  1637ms
+   ✓ restores references again after a failed refresh and same revision reload  2638ms
+   ✓ keeps the original budget revision and retry identity if another client updates it  2640ms
+
+ Test Files  29 passed (29)
+      Tests  317 passed (317)
+   Start at  20:41:24
+   Duration  11.30s (transform 2.40s, setup 0ms, collect 7.73s, tests 14.42s, environment 12.88s, prepare 1.45s)
+
