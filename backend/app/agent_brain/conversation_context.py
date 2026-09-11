@@ -361,7 +361,7 @@ class ConversationContextBuilder:
             ConversationRepositoryError, ContentCryptoError, KeyError, TypeError,
             UnicodeError, ValueError, psycopg.Error,
         ):
-            raise
+            raise ConversationContextError() from None
         messages = context.messages
         size = context.estimated_utf8_bytes
         while size > MAX_CONTEXT_BYTES and len(messages) > 1:

@@ -1,0 +1,34 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_direct_context_maps_internal_failures_to_controlled_error[internal_error0] _
+tests/test_agent_brain_conversation_context.py:55: in test_direct_context_maps_internal_failures_to_controlled_error
+    builder.build_direct(uuid4(), uuid4())
+app/agent_brain/conversation_context.py:355: in build_direct
+    context, _, _ = self._load(conversation_id, turn_id, direct_limit=64)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_agent_brain_conversation_context.py:50: in fail_load
+    raise internal_error
+E   ValueError: private invalid context detail
+_ test_direct_context_maps_internal_failures_to_controlled_error[internal_error1] _
+tests/test_agent_brain_conversation_context.py:55: in test_direct_context_maps_internal_failures_to_controlled_error
+    builder.build_direct(uuid4(), uuid4())
+app/agent_brain/conversation_context.py:355: in build_direct
+    context, _, _ = self._load(conversation_id, turn_id, direct_limit=64)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_agent_brain_conversation_context.py:50: in fail_load
+    raise internal_error
+E   KeyError: 'private missing context field'
+_ test_direct_context_maps_internal_failures_to_controlled_error[internal_error2] _
+tests/test_agent_brain_conversation_context.py:55: in test_direct_context_maps_internal_failures_to_controlled_error
+    builder.build_direct(uuid4(), uuid4())
+app/agent_brain/conversation_context.py:355: in build_direct
+    context, _, _ = self._load(conversation_id, turn_id, direct_limit=64)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_agent_brain_conversation_context.py:50: in fail_load
+    raise internal_error
+E   psycopg.DataError: private database context detail
+=========================== short test summary info ============================
+FAILED tests/test_agent_brain_conversation_context.py::test_direct_context_maps_internal_failures_to_controlled_error[internal_error0]
+FAILED tests/test_agent_brain_conversation_context.py::test_direct_context_maps_internal_failures_to_controlled_error[internal_error1]
+FAILED tests/test_agent_brain_conversation_context.py::test_direct_context_maps_internal_failures_to_controlled_error[internal_error2]
+3 failed in 0.18s

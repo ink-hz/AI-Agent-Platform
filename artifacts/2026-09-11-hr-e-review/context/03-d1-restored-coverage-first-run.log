@@ -1,0 +1,60 @@
+FFFFFFFF........                                                         [100%]
+=================================== FAILURES ===================================
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v6-False-build] _
+tests/test_agent_brain_hr_history_isolation.py:109: in test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b
+    first = repo.start(
+app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v6-False-build_direct] _
+tests/test_agent_brain_hr_history_isolation.py:109: in test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b
+    first = repo.start(
+app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v6-True-build] _
+tests/test_agent_brain_hr_history_isolation.py:109: in test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b
+    first = repo.start(
+app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v6-True-build_direct] _
+tests/test_agent_brain_hr_history_isolation.py:109: in test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b
+    first = repo.start(
+app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v7-False-build] _
+tests/test_agent_brain_hr_history_isolation.py:109: in test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b
+    first = repo.start(
+app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v7-False-build_direct] _
+tests/test_agent_brain_hr_history_isolation.py:109: in test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b
+    first = repo.start(
+app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v7-True-build] _
+tests/test_agent_brain_hr_history_isolation.py:109: in test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b
+    first = repo.start(
+app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+_ test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v7-True-build_direct] _
+tests/test_agent_brain_hr_history_isolation.py:109: in test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b
+    first = repo.start(
+app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+=========================== short test summary info ============================
+FAILED tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v6-False-build]
+FAILED tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v6-False-build_direct]
+FAILED tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v6-True-build]
+FAILED tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v6-True-build_direct]
+FAILED tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v7-False-build]
+FAILED tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v7-False-build_direct]
+FAILED tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v7-True-build]
+FAILED tests/test_agent_brain_hr_history_isolation.py::test_same_position_candidate_a_history_and_mixed_summary_do_not_cross_into_candidate_b[v7-True-build_direct]
+8 failed, 8 passed in 2.61s

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-from dataclasses import replace
-from datetime import datetime
+from contextlib import contextmanager
 from uuid import uuid4
 
 import psycopg
@@ -20,13 +18,76 @@ from test_control_plane_migration import (
 from app.agent_brain.conversation_context import (
     MAX_CONTEXT_BYTES,
     ConversationContextBuilder,
+    ConversationContextError,
 )
 from app.agent_brain.conversation_projection import ConversationProjection
-from app.hr.models import BindPositionConversation, CreateManualPosition
-from app.hr.panorama_context import PanoramaContextError, PanoramaContextFragment
-from app.hr.panorama_repository import PanoramaConflict, PanoramaUnavailable
-from app.hr.position_intelligence_models import HrPositionContextEnvelope
-from app.hr.repository import HrPositionRepository
+from app.agent_brain.conversation_repository import ConversationRepository
+from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
+from app.agent_brain.direct_worker import DirectWorker
+
+
+@pytest.mark.parametrize(
+    "internal_error",
+    [
+        ValueError("private invalid context detail"),
+        KeyError("private missing context field"),
+        psycopg.DataError("private database context detail"),
+    ],
+)
+def test_direct_context_maps_internal_failures_to_controlled_error(
+    monkeypatch,
+    internal_error,
+) -> None:
+    repository = object.__new__(ConversationRepository)
+    builder = ConversationContextBuilder(repository)
+
+    def fail_load(*_args, **_kwargs):
+        raise internal_error
+
+    monkeypatch.setattr(builder, "_load", fail_load)
+
+    with pytest.raises(ConversationContextError) as caught:
+        builder.build_direct(uuid4(), uuid4())
+
+    assert type(caught.value) is ConversationContextError
+    assert str(caught.value) == "conversation context unavailable"
+    assert caught.value.__cause__ is None
+
+
+def test_direct_mission_adapter_context_failure_is_caught_by_worker(monkeypatch) -> None:
+    repository = object.__new__(ConversationRepository)
+    builder = ConversationContextBuilder(repository)
+
+    def fail_load(*_args, **_kwargs):
+        raise KeyError("private context field")
+
+    monkeypatch.setattr(builder, "_load", fail_load)
+    conversation_id = uuid4()
+    turn_id = uuid4()
+
+    class Attempts:
+        @contextmanager
+        def transaction(self):
+            yield None
+
+    class Bindings:
+        def _lock(self, _lease, _connection):
+            return (
+                {"conversation_id": conversation_id},
+                {"turn_id": turn_id},
+                {"cancel_requested_at": None},
+            )
+
+        def get_prepared(self, _lease, *, connection):
+            assert connection is None
+
+    attempts = Attempts()
+    adapter = DirectMissionAdapter(attempts, Bindings(), builder, object())
+    worker = DirectWorker(attempts, adapter, limit=1)
+    try:
+        assert worker._prepare(object()) == "context_unavailable"
+    finally:
+        worker._pool.shutdown(wait=True)
 
 
 @pytest.mark.postgres
