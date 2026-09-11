@@ -1,0 +1,97 @@
+[
+  {
+    "path": "backend-delivery.log",
+    "bytes": 1316,
+    "sha256": "465cf9e029ce3159ae0379ef5ba876a96b61dd4c8b96317fad18bae3733b05dc"
+  },
+  {
+    "path": "backend-final.log",
+    "bytes": 1316,
+    "sha256": "9ac09aeebdcd2bb177ac4fd859028168fd5ad7dcd8696d67e2aac8757af7a943"
+  },
+  {
+    "path": "backend-integration.log",
+    "bytes": 1316,
+    "sha256": "2c72e41ab9b0c8bf9cee49639065cbad7f76449c302374d9f28f1903f9e0b170"
+  },
+  {
+    "path": "document-links.json",
+    "bytes": 37,
+    "sha256": "e38058fb1093fa744f82070f20e9e1832e2c94597b1fcce51f5497680025f1f2"
+  },
+  {
+    "path": "frontend-baseline-blobs.txt",
+    "bytes": 164,
+    "sha256": "2d76d598fff2d38eb619d39f29c83a0dfeb28c7bd0aca309a69961e7f05cd3fa"
+  },
+  {
+    "path": "frontend-final.log",
+    "bytes": 1190,
+    "sha256": "1016f0dcde8e1f60b59d3335901e656da0a21b16832070342532b83fe35ed496"
+  },
+  {
+    "path": "frontend-known-baseline.log",
+    "bytes": 7863,
+    "sha256": "76a55d5f42c42a6c33afddc8bbc661b0016cae3f1aacaf0fe4dc449a70210ccc"
+  },
+  {
+    "path": "journey-engineering-final.log",
+    "bytes": 321,
+    "sha256": "5dac5bd317ab75d31ddd08b2c86263e56fd7ba30e8332712840ecbc2c7ef8620"
+  },
+  {
+    "path": "model-run-1-tool-output.log",
+    "bytes": 802,
+    "sha256": "92f157b3bb6d6bb4ef21c21f500ba24aaac5f51a1077d1a05f9053832f63871f"
+  },
+  {
+    "path": "model-run-2.log",
+    "bytes": 109,
+    "sha256": "b2b9d99c5c7cfadf81d0c1478f99f8958220398bffdf307132b74f2a7203adc6"
+  },
+  {
+    "path": "model-run-3.log",
+    "bytes": 110,
+    "sha256": "a85631f8f664f0db630c6ed2344b5018fcc2bca1d186be4f1db2943d9ef3073d"
+  },
+  {
+    "path": "model-run-4.log",
+    "bytes": 110,
+    "sha256": "80906f092ed501d967788f971b12366a87cfd506de1e96d540043ad4d012b7fb"
+  },
+  {
+    "path": "prior-evidence-check.json",
+    "bytes": 247,
+    "sha256": "9a6c7b44115803c1caac77e1027af6366c666e8d02f7cfd91fdd128e142aead4"
+  },
+  {
+    "path": "review-continuation-engineering.log",
+    "bytes": 99,
+    "sha256": "a5ed5834be7849ffb4cd693b748f6e0c41922b930687593935aba365e3ac8777"
+  },
+  {
+    "path": "role-release-corrected.log",
+    "bytes": 98,
+    "sha256": "0f359b65eb49e1c16fc9873c3238e97ec9b08b15eeb25ade92b23737ec985269"
+  },
+  {
+    "path": "role-release.log",
+    "bytes": 109,
+    "sha256": "6cbe7fc65a601447d047fec713fd3ebbb6c4645ea21f229cbe111cebf9144739"
+  },
+  {
+    "path": "selfcheck.log",
+    "bytes": 98,
+    "sha256": "26d08093661fd3951aea530ff6b278528d3a13757365a8db0d9dee6300c48c4d"
+  },
+  {
+    "path": "typescript.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "without-plan-engineering.log",
+    "bytes": 98,
+    "sha256": "6946673fa1f86990bd4ec2098053a244fc1f0340d5c1fe5cb08032b5f96d8616"
+  }
+]

@@ -1,0 +1,17 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________________ test_fictional_d_real_model_evidence _____________________
+backend/tests/test_hr_agent_d_journey.py:398: in test_fictional_d_real_model_evidence
+    ???
+backend/tests/test_hr_agent_d_journey.py:300: in journey
+    [raw_ref],
+backend/tests/test_hr_agent_d_journey.py:269: in stage
+    evidence["stages"].append(snapshot)
+E   AssertionError: failed
+E   assert 'failed' == 'completed'
+E     
+E     - completed
+E     + failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_d_journey.py::test_fictional_d_real_model_evidence
+1 failed in 660.93s (0:11:00)

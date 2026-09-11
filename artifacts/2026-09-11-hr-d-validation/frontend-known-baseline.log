@@ -1,0 +1,118 @@
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run --run src/styles.test.ts
+
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/webui
+
+ ❯ src/styles.test.ts (34 tests | 3 failed) 17ms
+   ✓ Executive Operations visual contract > gives the VOC workspace a clear draft boundary and responsive layout 1ms
+   ✓ Executive Operations visual contract > uses a Chinese-first product typeface and removes template-era chrome 0ms
+   ✓ Executive Operations visual contract > presents runtime facts as one structured panel instead of floating cards 0ms
+   ✓ Executive Operations visual contract > uses the approved high-contrast foundation 0ms
+   × Executive Operations visual contract > never renders visible text below the approved minimum 9ms
+     → expected 11 to be greater than or equal to 11.5
+   × Executive Operations visual contract > renders HR as a calm full-height recruiting workspace instead of a card dashboard 2ms
+     → expected '.hr-workspace-shell {\n  --hr-sidebar…' to contain 'background: #eef1f4'
+   × Executive Operations visual contract > keeps the position conversation primary with on-demand responsive controls 1ms
+     → expected '.hr-position-chat-surface > .agent-us…' to contain 'grid-template-columns: 248px minmax(0…'
+   ✓ Executive Operations visual contract > keeps compact FAE workbench navigation in one keyboard-scrollable row 0ms
+   ✓ Executive Operations visual contract > turns the FAE outcome report into a responsive and printable reader 0ms
+   ✓ Executive Operations visual contract > bounds the FAE workspace and keeps its reading column legible 0ms
+   ✓ Executive Operations visual contract > keeps available non-drillable metrics visually distinct from unavailable metrics 0ms
+   ✓ Executive Operations visual contract > stacks Session governance after the header and before Turns at 1040px 0ms
+   ✓ Executive Operations visual contract > keeps overview cards single-column and actions visible without hover below 720px 0ms
+   ✓ Executive Operations visual contract > gives summary and insight cards visible resting weight 0ms
+   ✓ Executive Operations visual contract > keeps chart values readable without hover 0ms
+   ✓ Executive Operations visual contract > gives percentage-height trend bars a definite containing block 0ms
+   ✓ Executive Operations visual contract > gives every Agent card substantial resting weight 0ms
+   ✓ Executive Operations visual contract > keeps Agent names and detail rows readable 0ms
+   ✓ Executive Operations visual contract > makes Professional Agent cards obvious links without changing the profile label 0ms
+   ✓ Executive Operations visual contract > uses one-column summary and Agent layouts on small screens 0ms
+   ✓ Executive Operations visual contract > protects long Agent names beside wide status labels at 320px 0ms
+   ✓ Executive Operations visual contract > gives the Daily Brief two equal, substantial desktop columns 0ms
+   ✓ Executive Operations visual contract > uses rendered severity hooks for label, icon, border, and color treatments 0ms
+   ✓ Executive Operations visual contract > distinguishes stale Briefs and quiet System Agent infrastructure 0ms
+   ✓ Executive Operations visual contract > finishes Activity groups, pagination, and Recent Activity cards 0ms
+   ✓ Executive Operations visual contract > contains all six Activity filter tracks through the intermediate desktop range 0ms
+   ✓ Executive Operations visual contract > stacks the Brief and Activity controls at the approved Operations breakpoint 0ms
+   ✓ Executive Operations visual contract > contains rich message content with message-scoped overflow rules 0ms
+   ✓ Executive Operations visual contract > scopes Markdown typography and tables to Session messages 0ms
+   ✓ Executive Operations visual contract > stacks messages while keeping labels and times readable on mobile 0ms
+   ✓ Executive Operations visual contract > keeps continuous Conversation content and composer usable on mobile 0ms
+   ✓ Executive Operations visual contract > keeps attachment names and cards readable on narrow screens 0ms
+   ✓ Executive Operations visual contract > gives AI notes an independent two-column reading workspace 1ms
+   ✓ Executive Operations visual contract > keeps the AI notes home entry quiet and keyboard visible 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/styles.test.ts > Executive Operations visual contract > never renders visible text below the approved minimum
+AssertionError: expected 11 to be greater than or equal to 11.5
+ ❯ src/styles.test.ts:91:34
+     89|       expect(declaration).toMatch(/^(?:[\d.]+px|clamp\([\d.]+px,\s*[\d…
+     90|       const sizes = [...declaration.matchAll(/([\d.]+)px/g)].map((matc…
+     91|       expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11.5);
+       |                                  ^
+     92|     }
+     93|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/styles.test.ts > Executive Operations visual contract > renders HR as a calm full-height recruiting workspace instead of a card dashboard
+AssertionError: expected '.hr-workspace-shell {\n  --hr-sidebar…' to contain 'background: #eef1f4'
+
+- Expected
++ Received
+
+- background: #eef1f4
++ .hr-workspace-shell {
++   --hr-sidebar-width: 248px;
++   --hr-glass: rgba(255,255,255,.62);
++   --hr-glass-strong: rgba(255,255,255,.78);
++   --hr-glass-line: rgba(113,151,202,.25);
++   display: flex;
++   min-width: 0;
++   height: 100%;
++   overflow: hidden;
++   flex-direction: column;
++   color: #172b42;
++   background:
++     radial-gradient(circle at 8% 5%, rgba(103,198,255,.34), transparent 30rem),
++     radial-gradient(circle at 92% 16%, rgba(128,149,255,.2), transparent 31rem),
++     radial-gradient(circle at 56% 92%, rgba(99,222,214,.16), transparent 30rem),
++     linear-gradient(145deg, #f4faff 0%, #edf6ff 45%, #eef2ff 100%);
++   font-size: 14px;
++ }
+
+ ❯ src/styles.test.ts:100:41
+     98|     expect(rule(".page.is-hr-workspace")).toContain("padding: 0");
+     99|     expect(rule(".app.is-hr-workspace-shell > .topbar")).toContain("di…
+    100|     expect(rule(".hr-workspace-shell")).toContain("background: #eef1f4…
+       |                                         ^
+    101|     expect(rule(".hr-workspace-topbar")).toContain("backdrop-filter: b…
+    102|     expect(rule(".hr-workspace-body")).toContain("min-height: 0");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/styles.test.ts > Executive Operations visual contract > keeps the position conversation primary with on-demand responsive controls
+AssertionError: expected '.hr-position-chat-surface > .agent-us…' to contain 'grid-template-columns: 248px minmax(0…'
+
+Expected: "grid-template-columns: 248px minmax(0,1fr)"
+Received: ".hr-position-chat-surface > .agent-use-workspace.is-focused { grid-template-columns: var(--hr-sidebar-width,248px) minmax(0,1fr); }"
+
+ ❯ src/styles.test.ts:133:81
+    131|     expect(rule(".hr-position-chat-surface")).toContain("flex: 1");
+    132|     expect(rule(".hr-position-chat-surface")).toContain("min-height: 0…
+    133|     expect(rule(".hr-position-chat-surface > .agent-use-workspace.is-f…
+       |                                                                                 ^
+    134|     expect(rule(".hr-position-details-drawer")).toContain("position: a…
+    135|     expect(rule(".hr-position-details-drawer")).toContain("right: 0");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 31 passed (34)
+   Start at  16:17:16
+   Duration  181ms (transform 21ms, setup 0ms, collect 21ms, tests 17ms, environment 0ms, prepare 38ms)
+

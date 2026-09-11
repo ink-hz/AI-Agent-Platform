@@ -1,0 +1,116 @@
+[
+  {
+    "run": "run-1",
+    "generation_calls": 16,
+    "stages": [
+      {
+        "name": "sourcing-assessment",
+        "state": "completed",
+        "saved_kinds": [
+          "sourcing",
+          "candidate_assessment"
+        ],
+        "attempts": 8,
+        "interrupted": 1,
+        "captured_reply_reported_tokens": 152537,
+        "charged_tokens": 394146,
+        "charged_usage_quality": "estimated"
+      },
+      {
+        "name": "interview-plan",
+        "state": "failed",
+        "saved_kinds": [],
+        "attempts": 8,
+        "interrupted": 4,
+        "captured_reply_reported_tokens": 62506,
+        "charged_tokens": 348434,
+        "charged_usage_quality": "estimated"
+      }
+    ],
+    "retained_attempts": 16
+  },
+  {
+    "run": "run-2",
+    "generation_calls": 4,
+    "stages": [
+      {
+        "name": "record-without-plan",
+        "state": "completed",
+        "saved_kinds": [
+          "interview_record"
+        ],
+        "attempts": 4,
+        "interrupted": 0,
+        "captured_reply_reported_tokens": 56726,
+        "charged_tokens": 121746,
+        "charged_usage_quality": "estimated"
+      }
+    ],
+    "retained_attempts": 4
+  },
+  {
+    "run": "run-3",
+    "generation_calls": 23,
+    "stages": [
+      {
+        "name": "sourcing-assessment",
+        "state": "completed",
+        "saved_kinds": [
+          "sourcing",
+          "candidate_assessment"
+        ],
+        "attempts": 7,
+        "interrupted": 0,
+        "captured_reply_reported_tokens": 142196,
+        "charged_tokens": 312005,
+        "charged_usage_quality": "estimated"
+      },
+      {
+        "name": "interview-plan",
+        "state": "completed",
+        "saved_kinds": [
+          "interview_plan"
+        ],
+        "attempts": 8,
+        "interrupted": 0,
+        "captured_reply_reported_tokens": 146722,
+        "charged_tokens": 326582,
+        "charged_usage_quality": "estimated"
+      },
+      {
+        "name": "record-retrospective",
+        "state": "completed",
+        "saved_kinds": [
+          "interview_record",
+          "retrospective"
+        ],
+        "attempts": 8,
+        "interrupted": 0,
+        "captured_reply_reported_tokens": 172135,
+        "charged_tokens": 376995,
+        "charged_usage_quality": "estimated"
+      }
+    ],
+    "retained_attempts": 23
+  },
+  {
+    "run": "run-4",
+    "generation_calls": 9,
+    "stages": [
+      {
+        "name": "reviewed-record-retrospective",
+        "state": "completed",
+        "saved_kinds": [
+          "interview_record",
+          "retrospective"
+        ],
+        "attempts": 9,
+        "interrupted": 1,
+        "captured_reply_reported_tokens": 188623,
+        "charged_tokens": 492922,
+        "charged_usage_quality": "estimated"
+      }
+    ],
+    "retained_attempts": 9
+  }
+]

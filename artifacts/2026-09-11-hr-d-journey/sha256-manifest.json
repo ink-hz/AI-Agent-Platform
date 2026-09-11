@@ -1,0 +1,92 @@
+[
+  {
+    "path": "run-1/evidence.json",
+    "bytes": 174935,
+    "sha256": "00c2ab539262dd0961bb04431c1b9011ba39cc2079a8cb54873194717bd80b30"
+  },
+  {
+    "path": "run-1/fixture.json",
+    "bytes": 9046,
+    "sha256": "eb2e5baba8c6816af473bc18477670fad3d85bfbd9918c586b10618309efddeb"
+  },
+  {
+    "path": "run-1/stage-1-candidate_assessment.md",
+    "bytes": 5765,
+    "sha256": "07b9e9d69eac61bcd15e55a492053347b9811d401674ad09ae9a5abddea94267"
+  },
+  {
+    "path": "run-1/stage-1-sourcing.md",
+    "bytes": 5420,
+    "sha256": "462e62e7ee1b3441170f7beef61c1f54bc97f02fb5fc12787baba3cefcc1bd0b"
+  },
+  {
+    "path": "run-2/evidence.json",
+    "bytes": 67105,
+    "sha256": "1bc1f7cab6f35cbeb8e1b26c29264432feca6c204e55076a60ef4d5ec6ef1228"
+  },
+  {
+    "path": "run-2/fixture.json",
+    "bytes": 9473,
+    "sha256": "68a12db535d2eab3fcdce9bd42c7fe51ef6af9a34833f20ef8671d8e23299ff3"
+  },
+  {
+    "path": "run-2/stage-1-interview_record.md",
+    "bytes": 2851,
+    "sha256": "0cebfc0d10f6b858eaade5aa67ca0d9a2808c0e3188039da741015fb20318215"
+  },
+  {
+    "path": "run-3/evidence.json",
+    "bytes": 372046,
+    "sha256": "ee84f79d100ca951c863739e32e2f26dd614082c736047ea7db4f6bf88b7f01a"
+  },
+  {
+    "path": "run-3/fixture.json",
+    "bytes": 9467,
+    "sha256": "e39c58854ca30f085a5125a56e1f653232c55a3a8f338732929d89c20452d2eb"
+  },
+  {
+    "path": "run-3/stage-1-candidate_assessment.md",
+    "bytes": 4758,
+    "sha256": "51ecdb1a40df786d60a4e48370f0e195cef4adb086c4879210f98d7eb7dead78"
+  },
+  {
+    "path": "run-3/stage-1-sourcing.md",
+    "bytes": 5615,
+    "sha256": "639146f016171d959edab11ac6723a3cb084d84706e724de388cf3de382842a1"
+  },
+  {
+    "path": "run-3/stage-2-interview_plan.md",
+    "bytes": 7732,
+    "sha256": "54a211a0b773865f3944213007f07160e88cdb9920e22747d45da4b567714a72"
+  },
+  {
+    "path": "run-3/stage-3-interview_record.md",
+    "bytes": 5866,
+    "sha256": "297dfddb24623f927b8ffcf73fd87781149535bf94164527f4d49a1035a0e656"
+  },
+  {
+    "path": "run-3/stage-3-retrospective.md",
+    "bytes": 6226,
+    "sha256": "a3283f26fdaba92a33d9808147bf311ee6e68c7d3f17772b432017db91d195a6"
+  },
+  {
+    "path": "run-4/evidence.json",
+    "bytes": 151685,
+    "sha256": "0bac280477d3c2bda9254bd41d4c03336f07e2d33329f205cfab22dc4f963b05"
+  },
+  {
+    "path": "run-4/fixture.json",
+    "bytes": 9484,
+    "sha256": "42373992368bfc4aaa8f2df16ba2f69ab0d654613f9f31bcea7f2ec5ca86a6b9"
+  },
+  {
+    "path": "run-4/stage-1-interview_record.md",
+    "bytes": 4883,
+    "sha256": "58f219aa0017f8925c37b20f241f48f38f1e2a853905e014e6b9254cd7aa24c2"
+  },
+  {
+    "path": "run-4/stage-1-retrospective.md",
+    "bytes": 7593,
+    "sha256": "fae5362d8d359c0435b50852fac2fd05bcfa2d416253804904998ec24f9ace25"
+  }
+]

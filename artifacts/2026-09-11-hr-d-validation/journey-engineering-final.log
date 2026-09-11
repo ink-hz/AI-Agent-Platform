@@ -1,0 +1,4 @@
+....s                                                                    [100%]
+=========================== short test summary info ============================
+SKIPPED [1] backend/tests/test_hr_agent_d_journey.py:521: explicit synthetic D real-model profile and evidence directory required
+4 passed, 1 skipped in 42.68s
