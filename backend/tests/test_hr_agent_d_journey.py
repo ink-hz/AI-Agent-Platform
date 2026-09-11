@@ -7,6 +7,8 @@ provider for D work; candidate intake fixture initialization remains scripted.
 import hashlib
 import json
 import os
+import subprocess
+import time
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -83,7 +85,7 @@ def saved(kind, body, objects, refs):
 class BoundedRealPort:
     """One local validation's aggregate call budget, shared by all D stages."""
 
-    def __init__(self, profile):
+    def __init__(self, profile, *, extended=False):
         from app.hr_agent.model import ConfiguredHttpModelPort
 
         if (
@@ -93,18 +95,41 @@ class BoundedRealPort:
             raise ValueError("fixed HR Opus5 profile required")
         self.port = ConfiguredHttpModelPort.from_mapping(profile)
         self.calls = 0
+        self.max_output = 16384 if extended else 4096
+        self.max_seconds = 300 if extended else 120
+        self.observations = []
 
     def stream(self, request):
         from app.hr_agent.model import ModelTransportError
 
         if (
             self.calls >= 24
-            or request.max_output_tokens > 4096
-            or request.deadline_seconds > 120
+            or request.max_output_tokens > self.max_output
+            or request.deadline_seconds > self.max_seconds
         ):
             raise ModelTransportError("configuration_unavailable")
         self.calls += 1
-        yield from self.port.stream(request)
+        observation = {
+            "attempt_id": str(request.attempt_id),
+            "stops": [],
+            "usage": [],
+            "stream_complete": False,
+        }
+        self.observations.append(observation)
+        started = time.monotonic()
+        try:
+            for event in self.port.stream(request):
+                if event.type == "stop":
+                    observation["stops"].append(event.payload)
+                elif event.type == "usage":
+                    observation["usage"].append(event.payload)
+                yield event
+            observation["stream_complete"] = True
+        except ModelTransportError as error:
+            observation["error_code"] = error.code
+            raise
+        finally:
+            observation["duration_seconds"] = time.monotonic() - started
 
 
 def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=False):
@@ -214,13 +239,26 @@ def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=Fa
         output.mkdir(parents=True, exist_ok=False)
         profile_path = Path(os.environ["HR_D_REAL_PROFILE_FILE"])
         profile = json.loads(profile_path.read_text())
-        # Keep provider's actual model/window. Explicit local smoke ceiling120s, not a deployment edit.
+        extended = os.getenv("HR_D_EXTENDED_RESPONSE") == "1"
+        max_seconds, max_output = (300, 16384) if extended else (120, 4096)
+        # Explicit local experiment only. No private profile or deployment file is rewritten.
         profile = {
             **profile,
-            "timeout_seconds": min(float(profile.get("timeout_seconds", 120)), 120),
+            "timeout_seconds": max_seconds,
         }
-        repo.settings = replace(repo.settings, provider_profile=profile)
-        port = BoundedRealPort(profile)
+        repo.settings = replace(
+            repo.settings,
+            provider_profile=profile,
+            budget_profile={
+                **repo.settings.budget_profile,
+                "max_output_tokens": max_output,
+                "reserve": {
+                    **repo.settings.budget_profile["reserve"],
+                    "total_tokens": max(16000, max_output * 2),
+                },
+            },
+        )
+        port = BoundedRealPort(profile, extended=extended)
         evidence["provider"] = _provider_evidence(profile)
         evidence["provider"]["source_configuration"] = {
             "status": "read_from_explicit_local_profile",
@@ -230,9 +268,18 @@ def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=Fa
         }
         evidence["validation_limits"] = {
             "generation_calls": 24,
-            "per_call_output": 4096,
-            "per_call_seconds": 120,
+            "per_call_output": max_output,
+            "per_call_seconds": max_seconds,
             "per_work": repo.settings.budget_profile["limits"],
+            "reserve": repo.settings.budget_profile["reserve"],
+            "configuration_scope": "explicit_local_validation_only",
+        }
+        evidence["runner_source"] = {
+            "git_revision": subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], text=True
+            ).strip(),
+            "file_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "captured_before_first_D_model_request": True,
         }
         (output / "fixture.json").write_text(
             json.dumps(evidence, ensure_ascii=False, indent=2)
@@ -411,6 +458,7 @@ def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=Fa
     finally:
         if output:
             evidence["generation_calls"] = port.calls
+            evidence["normalized_stream_observations"] = port.observations
             (output / "evidence.json").write_text(
                 json.dumps(evidence, ensure_ascii=False, indent=2, default=str)
             )
@@ -435,6 +483,40 @@ def test_fictional_record_without_plan_can_be_saved(
     evidence = journey(uploaded, intake, database, tmp_path, without_plan=True)
     assert len(evidence["stages"]) == 1
     assert evidence["original_record"]["interview_plan_ref"] is None
+
+
+@pytest.mark.parametrize(
+    "extended,seconds,output", [(False, 120, 4096), (True, 300, 16384)]
+)
+def test_d_validation_port_limits_are_explicit(monkeypatch, extended, seconds, output):
+    from types import SimpleNamespace
+
+    from app.hr_agent.model import (
+        ConfiguredHttpModelPort,
+        ModelEvent,
+        ModelTransportError,
+    )
+
+    class FakePort:
+        def stream(self, request):
+            yield ModelEvent("stop", {"reason": "max_tokens"})
+
+    monkeypatch.setattr(ConfiguredHttpModelPort, "from_mapping", lambda _: FakePort())
+    profile = {"model": "claude-opus-5", "protocol": "anthropic_messages_sse"}
+    with pytest.raises(ValueError):
+        BoundedRealPort({**profile, "model": "other"})
+    port = BoundedRealPort(profile, extended=extended)
+    request = SimpleNamespace(
+        attempt_id="synthetic", max_output_tokens=output, deadline_seconds=seconds
+    )
+    assert len(list(port.stream(request))) == 1
+    assert port.observations[0]["stops"] == [{"reason": "max_tokens"}]
+    for extra in ({"max_output_tokens": output + 1}, {"deadline_seconds": seconds + 1}):
+        with pytest.raises(ModelTransportError):
+            list(port.stream(SimpleNamespace(**{**vars(request), **extra})))
+    port.calls = 24
+    with pytest.raises(ModelTransportError):
+        list(port.stream(request))
 
 
 @pytest.mark.skipif(
