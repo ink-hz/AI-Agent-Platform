@@ -110,7 +110,7 @@ def test_retry_limit_is_three_actual_sends(setup, database):
 
 def test_empty_response_retries_same_logical_step_then_succeeds(setup, database):
     repo, owner, view, fence = setup
-    model = ScriptModel([empty_answer(' \n'), answer('重试后的有效回答')])
+    model = ScriptModel([empty_answer('\u200b\ufeff\u2060'), answer('重试后的有效回答')])
 
     done = run_work(repo, model, None, fence, context_builder=context)
 

@@ -253,7 +253,7 @@ def test_provider_refusal_has_stable_classification(tmp_path: Path) -> None:
     assert caught.value.code == "provider_refused"
 
 
-@pytest.mark.parametrize("text", ["", " \n\t"])
+@pytest.mark.parametrize("text", ["", " \n\t", "\u200b\ufeff\u2060"])
 def test_complete_empty_answer_has_retryable_specific_classification(text) -> None:
     from app.hr_agent.model import ModelProtocolError, collect_reply
     from app.hr_agent.types import ModelEvent
@@ -267,6 +267,21 @@ def test_complete_empty_answer_has_retryable_specific_classification(text) -> No
         collect_reply(events)
 
     assert caught.value.code == "empty_response"
+
+
+def test_visible_emoji_with_format_control_is_preserved() -> None:
+    from app.hr_agent.model import collect_reply
+    from app.hr_agent.types import ModelEvent
+
+    text = "👩\u200d💻"
+    reply = collect_reply(
+        [
+            ModelEvent("text_delta", {"text": text}),
+            ModelEvent("stop", {"reason": "end_turn"}),
+        ]
+    )
+
+    assert reply.text == text
 
 
 def test_tool_stop_without_a_tool_call_remains_invalid_response() -> None:

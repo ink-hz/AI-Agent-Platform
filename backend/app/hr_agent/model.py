@@ -9,6 +9,7 @@ import re
 import stat
 import threading
 import time
+import unicodedata
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -568,6 +569,13 @@ def _anthropic_events(lines: Iterable[str]) -> Iterator[ModelEvent]:
         raise ModelProtocolError("incomplete_response")
 
 
+def _has_visible_text(value: str) -> bool:
+    return any(
+        not character.isspace() and unicodedata.category(character) != "Cf"
+        for character in value
+    )
+
+
 def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
     text: list[str] = []
     calls: dict[int, dict[str, object]] = {}
@@ -658,7 +666,7 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
         raise ModelProtocolError("invalid_response")
     if bool(tool_calls) != (stop_reason in tool_stop_reasons):
         raise ModelProtocolError("invalid_response")
-    if not final_text.strip() and not tool_calls:
+    if not _has_visible_text(final_text) and not tool_calls:
         raise ModelProtocolError("empty_response")
     input_total, output_total = _usage_totals(raw_usage, usage_protocol)
     usage = Usage(
