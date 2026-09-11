@@ -408,6 +408,11 @@ def test_proactive_summary_preserves_sources_and_checkpoint(repo, tmp_path):
         "selected_references": [ref],
         "checkpoint": before["checkpoint"],
     }
+    assert attempt.tools == ()
+    assert attempt.messages[-1] == {
+        "role": "user",
+        "content": attempt.messages[0]["content"],
+    }
     repo.mark_model_sending(fence, attempt.attempt_id)
     repo.commit_model(
         fence, attempt.attempt_id, reply("阶段观察：保留尚待证据的问题。")
