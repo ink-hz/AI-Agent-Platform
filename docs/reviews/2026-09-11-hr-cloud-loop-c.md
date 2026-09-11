@@ -1,6 +1,6 @@
 # HR C 阶段交付与评审（2026-09-11）
 
-分支 `feat/hr-cloud-loop-c`，基线 `347594c`；A+B 分支保留。本轮已实现 C0/C1/C2 与 C3 研究运行能力，C3 专业验收尚未通过。真实模型试验的失败、已保存但判断不合格的成果一并留证。未推送、部署、访问生产业务库或使用真实候选人材料；不据此进入 D/E 或宣称旧链已经退出。
+分支 `feat/hr-cloud-loop-c`，基线 `347594c`；A+B 分支保留。C0/C1/C2 工程与 C3 两个公开样例已完成，可提交用户评审：Opus5 在同一工作内完成预算续作、保存和反馈修订，最终稿经独立 AI 审读可接受。不是人类 HR 签收，也不是所有 W 支腿、真实候选人或生产验收通过。此前失败和未通过稿一并保留。未推送、部署、访问生产业务库或使用真实候选人材料；D/E 未进入，旧链未退出。
 
 ## 1. 本次改动及理由
 
@@ -9,6 +9,7 @@
 - **个人材料边界**：入批即登记个人来源。普通 work 引用该材料或派生 research 也在发送前检查处理许可；默认无许可则拒绝。回调异常只使该项失败，兄弟项继续。已知个人来源不能借丢弃 candidate 对象进入通用标准。这是来源传播，不是任意文本自动识别/DLP。
 - **情报引用**：严格适配真实 bundle，当前目录和选定旧正文分开。前端保留准确引用；旧正文清除或篡改时报不可用，不换 current。86篇旧模板仅验证格式，不认证其专业质量；历史38篇语义分析尚未发布到新库。
 - **删除维护**：真实维护角色暴露两处旧缺陷：领取函数被逐列重复执行可配错任务/附件，维护角色缺上传版本读取权限。修复领取 SQL，新增公共迁移100的最小列权限；HR readiness 同时检查迁移与实际权限。只是本地修复，未应用生产。
+- **摘要与续作**：摘要携带当前目标、对象、准确选材和checkpoint，历史工具记录完整保存为参考数据；摘要标签覆盖当前前缀来源。最新未消费工具批次先进入工作模型，软压缩阈值不抢先丢弃刚返回的正文，硬窗口不放宽。完整空响应独立分类，受原三次实际发送上限和累计预算约束，拒绝及畸形不因此重试。独立代码复审通过；公开实跑与专业审读另列，见[续作记录](2026-09-11-hr-c3-continuation.md)。
 - **研究运行**：单请求原默认120秒不足以覆盖已观察到的持续输出。支持显式1–600秒，默认120不变，实际截止取配置与工作剩余活动预算的较小值；本机试验副本设300秒，不改生产或默认预算。`official_original` 不可用错误明确指向 basis，不再让模型误以为 research 不支持；普通研究用 source_refs，basis 可空。
 
 接口与范围：[C1契约](2026-09-11-hr-c1-material-contract.md)、[C1页面](2026-09-11-hr-c1-frontend.md)、[删除维护审计](2026-09-11-hr-c1-erasure-audit.md)、[C2](2026-09-11-hr-c2-intelligence.md)、[C0独立审查](2026-09-11-hr-c0-history-review.md)、[资产盘点](2026-09-11-hr-c-assets.md)。候选人页面只做材料核对/建档，完整评估和面试续作仍属于D。
@@ -19,11 +20,14 @@
 
 | 命令/边界 | 实际结果 | 说明 |
 | --- | --- | --- |
-| `backend/.venv/bin/python -m pytest backend/tests/test_hr_agent_*.py backend/tests/test_hr_cloud_loop_docs_selfcheck.py -q -rs` | **311 passed, 5 skipped，149.36s** | 每模块一次性PostgreSQL、真实迁移/HTTP/应用权限、真实Worker进程；模型替身用于确定性故障。skip为B真实模型、C原始包、C真实模型、C2两项实际包，没有因数据库缺失跳过 |
+| `backend/.venv/bin/python -m pytest backend/tests/test_hr_agent_*.py backend/tests/test_hr_cloud_loop_docs_selfcheck.py -q -rs` | **330 passed, 5 skipped，151.17s** | 每模块一次性PostgreSQL、真实迁移/HTTP/应用权限、真实Worker进程；模型替身用于确定性故障。skip为B真实模型、C原始包、C真实模型、C2两项实际包，没有因数据库缺失跳过 |
 | `HR_TEST_INTELLIGENCE_BUNDLE='<本机包目录>' backend/.venv/bin/python -m pytest backend/tests/test_hr_agent_intelligence_build.py backend/tests/test_hr_agent_intelligence_releases.py -q -rs` | **6 passed，5.86s** | 上一行C2的两个跳过已单独用真实12公司/3437岗位/86分析单元包实跑 |
 | `backend/.venv/bin/python -m pytest backend/tests/test_r1_authorization.py backend/tests/test_agent_use_authorization.py backend/tests/test_agent_brain_conversation_context.py backend/tests/test_hr_task_context.py backend/tests/test_hr_cloud_loop_docs_selfcheck.py backend/tests/test_hr_agent_candidate_routes.py -q` | **655 passed，10.29s** | 真实身份/CSRF/第二个owner及旧HR上下文回归；不声称线上D1已经处理 |
 | `cd webui && npm exec -- vitest run src/hrLoopApi.test.ts src/hrLoopCandidatesApi.test.ts src/workspaces/hr/HrLoopWorkspace.test.tsx src/workspaces/hr/HrLoopIntelligencePicker.test.tsx src/workspaces/hr/HrLoopCandidatesPanel.test.tsx` | **53 passed，10.74s，5文件** | HTTP模拟边界的组件交互，非真实浏览器上传；`npm exec -- tsc -b`通过 |
-| `backend/.venv/bin/python docs/superpowers/specs/hr-cloud-loop/selfcheck.py` | **55定义、133例、18条件覆盖ID、6正文证据ID** | 不是专业质量规则；18不等于schema构造总数 |
+| `backend/.venv/bin/python docs/superpowers/specs/hr-cloud-loop/selfcheck.py` | **55定义、134例、18条件覆盖ID、6正文证据ID** | 不是专业质量规则；18不等于schema构造总数 |
+| 公开19岗真实模型，完整 `test_hr_agent_c_public_research.py`，配置见[证据说明](artifacts/2026-09-11-hr-c3/README.md) | **2 passed，946.45s** | run9；包含独立审读等待，工作活动491.78秒；同work、同成果新修订 |
+| 同文件 `::test_public_full_research_budget_resume`，7岗场景、16384输出额度 | **1 passed，1115.50s** | run11；包含独立审读等待，工作活动571.80秒；不是全量1539岗或3437岗压力验证 |
+| `backend/.venv/bin/python -m pytest backend/tests/test_hr_cloud_loop_docs_selfcheck.py backend/tests/test_hr_agent_c_public_research.py -q -rs` | **5 passed，2 skipped，0.86s** | 最后runner/文档校验；未设置外部资料变量的2项跳过由上述显式实跑另列，不相加 |
 
 仓库级前端的3个 `styles.test.ts` 既有失败沿用A+B记录，两个相关blob与master一致；本轮没有将相关53项写成全仓前端全绿。候选前端不要求用户编辑JSON。单文件解析不含OCR，批次恢复不恢复尚未上传的浏览器File对象。
 
@@ -45,8 +49,8 @@
 | W8 | 本地工程通过 | 来源撤权在历史/发送/保存/下载重验，真实维护删除后档案/派生成果不可读；新增100待部署；不撤回已送给外部模型的内容 |
 | W9 | 工程通过 | 真实Worker SIGKILL/恢复/取消原测试，C补长历史取消及候选提交后回写异常恢复。候选协调专项为异常注入，非新增候选进程kill证明 |
 | W10 | 工程部分通过 | 基础出站端点/日志/临时目录+候选处理许可缺失或异常零发送；不新增fallback。真实个人最小化、获准服务及保留承诺尚未确定 |
-| W11 | **专业未通过，工程部分通过** | 19岗完整归档已返回，预算暂停/追加累计可查；Opus试验出现空回答失败、越界判断，不能凭已保存或方法已读验收。不是3437岗压力证明；子公司歧义另样例未验证 |
-| W12 | B工程延续 | 方法准确revision/丢失拒绝测试，C真实模型自主读方法仍出现判断问题；方法读取不作为正确应用证明 |
+| W11 | **两个公开样例完成、独立AI审读可接受；全条不判通过** | run9的19岗全文、run11的7岗实体对照均同work暂停/续作/保存/反馈修订；来源、未完成范围与累计预算保留。3437岗规模、生产长任务与人类专业验收未覆盖；早期失败不覆盖 |
+| W12 | B工程延续，C专业判断另审 | 方法准确revision/丢失拒绝测试；run9实际读取方法，run11未读方法仍按原文审读。既不强制方法次数，也不以读取证明正确应用 |
 
 ## 4. Opus5公开研究记录
 
@@ -62,6 +66,15 @@
 | 4 | 300秒配置下133秒工具参数完整；保存因basis错误被拒；最后completed但results为空 | 技术结束不等于成果保存。未保存草稿专业未通过，见独立审读 |
 | 5 | 自主读取两份方法，保存1份成果，4calls后waiting_budget；追加后同work为failed（第6次空end_turn） | 已保存成果未丢；专业仍未通过。没有用默认重试或假终答把失败涂绿 |
 | 6 | 初始研究第4次摘要请求返回空end_turn，failed，31.14s | 拟执行的显式评审修订尚未到达；没有保存成果或反馈修订通过的证据 |
+| 7 | waiting_budget后同work续作failed；真实失败摘要原样回放也空 | 首次完整请求捕获；保存稿无修订，[审读未通过](2026-09-11-c3-run7-independent-research-review.md) |
+| 8 | 摘要加入当前状态及末尾任务后，续作与显式反馈仍空；三阶段同一成果revision | 证明末尾任务修复不充分；[外采与组织判断仍超出证据](2026-09-11-c3-run8-independent-research-review.md) |
+| 9 | 同work预算暂停→续作成功→两次显式反馈；14次累计调用，同成果保存新revision；真实测试2 passed | [19岗最终稿与独立AI审读通过](2026-09-11-c3-run9-independent-research-review.md)，不代表人类业务验收或3437岗规模 |
+| 10 | 7岗实体对照；8192输出额度下工具参数多次max_tokens截断，最终failed且无成果 | 准确失败请求仅将输出改16384后完整返回；实报11806输出token超过原上限，失败仍保留 |
+| 11 | 7岗完整原文；预算2→3次调用后续作成功；一次实际反馈后累计7次，同成果新revision，1 passed | [独立AI审读可接受](2026-09-11-c3-run11-independent-research-review.md)：成本信号、Token接收方、评测链路三处已修，实体范围和经历核验保留 |
+
+最终正文：[19岗核心研究](artifacts/2026-09-11-hr-c3/run-9/stage-4-result-1.md)、[7岗子公司研究](artifacts/2026-09-11-hr-c3/run-11/stage-3-result-1.md)。子公司审读者参与过样本准备，不是盲评；两项保留是跨域人才池“最可能”只能作待验证搜寻假设、要求“完全相同”应理解为语义模板相同而非字节相同。不能把它们转成硬筛或市场比较事实。
+
+run9工作扣记803344 token，run11为427241，均混合保守估算与实报，不是供应商账单，也不含其他失败运行或诊断。run11单次输出16384、收尾预留32768只在测试副本生效；总调用/累计token/活动时长上限未扩大。该样例实际输出曾超过8192，部署预算需要重新校准，不能把测试额度直接当生产默认值。准确命令、源文件与原始日志见[证据说明](artifacts/2026-09-11-hr-c3/README.md)，诊断因果与限制见[续作记录](2026-09-11-hr-c3-continuation.md)。
 
 原始公开trace与SHA清单：[artifacts](artifacts/2026-09-11-hr-c3/sha256-manifest.json)。[run4审读](2026-09-11-hr-c3-run4-semantic-review.md)、[run5审读](2026-09-11-hr-c3-run5-semantic-review.md)独立回查全部原文。主要缺陷：要求OR/优先关系被改窄、招聘职责被当成组织已运行、引用“了解渠道差异”证明经营并存、忽略实操凭证反例。已将通用逻辑边界写入本地角色适配并留来源；没有按公司写判断规则、固定方法路由或机器专业合格门控。
 
@@ -69,12 +82,12 @@
 
 ## 5. 待完成与评审顺序
 
-先按上表核查W证据，再评研究正文。C3本次失败不能被311项工程通过冲抵。候选材料专业审读、原生浏览器上传、获准个人处理配置、生产保留/新鲜度/预算值仍需各自验收。P1/D1只有本地保守修复，旧命令快照/在途归属与停机窗口在E单列；P2只有本机公开资产盘点，没有生产计数或数据为空的结论。
+先按上表核查W证据，再评两个最终研究正文及审读保留。[独立工程收尾核查](2026-09-11-hr-c3-engineering-review.md)无阻断项；用户C验收尚未签收。候选材料专业审读、原生浏览器上传、获准个人处理配置、生产保留/新鲜度/预算值仍需各自验收。P1/D1只有本地保守修复，旧命令快照/在途归属与停机窗口在E单列；P2只有本机公开资产盘点，没有生产计数或数据为空的结论。
 
 部署须先运行公共迁移（含100）及显式HR目录096–099，并验证准确校验和和权限。启用开关不运行DDL；本轮没有部署。新链档案不迁移或双写旧v70资料，其他Bot不受本轮退出计划影响。
 
-### 传输核对补充
+### 早期传输核对（run6时点，后续证据见续作记录）
 
-公开两句问答探针正常（10.58秒），摘要探针在原历史工具格式、序列化为历史数据两种输入中均由网关返回 `stop_reason=refusal`；省略空工具列表仍拒绝。没有发现本次探针的非空正文被适配器漏掉，但这不能排除其他未捕获响应的问题，也不能把本次refusal与此前空end_turn混为同一原因。摘要格式的试验性代码已撤回：成对探针没有支持它是修复。当前模型/网关还需核查长研究、摘要及空响应兼容性，不能宣称六次研究失败均已解释。没有换模型、备用端点、绕过拒绝或伪造终答。
+公开两句问答探针正常（10.58秒），摘要探针在原历史工具格式、序列化为历史数据两种输入中均由网关返回 `stop_reason=refusal`；省略空工具列表仍拒绝。没有发现本次探针的非空正文被适配器漏掉，但这不能排除其他未捕获响应的问题，也不能把本次refusal与此前空end_turn混为同一原因。摘要格式的试验性代码已撤回：成对探针没有支持它是修复。这是早期人工构造探针的结论；其后run7/8准确失败请求的成对回放支持了历史数据表示修复，见[续作记录](2026-09-11-hr-c3-continuation.md)。不能宣称六次研究失败均已解释。没有换模型、备用端点、绕过拒绝或伪造终答。
 
-C3第6轮仅完成初始失败快照，未到显式评审输入；`review-input.md` 是待验证输入，不能当作用户反馈旅程已通过。修订文本/专业通过没有产生，W11仍未勾选。普通短探针正确回答“职责不证明现状”，也不抵消研究长文中同一边界被违反的事实。
+C3第6轮仅完成初始失败快照，未到显式评审输入；`review-input.md` 是待验证输入，不能当作用户反馈旅程已通过。修订文本/专业通过没有产生，该时点W11未勾选，当前状态以上表为准。普通短探针正确回答“职责不证明现状”，也不抵消研究长文中同一边界被违反的事实。

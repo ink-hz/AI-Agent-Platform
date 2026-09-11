@@ -1,0 +1,37 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________________ test_public_full_research_budget_resume ____________________
+
+uploaded = (<starlette.testclient.TestClient object at 0x1065b3190>, {'Origin': 'https://agent.example.test', 'X-CSRF-Token': 'cs...998e468'), <app.hr_agent.materials.MaterialService object at 0x10638aa90>, '983e7b82-b5a5-48ab-a740-437431666235', ...)
+database = HrTestDatabase()
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9182/test_public_full_research_budg0')
+
+    @pytest.mark.skipif(
+        not (os.getenv("HR_C_REAL_PROFILE_FILE") and os.getenv("HR_C_RESEARCH_BUNDLE")),
+        reason="explicit public real-provider profile and archive required",
+    )
+    def test_public_full_research_budget_resume(uploaded, database, tmp_path):
+        from app.attachments.derivatives import DerivativeBuilder
+        from app.attachments.scanner import TrustedInternalScanner
+        from app.attachments.validation import AttachmentValidator
+        from app.attachments.worker import AttachmentProcessor
+        from app.attachments.worker_runtime import AttachmentProcessingRepository
+        from app.hr_agent.knowledge import KnowledgeReleases
+        from app.hr_agent.model import ConfiguredHttpModelPort
+        from app.hr_agent.resources import ResourceReader
+        from app.hr_agent.runtime import run_work
+        from hr_agent_support import make_hr_settings
+        from tools.hr_agent.build_knowledge_release import build
+    
+        client, headers, repo, _owner, materials, _, _, store = uploaded
+        text, provenance = public_archive(os.environ["HR_C_RESEARCH_BUNDLE"], "revopoint")
+        scenario_file = os.getenv("HR_C_PUBLIC_SCENARIO_FILE")
+        scenario = json.loads(Path(scenario_file).read_text()) if scenario_file else None
+        if scenario:
+            text, provenance = scenario["text"], scenario["provenance"]
+>           assert isinstance(text, str) and text and provenance["jobs"]
+                                                      ^^^^^^^^^^^^^^^^^^
+E           KeyError: 'jobs'
+
+backend/tests/test_hr_agent_c_public_research.py:118: KeyError
+1 failed in 1.34s

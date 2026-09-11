@@ -161,7 +161,6 @@ def test_public_full_research_budget_resume(uploaded, database, tmp_path):
     assert material["parse_state"] == "ready"
     build(Path(__file__).parents[1] / "hr_agent_knowledge", tmp_path / "release")
     knowledge = KnowledgeReleases(tmp_path / "release")
-    output_tokens = int(os.getenv("HR_C_REAL_MAX_OUTPUT_TOKENS", "8192"))
     budget = {
         "id": "c3-public",
         "service_limits": {
@@ -170,12 +169,8 @@ def test_public_full_research_budget_resume(uploaded, database, tmp_path):
             "active_seconds": 1800,
         },
         "limits": {"model_calls": 2, "total_tokens": 600000, "active_seconds": 900},
-        "reserve": {
-            "model_calls": 1,
-            "total_tokens": max(16000, 2 * output_tokens),
-            "active_seconds": 30,
-        },
-        "max_output_tokens": output_tokens,
+        "reserve": {"model_calls": 1, "total_tokens": 16000, "active_seconds": 30},
+        "max_output_tokens": 8192,
         "input_target_tokens": 50000,
         "input_trigger_tokens": 70000,
         "work_retention_seconds": 3600,
@@ -263,7 +258,6 @@ def test_public_full_research_budget_resume(uploaded, database, tmp_path):
                 "stops": [],
                 "text_characters": 0,
                 "tool_argument_characters": 0,
-                "usage_observations": [],
                 "error_code": None,
             }
             transport_evidence.append(record)
@@ -278,20 +272,6 @@ def test_public_full_research_budget_resume(uploaded, database, tmp_path):
                         record["tool_argument_characters"] += len(
                             event.payload.get("arguments_delta", "")
                         )
-                    elif event.type == "usage":
-                        raw = event.payload.get("raw", event.payload)
-                        safe = {
-                            key: raw[key]
-                            for key in (
-                                "input_tokens",
-                                "output_tokens",
-                                "cache_read_input_tokens",
-                                "cache_creation_input_tokens",
-                                "output_tokens_details",
-                            )
-                            if key in raw
-                        }
-                        record["usage_observations"].append(safe)
                     yield event
             except Exception as error:
                 record["error_code"] = getattr(error, "code", "local_capture_failure")

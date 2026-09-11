@@ -1,0 +1,12 @@
+.s.....ss............................................................... [ 21%]
+....................................................s...s............... [ 42%]
+........................................................................ [ 64%]
+........................................................................ [ 85%]
+...............................................                          [100%]
+=========================== short test summary info ============================
+SKIPPED [1] backend/tests/test_hr_agent_b_public_model.py:144: explicit public real-model profile required
+SKIPPED [1] backend/tests/test_hr_agent_c_public_research.py:80: explicit public archive path required
+SKIPPED [1] backend/tests/test_hr_agent_c_public_research.py:95: explicit public real-provider profile and archive required
+SKIPPED [1] backend/tests/test_hr_agent_intelligence_build.py:62: explicit public local Bundle required; fixture is not actual asset import
+SKIPPED [1] backend/tests/test_hr_agent_intelligence_releases.py:164: explicit public local Bundle required
+330 passed, 5 skipped in 151.17s (0:02:31)

@@ -1,0 +1,1812 @@
+{
+  "provider": {
+    "model": "claude-opus-5",
+    "protocol": "anthropic_messages_sse",
+    "profile_revision": "hr-opus5-20260911",
+    "profile": {
+      "id": "hr-cloud-loop",
+      "revision": "hr-opus5-20260911",
+      "protocol": "anthropic_messages_sse",
+      "model": "claude-opus-5",
+      "tokenizer": "conservative_utf8",
+      "context_window_tokens": 131072,
+      "timeout_seconds": 300,
+      "auth_scheme": "bearer"
+    },
+    "profile_fingerprint": "9f96f33cff4fda4a1424f4b2e06e2861ae9c9ab44fd40247c850dea10e92084f",
+    "fingerprint_scope": "allowlisted_nonsecret_profile_fields; endpoint_and_credentials_excluded",
+    "identity_assurance": "provider_self_report_only",
+    "source_configuration": {
+      "status": "not_recorded"
+    }
+  },
+  "source_provider_nonsecret": {
+    "model": "claude-opus-5",
+    "protocol": "anthropic_messages_sse",
+    "profile_revision": "hr-opus5-20260911",
+    "profile": {
+      "id": "hr-cloud-loop",
+      "revision": "hr-opus5-20260911",
+      "protocol": "anthropic_messages_sse",
+      "model": "claude-opus-5",
+      "tokenizer": "conservative_utf8",
+      "context_window_tokens": 131072,
+      "timeout_seconds": 120,
+      "auth_scheme": "bearer"
+    },
+    "profile_fingerprint": "13bd0c430a6b8a8c2bf87312fa073070d1f260703f8a688aac2c0d6410b4aa7a",
+    "fingerprint_scope": "allowlisted_nonsecret_profile_fields; endpoint_and_credentials_excluded",
+    "identity_assurance": "provider_self_report_only",
+    "source_configuration": {
+      "status": "not_recorded"
+    }
+  },
+  "test_profile_override": {
+    "timeout_seconds": 300
+  },
+  "budget_configuration": {
+    "id": "c3-public",
+    "service_limits": {
+      "model_calls": 24,
+      "total_tokens": 1200000,
+      "active_seconds": 1800
+    },
+    "limits": {
+      "model_calls": 2,
+      "total_tokens": 600000,
+      "active_seconds": 900
+    },
+    "reserve": {
+      "model_calls": 1,
+      "total_tokens": 16000,
+      "active_seconds": 30
+    },
+    "max_output_tokens": 8192,
+    "input_target_tokens": 50000,
+    "input_trigger_tokens": 70000,
+    "work_retention_seconds": 3600
+  },
+  "input": "我们想找一个能判断机器人数据投入是否值得的人。请根据这些公开岗位全文，研究应该到哪里、找什么经历的人，并解释为什么。哪些具体用人实体及责任边界有材料支持，哪些仍无法判断？请把关键判断对应到具体岗位正文，保留不支持该判断的材料和需要补充核实的问题，并说明这组材料能覆盖到哪里。 请将研究保存在当前工作内的一份 research 成果中，保留准确来源和未完成部分，方便后续复用；预算暂停时保存阶段进度，显式追加预算后继续同一问题。",
+  "public_provenance": {
+    "fixture_kind": "W11 targeted public archival full-description scenario",
+    "bundle_id": "2b49ecc4-42fe-45ae-80ac-26891f42ac6c",
+    "bundle_path": "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-intelligence/bundles/2b49ecc4-42fe-45ae-80ac-26891f42ac6c",
+    "selected_job_count": 7,
+    "bundle_normalized_job_count": 3437,
+    "agibot_normalized_job_count": 1539,
+    "scope": "7条有目的选择的公开归档材料；不是1539岗全量；未重新在线核验在招状态或法律实体；未调用模型。",
+    "selection_basis": "按标题实体标记与正文责任形成对照：觅蜂2条、Genie1条、灵犀1条、标题无实体标记3条；非随机或统计代表样本。",
+    "identity_boundary": "company_key仅为归档聚类；岗位标题实体标记仅证明该招聘标题的公开用语；不证明雇佣合同主体、股权关系、团队汇报链或人员身份。",
+    "extraction": "normalized-jobs job_id → public_job_key + evidence_sha256 → raw-evidence-index locator → 原始字节SHA-256和size_bytes核验 → data.job_post_list中id精确相等的唯一记录 → 完整description/requirement；未使用excerpt或agent摘要。source_url保留标准化岗位详情地址，raw_archive_source_url另列，二者不要求相等。",
+    "input_files_sha256": {
+      "normalized-jobs.jsonl": "89db450608da4aa40f06174071bc9350419a18f50a8fb7ed2c96e0ecb26f6a0d",
+      "raw-evidence-index.json": "48b0aed80bed8b2bf77512cfe7a09c6082b69a9db5d8178a09d37019ec771170"
+    },
+    "text_utf8_sha256": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31",
+    "jobs": [
+      {
+        "company_key": "agibot",
+        "job_id": "2d769522-f0fd-5075-b43b-823add5dade2",
+        "public_job_key": "7652174229690353971",
+        "title": "优才-具身智能算法研究员（预训练方向）-觅蜂子公司",
+        "source_url": "https://agirobot.jobs.feishu.cn/campusrecruitment/position/7652174229690353971/detail",
+        "observed_at": "2026-09-06T14:38:24.096086+00:00",
+        "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+        "selection_reason": "标题明确出现觅蜂子公司；正文包含预训练与数据价值评估责任",
+        "evidence_sha256": "21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a",
+        "raw_locator": "evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a",
+        "raw_archive_source_url": "https://agirobot.jobs.feishu.cn/campusrecruitment/position/7403196418595031307/detail",
+        "raw_archive_size_bytes": 1963228,
+        "raw_json_pointer": "/data/job_post_list/303",
+        "normalized_jobs_line_1based": 875,
+        "description": "【方向：预训练、Omni大模型与数据策略】\n利用大规模人类视频（Ego4D、Open X-Embodiment）及无本体交互数据，预训练多模态基座模型（视觉-语言-动作联合），作为VLA主干backbone。\n探索scaling law，设计模型架构（如Transformer、DiT）与预训练任务（MAE、动作预测、对比学习）。\n基于VLM/VLA大模型构建自动标注管线，对视频、轨迹、触觉信号进行结构化标注（动作阶段、接触事件、成功/失败标签），降低人工成本。\n设计主动学习策略，从海量数据中筛选高价值样本（失败轨迹、长尾场景）。\n牵头制定数据混合策略：真机遥操作数据 : 无本体人类视频 : 仿真合成数据的最优比例，设计消融实验验证，建立数据价值评估模型。",
+        "requirement": "计算机视觉、机器人学、机器学习、图形学等相关专业硕士及以上学历，博士优先。\n在以下至少一个方向有深入研究和项目经验：\n三维重建/SLAM/3D Gaussian Splatting/物体姿态估计/人体手部重建\n模仿学习（BC、ACT、Diffusion Policy）、强化学习（PPO、SAC）、机器人控制（MPC、力控）、VLA架构（RT-2、PaLM-E等）\n多模态预训练（CLIP、LLaVA）、大模型微调（LoRA、RLHF）、自动标注、数据合成与数据策略\n扎实的编程能力：精通Python，熟悉C++，熟练使用PyTorch/JAX等深度学习框架。\n熟悉至少一种仿真器（Isaac Sim、Mujoco、PyBullet）或真实机器人平台。\n具备优秀的学习能力、逻辑思维与跨团队协作精神，能够快速将前沿论文转化为可工作的原型。\n\n加分项\n有真实机器人（机械臂、人形、四足）部署经验，特别是高复杂度操作任务（装配、双手协作）。\n在CVPR/ICCV/ECCV/CoRL/ICRA/RSS/NeurIPS等顶会发表论文，或有高质量开源贡献。\n处理过Ego4D、HoloAssist或自采机器人混合数据，有Sim2Real迁移实战经验。\n熟悉ROS/ROS2，有实时系统或嵌入式开发经验。",
+        "description_utf8_sha256": "90b252c6b93312381614fccfff23957cdb8915a552fa9e390114d183c4e6d321",
+        "requirement_utf8_sha256": "6fc97819e58696752e9d413b414c768561eadf5d4a4da66e92597f31d0505a65",
+        "raw_department_id": null,
+        "raw_job_post_info_department_id": null
+      },
+      {
+        "company_key": "agibot",
+        "job_id": "838e8a58-3147-5761-8541-b18931b2dca0",
+        "public_job_key": "7652173750204483894",
+        "title": "优才-具身智能算法研究员（空间智能方向）-觅蜂子公司",
+        "source_url": "https://agirobot.jobs.feishu.cn/campusrecruitment/position/7652173750204483894/detail",
+        "observed_at": "2026-09-06T14:38:24.096086+00:00",
+        "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+        "selection_reason": "标题明确出现觅蜂子公司；空间智能与下游协同责任对照",
+        "evidence_sha256": "21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a",
+        "raw_locator": "evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a",
+        "raw_archive_source_url": "https://agirobot.jobs.feishu.cn/campusrecruitment/position/7403196418595031307/detail",
+        "raw_archive_size_bytes": 1963228,
+        "raw_json_pointer": "/data/job_post_list/305",
+        "normalized_jobs_line_1based": 873,
+        "description": "【方向：空间智能与三维重建】空间智能与三维重建\n研发前馈式（Feedforward）3D Gaussian Splatting 场景重建算法，从稀疏多视角或单目视频毫秒级输出紧凑3D高斯表示，支持动态更新与压缩。\n构建实时SLAM系统（融合传统/NeRF/3DGS方法），处理自我中心（egocentric）与人中心（exocentric）混合输入，输出机器人坐标系下的稠密几何、物体6DoF位姿及相机轨迹。\n开发人体-物体交互（HOI）重建：从多视角外部视频重建物体网格+姿态、人体SMPL/手部MANO参数；从单目自我中心视频实时重建手部与接触关系，生成时空对齐的HOI轨迹。\n设计自动标定与数据预处理管线（多相机外参自标定、时间同步、空间对齐），为下游模型提供规范化输入。\n向端到端模型输出可消费的空间Token（如场景图序列、可操作实体列表、接触点坐标），并与RL组协同提供动态场景下的状态预测（世界模型）。",
+        "requirement": "计算机视觉、机器人学、机器学习、图形学等相关专业硕士及以上学历，博士优先。\n在以下至少一个方向有深入研究和项目经验：\n三维重建/SLAM/3D Gaussian Splatting/物体姿态估计/人体手部重建\n模仿学习（BC、ACT、Diffusion Policy）、强化学习（PPO、SAC）、机器人控制（MPC、力控）、VLA架构（RT-2、PaLM-E等）\n多模态预训练（CLIP、LLaVA）、大模型微调（LoRA、RLHF）、自动标注、数据合成与数据策略\n扎实的编程能力：精通Python，熟悉C++，熟练使用PyTorch/JAX等深度学习框架。\n熟悉至少一种仿真器（Isaac Sim、Mujoco、PyBullet）或真实机器人平台。\n具备优秀的学习能力、逻辑思维与跨团队协作精神，能够快速将前沿论文转化为可工作的原型。\n加分项\n有真实机器人（机械臂、人形、四足）部署经验，特别是高复杂度操作任务（装配、双手协作）。\n在CVPR/ICCV/ECCV/CoRL/ICRA/RSS/NeurIPS等顶会发表论文，或有高质量开源贡献。\n处理过Ego4D、HoloAssist或自采机器人混合数据，有Sim2Real迁移实战经验。\n熟悉ROS/ROS2，有实时系统或嵌入式开发经验。",
+        "description_utf8_sha256": "71d09226f70f98ee87d97d077ef700c8227c9ea293c8cb6987c58b3ac48c7339",
+        "requirement_utf8_sha256": "fc71b4a33a7a2afb522e2c4e5c8c567f8ebcebd71f5909d36dc41e09938fb8ae",
+        "raw_department_id": null,
+        "raw_job_post_info_department_id": null
+      },
+      {
+        "company_key": "agibot",
+        "job_id": "948b8fe7-5d51-59e7-9a1c-50431155d443",
+        "public_job_key": "7662008887891544358",
+        "title": "数据模型和解决方案系统工程师- Genie业务部",
+        "source_url": "https://agirobot.jobs.feishu.cn/campusrecruitment/position/7662008887891544358/detail",
+        "observed_at": "2026-09-06T14:38:24.096086+00:00",
+        "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+        "selection_reason": "标题明确出现Genie业务部；系统、数据与模型评测责任对照",
+        "evidence_sha256": "21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a",
+        "raw_locator": "evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a",
+        "raw_archive_source_url": "https://agirobot.jobs.feishu.cn/campusrecruitment/position/7403196418595031307/detail",
+        "raw_archive_size_bytes": 1963228,
+        "raw_json_pointer": "/data/job_post_list/250",
+        "normalized_jobs_line_1based": 1067,
+        "description": "1. 负责机器人数据采集链路、数据质量评估与闭环优化方案设计，推动遥操作、传感器、运控、任务执行等多源数据的统一定义、采集、标注、回流和使用。\n2. 负责 VLA、多模态感知模型等在机器人系统中的应用架构设计，推动模型在端侧、边侧、云侧的部署、评测、迭代和闭环优化。\n3. 负责模型评测体系设计，包括感知模型、策略模型、动作模型、任务成功率、泛化能力、稳定性、时延、资源消耗等指标体系建设。\n4. 负责打通端到边、边到云的数据与模型闭环，协同算法、平台、运控、感知、遥操作团队推进系统落地。\n结合机器人本体能力，推动模型方案与运控、传感器、遥操作、数据采集系统协同设计，保障模型能力在真实机器人场景中可用、可验证、可迭代。\n5. 参与关键项目的系统集成验证、问题分析与方案优化，推动复杂场景下模型应用的稳定性和工程可落地性持续提升。",
+        "requirement": "1. 本科及以上学历，机器人、自动化、计算机、电子信息、控制、人工智能等相关专业。\n2. 理解数据闭环、模型闭环、训练与部署链路，熟悉数据质量、模型评测、模型版本管理、训练迭代等核心流程。\n3. 对 VLA、多模态感知模型、强化学习或后训练等方向有较好的认知，能够从系统视角分析模型落地问题。\n4. 熟悉机器人基础能力，包括运控、传感器、遥操作、数据采集中的一个或多个方向，能够理解数据来源、约束和实际应用链路。\n5. 具备较强的系统抽象能力、跨团队协作能力和问题拆解能力，能够从需求出发完成方案定义并推动落地。\n6. 具备良好的文档能力、接口定义能力、验证思维和工程意识。",
+        "description_utf8_sha256": "54fbb41f47eac2f8422ba8c2aad59bf8a1db52cb3b907dc00fc6ada130c6fbaf",
+        "requirement_utf8_sha256": "4d80e59a7deef9e742c96e5041257571722c4ffcf31402985a20db8e2b673c10",
+        "raw_department_id": null,
+        "raw_job_post_info_department_id": null
+      },
+      {
+        "company_key": "agibot",
+        "job_id": "4859b2b0-eada-5552-8ddd-47171780860e",
+        "public_job_key": "7677794196577536319",
+        "title": "分布式数据平台研发工程师-灵犀业务部",
+        "source_url": "https://agirobot.jobs.feishu.cn/campusrecruitment/position/7677794196577536319/detail",
+        "observed_at": "2026-09-06T14:38:24.096086+00:00",
+        "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+        "selection_reason": "标题明确出现灵犀业务部；数据平台工程及校招责任层级对照",
+        "evidence_sha256": "21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a",
+        "raw_locator": "evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a",
+        "raw_archive_source_url": "https://agirobot.jobs.feishu.cn/campusrecruitment/position/7403196418595031307/detail",
+        "raw_archive_size_bytes": 1963228,
+        "raw_json_pointer": "/data/job_post_list/15",
+        "normalized_jobs_line_1based": 1460,
+        "description": "1、参与 PB 级数据存储与管理平台建设，支持数据检索、版本、权限和血缘管理。\n2、搭建分布式数据处理流水线，支持数据清洗、转换、自动标注、质检和发布。\n3、建设采训推一站式平台，打通数据、训练、评测和模型发布流程。\n4、完善系统监控、容错和故障恢复能力，保障平台稳定运行。",
+        "requirement": "1、2027 届本科及以上学历，计算机、软件工程等相关专业。\n2、熟练掌握 Python，具备 C++、Rust、Go 或 Java 中至少一门语言的开发经验。\n3、熟悉分布式系统、计算机网络和数据库基础。\n4、熟悉 Kafka、S3、Spark、Ray、Flink、Docker、Kubernetes 中的一种或多种。\n5、有分布式系统、数据平台、工作流或开源项目实践者优先。\n6、在分布式系统、数据工程、云计算等相关领域顶级会议发表论文者优先。",
+        "description_utf8_sha256": "2975f9d07069730497156b538295f033ce16e04815bd0e1b4370c782f8ab1004",
+        "requirement_utf8_sha256": "e7f14ae1f6a62ae263b57692ffdae6ccfde936cdc2abc2cd3fc21b38e7bdb74c",
+        "raw_department_id": null,
+        "raw_job_post_info_department_id": null
+      },
+      {
+        "company_key": "agibot",
+        "job_id": "e3787148-8183-5759-8c60-c0b51ef13f43",
+        "public_job_key": "7662252061434284329",
+        "title": "具身数据总监",
+        "source_url": "https://agirobot.jobs.feishu.cn/socialrecruitment/position/7662252061434284329/detail",
+        "observed_at": "2026-09-06T14:38:22.792168+00:00",
+        "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+        "selection_reason": "标题无子公司或业务部实体标记；数据价值与工程责任对照",
+        "evidence_sha256": "189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5",
+        "raw_locator": "evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5",
+        "raw_archive_source_url": "https://agirobot.jobs.feishu.cn/socialrecruitment/position/7213232481075218749/detail",
+        "raw_archive_size_bytes": 3695534,
+        "raw_json_pointer": "/data/job_post_list/154",
+        "normalized_jobs_line_1based": 1122,
+        "description": "- 场景化采样策略：针对大量落地项目，如导购、装配、巡检等不同业务场景，确定Ego与真机（全局物理状态）数据的最佳采集方案。\n- 本体建模（Ontology）：定义具身场景下感知、运动、操作数据的标准化结构，确保跨场景数据的可复用性与可查询性。\n- 数据工程体系：搭建覆盖多业务场景（零售/制造/服务）的大规模数据采集与标注管道，支持真机交互、遥操作、仿真数据的统一接入与管理。\n- 数据闭环流水线：针对导购、装配、巡检等不同业务场景，建设从不同项目中回流原始数据 → 清洗/处理 → 价值评估 → 模型消费 → 反馈回写的全链路工程，抽象数据管理工程；注意数据隐私、安全合规",
+        "requirement": "- 研究生学历，计算机/自动化/数据科学相关专业。\n- 精通Python，熟练使用PyTorch数据处理生态；\n- 在主流多模态大模型、智能驾驶、具身模型中，有至少一类数据工程相关落地经验，且对相关模型有一定理解\n- 知识面广，不限于数据与模型，对平台工程也有一定了解，可进行相关数据库、平台系统设计与开发",
+        "description_utf8_sha256": "585d9998da430360ebdff0de4eb330a9f8ae8116587ad001412b8f548747b146",
+        "requirement_utf8_sha256": "878e9c31a9a0f4c362fb8e859a48a12f8d4a2d64991cd6fe7637941c6aa8b601",
+        "raw_department_id": null,
+        "raw_job_post_info_department_id": null
+      },
+      {
+        "company_key": "agibot",
+        "job_id": "a14a5e6a-f84b-595b-816f-6feb32820e5a",
+        "public_job_key": "7600669099098376457",
+        "title": "数据闭环工程师(指标+数据集)",
+        "source_url": "https://agirobot.jobs.feishu.cn/socialrecruitment/position/7600669099098376457/detail",
+        "observed_at": "2026-09-06T14:38:22.792168+00:00",
+        "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+        "selection_reason": "标题无子公司或业务部实体标记；运营指标与交互质量对照",
+        "evidence_sha256": "189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5",
+        "raw_locator": "evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5",
+        "raw_archive_source_url": "https://agirobot.jobs.feishu.cn/socialrecruitment/position/7213232481075218749/detail",
+        "raw_archive_size_bytes": 3695534,
+        "raw_json_pointer": "/data/job_post_list/603",
+        "normalized_jobs_line_1based": 382,
+        "description": "1、运营指标体系建设\n-制定机器人的运营指标树\n-开发运营指标和数据看板用于追踪机器人运营情况\n2、交互质量保障\n-开发交互运营指标和看板\n-开发机器人交互的离线评测指标，结合用户行为数据优化测试方案，提升语音交互用户体验\n-维护数据清洗和筛选的pipeline，用于测试数据集更新\n3、数据分析\n-从运营看板和指标中定期得出基础分析，指导后续的研发方向\n4、协作与交付\n与产品、开发团队协作，参与需求评审、测试计划制定及缺陷跟踪闭环\n输出运营报告和测试报告，提供质量风险评估及改进建议，支持企业快速迭代",
+        "requirement": "1、基础能力\n-掌握sql，能够做的指标开发和看板搭建\n-掌握python，熟悉常用库，例如：pyspark，requests，pytest的使用\n2、加分技能\n-熟悉语音交互流程和测试：覆盖ASR（语音识别）、NLU（自然语言理解）、TTS（语音合成）\n-熟悉Docker等工具，支持CI/CD流程集成\n3、软性素质\n-责任心强，能独立承担模块测试任务并推动问题解决。\n-适应快节奏项目，具备跨团队沟通与多任务并行处理能力。",
+        "description_utf8_sha256": "a0572f4f554d14e8f396de5982950a0b179915005b378248faf74d58e1c9708d",
+        "requirement_utf8_sha256": "4bbb2324c984deaa6c0c6c0a257ec9f3f15a44e5043082755345ec373e11a11c",
+        "raw_department_id": null,
+        "raw_job_post_info_department_id": null
+      },
+      {
+        "company_key": "agibot",
+        "job_id": "3c6389c8-7dd5-51cf-a38e-487fec8a78ec",
+        "public_job_key": "7623604735216191785",
+        "title": "具身数据平台产品经理",
+        "source_url": "https://agirobot.jobs.feishu.cn/socialrecruitment/position/7623604735216191785/detail",
+        "observed_at": "2026-09-06T14:38:22.792168+00:00",
+        "source_id": "6cc4c481-4a59-526e-bc5c-a6b22b1324b1",
+        "selection_reason": "标题无子公司或业务部实体标记；平台产品与协同责任对照",
+        "evidence_sha256": "189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5",
+        "raw_locator": "evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5",
+        "raw_archive_source_url": "https://agirobot.jobs.feishu.cn/socialrecruitment/position/7213232481075218749/detail",
+        "raw_archive_size_bytes": 3695534,
+        "raw_json_pointer": "/data/job_post_list/480",
+        "normalized_jobs_line_1based": 540,
+        "description": "1、数据全生命周期平台搭建：聚焦具身智能业务场景，牵头设计并落地覆盖数据采集、标注、挖掘、分析、存储及复用的全流程数据服务中台，核心打造一站式、高自由度且灵活适配的解决方案，确保各模块高效协同，精准响应研发、测试、落地等不同阶段的差异化数据需求。\n2、核心模块产品设计：主导数据采集（多源异构数据接入、实时/离线采集策略适配）、数据标注（自动化工具研发、人工标注流程优化、质量校验体系搭建）、数据挖掘（特征工程构建、关联规律提炼）、数据分析（可视化工具迭代、自定义分析模型封装）等核心模块，完成需求拆解、原型设计、PRD输出全流程，平衡功能完整性与用户易用性。\n3、AI SaaS Agent化落地：基于LLM、RAG、NLP等AI技术，规划平台智能化演进路线，分阶段推动现有SaaS数据服务Agent化改造，实现智能需求理解、自动任务调度、自主问题排查、个性化服务推送等核心能力，持续提升平台智能化水平与用户操作效率。\n4、项目落地与跨团队协同：统筹数据平台从需求立项到上线落地的全流程管理，协调研发、算法、测试、业务等跨部门资源，高效解决技术瓶颈、资源冲突、需求变更等问题，保障产品按质按量按期交付。\n5、产品运营与体验迭代：以用户视角制定产品推广与运营策略，搭建完善的用户体验反馈机制（含调研访谈、反馈收集、闭环跟进），持续追踪用户使用数据与业务反馈，迭代优化产品功能与交互，强化产品行业影响力，提升用户粘性。\n6、技术与业务深度融合：深耕具身智能业务逻辑，联动技术团队探索数据平台与AI技术（LLM微调、Prompt优化、RAG、Agent）的融合场景，输出兼顾业务价值与技术可行性的产品方案，支撑业务规模化扩张。",
+        "requirement": "1、本科及以上学历，工科相关专业优先，计算机科学、电子工程、自动化、数据科学等专业为佳。\n2、5年以上数据领域产品相关经验，具备扎实的产品规划、设计与项目落地能力，曾参与或主导过数据平台核心模块（采集、标注、分析、中台等）建设，对数据中台的架构设计、服务模式及落地路径有深刻理解；有自动驾驶、大模型相关业务经验者优先。\n3、具备扎实的数据基础，了解数据仓库架构及核心原理，熟练掌握数据采集、数据标注、数据分析的基本原理、方法论与常用工具，能结合具身智能业务场景设计合理的数据流转与处理方案。\n4、熟悉AI核心技术，重点掌握LLM（微调、Prompt设计）、RAG、NLP等领域基础知识，了解Agent技术的核心逻辑、技术栈及应用场景，有AI+数据平台、Agent相关项目经验者加分。\n5、具备优秀的沟通协调与团队协作能力，能高效联动跨部门团队推进工作；同时具备较强的产品运营思维，善于从用户视角优化产品，建立完善的反馈与迭代机制，持续提升产品体验。\n6、逻辑思维清晰，具备较强的需求拆解、问题分析与解决能力，对具身智能、数据中台领域的技术趋势与业务痛点有敏锐洞察力，能平衡技术可行性与业务价值。\n7、熟练使用Axure、墨刀等原型设计工具，具备优质的文档撰写能力，可输出规范、详尽的PRD、原型图及产品规划文档。\n",
+        "description_utf8_sha256": "0fae40a999522290cf5c3b6ad740f38717dd506284f7b60bcf71fb535b961504",
+        "requirement_utf8_sha256": "9872d025060a8dd517aa5f0667b5c114b1ca4a87e8642ffa658bb8c932224efd",
+        "raw_department_id": null,
+        "raw_job_post_info_department_id": null
+      }
+    ]
+  },
+  "source_text_sha256": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31",
+  "source_text_characters": 8895,
+  "release": {
+    "role_release": "hr-80f12872305b7a96f976d5c3",
+    "knowledge_release": "hr-80f12872305b7a96f976d5c3",
+    "role_manifest_sha": "edd7dcbb7ddda4a51f934f6d1e213b1f2e6bcc5039cc582321f835270930ee9c"
+  },
+  "stages": [
+    {
+      "work": {
+        "work_id": "eb68c0b4-26fe-4f23-b6a8-c07107a4fff9",
+        "thread_id": "9d3c9133-8964-4b4e-9558-a302ec89d00a",
+        "input_revision": 1,
+        "state": "waiting_budget",
+        "phase": "finalizing",
+        "answer_state": "none",
+        "result_refs": [],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 147.781081,
+          "charged_calls": 2,
+          "charged_tokens": 64886,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 2,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 1,
+            "total_tokens": 16000
+          },
+          "revision": 1,
+          "usage_quality": "mixed"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:text",
+                "kind": "material",
+                "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31:utf8-v1",
+                "sha256": "c50f243b596e7dbbd14e1cfeabab94a1ab956fd80febc0a511da51a560ada5b6"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 8895
+            }
+          ],
+          "revision": 4
+        },
+        "last_event_seq": 7
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "4665e509-589a-432f-8f9d-8758faa074b8",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "我们想找一个能判断机器人数据投入是否值得的人。请根据这些公开岗位全文，研究应该到哪里、找什么经历的人，并解释为什么。哪些具体用人实体及责任边界有材料支持，哪些仍无法判断？请把关键判断对应到具体岗位正文，保留不支持该判断的材料和需要补充核实的问题，并说明这组材料能覆盖到哪里。 请将研究保存在当前工作内的一份 research 成果中，保留准确来源和未完成部分，方便后续复用；预算暂停时保存阶段进度，显式追加预算后继续同一问题。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 1
+      },
+      "results": [],
+      "attempts": [
+        {
+          "attempt_id": "8227bcc0-1be8-4674-a89f-457334aa840f",
+          "ordinal": 1,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 24774,
+          "charged_tokens": 16582,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "I'll start by discovering available resources and reading the selected material.",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "kinds": [
+                    "material",
+                    "method",
+                    "result",
+                    "intelligence",
+                    "standard"
+                  ]
+                },
+                "name": "list_resources",
+                "provider_call_id": "toolu_bdrk_01FhJjsDEayJFh4vsmDtkDEL"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:text",
+                    "kind": "material",
+                    "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31:utf8-v1",
+                    "sha256": "c50f243b596e7dbbd14e1cfeabab94a1ab956fd80febc0a511da51a560ada5b6"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01WNHPJnt3yujc6HmdVpy6Uk"
+              }
+            ],
+            "usage": {
+              "input_total": 7902,
+              "output_total": 300,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 7902,
+                "output_tokens": 300,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "64f4b319-89b7-4f57-92a0-dfa52619ef5b",
+          "ordinal": 2,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 48304,
+          "charged_tokens": 48304,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        }
+      ],
+      "tools": [
+        {
+          "operation_id": "7ed33f23-404c-4aa3-99db-16e8fa7a22b6",
+          "attempt_id": "8227bcc0-1be8-4674-a89f-457334aa840f",
+          "namespace": "tool:list_resources",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "items": [
+                {
+                  "description": "用户为本次工作指定的材料正文",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": {
+                    "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:original",
+                    "kind": "material",
+                    "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31",
+                    "sha256": "3ffd886120fc2c4a9058141ea2453c9ecccf65b1e587d29c427b3f0a4924f347"
+                  },
+                  "ref": {
+                    "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:text",
+                    "kind": "material",
+                    "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31:utf8-v1",
+                    "sha256": "c50f243b596e7dbbd14e1cfeabab94a1ab956fd80febc0a511da51a560ada5b6"
+                  },
+                  "representation": "parsed_text",
+                  "state": "available",
+                  "title": "已选材料",
+                  "visibility": {
+                    "kind": "private",
+                    "subject_id": "072cfaf4-a9d9-4ec4-a257-20c9e4d67692"
+                  }
+                },
+                {
+                  "description": "来源核验与适配边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-08-hr-methodology-sources",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "公开 JD 阅读案例与证据边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-09-jd-reading-cases",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位原文理解：已复核案例来源",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "comparison-and-learning",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "候选人比较与反馈",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "胜任力与人才画像",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "循证判断",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位与业务情境",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "要求校准与 AMO",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "甄选与工作样本",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "sourcing-and-transfer",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "人才来源与能力迁移",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                }
+              ],
+              "next_cursor": null
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "c1b32d62-3fb9-4570-b2a7-05588dfea539",
+          "attempt_id": "8227bcc0-1be8-4674-a89f-457334aa840f",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 8895,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "4ca30558-3a60-430d-84bb-3d5beb8694a3",
+              "ref": {
+                "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:text",
+                "kind": "material",
+                "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31:utf8-v1",
+                "sha256": "c50f243b596e7dbbd14e1cfeabab94a1ab956fd80febc0a511da51a560ada5b6"
+              },
+              "text": "本材料是 agibot 归档中定向选择的 7 个岗位完整 description / requirement，观察时间为 2026-09-06；不是 agibot 1,539 岗全量，也不是全部公司的 3,437 岗全量。招聘页标题中的子公司、业务部文字是公开招聘表述，不构成法律实体认证。以下保留原文，不把目录聚类当组织关系证据。\n\n## 岗位 1：优才-具身智能算法研究员（预训练方向）-觅蜂子公司\njob_id: 2d769522-f0fd-5075-b43b-823add5dade2\npublic_job_key: 7652174229690353971\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/campusrecruitment/position/7652174229690353971/detail\nobserved_at: 2026-09-06T14:38:24.096086+00:00\n原始归档 SHA-256: 21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a\n原件定位: evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a#/data/job_post_list/303\n\n### description（原始完整字段）\n【方向：预训练、Omni大模型与数据策略】\n利用大规模人类视频（Ego4D、Open X-Embodiment）及无本体交互数据，预训练多模态基座模型（视觉-语言-动作联合），作为VLA主干backbone。\n探索scaling law，设计模型架构（如Transformer、DiT）与预训练任务（MAE、动作预测、对比学习）。\n基于VLM/VLA大模型构建自动标注管线，对视频、轨迹、触觉信号进行结构化标注（动作阶段、接触事件、成功/失败标签），降低人工成本。\n设计主动学习策略，从海量数据中筛选高价值样本（失败轨迹、长尾场景）。\n牵头制定数据混合策略：真机遥操作数据 : 无本体人类视频 : 仿真合成数据的最优比例，设计消融实验验证，建立数据价值评估模型。\n\n### requirement（原始完整字段）\n计算机视觉、机器人学、机器学习、图形学等相关专业硕士及以上学历，博士优先。\n在以下至少一个方向有深入研究和项目经验：\n三维重建/SLAM/3D Gaussian Splatting/物体姿态估计/人体手部重建\n模仿学习（BC、ACT、Diffusion Policy）、强化学习（PPO、SAC）、机器人控制（MPC、力控）、VLA架构（RT-2、PaLM-E等）\n多模态预训练（CLIP、LLaVA）、大模型微调（LoRA、RLHF）、自动标注、数据合成与数据策略\n扎实的编程能力：精通Python，熟悉C++，熟练使用PyTorch/JAX等深度学习框架。\n熟悉至少一种仿真器（Isaac Sim、Mujoco、PyBullet）或真实机器人平台。\n具备优秀的学习能力、逻辑思维与跨团队协作精神，能够快速将前沿论文转化为可工作的原型。\n\n加分项\n有真实机器人（机械臂、人形、四足）部署经验，特别是高复杂度操作任务（装配、双手协作）。\n在CVPR/ICCV/ECCV/CoRL/ICRA/RSS/NeurIPS等顶会发表论文，或有高质量开源贡献。\n处理过Ego4D、HoloAssist或自采机器人混合数据，有Sim2Real迁移实战经验。\n熟悉ROS/ROS2，有实时系统或嵌入式开发经验。\n\n---\n\n## 岗位 2：优才-具身智能算法研究员（空间智能方向）-觅蜂子公司\njob_id: 838e8a58-3147-5761-8541-b18931b2dca0\npublic_job_key: 7652173750204483894\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/campusrecruitment/position/7652173750204483894/detail\nobserved_at: 2026-09-06T14:38:24.096086+00:00\n原始归档 SHA-256: 21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a\n原件定位: evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a#/data/job_post_list/305\n\n### description（原始完整字段）\n【方向：空间智能与三维重建】空间智能与三维重建\n研发前馈式（Feedforward）3D Gaussian Splatting 场景重建算法，从稀疏多视角或单目视频毫秒级输出紧凑3D高斯表示，支持动态更新与压缩。\n构建实时SLAM系统（融合传统/NeRF/3DGS方法），处理自我中心（egocentric）与人中心（exocentric）混合输入，输出机器人坐标系下的稠密几何、物体6DoF位姿及相机轨迹。\n开发人体-物体交互（HOI）重建：从多视角外部视频重建物体网格+姿态、人体SMPL/手部MANO参数；从单目自我中心视频实时重建手部与接触关系，生成时空对齐的HOI轨迹。\n设计自动标定与数据预处理管线（多相机外参自标定、时间同步、空间对齐），为下游模型提供规范化输入。\n向端到端模型输出可消费的空间Token（如场景图序列、可操作实体列表、接触点坐标），并与RL组协同提供动态场景下的状态预测（世界模型）。\n\n### requirement（原始完整字段）\n计算机视觉、机器人学、机器学习、图形学等相关专业硕士及以上学历，博士优先。\n在以下至少一个方向有深入研究和项目经验：\n三维重建/SLAM/3D Gaussian Splatting/物体姿态估计/人体手部重建\n模仿学习（BC、ACT、Diffusion Policy）、强化学习（PPO、SAC）、机器人控制（MPC、力控）、VLA架构（RT-2、PaLM-E等）\n多模态预训练（CLIP、LLaVA）、大模型微调（LoRA、RLHF）、自动标注、数据合成与数据策略\n扎实的编程能力：精通Python，熟悉C++，熟练使用PyTorch/JAX等深度学习框架。\n熟悉至少一种仿真器（Isaac Sim、Mujoco、PyBullet）或真实机器人平台。\n具备优秀的学习能力、逻辑思维与跨团队协作精神，能够快速将前沿论文转化为可工作的原型。\n加分项\n有真实机器人（机械臂、人形、四足）部署经验，特别是高复杂度操作任务（装配、双手协作）。\n在CVPR/ICCV/ECCV/CoRL/ICRA/RSS/NeurIPS等顶会发表论文，或有高质量开源贡献。\n处理过Ego4D、HoloAssist或自采机器人混合数据，有Sim2Real迁移实战经验。\n熟悉ROS/ROS2，有实时系统或嵌入式开发经验。\n\n---\n\n## 岗位 3：数据模型和解决方案系统工程师- Genie业务部\njob_id: 948b8fe7-5d51-59e7-9a1c-50431155d443\npublic_job_key: 7662008887891544358\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/campusrecruitment/position/7662008887891544358/detail\nobserved_at: 2026-09-06T14:38:24.096086+00:00\n原始归档 SHA-256: 21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a\n原件定位: evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a#/data/job_post_list/250\n\n### description（原始完整字段）\n1. 负责机器人数据采集链路、数据质量评估与闭环优化方案设计，推动遥操作、传感器、运控、任务执行等多源数据的统一定义、采集、标注、回流和使用。\n2. 负责 VLA、多模态感知模型等在机器人系统中的应用架构设计，推动模型在端侧、边侧、云侧的部署、评测、迭代和闭环优化。\n3. 负责模型评测体系设计，包括感知模型、策略模型、动作模型、任务成功率、泛化能力、稳定性、时延、资源消耗等指标体系建设。\n4. 负责打通端到边、边到云的数据与模型闭环，协同算法、平台、运控、感知、遥操作团队推进系统落地。\n结合机器人本体能力，推动模型方案与运控、传感器、遥操作、数据采集系统协同设计，保障模型能力在真实机器人场景中可用、可验证、可迭代。\n5. 参与关键项目的系统集成验证、问题分析与方案优化，推动复杂场景下模型应用的稳定性和工程可落地性持续提升。\n\n### requirement（原始完整字段）\n1. 本科及以上学历，机器人、自动化、计算机、电子信息、控制、人工智能等相关专业。\n2. 理解数据闭环、模型闭环、训练与部署链路，熟悉数据质量、模型评测、模型版本管理、训练迭代等核心流程。\n3. 对 VLA、多模态感知模型、强化学习或后训练等方向有较好的认知，能够从系统视角分析模型落地问题。\n4. 熟悉机器人基础能力，包括运控、传感器、遥操作、数据采集中的一个或多个方向，能够理解数据来源、约束和实际应用链路。\n5. 具备较强的系统抽象能力、跨团队协作能力和问题拆解能力，能够从需求出发完成方案定义并推动落地。\n6. 具备良好的文档能力、接口定义能力、验证思维和工程意识。\n\n---\n\n## 岗位 4：分布式数据平台研发工程师-灵犀业务部\njob_id: 4859b2b0-eada-5552-8ddd-47171780860e\npublic_job_key: 7677794196577536319\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/campusrecruitment/position/7677794196577536319/detail\nobserved_at: 2026-09-06T14:38:24.096086+00:00\n原始归档 SHA-256: 21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a\n原件定位: evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a#/data/job_post_list/15\n\n### description（原始完整字段）\n1、参与 PB 级数据存储与管理平台建设，支持数据检索、版本、权限和血缘管理。\n2、搭建分布式数据处理流水线，支持数据清洗、转换、自动标注、质检和发布。\n3、建设采训推一站式平台，打通数据、训练、评测和模型发布流程。\n4、完善系统监控、容错和故障恢复能力，保障平台稳定运行。\n\n### requirement（原始完整字段）\n1、2027 届本科及以上学历，计算机、软件工程等相关专业。\n2、熟练掌握 Python，具备 C++、Rust、Go 或 Java 中至少一门语言的开发经验。\n3、熟悉分布式系统、计算机网络和数据库基础。\n4、熟悉 Kafka、S3、Spark、Ray、Flink、Docker、Kubernetes 中的一种或多种。\n5、有分布式系统、数据平台、工作流或开源项目实践者优先。\n6、在分布式系统、数据工程、云计算等相关领域顶级会议发表论文者优先。\n\n---\n\n## 岗位 5：具身数据总监\njob_id: e3787148-8183-5759-8c60-c0b51ef13f43\npublic_job_key: 7662252061434284329\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/socialrecruitment/position/7662252061434284329/detail\nobserved_at: 2026-09-06T14:38:22.792168+00:00\n原始归档 SHA-256: 189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5\n原件定位: evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5#/data/job_post_list/154\n\n### description（原始完整字段）\n- 场景化采样策略：针对大量落地项目，如导购、装配、巡检等不同业务场景，确定Ego与真机（全局物理状态）数据的最佳采集方案。\n- 本体建模（Ontology）：定义具身场景下感知、运动、操作数据的标准化结构，确保跨场景数据的可复用性与可查询性。\n- 数据工程体系：搭建覆盖多业务场景（零售/制造/服务）的大规模数据采集与标注管道，支持真机交互、遥操作、仿真数据的统一接入与管理。\n- 数据闭环流水线：针对导购、装配、巡检等不同业务场景，建设从不同项目中回流原始数据 → 清洗/处理 → 价值评估 → 模型消费 → 反馈回写的全链路工程，抽象数据管理工程；注意数据隐私、安全合规\n\n### requirement（原始完整字段）\n- 研究生学历，计算机/自动化/数据科学相关专业。\n- 精通Python，熟练使用PyTorch数据处理生态；\n- 在主流多模态大模型、智能驾驶、具身模型中，有至少一类数据工程相关落地经验，且对相关模型有一定理解\n- 知识面广，不限于数据与模型，对平台工程也有一定了解，可进行相关数据库、平台系统设计与开发\n\n---\n\n## 岗位 6：数据闭环工程师(指标+数据集)\njob_id: a14a5e6a-f84b-595b-816f-6feb32820e5a\npublic_job_key: 7600669099098376457\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/socialrecruitment/position/7600669099098376457/detail\nobserved_at: 2026-09-06T14:38:22.792168+00:00\n原始归档 SHA-256: 189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5\n原件定位: evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5#/data/job_post_list/603\n\n### description（原始完整字段）\n1、运营指标体系建设\n-制定机器人的运营指标树\n-开发运营指标和数据看板用于追踪机器人运营情况\n2、交互质量保障\n-开发交互运营指标和看板\n-开发机器人交互的离线评测指标，结合用户行为数据优化测试方案，提升语音交互用户体验\n-维护数据清洗和筛选的pipeline，用于测试数据集更新\n3、数据分析\n-从运营看板和指标中定期得出基础分析，指导后续的研发方向\n4、协作与交付\n与产品、开发团队协作，参与需求评审、测试计划制定及缺陷跟踪闭环\n输出运营报告和测试报告，提供质量风险评估及改进建议，支持企业快速迭代\n\n### requirement（原始完整字段）\n1、基础能力\n-掌握sql，能够做的指标开发和看板搭建\n-掌握python，熟悉常用库，例如：pyspark，requests，pytest的使用\n2、加分技能\n-熟悉语音交互流程和测试：覆盖ASR（语音识别）、NLU（自然语言理解）、TTS（语音合成）\n-熟悉Docker等工具，支持CI/CD流程集成\n3、软性素质\n-责任心强，能独立承担模块测试任务并推动问题解决。\n-适应快节奏项目，具备跨团队沟通与多任务并行处理能力。\n\n---\n\n## 岗位 7：具身数据平台产品经理\njob_id: 3c6389c8-7dd5-51cf-a38e-487fec8a78ec\npublic_job_key: 7623604735216191785\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/socialrecruitment/position/7623604735216191785/detail\nobserved_at: 2026-09-06T14:38:22.792168+00:00\n原始归档 SHA-256: 189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5\n原件定位: evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5#/data/job_post_list/480\n\n### description（原始完整字段）\n1、数据全生命周期平台搭建：聚焦具身智能业务场景，牵头设计并落地覆盖数据采集、标注、挖掘、分析、存储及复用的全流程数据服务中台，核心打造一站式、高自由度且灵活适配的解决方案，确保各模块高效协同，精准响应研发、测试、落地等不同阶段的差异化数据需求。\n2、核心模块产品设计：主导数据采集（多源异构数据接入、实时/离线采集策略适配）、数据标注（自动化工具研发、人工标注流程优化、质量校验体系搭建）、数据挖掘（特征工程构建、关联规律提炼）、数据分析（可视化工具迭代、自定义分析模型封装）等核心模块，完成需求拆解、原型设计、PRD输出全流程，平衡功能完整性与用户易用性。\n3、AI SaaS Agent化落地：基于LLM、RAG、NLP等AI技术，规划平台智能化演进路线，分阶段推动现有SaaS数据服务Agent化改造，实现智能需求理解、自动任务调度、自主问题排查、个性化服务推送等核心能力，持续提升平台智能化水平与用户操作效率。\n4、项目落地与跨团队协同：统筹数据平台从需求立项到上线落地的全流程管理，协调研发、算法、测试、业务等跨部门资源，高效解决技术瓶颈、资源冲突、需求变更等问题，保障产品按质按量按期交付。\n5、产品运营与体验迭代：以用户视角制定产品推广与运营策略，搭建完善的用户体验反馈机制（含调研访谈、反馈收集、闭环跟进），持续追踪用户使用数据与业务反馈，迭代优化产品功能与交互，强化产品行业影响力，提升用户粘性。\n6、技术与业务深度融合：深耕具身智能业务逻辑，联动技术团队探索数据平台与AI技术（LLM微调、Prompt优化、RAG、Agent）的融合场景，输出兼顾业务价值与技术可行性的产品方案，支撑业务规模化扩张。\n\n### requirement（原始完整字段）\n1、本科及以上学历，工科相关专业优先，计算机科学、电子工程、自动化、数据科学等专业为佳。\n2、5年以上数据领域产品相关经验，具备扎实的产品规划、设计与项目落地能力，曾参与或主导过数据平台核心模块（采集、标注、分析、中台等）建设，对数据中台的架构设计、服务模式及落地路径有深刻理解；有自动驾驶、大模型相关业务经验者优先。\n3、具备扎实的数据基础，了解数据仓库架构及核心原理，熟练掌握数据采集、数据标注、数据分析的基本原理、方法论与常用工具，能结合具身智能业务场景设计合理的数据流转与处理方案。\n4、熟悉AI核心技术，重点掌握LLM（微调、Prompt设计）、RAG、NLP等领域基础知识，了解Agent技术的核心逻辑、技术栈及应用场景，有AI+数据平台、Agent相关项目经验者加分。\n5、具备优秀的沟通协调与团队协作能力，能高效联动跨部门团队推进工作；同时具备较强的产品运营思维，善于从用户视角优化产品，建立完善的反馈与迭代机制，持续提升产品体验。\n6、逻辑思维清晰，具备较强的需求拆解、问题分析与解决能力，对具身智能、数据中台领域的技术趋势与业务痛点有敏锐洞察力，能平衡技术可行性与业务价值。\n7、熟练使用Axure、墨刀等原型设计工具，具备优质的文档撰写能力，可输出规范、详尽的PRD、原型图及产品规划文档。\n",
+              "total_characters": 8895
+            },
+            "error": null,
+            "status": "ok"
+          }
+        }
+      ]
+    },
+    {
+      "work": {
+        "work_id": "eb68c0b4-26fe-4f23-b6a8-c07107a4fff9",
+        "thread_id": "9d3c9133-8964-4b4e-9558-a302ec89d00a",
+        "input_revision": 1,
+        "state": "failed",
+        "phase": "research",
+        "answer_state": "none",
+        "result_refs": [],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 633.3441700000001,
+          "charged_calls": 10,
+          "charged_tokens": 606263,
+          "limits": {
+            "active_seconds": 1800,
+            "model_calls": 22,
+            "total_tokens": 1200000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 1,
+            "total_tokens": 16000
+          },
+          "revision": 2,
+          "usage_quality": "mixed"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:text",
+                "kind": "material",
+                "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31:utf8-v1",
+                "sha256": "c50f243b596e7dbbd14e1cfeabab94a1ab956fd80febc0a511da51a560ada5b6"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 8895
+            },
+            {
+              "ref": {
+                "id": "sourcing-and-transfer",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1138
+            },
+            {
+              "ref": {
+                "id": "2026-09-09-jd-reading-cases",
+                "kind": "method",
+                "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1768
+            },
+            {
+              "ref": {
+                "id": "job-and-context",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1889
+            },
+            {
+              "ref": {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1562
+            },
+            {
+              "ref": {
+                "id": "competency-and-profile",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1113
+            },
+            {
+              "ref": {
+                "id": "requirement-calibration",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1787
+            },
+            {
+              "ref": {
+                "id": "selection-and-work-samples",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1133
+            }
+          ],
+          "revision": 16
+        },
+        "last_event_seq": 22
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "4665e509-589a-432f-8f9d-8758faa074b8",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "我们想找一个能判断机器人数据投入是否值得的人。请根据这些公开岗位全文，研究应该到哪里、找什么经历的人，并解释为什么。哪些具体用人实体及责任边界有材料支持，哪些仍无法判断？请把关键判断对应到具体岗位正文，保留不支持该判断的材料和需要补充核实的问题，并说明这组材料能覆盖到哪里。 请将研究保存在当前工作内的一份 research 成果中，保留准确来源和未完成部分，方便后续复用；预算暂停时保存阶段进度，显式追加预算后继续同一问题。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 1
+      },
+      "results": [],
+      "attempts": [
+        {
+          "attempt_id": "8227bcc0-1be8-4674-a89f-457334aa840f",
+          "ordinal": 1,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 24774,
+          "charged_tokens": 16582,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "I'll start by discovering available resources and reading the selected material.",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "kinds": [
+                    "material",
+                    "method",
+                    "result",
+                    "intelligence",
+                    "standard"
+                  ]
+                },
+                "name": "list_resources",
+                "provider_call_id": "toolu_bdrk_01FhJjsDEayJFh4vsmDtkDEL"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:text",
+                    "kind": "material",
+                    "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31:utf8-v1",
+                    "sha256": "c50f243b596e7dbbd14e1cfeabab94a1ab956fd80febc0a511da51a560ada5b6"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01WNHPJnt3yujc6HmdVpy6Uk"
+              }
+            ],
+            "usage": {
+              "input_total": 7902,
+              "output_total": 300,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 7902,
+                "output_tokens": 300,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "64f4b319-89b7-4f57-92a0-dfa52619ef5b",
+          "ordinal": 2,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 48304,
+          "charged_tokens": 48304,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "6d490321-86a2-4ccd-b0e1-33c007058ebd",
+          "ordinal": 3,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 50605,
+          "charged_tokens": 42413,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "sourcing-and-transfer",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01C64GkNtwfVENMJeNtTqifZ"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "2026-09-09-jd-reading-cases",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01GN3QLfWpAcvGwXy74KpUar"
+              }
+            ],
+            "usage": {
+              "input_total": 18498,
+              "output_total": 394,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 18498,
+                "output_tokens": 394,
+                "output_tokens_details": {
+                  "thinking_tokens": 58
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "0da97fdc-a862-4961-8e4c-8929e456d733",
+          "ordinal": 4,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 59066,
+          "charged_tokens": 50874,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01V7H2rfgAYbR3CLEES298kD"
+              },
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01VSshHeWrQEzK78QwJKV2AG"
+              }
+            ],
+            "usage": {
+              "input_total": 22079,
+              "output_total": 377,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 22079,
+                "output_tokens": 377,
+                "output_tokens_details": {
+                  "thinking_tokens": 88
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "8192d742-8115-488b-bc51-cfeee61041fa",
+          "ordinal": 5,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 69877,
+          "charged_tokens": 61685,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01UJFiB4uxWJstageemY4Tmn"
+              }
+            ],
+            "usage": {
+              "input_total": 26179,
+              "output_total": 242,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 26179,
+                "output_tokens": 242,
+                "output_tokens_details": {
+                  "thinking_tokens": 102
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "ee685108-ac88-47bd-be09-b374d7c6e63a",
+          "ordinal": 6,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 73668,
+          "charged_tokens": 65476,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_017eCdHnq9hq85UztDn8UvLQ"
+              }
+            ],
+            "usage": {
+              "input_total": 27620,
+              "output_total": 244,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 27620,
+                "output_tokens": 244,
+                "output_tokens_details": {
+                  "thinking_tokens": 93
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "0f522295-913e-497f-8716-cc0a60c5f1dd",
+          "ordinal": 7,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 79338,
+          "charged_tokens": 71146,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01SJbjuC2XbQAHLJcaT5Zymn"
+              }
+            ],
+            "usage": {
+              "input_total": 29806,
+              "output_total": 245,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 29806,
+                "output_tokens": 245,
+                "output_tokens_details": {
+                  "thinking_tokens": 96
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "ae454402-bd91-4169-9e62-70bc7db11159",
+          "ordinal": 8,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 83261,
+          "charged_tokens": 83261,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "71ee521f-48cf-4c9f-b847-931c98fe1c64",
+          "ordinal": 9,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 83261,
+          "charged_tokens": 83261,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "86951d38-23f0-4fde-a73a-0ea53712b830",
+          "ordinal": 10,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 83261,
+          "charged_tokens": 83261,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        }
+      ],
+      "tools": [
+        {
+          "operation_id": "7ed33f23-404c-4aa3-99db-16e8fa7a22b6",
+          "attempt_id": "8227bcc0-1be8-4674-a89f-457334aa840f",
+          "namespace": "tool:list_resources",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "items": [
+                {
+                  "description": "用户为本次工作指定的材料正文",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": {
+                    "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:original",
+                    "kind": "material",
+                    "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31",
+                    "sha256": "3ffd886120fc2c4a9058141ea2453c9ecccf65b1e587d29c427b3f0a4924f347"
+                  },
+                  "ref": {
+                    "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:text",
+                    "kind": "material",
+                    "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31:utf8-v1",
+                    "sha256": "c50f243b596e7dbbd14e1cfeabab94a1ab956fd80febc0a511da51a560ada5b6"
+                  },
+                  "representation": "parsed_text",
+                  "state": "available",
+                  "title": "已选材料",
+                  "visibility": {
+                    "kind": "private",
+                    "subject_id": "072cfaf4-a9d9-4ec4-a257-20c9e4d67692"
+                  }
+                },
+                {
+                  "description": "来源核验与适配边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-08-hr-methodology-sources",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "公开 JD 阅读案例与证据边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-09-jd-reading-cases",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位原文理解：已复核案例来源",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "comparison-and-learning",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "候选人比较与反馈",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "胜任力与人才画像",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "循证判断",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位与业务情境",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "要求校准与 AMO",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "甄选与工作样本",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "sourcing-and-transfer",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "人才来源与能力迁移",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                }
+              ],
+              "next_cursor": null
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "c1b32d62-3fb9-4570-b2a7-05588dfea539",
+          "attempt_id": "8227bcc0-1be8-4674-a89f-457334aa840f",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 8895,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "4ca30558-3a60-430d-84bb-3d5beb8694a3",
+              "ref": {
+                "id": "0139bc67-26f4-41ec-b7dc-84ea9693f0e6:text",
+                "kind": "material",
+                "revision": "bd691b56f58df6ce449bcc2aefc707b4841cc451e08fe4ac1dda5df58865fc31:utf8-v1",
+                "sha256": "c50f243b596e7dbbd14e1cfeabab94a1ab956fd80febc0a511da51a560ada5b6"
+              },
+              "text": "本材料是 agibot 归档中定向选择的 7 个岗位完整 description / requirement，观察时间为 2026-09-06；不是 agibot 1,539 岗全量，也不是全部公司的 3,437 岗全量。招聘页标题中的子公司、业务部文字是公开招聘表述，不构成法律实体认证。以下保留原文，不把目录聚类当组织关系证据。\n\n## 岗位 1：优才-具身智能算法研究员（预训练方向）-觅蜂子公司\njob_id: 2d769522-f0fd-5075-b43b-823add5dade2\npublic_job_key: 7652174229690353971\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/campusrecruitment/position/7652174229690353971/detail\nobserved_at: 2026-09-06T14:38:24.096086+00:00\n原始归档 SHA-256: 21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a\n原件定位: evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a#/data/job_post_list/303\n\n### description（原始完整字段）\n【方向：预训练、Omni大模型与数据策略】\n利用大规模人类视频（Ego4D、Open X-Embodiment）及无本体交互数据，预训练多模态基座模型（视觉-语言-动作联合），作为VLA主干backbone。\n探索scaling law，设计模型架构（如Transformer、DiT）与预训练任务（MAE、动作预测、对比学习）。\n基于VLM/VLA大模型构建自动标注管线，对视频、轨迹、触觉信号进行结构化标注（动作阶段、接触事件、成功/失败标签），降低人工成本。\n设计主动学习策略，从海量数据中筛选高价值样本（失败轨迹、长尾场景）。\n牵头制定数据混合策略：真机遥操作数据 : 无本体人类视频 : 仿真合成数据的最优比例，设计消融实验验证，建立数据价值评估模型。\n\n### requirement（原始完整字段）\n计算机视觉、机器人学、机器学习、图形学等相关专业硕士及以上学历，博士优先。\n在以下至少一个方向有深入研究和项目经验：\n三维重建/SLAM/3D Gaussian Splatting/物体姿态估计/人体手部重建\n模仿学习（BC、ACT、Diffusion Policy）、强化学习（PPO、SAC）、机器人控制（MPC、力控）、VLA架构（RT-2、PaLM-E等）\n多模态预训练（CLIP、LLaVA）、大模型微调（LoRA、RLHF）、自动标注、数据合成与数据策略\n扎实的编程能力：精通Python，熟悉C++，熟练使用PyTorch/JAX等深度学习框架。\n熟悉至少一种仿真器（Isaac Sim、Mujoco、PyBullet）或真实机器人平台。\n具备优秀的学习能力、逻辑思维与跨团队协作精神，能够快速将前沿论文转化为可工作的原型。\n\n加分项\n有真实机器人（机械臂、人形、四足）部署经验，特别是高复杂度操作任务（装配、双手协作）。\n在CVPR/ICCV/ECCV/CoRL/ICRA/RSS/NeurIPS等顶会发表论文，或有高质量开源贡献。\n处理过Ego4D、HoloAssist或自采机器人混合数据，有Sim2Real迁移实战经验。\n熟悉ROS/ROS2，有实时系统或嵌入式开发经验。\n\n---\n\n## 岗位 2：优才-具身智能算法研究员（空间智能方向）-觅蜂子公司\njob_id: 838e8a58-3147-5761-8541-b18931b2dca0\npublic_job_key: 7652173750204483894\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/campusrecruitment/position/7652173750204483894/detail\nobserved_at: 2026-09-06T14:38:24.096086+00:00\n原始归档 SHA-256: 21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a\n原件定位: evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a#/data/job_post_list/305\n\n### description（原始完整字段）\n【方向：空间智能与三维重建】空间智能与三维重建\n研发前馈式（Feedforward）3D Gaussian Splatting 场景重建算法，从稀疏多视角或单目视频毫秒级输出紧凑3D高斯表示，支持动态更新与压缩。\n构建实时SLAM系统（融合传统/NeRF/3DGS方法），处理自我中心（egocentric）与人中心（exocentric）混合输入，输出机器人坐标系下的稠密几何、物体6DoF位姿及相机轨迹。\n开发人体-物体交互（HOI）重建：从多视角外部视频重建物体网格+姿态、人体SMPL/手部MANO参数；从单目自我中心视频实时重建手部与接触关系，生成时空对齐的HOI轨迹。\n设计自动标定与数据预处理管线（多相机外参自标定、时间同步、空间对齐），为下游模型提供规范化输入。\n向端到端模型输出可消费的空间Token（如场景图序列、可操作实体列表、接触点坐标），并与RL组协同提供动态场景下的状态预测（世界模型）。\n\n### requirement（原始完整字段）\n计算机视觉、机器人学、机器学习、图形学等相关专业硕士及以上学历，博士优先。\n在以下至少一个方向有深入研究和项目经验：\n三维重建/SLAM/3D Gaussian Splatting/物体姿态估计/人体手部重建\n模仿学习（BC、ACT、Diffusion Policy）、强化学习（PPO、SAC）、机器人控制（MPC、力控）、VLA架构（RT-2、PaLM-E等）\n多模态预训练（CLIP、LLaVA）、大模型微调（LoRA、RLHF）、自动标注、数据合成与数据策略\n扎实的编程能力：精通Python，熟悉C++，熟练使用PyTorch/JAX等深度学习框架。\n熟悉至少一种仿真器（Isaac Sim、Mujoco、PyBullet）或真实机器人平台。\n具备优秀的学习能力、逻辑思维与跨团队协作精神，能够快速将前沿论文转化为可工作的原型。\n加分项\n有真实机器人（机械臂、人形、四足）部署经验，特别是高复杂度操作任务（装配、双手协作）。\n在CVPR/ICCV/ECCV/CoRL/ICRA/RSS/NeurIPS等顶会发表论文，或有高质量开源贡献。\n处理过Ego4D、HoloAssist或自采机器人混合数据，有Sim2Real迁移实战经验。\n熟悉ROS/ROS2，有实时系统或嵌入式开发经验。\n\n---\n\n## 岗位 3：数据模型和解决方案系统工程师- Genie业务部\njob_id: 948b8fe7-5d51-59e7-9a1c-50431155d443\npublic_job_key: 7662008887891544358\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/campusrecruitment/position/7662008887891544358/detail\nobserved_at: 2026-09-06T14:38:24.096086+00:00\n原始归档 SHA-256: 21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a\n原件定位: evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a#/data/job_post_list/250\n\n### description（原始完整字段）\n1. 负责机器人数据采集链路、数据质量评估与闭环优化方案设计，推动遥操作、传感器、运控、任务执行等多源数据的统一定义、采集、标注、回流和使用。\n2. 负责 VLA、多模态感知模型等在机器人系统中的应用架构设计，推动模型在端侧、边侧、云侧的部署、评测、迭代和闭环优化。\n3. 负责模型评测体系设计，包括感知模型、策略模型、动作模型、任务成功率、泛化能力、稳定性、时延、资源消耗等指标体系建设。\n4. 负责打通端到边、边到云的数据与模型闭环，协同算法、平台、运控、感知、遥操作团队推进系统落地。\n结合机器人本体能力，推动模型方案与运控、传感器、遥操作、数据采集系统协同设计，保障模型能力在真实机器人场景中可用、可验证、可迭代。\n5. 参与关键项目的系统集成验证、问题分析与方案优化，推动复杂场景下模型应用的稳定性和工程可落地性持续提升。\n\n### requirement（原始完整字段）\n1. 本科及以上学历，机器人、自动化、计算机、电子信息、控制、人工智能等相关专业。\n2. 理解数据闭环、模型闭环、训练与部署链路，熟悉数据质量、模型评测、模型版本管理、训练迭代等核心流程。\n3. 对 VLA、多模态感知模型、强化学习或后训练等方向有较好的认知，能够从系统视角分析模型落地问题。\n4. 熟悉机器人基础能力，包括运控、传感器、遥操作、数据采集中的一个或多个方向，能够理解数据来源、约束和实际应用链路。\n5. 具备较强的系统抽象能力、跨团队协作能力和问题拆解能力，能够从需求出发完成方案定义并推动落地。\n6. 具备良好的文档能力、接口定义能力、验证思维和工程意识。\n\n---\n\n## 岗位 4：分布式数据平台研发工程师-灵犀业务部\njob_id: 4859b2b0-eada-5552-8ddd-47171780860e\npublic_job_key: 7677794196577536319\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/campusrecruitment/position/7677794196577536319/detail\nobserved_at: 2026-09-06T14:38:24.096086+00:00\n原始归档 SHA-256: 21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a\n原件定位: evidence/sha256/21/21d30649d93550809ffc5212926f474880dca99e74f65a017fc17f79ec26da7a#/data/job_post_list/15\n\n### description（原始完整字段）\n1、参与 PB 级数据存储与管理平台建设，支持数据检索、版本、权限和血缘管理。\n2、搭建分布式数据处理流水线，支持数据清洗、转换、自动标注、质检和发布。\n3、建设采训推一站式平台，打通数据、训练、评测和模型发布流程。\n4、完善系统监控、容错和故障恢复能力，保障平台稳定运行。\n\n### requirement（原始完整字段）\n1、2027 届本科及以上学历，计算机、软件工程等相关专业。\n2、熟练掌握 Python，具备 C++、Rust、Go 或 Java 中至少一门语言的开发经验。\n3、熟悉分布式系统、计算机网络和数据库基础。\n4、熟悉 Kafka、S3、Spark、Ray、Flink、Docker、Kubernetes 中的一种或多种。\n5、有分布式系统、数据平台、工作流或开源项目实践者优先。\n6、在分布式系统、数据工程、云计算等相关领域顶级会议发表论文者优先。\n\n---\n\n## 岗位 5：具身数据总监\njob_id: e3787148-8183-5759-8c60-c0b51ef13f43\npublic_job_key: 7662252061434284329\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/socialrecruitment/position/7662252061434284329/detail\nobserved_at: 2026-09-06T14:38:22.792168+00:00\n原始归档 SHA-256: 189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5\n原件定位: evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5#/data/job_post_list/154\n\n### description（原始完整字段）\n- 场景化采样策略：针对大量落地项目，如导购、装配、巡检等不同业务场景，确定Ego与真机（全局物理状态）数据的最佳采集方案。\n- 本体建模（Ontology）：定义具身场景下感知、运动、操作数据的标准化结构，确保跨场景数据的可复用性与可查询性。\n- 数据工程体系：搭建覆盖多业务场景（零售/制造/服务）的大规模数据采集与标注管道，支持真机交互、遥操作、仿真数据的统一接入与管理。\n- 数据闭环流水线：针对导购、装配、巡检等不同业务场景，建设从不同项目中回流原始数据 → 清洗/处理 → 价值评估 → 模型消费 → 反馈回写的全链路工程，抽象数据管理工程；注意数据隐私、安全合规\n\n### requirement（原始完整字段）\n- 研究生学历，计算机/自动化/数据科学相关专业。\n- 精通Python，熟练使用PyTorch数据处理生态；\n- 在主流多模态大模型、智能驾驶、具身模型中，有至少一类数据工程相关落地经验，且对相关模型有一定理解\n- 知识面广，不限于数据与模型，对平台工程也有一定了解，可进行相关数据库、平台系统设计与开发\n\n---\n\n## 岗位 6：数据闭环工程师(指标+数据集)\njob_id: a14a5e6a-f84b-595b-816f-6feb32820e5a\npublic_job_key: 7600669099098376457\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/socialrecruitment/position/7600669099098376457/detail\nobserved_at: 2026-09-06T14:38:22.792168+00:00\n原始归档 SHA-256: 189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5\n原件定位: evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5#/data/job_post_list/603\n\n### description（原始完整字段）\n1、运营指标体系建设\n-制定机器人的运营指标树\n-开发运营指标和数据看板用于追踪机器人运营情况\n2、交互质量保障\n-开发交互运营指标和看板\n-开发机器人交互的离线评测指标，结合用户行为数据优化测试方案，提升语音交互用户体验\n-维护数据清洗和筛选的pipeline，用于测试数据集更新\n3、数据分析\n-从运营看板和指标中定期得出基础分析，指导后续的研发方向\n4、协作与交付\n与产品、开发团队协作，参与需求评审、测试计划制定及缺陷跟踪闭环\n输出运营报告和测试报告，提供质量风险评估及改进建议，支持企业快速迭代\n\n### requirement（原始完整字段）\n1、基础能力\n-掌握sql，能够做的指标开发和看板搭建\n-掌握python，熟悉常用库，例如：pyspark，requests，pytest的使用\n2、加分技能\n-熟悉语音交互流程和测试：覆盖ASR（语音识别）、NLU（自然语言理解）、TTS（语音合成）\n-熟悉Docker等工具，支持CI/CD流程集成\n3、软性素质\n-责任心强，能独立承担模块测试任务并推动问题解决。\n-适应快节奏项目，具备跨团队沟通与多任务并行处理能力。\n\n---\n\n## 岗位 7：具身数据平台产品经理\njob_id: 3c6389c8-7dd5-51cf-a38e-487fec8a78ec\npublic_job_key: 7623604735216191785\ncompany_key（归档目录标签）: agibot\nsource_url: https://agirobot.jobs.feishu.cn/socialrecruitment/position/7623604735216191785/detail\nobserved_at: 2026-09-06T14:38:22.792168+00:00\n原始归档 SHA-256: 189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5\n原件定位: evidence/sha256/18/189bab83fc8231a68410d382fba332bd79ecbd4ce01d99bc9740f69df13f09d5#/data/job_post_list/480\n\n### description（原始完整字段）\n1、数据全生命周期平台搭建：聚焦具身智能业务场景，牵头设计并落地覆盖数据采集、标注、挖掘、分析、存储及复用的全流程数据服务中台，核心打造一站式、高自由度且灵活适配的解决方案，确保各模块高效协同，精准响应研发、测试、落地等不同阶段的差异化数据需求。\n2、核心模块产品设计：主导数据采集（多源异构数据接入、实时/离线采集策略适配）、数据标注（自动化工具研发、人工标注流程优化、质量校验体系搭建）、数据挖掘（特征工程构建、关联规律提炼）、数据分析（可视化工具迭代、自定义分析模型封装）等核心模块，完成需求拆解、原型设计、PRD输出全流程，平衡功能完整性与用户易用性。\n3、AI SaaS Agent化落地：基于LLM、RAG、NLP等AI技术，规划平台智能化演进路线，分阶段推动现有SaaS数据服务Agent化改造，实现智能需求理解、自动任务调度、自主问题排查、个性化服务推送等核心能力，持续提升平台智能化水平与用户操作效率。\n4、项目落地与跨团队协同：统筹数据平台从需求立项到上线落地的全流程管理，协调研发、算法、测试、业务等跨部门资源，高效解决技术瓶颈、资源冲突、需求变更等问题，保障产品按质按量按期交付。\n5、产品运营与体验迭代：以用户视角制定产品推广与运营策略，搭建完善的用户体验反馈机制（含调研访谈、反馈收集、闭环跟进），持续追踪用户使用数据与业务反馈，迭代优化产品功能与交互，强化产品行业影响力，提升用户粘性。\n6、技术与业务深度融合：深耕具身智能业务逻辑，联动技术团队探索数据平台与AI技术（LLM微调、Prompt优化、RAG、Agent）的融合场景，输出兼顾业务价值与技术可行性的产品方案，支撑业务规模化扩张。\n\n### requirement（原始完整字段）\n1、本科及以上学历，工科相关专业优先，计算机科学、电子工程、自动化、数据科学等专业为佳。\n2、5年以上数据领域产品相关经验，具备扎实的产品规划、设计与项目落地能力，曾参与或主导过数据平台核心模块（采集、标注、分析、中台等）建设，对数据中台的架构设计、服务模式及落地路径有深刻理解；有自动驾驶、大模型相关业务经验者优先。\n3、具备扎实的数据基础，了解数据仓库架构及核心原理，熟练掌握数据采集、数据标注、数据分析的基本原理、方法论与常用工具，能结合具身智能业务场景设计合理的数据流转与处理方案。\n4、熟悉AI核心技术，重点掌握LLM（微调、Prompt设计）、RAG、NLP等领域基础知识，了解Agent技术的核心逻辑、技术栈及应用场景，有AI+数据平台、Agent相关项目经验者加分。\n5、具备优秀的沟通协调与团队协作能力，能高效联动跨部门团队推进工作；同时具备较强的产品运营思维，善于从用户视角优化产品，建立完善的反馈与迭代机制，持续提升产品体验。\n6、逻辑思维清晰，具备较强的需求拆解、问题分析与解决能力，对具身智能、数据中台领域的技术趋势与业务痛点有敏锐洞察力，能平衡技术可行性与业务价值。\n7、熟练使用Axure、墨刀等原型设计工具，具备优质的文档撰写能力，可输出规范、详尽的PRD、原型图及产品规划文档。\n",
+              "total_characters": 8895
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "bd93d969-6bcc-44a8-b72a-dca7db527c29",
+          "attempt_id": "6d490321-86a2-4ccd-b0e1-33c007058ebd",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1138,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "7cd11c87-0582-4821-a1e6-ed50e9a62648",
+              "ref": {
+                "id": "sourcing-and-transfer",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+              },
+              "text": "---\nid: sourcing-and-transfer\ntitle: 人才来源与能力迁移\nrevision: 1\ndomains: [recruiting, talent-development]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 人才来源与能力迁移：从公司名单转向任务相似性\n\n## 帮助理解什么\n\n本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。\n\n## 核心关系\n\n迁移判断可以区分底层任务机制、领域知识和环境条件。两段经历即使行业名称不同，也可能共享诊断问题、协调利益相关方或在约束下交付等任务；反过来，相同岗位名称在客户类型、决策周期、监管、规模和授权方式上也可能完全不同。\n\n人才来源是一组待验证假设：某类经历为何可能产生目标能力，哪些情境差异会削弱迁移，哪些知识可以在合理时间内补齐，以及用什么证据进一步了解。公司品牌只能说明经历背景，不能证明个人承担了什么任务。\n\n## 如何结合证据思考\n\n从目标任务和能力出发，探索同类岗位、相邻任务、可迁移行业及培养型来源。对每类来源同时记录相似性和差异，不只寻找支持理由。渠道回应、合格样本和后续评价可以更新来源假设，但短期漏斗不等于入职绩效。\n\n跨行业候选人可重点了解共同任务中的个人行为和新情境差异；应届生缺少正式经历时，可以看课程、项目、实习和负担适当的工作样本，但不应把成熟人才年限门槛原样套用。\n\n## 适用与局限\n\n适合供给狭窄、只搜竞品、岗位名称混乱或希望拓宽多元来源的情境。能力迁移具有不确定性，学习速度也不能从学校或公司名可靠推断；任何来源假设都需要真实招聘和工作结果复盘。\n\n## 可结合的视角\n\n可与“岗位与业务情境”明确目标任务，与“要求校准与 AMO”区分供给和吸引力，与“甄选与工作样本”探索迁移证据。\n\n## 案例\n\n工业软件实施顾问难招。除了同类软件公司，还可以探索流程咨询和复杂设备售后，因为它们可能共享现场诊断、多方协调和分阶段交付任务。流程咨询人才可能缺少产品配置经验，设备售后人才可能缺少企业软件知识；这些差异应成为学习和补证问题，而不是直接通过或淘汰理由。\n\n## 来源\n\n- O*NET Resource Center, *The O*NET Content Model*，任务、工作活动、知识、技能、能力与工作情境结构。\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，证据的可靠性、相关性与情境适用性 pp.1–4。\n",
+              "total_characters": 1138
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "b91b65be-5176-47a8-a16c-d03d5799f728",
+          "attempt_id": "6d490321-86a2-4ccd-b0e1-33c007058ebd",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1768,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "374a5bc1-44f3-4e71-b352-2a7c7cbac540",
+              "ref": {
+                "id": "2026-09-09-jd-reading-cases",
+                "kind": "method",
+                "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+              },
+              "text": "# 岗位原文理解：已复核案例来源\n\n来源是招聘归档包 `2ed2262c-63a0-47e5-996c-7d00eb0be1a0`，观察日期为 2026-09-06。2026-09-09 的语义分析及用户提供的独立评审已回查以下记录。这里提炼对材料理解的启示，不将历史招聘广告当作当前岗位或已实现的组织事实，也不把案例推断冒充文献结论。\n\n| 案例 | 可回查岗位身份 | 已确认的材料关系与边界 |\n| --- | --- | --- |\n| 智元多模态生成动作大模型工程师/专家 | `921d9d76-6993-59af-a0d6-5f93278c166d`；原始 ID `7610278886073583914` | 三项能力同时出现在任职要求和加分项。同族研究员 `0d3fa02f-0523-5d15-88fa-27b7f3dcee49`、研究实习生 `bc7a098d-7e53-5bad-9c23-a0d2fa5ebb94` 各只出现一次，加分另有内容。只能确认当前记录的歧义，不能代替岗位方确定真实门槛 |\n| 觅蜂产品经理与算法岗位 | 产品 `0a380957-a3dc-59ce-bb5a-2b81f3310202`；算法 `71db07bb-be9e-52c4-aae0-5ed48e3c8b1c`；优才算法 `8058ad69-1c88-5615-b64c-1e0b86c073e7` | 三条要求内容相同，第三条只少一个末尾换行；产品职责与算法职责不同。可见文本复用，不证明误贴或同一真实岗位 |\n| 模型量化标题与系统集成正文 | `edebba36-f2e4-5538-9674-e572477f832e`；功能集成岗 `78632c11-53cf-5907-8daf-f70f0399d365` | 两条 description 相同，实际任务是端侧系统、固件升级准出及整包管理。另有真实模型压缩任务，不能据单条错位说整个招聘集合没有量化需求 |\n| 字段位置与材料缺失 | 服装设计 `64159b0e-ed67-5233-9d04-48e1b8f877ac`；视觉设计总监 `84bdee53-5627-5268-b911-af4e3516c1d8`；硬件 DRE `88ccbd68-e090-5a0b-94a8-b3aaf2b36120` | 前两条可从全文恢复职责与要求，最后一条职责与要求只有 `/`。可恢复理解不等于修改原始来源，也不能凭标题补占位正文 |\n| 实体归属与局部分工 | 觅蜂预训练 `2d769522-f0fd-5075-b43b-823add5dade2`；归属未明的研究实习生 `a2fac382-ba7a-586e-ad33-1bf4607b9c78`；同时参与数据采集与训练的实习生 `19f60c88-2d47-5319-9699-b21c3ff7fade` | 数据价值研究有具名觅蜂入口，但不能把未标归属岗分给觅蜂或本部。不同岗位数据生产责任不同，不能合并成集团组织规则 |\n\n原始行见包内 `normalized-jobs.jsonl` 的身份对照及原始招聘归档。分析正文、逐字引文、SHA 路径与 JSON 指针保存在 AI-Agent-Platform 仓库工作树的 `docs/research/hr-intelligence/analysis/agibot/q9-technical-intent.md`、`q11-internal-consistency.md`、`text-led-evidence-index.md`；完整阅读与原文回查记录在该工作树本地 `.superpowers/sdd/hr-question-analysis/`。这些审计资料尚未作为情报业务工具的正式发布内容，不能指令 Hannah 去读取一个运行时不存在的工作树路径。\n\n本次只将人工评审后的通用思考材料纳入 `job-and-context`、`requirement-calibration`、`evidence-informed-judgment`。案例不构成固定规则、候选人评分或工具操作授权；当前任务需要某家公司事实时，仍需取得当次可访问的实际材料。\n",
+              "total_characters": 1768
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "cbe41105-2c87-4cea-8c07-3715714dda58",
+          "attempt_id": "0da97fdc-a862-4961-8e4c-8929e456d733",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1889,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "36371e32-8b41-450d-8e19-0d8946640c70",
+              "ref": {
+                "id": "job-and-context",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+              },
+              "text": "---\nid: job-and-context\ntitle: 岗位与业务情境\nrevision: 2\ndomains: [recruiting, organization-design]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 岗位与业务情境：从结果、任务到能力\n\n## 帮助理解什么\n\n当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。\n\n## 核心关系\n\n岗位分析的基本链条是“业务结果—关键任务—工作情境—所需能力—可用证据”。OPM 将岗位分析描述为考察岗位任务、完成任务所需胜任力，以及任务与胜任力之间的联系。O*NET 则把任务、工作活动、知识、技能、能力、经验要求和工作情境分开表达。这提醒我们不要把学历、年限、公司品牌或性格形容词直接当成能力。\n\n战略与情境匹配提供更高一层的问题：同一任务在创业期和成熟期、强授权与弱授权、已有团队与从零组建中可能要求不同。岗位要求是关于未来工作的假设，而非对现任优秀员工特征的完整复制。\n\n## 如何结合证据思考\n\n可以先寻找业务负责人、上下游和现任岗位对实际工作的一致与分歧描述，再用历史成果、失败事件、流程材料和真实工作样本交叉检查。每项能力都应能解释它支撑什么任务；每项硬门槛都应能解释缺少它会带来什么岗位风险。信息不足时，应把未知写出来，而不是用常识补成事实。\n\n## 从文字重建任务，并保留结论的对象\n\n职位名和字段名是材料的组织方式，不保证含义正确。一段写在 requirement 中的工作交付可能仍是职责；空的 requirement 也可能只是要求已写在 description 内。先读完整材料，理解语句作用与相互关系，再说明哪些任务和条件有依据。不能因字段为空补默认门槛，也不能因标题含某技术就补出正文没有的工作。\n\n同样的要求文字被多个岗位复用时，要回到各自的交付物：一个岗位需要定义数据产品，另一个需要训练模型，共用编程要求并不解释两者的真实责任。它值得核实，但不证明复制方向或误贴。改写 JD 时，应围绕用户确认的任务与条件组织表达，区分既有要求和新增建议，不照搬另一岗位的筛选口径。\n\n作用域也是证据的一部分。集团招聘入口可能汇集子公司、业务部和归属未明的岗位；某个团队的研究任务不能自动推广到本部或全集团。比较时保留原文对象，确认候选人本人做了什么，而不是以任职公司代替经历。没有子公司标记不代表归属本部，相邻岗位也不证明实际汇报或项目交接关系。\n\n本节来自已复核招聘归档的工作台适配，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不称为 OPM 或 O*NET 原文规则。\n\n## 适用与局限\n\n适合新岗位、职责变化、多人描述不一致、画像缺少任务依据等情况。若用户只是希望润色已经确认的 JD，它可以作为背景而不必重新做完整分析。岗位分析会过时，O*NET 的美国职业数据也不能代替本组织访谈；业务负责人意见是重要证据，但仍可能含有偏好和既有做法偏差。\n\n## 可结合的视角\n\n可与“胜任力与人才画像”连接行为表达，与“要求校准与 AMO”检查环境约束，也可与“甄选与工作样本”思考什么证据更贴近实际任务。这些是建议关系，不是固定流程。\n\n## 案例\n\n一家企业把新客户成功岗描述为“沟通好、抗压强、懂客户”。进一步理解后，目标是提高上线采用率并提前发现续约风险；关键任务包括诊断使用障碍、与产品团队协调、向客户管理层解释取舍。原来的标签因此可以被重新理解为问题诊断、跨团队推进和面向不同受众沟通，并需要在复杂度、独立程度和结果上进一步求证。\n\n## 来源\n\n- U.S. OPM, *Job Analysis*，官方主页面正文。\n- O*NET Resource Center, *The O*NET Content Model*，Worker Requirements、Occupational Requirements、Occupation-Specific Information。\n- Armstrong, *Handbook of Human Resource Management Practice*, 13th ed.，仅使用本地文件可见范围内的战略匹配相关节选；未引用缺失章节。\n",
+              "total_characters": 1889
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "fd80000c-142b-43e2-b317-67c3d926dfd8",
+          "attempt_id": "0da97fdc-a862-4961-8e4c-8929e456d733",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1562,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "c4be6b57-8232-46ee-b3b3-196088d4dc9f",
+              "ref": {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              "text": "---\nid: evidence-informed-judgment\ntitle: 循证判断\nrevision: 2\ndomains: [recruiting, hr-analytics]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 循证判断：让结论强度不超过证据\n\n## 帮助理解什么\n\n本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。\n\n## 核心关系\n\nCEBMa 将循证实践概括为审慎、明确、合理地使用最佳可得证据，并强调可靠性和对当前情境的相关性。它提出 Ask、Acquire、Appraise、Aggregate、Apply、Assess 六个活动。对招聘而言，这不是机械流程，而是提醒：先形成可回答的问题，寻找多类证据，评价质量，整合一致与冲突，再作条件化判断并观察结果。\n\n证据可来自候选人陈述、可核材料、评估观察、组织数据、科学研究、专业经验及相关人员观点。不同来源能互相支持、质疑或澄清。数量多不代表质量高，缺少反证也不等于证实。\n\n## 如何结合证据思考\n\n对每项主张询问来源、与岗位任务的关系、时效、独立性和替代解释。团队成果需要和个人行动、决策权及外部条件分开。表达结论时可以使用“支持”“存在相关线索”“与另一证据冲突”“尚无法判断”等与证据强度相称的语言。\n\n## 让反证、冗余支持和材料缺陷各自发挥作用\n\n多个岗位可能独立支持同一判断，也可能只是复用一段招聘文案。重复文本不能按出现次数累加为更强事实；不同任务提供的支持则可能相互补充。删除一个引用后仍有其他依据支持结论，属于证据冗余，不是分析不依赖证据。要反问的是：承重证据整体失去支持后，结论是否仍被无依据地保留。\n\n主动寻找能收窄结论的材料。某个研究岗说数据生产由专门团队负责，同批却有算法岗同时参与采集与训练，说明前者是局部职责安排；不能推广成所有算法岗都不做数据。存在独立数采岗位可以与自述相互支持，但缺少共同团队或项目标识，仍不能确认它就是所指的支撑团队。\n\n记录缺陷与业务事实要分别解释。正文放错字段但文字完整时，可以恢复对任务的理解并指出原始位置；只有占位符或缺文时，需要补材料。公开岗位没有写某项职责不能证明组织没有该能力，简历没有写某段经历也不能直接认定候选人不具备；同时，未知也不能被包装成已证明匹配。说明当前能判断什么、还缺哪类相关证据。\n\n本节是招聘归档分析的适配总结，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不将这些具体案例归于文献作者。\n\n## 适用与局限\n\n适合候选人证据分析、人才来源假设、画像校准和多人比较。现实中常无法获得理想证据，评价本身也需要判断；循证不会消除价值取舍，也不能把小样本相关性变成因果结论。\n\n## 可结合的视角\n\n几乎可与所有资源结合。它尤其能约束“能力迁移”的乐观推断、“结构化甄选”的分数幻觉，以及比较时将未知当作不满足的倾向。\n\n## 案例\n\n候选人称“主导项目使营收增长 30%”。可确认的只有团队营收和候选人在项目中的任职时间。合理结论不是“已证明商业能力”，而是有相关线索；还需理解基线、个人决策、其他团队贡献、市场变化及候选人能提供的具体产物。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，完整 7 页，重点 pp.1–4。\n- CIPD, *Fair selection: An evidence review*，甄选程序与候选人体验 pp.5–16。\n",
+              "total_characters": 1562
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "c2b0c33d-91e8-486e-9fb4-c6392a718f70",
+          "attempt_id": "8192d742-8115-488b-bc51-cfeee61041fa",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1113,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "6d15c5ea-4f85-4b76-a3d3-3f261ab15e2e",
+              "ref": {
+                "id": "competency-and-profile",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+              },
+              "text": "---\nid: competency-and-profile\ntitle: 胜任力与人才画像\nrevision: 1\ndomains: [recruiting, talent-development]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 胜任力与人才画像：从标签转向可观察行为\n\n## 帮助理解什么\n\n本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。\n\n## 核心关系\n\n能力只有连接到岗位任务才有选择意义。可观察行为可以从情境难度、采取的行动、独立程度、判断质量和产生的结果来描述。不同水平不只是工作年限不同，而可能体现在能处理多大不确定性、需要多少指导、能否识别取舍并复盘。\n\nOPM 的结构化面试指南用不同熟练度的行为例子帮助评估者形成共同参照。它支持“用具体行为解释层级”的原则，但组织仍需让岗位专家结合自己的任务设计例子。行为例子是参照，不是所有合格行为的穷尽清单。\n\n## 如何结合证据思考\n\n先问抽象标签在一个近期关键任务里会让人做出什么不同动作。再检查这些动作是否能被候选人经历、工作样本、结构化问答或其他岗位相关材料观察。既要寻找支持证据，也要注意替代解释：结果可能来自团队、资源或运气，而一次行为也未必代表稳定能力。\n\n## 适用与局限\n\n适合画像条件多、评价者理解不一致、面试反馈停留在“感觉好”等情况。行为锚点可能偏向既有文化和现任者，且观察者仍会产生偏差；因此需要试用、讨论分歧并保留修订可能。\n\n## 可结合的视角\n\n可与“岗位与业务情境”保证能力有任务依据，与“甄选与工作样本”探索观察方式，与“循证判断”控制从一次回答到稳定能力的推断强度。\n\n## 案例\n\n团队把“跨团队影响力”列为画像核心。与其定义为“善于沟通”，可以探索候选人在目标不一致、没有正式权力时，如何识别各方约束、提出共同目标、调整方案并让风险显性化。较高水平可能表现为在复杂冲突中形成可持续机制，但这仍需多个情境的证据支持。\n\n## 来源\n\n- U.S. OPM, *Job Analysis*，任务与胜任力的岗位相关联系。\n- U.S. OPM, *Structured Interviews: A Practical Guide*，行为锚定与熟练度例子 pp.8–12。\n- O*NET Resource Center, *The O*NET Content Model*，Skills、Abilities、Work Activities。\n",
+              "total_characters": 1113
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "f5a5cc07-b242-40b2-8747-2d21d44eb2fd",
+          "attempt_id": "ee685108-ac88-47bd-be09-b374d7c6e63a",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1787,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "28c630b6-a88d-47b2-8bad-84395f645984",
+              "ref": {
+                "id": "requirement-calibration",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+              },
+              "text": "---\nid: requirement-calibration\ntitle: 要求校准与 AMO\nrevision: 2\ndomains: [recruiting, performance]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 要求校准与 AMO：不要把所有问题都变成人才缺陷\n\n## 帮助理解什么\n\n当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。\n\n## 核心关系\n\n长期招不到人至少可能涉及四类解释：需求定义是否真实且清楚；目标人才供给是否存在；薪酬、地点、工作方式、发展机会和雇主信息是否有吸引力；甄选流程是否因门槛、速度或评价偏差误杀。四类因素可能同时发生，招聘时长本身不能证明“市场没人”。\n\nAMO 从能力、动机和机会三个方向拓宽诊断：一个人是否会做、是否愿意投入、环境是否允许他做出结果。它适合提出问题，不适合把候选人压缩成 A×M×O 总分或宣称单一因素造成绩效。\n\n## 如何结合证据思考\n\n查看漏斗各阶段的数量、等待时间、退出原因和评价分歧，并把组织数据与招聘人员、用人经理及候选人的观点并置。对每项要求追问业务理由、对应任务、失败风险和可接受的替代证据。把“必须”“有帮助”“可以培养”和“只是惯例”看作待论证判断，而非固定字段。\n\n如果建议调整，可以优先提出可逆、可观察的试验，例如重新表达岗位价值、抽样复核被筛掉材料、允许相邻行业以工作样本补证。结果只能支持或削弱当前假设，不能自动改写已确认画像。\n\n## 区分任务需要与文案写出的要求强度\n\n能力与任务相关，不等于已经证明它必须在入职前具备；原文明确给出的优先、可培养或替代经历也不能被自动升级成硬门槛。理解条件时，同时看它支撑什么交付、原文要求达到何种独立程度，以及用户是否已经确认适用条件。不要把一段宽技术清单读成每一项都要精通。\n\n若同一能力在同一条广告中既列为任职要求又列为加分，当前文本没有稳定说明缺少该经历是否仍可评估。可以继续分析任务相关性和候选材料，但不能默默选择更严或更松的一段作结论。只有当歧义影响当前判断时，才向岗位方澄清，例如这项经历是入职即须独立交付，还是允许在相邻经验基础上学习。\n\n相邻岗位若将任职要求与加分分开表达，可以帮助定位当前记录的局部问题，不代表它们的门槛可直接移植。岗位跨度、经验入口或用工形式不同，也可能合理地产生不同要求；不能把差异一律判为矛盾。\n\n用户说明目标岗位的实际条件后，应按该澄清继续当前工作，保留它相对原文改变了什么；分析建议本身不修改长期标准。切换岗位或业务团队时重新判断适用性，不能沿用上一岗位的硬门槛。\n\n本节依据真实文案冲突归纳，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)。这是思考材料，不是按“必需”“优先”等关键词执行的筛选程序。\n\n## 适用与局限\n\n适合长期空缺、漏斗异常、条件互相矛盾、用人经理反复加码等情境。漏斗数据可能受季节、渠道和岗位变化影响；候选人退出原因也常不完整。AMO 各因素相互作用，不能当精确因果模型。\n\n## 可结合的视角\n\n可与“岗位与业务情境”核查要求依据，与“人才来源与能力迁移”扩展供给假设，与“循证判断”评价漏斗解释。不存在必须依次采用的顺序。\n\n## 案例\n\n一个数据产品经理岗位空缺三个月。简历数量并不少，但业务初筛淘汰率很高；“同业五年”无法对应某项独有任务，而薪酬与地点的退出反馈也明显。较好的理解是：供给、要求和吸引力都有待验证。允许相邻行业候选人用复杂 B2B 发现与落地证据补充，只是一个可审阅假设，最终效果仍需观察录用和入职表现。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，pp.1–4。\n- CIPD, *People performance: An evidence review*，AMO 讨论 pp.14–17。\n- CIPD, *Fair selection: An evidence review*，公平框架与实践建议 pp.5–16。\n",
+              "total_characters": 1787
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "a4a29393-4669-48a5-83c4-02a3a89e6c28",
+          "attempt_id": "0f522295-913e-497f-8716-cc0a60c5f1dd",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1133,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "159df023-cbbf-49c9-92e9-8a81677ac541",
+              "ref": {
+                "id": "selection-and-work-samples",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+              },
+              "text": "---\nid: selection-and-work-samples\ntitle: 甄选与工作样本\nrevision: 1\ndomains: [recruiting]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 甄选与工作样本：相关性、一致性和表达机会\n\n## 帮助理解什么\n\n本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。\n\n## 核心关系\n\nOPM 的结构化面试指南强调从岗位分析和待评能力出发，让候选人回答共同核心问题，并用共同量表评价。行为题探索过去做法，情境题探索面对假设情境的处理；两者都需要岗位专家形成与能力水平相关的行为参照。结构化的价值在于更一致、可解释的观察，而非让分数天然客观。\n\n工作样本把候选人置于接近实际岗位的任务中，观察其行为或成果。它适合考察入职时就应具备的能力。任务、材料、时间和评价视角需要可比，也要控制候选人负担，不应索取可直接用于公司的免费劳动。\n\nCIPD 的公平甄选综述提醒关注岗位相关性、信息透明、候选人表达机会、解释和评估者培训。共同核心保持一致，并不排斥围绕个人证据缺口进行中性追问；但难度不同的个性化问题不能被直接相加比较。\n\n## 如何结合证据思考\n\n先理解哪项能力更适合口头叙述、现场行为、作品或其他方式。评估者应记录具体回答或行为，先形成各自判断，再讨论理由和分歧。题目和行为参照需要试用，以发现歧义、时长、文化熟悉度和无障碍问题。\n\n## 适用与局限\n\n适合关键能力需要多位评估者判断、闲聊式面试差异大、经历证据不足等情境。面试叙述可能受记忆和表达影响；工作样本只能覆盖有限任务；结构化不能消除所有偏差。未经试用的自制工具不应称为已验证测评。\n\n## 可结合的视角\n\n可与“胜任力与人才画像”理解行为层级，与“循证判断”控制推断，与“候选人比较与反馈”理解哪些证据真正可比。\n\n## 案例\n\n为了解产品经理的需求取舍，可以给所有候选人同一组匿名客户反馈、资源限制和目标，请其说明优先级与理由。可观察信息整合、权衡和风险意识，而非文档是否精美。这个样本仍不能证明长期执行力，需与经历和其他观察共同理解。\n\n## 来源\n\n- U.S. OPM, *Structured Interviews: A Practical Guide*，完整 36 页。\n- U.S. OPM, *Work Samples and Simulations*，官方页面相关小节。\n- CIPD, *Fair selection: An evidence review*，完整 20 页。\n",
+              "total_characters": 1133
+            },
+            "error": null,
+            "status": "ok"
+          }
+        }
+      ]
+    }
+  ],
+  "transport_observations": [
+    {
+      "attempt_id": "8227bcc0-1be8-4674-a89f-457334aa840f",
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "text_characters": 80,
+      "tool_argument_characters": 322,
+      "error_code": null,
+      "duration_seconds": 4.986693541519344
+    },
+    {
+      "attempt_id": "64f4b319-89b7-4f57-92a0-dfa52619ef5b",
+      "stops": [
+        {
+          "reason": "max_tokens"
+        }
+      ],
+      "text_characters": 50,
+      "tool_argument_characters": 148,
+      "error_code": null,
+      "duration_seconds": 141.98688900005072
+    },
+    {
+      "attempt_id": "6d490321-86a2-4ccd-b0e1-33c007058ebd",
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "text_characters": 0,
+      "tool_argument_characters": 369,
+      "error_code": null,
+      "duration_seconds": 10.00407600030303
+    },
+    {
+      "attempt_id": "0da97fdc-a862-4961-8e4c-8929e456d733",
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "text_characters": 0,
+      "tool_argument_characters": 323,
+      "error_code": null,
+      "duration_seconds": 8.870074417442083
+    },
+    {
+      "attempt_id": "8192d742-8115-488b-bc51-cfeee61041fa",
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "text_characters": 0,
+      "tool_argument_characters": 163,
+      "error_code": null,
+      "duration_seconds": 7.685305749997497
+    },
+    {
+      "attempt_id": "ee685108-ac88-47bd-be09-b374d7c6e63a",
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "text_characters": 0,
+      "tool_argument_characters": 164,
+      "error_code": null,
+      "duration_seconds": 6.641288749873638
+    },
+    {
+      "attempt_id": "0f522295-913e-497f-8716-cc0a60c5f1dd",
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "text_characters": 0,
+      "tool_argument_characters": 167,
+      "error_code": null,
+      "duration_seconds": 7.504683000035584
+    },
+    {
+      "attempt_id": "ae454402-bd91-4169-9e62-70bc7db11159",
+      "stops": [
+        {
+          "reason": "max_tokens"
+        }
+      ],
+      "text_characters": 63,
+      "tool_argument_characters": 141,
+      "error_code": null,
+      "duration_seconds": 149.45629358291626
+    },
+    {
+      "attempt_id": "71ee521f-48cf-4c9f-b847-931c98fe1c64",
+      "stops": [
+        {
+          "reason": "max_tokens"
+        }
+      ],
+      "text_characters": 58,
+      "tool_argument_characters": 141,
+      "error_code": null,
+      "duration_seconds": 148.22801766637713
+    },
+    {
+      "attempt_id": "86951d38-23f0-4fde-a73a-0ea53712b830",
+      "stops": [
+        {
+          "reason": "max_tokens"
+        }
+      ],
+      "text_characters": 37,
+      "tool_argument_characters": 142,
+      "error_code": null,
+      "duration_seconds": 143.66862408351153
+    }
+  ],
+  "public_request_capture": {
+    "path": "public-requests.json",
+    "sha256": "199abf39d2916ae99f47da3aea65cd0d7b8482f5d93fcbf90d6fc99551373a32",
+    "scope": "explicit public-only fixture; complete canonical requests, never production logging"
+  },
+  "acceptance": "Public archived jobs only; semantic quality requires independent professional review; no production publication.",
+  "runner_files_sha256_before_first_send": {
+    "backend/tests/test_hr_agent_c_public_research.py": "5f3c638a6844abaeedd0b2a0ae9f00278e704f2d8b3489735e9a2ad53947a2b7",
+    "backend/tests/test_hr_agent_b_public_model.py": "dd0caad68df531bd39f4623ca2be0a90616edcc312473640b3a11dc8b51d764c",
+    "backend/app/hr_agent/model.py": "0366ab25deb8069cc3cfe23eb7af7323ee3a86f7b31f82df21ff2a9bda309b58",
+    "backend/app/hr_agent/repository.py": "f75325291f0bc4cb56f3ad7ffd2bb42f1ed21d96b05dc99134372cf7cccd415b",
+    "backend/app/hr_agent/config.py": "32b78ef2c2268618cd68dcf5b566827edcfa5d501c99ae24a010e10643f9c639",
+    "backend/app/hr_agent/context.py": "0c7c406b84eff91bcd53ae45d5beefe3e9fddea157acb33c15fb508722edbb36"
+  }
+}

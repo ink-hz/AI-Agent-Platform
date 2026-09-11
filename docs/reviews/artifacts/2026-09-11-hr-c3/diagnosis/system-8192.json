@@ -1,0 +1,72 @@
+{
+  "instruction_delivery": "system",
+  "request": {
+    "model": "claude-opus-5",
+    "system": "整理已有材料为阶段笔记，保留承重证据、反例和不确定性。不宣布任务完成。",
+    "messages": [
+      {
+        "role": "user",
+        "content": "{\"historical_record\": {\"entry_id\": \"public-probe\", \"kind\": \"tool\", \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"toolu_summary_probe\", \"name\": \"read_resource\", \"input\": {\"ref\": \"public-probe\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"toolu_summary_probe\", \"content\": \"公开岗位甲职责：协助项目经理分配任务。岗位乙职责：执行月度库存关账。材料只记录招聘职责，没有组织人员或执行流程记录。\"}]}]}}"
+      }
+    ],
+    "tools": [],
+    "max_tokens": 8192,
+    "stream": true
+  },
+  "outcome": {
+    "status": "invalid",
+    "code": "provider_refused"
+  },
+  "elapsed_seconds": 2.2584189167246222,
+  "event_shapes": [
+    {
+      "type": "message_start",
+      "reported_model": "claude-opus-5",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "text_characters": 0,
+      "stop_reason": null,
+      "usage": {
+        "input_tokens": 257,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 6,
+        "service_tier": "standard"
+      }
+    },
+    {
+      "type": "message_delta",
+      "reported_model": null,
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "text_characters": 0,
+      "stop_reason": "refusal",
+      "usage": {
+        "input_tokens": 257,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 6,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        }
+      }
+    },
+    {
+      "type": "message_stop",
+      "reported_model": null,
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "text_characters": 0,
+      "stop_reason": null,
+      "usage": null
+    }
+  ],
+  "scope": "Public protocol diagnostic only; no candidate material, no identity guarantee beyond gateway report."
+}

@@ -1,0 +1,539 @@
+{
+  "name": "plain_summary",
+  "request": {
+    "model": "claude-opus-5",
+    "messages": [
+      {
+        "role": "user",
+        "content": "请总结以下公开资料，保留证据与不确定性：甲岗位职责为协助项目经理分配任务；乙岗位职责为月度库存关账。没有实际流程或人员在位记录。"
+      }
+    ],
+    "max_tokens": 512,
+    "stream": true
+  },
+  "outcome": {
+    "status": "invalid",
+    "code": "incomplete_response"
+  },
+  "seconds": 11.095190083608031,
+  "event_shapes": [
+    {
+      "type": "message_start",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 0,
+      "reported_model": "claude-opus-5"
+    },
+    {
+      "type": "content_block_start",
+      "stop_reason": null,
+      "block_type": "thinking",
+      "text_characters": 0,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 0,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 0,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_stop",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 0,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_start",
+      "stop_reason": null,
+      "block_type": "text",
+      "text_characters": 0,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 4,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 5,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 3,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 3,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 5,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 5,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 3,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 6,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 4,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 12,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 7,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 8,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 7,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 8,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 7,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 4,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 5,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 5,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 8,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 9,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 3,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 3,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 5,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 3,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 4,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 5,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 4,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 10,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 2,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 3,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 7,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_delta",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 1,
+      "reported_model": null
+    },
+    {
+      "type": "content_block_stop",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 0,
+      "reported_model": null
+    },
+    {
+      "type": "message_delta",
+      "stop_reason": "max_tokens",
+      "block_type": null,
+      "text_characters": 0,
+      "reported_model": null
+    },
+    {
+      "type": "message_stop",
+      "stop_reason": null,
+      "block_type": null,
+      "text_characters": 0,
+      "reported_model": null
+    }
+  ]
+}
