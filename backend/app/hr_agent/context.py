@@ -17,7 +17,7 @@ _TOOL_DESCRIPTIONS = {
     "list_resources": "发现当前可读的材料、方法、成果与已发布情报。搜索仅用于定位，自主判断是否需要。",
     "read_resource": "按准确引用和字符区间读取正文。返回区间不代表专业理解或全文已经读完。",
     "save_note": "保存阶段判断、来源、未解决问题和剩余阅读目标。",
-    "save_result": "保存带来源与基准的可复用成果。原始材料引用放 source_refs；basis 表示评判所依据的已确认标准或用户临时要求，普通 research 可以为 []。上传的公开材料未经官网核验，不能标为 official_original。保存不会确认正式标准。",
+    "save_result": "保存带来源与基准的可复用成果。objects 只能选择当前输入已获准的业务对象；正文提及的公司或其他实体不会自动获得对象授权。当前 objects 为空时使用 objects=[]，成果仍保存在本 work。原始材料引用放 source_refs；basis 表示评判所依据的已确认标准或用户临时要求，普通 research 可以为 []。上传的公开材料未经官网核验，不能标为 official_original。保存不会确认正式标准。",
     "ask_user": "材料或意图不足时提出明确问题，等待用户回复。",
 }
 

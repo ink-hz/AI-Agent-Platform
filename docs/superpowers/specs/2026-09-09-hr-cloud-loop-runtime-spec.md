@@ -134,7 +134,7 @@ A1 的首个无岗位接口样例使用真实上传的 UTF-8 text/plain JD：解
 | `list_resources` | ListResourcesInput → ListResourcesOutput | kinds 必填；method 给用途/边界，result 支持历史发现，其余给材料/情报/标准目录。objects 省略时取当前范围，显式值必须为其子集；query 只作搜索定位。成功无条目为 empty |
 | `read_resource` | ReadResourceInput → ReadResourceOutput | 准确 ref；offset 默认0、limit 默认8000个 Unicode 码点，最多20000。返回 offset/end/total/next_offset 与持久 read_id；不支持的二进制返回 invalid/unsupported_kind，不能称全文已读 |
 | `save_note` | SaveNoteInput → SaveNoteOutput | 保存问题、证据、反证与下一步的自由正文；open_questions 为待解问题，reading_targets 为已发现但计划继续阅读的准确引用。只进工作记录，不形成岗位标准；系统补齐输入/来源限制 |
-| `save_result` | SaveResultInput → SaveResultOutput | 新建 result_id/expected_revision 均null；修改均非null且基准为当前修订。objects 仅选当前合法对象；返回真实保存 ref。standard_proposal 要求非空 changes，base 可为空；其他 kind 要求 changes=[]、base=null；basis 按下述基准语义校验 |
+| `save_result` | SaveResultInput → SaveResultOutput | 新建 result_id/expected_revision 均null；修改均非null且基准为当前修订。objects 仅选当前输入已获准的业务对象，正文提及实体不产生对象授权；当前 objects 为空时传 []，成果仍归本 work。返回真实保存 ref。standard_proposal 要求非空 changes，base 可为空；其他 kind 要求 changes=[]、base=null；basis 按下述基准语义校验 |
 | `ask_user` | AskUserInput → AskUserOutput | options 可以为空；服务端创建 question_id，持久提问并把工作转 waiting_user、释放租约。回答进入新的输入修订；不把普通模型问句当已经保存的等待状态 |
 
 发现方法用 `list_resources({kinds:["method"]})`，读正文仍调用 read_resource；不单独强建“方法执行器”。模型可读零份、若干份，或按用户指定讨论。全文阅读记录使用每个 ref 返回区间的并集；收到全部区间只能证明内容可见，不能证明正确理解，专业质量另审。
