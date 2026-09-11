@@ -1,5 +1,6 @@
 """Selecting an exact saved result carries usable provenance, never new object authority."""
 
+import json
 from dataclasses import replace
 from uuid import uuid4
 
@@ -94,6 +95,16 @@ def test_exact_selected_result_allows_own_provenance_without_reselecting_materia
     )
     done = run_work(repo, model, resources, repo.claim("continue", 60))
     assert done["state"] == "completed", done["state"]
+    tool_messages = [
+        json.loads(message["content"])
+        for message in model.requests[-1].messages
+        if message["role"] == "tool"
+    ]
+    assert any(
+        outcome.get("data", {}).get("ref") == material
+        and outcome["data"]["text"] == uploaded[6].decode()
+        for outcome in tool_messages
+    )
     with repo.transaction() as c:
         c.execute(
             "SELECT count(*) AS n FROM platform_hr_agent.read_records WHERE work_id=%s AND ref=%s",

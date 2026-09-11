@@ -901,11 +901,17 @@ class HrAgentRepository(RepositoryViewsMixin):
         ):
             return False
         for ref in row["source_refs"]:
-            if ref["kind"] == "material" and ref not in current["references"]:
-                return False
             key = ("ref", objects_key, canonical_json(ref))
 
             def validate(ref=ref):
+                if (
+                    ref["kind"] == "material"
+                    and ref not in current["references"]
+                    and not self._selected_result_dependency(
+                        c, work["owner_id"], work["work_id"], ref
+                    )
+                ):
+                    raise problem("scope_denied", http_status=403)
                 if ref["kind"] == "result":
                     self._validate_result_sources(
                         c, work["owner_id"], ref, work["work_id"]
