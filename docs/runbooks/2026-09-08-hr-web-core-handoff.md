@@ -2,6 +2,8 @@
 
 ## 最新续接（覆盖下方旧版布局与版本描述）
 
+- **2026-09-11：新版语义研究情报页已上线。** API/current `fe10fae1969b4c42f8c05d48c8eaf507a787b2b5`，`/hr/panorama` 默认展示 38 篇/7 公司原文研究与可展开依据，材料 09-06、分析 09-09；历史模板情报保留。只更新 API/静态资源，其他容器不变；未调用模型或接入对话。本地 HTTP/阅读组件、生产文档摘要及资源检查通过，浏览器不可用未验收。详见 [发布记录](../reviews/2026-09-11-hr-research-reading-release.md)。不要重复本次发布或已完成检查。
+
 - **2026-09-09：场景成果与连续引用 v7 已实现并上线。** Platform API / 独立 HR Worker / 本地 Signed Worker `1a705ebb4b6598c61bc0d767ff44e2afc038a539`，MetaBot `672058ca5d316c9ada2a460e211f8ec5cca1b70a`，Team role/knowledge `a87500e2d0b4d35eb28713fb04b8274964e76d23`。新候选人成果类型、非空基准、本次参考与冻结输入引用、结果读取授权、用户正文复核已生效；候选人成果不能直接成岗位标准。Hannah 场景原位补交付声明，不恢复已删入口。页面 `index-K0JwF2ER.js` / `index-UreVbVab.css`。正式 095 与本地 callback v7 约束已应用，历史冻结命令不改写。详见 [v7 交付记录](../reviews/2026-09-09-hr-deliverables-v7-delivery.md)。
 - 本次相关 HTTP / 数据库、跨仓两轮工程闭环、组件与编译构建通过；提供方替换，不是真实模型或招聘质量验收。未做浏览器 / 新故障注入 / 生产业务调用。生产 health、签名 v7 readiness 与角色包、页面资源一致，其他 Bot / 容器 / Nginx 未变化。三仓代码已推 master；云端锁与 staging 清理，当前加两版保留。**不要重复本次验证或发布**。以下“v7 待实现”均已被本条覆盖；岗位全链路展示仍非本次交付。
 
