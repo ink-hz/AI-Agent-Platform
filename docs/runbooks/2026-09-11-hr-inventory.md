@@ -25,7 +25,7 @@ python -m tools.hr_agent.inventory \
   --output /approved/path/hr-inventory-report.json
 ```
 
-工具开启 `BEGIN READ ONLY`，设置 statement/lock/idle transaction 超时，对每个固定查询使用 savepoint 隔离，并在结束时 `ROLLBACK`。启动时执行零行 `UPDATE` 探针，预期输出 `"write_probe":"rejected"`；若出现 `unexpectedly_allowed`，本次结果不得用于切换判断。
+工具开启 `BEGIN READ ONLY`，设置 statement/lock/idle transaction 超时，对每个固定查询使用 savepoint 隔离，并在结束时 `ROLLBACK`。运行时只执行 `SELECT`、`SHOW transaction_read_only`、事务控制和 `SET LOCAL`；报告中的 `transaction_read_only` 必须为 `true`。写入拒绝只在一次性测试数据库中验证，不在获准环境执行写探针。
 
 ## 输出解释
 
@@ -37,7 +37,9 @@ python -m tools.hr_agent.inventory \
 - `unreadable`：当前角色没有表级 SELECT 权限。
 - `query_error`：预检通过但聚合查询失败；错误正文不会写入报告。
 
-状态、kind 和引用结果均经过白名单。数据库出现新枚举时输出 `unknown`，不会把任意原值带出。旧执行只用固定 `agent_id` 分类：`hr-bot`、`hannah`、`hr-agent` 计入 `hr`，其余计入 `other`；不读取或解密 payload。部署前应将固定白名单与获准环境实际 HR agent 配置逐项核对，未知 agent 不可自动归为 HR。
+成功资产另带 `scope`。`complete` 表示 catalog 未发现会限制当前角色可见行的 RLS；`scope_limited` 表示主表或 join 依赖启用了当前角色不能绕过的 RLS，此时计数只是可见范围，不能当作全库计数。该标记不证明 `complete` 已获得业务上的全量环境授权。
+
+状态、kind 和引用结果均经过迁移或 HTTP 契约白名单。数据库出现新枚举时输出合并后的单一 `unknown` 桶，不会把任意原值带出。旧执行只把精确 `agent_id='hr-bot'` 计入 `hr`，其余计入 `other`；不读取或解密 payload。部署前应将该身份与获准环境配置逐项核对，未知 agent 不可自动归为 HR。
 
 引用诊断当前只解析：
 
@@ -55,6 +57,19 @@ python -m tools.hr_agent.inventory \
 pytest -q tests/test_hr_agent_inventory.py
 ```
 
-测试使用 `hr_agent_support` 启动一次性 PostgreSQL，覆盖非零旧候选/新成果、HR 与其他 Bot、缺 schema、缺列、拒权、只读写拒绝、悬空引用、敏感哨兵不出现在输出或错误，以及 DSN/output 文件安全。
+测试使用 `hr_agent_support` 启动一次性 PostgreSQL，覆盖非零旧候选/新成果、pending 草稿、10 种成果契约中的非 research 类型、HR 与其他 Bot、缺 schema、join 依赖缺列、拒权、RLS 范围提示、只读写拒绝、严格且大小写不敏感的 UUID 解析、悬空/错 owner 引用、未知桶合并、敏感哨兵不出现在输出或错误，以及 DSN/output 文件安全。
 
 将本地验证日志保存在 `artifacts/2026-09-11-hr-e/inventory/`。获准环境的报告应保存到权限受控目录，并记录代码提交、报告文件 SHA-256、运行者与环境名称；不要保存 DSN 文件副本。报告只能支持下一步人工制定承接清单，不能据此自动复制 owner 不明数据、旧私聊、摘要或个人附件正文，也不授权暂停旧链、切流或发布。
+
+## 本版明确未覆盖的旧资产
+
+本注册表是 E1 的有界盘点面，并非完整 P2。以下旧资产仍未纳入计数：
+
+- `platform_hr.position_task_requests` 与 `position_task_records` 的请求/记录关系；record 没有状态列，需要先确定安全的完成判据。
+- `platform_control.direct_command_bindings`、`turn_attempts`、`v5_source_events` 与 mission run 的旧 v5/v6/v7 派发、接受和恢复关系。
+- 架构文档提到的 `tool_operations_v6` 敏感操作存储；当前本地迁移和代码未找到同名表定义，不能猜测实际表名或计数。
+- `result_artifact_intents` 到 source event、message、grant、attachment 的完整悬空关系，以及 artifact current revision 的一致性。
+- panorama 的旧 run/batch/publication/current 链和情报 bundle current 指针悬空诊断。
+- conversation、turn、summary 和旧解析提交之间的在途归属；本工具刻意不读取消息或 payload 来推断。
+
+这些缺口必须通过后续固定、非敏感 join 设计补齐。当前报告不得用于宣称旧链已经排空、全部历史成果可承接或 P2 已完成。

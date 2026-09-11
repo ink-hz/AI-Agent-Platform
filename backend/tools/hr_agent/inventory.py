@@ -26,10 +26,14 @@ class QuerySpec:
     sql: str
     state_columns: tuple[str, ...] = ()
     allowed_states: dict[str, frozenset[str | None]] | None = None
+    dependencies: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
-def _spec(name, relation, columns, statement, states=(), allowed=None):
-    return QuerySpec(name, relation, tuple(columns), statement, tuple(states), allowed)
+def _spec(name, relation, columns, statement, states=(), allowed=None, dependencies=()):
+    return QuerySpec(
+        name, relation, tuple(columns), statement, tuple(states), allowed,
+        tuple((selected, tuple(required)) for selected, required in dependencies),
+    )
 
 
 POSITION_STATES = {
@@ -64,7 +68,7 @@ QUERY_REGISTRY = (
           "select count(*)::bigint as count from platform_hr.candidate_documents"),
     _spec("old_candidate_drafts", "platform_hr.candidate_drafts", ("state",),
           "select state,count(*)::bigint as count from platform_hr.candidate_drafts group by state",
-          ("state",), {"state": frozenset({"queued", "processing", "ready", "failed", "confirmed", "dismissed"})}),
+          ("state",), {"state": frozenset({"pending", "processing", "ready", "failed", "confirmed", "dismissed"})}),
     _spec("old_parse_attempts", "platform_hr.candidate_draft_processing_attempts", ("state",),
           "select state,count(*)::bigint as count from platform_hr.candidate_draft_processing_attempts group by state",
           ("state",), {"state": frozenset({"processing", "completed", "failed", "expired"})}),
@@ -103,7 +107,10 @@ QUERY_REGISTRY = (
           ("status",), {"status": frozenset({"pending", "ready", "failed"})}),
     _spec("new_results", "platform_hr_agent.results", ("kind",),
           "select kind,count(*)::bigint as count from platform_hr_agent.results group by kind",
-          ("kind",), {"kind": frozenset({"research", "analysis", "plan", "report", "draft"})}),
+          ("kind",), {"kind": frozenset({
+              "role_calibration", "jd", "requirements", "standard_proposal", "sourcing",
+              "candidate_assessment", "interview_plan", "interview_record", "retrospective", "research",
+          })}),
     _spec("new_result_revisions", "platform_hr_agent.result_revisions", ("revision_id",),
           "select count(*)::bigint as count from platform_hr_agent.result_revisions"),
     _spec("new_standards", "platform_hr_agent.standards", ("position_id",),
@@ -116,7 +123,7 @@ QUERY_REGISTRY = (
           {"state": WORK_STATES, "phase": frozenset({"research", "finalizing"}),
            "answer_state": frozenset({"none", "partial", "ended"})}),
     _spec("old_execution_jobs", "platform_control.execution_jobs", ("agent_id", "status"),
-          "select case when agent_id in ('hr-bot','hannah','hr-agent') then 'hr' else 'other' end as scope,"
+          "select case when agent_id='hr-bot' then 'hr' else 'other' end as scope,"
           "status,count(*)::bigint as count from platform_control.execution_jobs group by scope,status",
           ("scope", "status"), {"scope": frozenset({"hr", "other"}), "status": EXECUTION_STATES}),
     _spec("new_candidate_position_refs", "platform_hr_agent.candidate_positions",
@@ -127,21 +134,26 @@ QUERY_REGISTRY = (
           "from platform_hr_agent.candidate_positions r left join platform_hr.positions p "
           "on p.position_id=r.position_id and p.owner_internal_user_id=r.owner_id "
           "left join platform_hr.positions any_p on any_p.position_id=r.position_id) refs group by resolution",
-          ("resolution",), {"resolution": frozenset({"resolvable", "wrong_owner", "missing"})}),
+          ("resolution",), {"resolution": frozenset({"resolvable", "wrong_owner", "missing"})},
+          (("platform_hr.positions", ("position_id", "owner_internal_user_id")),)),
     _spec("new_result_link_refs", "platform_hr_agent.result_links", ("object_kind", "object_id", "owner_id"),
           "select case when l.object_kind='position' then 'position' else 'unsupported' end as kind,"
-          "case when l.object_kind<>'position' then 'unsupported' "
-          "when l.object_id ~ '^[0-9a-f-]{36}$' and p.position_id is not null then 'resolvable' "
-          "else 'missing' end as resolution,count(*)::bigint as count "
-          "from platform_hr_agent.result_links l left join platform_hr.positions p "
-          "on l.object_kind='position' and p.position_id=case when l.object_id ~ '^[0-9a-f-]{36}$' "
+          "case when l.object_kind<>'position' then 'unsupported' when p.position_id is not null then 'resolvable' "
+          "when any_p.position_id is not null then 'wrong_owner' else 'missing' end as resolution,"
+          "count(*)::bigint as count from platform_hr_agent.result_links l "
+          "left join platform_hr.positions p on l.object_kind='position' and p.position_id=case "
+          "when l.object_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' "
           "then l.object_id::uuid else null end and p.owner_internal_user_id=l.owner_id "
+          "left join platform_hr.positions any_p on l.object_kind='position' and any_p.position_id=case "
+          "when l.object_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' "
+          "then l.object_id::uuid else null end "
           "group by kind,resolution", ("kind", "resolution"),
           {"kind": frozenset({"position", "unsupported"}),
-           "resolution": frozenset({"resolvable", "missing", "unsupported"})}),
+           "resolution": frozenset({"resolvable", "wrong_owner", "missing", "unsupported"})},
+          (("platform_hr.positions", ("position_id", "owner_internal_user_id")),)),
     _spec("new_reference_edges", "platform_hr_agent.reference_edges", ("source_kind",),
           "select source_kind,count(*)::bigint as count from platform_hr_agent.reference_edges group by source_kind",
-          ("source_kind",), {"source_kind": frozenset({"attachment", "result", "position", "candidate", "intelligence_bundle"})}),
+          ("source_kind",), {"source_kind": frozenset({"material", "method", "result", "intelligence", "standard"})}),
     _spec("intelligence_bundles", "platform_hr.intelligence_bundles", ("bundle_id",),
           "select count(*)::bigint as count from platform_hr.intelligence_bundles"),
     _spec("intelligence_jobs", "platform_hr.intelligence_bundle_jobs", ("job_id",),
@@ -155,15 +167,18 @@ def _relation_parts(relation: str) -> tuple[str, str]:
     return tuple(relation.split(".", 1))  # type: ignore[return-value]
 
 
-def _precheck(connection, spec: QuerySpec) -> str | None:
-    schema_name, table_name = _relation_parts(spec.relation)
-    present = connection.execute(
-        "select exists(select 1 from pg_catalog.pg_class c join pg_catalog.pg_namespace n "
-        "on n.oid=c.relnamespace where n.nspname=%s and c.relname=%s and c.relkind in ('r','p','v','m'))",
+def _check_relation(connection, relation: str, required: tuple[str, ...]) -> tuple[str | None, bool]:
+    schema_name, table_name = _relation_parts(relation)
+    row = connection.execute(
+        "select c.relrowsecurity,c.relforcerowsecurity,r.rolbypassrls,(c.relowner=r.oid) "
+        "from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace "
+        "join pg_catalog.pg_roles r on r.rolname=current_user "
+        "where n.nspname=%s and c.relname=%s and c.relkind in ('r','p','v','m')",
         (schema_name, table_name),
-    ).fetchone()[0]
+    ).fetchone()
+    present = row is not None
     if not present:
-        return "missing_table"
+        return "missing_table", False
     columns = {
         row[0] for row in connection.execute(
             "select a.attname from pg_catalog.pg_attribute a join pg_catalog.pg_class c on c.oid=a.attrelid "
@@ -171,12 +186,25 @@ def _precheck(connection, spec: QuerySpec) -> str | None:
             "and a.attnum>0 and not a.attisdropped", (schema_name, table_name),
         )
     }
-    if any(column not in columns for column in spec.columns):
-        return "missing_column"
+    if any(column not in columns for column in required):
+        return "missing_column", False
     readable = connection.execute(
-        "select has_table_privilege(current_user,%s,'SELECT')", (spec.relation,),
+        "select has_table_privilege(current_user,%s,'SELECT')", (relation,),
     ).fetchone()[0]
-    return None if readable else "unreadable"
+    if not readable:
+        return "unreadable", False
+    rls_limited = bool(row[0] and not row[2] and (not row[3] or row[1]))
+    return None, rls_limited
+
+
+def _precheck(connection, spec: QuerySpec) -> tuple[str | None, str]:
+    limited = False
+    for relation, columns in ((spec.relation, spec.columns), *spec.dependencies):
+        blocked, relation_limited = _check_relation(connection, relation, columns)
+        if blocked:
+            return blocked, "scope_limited"
+        limited = limited or relation_limited
+    return None, "scope_limited" if limited else "complete"
 
 
 def _safe_value(spec: QuerySpec, column: str, value):
@@ -187,12 +215,12 @@ def _safe_value(spec: QuerySpec, column: str, value):
 def _execute_one(connection, spec: QuerySpec) -> dict:
     connection.execute("savepoint hr_inventory_item")
     try:
-        blocked = _precheck(connection, spec)
+        blocked, scope = _precheck(connection, spec)
         if blocked:
             return {"name": spec.name, "relation": spec.relation, "status": blocked}
         cursor = connection.execute(spec.sql)
         names = [column.name for column in cursor.description]
-        groups = []
+        combined: dict[str, dict] = {}
         total = 0
         for row in cursor.fetchall():
             record = dict(zip(names, row))
@@ -201,9 +229,10 @@ def _execute_one(connection, spec: QuerySpec) -> dict:
             state = {
                 key: _safe_value(spec, key, record[key]) for key in spec.state_columns
             }
-            groups.append({"state": state, "count": count})
-        groups.sort(key=lambda item: json.dumps(item["state"], sort_keys=True))
-        result = {"name": spec.name, "relation": spec.relation, "status": "ok", "total": total}
+            key = json.dumps(state, sort_keys=True)
+            combined.setdefault(key, {"state": state, "count": 0})["count"] += count
+        groups = [combined[key] for key in sorted(combined)]
+        result = {"name": spec.name, "relation": spec.relation, "status": "ok", "scope": scope, "total": total}
         if spec.state_columns:
             result["groups"] = groups
         return result
@@ -214,18 +243,6 @@ def _execute_one(connection, spec: QuerySpec) -> dict:
         connection.execute("release savepoint hr_inventory_item")
 
 
-def _write_probe(connection) -> str:
-    connection.execute("savepoint hr_inventory_write_probe")
-    try:
-        connection.execute("update platform_hr_agent.works set state=state where false")
-    except psycopg.errors.ReadOnlySqlTransaction:
-        connection.execute("rollback to savepoint hr_inventory_write_probe")
-        return "rejected"
-    finally:
-        connection.execute("release savepoint hr_inventory_write_probe")
-    return "unexpectedly_allowed"
-
-
 def run_inventory(connection_factory: Callable):
     connection = connection_factory()
     try:
@@ -233,7 +250,9 @@ def run_inventory(connection_factory: Callable):
         connection.execute("set local statement_timeout='15s'")
         connection.execute("set local lock_timeout='2s'")
         connection.execute("set local idle_in_transaction_session_timeout='30s'")
-        write_probe = _write_probe(connection)
+        transaction_read_only = connection.execute("show transaction_read_only").fetchone()[0] == "on"
+        if not transaction_read_only:
+            raise RuntimeError("read_only_transaction_required")
         assets = [_execute_one(connection, spec) for spec in QUERY_REGISTRY]
         diagnostics = {
             name: sum(item["status"] == name for item in assets)
@@ -242,7 +261,7 @@ def run_inventory(connection_factory: Callable):
         return {
             "schema_version": 1,
             "transaction": "read_only_rolled_back",
-            "write_probe": write_probe,
+            "transaction_read_only": transaction_read_only,
             "assets": assets,
             "diagnostics": diagnostics,
         }
@@ -287,7 +306,7 @@ def main(argv=None) -> None:
             _write_output(args.output, payload)
         else:
             print(payload, end="")
-    except (ValueError, psycopg.Error):
+    except (ValueError, OSError, psycopg.Error, RuntimeError):
         parser.error("inventory_failed")
 
 

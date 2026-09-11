@@ -1,6 +1,4 @@
 import json
-import os
-from pathlib import Path
 from uuid import uuid4
 
 import psycopg
@@ -31,20 +29,47 @@ def _seed_aggregates(database):
         )
         connection.execute(
             "insert into platform_hr_agent.results(owner_id,result_id,origin_work_id,"
-            "current_revision,kind) values (%s,%s,%s,%s,'research')",
+            "current_revision,kind) values (%s,%s,%s,%s,'candidate_assessment')",
             (owner, result_id := uuid4(), uuid4(), uuid4()),
         )
+        for kind in ("future-private-alpha", "future-private-beta"):
+            connection.execute(
+                "insert into platform_hr_agent.results(owner_id,result_id,origin_work_id,"
+                "current_revision,kind) values (%s,%s,%s,%s,%s)",
+                (owner, uuid4(), uuid4(), uuid4(), kind),
+            )
         connection.execute(
             "insert into platform_hr_agent.result_links(owner_id,result_id,object_kind,"
             "object_id,linked_by_operation) values (%s,%s,'candidate','not-a-uuid',%s)",
             (owner, result_id, uuid4()),
+        )
+        owned_position, foreign_position = uuid4(), uuid4()
+        connection.execute(
+            "insert into platform_hr.positions(position_id,owner_internal_user_id,client_request_id,"
+            "source_kind,title) values (%s,%s,%s,'manual','sensitive-title'),"
+            "(%s,%s,%s,'manual','other-sensitive-title')",
+            (owned_position, owner, uuid4(), foreign_position, uuid4(), uuid4()),
+        )
+        connection.execute(
+            "insert into platform_hr_agent.result_links(owner_id,result_id,object_kind,object_id,"
+            "linked_by_operation) values (%s,%s,'position',%s,%s),(%s,%s,'position',%s,%s),"
+            "(%s,%s,'position',%s,%s)",
+            (owner, result_id, str(owned_position).upper(), uuid4(),
+             owner, result_id, "-" * 36, uuid4(),
+             owner, result_id, str(foreign_position), uuid4()),
         )
         connection.execute(
             "insert into platform_hr_agent.candidate_positions(owner_id,candidate_id,"
             "position_id,created_by_operation) values (%s,%s,%s,%s),(%s,%s,%s,%s)",
             (owner, uuid4(), uuid4(), uuid4(), owner, uuid4(), uuid4(), uuid4()),
         )
-        for agent in ("hr-bot", "marketing-bot"):
+        connection.execute(
+            "insert into platform_hr.candidate_drafts(draft_id,owner_internal_user_id,"
+            "position_id,attachment_id,batch_request_id,client_request_id,state) "
+            "values (%s,%s,%s,%s,%s,%s,'pending')",
+            (uuid4(), owner, uuid4(), uuid4(), uuid4(), uuid4()),
+        )
+        for agent in ("hr-bot", "hannah", "marketing-bot"):
             connection.execute(
                 "insert into platform_control.execution_jobs(job_id,run_id,agent_id,"
                 "payload_ciphertext,encryption_key_version,status) "
@@ -63,19 +88,32 @@ def test_inventory_aggregates_old_new_and_classifies_hr_execution(database):
     rendered = json.dumps(report, ensure_ascii=False)
 
     assert report["transaction"] == "read_only_rolled_back"
-    assert report["write_probe"] == "rejected"
+    assert report["transaction_read_only"] is True
     assert _asset(report, "old_candidates")["total"] >= 1
     assert _asset(report, "new_results")["total"] >= 1
+    assert {group["state"]["kind"]: group["count"] for group in _asset(report, "new_results")["groups"]}[
+        "candidate_assessment"
+    ] >= 1
+    assert len([group for group in _asset(report, "new_results")["groups"] if group["state"] == {"kind": "unknown"}]) == 1
+    assert {group["state"]["state"] for group in _asset(report, "old_candidate_drafts")["groups"]} >= {"pending"}
     references = _asset(report, "new_candidate_position_refs")
     assert references["total"] >= 2
     assert len([group for group in references["groups"] if group["state"] == {"resolution": "missing"}]) == 1
-    assert _asset(report, "new_result_link_refs")["groups"] == [
-        {"state": {"kind": "unsupported", "resolution": "unsupported"}, "count": 1}
-    ]
+    result_refs = _asset(report, "new_result_link_refs")
+    assert result_refs["status"] == "ok"
+    assert {tuple(sorted(group["state"].items())): group["count"] for group in result_refs["groups"]} == {
+        (("kind", "position"), ("resolution", "missing")): 1,
+        (("kind", "position"), ("resolution", "resolvable")): 1,
+        (("kind", "position"), ("resolution", "wrong_owner")): 1,
+        (("kind", "unsupported"), ("resolution", "unsupported")): 1,
+    }
     execution = _asset(report, "old_execution_jobs")
     assert {tuple(sorted(group["state"].items())): group["count"] for group in execution["groups"]}[
         (("scope", "hr"), ("status", "queued"))
     ] >= 1
+    assert {tuple(sorted(group["state"].items())): group["count"] for group in execution["groups"]}[
+        (("scope", "other"), ("status", "queued"))
+    ] >= 2
     assert {tuple(sorted(group["state"].items())): group["count"] for group in execution["groups"]}[
         (("scope", "other"), ("status", "queued"))
     ] >= 1
@@ -97,10 +135,52 @@ def test_inventory_distinguishes_missing_table_and_column(database):
         assert _asset(report, "new_results")["status"] == "missing_column"
         assert _asset(report, "old_candidates").get("total") is None
         assert _asset(report, "new_results").get("total") is None
+        assert _asset(report, "new_candidate_position_refs")["status"] == "missing_table"
     finally:
         with database.admin_connection() as connection:
             connection.execute("alter schema platform_hr_saved rename to platform_hr")
             connection.execute("alter table platform_hr_agent.results rename column kind_saved to kind")
+
+
+@pytest.mark.postgres
+def test_missing_new_schema_preserves_old_inventory(database):
+    from tools.hr_agent.inventory import run_inventory
+
+    with database.admin_connection() as connection:
+        connection.execute("alter schema platform_hr_agent rename to platform_hr_agent_saved")
+    try:
+        report = run_inventory(database.connection)
+        assert _asset(report, "old_candidates")["status"] == "ok"
+        assert _asset(report, "old_candidates")["total"] >= 1
+        assert _asset(report, "new_results")["status"] == "missing_table"
+        assert report["transaction_read_only"] is True
+    finally:
+        with database.admin_connection() as connection:
+            connection.execute("alter schema platform_hr_agent_saved rename to platform_hr_agent")
+
+
+@pytest.mark.postgres
+def test_database_rejects_writes_in_same_read_only_mode(database):
+    with database.connection() as connection:
+        connection.execute("begin read only")
+        assert connection.execute("show transaction_read_only").fetchone()[0] == "on"
+        with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+            connection.execute("update platform_hr_agent.works set state=state where false")
+        connection.rollback()
+
+
+@pytest.mark.postgres
+def test_rls_tables_are_marked_scope_limited(database):
+    from tools.hr_agent.inventory import run_inventory
+
+    with database.admin_connection() as connection:
+        connection.execute("alter table platform_hr.candidates enable row level security")
+    try:
+        report = run_inventory(database.connection)
+        assert _asset(report, "old_candidates")["scope"] == "scope_limited"
+    finally:
+        with database.admin_connection() as connection:
+            connection.execute("alter table platform_hr.candidates disable row level security")
 
 
 @pytest.mark.postgres
@@ -121,23 +201,59 @@ def test_inventory_reports_permission_denied_without_sensitive_error(database):
             connection.execute("grant select on platform_hr.candidates to platform_control_app")
 
 
-def test_cli_rejects_unsafe_dsn_file_and_output(tmp_path, capsys):
-    from tools.hr_agent.inventory import main
+@pytest.mark.postgres
+def test_join_dependency_missing_column_and_permission_are_prechecked(database):
+    from tools.hr_agent.inventory import run_inventory
+
+    with database.admin_connection() as connection:
+        connection.execute("alter table platform_hr.positions rename column owner_internal_user_id to owner_saved")
+    try:
+        report = run_inventory(database.connection)
+        assert _asset(report, "new_result_link_refs")["status"] == "missing_column"
+    finally:
+        with database.admin_connection() as connection:
+            connection.execute("alter table platform_hr.positions rename column owner_saved to owner_internal_user_id")
+
+    with database.admin_connection() as connection:
+        connection.execute("revoke select on platform_hr.positions from platform_control_app")
+    try:
+        report = run_inventory(database.connection)
+        assert _asset(report, "new_candidate_position_refs")["status"] == "unreadable"
+    finally:
+        with database.admin_connection() as connection:
+            connection.execute("grant select on platform_hr.positions to platform_control_app")
+
+
+def test_cli_rejects_unsafe_dsn_file_and_output(tmp_path, capsys, monkeypatch):
+    from tools.hr_agent import inventory
 
     dsn = tmp_path / "dsn"
     dsn.write_text("PRIVATE-DSN-SENTINEL")
     dsn.chmod(0o644)
     with pytest.raises(SystemExit) as failure:
-        main(["--dsn-file", str(dsn)])
+        inventory.main(["--dsn-file", str(dsn)])
     assert failure.value.code == 2
     assert "PRIVATE-DSN-SENTINEL" not in capsys.readouterr().err
 
     dsn.chmod(0o600)
+    monkeypatch.setattr(inventory, "run_inventory", lambda factory: {"safe": True})
     output = tmp_path / "report.json"
     output.symlink_to(tmp_path / "target.json")
     with pytest.raises(SystemExit) as failure:
-        main(["--dsn-file", str(dsn), "--output", str(output)])
+        inventory.main(["--dsn-file", str(dsn), "--output", str(output)])
     assert failure.value.code == 2
+
+
+def test_cli_sanitizes_filesystem_errors(tmp_path, capsys, monkeypatch):
+    from tools.hr_agent import inventory
+
+    dsn = tmp_path / "dsn"
+    dsn.write_text("PRIVATE-DSN-SENTINEL")
+    dsn.chmod(0o600)
+    monkeypatch.setattr(type(dsn), "read_text", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("PRIVATE-PATH-SENTINEL")))
+    with pytest.raises(SystemExit):
+        inventory.main(["--dsn-file", str(dsn)])
+    assert "PRIVATE-PATH-SENTINEL" not in capsys.readouterr().err
 
 
 def test_registry_never_selects_sensitive_columns():
@@ -150,3 +266,15 @@ def test_registry_never_selects_sensitive_columns():
     sql = " ".join(spec.sql.lower() for spec in QUERY_REGISTRY)
     assert not forbidden.intersection(sql.split())
     assert all(spec.allowed_states is not None for spec in QUERY_REGISTRY if spec.state_columns)
+    assert "update " not in sql
+    by_name = {spec.name: spec for spec in QUERY_REGISTRY}
+    assert by_name["new_results"].allowed_states["kind"] == frozenset({
+        "role_calibration", "jd", "requirements", "standard_proposal", "sourcing",
+        "candidate_assessment", "interview_plan", "interview_record", "retrospective", "research",
+    })
+    assert by_name["old_candidate_drafts"].allowed_states["state"] == frozenset({
+        "pending", "processing", "ready", "failed", "confirmed", "dismissed",
+    })
+    assert by_name["new_reference_edges"].allowed_states["source_kind"] == frozenset({
+        "material", "method", "result", "intelligence", "standard",
+    })
