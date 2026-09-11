@@ -1067,3 +1067,26 @@ it("opens the batch material panel lazily and clears it when starting a new conv
   await act(async () => button("新工作").click());
   expect(el.querySelector('section[aria-label="批量简历材料"]')).toBeNull();
 });
+
+it("starts clean candidate-scoped work with only explicit candidate, position and exact refs", async () => {
+  const draft = { kind:"result", id:"candidate-draft", revision:"confirmed", sha256:"c".repeat(64) };
+  const candidates = {
+    candidates: vi.fn().mockResolvedValue({items:[{candidate_id:"candidate-a",display_name:"候选人甲",summary:"摘要",available:true}]}),
+    candidate: vi.fn().mockResolvedValue({candidate_id:"candidate-a",display_name:"候选人甲",summary:"摘要",position_ids:["position-a"],documents:[{document_id:"d",attachment_id:"a",source_ref:{...draft,kind:"material"},result_ref:draft,reviewed_limitations:true}]}),
+    interviewRecords: vi.fn().mockResolvedValue({items:[]}),
+  };
+  const client = api({result: vi.fn().mockResolvedValue({ref:draft,kind:"candidate_profile",title:"确认草稿",body:"准确正文",objects:[{kind:"candidate",id:"candidate-a"},{kind:"position",id:"position-a"}],changes:[],base_standard_ref:null,basis:[]})});
+  const positionApi = { position: vi.fn().mockResolvedValue({positionId:"position-a",title:"产品经理"}) };
+  await act(async () => root.render(<HrLoopWorkspace account={account} api={client as never} positionApi={positionApi as never} candidatesApi={candidates as never}/>));
+  await type("旧工作未提交草稿");
+  await act(async () => button("候选人工作").click());
+  await act(async () => { const select = el.querySelector<HTMLSelectElement>('[aria-label="选择候选人"]')!; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value")!.set!.call(select,"candidate-a"); select.dispatchEvent(new Event("change",{bubbles:true})); });
+  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿 candidate-draft"]')!.click());
+  await act(async () => { const area = el.querySelector<HTMLTextAreaElement>('[aria-label="继续工作的意图"]')!; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(area,"为候选人准备追问"); area.dispatchEvent(new Event("input",{bubbles:true})); });
+  await act(async () => button("带所选内容继续工作").click());
+  expect(el.querySelector('section[aria-label="候选人工作"]')).toBeNull();
+  expect(el.querySelector<HTMLTextAreaElement>("#hr-loop-input")!.value).toBe("为候选人准备追问");
+  await act(async () => button("发送").click());
+  expect(client.submit.mock.calls[0][0]).toMatchObject({objects:[{kind:"candidate",id:"candidate-a"},{kind:"position",id:"position-a"}],references:[draft],text:"为候选人准备追问"});
+  expect(client.submit.mock.calls[0][0].text).not.toContain("旧工作");
+});

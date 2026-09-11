@@ -31,6 +31,7 @@ import { MessageMarkdown } from "../../components/MessageMarkdown";
 import { HrLoopMethodPreview } from "./HrLoopMethodPreview";
 import type { HrLoopCandidatesApi } from "../../hrLoopCandidatesApi";
 import { HrLoopCandidatesPanel } from "./HrLoopCandidatesPanel";
+import { HrLoopCandidateWorkspace, type CandidateWorkSelection } from "./HrLoopCandidateWorkspace";
 import { HrLoopIntelligencePicker } from "./HrLoopIntelligencePicker";
 import { HrPositionPicker } from "./HrPositionPicker";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
@@ -123,6 +124,8 @@ function Workspace({
     ReturnType<HrLoopApi["configuration"]>
   > | null>(null);
   const [showCandidates, setShowCandidates] = useState(false);
+  const [showCandidateWork, setShowCandidateWork] = useState(false);
+  const [candidateName, setCandidateName] = useState("");
   const [methods, setMethods] = useState<ResourceItem[]>([]);
   const [intelligence, setIntelligence] = useState<{
     ref?: ExactRef;
@@ -208,6 +211,8 @@ function Workspace({
     setMethod(null);
     setIntelligence(null);
     setShowCandidates(false);
+    setShowCandidateWork(false);
+    setCandidateName("");
     setUploads([]);
   }
   function report(error: unknown) {
@@ -394,6 +399,19 @@ function Workspace({
     if (id) url.searchParams.set("work", id);
     else url.searchParams.delete("work");
     window.history.replaceState(null, "", url);
+  }
+  function useCandidate(selection: CandidateWorkSelection) {
+    selectWork();
+    setCandidateName(selection.displayName);
+    setPositionId(selection.positionId);
+    setPosition(null);
+    setObjects([
+      { kind: "candidate", id: selection.candidateId },
+      ...(selection.positionId ? [{ kind: "position", id: selection.positionId }] : []),
+    ]);
+    setReferences(selection.references);
+    setText(selection.goal);
+    setShowCandidateWork(false);
   }
   async function mutate(
     operation: string,
@@ -649,6 +667,9 @@ function Workspace({
           <button type="button" onClick={() => setShowCandidates(true)}>
             批量简历材料
           </button>
+          <button type="button" onClick={() => setShowCandidateWork(true)}>
+            候选人工作
+          </button>
           <h2>公开研究</h2>
           <button
             type="button"
@@ -735,6 +756,17 @@ function Workspace({
               onClose={() => setShowCandidates(false)}
               onAccessError={report}
               onOpenWork={selectWork}
+            />
+          )}
+          {showCandidateWork && (
+            <HrLoopCandidateWorkspace
+              api={api}
+              candidatesApi={candidatesApi}
+              csrf={account.csrf_token}
+              disabled={disabled}
+              onClose={() => setShowCandidateWork(false)}
+              onAccessError={report}
+              onUse={useCandidate}
             />
           )}
           {intelligence && (
@@ -974,7 +1006,9 @@ function Workspace({
                       ? position?.positionId === o.id
                         ? position.title
                         : "已选岗位"
-                      : "已选材料对象",
+                      : o.kind === "candidate"
+                        ? candidateName || "已选候选人"
+                        : "已选材料对象",
                   )
                   .join("、")}
               </p>

@@ -247,12 +247,17 @@ export function createHrLoopApi(csrf: string) {
     results: (query: {
       thread?: string;
       position?: string;
+      candidate?: string;
       cursor?: string;
     }) => {
+      if ([query.thread, query.position, query.candidate].filter(Boolean).length !== 1)
+        throw new Error("results require exactly one object scope");
       const params = new URLSearchParams(
-        query.position
+        query.candidate
+          ? { object_kind: "candidate", object_id: query.candidate }
+          : query.position
           ? { object_kind: "position", object_id: query.position }
-          : { thread_id: query.thread ?? "" },
+          : { thread_id: query.thread! },
       );
       if (query.cursor) params.set("cursor", query.cursor);
       return request<Page<ResourceItem>>("/results?" + params);

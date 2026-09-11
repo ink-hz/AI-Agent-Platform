@@ -51,6 +51,17 @@ describe("HR loop API", () => {
     expect(init.headers["Idempotency-Key"]).toBe("intent-1");
     expect(JSON.parse(init.body)).toEqual(input);
   });
+  it("lists results for exactly one candidate object", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    const api = createHrLoopApi("csrf");
+    await api.results({ candidate: "candidate/one", cursor: "next" });
+    const url = new URL(fetcher.mock.calls[0][0], "https://local.test");
+    expect(url.searchParams.get("object_kind")).toBe("candidate");
+    expect(url.searchParams.get("object_id")).toBe("candidate/one");
+    expect(url.searchParams.get("cursor")).toBe("next");
+    expect(() => api.results({ candidate: "c", position: "p" })).toThrow(/one object scope/i);
+  });
   it("exposes conflict without replacing expected revision", async () => {
     vi.stubGlobal(
       "fetch",

@@ -55,6 +55,40 @@ export type CandidateReceipt = {
   state: "confirmed";
   row_version: number;
 };
+export type CandidateDocument = {
+  document_id: string;
+  attachment_id: string;
+  source_ref: ExactRef;
+  result_ref: ExactRef;
+  reviewed_limitations: boolean;
+  summary?: string;
+};
+export type CandidateView = {
+  candidate_id: string;
+  display_name: string;
+  summary: string;
+  position_ids: string[];
+  documents: CandidateDocument[];
+};
+export type InterviewRecord = {
+  record_id: string;
+  candidate_id: string;
+  material_ref: ExactRef;
+  title: string;
+  occurred_at: string | null;
+  position_id: string | null;
+  interview_plan_ref: ExactRef | null;
+  authorship: "user_supplied" | "ai_generated";
+  created_at: string;
+};
+export type InterviewRecordView = InterviewRecord & { text: string };
+export type InterviewRecordInput = {
+  material_ref: ExactRef;
+  title: string;
+  occurred_at: string | null;
+  position_id: string | null;
+  interview_plan_ref: ExactRef | null;
+};
 export function candidateError(error: unknown): string {
   if (error instanceof HrLoopError) {
     if (error.code === "processing_not_authorized")
@@ -140,17 +174,13 @@ export function createHrLoopCandidatesApi(csrf: string) {
       ),
     candidates: () =>
       request<{ items: CandidateChoice[] }>("/candidates?limit=100"),
-    candidate: (id: string) =>
-      request<{
-        candidate_id: string;
-        display_name: string;
-        summary: string;
-        documents: {
-          document_id: string;
-          attachment_id: string;
-          summary: string;
-        }[];
-      }>("/candidates/" + enc(id)),
+    candidate: (id: string) => request<CandidateView>("/candidates/" + enc(id)),
+    interviewRecords: (id: string) =>
+      request<{ items: InterviewRecord[] }>(`/candidates/${enc(id)}/interview-records`),
+    interviewRecord: (id: string, recordId: string) =>
+      request<InterviewRecordView>(`/candidates/${enc(id)}/interview-records/${enc(recordId)}`),
+    registerInterviewRecord: (id: string, body: InterviewRecordInput, key: string) =>
+      request<InterviewRecord>(`/candidates/${enc(id)}/interview-records`, body, key),
   };
 }
 export type HrLoopCandidatesApi = ReturnType<typeof createHrLoopCandidatesApi>;
