@@ -1,0 +1,24 @@
+{
+  "observed_at": "2026-09-11T05:45:30.273242+00:00",
+  "scope": "production attachment worker; SELECT aggregates only",
+  "erasure_source_sha256": "fe4be437413a1228f737ac96ba1943bd77567ccfe3478d0ac5f987c46abb310d",
+  "legacy_claim_expansion": false,
+  "fixed_claim_from": false,
+  "transaction_read_only": "on",
+  "queue_states": [],
+  "queue_attempts": [],
+  "state_pairs": [],
+  "worker_permissions": [
+    {
+      "uploads_attachment": false,
+      "uploads_attempt": false,
+      "attempts_attachment": false,
+      "attempts_id": false,
+      "attempts_ciphertext": false,
+      "attempts_key_version": false
+    }
+  ],
+  "migration_100": {
+    "unavailable_sqlstate": "42501"
+  }
+}

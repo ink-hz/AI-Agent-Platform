@@ -146,6 +146,29 @@ def _insert_attachment(
     return attachment_id
 
 
+def _insert_erasure_job(
+    connection: psycopg.Connection,
+    context: dict[str, object],
+    attachment_id: object,
+) -> object:
+    erasure_job_id = uuid4()
+    connection.execute(
+        "insert into platform_attachments.erasure_jobs "
+        "(erasure_job_id,attachment_id,requested_by_internal_user_id,"
+        "reason_ciphertext,reason_key_version,reason_sha256) "
+        "values (%s,%s,%s,%s,1,%s)",
+        (
+            erasure_job_id,
+            attachment_id,
+            context["owner_id"],
+            b"e" * 29,
+            b"e" * 32,
+        ),
+    )
+    connection.commit()
+    return erasure_job_id
+
+
 def _insert_task_input_binding(
     connection: psycopg.Connection,
     context: dict[str, object],
@@ -1732,6 +1755,69 @@ def test_v64_processing_rejection_determines_bound_artifact_version(
             "platform_attachments.artifact_versions where artifact_version_id=%s",
             (version_id,),
         ).fetchone() == ("rejected", "failed", "malware_detected")
+
+
+@pytest.mark.postgres
+def test_v64_legacy_composite_expansion_claims_single_job_with_null_attachment(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        attachment_id = _insert_attachment(admin, context)
+        erasure_job_id = _insert_erasure_job(admin, context, attachment_id)
+
+    with psycopg.connect(
+        environment["urls"]["platform_control_maintenance"]
+    ) as maintenance:
+        legacy_row = maintenance.execute(
+            "select (platform_attachments."
+            "claim_attachment_erasure_job_v64('legacy-single')).*"
+        ).fetchone()
+        maintenance.commit()
+
+    assert legacy_row is not None
+    assert legacy_row[0] == erasure_job_id
+    assert legacy_row[1] is None
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state,claimed_by from platform_attachments.erasure_jobs "
+            "where erasure_job_id=%s",
+            (erasure_job_id,),
+        ).fetchone() == ("running", "legacy-single")
+
+
+@pytest.mark.postgres
+def test_v64_legacy_composite_expansion_claims_and_splices_two_jobs(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        first_attachment = _insert_attachment(admin, context)
+        second_attachment = _insert_attachment(admin, context)
+        first_job = _insert_erasure_job(admin, context, first_attachment)
+        second_job = _insert_erasure_job(admin, context, second_attachment)
+        expected = {first_job: first_attachment, second_job: second_attachment}
+
+    with psycopg.connect(
+        environment["urls"]["platform_control_maintenance"]
+    ) as maintenance:
+        legacy_row = maintenance.execute(
+            "select (platform_attachments."
+            "claim_attachment_erasure_job_v64('legacy-multiple')).*"
+        ).fetchone()
+        maintenance.commit()
+
+    assert legacy_row is not None
+    assert legacy_row[0] in expected
+    assert legacy_row[1] in expected.values()
+    assert expected[legacy_row[0]] != legacy_row[1]
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state,count(*) from platform_attachments.erasure_jobs "
+            "where claimed_by='legacy-multiple' group by state"
+        ).fetchall() == [("running", 2)]
 
 
 @pytest.mark.postgres

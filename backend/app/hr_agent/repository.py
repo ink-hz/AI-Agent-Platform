@@ -1118,8 +1118,6 @@ class HrAgentRepository(RepositoryViewsMixin):
                 raise WorkPaused(self._view(c, work))
             budget["charged_calls"] += 1
             budget["charged_tokens"] += attempt["reserved_tokens"]
-            budget["usage_quality"] = "mixed"
-            self._save_budget(c, work, budget)
             self._update(
                 c,
                 "model_attempts",
@@ -1127,6 +1125,8 @@ class HrAgentRepository(RepositoryViewsMixin):
                 attempt["attempt_id"],
                 {"status": "sending", "charged_tokens": attempt["reserved_tokens"]},
             )
+            budget["usage_quality"] = self._charged_usage_quality(c, work)
+            self._save_budget(c, work, budget)
 
     def commit_model(self, fence, attempt_id, reply):
         if not isinstance(reply, ModelReply) or (
@@ -1202,6 +1202,16 @@ class HrAgentRepository(RepositoryViewsMixin):
             self._checkpoint(c, work)
             return tuple(operations)
 
+    def _charged_usage_quality(self, c, work):
+        c.execute(
+            "SELECT DISTINCT usage_quality FROM platform_hr_agent.model_attempts WHERE work_id=%s AND charged_tokens>0",
+            (work["work_id"],),
+        )
+        qualities = {row["usage_quality"] for row in c.fetchall()}
+        if not qualities:
+            return "reported"
+        return next(iter(qualities)) if len(qualities) == 1 else "mixed"
+
     def _settle(self, c, work, attempt, observation_id, usage):
         if usage.input_total is None or usage.output_total is None:
             return
@@ -1235,8 +1245,6 @@ class HrAgentRepository(RepositoryViewsMixin):
         }
         budget = self._unseal("works", work["work_id"], "sealed_budget", work)
         budget["charged_tokens"] += actual - attempt["charged_tokens"]
-        budget["usage_quality"] = "mixed"
-        self._save_budget(c, work, budget)
         self._update(
             c,
             "model_attempts",
@@ -1255,6 +1263,8 @@ class HrAgentRepository(RepositoryViewsMixin):
                 ),
             },
         )
+        budget["usage_quality"] = self._charged_usage_quality(c, work)
+        self._save_budget(c, work, budget)
 
     def settle_usage(self, worker, attempt_id, observation_id, usage):
         if (

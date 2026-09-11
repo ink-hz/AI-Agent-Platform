@@ -108,7 +108,7 @@ def test_docx_reports_omml_math_and_word_symbols_as_partial_coverage():
             if entry.filename == "word/document.xml":
                 body = body.replace(
                     b"</w:body>",
-                    b'<w:p><w:r><w:t>Required formula: </w:t></w:r>'
+                    b"<w:p><w:r><w:t>Required formula: </w:t></w:r>"
                     b'<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x=7</m:t></m:r></m:oMath>'
                     b'<w:r><w:sym w:font="Symbol" w:char="F061"/></w:r></w:p></w:body>',
                 )
@@ -120,8 +120,7 @@ def test_docx_reports_omml_math_and_word_symbols_as_partial_coverage():
     assert "Required formula: " in result["text"]
     assert result["coverage_complete"] is False
     assert any(
-        "equations or symbols" in note.lower()
-        for note in result["coverage_notes"]
+        "equations or symbols" in note.lower() for note in result["coverage_notes"]
     )
 
 
@@ -354,7 +353,75 @@ def test_parse_key_conflict_and_revoked_during_processing(uploaded, database):
     assert materials.resolve(owner, first)["text_ref"] is None
 
 
-def test_worker_revalidates_owner_grant_before_source_io(uploaded, database, monkeypatch):
+def test_parse_uuid_case_retry_has_one_request_and_preserves_conflict(
+    uploaded, database
+):
+    _client, _headers, repo, owner, materials, _, _, _store = uploaded
+    service = parsing.MaterialParsingService(repo, materials)
+    first = upload_document(uploaded, database, pdf(), "application/pdf", "first.pdf")
+    second = upload_document(uploaded, database, pdf(), "application/pdf", "second.pdf")
+    key = str(uuid4())
+    service.request(owner, first, key.upper())
+    service.request(owner, first, key.lower())
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT count(*) AS n FROM platform_hr_agent.material_parse_requests WHERE owner_id=%s",
+            (owner,),
+        )
+        assert c.fetchone()["n"] == 1
+    with pytest.raises(HrAgentProblem) as error:
+        service.request(owner, second, key.lower())
+    assert error.value.problem["code"] == "idempotency_conflict"
+    assert service.process_one("uuid-case-retry")
+    assert not service.process_one("uuid-case-retry-again")
+
+
+def test_legacy_uppercase_uuid_parse_receipt_is_reused(uploaded, database):
+    _client, _headers, repo, owner, materials, _, _, _store = uploaded
+    service = parsing.MaterialParsingService(repo, materials)
+    first = upload_document(uploaded, database, pdf(), "application/pdf", "first.pdf")
+    second = upload_document(uploaded, database, pdf(), "application/pdf", "second.pdf")
+    key = str(uuid4())
+    receipt = service.request(owner, first, key)
+    # Reproduce the persisted spelling written by the previous release.
+    with database.admin_connection() as c:
+        c.execute(
+            "UPDATE platform_hr_agent.material_parse_requests SET request_key=%s WHERE owner_id=%s AND request_key=%s",
+            (key.upper(), owner, key),
+        )
+    with pytest.raises(HrAgentProblem) as error:
+        service.request(owner, second, key)
+    assert error.value.problem["code"] == "idempotency_conflict"
+    assert service.request(owner, first, key) == receipt
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT request_key FROM platform_hr_agent.material_parse_requests WHERE owner_id=%s",
+            (owner,),
+        )
+        assert [r["request_key"] for r in c.fetchall()] == [key.upper()]
+    assert service.process_one("legacy-uuid-retry")
+
+
+def test_noncanonical_opaque_parse_keys_remain_case_sensitive(uploaded, database):
+    _client, _headers, repo, owner, materials, _, _, _store = uploaded
+    service = parsing.MaterialParsingService(repo, materials)
+    first = upload_document(uploaded, database, pdf(), "application/pdf", "first.pdf")
+    key = uuid4().hex
+    service.request(owner, first, key.upper())
+    service.request(owner, first, key.lower())
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT count(*) AS n FROM platform_hr_agent.material_parse_requests WHERE owner_id=%s",
+            (owner,),
+        )
+        assert c.fetchone()["n"] == 2
+    assert service.process_one("opaque-case-retry")
+    assert not service.process_one("opaque-case-retry-again")
+
+
+def test_worker_revalidates_owner_grant_before_source_io(
+    uploaded, database, monkeypatch
+):
     _client, _headers, repo, owner, materials, _, _, store = uploaded
     service = parsing.MaterialParsingService(repo, materials)
     aid = upload_document(uploaded, database, pdf(), "application/pdf", "grant.pdf")

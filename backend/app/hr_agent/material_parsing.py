@@ -2,6 +2,7 @@
 
 import io
 import json
+import re
 import subprocess
 import sys
 import zipfile
@@ -190,6 +191,15 @@ class MaterialParsingService:
     def request(self, owner_id, attachment_id, idempotency_key):
         if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 200:
             raise problem("invalid_input")
+        uuid_key = (
+            re.fullmatch(
+                r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                idempotency_key,
+            )
+            is not None
+        )
+        if uuid_key:
+            idempotency_key = idempotency_key.lower()
         row = self.materials._row(owner_id, attachment_id)
         if row["state"] != "ready":
             raise problem("reference_unavailable", http_status=410)
@@ -202,12 +212,17 @@ class MaterialParsingService:
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                 (str(owner_id) + idempotency_key,),
             )
+            # Read legacy UUID spellings without rewriting persisted receipts.
+            # All noncanonical keys keep their original opaque identity.
             c.execute(
-                "SELECT * FROM platform_hr_agent.material_parse_requests WHERE owner_id=%s AND request_key=%s",
+                "SELECT * FROM platform_hr_agent.material_parse_requests WHERE owner_id=%s AND "
+                + ("lower(request_key)=%s" if uuid_key else "request_key=%s")
+                + " ORDER BY request_key",
                 (owner_id, idempotency_key),
             )
-            previous = c.fetchone()
-            if previous and previous["attachment_id"] != row["attachment_id"]:
+            prior_requests = c.fetchall()
+            previous = prior_requests[0] if prior_requests else None
+            if any(p["attachment_id"] != row["attachment_id"] for p in prior_requests):
                 raise problem("idempotency_conflict", http_status=409)
             c.execute(
                 "INSERT INTO platform_hr_agent.material_parses(parse_id,owner_id,attachment_id,source_sha256,parser_release,source_identity,state) VALUES(%s,%s,%s,%s,%s,%s,'queued') ON CONFLICT(owner_id,attachment_id,source_sha256,parser_release) DO NOTHING",
@@ -225,7 +240,7 @@ class MaterialParsingService:
                 (owner_id, row["attachment_id"], row["sha256"], release),
             )
             task = c.fetchone()
-            if previous and previous["parse_id"] != task["parse_id"]:
+            if any(p["parse_id"] != task["parse_id"] for p in prior_requests):
                 raise problem("idempotency_conflict", http_status=409)
             if source_identity(row) != task["source_identity"]:
                 raise problem("reference_unavailable", http_status=410)

@@ -1,0 +1,129 @@
+WITH_100_LINES 31
+WITHOUT_100_LINES 30
+WITH_100_CHECKSUM True
+WITHOUT_100_RECEIPT True
+WITHOUT_100_FALSE_PRIVILEGES 6
+.
+=============================== warnings summary ===============================
+tests/test_control_plane_migration.py:359
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:359: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:428
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:428: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:471
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:471: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:711
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:711: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:798
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:798: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1080
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1080: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1139
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1139: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1178
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1178: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1205
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1205: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1390
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1390: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1500
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1500: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1559
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1559: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1617
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1617: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1654
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1654: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1702
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1702: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1808
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1808: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1863
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1863: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:1978
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:1978: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2072
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2072: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2366
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2366: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2399
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2399: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2472
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2472: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2550
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2550: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2659
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2659: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2727
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2727: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2848
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2848: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:2942
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:2942: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:3062
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:3062: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:3133
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:3133: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+tests/test_control_plane_migration.py:3173
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c/backend/tests/test_control_plane_migration.py:3173: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1 passed, 30 warnings in 1.45s

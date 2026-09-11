@@ -1,0 +1,40 @@
+{
+  "observed_at": "2026-09-11T05:46:46.562626+00:00",
+  "scope": "production attachment worker; SELECT aggregates only",
+  "erasure_source_sha256": "fe4be437413a1228f737ac96ba1943bd77567ccfe3478d0ac5f987c46abb310d",
+  "legacy_claim_expansion": false,
+  "fixed_claim_from": false,
+  "claim_sql_lines": [
+    "\"select (platform_attachments.claim_attachment_erasure_job_v64(%s)).*\","
+  ],
+  "transaction_read_only": "on",
+  "database_identity": [
+    {
+      "database": "agent_platform_control",
+      "role": "platform_control_maintenance"
+    }
+  ],
+  "erasure_rls": [
+    {
+      "relrowsecurity": false,
+      "relforcerowsecurity": false
+    }
+  ],
+  "erasure_policies": [],
+  "queue_states": [],
+  "queue_attempts": [],
+  "state_pairs": [],
+  "worker_permissions": [
+    {
+      "uploads_attachment": false,
+      "uploads_attempt": false,
+      "attempts_attachment": false,
+      "attempts_id": false,
+      "attempts_ciphertext": false,
+      "attempts_key_version": false
+    }
+  ],
+  "migration_100": {
+    "unavailable_sqlstate": "42501"
+  }
+}

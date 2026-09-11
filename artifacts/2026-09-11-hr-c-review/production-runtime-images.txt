@@ -1,0 +1,2 @@
+/orbbec-agent-platform-platform-attachments-1|orbbec-agent-platform:03e60f83cddcfffe704cce627c1ca62d29da0327|sha256:ee24975e38f8ef51cac4e6036aa92c42e46d508c91615773eeba181ee38eb1b1|running
+/orbbec-agent-platform-platform-api-1|orbbec-agent-platform:44de9209b77343facf3117fe3ab4d3450eaf2062|sha256:74c8f7c47909c2af37c985d8a698814c78ca47d43efaf49bfd12049911826809|running

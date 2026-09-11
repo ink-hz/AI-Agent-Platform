@@ -385,6 +385,7 @@ A1 `test_first_request_logs_exclude_sensitive_payloads` 给本地提供方的输
 - 发送前估计当前输入并加上本次最大输出作为 reserved_tokens；普通调用需同时满足 calls/tokens/time 扣除收尾reserve后的余额。普通余额不足先持久转finalizing，再按总剩余额度准入收尾；总额不足转waiting_budget，不把输出上限降成无法解释的截断回答。
 - 收到usage：依据提供方profile把未缓存输入、cache write/read规范成不重复的 input_total，把可见/推理输出规范成不重复 output_total；保留原usage供受限核验。以报告总量与冻结请求 `estimated_input_tokens` 的较大值替换本次预扣。后者是保守预算策略，不是实际 token 或账单下界；下限生效时 `usage_quality=estimated`，加密原始用量中记录报告输入/输出、估算下限和扣记值。若实际超预估，如实记录超额并停止后续调用，不声称token预算是精确供应商扣费上限。
 - usage缺失/断流：charged_tokens保留本次预留值，usage_quality=estimated，不记0；取得可核验usage才调账，并留事件。输入tokenizer不可用时不声称精确估值，profile须提供经过测试的保守估算方法，否则blocked。
+- work层 `budget.usage_quality` 按已有正扣记的attempt汇总：全估算为estimated、全实报为reported，两者并存才是mixed；尚未发送且零扣记的prepared不参与。中断保留的预留属于估算，合法迟到用量结算后重新汇总；标签不改变扣记下限。
 - 活动时长用Worker单调时钟计量，心跳定期落累计量和数据库观测时间；崩溃后未落区间最多按剩余旧租约时间保守补记，并标估算。新执行者不会把旧工作用量归零。
 - 收尾只允许组织已获准证据、save_note/save_result/ask_user，不准新增研究读取来扩张范围。实际额度仍不够时系统保存最后一个有效笔记、已读区间和待执行位置，明确没有生成新终稿，不能为了“完整交付”超限调用。
 - 预算追加是用户操作，increments逐字段非负且至少一项>0，有expected_budget_revision和去重键；增加上限，不重置累计值/原reserve；已取消工作不能由追加复活。新任务重做不是旧任务恢复，界面必须区分。

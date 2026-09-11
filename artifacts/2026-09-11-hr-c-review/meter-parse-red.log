@@ -1,0 +1,93 @@
+FFF.F                                                                    [100%]
+=================================== FAILURES ===================================
+_____ test_work_usage_quality_matches_actual_charging_source[0-estimated] ______
+
+repo = <app.hr_agent.repository.HrAgentRepository object at 0x10678de10>
+reported = 0, expected_quality = 'estimated'
+
+    @pytest.mark.parametrize(
+        "reported, expected_quality",
+        [(0, "estimated"), (350, "estimated"), (800, "reported")],
+    )
+    def test_work_usage_quality_matches_actual_charging_source(repo, reported, expected_quality):
+        owner = uuid4()
+        work = repo.submit(owner, support.request(), uuid4())
+        fence = repo.claim("quality-review", 60)
+        attempt = repo.prepare_model(fence, support.model_context(tokens=700))
+        repo.mark_model_sending(fence, attempt.attempt_id)
+>       assert repo.get_work(owner, work["work_id"])["budget"]["usage_quality"] == "estimated"
+E       AssertionError: assert 'mixed' == 'estimated'
+E         
+E         - estimated
+E         + mixed
+
+backend/tests/test_hr_agent_review_regressions.py:58: AssertionError
+____ test_work_usage_quality_matches_actual_charging_source[350-estimated] _____
+
+repo = <app.hr_agent.repository.HrAgentRepository object at 0x10678e0d0>
+reported = 350, expected_quality = 'estimated'
+
+    @pytest.mark.parametrize(
+        "reported, expected_quality",
+        [(0, "estimated"), (350, "estimated"), (800, "reported")],
+    )
+    def test_work_usage_quality_matches_actual_charging_source(repo, reported, expected_quality):
+        owner = uuid4()
+        work = repo.submit(owner, support.request(), uuid4())
+        fence = repo.claim("quality-review", 60)
+        attempt = repo.prepare_model(fence, support.model_context(tokens=700))
+        repo.mark_model_sending(fence, attempt.attempt_id)
+>       assert repo.get_work(owner, work["work_id"])["budget"]["usage_quality"] == "estimated"
+E       AssertionError: assert 'mixed' == 'estimated'
+E         
+E         - estimated
+E         + mixed
+
+backend/tests/test_hr_agent_review_regressions.py:58: AssertionError
+_____ test_work_usage_quality_matches_actual_charging_source[800-reported] _____
+
+repo = <app.hr_agent.repository.HrAgentRepository object at 0x10679fa10>
+reported = 800, expected_quality = 'reported'
+
+    @pytest.mark.parametrize(
+        "reported, expected_quality",
+        [(0, "estimated"), (350, "estimated"), (800, "reported")],
+    )
+    def test_work_usage_quality_matches_actual_charging_source(repo, reported, expected_quality):
+        owner = uuid4()
+        work = repo.submit(owner, support.request(), uuid4())
+        fence = repo.claim("quality-review", 60)
+        attempt = repo.prepare_model(fence, support.model_context(tokens=700))
+        repo.mark_model_sending(fence, attempt.attempt_id)
+>       assert repo.get_work(owner, work["work_id"])["budget"]["usage_quality"] == "estimated"
+E       AssertionError: assert 'mixed' == 'estimated'
+E         
+E         - estimated
+E         + mixed
+
+backend/tests/test_hr_agent_review_regressions.py:58: AssertionError
+______ test_parse_uuid_case_retry_has_one_request_and_preserves_conflict _______
+
+uploaded = (<starlette.testclient.TestClient object at 0x106a14f90>, {'Origin': 'https://agent.example.test', 'X-CSRF-Token': 'cs...59aec3f'), <app.hr_agent.materials.MaterialService object at 0x10699a910>, 'e67fe42c-7fdd-4940-a751-cf8994f651f2', ...)
+database = HrTestDatabase()
+
+    def test_parse_uuid_case_retry_has_one_request_and_preserves_conflict(uploaded, database):
+        _client, _headers, repo, owner, materials, _, _, _store = uploaded
+        service = parsing.MaterialParsingService(repo, materials)
+        first = upload_document(uploaded, database, pdf(), "application/pdf", "first.pdf")
+        second = upload_document(uploaded, database, pdf(), "application/pdf", "second.pdf")
+        key = str(uuid4())
+        service.request(owner, first, key.upper())
+        service.request(owner, first, key.lower())
+        with repo.transaction() as c:
+            c.execute("SELECT count(*) AS n FROM platform_hr_agent.material_parse_requests WHERE owner_id=%s", (owner,))
+>           assert c.fetchone()["n"] == 1
+E           assert 2 == 1
+
+backend/tests/test_hr_agent_material_parsing.py:367: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_review_regressions.py::test_work_usage_quality_matches_actual_charging_source[0-estimated]
+FAILED backend/tests/test_hr_agent_review_regressions.py::test_work_usage_quality_matches_actual_charging_source[350-estimated]
+FAILED backend/tests/test_hr_agent_review_regressions.py::test_work_usage_quality_matches_actual_charging_source[800-reported]
+FAILED backend/tests/test_hr_agent_material_parsing.py::test_parse_uuid_case_retry_has_one_request_and_preserves_conflict
+4 failed, 1 passed, 16 deselected in 2.51s

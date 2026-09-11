@@ -1,0 +1,16 @@
+{
+  "observed_at": "2026-09-11T05:48:30.568690+00:00",
+  "scope": "production API database identity and migration receipt only",
+  "transaction_read_only": "on",
+  "database_identity": [
+    "agent_platform_control",
+    "platform_control_app"
+  ],
+  "migration_receipts": [
+    {
+      "version": 64,
+      "sha256": "1f9f083e76c3fc14e14a2ccfc403fcfb83716b4f1602cd5c41882e9ffb04c3aa",
+      "applied_at": "2026-09-04 00:14:02.580744+00:00"
+    }
+  ]
+}

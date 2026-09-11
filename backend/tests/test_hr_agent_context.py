@@ -3,6 +3,9 @@ import json
 from uuid import UUID, uuid4
 
 import pytest
+from app.hr_agent.context import build_model_context, estimate_input_tokens
+from app.hr_agent.resources import PublishedKnowledge, ResourceReader
+from app.hr_agent.types import HrAgentProblem, ModelContext, ToolCall, WorkPaused
 from test_hr_agent_repository import (
     database as database,  # noqa: PLC0414 - pytest fixture export
 )
@@ -10,10 +13,6 @@ from test_hr_agent_repository import model_context, reply, request
 from test_hr_agent_repository import (
     repo as repo,  # noqa: PLC0414 - pytest fixture export
 )
-
-from app.hr_agent.context import build_model_context, estimate_input_tokens
-from app.hr_agent.resources import PublishedKnowledge, ResourceReader
-from app.hr_agent.types import HrAgentProblem, ModelContext, ToolCall, WorkPaused
 
 
 def publication(path, method_text="先检验假设，再比较证据。"):
