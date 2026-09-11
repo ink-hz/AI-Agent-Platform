@@ -1,0 +1,9 @@
+Command (working directory: /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-c):
+
+backend/.venv/bin/pytest -q backend/tests/test_hr_execution_cutover.py backend/tests/test_hr_agent_candidate_intake.py backend/tests/test_hr_agent_material_parsing.py backend/tests/test_hr_agent_repository.py backend/tests/test_hr_agent_routes.py backend/tests/test_hr_agent_worker_process.py backend/tests/test_hr_candidate_repository.py backend/tests/test_hr_candidate_parser_runtime.py backend/tests/test_hr_candidate_parser_runtime_database.py backend/tests/test_agent_brain_conversation_repository.py backend/tests/test_hr_direct_worker.py backend/tests/test_hr_direct_worker_progress.py backend/tests/test_execution_relay_repository.py --disable-warnings --maxfail=1
+
+Observed result:
+
+212 passed in 102.06s (0:01:42)
+
+This focused local run used disposable PostgreSQL fixtures and test provider boundaries. It is not production or real-model validation. An earlier pre-review focused run completed with 239 passed in 87.12s; later review fixes added candidate drain continuation and worker idle coverage, and the 212-test command above is the final fresh verification for this commit.

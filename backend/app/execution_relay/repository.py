@@ -12,6 +12,8 @@ import psycopg
 from psycopg.rows import dict_row
 from pydantic import ValidationError
 
+from app.hr_agent.cutover import lock_state
+
 from app.control_plane.dsn import validate_control_dsn
 
 from .content_crypto import ContentCodec, ContentCryptoError, SealedContent
@@ -264,10 +266,13 @@ class ExecutionRelayRepository:
             raise ValueError("lease seconds invalid")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
+                cutover = lock_state(cursor)
                 worker_agents = self._active_worker(cursor, worker_id)
                 permitted = tuple(
                     agent for agent in worker_agents if agent in allowed_agents
                 )
+                if cutover is not None and cutover.phase in {"cloud", "draining_cloud"}:
+                    permitted = tuple(agent for agent in permitted if agent != "hr-bot")
                 if not permitted:
                     return None
                 row = cursor.execute(

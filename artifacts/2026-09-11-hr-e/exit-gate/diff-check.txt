@@ -1,0 +1,15 @@
+Command:
+
+git diff --check
+
+Observed result: exit code 0, no output.
+
+Command:
+
+backend/.venv/bin/python -m compileall -q backend/app/hr_agent backend/app/agent_brain backend/app/hr backend/app/execution_relay
+
+Observed result: exit code 0, no output.
+
+Migration 102 SHA-256 at verification time:
+
+70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6

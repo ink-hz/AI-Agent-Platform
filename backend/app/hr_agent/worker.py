@@ -9,6 +9,7 @@ import sys
 import threading
 from uuid import uuid4
 
+from .cutover import CutoverRejected
 from .runtime import run_work
 
 
@@ -27,13 +28,22 @@ def run_worker(
     while not stop_event.is_set():
         parser = getattr(getattr(resources, "materials", None), "parsing", None)
         if parser is not None:
-            parser.process_one(worker_id, repository.settings.lease_seconds)
+            try:
+                parser.process_one(worker_id, repository.settings.lease_seconds)
+            except CutoverRejected:
+                pass
         candidates = getattr(resources, "candidates", None)
         if candidates is not None:
-            candidates.advance_one(worker_id)
+            try:
+                candidates.advance_one(worker_id)
+            except CutoverRejected:
+                pass
         if stop_event.is_set():
             break
-        fence = repository.claim(worker_id, repository.settings.lease_seconds)
+        try:
+            fence = repository.claim(worker_id, repository.settings.lease_seconds)
+        except CutoverRejected:
+            fence = None
         if fence is None:
             stop_event.wait(poll_seconds)
             continue

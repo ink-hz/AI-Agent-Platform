@@ -333,6 +333,7 @@ class CandidateParserSubmissionCoordinator:
             _PARSER_PROMPT,
             mode="direct_agent",
             direct_agent_id="hr-bot",
+            _candidate_parser_attempt_id=selected.attempt_id,
         )
         return True
 

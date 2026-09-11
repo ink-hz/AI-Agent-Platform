@@ -15,6 +15,8 @@ from psycopg.types.json import Jsonb
 
 from app.execution_relay.content_crypto import SealedContent
 
+from .cutover import lock_admission, lock_state, require_lane, verify_candidate_continuation
+
 from .types import (
     DEFAULT_MODEL_TIMEOUT_SECONDS,
     AuthorizedScope,
@@ -436,14 +438,21 @@ class HrAgentRepository(RepositoryViewsMixin):
             objects=body["objects"],
         )
 
-    def submit(self, owner_id, request, key):
+    def submit(self, owner_id, request, key, *, _candidate_continuation=None):
         request = validate_contract("WorkInput", request)
         owner_id = _uuid(owner_id)
         self._scope(owner_id, request["objects"], request["references"])
         with self.transaction() as c:
+            cutover = lock_state(c)
             op, replay = self._idempotency(c, owner_id, "POST /works", key, request)
             if replay:
                 return replay
+            require_lane(
+                cutover, "cloud",
+                continuing=verify_candidate_continuation(
+                    c, owner_id, _candidate_continuation
+                ) if _candidate_continuation is not None else False,
+            )
             thread = _uuid(request["thread_id"]) if request["thread_id"] else uuid4()
             if request["thread_id"]:
                 c.execute(
@@ -582,12 +591,14 @@ class HrAgentRepository(RepositoryViewsMixin):
         request = validate_contract("AppendInput", request)
         self._scope(owner_id, request["objects"], request["references"])
         with self.transaction() as c:
+            cutover = lock_state(c)
             work = self._work(c, owner_id, work_id, True)
             op, replay = self._idempotency(
                 c, owner_id, f"POST /works/{work_id}/inputs", key, request
             )
             if replay:
                 return replay
+            require_lane(cutover, "cloud", continuing=True)
             if work["state"] == "cancelled":
                 raise problem("cancelled", http_status=409)
             if work["input_revision"] != request["expected_input_revision"]:
@@ -662,6 +673,7 @@ class HrAgentRepository(RepositoryViewsMixin):
     def extend_budget(self, owner_id, work_id, request, key):
         request = validate_contract("ExtendBudgetInput", request)
         with self.transaction() as c:
+            cutover = lock_state(c)
             work = self._work(c, owner_id, work_id, True)
             self._input(c, work)
             op, replay = self._idempotency(
@@ -669,6 +681,7 @@ class HrAgentRepository(RepositoryViewsMixin):
             )
             if replay:
                 return replay
+            require_lane(cutover, "cloud", continuing=True)
             if work["state"] == "cancelled":
                 raise problem("cancelled", http_status=409)
             budget = self._unseal("works", work["work_id"], "sealed_budget", work)
@@ -743,6 +756,7 @@ class HrAgentRepository(RepositoryViewsMixin):
         if not worker_id or lease_seconds <= 0:
             raise problem("invalid_input")
         with self.transaction() as c:
+            lock_admission(c, "cloud", continuing=True)
             c.execute(
                 "SELECT * FROM platform_hr_agent.works WHERE state='queued' OR (state='running' AND lease_until<clock_timestamp()) ORDER BY created_at,work_id FOR UPDATE SKIP LOCKED LIMIT 1"
             )

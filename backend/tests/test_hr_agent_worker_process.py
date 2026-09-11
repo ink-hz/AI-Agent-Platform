@@ -1,6 +1,7 @@
 """Independent local Worker processes and HTTP SSE transport, no live provider."""
 import threading
 from app.hr_agent.worker import run_worker
+from app.hr_agent.cutover import CutoverRejected
 
 
 def test_worker_shutdown_event_stops_claiming():
@@ -10,6 +11,31 @@ def test_worker_shutdown_event_stops_claiming():
     stop = threading.Event()
     stop.set()
     run_worker(Repository(), None, None, stop_event=stop)
+
+
+def test_worker_idles_instead_of_crashing_when_cloud_lane_is_inactive():
+    stop = threading.Event()
+
+    class Blocked:
+        def process_one(self, *args):
+            raise CutoverRejected()
+
+        def advance_one(self, *args):
+            raise CutoverRejected()
+
+    class Repository:
+        settings = type("Settings", (), {"lease_seconds": 1, "heartbeat_seconds": 1})()
+
+        def claim(self, *args):
+            stop.set()
+            raise CutoverRejected()
+
+    resources = type(
+        "Resources", (),
+        {"materials": type("Materials", (), {"parsing": Blocked()})(),
+         "candidates": Blocked()},
+    )()
+    run_worker(Repository(), None, resources, stop_event=stop, poll_seconds=0.001)
 
 import json
 import os

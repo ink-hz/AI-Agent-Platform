@@ -11,6 +11,8 @@ from uuid import UUID, uuid4
 import psycopg
 from psycopg.rows import dict_row
 
+from app.hr_agent.cutover import lock_state, require_lane
+
 from app.agent_brain.conversation_models import (
     ConversationArtifactVersionProjection,
     ConversationAttachmentProjection,
@@ -985,6 +987,7 @@ class ConversationRepository:
         hr_position_scope=None,
         position_id: UUID | None = None,
         position_draft_id: UUID | None = None,
+        _candidate_parser_attempt_id: UUID | None = None,
     ) -> ConversationCreateResult:
         _require_uuid(internal_user_id)
         _require_uuid(client_request_id)
@@ -1005,6 +1008,11 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 cursor.execute("set constraints all deferred")
+                cutover = (
+                    lock_state(cursor)
+                    if mode == "direct_agent" and direct_agent_id == "hr-bot"
+                    else None
+                )
                 existing = cursor.execute(
                     "select * from platform_control.conversations "
                     "where owner_internal_user_id=%s "
@@ -1023,6 +1031,20 @@ class ConversationRepository:
                     created = False
                     mission = None
                 else:
+                    if mode == "direct_agent" and direct_agent_id == "hr-bot":
+                        continuing = False
+                        if _candidate_parser_attempt_id is not None:
+                            proof = None if cutover is None else cursor.execute(
+                                "select platform_control."
+                                "verify_legacy_candidate_parser_admission_v102(%s,%s) "
+                                "as allowed", (_candidate_parser_attempt_id, internal_user_id),
+                            ).fetchone()
+                            if (_candidate_parser_attempt_id != client_request_id
+                                    or (cutover is not None and
+                                        (proof is None or proof["allowed"] is not True))):
+                                raise ConversationRepositoryConflict()
+                            continuing = True
+                        require_lane(cutover, "legacy", continuing=continuing)
                     worker_intake = self.worker_direct_enabled and mode == "direct_agent" and direct_agent_id == "hr-bot"
                     owner_columns = ",execution_owner,route_epoch" if worker_intake else ""
                     owner_values = ",'worker_direct',1" if worker_intake else ""
@@ -1306,6 +1328,18 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 cursor.execute("set constraints all deferred")
+                identity = cursor.execute(
+                    "select c.mode,c.direct_agent_id,exists(select 1 from "
+                    "platform_hr.position_conversations p where p.conversation_id="
+                    "c.conversation_id) as hr_bound from platform_control.conversations c "
+                    "where c.conversation_id=%s and c.owner_internal_user_id=%s",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                cutover = lock_state(cursor) if identity is not None and (
+                    (identity["mode"] == "direct_agent"
+                     and identity["direct_agent_id"] == "hr-bot")
+                    or identity.get("hr_bound", False)
+                ) else None
                 conversation_row = cursor.execute(
                     "select * from platform_control.conversations "
                     "where conversation_id=%s and owner_internal_user_id=%s "
@@ -1326,6 +1360,10 @@ class ConversationRepository:
                     mission = None
                     created = False
                 else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or (identity is not None and identity.get("hr_bound", False))):
+                        require_lane(cutover, "legacy")
                     if conversation_row["status"] != "active":
                         raise ConversationRepositoryConflict()
                     active = cursor.execute(
@@ -1392,6 +1430,18 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 cursor.execute("set constraints all deferred")
+                identity = cursor.execute(
+                    "select c.mode,c.direct_agent_id,exists(select 1 from "
+                    "platform_hr.position_conversations p where p.conversation_id="
+                    "c.conversation_id) as hr_bound from platform_control.conversations c "
+                    "where c.conversation_id=%s and c.owner_internal_user_id=%s",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                cutover = lock_state(cursor) if identity is not None and (
+                    (identity["mode"] == "direct_agent"
+                     and identity["direct_agent_id"] == "hr-bot")
+                    or identity.get("hr_bound", False)
+                ) else None
                 conversation_row = cursor.execute(
                     "select * from platform_control.conversations "
                     "where conversation_id=%s and owner_internal_user_id=%s "
@@ -1400,6 +1450,10 @@ class ConversationRepository:
                 ).fetchone()
                 if conversation_row is None:
                     raise ConversationRepositoryNotFound()
+                if ((conversation_row["mode"] == "direct_agent"
+                     and conversation_row["direct_agent_id"] == "hr-bot")
+                        or (identity is not None and identity.get("hr_bound", False))):
+                    require_lane(cutover, "legacy")
                 if (
                     conversation_row["status"] != "active"
                     or conversation_row["mode"] != "direct_agent"

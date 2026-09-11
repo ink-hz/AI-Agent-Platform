@@ -2,6 +2,8 @@
 
 import logging
 
+from app.hr_agent.cutover import lock_admission
+
 from .turn_attempts import Lease
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,7 @@ def claim_direct(repository, executor_id, lease_seconds):
     # Discovery's connection closes before candidate transactions start. Never
     # retain a skipped conversation's locks while inspecting the next one.
     with repository.transaction() as connection:
+        lock_admission(connection, "legacy", continuing=True)
         candidates = connection.execute(
             "select a.attempt_id,t.conversation_id from platform_control.turn_attempts a "
             "join platform_control.conversation_turns t using(turn_id) "
@@ -42,6 +45,9 @@ def claim_direct(repository, executor_id, lease_seconds):
         ).fetchall()
     for candidate in candidates:
         with repository.transaction() as connection:
+            # Discovery released its shared gate lock; reacquire it before any
+            # candidate/domain lock so a transition cannot pass between them.
+            lock_admission(connection, "legacy", continuing=True)
             c = connection.execute(
                 "select * from platform_control.conversations where conversation_id=%s "
                 "for update skip locked",

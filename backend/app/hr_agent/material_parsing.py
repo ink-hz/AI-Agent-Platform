@@ -12,6 +12,7 @@ from xml.etree import ElementTree
 
 from psycopg.types.json import Jsonb
 
+from .cutover import lock_admission, lock_state, require_lane, verify_candidate_continuation
 from .types import MaterialText, content_sha256, problem
 
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -188,7 +189,7 @@ class MaterialParsingService:
         self.timeout_seconds = timeout_seconds
         materials.parsing = self
 
-    def request(self, owner_id, attachment_id, idempotency_key):
+    def request(self, owner_id, attachment_id, idempotency_key, *, _candidate_continuation=None):
         if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 200:
             raise problem("invalid_input")
         uuid_key = (
@@ -208,6 +209,7 @@ class MaterialParsingService:
             raise problem("unsupported_kind")
         self.materials._assert_current(owner_id, row)
         with self.repo.transaction() as c:
+            cutover = lock_state(c)
             c.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                 (str(owner_id) + idempotency_key,),
@@ -224,6 +226,14 @@ class MaterialParsingService:
             previous = prior_requests[0] if prior_requests else None
             if any(p["attachment_id"] != row["attachment_id"] for p in prior_requests):
                 raise problem("idempotency_conflict", http_status=409)
+            if previous:
+                return previous["receipt"]
+            require_lane(
+                cutover, "cloud",
+                continuing=verify_candidate_continuation(
+                    c, owner_id, _candidate_continuation
+                ) if _candidate_continuation is not None else False,
+            )
             c.execute(
                 "INSERT INTO platform_hr_agent.material_parses(parse_id,owner_id,attachment_id,source_sha256,parser_release,source_identity,state) VALUES(%s,%s,%s,%s,%s,%s,'queued') ON CONFLICT(owner_id,attachment_id,source_sha256,parser_release) DO NOTHING",
                 (
@@ -244,8 +254,6 @@ class MaterialParsingService:
                 raise problem("idempotency_conflict", http_status=409)
             if source_identity(row) != task["source_identity"]:
                 raise problem("reference_unavailable", http_status=410)
-            if previous:
-                return previous["receipt"]
             receipt = {
                 "parse_id": str(task["parse_id"]),
                 "attachment_id": str(row["attachment_id"]),
@@ -278,6 +286,7 @@ class MaterialParsingService:
         request = {"attachment_id": str(row["attachment_id"])}
 
         def apply(c):
+            lock_admission(c, "cloud", continuing=True)
             op, replay = self.repo._idempotency(
                 c, owner_id, "material_parse_retry", key, request
             )
@@ -318,6 +327,7 @@ class MaterialParsingService:
 
     def process_one(self, worker_id, lease_seconds=60):
         with self.repo.transaction() as c:
+            lock_admission(c, "cloud", continuing=True)
             c.execute(
                 "SELECT * FROM platform_hr_agent.material_parses WHERE state='queued' OR (state='processing' AND lease_until<now()) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"
             )

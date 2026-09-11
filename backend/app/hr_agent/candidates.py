@@ -9,6 +9,7 @@ from uuid import UUID, uuid4, uuid5
 
 from psycopg.types.json import Jsonb
 
+from .cutover import lock_admission, lock_state, require_lane
 from .material_parsing import source_identity
 from .results import ResultService
 from .types import HrAgentProblem, problem, validate_contract
@@ -137,6 +138,7 @@ class CandidateIntakeService:
         if any(r["state"] != "ready" for r in sources):
             raise problem("reference_unavailable", http_status=410)
         with self.repo.transaction() as c:
+            cutover = lock_state(c)
             op, replay = self.repo._idempotency(
                 c, owner, "candidate_batch", key, request
             )
@@ -144,6 +146,7 @@ class CandidateIntakeService:
                 for identity in replay["item_ids"]:
                     self._lock_source(c, self._row(owner, identity, c))
                 return replay
+            require_lane(cutover, "cloud")
             bid = uuid4()
             self.repo._insert(
                 c,
@@ -310,6 +313,7 @@ class CandidateIntakeService:
     def advance_one(self, worker_id):
         _text(worker_id, 128)
         with self.repo.transaction() as c:
+            lock_admission(c, "cloud", continuing=True)
             c.execute(
                 "SELECT * FROM platform_hr_agent.candidate_intake_items WHERE state IN ('queued','parsing','profiling') ORDER BY updated_at,item_id FOR UPDATE SKIP LOCKED LIMIT 1"
             )
@@ -376,7 +380,10 @@ class CandidateIntakeService:
                     if parser is None:
                         raise problem("configuration_unavailable")
                     parser.request(
-                        owner, row["attachment_id"], str(uuid5(row["item_id"], "parse"))
+                        owner, row["attachment_id"], str(uuid5(row["item_id"], "parse")),
+                        _candidate_continuation=(
+                            row["item_id"], row["generation"], row["attachment_id"]
+                        ),
                     )
                     detail["parse_state"] = (
                         "queued"
@@ -410,7 +417,10 @@ class CandidateIntakeService:
                 "budget_profile": request["budget_profile"],
             }
             work = self.repo.submit(
-                owner, body, uuid5(row["item_id"], f"profile:{row['generation']}")
+                owner, body, uuid5(row["item_id"], f"profile:{row['generation']}"),
+                _candidate_continuation=(
+                    row["item_id"], row["generation"], row["attachment_id"]
+                ),
             )
             detail["work_state"] = work["state"]
             self._set(
@@ -493,6 +503,7 @@ class CandidateIntakeService:
         self._source_current(owner, row)
         self._owner(owner, self._batch(owner, row["batch_id"])["position_id"])
         with self.repo.transaction() as c:
+            cutover = lock_state(c)
             op, replay = self.repo._idempotency(
                 c,
                 owner,
@@ -502,6 +513,7 @@ class CandidateIntakeService:
             )
             if replay:
                 return replay
+            require_lane(cutover, "cloud", continuing=True)
             row = self._row(owner, item_id, c, True)
             if (
                 row["row_version"] != request["expected_row_version"]

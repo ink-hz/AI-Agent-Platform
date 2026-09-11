@@ -8,6 +8,8 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
+from app.hr_agent.cutover import lock_admission, lock_state, require_lane
+
 from .candidate_models import (
     AppendHumanFeedback,
     AttachCandidateDraftExecution,
@@ -230,6 +232,9 @@ class CandidateRepository:
     ) -> CandidateDraft:
         try:
             with self._connection() as connection:
+                # The batch row is the immutable, server-created admission proof.
+                # Finishing its per-file roots is a continuation during drain.
+                lock_admission(connection, "legacy", continuing=True)
                 row = connection.execute(
                     "select (platform_hr.create_candidate_draft_v70("
                     "%s,%s,%s,%s,%s,%s)).*",
@@ -249,6 +254,14 @@ class CandidateRepository:
     def register_batch(self, command: CreateCandidateDraftBatch) -> None:
         try:
             with self._connection() as connection:
+                cutover = lock_state(connection)
+                replay = connection.execute(
+                    "select 1 from platform_hr.candidate_draft_batches where "
+                    "owner_internal_user_id=%s and batch_request_id=%s",
+                    (command.owner_id, command.client_request_id),
+                ).fetchone()
+                if replay is None:
+                    require_lane(cutover, "legacy")
                 row = connection.execute(
                     "select (platform_hr.register_candidate_draft_batch_v70("
                     "%s,%s,%s,%s)).*",
@@ -276,6 +289,7 @@ class CandidateRepository:
     ) -> CandidateDraftProcessingAttempt:
         try:
             with self._connection() as connection:
+                lock_admission(connection, "legacy", continuing=True)
                 row = connection.execute(
                     "select (platform_hr.claim_next_candidate_draft_v70("
                     "%s,%s,%s)).*",
@@ -294,6 +308,7 @@ class CandidateRepository:
     ) -> CandidateDraftProcessingAttempt:
         try:
             with self._connection() as connection:
+                lock_admission(connection, "legacy", continuing=True)
                 row = connection.execute(
                     "select (platform_hr.attach_candidate_draft_execution_v70("
                     "%s,%s,%s,%s,%s)).*",
@@ -316,6 +331,7 @@ class CandidateRepository:
     ) -> CandidateDraftProcessingAttempt:
         try:
             with self._connection() as connection:
+                lock_admission(connection, "legacy", continuing=True)
                 row = connection.execute(
                     "select (platform_hr.recover_candidate_draft_attempt_v70("
                     "%s,%s)).*", (attempt_id, worker_id),
@@ -333,6 +349,7 @@ class CandidateRepository:
     ) -> CandidateDraftProcessingAttempt:
         try:
             with self._connection() as connection:
+                lock_admission(connection, "legacy", continuing=True)
                 row = connection.execute(
                     "select (platform_hr.recover_next_candidate_draft_attempt_v70("
                     "%s)).*", (worker_id,),
@@ -350,6 +367,7 @@ class CandidateRepository:
     ) -> AttachCandidateDraftExecution:
         try:
             with self._connection() as connection:
+                lock_admission(connection, "legacy", continuing=True)
                 row = connection.execute(
                     "select * from platform_hr.discover_candidate_draft_execution_v70("
                     "%s,%s)", (attempt_id, worker_id),
@@ -394,6 +412,7 @@ class CandidateRepository:
         placeholders = ",".join("%s" for _ in range(6 + len(extra)))
         try:
             with self._connection() as connection:
+                lock_admission(connection, "legacy", continuing=True)
                 row = connection.execute(
                     f"select (platform_hr.{function_name}({placeholders})).*",
                     (
@@ -458,10 +477,13 @@ class CandidateRepository:
         request_id: UUID,
         expected_row_version: int,
         *extra: object,
+        require_admission: bool = False,
     ) -> CandidateDraft:
         placeholders = ",".join("%s" for _ in range(4 + len(extra)))
         try:
             with self._connection() as connection:
+                if require_admission:
+                    lock_admission(connection, "legacy")
                 row = connection.execute(
                     f"select (platform_hr.{function_name}({placeholders})).*",
                     (
@@ -481,6 +503,7 @@ class CandidateRepository:
         return self._draft_transition(
             "retry_candidate_draft_v70", command.owner_id, command.draft_id,
             command.client_request_id, command.expected_row_version,
+            require_admission=True,
         )
 
     def dismiss_draft(self, command: RetryCandidateDraft) -> CandidateDraft:

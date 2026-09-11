@@ -74,6 +74,7 @@ class ConversationCommandService:
         hr_position_scope=None,
         position_id: UUID | None = None,
         position_draft_id: UUID | None = None,
+        _candidate_parser_attempt_id: UUID | None = None,
     ) -> ConversationCreateResult:
         submission = normalize_turn_submission(submission)
         if not self.v2_enabled or mode == "direct_agent":
@@ -86,6 +87,7 @@ class ConversationCommandService:
                 hr_position_scope=hr_position_scope,
                 position_id=position_id,
                 position_draft_id=position_draft_id,
+                _candidate_parser_attempt_id=_candidate_parser_attempt_id,
             )
         if position_id is not None or position_draft_id is not None:
             raise ValueError("HR position scope requires a direct Agent")

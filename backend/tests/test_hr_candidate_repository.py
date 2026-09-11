@@ -64,9 +64,17 @@ class FakeConnection:
         return None
 
     def execute(self, sql, parameters=()):
-        self.calls.append((" ".join(sql.split()), parameters))
         if self.error is not None:
             raise self.error
+        if "pg_advisory_xact_lock_shared" in sql:
+            return FakeResult(one={"pg_advisory_xact_lock_shared": None})
+        if "to_regclass" in sql:
+            return FakeResult(one={"relation": None})
+        if "hr_execution_cutover" in sql:
+            return FakeResult(one=None)
+        if "select 1 from platform_hr.candidate_draft_batches" in sql.lower():
+            return FakeResult(one=None)
+        self.calls.append((" ".join(sql.split()), parameters))
         return self.results.pop(0)
 
 

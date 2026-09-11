@@ -77,6 +77,7 @@ def test_submission_coordinator_starts_exact_unbound_hr_conversation() -> None:
     assert commands.calls[0][1] == {
         "mode": "direct_agent",
         "direct_agent_id": "hr-bot",
+        "_candidate_parser_attempt_id": attempt.attempt_id,
     }
 
     retried = CandidateParserSubmission.from_attempt(
