@@ -1,0 +1,45 @@
+...FF                                                                    [100%]
+=================================== FAILURES ===================================
+_____________ test_wrapper_delegates_to_bounded_stdlib_supervisor ______________
+
+    def test_wrapper_delegates_to_bounded_stdlib_supervisor():
+        source = HELPER.read_text(encoding="utf-8")
+>       assert SUPERVISOR.is_file()
+E       AssertionError: assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/deploy/cloud/hr_agent_migrate.py').is_file
+
+backend/tests/test_hr_agent_migration_deployment.py:206: AssertionError
+_____ test_supervisor_owns_named_container_lifecycle_and_redacted_receipt ______
+
+    def test_supervisor_owns_named_container_lifecycle_and_redacted_receipt():
+>       source = SUPERVISOR.read_text(encoding="utf-8")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_hr_agent_migration_deployment.py:214:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1058: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/deploy/cloud/hr_agent_migrate.py')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/deploy/cloud/hr_agent_migrate.py'
+
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1044: FileNotFoundError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_migration_deployment.py::test_wrapper_delegates_to_bounded_stdlib_supervisor
+FAILED backend/tests/test_hr_agent_migration_deployment.py::test_supervisor_owns_named_container_lifecycle_and_redacted_receipt
+2 failed, 3 passed in 5.37s

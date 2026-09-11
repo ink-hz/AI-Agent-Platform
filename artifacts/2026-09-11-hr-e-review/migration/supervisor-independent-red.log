@@ -1,0 +1,82 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_signal_during_production_revoke_never_starts_preview ___________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9452/test_signal_during_production_0')
+
+    def test_signal_during_production_revoke_never_starts_preview(tmp_path):
+        with hr_agent_database(migrate_hr=False) as database:
+            preview_dsn = _prepare_preview_and_revoke(database)
+            private = tmp_path / "private"; private.mkdir()
+            for name, value in (("control-migrator-database-url", database.migrator_dsn),
+                                ("preview-control-migrator-database-url", preview_dsn)):
+                path = private / name; path.write_text(value); path.chmod(0o600)
+            fake = tmp_path / "docker"; _write_fake_docker(fake)
+            marker = tmp_path / "revoke-pending"
+            source = fake.read_text()
+            needle = "    values=conninfo_to_dict(os.environ['TEST_ADMIN_DSN']); values['dbname']=database"
+            delay = """    marker=pathlib.Path(os.environ['TEST_REVOKE_MARKER'])
+        if 'revoke platform_control_owner from platform_control_migrator' in query and not marker.exists():
+            marker.touch(); time.sleep(0.7)
+    """
+            fake.write_text(source.replace(needle, delay + needle, 1)); fake.chmod(0o700)
+            calls = tmp_path / "calls"; receipts = tmp_path / "receipts"
+            process = subprocess.Popen(
+                [str(HELPER), str(ROOT), str(private), "sha256:" + "a" * 64,
+                 "test-postgres", "--receipt-dir", str(receipts), "--command-timeout",
+                 "3", "--migration-timeout", "20"],
+                env={**os.environ, "HR_MIGRATION_DOCKER": str(fake),
+                     "TEST_ADMIN_DSN": database.admin_dsn, "TEST_PRIVATE": str(private),
+                     "TEST_RELEASE": str(ROOT), "TEST_DOCKER_STATE": str(tmp_path / "state"),
+                     "TEST_DOCKER_CALLS": str(calls), "TEST_REVOKE_MARKER": str(marker),
+                     "PYTHONPATH": str(ROOT / "backend")},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            deadline = time.monotonic() + 12
+            while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert marker.exists()
+            process.send_signal(signal.SIGTERM)
+            process.communicate(timeout=15)
+            assert process.returncode == 128 + signal.SIGTERM
+>           assert sum(line.startswith("create ") for line in calls.read_text().splitlines()) == 1
+E           assert 2 == 1
+E            +  where 2 = sum(<generator object test_signal_during_production_revoke_never_starts_preview.<locals>.<genexpr> at 0x1078a8ba0>)
+
+backend/tests/test_hr_agent_migration_deployment.py:466: AssertionError
+_____________ test_dirty_at_rest_receipt_is_never_cleanup_verified _____________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9452/test_dirty_at_rest_receipt_is_0')
+
+    def test_dirty_at_rest_receipt_is_never_cleanup_verified(tmp_path):
+        with hr_agent_database(migrate_hr=False) as database:
+            preview_dsn = _prepare_preview_and_revoke(database)
+            with database.admin_connection() as connection:
+                connection.execute("grant platform_control_owner to platform_control_migrator")
+            private = tmp_path / "private"; private.mkdir()
+            for name, value in (("control-migrator-database-url", database.migrator_dsn),
+                                ("preview-control-migrator-database-url", preview_dsn)):
+                path = private / name; path.write_text(value); path.chmod(0o600)
+            fake = tmp_path / "docker"; _write_fake_docker(fake)
+            receipts = tmp_path / "receipts"
+            result = subprocess.run(
+                [str(HELPER), str(ROOT), str(private), "sha256:" + "a" * 64,
+                 "test-postgres", "--receipt-dir", str(receipts)],
+                env={**os.environ, "HR_MIGRATION_DOCKER": str(fake),
+                     "TEST_ADMIN_DSN": database.admin_dsn, "TEST_PRIVATE": str(private),
+                     "TEST_RELEASE": str(ROOT), "TEST_DOCKER_STATE": str(tmp_path / "state"),
+                     "TEST_DOCKER_CALLS": str(tmp_path / "calls"),
+                     "PYTHONPATH": str(ROOT / "backend")},
+                capture_output=True, text=True, check=False, timeout=10,
+            )
+            receipt = __import__("json").loads(next(receipts.glob("*.json")).read_text())
+            assert result.returncode != 0
+            assert receipt["failure_code"] == "at_rest_not_clean"
+>           assert receipt["cleanup_verified"] is False
+E           assert True is False
+
+backend/tests/test_hr_agent_migration_deployment.py:494: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_migration_deployment.py::test_signal_during_production_revoke_never_starts_preview
+FAILED backend/tests/test_hr_agent_migration_deployment.py::test_dirty_at_rest_receipt_is_never_cleanup_verified
+2 failed, 12 deselected in 6.02s
