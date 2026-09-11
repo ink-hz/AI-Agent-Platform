@@ -1,0 +1,24 @@
+{
+  "command": "backend/.venv/bin/python -m pytest backend/tests/test_hr_agent_*.py backend/tests/test_hr_cloud_loop_docs_selfcheck.py -q",
+  "exit_code": 0,
+  "passed": 236,
+  "skipped": 1,
+  "seconds": 114.01,
+  "skip": "Opt-in full public real-model journey; fresh Opus5 short probe is separate",
+  "model_boundary": "scripted/local HTTP in engineering tests; real public short probe separate",
+  "source_sha256": {
+    "backend/app/hr_agent/config.py": "e48ccc03cde5054120f2d47c0e7152bff3e094033588aec2218b947ba8b4aca3",
+    "backend/app/hr_agent/model.py": "05c497efc1ff73fe170cd3b3954e5d507ede53d350b8de715ba8c54f9a21c3c5",
+    "backend/app/hr_agent/repository.py": "643074a41563128f41b665eb89a9f1bb20aee62eb316bbce2e11108296c46c4a",
+    "backend/app/hr_agent/standards.py": "2454012993fe24f477e468f2a7be755d02bd4626b21b7fee3b992f1749d0adda"
+  },
+  "schema_selfcheck": {
+    "definitions": 55,
+    "examples": 133,
+    "condition_coverage_ids": 18,
+    "prose_evidence_ids": 6
+  },
+  "docker_compose_validation": "not_run: docker executable unavailable",
+  "yaml_model_forwarding": "both HR API and Worker verified",
+  "production": "not accessed or deployed"
+}

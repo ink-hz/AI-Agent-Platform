@@ -92,3 +92,11 @@ PDF/DOCX 通过用户 `POST /api/hr/agent/materials/{attachment_id}/parse` 入�
 公开实测采用20次调用、60万累计 token、900秒活动时间，输出上限4096；使用UTF-8字节上界估算，输入压缩触发/目标70,000/50,000，配置窗口131,072。它们是验证配置，不是供应商窗口实测或生产成本默认值。真实输出与评审限制见 `docs/reviews/artifacts/2026-09-10-hr-b-public-model/`。
 
 B 未启动云端服务，也未切换现行 HR。Compose 的生产凭据、网络、TLS、对象存储和容量仍需 E 阶段演练与实际授权。
+
+## 2026-09-11 HR 专用 env 与 Opus 5.0
+
+用户指定 HR 改用网关标识 `claude-opus-5`。项目根目录本机 `.env.hr` 设置 `PLATFORM_HR_AGENT_MODEL=claude-opus-5`，并以 `PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE` 指向本机 `.hr-agent/provider.json`；凭据单独保存为0600文件，目录0700，均排除出 Git。模型优先采用非空 HR env 配置，否则使用 provider JSON；API 与 Worker 必须装载同一 env。模型值进入冻结配置摘要，不隐式续跑旧配置工作。
+
+环境文件不会自动启动或启用 HR；本机运行时须由启动器载入（例如 `set -a; source /实际项目路径/.env.hr; set +a`），并另外提供已审阅的数据库、内容密钥、预算、知识与工作目录配置。这里的本机绝对路径不能直接用于云端。Compose 的 HR API/Worker 均显式转发 `PLATFORM_HR_AGENT_MODEL`，云端 provider/凭据仍由专用秘密卷提供，不从本机 env 上传秘密。
+
+此前 B 的 `claude-opus-4-8` 只描述9月10日历史证据；不能将那些结果改标为 Opus 5。新探针见 `docs/reviews/artifacts/2026-09-11-hr-ab-revision/`，响应名称只代表网关自报。尚未用 Opus 5 重跑完整 HR 专业质量旅程。

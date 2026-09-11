@@ -1,8 +1,10 @@
 """Opt-in public-material model evidence, never part of routine offline tests."""
 
 import asyncio
+import hashlib
 import json
 import os
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +16,129 @@ uploaded = materials_fixtures.uploaded
 secured = materials_fixtures.secured
 database = materials_fixtures.database
 _FIXTURES = (uploaded, secured, database)
+
+
+def _response_evidence(reply):
+    raw = (reply or {}).get("usage", {}).get("raw") or {}
+    models = raw.get("_response_metadata", {}).get("reported_models", [])
+    return {
+        "reported_models": models,
+        "status": "reported" if models else "not_reported_or_not_captured",
+        "identity_assurance": "provider_self_report_only",
+    }
+
+
+def _provider_evidence(profile):
+    allowed = (
+        "id",
+        "revision",
+        "protocol",
+        "model",
+        "tokenizer",
+        "context_window_tokens",
+        "timeout_seconds",
+        "auth_scheme",
+    )
+    sanitized = {key: profile[key] for key in allowed if key in profile}
+    fingerprint = hashlib.sha256(
+        json.dumps(sanitized, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return {
+        "model": profile["model"],
+        "protocol": profile["protocol"],
+        "profile_revision": profile["revision"],
+        "profile": sanitized,
+        "profile_fingerprint": fingerprint,
+        "fingerprint_scope": "allowlisted_nonsecret_profile_fields; endpoint_and_credentials_excluded",
+        "identity_assurance": "provider_self_report_only",
+        "source_configuration": {"status": "not_recorded"},
+    }
+
+
+def _runner_source():
+    root = Path(__file__).parents[2]
+    paths = (
+        "backend/app/hr_agent/model.py",
+        "backend/tests/test_hr_agent_b_public_model.py",
+    )
+    return {
+        "git_revision": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True
+        ).strip(),
+        "files_sha256": {
+            path: hashlib.sha256((root / path).read_bytes()).hexdigest()
+            for path in paths
+        },
+    }
+
+
+def _stage_evidence(client, repo, work):
+    """Snapshot each stage before same-work continuation or a new thread."""
+    work_id = work["work_id"]
+    messages = client.get(f"/api/hr/agent/works/{work_id}/messages")
+    assert messages.status_code == 200, messages.text
+    results = []
+    for ref in work["result_refs"]:
+        response = client.get(
+            f"/api/hr/agent/results/{ref['id']}/revisions/{ref['revision']}"
+        )
+        assert response.status_code == 200, response.text
+        results.append(response.json())
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT * FROM platform_hr_agent.model_attempts WHERE work_id=%s ORDER BY ordinal",
+            (work_id,),
+        )
+        attempts = []
+        for row in c.fetchall():
+            reply = (
+                repo._unseal("model_attempts", row["attempt_id"], "sealed_reply", row)
+                if row["sealed_reply"]
+                else None
+            )
+            attempts.append(
+                {
+                    **{
+                        key: row[key]
+                        for key in (
+                            "attempt_id",
+                            "ordinal",
+                            "status",
+                            "purpose",
+                            "usage_quality",
+                            "reserved_tokens",
+                            "charged_tokens",
+                        )
+                    },
+                    "response_model": _response_evidence(reply),
+                    "reply": reply,
+                }
+            )
+        c.execute(
+            "SELECT * FROM platform_hr_agent.operations WHERE work_id=%s AND attempt_id IS NOT NULL ORDER BY created_at,slot",
+            (work_id,),
+        )
+        calls = [
+            {
+                **{
+                    key: row[key]
+                    for key in ("operation_id", "attempt_id", "namespace", "status")
+                },
+                "receipt": repo._unseal(
+                    "operations", row["operation_id"], "sealed_receipt", row
+                )
+                if row["sealed_receipt"]
+                else None,
+            }
+            for row in c.fetchall()
+        ]
+    return {
+        "work": work,
+        "messages": messages.json(),
+        "results": results,
+        "attempts": attempts,
+        "tools": calls,
+    }
 
 
 @pytest.mark.skipif(
@@ -128,6 +253,7 @@ def test_public_jd_real_model_evidence(uploaded, database, tmp_path):
         repo, ConfiguredHttpModelPort.from_mapping(profile), resources, fence
     )
     stages = [done]
+    stage_evidence = [_stage_evidence(client, repo, done)]
     confirmed_standard = None
     if os.getenv("HR_B_REAL_FULL_JOURNEY") == "1" and done["state"] == "completed":
         from app.hr.models import CreateManualPosition
@@ -167,6 +293,7 @@ def test_public_jd_real_model_evidence(uploaded, database, tmp_path):
             repo.claim("real-public-b4-clarify", 1200),
         )
         stages.append(done)
+        stage_evidence.append(_stage_evidence(client, repo, done))
         proposals = []
         for ref in done["result_refs"]:
             result = client.get(
@@ -207,38 +334,16 @@ def test_public_jd_real_model_evidence(uploaded, database, tmp_path):
                 repo.claim("real-public-b4-next-thread", 1200),
             )
             stages.append(continued)
-    messages = client.get(f"/api/hr/agent/works/{work['work_id']}/messages").json()
-    page = client.get(
-        "/api/hr/agent/results", params={"thread_id": work["thread_id"]}
-    ).json()
-    results = [
-        client.get(
-            f"/api/hr/agent/results/{item['ref']['id']}/revisions/{item['ref']['revision']}"
-        ).json()
-        for item in page["items"]
-    ]
-    with repo.transaction() as c:
-        c.execute(
-            "SELECT ordinal,status,purpose,usage_quality,reserved_tokens,charged_tokens FROM platform_hr_agent.model_attempts WHERE work_id=%s ORDER BY ordinal",
-            (work["work_id"],),
-        )
-        attempts = c.fetchall()
-        c.execute(
-            "SELECT * FROM platform_hr_agent.operations WHERE work_id=%s AND attempt_id IS NOT NULL ORDER BY created_at,slot",
-            (work["work_id"],),
-        )
-        calls = [
-            {
-                "namespace": row["namespace"],
-                "status": row["status"],
-                "receipt": repo._unseal(
-                    "operations", row["operation_id"], "sealed_receipt", row
-                )
-                if row["sealed_receipt"]
-                else None,
-            }
-            for row in c.fetchall()
-        ]
+            stage_evidence.append(_stage_evidence(client, repo, continued))
+    messages = stage_evidence[-1]["messages"]
+    results = [result for stage in stage_evidence for result in stage["results"]]
+    results = list(
+        {
+            json.dumps(result["ref"], sort_keys=True): result for result in results
+        }.values()
+    )
+    attempts = [attempt for stage in stage_evidence for attempt in stage["attempts"]]
+    calls = [call for stage in stage_evidence for call in stage["tools"]]
     out = Path(
         os.environ.get(
             "HR_B_REAL_OUTPUT_DIR",
@@ -247,15 +352,13 @@ def test_public_jd_real_model_evidence(uploaded, database, tmp_path):
     )
     out.mkdir(parents=True, exist_ok=True)
     evidence = {
-        "provider": {
-            "model": profile["model"],
-            "protocol": profile["protocol"],
-            "profile_revision": profile["revision"],
-        },
+        "provider": _provider_evidence(profile),
+        "runner_source": _runner_source(),
+        "stage_evidence": stage_evidence,
         "public_fixture": fixture,
         "input": prompt,
         "release": knowledge.metadata(),
-        "work": done,
+        "work": stages[-1],
         "stages": stages,
         "confirmed_standard": confirmed_standard,
         "messages": messages,
@@ -280,3 +383,107 @@ def test_public_jd_real_model_evidence(uploaded, database, tmp_path):
             "No proposal/confirmation completed: inspect saved evidence."
         )
         assert stages[-1]["state"] == "completed"
+
+
+def test_provider_evidence_fingerprint_excludes_connection_secrets():
+    profile = {
+        "id": "public-test",
+        "revision": "v1",
+        "protocol": "anthropic_messages_sse",
+        "model": "configured-alias",
+        "tokenizer": "conservative_utf8",
+        "context_window_tokens": 100000,
+        "endpoint": "https://private.example",
+        "credential_file": "/secret/key",
+        "api_key": "SECRET",
+    }
+    evidence = _provider_evidence(profile)
+    assert "SECRET" not in json.dumps(evidence)
+    assert "private.example" not in json.dumps(evidence)
+    assert "/secret/key" not in json.dumps(evidence)
+    assert (
+        evidence["profile_fingerprint"]
+        == _provider_evidence({**profile, "endpoint": "other", "api_key": "other"})[
+            "profile_fingerprint"
+        ]
+    )
+    assert (
+        evidence["profile_fingerprint"]
+        != _provider_evidence({**profile, "model": "new-alias"})["profile_fingerprint"]
+    )
+    assert evidence["identity_assurance"] == "provider_self_report_only"
+    assert evidence["source_configuration"]["status"] == "not_recorded"
+
+
+def test_response_evidence_does_not_replace_missing_report_with_alias():
+    assert _response_evidence({"usage": {"raw": None}}) == {
+        "reported_models": [],
+        "status": "not_reported_or_not_captured",
+        "identity_assurance": "provider_self_report_only",
+    }
+    assert _response_evidence(
+        {
+            "usage": {
+                "raw": {"_response_metadata": {"reported_models": ["gateway-reported"]}}
+            }
+        }
+    )["reported_models"] == ["gateway-reported"]
+
+
+def test_stage_export_keeps_new_thread_answer_attempt_and_response_model(
+    uploaded, tmp_path
+):
+    from app.hr_agent.resources import PublishedKnowledge, ResourceReader
+    from app.hr_agent.runtime import run_work
+    from app.hr_agent.types import ModelEvent
+    from tests.test_hr_agent_context import publication
+    from tests.test_hr_agent_runtime import ScriptModel, answer, tool
+
+    client, headers, repo, _, materials, aid, _, _ = uploaded
+    repo.settings = replace(
+        repo.settings,
+        budget_profile={
+            **repo.settings.budget_profile,
+            "input_target_tokens": 20000,
+            "input_trigger_tokens": 24000,
+        },
+    )
+    publication(tmp_path)
+    knowledge = PublishedKnowledge(tmp_path)
+    resources = ResourceReader(repo, knowledge, material_service=materials)
+    repo.scope_validator = resources.validate_scope
+    repo.release_provider = knowledge.metadata
+    ref = client.get("/api/hr/agent/materials/" + aid).json()["text_ref"]
+    stages = []
+    for index in range(3):
+        response = client.post(
+            "/api/hr/agent/works",
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+            json={**materials_fixtures.body(), "references": [ref]},
+        )
+        assert response.status_code == 201, response.text
+        events = answer(f"local stage {index + 1}")
+        events.insert(
+            0,
+            ModelEvent(
+                "usage",
+                {
+                    "_response_metadata": {
+                        "reported_models": [f"gateway-stage-{index + 1}"],
+                        "identity_assurance": "provider_self_report_only",
+                    }
+                },
+            ),
+        )
+        model = ScriptModel([tool("read_resource", {"ref": ref}), events])
+        done = run_work(repo, model, resources, repo.claim(f"export-{index}", 60))
+        assert done["state"] == "completed", done
+        stages.append(_stage_evidence(client, repo, done))
+    assert len({stage["work"]["work_id"] for stage in stages}) == 3
+    assert "local stage 3" in json.dumps(stages[2]["messages"])
+    assert stages[2]["attempts"][-1]["response_model"]["reported_models"] == [
+        "gateway-stage-3"
+    ]
+    assert stages[2]["attempts"][-1]["reply"]["text"] == "local stage 3"
+    assert stages[2]["tools"]
+    assert all(stage["attempts"] and stage["messages"] for stage in stages)

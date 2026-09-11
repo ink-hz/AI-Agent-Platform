@@ -23,7 +23,18 @@ def repo(database):
     codec = ContentCodec(
         IdentityKeyring(1, "platform-content-encryption", {1: b"k" * 32})
     )
-    return HrAgentRepository(database.connection, codec)
+    from types import SimpleNamespace
+
+    from app.hr_agent.repository import DEFAULT_BUDGET, DEFAULT_RESERVE
+    # Explicit isolated test authority and service budget; production uses ResourceReader.
+    settings = SimpleNamespace(
+        budget_profile={"id": "calibration-test", "limits": DEFAULT_BUDGET,
+                        "reserve": DEFAULT_RESERVE, "max_output_tokens": 4096,
+                        "input_target_tokens": 8000, "input_trigger_tokens": 12000,
+                        "service_limits": {k: v * 2 for k, v in DEFAULT_BUDGET.items()}},
+        provider_profile={"id": "a1-test", "tokenizer": "conservative_utf8", "context_window_tokens": 32768},
+    )
+    return HrAgentRepository(database.connection, codec, settings=settings, scope_validator=lambda *args: None)
 
 
 def request(**updates):

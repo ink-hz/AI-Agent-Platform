@@ -101,6 +101,13 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
             return int(value)
 
         provider = document("PROVIDER_PROFILE_FILE")
+        model = environment.get(prefix + "MODEL", "")
+        if model:
+            if not isinstance(model, str) or not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}", model
+            ):
+                raise ValueError()
+            provider["model"] = model
         budget = document("BUDGET_PROFILE_FILE")
         diagnostic = document("DIAGNOSTIC_PROFILE_FILE")
         for name in (
@@ -173,6 +180,11 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
             raise ValueError()
         for name in ("model_calls", "total_tokens", "active_seconds"):
             if integer(budget["limits"][name]) <= 0:
+                raise ValueError()
+            if (
+                integer(budget.get("service_limits", budget["limits"])[name])
+                < budget["limits"][name]
+            ):
                 raise ValueError()
             if not 0 <= integer(budget["reserve"][name]) < budget["limits"][name]:
                 raise ValueError()

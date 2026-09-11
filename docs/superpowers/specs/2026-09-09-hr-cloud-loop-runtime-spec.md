@@ -383,7 +383,7 @@ A1 `test_first_request_logs_exclude_sensitive_payloads` 给本地提供方的输
 - `charged_calls` 在每次实际发送前于 prepared→sending 事务中+1；若崩溃不能确定是否已发送，保守保留1，不因重试或取消扣回。适配器不得隐藏多次请求。
 - prepared时只记录reserved_tokens，charged_tokens保持0；有效余额同时扣除尚未sending的预留。mark_model_sending将该预留转成charged_tokens，不能重复相加；取消确定未发送的prepared只释放预留。
 - 发送前估计当前输入并加上本次最大输出作为 reserved_tokens；普通调用需同时满足 calls/tokens/time 扣除收尾reserve后的余额。普通余额不足先持久转finalizing，再按总剩余额度准入收尾；总额不足转waiting_budget，不把输出上限降成无法解释的截断回答。
-- 收到usage：依据提供方profile把未缓存输入、cache write/read规范成不重复的 input_total，把可见/推理输出规范成不重复 output_total；保留原usage供受限核验。用实际总量替换本次预扣。若实际超预估，如实记录超额并停止后续调用，不声称token预算是精确供应商扣费上限。
+- 收到usage：依据提供方profile把未缓存输入、cache write/read规范成不重复的 input_total，把可见/推理输出规范成不重复 output_total；保留原usage供受限核验。以报告总量与冻结请求 `estimated_input_tokens` 的较大值替换本次预扣。后者是保守预算策略，不是实际 token 或账单下界；下限生效时 `usage_quality=estimated`，加密原始用量中记录报告输入/输出、估算下限和扣记值。若实际超预估，如实记录超额并停止后续调用，不声称token预算是精确供应商扣费上限。
 - usage缺失/断流：charged_tokens保留本次预留值，usage_quality=estimated，不记0；取得可核验usage才调账，并留事件。输入tokenizer不可用时不声称精确估值，profile须提供经过测试的保守估算方法，否则blocked。
 - 活动时长用Worker单调时钟计量，心跳定期落累计量和数据库观测时间；崩溃后未落区间最多按剩余旧租约时间保守补记，并标估算。新执行者不会把旧工作用量归零。
 - 收尾只允许组织已获准证据、save_note/save_result/ask_user，不准新增研究读取来扩张范围。实际额度仍不够时系统保存最后一个有效笔记、已读区间和待执行位置，明确没有生成新终稿，不能为了“完整交付”超限调用。
@@ -412,7 +412,7 @@ A1 `test_first_request_logs_exclude_sensitive_payloads` 给本地提供方的输
 | --- | --- |
 | `backend/app/hr_agent/types.py` | Schema对应的WorkInput/AppendInput/WorkView/ExactRef/ObjectRef/Problem/各工具类型；以及SummaryProvenance/WorkCheckpoint/MaterialView/ResultBasis与下列内部类型 |
 | `backend/app/hr_agent/config.py` | `load_hr_agent_settings(environment: Mapping[str,str]) -> HrAgentSettings`；参数/文件校验与配置身份，不执行迁移；校验0<input_target_tokens<input_trigger_tokens<context_window_tokens-max_output_tokens |
-| `backend/app/hr_agent/access.py` | `HrAccess.authorize_user(auth: AuthContext, *, writable: bool) -> UUID`；`authorize_scope(owner_id: UUID, objects: tuple[ObjectRef,...], refs: tuple[ExactRef,...], *, work_id: UUID\|None) -> AuthorizedScope` |
+| `backend/app/hr_agent/access.py` | `HrAccess.authorize_user(auth: AuthContext, *, writable: bool) -> UUID`；HTTP 身份入口。生产工作范围统一接 `ResourceReader.validate_scope`，`HrAccess.authorize_scope` 不作为运行时装配入口 |
 | `backend/app/hr_agent/repository.py` | 持久请求、执行权、步骤、操作、事件、预算；接口见下表；内部持有connection_factory与ContentCodec |
 | `backend/app/hr_agent/context.py` | `build_model_context(repository: HrAgentRepository, resources: ResourceReader, fence: LeaseFence) -> ModelContext`；先验权/筛历史，再压缩/组装 |
 | `backend/app/hr_agent/model.py` | `ModelPort.stream(request: ModelRequest) -> Iterator[ModelEvent]`；配置提供方适配与完整响应解析；不自动重试 |
@@ -557,3 +557,12 @@ A1 段保留为当时交付快照；本节及 [B 计划](../plans/2026-09-10-hr-
 - Provider profile 可选 auth_scheme=provider_default/bearer，由服务端配置并参与配置身份。FAE 本地配置使用 Anthropic Bearer 网关。该网关实测拒绝工具 input_schema 顶层 allOf/oneOf/anyOf；传输适配保留字段 schema，并将顶层条件逐字序列化进工具说明。服务端和持久请求保留完整 Schema，工具执行前的条件验证不放宽；模型不能选择认证方式或跳过校验。
 
 B4 输入/输出与工程证据分开记录，真实模型生成不等于用户业务质量验收。
+
+## 12. A+B 评审后工程补充（2026-09-11）
+
+- `HrAgentRepository._scope` 未装配校验器一律 503，含空对象/空引用。生产由 `build_runtime_services` 绑定 `ResourceReader.validate_scope`。独立仓库/进程测试显式替换授权边界，不作为生产授权证明。
+- 幂等键先规范化为 UUID 标准字符串，再用于锁、查找及保存，大小写变体不重复建立 work、关联或追加预算。
+- `StandardService._conflict` 在发出真实冲突前校验 `ConfirmError`，保证标准/提案修订冲突携带当前修订；工具错误历史继承冻结输入及调用依赖。
+- 预算 profile 可配置 `service_limits`，三个维度不得小于初始 `limits`；缺省即初始限额。追加后任一维超服务上限返回 422，事务不保存追加或幂等回执。测试配置中的更大上限不构成生产默认值。
+- 提供方响应 model 按安全格式读取并加密留在响应证据中，仅为 `provider_self_report_only`。没有响应字段时标记未报告/未捕获，不用请求别名顶替。历史真实运行不追补不可恢复字段。
+- 尚未解决：历史装配持 work 锁期间重复执行附件全文校验和嵌套连接。C 前须以批量权限状态、短事务及发送前重验重新实现；必须保留解密前范围过滤和撤权传播，不得仅用缓存绕开。对应验收含长历史下取消可达、读取/连接次数与撤权并发。

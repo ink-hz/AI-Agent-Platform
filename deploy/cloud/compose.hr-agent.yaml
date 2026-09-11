@@ -5,6 +5,7 @@ services:
     environment:
       PLATFORM_HR_AGENT_ENABLED: "1"
       PLATFORM_HR_AGENT_CONTENT_KEYRING_FILE: /run/hr-agent-secrets/hr-content-keyring.json
+      PLATFORM_HR_AGENT_MODEL: "${PLATFORM_HR_AGENT_MODEL:-}"
       PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE: /run/hr-agent-secrets/hr-provider-profile.json
       PLATFORM_HR_AGENT_BUDGET_PROFILE_FILE: /run/hr-agent-secrets/hr-budget-profile.json
       PLATFORM_HR_AGENT_DIAGNOSTIC_PROFILE_FILE: /run/hr-agent-secrets/hr-diagnostic-profile.json

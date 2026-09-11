@@ -14,3 +14,7 @@ data/platform-operations.db-shm
 data/platform-operations.db-wal
 .superpowers/
 .worktrees/
+
+# Local HR model configuration and credentials
+.env.hr
+.hr-agent/

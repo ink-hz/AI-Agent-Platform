@@ -14,7 +14,7 @@ def database():
 def repo(database):
     with database.admin_connection() as c:
         c.execute('TRUNCATE platform_hr_agent.threads, platform_hr_agent.operations CASCADE')
-    return HrAgentRepository(database.connection,ContentCodec(IdentityKeyring(1,'platform-content-encryption',{1:b'v'*32})))
+    return HrAgentRepository(database.connection,ContentCodec(IdentityKeyring(1,'platform-content-encryption',{1:b'v'*32})), scope_validator=lambda *args: None)
 
 def request(**updates):
     return {'thread_id':None,'text':'虚构研究','objects':[],'references':[],'budget_profile':'calibration-test',**updates}

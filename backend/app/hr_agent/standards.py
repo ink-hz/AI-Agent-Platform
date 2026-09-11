@@ -73,7 +73,7 @@ class StandardService:
 
     @staticmethod
     def _conflict(kind, revision):
-        raise problem(
+        error = problem(
             "revision_conflict",
             http_status=409,
             details={
@@ -81,6 +81,8 @@ class StandardService:
                 "current_revision": str(revision) if revision else None,
             },
         )
+        validate_contract("ConfirmError", error.problem)
+        raise error
 
     def confirm(self, owner_id, position_id, request, key):
         request = validate_contract("ConfirmInput", request)

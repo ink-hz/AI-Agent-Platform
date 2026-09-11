@@ -446,6 +446,7 @@ def test_diagnostics_disabled_untrusted_expired_and_deleted_are_unreadable(
 
 def test_anthropic_request_uses_native_system_tool_pairs(tmp_path):
     from dataclasses import replace
+
     from app.hr_agent.model import ConfiguredHttpModelPort, collect_reply
     credential=tmp_path/'credential';write_credential(credential)
     chunks=[b'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',b'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":2,"output_tokens":1}}\n\n',b'data: {"type":"message_stop"}\n\n']
@@ -471,7 +472,7 @@ def test_anthropic_request_uses_native_system_tool_pairs(tmp_path):
 
 
 def test_absolute_deadline_expires_during_partial_sse_line(tmp_path):
-    from app.hr_agent.model import ConfiguredHttpModelPort,ModelTransportError
+    from app.hr_agent.model import ConfiguredHttpModelPort, ModelTransportError
     credential=tmp_path/'credential';write_credential(credential)
     chunks=[b'data: ']+[b' ']*15+[b'{}\n\n']
     with provider_server(chunks,delay=0.035) as (endpoint,seen):
@@ -491,6 +492,7 @@ def test_absolute_deadline_expires_during_partial_sse_line(tmp_path):
 ])
 def test_anthropic_invalid_tool_pairs_never_send_http(tmp_path,messages):
     from dataclasses import replace
+
     from app.hr_agent.model import ConfiguredHttpModelPort, ModelProtocolError
     credential=tmp_path/'credential';write_credential(credential)
     with provider_server([]) as (endpoint,seen):
@@ -524,7 +526,7 @@ def test_provider_usage_preserves_nested_details_without_double_count(raw,expect
 @pytest.mark.parametrize('reason',['length','max_tokens'])
 @pytest.mark.parametrize('tools',[False,True])
 def test_provider_truncation_never_returns_a_committable_reply(reason,tools):
-    from app.hr_agent.model import collect_reply,ModelProtocolError
+    from app.hr_agent.model import ModelProtocolError, collect_reply
     from app.hr_agent.types import ModelEvent
     events=[ModelEvent('text_delta',{'text':'incomplete fake answer'})]
     if tools:events.append(ModelEvent('tool_delta',{'index':0,'provider_call_id':'truncated','name':'save_note','arguments_delta':'{"body":"unfinished"}'}))
@@ -539,7 +541,7 @@ def test_provider_rejects_invalid_port_with_sanitized_error(tmp_path):
 
 def test_http_thread_unexpected_error_is_sanitized(tmp_path,monkeypatch,capsys):
     import httpx
-    from app.hr_agent.model import ConfiguredHttpModelPort,ModelTransportError
+    from app.hr_agent.model import ConfiguredHttpModelPort, ModelTransportError
     credential=tmp_path/'credential';write_credential(credential)
     def unexpected(*args,**kwargs):raise ValueError('PRIVATE_TRANSPORT_SENTINEL')
     monkeypatch.setattr(httpx,'AsyncClient',unexpected)
@@ -554,7 +556,8 @@ def test_http_thread_unexpected_error_is_sanitized(tmp_path,monkeypatch,capsys):
 ])
 def test_real_http_native_usage_is_normalized_by_profile(tmp_path,protocol,raw,expected):
     from dataclasses import replace
-    from app.hr_agent.model import ConfiguredHttpModelPort,collect_reply
+
+    from app.hr_agent.model import ConfiguredHttpModelPort, collect_reply
     credential=tmp_path/'credential';write_credential(credential)
     def data(value):return ('data: '+json.dumps(value)+'\n\n').encode()
     if protocol=='openai_chat_sse':
@@ -584,7 +587,7 @@ def test_anthropic_gateway_bearer_auth_is_explicit_profile_only(tmp_path):
 def test_anthropic_wire_root_conditions_are_described_but_server_still_enforces():
     from app.hr_agent.context import tools_for_phase
     from app.hr_agent.model import _anthropic_tool
-    from app.hr_agent.types import validate_tool_arguments,HrAgentProblem
+    from app.hr_agent.types import HrAgentProblem, validate_tool_arguments
     tool=next(t for t in tools_for_phase('research') if t['function']['name']=='save_result')
     original=json.dumps(tool,sort_keys=True)
     wire=_anthropic_tool(tool)
@@ -593,3 +596,48 @@ def test_anthropic_wire_root_conditions_are_described_but_server_still_enforces(
     assert json.dumps(tool,sort_keys=True)==original
     with pytest.raises(HrAgentProblem):
         validate_tool_arguments('save_result',{'kind':'standard_proposal','changes':[]})
+
+
+@pytest.mark.parametrize('protocol', ['openai_chat_sse', 'anthropic_messages_sse'])
+@pytest.mark.parametrize('reported', ['actual-gateway-model-20260910', None, 'https://private.example/key?secret=x'])
+def test_response_model_is_optional_gateway_self_report(tmp_path, protocol, reported):
+    from dataclasses import replace
+
+    from app.hr_agent.model import ConfiguredHttpModelPort, collect_reply
+    credential = tmp_path / 'credential'
+    write_credential(credential)
+    def data(value):
+        return ('data: ' + json.dumps(value) + '\n\n').encode()
+    model_field = {} if reported is None else {'model': reported}
+    if protocol == 'openai_chat_sse':
+        chunks = [data({**model_field, 'choices': [{'delta': {'content': 'fake'}, 'finish_reason': 'stop'}]}), b'data: [DONE]\n\n']
+    else:
+        chunks = [data({'type': 'message_start', 'message': model_field}), data({'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'text_delta', 'text': 'fake'}}), data({'type': 'message_delta', 'delta': {'stop_reason': 'end_turn'}}), data({'type': 'message_stop'})]
+    with provider_server(chunks) as (endpoint, seen):
+        reply = collect_reply(ConfiguredHttpModelPort(replace(openai_profile(endpoint, credential), protocol=protocol)).stream(request()))
+    assert reply.usage.quality == 'unknown'
+    assert reply.usage.input_total is None
+    if reported == 'actual-gateway-model-20260910':
+        assert reply.usage.raw['_response_metadata'] == {'reported_models': [reported], 'identity_assurance': 'provider_self_report_only'}
+        assert seen[0]['body']['model'] != reported
+    else:
+        assert reply.usage.raw is None
+
+
+def test_openai_chunk_model_reports_survive_later_usage_without_token_changes(tmp_path):
+    from app.hr_agent.model import ConfiguredHttpModelPort, collect_reply
+    credential = tmp_path / 'credential'
+    write_credential(credential)
+    def data(value):
+        return ('data: ' + json.dumps(value) + '\n\n').encode()
+    chunks = [
+        data({'model': 'gateway-first', 'choices': [{'delta': {'content': 'fake'}}]}),
+        data({'model': 'gateway-first', 'choices': []}),
+        data({'model': 'gateway-final', 'choices': [{'delta': {}, 'finish_reason': 'stop'}]}),
+        data({'usage': {'prompt_tokens': 10, 'completion_tokens': 3, '_response_metadata': {'reported_models': ['untrusted-usage-field']}}, 'choices': []}),
+        b'data: [DONE]\n\n',
+    ]
+    with provider_server(chunks) as (endpoint, _):
+        reply = collect_reply(ConfiguredHttpModelPort(openai_profile(endpoint, credential)).stream(request()))
+    assert reply.usage.raw['_response_metadata']['reported_models'] == ['gateway-first', 'gateway-final']
+    assert (reply.usage.input_total, reply.usage.output_total, reply.usage.quality) == (10, 3, 'reported')

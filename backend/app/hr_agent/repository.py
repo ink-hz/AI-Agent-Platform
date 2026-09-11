@@ -138,7 +138,7 @@ class HrAgentRepository(RepositoryViewsMixin):
     def _scope(self, owner, objects, refs, work_id=None):
         if self.scope_validator:
             self.scope_validator(_uuid(owner), tuple(objects), tuple(refs), work_id)
-        elif objects or refs:
+        else:
             raise problem("configuration_unavailable", http_status=503)
         return AuthorizedScope(
             _uuid(owner),
@@ -198,7 +198,8 @@ class HrAgentRepository(RepositoryViewsMixin):
         return body, row
 
     def _idempotency(self, c, owner, namespace, key, request):
-        identity = f"{owner}:{namespace}:{_uuid(key)}"
+        key = str(_uuid(key))
+        identity = f"{owner}:{namespace}:{key}"
         c.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (identity,))
         c.execute(
             "SELECT * FROM platform_hr_agent.operations WHERE owner_id=%s AND namespace=%s AND request_key=%s",
@@ -646,6 +647,17 @@ class HrAgentRepository(RepositoryViewsMixin):
                         "current_revision": budget["revision"],
                     },
                 )
+            config = (
+                self.settings.budget_profile
+                if self.settings
+                else {"limits": DEFAULT_BUDGET}
+            )
+            ceilings = config.get("service_limits", config["limits"])
+            if any(
+                budget["limits"][field] + value > ceilings[field]
+                for field, value in request["addition"].items()
+            ):
+                raise problem("invalid_input", http_status=422)
             for field, value in request["addition"].items():
                 budget["limits"][field] += value
             budget["revision"] += 1
@@ -1147,7 +1159,22 @@ class HrAgentRepository(RepositoryViewsMixin):
             if attempt["reported_usage_hash"] != fingerprint:
                 raise problem("revision_conflict", http_status=409)
             return
-        actual = usage.input_total + usage.output_total
+        reported = usage.input_total + usage.output_total
+        frozen = self._unseal(
+            "model_attempts", attempt["attempt_id"], "sealed_request", attempt
+        )
+        # Conservative budget accounting, not a claim about billed tokens.
+        floor = frozen["estimated_input_tokens"]
+        actual = max(reported, floor)
+        quality = "estimated" if actual > reported else "reported"
+        raw_usage = dict(usage.raw or {})
+        raw_usage["_budget_accounting"] = {
+            "reported_input_tokens": usage.input_total,
+            "reported_output_tokens": usage.output_total,
+            "input_estimate_floor": floor,
+            "charged_tokens": actual,
+            "usage_quality": quality,
+        }
         budget = self._unseal("works", work["work_id"], "sealed_budget", work)
         budget["charged_tokens"] += actual - attempt["charged_tokens"]
         budget["usage_quality"] = "mixed"
@@ -1159,14 +1186,14 @@ class HrAgentRepository(RepositoryViewsMixin):
             attempt["attempt_id"],
             {
                 "charged_tokens": actual,
-                "usage_quality": "reported",
+                "usage_quality": quality,
                 "usage_observation_id": observation_id,
                 "reported_usage_hash": fingerprint,
                 **self._seal(
                     "model_attempts",
                     attempt["attempt_id"],
                     "raw_usage_cipher",
-                    usage.raw or {},
+                    raw_usage,
                 ),
             },
         )
@@ -1365,6 +1392,19 @@ class HrAgentRepository(RepositoryViewsMixin):
             "revision_conflict": "conflict",
             "hash_mismatch": "conflict",
         }.get(error.problem["code"], "invalid")
+        # Error history has the same scope as the frozen call, even when access
+        # was revoked. Do not ask a failing authorizer again while recording it.
+        c.execute(
+            "SELECT * FROM platform_hr_agent.inputs WHERE owner_id=%s AND work_id=%s AND revision=%s",
+            (work["owner_id"], work["work_id"], op["input_revision"]),
+        )
+        input_row = c.fetchone()
+        frozen_input = self._unseal(
+            "inputs", input_row["input_id"], "sealed_input", input_row
+        )
+        attempt = self._attempt(c, work, op["attempt_id"])
+        _, payload = self._decode_request(attempt)
+        refs = list(_refs(frozen_input["references"] + payload["dependencies"]))
         outcome = {"status": status, "data": None, "error": error.problem}
         self._receipt(c, op["operation_id"], outcome)
         self._entry(
@@ -1372,6 +1412,8 @@ class HrAgentRepository(RepositoryViewsMixin):
             work,
             "tool",
             {"operation_id": str(op["operation_id"]), "outcome": outcome},
+            objects=frozen_input["objects"],
+            refs=refs,
             operation_id=op["operation_id"],
         )
         self._event(c, work, "tool_error", error=error.problem, status=status)

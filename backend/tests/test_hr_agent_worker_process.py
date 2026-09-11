@@ -114,7 +114,7 @@ def test_kill_restart_same_database_preserves_attempt_and_result(database, tmp_p
         c.execute('truncate platform_hr_agent.threads, platform_hr_agent.operations cascade')
     with Provider([wire(tool=True), wire()]) as provider:
         config, settings = process_config(tmp_path, database, provider.endpoint)
-        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings)
+        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings, scope_validator=lambda *args: None)
         owner = uuid4()
         view = repo.submit(owner, {'thread_id': None, 'text': '公开研究', 'objects': [], 'references': [], 'budget_profile': 'test'}, uuid4())
         first = launch(config, point)
@@ -158,7 +158,7 @@ def _process_fixture():
     config = Path(sys.argv[1]); point = sys.argv[2]; scenario = sys.argv[3]
     settings = load_hr_agent_settings(json.loads(config.read_text()))
     dsn = (config.parent/'dsn').read_text()
-    repo = HrAgentRepository(lambda: psycopg.connect(dsn), settings.create_codec(), settings=settings)
+    repo = HrAgentRepository(lambda: psycopg.connect(dsn), settings.create_codec(), settings=settings, scope_validator=lambda *args: None)
     resources = None
     if scenario == 'summary_checkpoint':
         from app.hr_agent.resources import build_runtime_services
@@ -207,7 +207,7 @@ def test_real_process_reply_projection_and_silent_sending_recovery(database, tmp
     replies = [(10, wire()), wire()] if scenario == 'sending' else [wire(), wire()]
     with Provider(replies) as provider:
         config, settings = process_config(tmp_path, database, provider.endpoint)
-        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings)
+        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings, scope_validator=lambda *args: None)
         owner = uuid4()
         view = repo.submit(owner, {'thread_id': None, 'text': '公开研究', 'objects': [], 'references': [], 'budget_profile': 'test'}, uuid4())
         first = launch(config, '' if scenario == 'sending' else 'model_committed', scenario)
@@ -266,7 +266,7 @@ def test_uncommitted_result_rolls_back_on_real_process_kill(database, tmp_path):
         c.execute('truncate platform_hr_agent.threads, platform_hr_agent.operations cascade')
     with Provider([wire(tool=True), wire()]) as provider:
         config, settings = process_config(tmp_path, database, provider.endpoint)
-        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings)
+        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings, scope_validator=lambda *args: None)
         owner = uuid4()
         view = repo.submit(owner, {'thread_id': None, 'text': '公开研究', 'objects': [], 'references': [], 'budget_profile': 'test'}, uuid4())
         first = launch(config, 'write_uncommitted')
@@ -295,7 +295,7 @@ def test_cancel_wins_before_new_side_effect_in_real_process(database, tmp_path):
         c.execute('truncate platform_hr_agent.threads, platform_hr_agent.operations cascade')
     with Provider([wire(tool=True)]) as provider:
         config, settings = process_config(tmp_path, database, provider.endpoint)
-        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings)
+        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings, scope_validator=lambda *args: None)
         owner = uuid4()
         view = repo.submit(owner, {'thread_id': None, 'text': '公开研究', 'objects': [], 'references': [], 'budget_profile': 'test'}, uuid4())
         first = launch(config, 'model_committed')
@@ -318,7 +318,7 @@ def test_real_process_new_input_rejects_old_answer_and_only_settles_usage(databa
         c.execute('truncate platform_hr_agent.threads, platform_hr_agent.operations cascade')
     with Provider([(1, wire()), wire()]) as provider:
         config, settings = process_config(tmp_path, database, provider.endpoint)
-        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings)
+        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings, scope_validator=lambda *args: None)
         owner = uuid4()
         view = repo.submit(owner, {'thread_id': None, 'text': '旧公开目标', 'objects': [], 'references': [], 'budget_profile': 'test'}, uuid4())
         process = launch(config)
@@ -332,7 +332,11 @@ def test_real_process_new_input_rejects_old_answer_and_only_settles_usage(databa
                 assert c.execute('select status from platform_hr_agent.model_attempts order by ordinal').fetchall() == [('superseded',), ('committed',)]
             done = repo.get_work(owner, view['work_id'])
             assert done['budget']['charged_calls'] == 2
-            assert done['budget']['charged_tokens'] == 30
+            with repo.transaction() as c:
+                c.execute('SELECT * FROM platform_hr_agent.model_attempts ORDER BY ordinal')
+                attempts = c.fetchall()
+                floors = [repo._unseal('model_attempts', a['attempt_id'], 'sealed_request', a)['estimated_input_tokens'] for a in attempts]
+            assert done['budget']['charged_tokens'] == sum(max(15, floor) for floor in floors)
         finally:
             process.terminate(); process.wait(timeout=5)
 
@@ -342,7 +346,7 @@ def test_finalizing_survives_real_restart_then_explicit_budget_extension(databas
         c.execute('truncate platform_hr_agent.threads, platform_hr_agent.operations cascade')
     with Provider([wire(), wire()]) as provider:
         config, settings = process_config(tmp_path, database, provider.endpoint)
-        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings)
+        repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings, scope_validator=lambda *args: None)
         owner = uuid4()
         view = repo.submit(owner, {'thread_id': None, 'text': '公开研究', 'objects': [], 'references': [], 'budget_profile': 'test'}, uuid4())
         with repo.transaction() as c:

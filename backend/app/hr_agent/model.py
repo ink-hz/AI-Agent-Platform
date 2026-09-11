@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
+import re
 import stat
 import threading
 import time
@@ -384,6 +385,25 @@ def _json_object(data: str) -> dict:
         raise ModelProtocolError("invalid_response") from None
 
 
+def _response_model_events(item: dict) -> Iterator[ModelEvent]:
+    # Optional gateway self-report, never evidence of underlying model identity.
+    model = item.get("model")
+    if (
+        isinstance(model, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}", model)
+        and "://" not in model
+    ):
+        yield ModelEvent(
+            "usage",
+            {
+                "_response_metadata": {
+                    "reported_models": [model],
+                    "identity_assurance": "provider_self_report_only",
+                }
+            },
+        )
+
+
 def _openai_events(lines: Iterable[str]) -> Iterator[ModelEvent]:
     complete = False
     for line in lines:
@@ -396,11 +416,19 @@ def _openai_events(lines: Iterable[str]) -> Iterator[ModelEvent]:
             complete = True
             break
         item = _json_object(data)
+        yield from _response_model_events(item)
         usage = item.get("usage")
         if usage is not None:
             if not isinstance(usage, dict):
                 raise ModelProtocolError("invalid_response")
-            yield ModelEvent("usage", dict(usage))
+            yield ModelEvent(
+                "usage",
+                {
+                    key: value
+                    for key, value in usage.items()
+                    if key != "_response_metadata"
+                },
+            )
         choices = item.get("choices", [])
         if not isinstance(choices, list):
             raise ModelProtocolError("invalid_response")
@@ -455,13 +483,22 @@ def _anthropic_events(lines: Iterable[str]) -> Iterator[ModelEvent]:
         item = _json_object(line[5:].strip())
         kind = item.get("type")
         if kind == "message_start":
+            if isinstance(item.get("message"), dict):
+                yield from _response_model_events(item["message"])
             usage = (
                 item.get("message", {}).get("usage")
                 if isinstance(item.get("message"), dict)
                 else None
             )
             if usage:
-                yield ModelEvent("usage", dict(usage))
+                yield ModelEvent(
+                    "usage",
+                    {
+                        key: value
+                        for key, value in usage.items()
+                        if key != "_response_metadata"
+                    },
+                )
         elif kind == "content_block_start":
             index, block = item.get("index"), item.get("content_block")
             if not isinstance(index, int) or not isinstance(block, dict):
@@ -500,7 +537,14 @@ def _anthropic_events(lines: Iterable[str]) -> Iterator[ModelEvent]:
             if usage is not None:
                 if not isinstance(usage, dict):
                     raise ModelProtocolError("invalid_response")
-                yield ModelEvent("usage", dict(usage))
+                yield ModelEvent(
+                    "usage",
+                    {
+                        key: value
+                        for key, value in usage.items()
+                        if key != "_response_metadata"
+                    },
+                )
             if isinstance(delta, dict) and delta.get("stop_reason"):
                 if delta["stop_reason"] == "refusal":
                     raise ModelTransportError("provider_refused")
@@ -558,6 +602,18 @@ def collect_reply(events: Iterable[ModelEvent]) -> ModelReply:
                     raise ModelProtocolError("invalid_response")
                 usage_protocol = protocol
                 payload = payload["raw"]
+            if "_response_metadata" in payload:
+                previous = raw_usage.get("_response_metadata", {}).get(
+                    "reported_models", []
+                )
+                reported = payload["_response_metadata"]["reported_models"]
+                payload = {
+                    **payload,
+                    "_response_metadata": {
+                        "reported_models": list(dict.fromkeys([*previous, *reported])),
+                        "identity_assurance": "provider_self_report_only",
+                    },
+                }
             raw_usage.update(payload)
         elif event.type == "stop":
             reason = event.payload.get("reason")

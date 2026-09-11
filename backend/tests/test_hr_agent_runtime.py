@@ -21,7 +21,7 @@ def setup(database, tmp_path):
     with database.admin_connection() as c:
         c.execute('truncate platform_hr_agent.threads, platform_hr_agent.operations cascade')
     settings = make_hr_settings(tmp_path)
-    repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings)
+    repo = HrAgentRepository(database.connection, settings.create_codec(), settings=settings, scope_validator=lambda *args: None)
     owner = uuid4()
     view = repo.submit(owner, {'thread_id': None, 'text': '公开招聘建议', 'objects': [], 'references': [], 'budget_profile': 'test'}, uuid4())
     return repo, owner, view, repo.claim('test-worker', 60)
@@ -57,7 +57,7 @@ def test_normal_answer_is_persisted_without_fixed_steps(setup):
     assert repo.list_messages(owner, view['work_id'])['items'][-1]['body'] == '已有结论'
     assert len(model.requests) == 1
     assert done['budget']['charged_calls'] == 1
-    assert done['budget']['charged_tokens'] == 15
+    assert done['budget']['charged_tokens'] == 20
 
 
 def test_transport_retries_are_persistent_and_refusal_is_terminal(setup, database):
@@ -111,7 +111,7 @@ def test_appended_input_during_provider_call_rejects_old_answer_but_settles_usag
     done = run_work(repo, AppendingModel(), None, fence, context_builder=context)
     assert done['state'] == 'queued'
     assert done['input_revision'] == 2
-    assert done['budget']['charged_tokens'] == 15
+    assert done['budget']['charged_tokens'] == 20
     assert all(m['body'] != '过时回答禁止展示' for m in repo.list_messages(owner, view['work_id'])['items'])
 
 
@@ -124,7 +124,7 @@ def test_cancel_during_provider_call_keeps_cancelled_state(setup):
     done = run_work(repo, CancellingModel(), None, fence, context_builder=context)
     assert done['state'] == 'cancelled'
     assert done['answer_state'] != 'ended'
-    assert done['budget']['charged_tokens'] == 15
+    assert done['budget']['charged_tokens'] == 20
 
 
 def test_summary_commit_recovery_projects_summary_and_then_answers(setup, database):

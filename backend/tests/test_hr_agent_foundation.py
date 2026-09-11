@@ -1,5 +1,5 @@
-from pathlib import Path
 import pytest
+
 
 def test_disabled_relay_can_load_hr_codec(tmp_path):
     from hr_agent_support import make_hr_settings
@@ -28,7 +28,7 @@ def test_missing_schema_does_not_create_tables():
 
 def test_provider_profile_rejects_fallback_and_unknown_config(tmp_path):
     import json
-    from app.hr_agent.config import load_hr_agent_settings
+
     from hr_agent_support import make_hr_settings
     settings=make_hr_settings(tmp_path)
     profile=dict(settings.provider_profile, fallback='http://other.invalid', unknown='sensitive')
@@ -39,9 +39,10 @@ def test_provider_profile_rejects_fallback_and_unknown_config(tmp_path):
 def test_scope_uses_server_eligibility_and_denies_unknown_objects():
     from types import SimpleNamespace
     from uuid import uuid4
+
+    from app.control_plane.models import AuthContext, Role
     from app.hr_agent.access import HrAccess
     from app.hr_agent.types import HrAgentProblem
-    from app.control_plane.models import AuthContext, Role
     actor=uuid4()
     class Eligibility:
         def decide_for_user_id(self, user, agent):
@@ -61,6 +62,7 @@ def test_schema_ready_is_true_after_explicit_migration():
 
 def test_database_constraints_reject_cross_owner_and_mutable_history():
     from uuid import uuid4
+
     import psycopg
     from hr_agent_support import hr_agent_database
     with hr_agent_database() as db:
@@ -103,6 +105,7 @@ def test_readiness_rejects_missing_application_write_grant(revocation):
 ])
 def test_config_requires_integer_numeric_units(tmp_path,document,field,value):
     import json
+
     from hr_agent_support import make_hr_settings
     settings=make_hr_settings(tmp_path)
     profile=dict(settings.budget_profile if document=='budget' else settings.provider_profile)
@@ -124,9 +127,25 @@ def test_config_requires_integer_environment_time_units(tmp_path,key,value):
 @pytest.mark.parametrize('endpoint',['http://127.0.0.1:PRIVATE_PORT_SENTINEL/v1','http://127.0.0.1:65536/v1','http://127.0.0.1:0/v1'])
 def test_config_rejects_invalid_endpoint_port_without_secret_echo(tmp_path,endpoint):
     import json
+
     from hr_agent_support import make_hr_settings
     settings=make_hr_settings(tmp_path)
     path=tmp_path/'invalid-provider.json'
     path.write_text(json.dumps({**settings.provider_profile,'endpoint':endpoint}))
     with pytest.raises(ValueError,match='^HR configuration invalid$'):
         make_hr_settings(tmp_path/'again',PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+
+
+def test_hr_model_environment_is_effective_and_changes_frozen_configuration(tmp_path):
+    from hr_agent_support import make_hr_settings
+    base=make_hr_settings(tmp_path)
+    selected=make_hr_settings(tmp_path, PLATFORM_HR_AGENT_MODEL='claude-opus-5')
+    assert selected.provider_profile['model']=='claude-opus-5'
+    assert selected.configuration_revision!=base.configuration_revision
+
+
+@pytest.mark.parametrize('value',[' ', '\nclaude-opus-5', 'bad\x00model'])
+def test_hr_model_environment_rejects_invalid_value(tmp_path,value):
+    from hr_agent_support import make_hr_settings
+    with pytest.raises(ValueError,match='^HR configuration invalid$'):
+        make_hr_settings(tmp_path,PLATFORM_HR_AGENT_MODEL=value)

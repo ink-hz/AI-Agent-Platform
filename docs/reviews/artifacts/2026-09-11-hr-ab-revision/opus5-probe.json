@@ -1,0 +1,39 @@
+{
+  "observed_at": "2026-09-11T01:30:26.060176+00:00",
+  "purpose": "new public OK probe; cannot reconstruct 2026-09-10 run",
+  "source_repository_revision": "b49eeede39bf3d1c5341067e69ccfe9ae15fcaa0",
+  "source_fields": [
+    "PLATFORM_HR_AGENT_MODEL",
+    "PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE"
+  ],
+  "identity_assurance": "provider_self_report_only",
+  "request_text": "Reply with OK.",
+  "model_source": "HR .env.hr PLATFORM_HR_AGENT_MODEL; HR provider uses FAE gateway credentials",
+  "profile": {
+    "id": "hr-cloud-loop",
+    "revision": "hr-opus5-20260911",
+    "protocol": "anthropic_messages_sse",
+    "model": "claude-opus-5",
+    "tokenizer": "conservative_utf8",
+    "context_window_tokens": 131072,
+    "timeout_seconds": 60,
+    "auth_scheme": "bearer"
+  },
+  "profile_fingerprint": "d826d14a809fe45222764c9235772a7230b30f1e1f4e425427f9f30d5cb18e8e",
+  "fingerprint_scope": "nonsecret allowlisted fields; endpoint and credentials excluded",
+  "runtime_source_sha256": "05c497efc1ff73fe170cd3b3954e5d507ede53d350b8de715ba8c54f9a21c3c5",
+  "response_metadata": {
+    "reported_models": [
+      "claude-opus-5"
+    ],
+    "identity_assurance": "provider_self_report_only"
+  },
+  "response_text_is_ok": true,
+  "usage": {
+    "input_total": 13,
+    "output_total": 4
+  },
+  "status": "completed",
+  "temporary_probe_credential_removed": true,
+  "hr_runtime_credential_retained_privately": true
+}

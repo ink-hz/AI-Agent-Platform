@@ -62,7 +62,7 @@ def make_hr_settings(tmp_path, **overrides):
     documents={
         'CONTENT_KEYRING_FILE':{'purpose':'platform-content-encryption','active_version':1,'keys':{'1':base64.b64encode(b'x'*32).decode()}},
         'PROVIDER_PROFILE_FILE':{'id':'local-fake','revision':'local-v1','protocol':'openai_chat_sse','endpoint':'http://127.0.0.1:1/v1/chat/completions','model':'fake','credential_file':str(credential),'tokenizer':'conservative_utf8','context_window_tokens':32768},
-        'BUDGET_PROFILE_FILE':{'id':'test','limits':{'model_calls':32,'total_tokens':600000,'active_seconds':900},'reserve':{'model_calls':2,'total_tokens':16000,'active_seconds':30},'max_output_tokens':4096,'input_target_tokens':8000,'input_trigger_tokens':12000,'work_retention_seconds':3600},
+        'BUDGET_PROFILE_FILE':{'id':'test','service_limits':{'model_calls':64,'total_tokens':1200000,'active_seconds':1800},'limits':{'model_calls':32,'total_tokens':600000,'active_seconds':900},'reserve':{'model_calls':2,'total_tokens':16000,'active_seconds':30},'max_output_tokens':4096,'input_target_tokens':8000,'input_trigger_tokens':12000,'work_retention_seconds':3600},
         'DIAGNOSTIC_PROFILE_FILE':{'enabled':False},
     }
     env={'PLATFORM_HR_AGENT_ENABLED':'1','PLATFORM_EXECUTION_RELAY_ENABLED':'0','PLATFORM_HR_AGENT_WORK_DIR':str(work),'PLATFORM_HR_AGENT_KNOWLEDGE_DIR':str(knowledge)}
