@@ -1699,7 +1699,7 @@ class HrAgentRepository(RepositoryViewsMixin):
         self._event(c, work, "result_saved", ref=ref)
         return {**document, "ref": ref, "access_state": "available"}
 
-    def commit_read(self, fence, operation_id, payload):
+    def commit_read(self, fence, operation_id, payload, *, receipt_validator=None):
         with self.transaction() as c:
             work = self._fence(c, fence)
             op = self._operation(c, work, operation_id)
@@ -1728,8 +1728,12 @@ class HrAgentRepository(RepositoryViewsMixin):
                     [payload["ref"]],
                     work["work_id"],
                 )
-                identity = uuid4()
-                payload["read_id"] = str(identity)
+                try:
+                    identity = UUID(payload["read_id"])
+                except (ValueError, TypeError):
+                    raise problem("invalid_input") from None
+                if identity.version != 4 or str(identity) != payload["read_id"]:
+                    raise problem("invalid_input")
                 self._insert(
                     c,
                     "read_records",
@@ -1766,7 +1770,7 @@ class HrAgentRepository(RepositoryViewsMixin):
                 "error": None,
             }
             self._receipt(c, op["operation_id"], outcome)
-            self._entry(
+            entry_id = self._entry(
                 c,
                 work,
                 "tool",
@@ -1776,7 +1780,15 @@ class HrAgentRepository(RepositoryViewsMixin):
                 operation_id=op["operation_id"],
             )
             self._event(c, work, "tool_finished")
-            self._checkpoint(c, work)
+            checkpoint = self._checkpoint(c, work)
+            if receipt_validator is not None:
+                c.execute(
+                    "SELECT seq FROM platform_hr_agent.entries WHERE entry_id=%s",
+                    (entry_id,),
+                )
+                receipt_validator(
+                    current, checkpoint, payload, entry_id, c.fetchone()["seq"]
+                )
             return outcome
 
     def pending_operations(self, fence):

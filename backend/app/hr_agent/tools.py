@@ -24,7 +24,28 @@ def execute_tool(repository, resources, fence, operation_id):
             if operation.name == "list_resources"
             else resources.read_resource(fence, arguments)
         )
-        return repository.commit_read(fence, operation_id, payload)
+        receipt_validator = None
+        if operation.name == "read_resource":
+            from .context import ensure_read_result_fits_summary
+
+            def receipt_validator(
+                current, checkpoint, exact_payload, entry_id, entry_seq
+            ):
+                ensure_read_result_fits_summary(
+                    repository,
+                    resources,
+                    fence,
+                    operation,
+                    exact_payload,
+                    current=current,
+                    checkpoint=checkpoint,
+                    entry_id=entry_id,
+                    entry_seq=entry_seq,
+                )
+
+        return repository.commit_read(
+            fence, operation_id, payload, receipt_validator=receipt_validator
+        )
     except HrAgentProblem as error:
         if error.problem["code"] == "lease_lost" or operation.status == "committed":
             raise

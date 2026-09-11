@@ -3,8 +3,13 @@ import json
 from uuid import UUID, uuid4
 
 import pytest
-from app.hr_agent.context import build_model_context, estimate_input_tokens
+from app.hr_agent.context import (
+    build_model_context,
+    ensure_read_result_fits_summary,
+    estimate_input_tokens,
+)
 from app.hr_agent.resources import PublishedKnowledge, ResourceReader
+from app.hr_agent.tools import execute_tool
 from app.hr_agent.types import HrAgentProblem, ModelContext, ToolCall, WorkPaused
 from test_hr_agent_repository import (
     database as database,  # noqa: PLC0414 - pytest fixture export
@@ -430,6 +435,150 @@ def test_indivisible_unconsumed_tool_batch_blocks_with_context_reason(repo, tmp_
     blocked = repo.get_work(owner, work["work_id"])
     assert blocked["state"] == "blocked"
     assert blocked["block_reason"] == "context_too_large"
+
+
+@pytest.mark.parametrize("character", ["中", "😀"])
+def test_read_resource_rejects_exact_receipt_that_cannot_fit_one_summary_request(
+    repo, tmp_path, character
+):
+    from dataclasses import replace
+
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / "read-window-settings")
+    repo.settings = replace(
+        settings,
+        provider_profile={
+            **settings.provider_profile,
+            "context_window_tokens": 32768,
+        },
+    )
+    root = tmp_path / "read-window-release"
+    ref = publication(root, character * 20000)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    work = repo.submit(
+        owner,
+        request(text="核对完整材料", references=[ref], budget_profile="test"),
+        uuid4(),
+    )
+    fence = repo.claim("w", 60)
+    attempt = repo.prepare_model(fence, model_context(revision=fence.input_revision))
+    repo.mark_model_sending(fence, attempt.attempt_id)
+    operations = repo.commit_model(
+        fence,
+        attempt.attempt_id,
+        reply(
+            "",
+            [
+                ToolCall("large", "read_resource", {"ref": ref, "limit": 20000}),
+                ToolCall("small", "read_resource", {"ref": ref, "limit": 1000}),
+            ],
+        ),
+    )
+
+    rejected = execute_tool(repo, resources, fence, operations[0])
+    assert rejected["error"]["code"] == "invalid_input"
+    assert "smaller limit" in rejected["error"]["message"]
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT count(*) AS count FROM platform_hr_agent.read_records WHERE work_id=%s",
+            (UUID(work["work_id"]),),
+        )
+        assert c.fetchone()["count"] == 0
+    assert repo.get_work(owner, work["work_id"])["checkpoint"]["readings"] == []
+
+    accepted = execute_tool(repo, resources, fence, operations[1])
+    assert accepted["error"] is None
+    assert accepted["data"]["text"] == character * 1000
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT count(*) AS count, min(read_id::text) AS read_id FROM platform_hr_agent.read_records WHERE work_id=%s",
+            (UUID(work["work_id"]),),
+        )
+        row = c.fetchone()
+        assert row["count"] == 1
+        assert row["read_id"] == accepted["data"]["read_id"]
+    assert repo.get_work(owner, work["work_id"])["state"] == "running"
+    context = build_model_context(repo, resources, fence)
+    assert context.purpose == "work"
+    assert context.estimated_input_tokens + settings.budget_profile[
+        "max_output_tokens"
+    ] <= settings.provider_profile["context_window_tokens"]
+
+
+def test_read_resource_guard_accounts_for_transactional_checkpoint_growth(
+    repo, tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / "read-boundary-settings")
+    repo.settings = replace(
+        settings,
+        provider_profile={
+            **settings.provider_profile,
+            "context_window_tokens": 100000,
+        },
+    )
+    root = tmp_path / "read-boundary-release"
+    ref = publication(root, '引号"反斜杠\\控制\n😀中' * 300)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    repo.submit(
+        owner,
+        request(text="动态目标", references=[ref], budget_profile="test"),
+        uuid4(),
+    )
+    fence = repo.claim("w", 60)
+    attempt = repo.prepare_model(fence, model_context(revision=fence.input_revision))
+    repo.mark_model_sending(fence, attempt.attempt_id)
+    operation = repo.commit_model(
+        fence,
+        attempt.attempt_id,
+        reply("", [ToolCall("boundary", "read_resource", {"ref": ref, "limit": 3000})]),
+    )[0]
+    observed = {}
+
+    def reject_one_below_final_shape(*args, **kwargs):
+        checkpoint = kwargs["checkpoint"]
+        assert checkpoint["readings"][0]["state"] == "partial"
+        assert checkpoint["readings"][0]["remaining_ranges"]
+        assert len(args[4]["read_id"]) == 36
+        required = ensure_read_result_fits_summary(*args, **kwargs)
+        observed["required"] = required
+        repo.settings = replace(
+            repo.settings,
+            provider_profile={
+                **repo.settings.provider_profile,
+                "context_window_tokens": required - 1,
+            },
+        )
+        return ensure_read_result_fits_summary(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.hr_agent.context.ensure_read_result_fits_summary",
+        reject_one_below_final_shape,
+    )
+
+    rejected = execute_tool(repo, resources, fence, operation)
+
+    assert rejected["error"]["code"] == "invalid_input"
+    assert observed["required"] > 0
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT count(*) AS count FROM platform_hr_agent.read_records WHERE work_id=%s",
+            (fence.work_id,),
+        )
+        assert c.fetchone()["count"] == 0
+    assert repo.get_work(owner, str(fence.work_id))["checkpoint"]["readings"] == []
 
 
 def test_hard_window_progressively_summarizes_large_unconsumed_batch_after_resume(
