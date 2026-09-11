@@ -1,6 +1,7 @@
 """Exact HTTP endpoints; identity, Origin and CSRF use platform middleware."""
 
 import json
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
@@ -139,15 +140,23 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
         return service.configuration(auth(request))
 
     @router.get("/knowledge")
-    def knowledge_catalog(request: Request):
-        return service.knowledge_catalog(auth(request))
+    def knowledge_catalog(
+        request: Request, kind: Literal["method", "intelligence"] = "method"
+    ):
+        return service.knowledge_catalog(auth(request), kind=kind)
 
     @router.get("/knowledge/{resource_id}/revisions/{revision}")
-    def knowledge_text(request: Request, resource_id: str, revision: str, sha256: str):
+    def knowledge_text(
+        request: Request,
+        resource_id: str,
+        revision: str,
+        sha256: str,
+        kind: Literal["method", "intelligence"] = "method",
+    ):
         return service.knowledge_text(
             auth(request),
             {
-                "kind": "method",
+                "kind": kind,
                 "id": resource_id,
                 "revision": revision,
                 "sha256": sha256,

@@ -122,17 +122,24 @@ class HrAgentService:
         budget = self.repository.settings.budget_profile
         return {"budget_profile": budget["id"], "budget_limits": budget["limits"]}
 
-    def knowledge_catalog(self, auth):
+    def knowledge_catalog(self, auth, kind="method"):
         self._owner(auth)
+        if kind not in ("method", "intelligence"):
+            raise problem("invalid_input")
         if self.knowledge is None:
             raise problem("configuration_unavailable", http_status=503)
         published = self.knowledge.current()
         return {
             "release_id": published.release_id,
             "items": [
-                {"ref": i["ref"], "title": i["title"], "description": i["description"]}
+                {
+                    "ref": i["ref"],
+                    "title": i["title"],
+                    "description": i["description"],
+                    "objects": i["objects"],
+                }
                 for i in published.items
-                if i["ref"]["kind"] == "method"
+                if i["ref"]["kind"] == kind
             ],
         }
 
