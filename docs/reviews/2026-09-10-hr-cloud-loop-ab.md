@@ -68,13 +68,41 @@ A1 报告是当时快照，其中“B 尚未开放”“只有单发布”“没
 | A1 阶段回归 | 168 通过；现行相关接口/启动回归另 15 通过 | 一次性数据库、真实进程；模型为替身 |
 | A+B 后端回归 | 216 通过、1 跳过 | 跳过的是需显式配置的真实模型测试；已另行实跑公开模型旅程 |
 | 身份/回跳回归 | 272 通过 | 不等于企业 SSO 或云端 TLS 已演练 |
-| 前端 | 最终相关 225 项通过，TypeScript/Vite 构建通过 | 组件和 fetch 测试含替身；最终滚动 CSS 另通过构建与浏览器验证 |
-| Schema/文档 | 55 定义、133 例、18 条件规则、6 正文证据 ID | 不证明权限实现或招聘判断正确 |
+| 前端 | 2026-09-11 原样重跑报告中的 10 文件命令：225 项通过（其中工作界面 24 项）；`npm test` 全量一次为 1,145 通过、3 失败 | 组合命令是组件/fetch 合约测试；全量失败均为既存 `src/styles.test.ts` 断言，见下方，不是本批 Loop CSS 或测试修复 |
+| Schema/文档 | 55 定义、133 例、18 条件规则、6 正文证据 ID | “18 条件规则”是 selfcheck 覆盖 ID，不是 schema 构造数量；不证明权限实现或招聘判断正确 |
 | 真实进程 | Worker SIGKILL/恢复、提交前后故障、取消、摘要、预算及材料读取崩溃等 | 不承诺模型供应商请求恰好一次；已外发材料不能撤回 |
 | 浏览器 | 工作恢复、方法阅读/选择、部分确认、关联、下载、继续输入、390px 双向滚动 | 本地测试身份、脚本模型、HTTPS Origin 传输适配；不是生产验收 |
 | 独立审查 | 后端/前端及全分支审查发现的问题已修复并复审，无未关闭代码审查项 | 仍保留下面的未验事项，不能代替用户验收 |
 
-下载验证有实际文件：125 字节，SHA-256 与授权 `/file-info` 一致。截图见 B 报告，截图内容来自本地工程夹具，不是真实模型成果。
+此前会话曾观察到浏览器下载为 125 字节，且与授权 `/file-info` 的 SHA-256 一致；本次评审包未保留该文件或 file-info 响应，故此观察不可复现、不可作为响应捕获证据。仅保留当时助手记录的 SHA-256 `8d9cbc31f733fb8920c81f92077939319b21c9e0fb12be13082e0171dd5c4523`，不把它表述为重新核验。截图见 B 报告，截图内容来自本地工程夹具，不是真实模型成果。
+
+前端复核使用报告的准确命令和文件清单：
+
+```sh
+cd webui
+npm test -- src/hrLoopApi.test.ts src/workspaces/hr/HrLoopWorkspace.test.tsx src/workspaces/hr/HrWorkspaceShell.test.tsx src/router.test.ts src/workspaces/hr/HrPositionIndex.test.tsx src/documentTitle.test.tsx src/accessEventReporter.test.tsx src/AppShell.brain.test.tsx src/App.hrPositionSection.test.tsx src/auth.test.ts
+```
+
+它在 2026-09-11 得到 **10 files / 225 tests passed**。随后一次 `npm test` 得到 **126 files / 1,145 tests passed，`src/styles.test.ts` 3 failed**：最小可见字号 `11 < 11.5`、`.hr-workspace-shell` 期待的 `background: #eef1f4`、以及职位聊天栅格期待的字面 `248px`。这三个断言与本批未触碰的 `webui/src/styles.css` 有关；该文件 blob 为 `ceeb217b73162287e638ebc33560cf67901c4fb7`，与本次文档基线 `ac965b9` 相同。未改 CSS 或这些无关测试。`Window.scrollTo` 的 jsdom 提示及 Vite chunk warning 仍只是提示。
+
+## 5.1 对照工作流 W1–W12 的状态
+
+状态以 [HR Agent 工作流](../../HR_Agent工作流.md) 的 W1–W12 为准；“工程通过”只指所列本地接口、数据库、进程或组件证据，绝不替代其要求的真实模型与独立专业审读。
+
+| 工作流 | 当前状态 | 已有证据位置 | 仍缺什么 |
+| --- | --- | --- | --- |
+| W1 | 工程通过；专业审读待定 | `backend/tests/test_hr_agent_b_journey.py`；公开模型 `evidence.json` / `result-1.md` | 独立专业审读与用户验收 |
+| W2 | 新链工程通过；C 未实施；旧 D1 未修复 | `backend/tests/test_hr_agent_context.py::test_candidate_b_excludes_a_message_and_summary`、`::test_explicit_comparison_allows_both` | C 的候选人工作流验收；这些虚构对象回归不修复现行 D1 |
+| W3 | 部分工程通过 | `backend/tests/test_hr_agent_b_journey.py`（对话/岗位读取） | 候选人入口、面试续作及专业验收，完整 W3 在 D02 |
+| W4 | C/D 未实施 | 无 | 面试方案与真实记录场景 |
+| W5 | C 未实施 | 无 | 批量材料、损坏/歧义与专业审读 |
+| W6 | 工程通过；专业审读待定 | `backend/tests/test_hr_agent_b_journey.py`、标准并发/来源回归 | 公开模型产出的独立专业审读与用户验收 |
+| W7 | C 未实施 | 无 | 固定情报包、更新与清除后的读取 |
+| W8 | 部分工程基础；C 未实施 | A1/B 授权与撤权回归 | C 的历史/摘要/下载/模型发送完整联动 |
+| W9 | 工程通过 | `backend/tests/test_hr_agent_worker_process.py::test_kill_restart_same_database_preserves_attempt_and_result`、`::test_real_process_reply_projection_and_silent_sending_recovery` | 无专业审读要求；仍非生产演练 |
+| W10 | 部分工程通过；C 未实施 | `backend/tests/test_hr_agent_runtime.py::test_first_request_logs_exclude_sensitive_payloads`、文件隔离/诊断回归 | 真实个人材料前的 C 扩展验证 |
+| W11 | C 未实施 | A1 预算机制回归仅作基础 | 公开研究、承重引用、部分交付与专业审读 |
+| W12 | 工程通过；专业审读待定 | 发布身份/恢复回归；公开模型方法证据 | M1→M2/丢失的完整业务样例与独立专业审读 |
 
 ## 6. 专业质量怎么评审
 
@@ -107,8 +135,8 @@ A1 报告是当时快照，其中“B 尚未开放”“只有单发布”“没
 
 > 请在 `feat/hr-cloud-loop-b` 对 A0/A1+B 做一次联合评审，以本文件的准确基线和根目录两份主文档为准。先检查契约是否落到真实 API、持久化、模型循环、权限、材料、成果与页面，而不是只核对测试数量。
 >
-> 重点检查：同一输入与准确引用在重试/恢复/新发布后是否稳定；候选范围和摘要是否会污染后续工作；当前撤权能否阻断读取、下载及确认；提案部分确认、并发冲突和来源继承是否一致；模型能否发现/读取方法且不被固定步骤控制；页面是否表达真实保存、临时基准和正式确认的区别。
+> 先按本报告 §5.1 将发现映射到 W1–W12，并保留“工程通过 / 部分 / C 未实施 / 专业审读待定”的边界。特别区分 W2 新链虚构对象回归已通过与现行 D1 未修复。再检查：同一输入与准确引用在重试/恢复/新发布后是否稳定；候选范围和摘要是否会污染后续工作；当前撤权能否阻断读取、下载及确认；提案部分确认、并发冲突和来源继承是否一致；模型能否发现/读取方法且不被固定步骤控制；页面是否表达真实保存、临时基准和正式确认的区别。
 >
-> 对真实公开模型产出另作专业审读，核验判断、反证、适用边界及用户澄清后的修正，不以调用成功或方法读取作为专业通过。缺失的第三阶段回答和原生文件上传证据请保留为未验证。
+> 对真实公开模型产出另作专业审读，核验判断、反证、适用边界及用户澄清后的修正，不以调用成功或方法读取作为专业通过。缺失的第三阶段回答和原生文件上传证据请保留为未验证。前端报告所列 10 文件命令现为 225 通过；全量 `npm test` 的既存 `src/styles.test.ts` 三项失败须如实报告，不修改无关 CSS/测试来取得全绿。
 >
 > 请给出 A 运行底座、B 工程闭环、B 专业质量三个分别的结论；问题按阻塞/应修/建议列出准确文件位置、触发方式和影响，区分代码缺陷与尚未实施的 C–E 范围。本轮只读评审，不修改代码、运行生产命令或接触真实候选人材料。

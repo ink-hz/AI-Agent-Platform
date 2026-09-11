@@ -209,7 +209,7 @@ def test_explicit_comparison_allows_both(repo, tmp_path):
     assert any(m["role"] == "tool" for m in context.messages)
 
 
-def test_unscoped_old_summary_is_not_imported(repo):
+def test_previous_work_entries_are_not_imported_into_new_work(repo):
     owner = uuid4()
     first = repo.submit(owner, request(text="其他工作里的个人事实"), uuid4())
     second = repo.submit(

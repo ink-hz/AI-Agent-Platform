@@ -185,7 +185,7 @@ cd backend
 
 - [x] 写失败测试 `test_submit_without_position_and_replay`、`test_same_key_changed_payload_conflicts`、`test_owner_filter_precedes_decryption`；使用真实认证/CSRF链，不单独绕开中间件调用owner函数。
 - [x] 实现A0 §3的work/thread/messages/events读取、受理和继续接口，以及repository同名方法。未开放的B能力明确503；GET messages必须在重开后返回已提交回答/问题正文，受限原文返回占位。
-- [x] 写并实现 `test_candidate_b_excludes_a_message_and_summary`、`test_explicit_comparison_allows_both`、`test_unscoped_old_summary_is_not_imported`；观察build_model_context的实际messages和dependencies，不只检查附件元数据。
+- [x] 写并实现 `test_candidate_b_excludes_a_message_and_summary`、`test_explicit_comparison_allows_both`、`test_previous_work_entries_are_not_imported_into_new_work`；观察build_model_context的实际messages和dependencies，不只检查附件元数据。后者实际验证已取消的前一工作与同线程新工作之间不串入 entry，并非“未标范围 summary”单项用例。
 - [x] 写并实现 `test_upload_text_jd_without_conversation_resolves_material_ref`：真实附件begin/content/complete→materials查询→WorkInput；分别验processing/unsupported/删除和原文/解析身份，A1先UTF-8文本，B1补PDF/DOCX，不用假ref掩盖入口缺失。
 - [x] 实现输入修订、来源范围标记、先筛后压缩和原方法身份校验；新输入失效旧执行权。测试通过后独立提交，不导入旧全局summary；summary必须记录derived_from，普通note无替换历史权限。增加 `test_mixed_summary_missing_originals_is_omitted` 和 `test_note_cannot_erase_personal_scope`。
 
@@ -214,9 +214,9 @@ cd backend
 
 **文件：** 新增 `backend/app/hr_agent/worker.py`、`backend/tests/test_hr_agent_worker_process.py`；扩展repository/runtime/config及测试support；修改 `deploy/cloud/compose.yaml`新增默认不启动的hr-agent profile。
 
-- [x] 写失败测试 `test_committed_save_survives_lost_reply_and_kill`、`test_committed_final_answer_projects_without_new_model_call`、`test_prepared_attempt_is_not_double_charged`。故障钩子阻断回执或终答投影；kill真实子进程后重启同一测试库，核对模型请求数/操作ID/结果修订数。
+- [x] 写失败测试 `test_kill_restart_same_database_preserves_attempt_and_result`、`test_committed_answer_recovery_never_calls_provider`、`test_prepared_recovery_reuses_attempt`。故障钩子阻断回执或终答投影；kill真实子进程后重启同一测试库，核对模型请求数/操作ID/结果修订数。
 - [x] 实现claim/renew/失效epoch、独立心跳与信号退出；先恢复prepared或committed步骤，不重发整份用户工作。终答从原reply投影，业务副作用只读取原回执。
-- [x] 写并实现 `test_cancel_wins_before_new_side_effect`、`test_old_epoch_cannot_commit_after_new_input`、`test_late_usage_only_settles_budget`；取消/新输入使旧业务提交失效，迟到usage只能走受限结算。
+- [x] 写并实现 `test_cancel_wins_before_new_side_effect_in_real_process`、`test_real_process_new_input_rejects_old_answer_and_only_settles_usage`；取消/新输入使旧业务提交失效，后一个实际进程用例同时验证旧输入的回答不能提交和迟到用量仍受限结算。
 - [x] 按A0 §9.3独立测试calls/token/time、usage缺失、重试累计；再测试research→finalizing→waiting_budget重启与显式追加。assert重点是没有下一次请求/重复副作用，而非最终回答中出现“预算”字样。
 - [x] 用GET work/messages/events重开工作，验证已保存回答、问题、阶段与成果可找回；运行下面两组回归，记录模型替身/进程故障范围后独立提交。此时不启动生产profile。
 
@@ -246,7 +246,7 @@ A1验收由工程负责人基于上述实际证据组织技术审阅；A1通过�
 
 | 检查 | 最终结果 | 范围与限制 |
 | --- | --- | --- |
-| `python docs/superpowers/specs/hr-cloud-loop/selfcheck.py` | 55 定义、133 正反例、18 条件规则、6 个正文证据 ID 通过 | 文档契约覆盖，不替代服务测试 |
+| `python docs/superpowers/specs/hr-cloud-loop/selfcheck.py` | 55 定义、133 正反例、18 条件规则覆盖 ID、6 个正文证据 ID 通过 | 18 是 selfcheck 覆盖 ID，不是 schema 构造数量；文档契约覆盖，不替代服务测试 |
 | `python -m pytest backend/tests/test_hr_agent_*.py backend/tests/test_hr_cloud_loop_docs_selfcheck.py -q` | **168 passed，89.89 秒，无 skip** | 一次性 PostgreSQL、真实 HTTP/Worker 进程与本地模型替身；含16项进程/配置用例 |
 | `python -m pytest backend/tests/test_hr_position_api.py backend/tests/test_main.py::test_create_app_without_pollers_does_not_create_default_operations_database -q` | **15 passed，0.59 秒** | 现行岗位接口与默认应用启动回归 |
 | `python -m ruff check backend/app/hr_agent`；`git diff --check` | 通过 | 新运行包静态检查及差异格式 |
