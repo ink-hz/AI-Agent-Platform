@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 
 from .panorama_repository import PanoramaConflict, PanoramaNotFound, PanoramaUnavailable
+from .research_library import ResearchLibrary
 
 _PRIVATE_HEADERS = {
     "Cache-Control": "private, no-store",
@@ -74,6 +75,22 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
             raise HTTPException(503, "HR panorama unavailable") from None
         except (KeyError, TypeError, ValueError):
             raise HTTPException(422, "HR panorama request invalid") from None
+
+    research_library = ResearchLibrary()
+
+    @router.get("/api/hr/panorama/research")
+    async def research_catalog(request: Request):
+        await authorize(request)
+        return await call(research_library.catalog)
+
+    @router.get("/api/hr/panorama/research/{document_id}")
+    async def research_document(
+        request: Request,
+        document_id: Annotated[str, Path(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")],
+        edition: Annotated[str, Query(min_length=1, max_length=128)],
+    ):
+        await authorize(request)
+        return await call(research_library.document, document_id, edition)
 
     @router.get("/api/hr/panorama/topics")
     async def topics(request: Request):

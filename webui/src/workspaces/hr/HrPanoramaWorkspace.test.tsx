@@ -8,7 +8,8 @@ import type {
   CompanyDirectory,
   HrCompanyIntelligenceApi,
 } from "../../hrCompanyIntelligenceTypes";
-import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
+import { HrLegacyPanoramaWorkspace as HrPanoramaWorkspace } from "./HrLegacyPanoramaWorkspace";
+import { HrPanoramaWorkspace as PanoramaRouter } from "./HrPanoramaWorkspace";
 import { HrCompanyIntelligenceApiError } from "../../hrCompanyIntelligenceApi";
 
 const account: Account = {
@@ -135,6 +136,19 @@ describe("HrPanoramaWorkspace", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+  });
+  it.each(["?view=archive", "?company=acme&bundle_id=" + bundleId])("keeps legacy company navigation in the archive (%s)", async (query) => {
+    history.replaceState({}, "", "/hr/panorama" + query);
+    await act(async () => root.render(<PanoramaRouter account={account} api={fakeApi()} />));
+    await settle();
+    const control = [...container.querySelectorAll("button")].find(item => query.includes("company=") ? item.textContent?.includes("返回公司目录") : item.textContent === "公司");
+    expect(control).toBeDefined();
+    await act(async () => control!.click());
+    await settle();
+    expect(new URLSearchParams(location.search).get("view")).toBe("archive");
+    expect(container.textContent).toContain("历史情报归档");
+    expect(container.textContent).toContain("艾克米");
+    expect(container.textContent).not.toContain("读懂业务，找到对的人");
   });
   it.each([401, 403])("recovers a denied company directory without a page reload (%s)", async (status) => {
     const companies = vi.fn().mockRejectedValueOnce(new HrCompanyIntelligenceApiError(status))
