@@ -163,10 +163,9 @@ def _runtime_report(environment: dict[str, str]) -> tuple[dict | None, str | Non
                 "id": settings.provider_profile["id"],
                 "revision": settings.provider_profile["revision"],
             },
-            "budget": {
-                "id": settings.budget_profile.get("id"),
-                "fingerprint": profiles["budget"],
-            },
+            # Budget metadata is protected configuration. Its optional id was
+            # historically unconstrained, so render only the file fingerprint.
+            "budget": {"fingerprint": profiles["budget"]},
             "knowledge": {
                 "release_id": knowledge.release_id,
                 "manifest_fingerprint": knowledge.manifest_sha,
@@ -191,6 +190,13 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
     blockers: list[str] = []
     migrations = []
     cutover = {"available": False, "initialized": False, "phase": None}
+    permissions = {
+        "app_gate_select": False,
+        "app_gate_write": False,
+        "app_admin_execute": False,
+        "maintenance_admin_execute": False,
+    }
+    permissions_complete = False
     try:
         expected_migrations = dict(EXPECTED_MIGRATIONS)
         expected_migrations[102] = _fingerprint(CUTOVER_MIGRATION.read_bytes())
@@ -235,6 +241,63 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
                             "row_version": rows[0][4],
                         }
                     )
+            roles = connection.execute(
+                "select current_user,case current_user "
+                "when 'platform_control_app' then 'platform_control_maintenance' "
+                "when 'platform_control_app_preview' then "
+                "'platform_control_maintenance_preview' end"
+            ).fetchone()
+            if roles and roles[1] is not None:
+                maintenance_role = roles[1]
+                privilege_row = connection.execute(
+                    "select "
+                    "has_table_privilege(current_user,"
+                    "'platform_control.hr_execution_cutover','SELECT'),"
+                    "has_table_privilege(current_user,"
+                    "'platform_control.hr_execution_cutover','INSERT'),"
+                    "has_table_privilege(current_user,"
+                    "'platform_control.hr_execution_cutover','UPDATE'),"
+                    "has_table_privilege(current_user,"
+                    "'platform_control.hr_execution_cutover','DELETE'),"
+                    "has_function_privilege(current_user,"
+                    "'platform_control.hr_execution_cutover_counts_v102()',"
+                    "'EXECUTE'),"
+                    "has_function_privilege(current_user,"
+                    "'platform_control.initialize_hr_execution_cutover_v102(uuid)',"
+                    "'EXECUTE'),"
+                    "has_function_privilege(current_user,"
+                    "'platform_control.transition_hr_execution_cutover_v102(text,uuid)',"
+                    "'EXECUTE'),"
+                    "has_function_privilege(%s,"
+                    "'platform_control.hr_execution_cutover_counts_v102()',"
+                    "'EXECUTE'),"
+                    "has_function_privilege(%s,"
+                    "'platform_control.initialize_hr_execution_cutover_v102(uuid)',"
+                    "'EXECUTE'),"
+                    "has_function_privilege(%s,"
+                    "'platform_control.transition_hr_execution_cutover_v102(text,uuid)',"
+                    "'EXECUTE')",
+                    (maintenance_role, maintenance_role, maintenance_role),
+                ).fetchone()
+                if privilege_row is not None:
+                    permissions = {
+                        "app_gate_select": privilege_row[0] is True,
+                        "app_gate_write": any(
+                            value is True for value in privilege_row[1:4]
+                        ),
+                        "app_admin_execute": any(
+                            value is True for value in privilege_row[4:7]
+                        ),
+                        "maintenance_admin_execute": all(
+                            value is True for value in privilege_row[7:10]
+                        ),
+                    }
+                    permissions_complete = permissions == {
+                        "app_gate_select": True,
+                        "app_gate_write": False,
+                        "app_admin_execute": False,
+                        "maintenance_admin_execute": True,
+                    }
         schema_ready = check_schema_ready(connection_factory)
         if not schema_ready:
             blockers.append("schema_not_ready")
@@ -242,11 +305,15 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
             blockers.append("migration_identity_mismatch")
         if not cutover["initialized"]:
             blockers.append("cutover_gate_not_initialized")
+        if not permissions_complete:
+            blockers.append("cutover_permissions_incomplete")
         return {
             "checked": True,
             "schema_ready": schema_ready,
             "migrations": migrations,
             "cutover": cutover,
+            "permissions": permissions,
+            "permissions_complete": permissions_complete,
         }, blockers
     except Exception:  # noqa: BLE001 - database errors are never rendered raw
         return {
@@ -254,6 +321,8 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
             "schema_ready": False,
             "migrations": migrations,
             "cutover": cutover,
+            "permissions": permissions,
+            "permissions_complete": False,
         }, ["database_read_unavailable"]
 
 
@@ -262,7 +331,10 @@ def build_report(
     worker_environment: dict[str, str],
     *,
     connection_factory=None,
+    launch_scope="full-candidate",
 ) -> dict:
+    if launch_scope not in {"public-only", "full-candidate"}:
+        raise ValueError("unsupported launch scope")
     blockers: list[str] = []
     api, api_error = _runtime_report(dict(api_environment))
     worker, worker_error = _runtime_report(dict(worker_environment))
@@ -303,6 +375,13 @@ def build_report(
             "schema_ready": False,
             "migrations": [],
             "cutover": {"available": False, "initialized": False, "phase": None},
+            "permissions": {
+                "app_gate_select": False,
+                "app_gate_write": False,
+                "app_admin_execute": False,
+                "maintenance_admin_execute": False,
+            },
+            "permissions_complete": False,
         }
         blockers.append("database_not_checked")
     else:
@@ -311,14 +390,16 @@ def build_report(
 
     # No production assembly currently supplies these authorities. Metadata in a
     # profile or caller-provided booleans cannot manufacture either approval.
-    blockers.extend(
-        ["personal_processing_authorizer_absent", "d7_product_approval_absent"]
-    )
+    if launch_scope == "full-candidate":
+        blockers.append("personal_processing_authorizer_absent")
+    blockers.append("d7_product_approval_absent")
     blockers = list(dict.fromkeys(blockers))
     return {
         "schema_version": 1,
         "ok": not blockers,
         "production_certified": False,
+        "launch_scope": launch_scope,
+        "full_candidate_ready": False,
         "runtime_match": runtime_match,
         "api": api,
         "worker": worker,
@@ -339,6 +420,9 @@ def build_report(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Read-only HR runtime preflight")
+    parser.add_argument(
+        "--scope", choices=("public-only", "full-candidate"), required=True
+    )
     parser.add_argument("--api-env-file", type=Path)
     parser.add_argument("--worker-env-file", type=Path)
     parser.add_argument("--database-url-file", type=Path)
@@ -375,7 +459,12 @@ def main(argv=None) -> int:
                     options="-c statement_timeout=10000 -c default_transaction_read_only=on",
                 )
 
-        report = build_report(api, worker, connection_factory=connection_factory)
+        report = build_report(
+            api,
+            worker,
+            connection_factory=connection_factory,
+            launch_scope=arguments.scope,
+        )
     except (SystemExit, KeyboardInterrupt):
         raise
     except Exception:  # noqa: BLE001 - CLI must emit only a generic safe error

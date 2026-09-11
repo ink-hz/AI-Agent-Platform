@@ -198,6 +198,33 @@ def test_profile_mismatch_and_attachment_asymmetry_block(tmp_path):
     assert "attachment_wiring_asymmetric" in report["blockers"]
 
 
+def test_budget_metadata_is_never_rendered_even_when_it_contains_secrets(tmp_path):
+    knowledge = _knowledge(tmp_path / "knowledge")
+    environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+    budget_path = Path(environment["PLATFORM_HR_AGENT_BUDGET_PROFILE_FILE"])
+    budget = json.loads(budget_path.read_text())
+    budget["id"] = {
+        "endpoint": "https://SECRET-SENTINEL.invalid",
+        "credential": "SECRET-SENTINEL",
+    }
+    budget_path.write_text(json.dumps(budget), encoding="utf-8")
+    report = build_report(environment, dict(environment))
+    encoded = json.dumps(report, sort_keys=True)
+    assert "SECRET-SENTINEL" not in encoded
+    assert report["api"]["budget"] == {
+        "fingerprint": hashlib.sha256(budget_path.read_bytes()).hexdigest()
+    }
+
+
+def test_public_only_scope_does_not_conflate_candidate_privacy_policy(tmp_path):
+    knowledge = _knowledge(tmp_path / "knowledge")
+    environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+    report = build_report(environment, dict(environment), launch_scope="public-only")
+    assert "personal_processing_authorizer_absent" not in report["blockers"]
+    assert report["launch_scope"] == "public-only"
+    assert report["full_candidate_ready"] is False
+
+
 def test_knowledge_changed_after_load_fails_closed(tmp_path):
     knowledge = _knowledge(tmp_path / "knowledge")
     api = _environment(tmp_path / "api", knowledge=knowledge)
@@ -235,13 +262,51 @@ def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
         102,
     ]
     assert all(item["match"] for item in report["database"]["migrations"])
+    assert report["database"]["permissions_complete"] is True
+    assert report["database"]["permissions"] == {
+        "app_gate_select": True,
+        "app_gate_write": False,
+        "app_admin_execute": False,
+        "maintenance_admin_execute": True,
+    }
+
+
+def test_database_permission_probe_fails_when_maintenance_cannot_transition(tmp_path):
+    knowledge = _knowledge(tmp_path / "knowledge")
+    environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+    with hr_agent_database() as database:
+        with database.admin_connection() as connection:
+            connection.execute(
+                "insert into platform_control.hr_execution_cutover "
+                "(phase,epoch,transition_request_id) values "
+                "('legacy',1,'11111111-1111-4111-8111-111111111111')"
+            )
+            connection.execute(
+                "revoke execute on function "
+                "platform_control.transition_hr_execution_cutover_v102(text,uuid) "
+                "from platform_control_maintenance"
+            )
+        report = build_report(
+            environment, dict(environment), connection_factory=database.connection
+        )
+    assert report["database"]["permissions_complete"] is False
+    assert "cutover_permissions_incomplete" in report["blockers"]
 
 
 def test_cli_stdout_is_json_and_scrubs_raw_exceptions(tmp_path, capsys):
     bad = tmp_path / "bad.env"
     bad.write_text("PLATFORM_HR_AGENT_ENABLED=1\n", encoding="utf-8")
     bad.chmod(0o600)
-    status = main(["--api-env-file", str(bad), "--worker-env-file", str(bad)])
+    status = main(
+        [
+            "--scope",
+            "public-only",
+            "--api-env-file",
+            str(bad),
+            "--worker-env-file",
+            str(bad),
+        ]
+    )
     output = capsys.readouterr().out
     assert status == 1
     assert json.loads(output)["ok"] is False
