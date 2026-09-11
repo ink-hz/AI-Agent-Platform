@@ -15,7 +15,7 @@
 
 实现保存成果时自动关联其服务端核验的对象，使对话、岗位、候选人读取同一成果。保存事务写 result_links；不可接受超出本次对象的模型关联。
 
-用户确认候选草稿时，把该准确草稿关联到新建/明确选定的候选人。一般 link_result 不允许把任意成果挂到另一候选人；确认路径具有已经核对源、草稿与用户选择的独立语义。不得改写已有 result_revision 正文、objects 或 hash。对已经确认的 candidate_documents，读取端也能发现其准确 result_ref；不能以 current 替换确认的旧修订。
+用户确认候选草稿时，把该准确草稿关联到新建/明确选定的候选人。一般 link_result 不允许把任意成果挂到另一候选人；确认路径具有已经核对源、草稿与用户选择的独立语义。不得改写已有 result_revision 正文、objects 或 hash。对已经确认的 candidate_documents，读取端也能发现其准确 result_ref；不能以 current 替换确认的旧修订。通用成果列表继续显示该成果最新修订；read_candidate.documents 单独保留每次确认的准确 ref，候选入口必须将“已确认草稿”与“关联成果”区分，不能任挑某次确认覆盖通用列表。
 
 read_candidate 返回已授权 position_ids，供选定候选人后构造明确岗位关系；不凭同名推断。
 
@@ -25,9 +25,9 @@ read_candidate 返回已授权 position_ids，供选定候选人后构造明确�
 
 ## Task 2: 用户面试原文登记
 
-复用普通附件上传：UTF-8 text/plain 原文由 user_input 附件生成准确 material ref，无需模型解析。新增用户 POST/GET `/api/hr/agent/candidates/{candidate_id}/interview-records`。
+复用普通附件上传：UTF-8 text/plain 原文由 user_input 附件生成准确 material ref，无需模型解析。新增用户 POST/GET `/api/hr/agent/candidates/{candidate_id}/interview-records`，以及准确 GET `.../interview-records/{record_id}` 返回该用户记录与原文。
 
-POST 仅接 material_ref（必须原生 UTF-8 text ref）、title、occurred_at（可空）、position_id（可空）、interview_plan_ref（可空）；Idempotency-Key。拒绝额外 authorship/source_kind/正文参数。响应 authorship 固定 user_supplied。原文留在附件链，登记只保存加密标题/时间与准确引用。
+POST 仅接 material_ref（必须原生 UTF-8 text ref）、title、occurred_at（可空）、position_id（可空）、interview_plan_ref（可空）；Idempotency-Key。拒绝额外 authorship/source_kind/正文参数。响应 authorship 固定 user_supplied。原文留在附件链，登记只保存加密标题/时间与准确引用。首批文本记录上限32,000 Unicode码点；准确GET读取附件而非AI结果，返回text与material_ref并在返回前重验当前权限，列表不携带正文。
 
 101 新增 candidate_interview_records；personal_materials 增加 registered_by_record，与 registered_by_item 恰有一种来源；使现有模型出站与标准提案个人来源检查覆盖用户记录。普通上传 source_kind 在数据库固定，登记锁必须重新检查 user_input，不能只信 MaterialService 或客户端。原文非空白、严格 UTF-8、准确身份、同 owner、可读/未过期/未删除；可选岗位必须已关联候选人；可选方案必须准确 interview_plan 且对象含当前候选人/所选岗位。登记与个人标记同事务。
 
