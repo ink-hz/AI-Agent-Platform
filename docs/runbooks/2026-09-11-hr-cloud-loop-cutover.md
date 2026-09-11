@@ -106,7 +106,7 @@ public 102 提供 `platform_control.hr_execution_cutover` 单例状态、幂等�
 经单独授权初始化时，maintenance 容器的具体调用形态为：
 
 ```bash
-/usr/bin/docker run --rm --read-only --user 0:0 \
+/usr/bin/docker run --rm -i --read-only --user 0:0 \
   --network orbbec-agent-platform-internal \
   -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
   -e HR_CUTOVER_REQUEST_ID=EXPLICIT_UUID PLATFORM_IMAGE_SHA \
@@ -130,22 +130,29 @@ PY
 
 ## 5. 隔离启动与验证
 
-迁移和 provisioning 完成后，只能先启动隔离服务，HR 新受理仍为关闭状态：
+迁移和 provisioning 完成后，可先启动 production 服务但保持 102 gate 为 `legacy`，因此云端新 root admission 会被拒绝：
 
 ```bash
 "${hr_compose[@]}" up -d --force-recreate platform-api platform-hr-agent-worker
 "${hr_compose[@]}" ps platform-api platform-hr-agent-worker
 ```
 
-随后按接口优先执行：
+预激活阶段只执行不创建工作的检查：
 
 1. 用真实认证用户读取现有 `GET /api/hr/agent/configuration` 和 `GET /api/hr/agent/knowledge?kind=method`。两者成功证明 API 当前能通过身份、HR 权限、schema/config 和知识读取；仓库没有独立 HR health/readiness endpoint，平台 `/api/health` 通过不算 HR ready。
-2. 用一次性公开/虚构 work 验证受理、Worker 认领、独立 heartbeat、结果保存、kill/restart 恢复和幂等。
-3. 显式附件模式下验证上传/读取/解析；personal-processing authorizer 缺失时，虚构 personal source 的模型请求数必须为 0，并返回受控阻断。
-4. 核对 provider 目标和普通日志去敏；不得发送真实候选材料。
-5. 最后才做页面上传、恢复、滚动和状态呈现验收。当前该浏览器验收未完成。
+2. 检查 API/Worker 容器使用预期 image、配置/knowledge 指纹，且 Worker 在没有 cloud-lane continuation 时保持空闲。进程存在只证明 supervisor 状态。
+3. 不提交 public canary work：`legacy` gate 正确拒绝 cloud root admission。在 production gate 仍为 `legacy` 时强行创建 canary 会绕过切换契约。
 
-存在进程只证明 supervisor 状态，不证明上述功能。每项证据绑定 release/image/config/knowledge 指纹和测试数据身份。
+若要在正式切换前做完整 public canary，必须另有独立 preview 数据库、compose project、secrets volumes、102 `cloud` gate 和非生产 provider/材料；当前 compose/runbook 没有提供这套隔离拓扑，因此本文不写一个可能误连 production 的 preview 示例。
+
+只有获准完成 §6 的 `draining_legacy -> cloud` 后，才在 production 执行一次性公开/虚构 work canary：
+
+1. 验证受理、Worker 认领、独立 heartbeat、结果保存、kill/restart 恢复和幂等。
+2. 显式附件模式下验证上传/读取/解析；full-candidate 仍因 personal-processing authorizer 缺失而阻断，不发送真实或虚构 personal source 到模型。
+3. 核对 provider 目标和普通日志去敏；不得发送真实候选材料。
+4. 最后才做页面上传、恢复、滚动和状态呈现验收。当前该浏览器验收未完成。
+
+每项证据绑定 release/image/config/knowledge 指纹、102 phase/epoch 和测试数据身份。production canary 失败按 §6 进入 `draining_cloud`，不能无记录地切回 legacy。
 
 ## 6. 切换、排空与回滚
 
