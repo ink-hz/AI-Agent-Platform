@@ -29,7 +29,18 @@ D保留在 `feat/hr-cloud-loop-d` / `6a9cef6`；E开发分支为 `feat/hr-cloud-
 - 前端相关118项通过及TypeScript/Vite完整构建通过。该证据是组件/构建，不是浏览器实际交互；旧styles三项失败的历史披露保留，未用局部套件声称仓库全绿。
 - 旧成果兼容新增2项：真实create_app和身份中间件下，未登录401、已登录未知成果404。只有成果查找结果被替换为not_found；不是生产数据读取验证。
 - E开发基线的212项受理/排空/候选续作等回归，与本发布整合后的测试不是同一基线，不叠加计数。
-- 最终后端整合回归、独立复核结果待本批收尾填写；目前不得标成整批通过。
+- 最终发布代码基线 `b5ea32d`：新Loop/盘点/预检/迁移/配置/云部署/切换/读取兼容 **567 passed, 6 skipped，287.23s**；身份/对话/D1 **757 passed，13.54s**。两组各报原始数量，不合并成业务通过数。六项条件跳过是既有真实模型/显式公开bundle测试，本轮未调用真实模型。
+- 有界独立审查核对D1与缺gate拒绝cloud，并各有9项和61项回归；见 `integration/independent-review.md` 的文件指纹及限制。不是整批独立人类评审。
+- selfcheck **55定义/134正反例/18条件覆盖ID/6正文证据ID**通过。部署shell语法通过。完整C/D artifacts相对D基线6a9cef6为0变动，见 `historical-evidence-check.json`。
+
+最终命令（工作目录为本worktree的backend，前端命令/文件集合见frontend原始日志）：
+
+```bash
+.venv/bin/python -m pytest tests/test_hr_agent_*.py tests/test_hr_cloud_loop_docs_selfcheck.py tests/test_config.py tests/test_cloud_deployment.py tests/test_hr_execution_cutover.py tests/test_hr_candidate_cutover_continuation.py tests/test_hr_release_read_compatibility.py -q
+.venv/bin/python -m pytest tests/test_agent_use_authorization.py tests/test_r1_authorization.py tests/test_agent_brain_conversation_api.py tests/test_agent_brain_v2_conversation_api.py tests/test_agent_brain_hr_history_isolation.py tests/test_identity_crypto.py tests/test_identity_rate_limits.py -q
+```
+
+对应日志分别为 `integration/backend/release-final-verified.log` 和 `integration/backend/identity-verified.log`。首次全组4 failed/560 passed/6 skipped与身份5 failed/752 passed的日志保留：前者是真实hr_web约束与共享gate初始化后的测试夹具不符，后者是通用direct-agent测试使用未配置v6的HR入口。修复只改合法fixture/测试输入，最终组已重新全跑；没有为通过而放宽授权或吞掉异常。
 
 ## W1–W12对应状态
 
