@@ -795,16 +795,21 @@ class HrAgentRepository(RepositoryViewsMixin):
         # Exact graph traversal, deduplicated. No current-pointer substitution.
         pending = [ref]
         seen = set()
+        authorized_sources = []
         while pending:
             current = pending.pop()
             identity = canonical_json(current)
             if identity in seen:
                 continue
             seen.add(identity)
+            authorized_sources.append(current)
             if len(seen) > 10000:
                 raise problem("temporarily_unavailable", http_status=503)
             if current["kind"] != "result":
-                self._scope(owner, [], [current], work_id)
+                # The exact result carries its provenance, not new object authority.
+                # All result nodes below still check the current work's objects;
+                # leaves independently recheck live ownership and availability.
+                self._scope(owner, [], [current])
                 continue
             c.execute(
                 "SELECT objects,sha256 FROM platform_hr_agent.result_revisions WHERE owner_id=%s AND result_id=%s AND revision_id=%s",
@@ -821,6 +826,17 @@ class HrAgentRepository(RepositoryViewsMixin):
                 (owner, current["id"], current["revision"]),
             )
             pending.extend(c.fetchall())
+        return authorized_sources
+
+    def _selected_result_dependency(self, c, owner, work_id, ref):
+        work = self._work(c, owner, work_id)
+        current, _ = self._input(c, work)
+        for selected in current["references"]:
+            if selected["kind"] == "result" and ref in self._validate_result_sources(
+                c, owner, selected, work_id
+            ):
+                return True
+        return False
 
     def list_messages(self, owner_id, work_id, after=0, limit=100):
         if after < 0 or not 1 <= limit <= 200:
@@ -1812,9 +1828,7 @@ class HrAgentRepository(RepositoryViewsMixin):
                 for row in c.fetchall():
                     if row["namespace"] != "tool:read_resource":
                         continue
-                    body = self._unseal(
-                        "entries", row["entry_id"], "sealed_body", row
-                    )
+                    body = self._unseal("entries", row["entry_id"], "sealed_body", row)
                     if body["outcome"]["error"] is not None:
                         continue
                     records.append(

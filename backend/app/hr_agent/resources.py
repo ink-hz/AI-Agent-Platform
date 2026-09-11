@@ -207,7 +207,11 @@ class ResourceReader:
                     raise problem("configuration_unavailable", http_status=503)
             elif ref["kind"] == "material":
                 if current is not None and ref not in current["references"]:
-                    raise problem("scope_denied", http_status=403)
+                    with self.repository.transaction() as c:
+                        if not self.repository._selected_result_dependency(
+                            c, owner, work_id, ref
+                        ):
+                            raise problem("scope_denied", http_status=403)
                 if self.materials is None:
                     raise problem("configuration_unavailable", http_status=503)
                 material_refs.append(ref)
