@@ -52,7 +52,15 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         "platform-dingtalk-stream",
         "platform-brain",
         "platform-hr-web-worker",
+        "platform-hr-agent-worker",
     }
+    hr_worker = services["platform-hr-agent-worker"]
+    assert hr_worker["profiles"] == ["hr-agent"]
+    assert "ports" not in hr_worker
+    assert hr_worker["read_only"] is True
+    assert hr_worker["cap_drop"] == ["ALL"]
+    assert hr_worker["security_opt"] == ["no-new-privileges:true"]
+    assert hr_worker["user"] == "10001:10001"
     assert "ports" not in services["platform-postgres"]
     assert "ports" not in services["platform-api"]
     assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
@@ -243,6 +251,9 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
     assert "uvicorn" in dockerfile
     assert '"--no-proxy-headers"' in dockerfile
     assert "brain-model.release.json" in dockerfile
+    assert "backend/tools/hr_agent/inventory.py" in dockerfile
+    assert "backend/tools/hr_agent/preflight.py" in dockerfile
+    assert "./tools/hr_agent/" in dockerfile
     for runtime_package in ("bubblewrap", "libmagic1", "poppler-utils"):
         assert runtime_package in dockerfile
     assert "\n      clamav \\\n" not in dockerfile

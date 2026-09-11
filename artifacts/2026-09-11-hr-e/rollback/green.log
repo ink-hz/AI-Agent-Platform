@@ -1,0 +1,29 @@
+....F................................................................... [ 72%]
+...........................                                              [100%]
+=================================== FAILURES ===================================
+_____________ test_compose_is_isolated_loopback_only_and_hardened ______________
+
+    def test_compose_is_isolated_loopback_only_and_hardened():
+        value = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
+        services = value["services"]
+    
+>       assert set(services) == {
+            "platform-api",
+            "platform-attachment-storage-init",
+            "platform-attachments",
+            "platform-loopback",
+            "platform-minio",
+            "platform-postgres",
+            "platform-directory",
+            "platform-dingtalk-stream",
+            "platform-brain",
+            "platform-hr-web-worker",
+        }
+E       AssertionError: assert {'platform-ap...rectory', ...} == {'platform-ap...rectory', ...}
+E         
+E         Extra items in the left set:
+E         'platform-hr-agent-worker'
+E         Use -v to get more diff
+
+backend/tests/test_cloud_deployment.py:44: AssertionError
+1 failed, 98 passed in 36.05s

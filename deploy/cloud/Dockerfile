@@ -30,6 +30,7 @@ ENV PLATFORM_RELEASE_SHA=${RELEASE_SHA}
 COPY --chown=10001:10001 backend/app ./app
 COPY --chown=10001:10001 backend/migrations ./migrations
 COPY --chown=10001:10001 backend/control_migrations ./control_migrations
+COPY --chown=10001:10001 backend/tools/hr_agent/inventory.py backend/tools/hr_agent/preflight.py ./tools/hr_agent/
 COPY --chown=10001:10001 deploy/cloud/registry.yaml /app/registry.yaml
 COPY --chown=10001:10001 deploy/cloud/metabot.runtime-contract.json /app/metabot.runtime-contract.json
 COPY --chown=10001:10001 deploy/cloud/brain-model.release.json /app/brain-model.release.json

@@ -1,0 +1,37 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_rollback_does_not_restart_old_erasure_after_possible_migration[0-expected0] _
+backend/tests/test_hr_release_rollback.py:20: in test_rollback_does_not_restart_old_erasure_after_possible_migration
+    source = function_source()
+             ^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_release_rollback.py:11: in function_source
+    return 'filter_rollback_consumers() {' + text.split('filter_rollback_consumers() {', 1)[1].split('\nrollback() {', 1)[0]
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   IndexError: list index out of range
+_ test_rollback_does_not_restart_old_erasure_after_possible_migration[1-expected1] _
+backend/tests/test_hr_release_rollback.py:20: in test_rollback_does_not_restart_old_erasure_after_possible_migration
+    source = function_source()
+             ^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_release_rollback.py:11: in function_source
+    return 'filter_rollback_consumers() {' + text.split('filter_rollback_consumers() {', 1)[1].split('\nrollback() {', 1)[0]
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   IndexError: list index out of range
+_ test_rollback_does_not_restart_old_erasure_after_possible_migration[unknown-expected2] _
+backend/tests/test_hr_release_rollback.py:20: in test_rollback_does_not_restart_old_erasure_after_possible_migration
+    source = function_source()
+             ^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_release_rollback.py:11: in function_source
+    return 'filter_rollback_consumers() {' + text.split('filter_rollback_consumers() {', 1)[1].split('\nrollback() {', 1)[0]
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   IndexError: list index out of range
+_______ test_filter_is_wired_before_restart_and_marked_before_migration ________
+backend/tests/test_hr_release_rollback.py:33: in test_filter_is_wired_before_restart_and_marked_before_migration
+    assert rollback.index('filter_rollback_consumers') < rollback.index('"${previous_compose[@]}" up -d')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ValueError: substring not found
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_release_rollback.py::test_rollback_does_not_restart_old_erasure_after_possible_migration[0-expected0]
+FAILED backend/tests/test_hr_release_rollback.py::test_rollback_does_not_restart_old_erasure_after_possible_migration[1-expected1]
+FAILED backend/tests/test_hr_release_rollback.py::test_rollback_does_not_restart_old_erasure_after_possible_migration[unknown-expected2]
+FAILED backend/tests/test_hr_release_rollback.py::test_filter_is_wired_before_restart_and_marked_before_migration
+4 failed in 0.03s

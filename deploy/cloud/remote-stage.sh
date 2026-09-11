@@ -328,6 +328,7 @@ control_secret_consumer_services=(
   platform-attachments
 )
 previous_control_consumers=()
+control_migrations_started=0
 previous_release=""
 if [[ -L "$root_path/current" ]]; then
   previous_release="$(/usr/bin/readlink -f "$root_path/current" 2>/dev/null || true)"
@@ -553,6 +554,23 @@ if /usr/bin/tar -tzf "$archive_path" | /usr/bin/grep -Eq '(^|/)(data|uploads|log
   fail
 fi
 /usr/bin/install -d -m 700 "$release_path"
+filter_rollback_consumers() {
+  # Bootstrap may commit migration 100 before failing. An old attachment
+  # image must never be restarted with its newly granted erasure privileges.
+  # Unknown state is conservative; manual recovery uses the fixed image only.
+  if [[ "${control_migrations_started:-1}" != "0" ]]; then
+    local service_name
+    local retained=()
+    for service_name in "${previous_control_consumers[@]}"; do
+      if [[ "$service_name" == "platform-attachments" ]]; then
+        echo "ATTACHMENT_WORKER_REMAINS_STOPPED migration_state_requires_review" >&2
+      else
+        retained+=("$service_name")
+      fi
+    done
+    previous_control_consumers=("${retained[@]}")
+  fi
+}
 rollback() {
   local exit_status=$?
   trap - EXIT
@@ -587,6 +605,7 @@ rollback() {
       if [[ -n "$previous_release" && -f "$previous_environment" ]]; then
         /bin/cp -p "$previous_environment" "$environment_path"
         /bin/ln -sfn "$previous_release" "$root_path/current"
+        filter_rollback_consumers
         if [[ "$loopback_port_released" -eq 1 && "${#previous_control_consumers[@]}" -gt 0 ]]; then
           if ! "${previous_compose[@]}" up -d --force-recreate "${previous_control_consumers[@]}" \
             >/dev/null 2>&1; then
@@ -806,6 +825,7 @@ done
   "$image_name" python -m app.cloud_replica.cli migrate >/dev/null
 
 postgres_container="$("${compose[@]}" ps -q platform-postgres)"
+control_migrations_started=1
 control_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-control-db.sh" \
   "$release_path" "$private_path" "$image_name" "$postgres_container")" || fail
 [[ "$control_bootstrap_result" == "CONTROL_DATABASE_CREDENTIALS_READY version=2" ]] || fail
