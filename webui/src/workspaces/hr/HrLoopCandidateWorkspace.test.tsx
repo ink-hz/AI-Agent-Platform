@@ -36,23 +36,23 @@ async function render(c = candidatesApi(), l = loopApi(), onUse = vi.fn()) { awa
 it("clears A selections and ignores a late A preview after switching to B", async () => {
   const c = candidatesApi(), l = loopApi(), late = deferred<never>();
   await render(c,l); await change("选择候选人", "a");
-  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿 draft-a"]')!.click());
+  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿：人工确认的候选人材料草稿"]')!.click());
   l.result.mockImplementationOnce(() => late.promise);
-  await act(async () => button("查看已确认草稿 draft-a").click());
+  await act(async () => el.querySelector<HTMLButtonElement>('[aria-label="查看已确认草稿：人工确认的候选人材料草稿"]')!.click());
   await change("继续工作的意图", "甲的私有草稿"); await change("选择候选人", "b");
   expect((el.querySelector('[aria-label="继续工作的意图"]') as HTMLTextAreaElement).value).toBe("");
   await act(async () => late.resolve({} as never));
   expect(el.textContent).not.toContain("甲的私有草稿");
-  expect(el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿 draft-b"]')!.checked).toBe(false);
+  expect(el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿：人工确认的候选人材料草稿"]')!.checked).toBe(false);
 });
 
 it("keeps confirmed drafts separate from associated latest results and uses exact selected refs", async () => {
   const onUse = vi.fn(); await render(candidatesApi(), loopApi(), onUse); await change("选择候选人", "a");
   expect(el.textContent).toContain("已确认草稿"); expect(el.textContent).toContain("关联成果");
   expect(el.textContent).toContain("AI 整理 · associated-a");
-  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿 draft-a"]')!.click());
-  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择准确正文 doc-a"]')!.click());
-  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择关联成果 associated-a"]')!.click());
+  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿：人工确认的候选人材料草稿"]')!.click());
+  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择第 1 份材料的准确正文"]')!.click());
+  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择关联成果：associated-a"]')!.click());
   await change("继续工作的意图", "基于准确材料准备追问"); await act(async () => button("带所选内容继续工作").click());
   expect(onUse).toHaveBeenCalledWith(expect.objectContaining({ candidateId:"a", positionId:"p", goal:"基于准确材料准备追问", references:[exact("draft-a"), {...exact("source-a"),kind:"material"}, exact("associated-a")] }));
 });

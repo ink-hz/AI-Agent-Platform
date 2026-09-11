@@ -1081,7 +1081,7 @@ it("starts clean candidate-scoped work with only explicit candidate, position an
   await type("旧工作未提交草稿");
   await act(async () => button("候选人工作").click());
   await act(async () => { const select = el.querySelector<HTMLSelectElement>('[aria-label="选择候选人"]')!; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value")!.set!.call(select,"candidate-a"); select.dispatchEvent(new Event("change",{bubbles:true})); });
-  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿 candidate-draft"]')!.click());
+  await act(async () => el.querySelector<HTMLInputElement>('[aria-label="选择已确认草稿：人工确认的候选人材料草稿"]')!.click());
   await act(async () => { const area = el.querySelector<HTMLTextAreaElement>('[aria-label="继续工作的意图"]')!; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(area,"为候选人准备追问"); area.dispatchEvent(new Event("input",{bubbles:true})); });
   await act(async () => button("带所选内容继续工作").click());
   expect(el.querySelector('section[aria-label="候选人工作"]')).toBeNull();

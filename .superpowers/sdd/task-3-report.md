@@ -40,7 +40,7 @@ Independent review identified and the implementation fixed: stuck busy state aft
 
 ## Limits
 
-- No browser acceptance was run, per task handoff; root owns later browser verification.
+- Browser acceptance was unavailable in this worker; root owns that final product limitation and any later browser verification.
 - No production, backend, database, or model calls were made.
 - The current UI intentionally omits an interview date field and sends `occurred_at: null`, which is an accepted interface option.
 - Related positions use a generic authorized label in the candidate panel; the main workspace resolves a known title through the existing position API.
