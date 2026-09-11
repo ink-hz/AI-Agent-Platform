@@ -1,6 +1,6 @@
 import hashlib
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from test_hr_agent_repository import (
@@ -551,6 +551,81 @@ def test_indivisible_context_overflow_blocks_with_recoverable_reason(
     assert repo.get_work(owner, work["work_id"])["budget"]["charged_calls"] == (
         1 if oversize == "entry" else 0
     )
+
+
+def test_oversize_user_history_requires_new_work_and_preserves_old_work(repo, tmp_path):
+    from dataclasses import replace
+
+    from hr_agent_support import make_hr_settings
+
+    settings = make_hr_settings(tmp_path / "oversize-history-settings")
+    repo.settings = replace(
+        settings,
+        budget_profile={
+            **settings.budget_profile,
+            "input_target_tokens": 3000,
+            "input_trigger_tokens": 4000,
+            "max_output_tokens": 1000,
+        },
+        provider_profile={
+            **settings.provider_profile,
+            "context_window_tokens": 15000,
+        },
+    )
+    root = tmp_path / "oversize-history-release"
+    publication(root)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    original = "中" * 10000
+    old = repo.submit(owner, request(text=original, budget_profile="test"), uuid4())
+    fence = repo.claim("old-1", 60)
+    with pytest.raises(WorkPaused):
+        build_model_context(repo, resources, fence)
+
+    repo.append_input(
+        owner,
+        old["work_id"],
+        {
+            "expected_input_revision": 1,
+            "text": "缩短后的目标",
+            "objects": [],
+            "references": [],
+            "question_id": None,
+        },
+        uuid4(),
+    )
+    fence = repo.claim("old-2", 60)
+    with pytest.raises(WorkPaused) as paused:
+        build_model_context(repo, resources, fence)
+    assert paused.value.view["block_reason"] == "context_too_large"
+
+    with repo.transaction() as c:
+        c.execute(
+            "SELECT * FROM platform_hr_agent.entries WHERE work_id=%s AND kind='user' ORDER BY seq",
+            (UUID(old["work_id"]),),
+        )
+        rows = c.fetchall()
+    assert [
+        repo._unseal("entries", row["entry_id"], "sealed_body", row)["body"]
+        for row in rows
+    ] == [
+        original,
+        "缩短后的目标",
+    ]
+
+    new = repo.submit(
+        owner,
+        request(text="按较小范围重新开始", budget_profile="test"),
+        uuid4(),
+    )
+    new_fence = repo.claim("new", 60)
+    context = build_model_context(repo, resources, new_fence)
+    assert context.purpose == "work"
+    assert repo.get_work(owner, old["work_id"])["state"] == "blocked"
+    assert repo.get_work(owner, new["work_id"])["state"] == "running"
 
 
 def test_explicit_comparison_allows_both(repo, tmp_path):

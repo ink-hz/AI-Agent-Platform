@@ -114,7 +114,8 @@ it("explains how to recover when context is structurally too large", async () =>
     ),
   );
 
-  expect(el.textContent).toContain("缩短输入、移除过大材料");
+  expect(el.textContent).toContain("拆分范围后创建新工作");
+  expect(el.textContent).toContain("旧工作、历史与成果仍会保留");
   expect(el.textContent).not.toContain("追加工作预算");
 });
 it("starts without a position using server budget and retains key after network failure", async () => {
