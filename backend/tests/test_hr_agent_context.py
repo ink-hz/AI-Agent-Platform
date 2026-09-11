@@ -112,6 +112,108 @@ def test_candidate_b_excludes_a_message_and_summary(repo):
     assert all(e.kind != "summary" for e in selected)
 
 
+def scoped_summary_from_public_history(repo, owner, work, fence, ref, objects):
+    public = repo.read_selected_entries(fence)[0]
+    repo.append_input(
+        owner,
+        work["work_id"],
+        {
+            "expected_input_revision": fence.input_revision,
+            "text": "只在当前摘要前缀中的敏感范围",
+            "objects": objects,
+            "references": [ref],
+            "question_id": None,
+        },
+        uuid4(),
+    )
+    fence = repo.claim("w", 60)
+    provenance = {
+        "derived_from": [
+            {
+                "entry_id": str(public.entry_id),
+                "seq": public.seq,
+                "input_revision": public.input_revision,
+            }
+        ],
+        "policy_revision": "scope-summary-v1",
+    }
+    context = ModelContext(
+        "summary",
+        ({"role": "user", "content": "摘要"},),
+        (),
+        (ref,),
+        100,
+        fence.input_revision,
+        summary_provenance=provenance,
+    )
+    attempt = repo.prepare_model(fence, context)
+    repo.mark_model_sending(fence, attempt.attempt_id)
+    repo.commit_model(fence, attempt.attempt_id, reply("敏感摘要"))
+    repo.commit_summary(fence, attempt.attempt_id, provenance)
+    return fence
+
+
+def test_summary_inherits_current_object_and_reference_scope(repo, tmp_path):
+    root = tmp_path / "scoped-summary-release"
+    ref = publication(root)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    candidate_b = {"kind": "candidate", "id": str(uuid4())}
+    candidate_a = {"kind": "candidate", "id": str(uuid4())}
+    work = repo.submit(owner, request(text="公开旧历史"), uuid4())
+    fence = repo.claim("w", 60)
+    fence = scoped_summary_from_public_history(
+        repo, owner, work, fence, ref, [candidate_b]
+    )
+    repo.append_input(
+        owner,
+        work["work_id"],
+        {
+            "expected_input_revision": fence.input_revision,
+            "text": "切换到候选人A",
+            "objects": [candidate_a],
+            "references": [],
+            "question_id": None,
+        },
+        uuid4(),
+    )
+
+    current = repo.claim("w", 60)
+    assert all(e.kind != "summary" for e in repo.read_selected_entries(current))
+
+
+def test_summary_is_omitted_after_current_prefix_reference_is_revoked(repo, tmp_path):
+    root = tmp_path / "revoked-summary-release"
+    ref = publication(root)
+    resources = ResourceReader(
+        repo, PublishedKnowledge(root), authorize_objects=lambda *a: None
+    )
+    repo.scope_validator = resources.validate_scope
+    owner = uuid4()
+    work = repo.submit(owner, request(text="公开旧历史"), uuid4())
+    fence = repo.claim("w", 60)
+    fence = scoped_summary_from_public_history(repo, owner, work, fence, ref, [])
+    repo.append_input(
+        owner,
+        work["work_id"],
+        {
+            "expected_input_revision": fence.input_revision,
+            "text": "不再选择材料",
+            "objects": [],
+            "references": [],
+            "question_id": None,
+        },
+        uuid4(),
+    )
+    (root / "method.md").write_text("已撤销的不同内容")
+
+    current = repo.claim("w", 60)
+    assert all(e.kind != "summary" for e in repo.read_selected_entries(current))
+
+
 def test_context_contains_paired_tool_request_and_result(repo, tmp_path):
     publication(tmp_path)
     resources = ResourceReader(

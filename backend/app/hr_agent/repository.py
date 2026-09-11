@@ -1971,8 +1971,11 @@ class HrAgentRepository(RepositoryViewsMixin):
             if existing:
                 return existing["entry_id"]
             current, _ = self._input(c, work)
-            objects = []
-            refs = []
+            # A summary may learn scoped content from the current-state prefix,
+            # even when that prefix is intentionally not part of derived_from.
+            # Preserve the frozen request scope as well as covered-entry scope.
+            objects = list(current["objects"])
+            refs = list(request["dependencies"])
             for source in provenance["derived_from"]:
                 c.execute(
                     "SELECT * FROM platform_hr_agent.entries WHERE owner_id=%s AND work_id=%s AND entry_id=%s AND seq=%s AND input_revision=%s",
