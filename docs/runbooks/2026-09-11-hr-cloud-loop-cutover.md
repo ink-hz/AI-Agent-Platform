@@ -75,31 +75,21 @@ preflight 从待发布镜像内运行；镜像必须包含 `backend/tools/hr_age
 
 ## 4. 控制库迁移（需单独执行授权）
 
-以下是获准窗口内的具体命令形态。先应用根目录，再显式应用 HR 子目录；两者共享 `platform_control.schema_migrations`。根目录中的 100 必须已由第 1 节独立完成并验证，HR 操作者在此只做 checksum 幂等确认，不能在旧附件 Worker 仍可恢复时首次应用 100。
+以下是获准窗口内的具体命令形态。根迁移由现有 `bootstrap-control-db.sh` 的短时 owner membership 生命周期负责；它必须已经应用并验证 102。根目录中的 100 必须更早由第 1 节独立附件热修复完成，不能在旧附件 Worker 仍可恢复时首次应用。HR opt-in 096–099/101 只由 `migrate-hr-agent.sh` 应用；它不会运行根迁移目录。
 
 Production：
 
 ```bash
-/usr/bin/docker run --rm --read-only --user 0:0 \
-  --network orbbec-agent-platform-internal \
-  -v /opt/orbbec-agent-platform/current/backend/control_migrations:/app/backend/control_migrations:ro \
-  -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
-  -e PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE=/run/control-secrets/control-migrator-database-url \
-  -e PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner \
-  -e PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations \
-  PLATFORM_IMAGE_SHA python -m app.control_plane.migrate
-
-/usr/bin/docker run --rm --read-only --user 0:0 \
-  --network orbbec-agent-platform-internal \
-  -v /opt/orbbec-agent-platform/current/backend/control_migrations:/app/backend/control_migrations:ro \
-  -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
-  -e PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE=/run/control-secrets/control-migrator-database-url \
-  -e PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner \
-  -e PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations/hr_agent \
-  PLATFORM_IMAGE_SHA python -m app.control_plane.migrate
+/opt/orbbec-agent-platform/current/deploy/cloud/migrate-hr-agent.sh \
+  /opt/orbbec-agent-platform/current \
+  /opt/orbbec-agent-platform/private \
+  PLATFORM_IMAGE_SHA \
+  PLATFORM_POSTGRES_CONTAINER_ID
 ```
 
-Preview 使用独立 preview migrator DSN 和 `PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner_preview`，不得复用 production secret。`PLATFORM_IMAGE_SHA` 必须替换为已核验的不可变镜像引用，不能使用浮动 tag。
+`PLATFORM_IMAGE_SHA` 和 `PLATFORM_POSTGRES_CONTAINER_ID` 必须替换为已核验的准确值，镜像不能使用浮动 tag。助手要求 production/preview 两个 migrator DSN 都是现有 root-owned mode-0600 文件，并先验证：owner membership at rest 为 0；production/preview 的根迁移 100、102 checksum 与当前 release 一致。任一条件不满足时，它在授予权限前失败，不尝试补跑根迁移。
+
+助手在发起 GRANT 前安装 EXIT cleanup，然后只向两个 migrator 短时授予各自 production/preview owner role，使用 root 容器和各自 DSN 显式运行 HR 子目录，最后撤销两个 membership 并验证总数回到 0。任一 HR 迁移、Docker 或远程调用边界、撤销步骤失败时整体失败；即使 GRANT 已生效但调用回执丢失，cleanup 仍尝试双重撤销。失败后必须以平台 owner 只读核对 membership 为 0，不能把“脚本退出”当撤销证据。
 
 public 102 提供 `platform_control.hr_execution_cutover` 单例状态、幂等操作记录和只读在途计数。迁移不会自动创建单例行；在 operational activation 前必须通过经授权的 `platform_control.initialize_hr_execution_cutover_v102(uuid)` 创建 `legacy` gate。状态切换只使用 `platform_control.transition_hr_execution_cutover_v102(text,uuid)`；在途计数只使用 `platform_control.hr_execution_cutover_counts_v102()`。三个函数均由 maintenance 身份执行，app 只对 gate 有 SELECT，不能写 gate 或执行管理函数。preflight 读取 gate 的 `singleton, phase, epoch, transitioned_at, row_version` 并核对这些权限；无行、多行或权限偏移均不 ready。不得手写 gate/operations 表。
 
