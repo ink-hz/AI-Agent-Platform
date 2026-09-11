@@ -231,13 +231,26 @@ class ConversationContextBuilder:
             conversation = self.repository._conversation_from_row(row)
             if conversation.summary_through_seq > row["user_seq"]:
                 raise ConversationContextError()
+            is_hr_agent = (
+                row["mode"] == "direct_agent"
+                and row["direct_agent_id"] == "hr-bot"
+            )
+            # Legacy messages and shared summaries have no provable candidate
+            # scope. Even ordinary HR turns can contain personal facts. Until
+            # scoped history exists, keep only the current user input and the
+            # separately verified current-turn providers/attachments below.
+            history_after_seq = (
+                row["user_seq"] - 1 if is_hr_agent
+                else conversation.summary_through_seq
+            )
+            summary = None if is_hr_agent else conversation.summary
             message_rows = cursor.execute(
                 "select * from platform_control.conversation_messages "
                 "where conversation_id=%s and seq>%s and seq<=%s "
                 + ("order by seq desc limit %s" if direct_limit else "order by seq"),
                 (
                     conversation_id,
-                    conversation.summary_through_seq,
+                    history_after_seq,
                     row["user_seq"],
                 ) + ((direct_limit,) if direct_limit else ()),
             ).fetchall()
@@ -279,10 +292,6 @@ class ConversationContextBuilder:
         messages = tuple(message for _seq, message in sequenced)
         hr_position_context = None
         hr_panorama_context = None
-        is_hr_agent = (
-            row["mode"] == "direct_agent"
-            and row["direct_agent_id"] == "hr-bot"
-        )
         hr_workflow_contract = HR_WORKFLOW_CONTRACT_V1 if is_hr_agent else None
         is_hr_position = is_hr_agent and row["verified_hr_position"] is True
         if is_hr_position:
@@ -374,10 +383,10 @@ class ConversationContextBuilder:
             active_attachment_ids.append(candidate_parser_attachment_id)
         return (
             ConversationContext(
-                summary=conversation.summary,
+                summary=summary,
                 messages=messages,
                 estimated_utf8_bytes=_context_size(
-                    conversation.summary,
+                    summary,
                     messages,
                     hr_position_context,
                     hr_panorama_context,
@@ -414,10 +423,11 @@ class ConversationContextBuilder:
             raise ConversationContextError() from None
 
     def build_direct(self, conversation_id: UUID, turn_id: UUID) -> ConversationContext:
-        """No compaction model: real summary plus bounded recent persisted history.
+        """No compaction model: bounded, eligible persisted context.
 
-        Reuse the existing provider/attachment authority; only old history is
-        bounded. Current input, workflow, summary and selected materials remain.
+        Legacy HR uses current input only, without its unscoped shared summary.
+        Other agents keep recent history and summary. Current provider/attachment
+        authority applies in both cases.
         """
         try:
             context, _, _ = self._load(conversation_id, turn_id, direct_limit=64)

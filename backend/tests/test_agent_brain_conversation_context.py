@@ -32,10 +32,10 @@ from app.hr.task_context import canonical_hash
 
 
 @pytest.mark.postgres
-def test_direct_context_bounds_120_persisted_messages_without_losing_current_input(conversation_database, repository):
+def test_non_hr_direct_context_bounds_120_persisted_messages_without_losing_current_input(conversation_database, repository):
     from app.agent_brain.conversation_repository import message_subject
     environment, owner, _ = conversation_database
-    started = repository.start(owner, uuid4(), "当前问题", mode="direct_agent", direct_agent_id="hr-bot")
+    started = repository.start(owner, uuid4(), "当前问题", mode="direct_agent", direct_agent_id="fae-bot")
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute("update platform_control.conversation_messages set seq=121 where message_id=%s", (started.message.message_id,))
         for seq in range(1, 121):
@@ -45,7 +45,7 @@ def test_direct_context_bounds_120_persisted_messages_without_losing_current_inp
     context = ConversationContextBuilder(repository).build_direct(started.conversation.conversation_id, started.turn.turn_id)
     assert 1 < len(context.messages) <= 64
     assert context.messages[-1].content == "当前问题"
-    assert context.hr_workflow_contract == HR_WORKFLOW_CONTRACT_V1
+    assert context.hr_workflow_contract is None
     assert context.estimated_utf8_bytes <= MAX_CONTEXT_BYTES
 
 
