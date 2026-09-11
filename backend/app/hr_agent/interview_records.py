@@ -98,6 +98,10 @@ class InterviewRecordService:
         ):
             raise problem("reference_unavailable", http_status=410)
         attachment, identity = row["attachment_id"], _source(row)
+        # Reading the transcript may overlap revocation of a different candidate
+        # authority edge. Recheck the candidate after I/O before creating an
+        # operation or returning an idempotent receipt.
+        candidate = self._candidate(owner, candidate)
         self._authorize_relations(owner, candidate, position, plan)
         canonical = {
             **request,

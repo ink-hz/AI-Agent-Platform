@@ -579,3 +579,85 @@ def test_optional_plan_requires_current_candidate_and_selected_position(
     assert (
         created["interview_plan_ref"] == valid and created["position_id"] == position_id
     )
+
+
+def test_register_rechecks_candidate_after_text_io_and_replay_observes_revocation(
+    uploaded, intake, database, monkeypatch
+):
+    from app.hr_agent.interview_records import InterviewRecordService
+
+    client, headers, repo, owner, materials, candidate_aid, _, _ = uploaded
+    candidate_id = _candidate(uploaded, intake)
+    interview_aid = upload_document(
+        uploaded, database, b"POST race transcript", "text/plain", "post-race.txt"
+    )
+    service = InterviewRecordService(repo, materials, intake[0])
+    client.app.state.hr_agent_service.candidates = intake[0]
+    client.app.state.hr_agent_service.interviews = service
+    request = _request(client, interview_aid)
+    path = f"/api/hr/agent/candidates/{candidate_id}/interview-records"
+    race_key = str(uuid4())
+    original = materials.read_text
+
+    def revoke_candidate_after_read(selected_owner, ref):
+        text = original(selected_owner, ref)
+        with database.admin_connection() as c:
+            c.execute(
+                "UPDATE platform_attachments.attachments SET retained_until=now()-interval '1 second' WHERE attachment_id=%s",
+                (UUID(candidate_aid),),
+            )
+        return text
+
+    monkeypatch.setattr(materials, "read_text", revoke_candidate_after_read)
+    response = client.post(
+        path,
+        headers={**headers, "Idempotency-Key": race_key},
+        json=request,
+    )
+    assert response.status_code == 410
+    with database.admin_connection() as c:
+        assert (
+            c.execute(
+                "SELECT count(*) FROM platform_hr_agent.candidate_interview_records WHERE attachment_id=%s",
+                (UUID(interview_aid),),
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            c.execute(
+                "SELECT count(*) FROM platform_hr_agent.personal_materials WHERE attachment_id=%s",
+                (UUID(interview_aid),),
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            c.execute(
+                "SELECT count(*) FROM platform_hr_agent.operations WHERE owner_id=%s AND namespace=%s AND request_key=%s",
+                (owner, f"interview_record:{candidate_id}", race_key),
+            ).fetchone()[0]
+            == 0
+        )
+        c.execute(
+            "UPDATE platform_attachments.attachments SET retained_until=now()+interval '1 day' WHERE attachment_id=%s",
+            (UUID(candidate_aid),),
+        )
+
+    monkeypatch.setattr(materials, "read_text", original)
+    replay_key = str(uuid4())
+    created = client.post(
+        path,
+        headers={**headers, "Idempotency-Key": replay_key},
+        json=request,
+    )
+    assert created.status_code == 201
+    with database.admin_connection() as c:
+        c.execute(
+            "UPDATE platform_attachments.attachments SET retained_until=now()-interval '1 second' WHERE attachment_id=%s",
+            (UUID(candidate_aid),),
+        )
+    denied = client.post(
+        path,
+        headers={**headers, "Idempotency-Key": replay_key},
+        json=request,
+    )
+    assert denied.status_code == 410
