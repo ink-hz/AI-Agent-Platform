@@ -1,0 +1,867 @@
+{
+  "purpose": "Public two-sentence transport compatibility probe; not full-research acceptance",
+  "request": {
+    "model": "claude-opus-5",
+    "messages": [
+      {
+        "role": "user",
+        "content": "请用中文两句话说明：公开招聘职责写“协助项目经理”和“月度库存关账”，能否据此断定现有经理已经在位、流程正在运行？不要只回答是或否。"
+      }
+    ],
+    "max_tokens": 512,
+    "stream": true
+  },
+  "duration_seconds": 10.582169375382364,
+  "event_shapes": [
+    {
+      "event": "message_start",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_start",
+      "block_type": "thinking",
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "thinking_delta",
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "signature_delta",
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_stop",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_start",
+      "block_type": "text",
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 4,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 5,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 4,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 8,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 4,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 4,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 8,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 5,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 4,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 4,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 4,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 2,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 3,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": "text_delta",
+      "delta_text_characters": 1,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "content_block_stop",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": null
+    },
+    {
+      "event": "message_delta",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": "end_turn"
+    },
+    {
+      "event": "message_stop",
+      "block_type": null,
+      "initial_text_characters": 0,
+      "delta_type": null,
+      "delta_text_characters": 0,
+      "message_start_content_types": [],
+      "stop_reason": null
+    }
+  ],
+  "normalized_result": {
+    "status": "valid",
+    "text": "不能据此断定：招聘职责常来自模板或对未来岗位设置的规划，\"协助项目经理\"可能指向尚待招聘、兼任或由上级远程兼管的角色，\"月度库存关账\"也可能是希望新人来搭建或规范的流程，而非已稳定运转的现状。它只能作为弱证据提高相关可能性，若要确认，还需交叉验证其他线索，例如同期是否在招项目经理、组织架构与员工公开履历、财报中存货核算与披露的规律性，以及职位是新增还是替补。"
+  }
+}

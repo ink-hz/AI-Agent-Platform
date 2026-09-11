@@ -31,3 +31,5 @@ run4的“候选池接近空集”“现状缺体系”不再出现；海外支�
 ## 后续改进依据
 
 通用角色边界已有帮助，但必须贯穿最终标题、概括句和行动建议：同一句引用保留OR，不代表概括也保留了OR；末尾写现状未知，不能允许正文声称已在运行。建议在保存前复核“唯一、最硬、已有、正在、并存、而不是”这些会改变承重结论的措辞，并用同一批原文主动找反例；找人建议须区分优先来源、直接能力证据与新增/删除的硬条件。此评审仅新增记录，未修改原文、知识或代码，未访问外网或调用模型。
+
+Committed evidence copy: [run-5/evidence.json](artifacts/2026-09-11-hr-c3/run-5/evidence.json). Original capture and review hashes above are unchanged.

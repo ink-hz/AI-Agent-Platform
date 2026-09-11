@@ -13,6 +13,7 @@ class HrAgentService:
         results=None,
         standards=None,
         knowledge=None,
+        candidates=None,
         ready=True,
     ):
         self._repository = repository
@@ -21,6 +22,7 @@ class HrAgentService:
         self.ready = ready
         self.standards = standards
         self.knowledge = knowledge
+        self.candidates = candidates
         from .results import ResultService
 
         self.results = results or (
@@ -165,3 +167,9 @@ class HrAgentService:
             work = self.repository._work(cursor, owner, work_id)
             current, _ = self.repository._input(cursor, work)
             return {"input_revision": work["input_revision"], **current}
+
+    def candidate_call(self, method, auth, *args, writable=False):
+        owner = self._owner(auth, writable)
+        if self.candidates is None:
+            raise problem("temporarily_unavailable", http_status=503)
+        return getattr(self.candidates, method)(owner, *args)

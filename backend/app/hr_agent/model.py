@@ -17,7 +17,15 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .types import ModelEvent, ModelReply, ModelRequest, ToolCall, Usage
+from .types import (
+    DEFAULT_MODEL_TIMEOUT_SECONDS,
+    MAX_MODEL_TIMEOUT_SECONDS,
+    ModelEvent,
+    ModelReply,
+    ModelRequest,
+    ToolCall,
+    Usage,
+)
 
 
 class ModelError(RuntimeError):
@@ -46,7 +54,7 @@ class ProviderProfile:
     endpoint: str
     model: str
     credential_file: Path
-    timeout_seconds: float = 120.0
+    timeout_seconds: float = DEFAULT_MODEL_TIMEOUT_SECONDS
     auth_scheme: str = "provider_default"
 
     def __post_init__(self) -> None:
@@ -68,7 +76,7 @@ class ProviderProfile:
             or not self.model
             or not isinstance(self.credential_file, Path)
             or not self.credential_file.is_absolute()
-            or not (0 < self.timeout_seconds <= 120)
+            or not (0 < self.timeout_seconds <= MAX_MODEL_TIMEOUT_SECONDS)
         ):
             raise ValueError("invalid provider profile")
 
@@ -130,7 +138,9 @@ class ConfiguredHttpModelPort:
                 endpoint=str(value["endpoint"]),
                 model=str(value["model"]),
                 credential_file=Path(str(value["credential_file"])),
-                timeout_seconds=float(value.get("timeout_seconds", 120)),
+                timeout_seconds=float(
+                    value.get("timeout_seconds", DEFAULT_MODEL_TIMEOUT_SECONDS)
+                ),
                 auth_scheme=str(value.get("auth_scheme", "provider_default")),
             )
         )
@@ -142,7 +152,7 @@ class ConfiguredHttpModelPort:
     def stream(self, request: ModelRequest) -> Iterator[ModelEvent]:
         if request.profile_id != self._profile.profile_id:
             raise ModelTransportError("configuration_unavailable")
-        timeout = min(120.0, self._profile.timeout_seconds, request.deadline_seconds)
+        timeout = min(self._profile.timeout_seconds, request.deadline_seconds)
         if timeout <= 0:
             raise ModelTransportError("transport_error")
         credential = _credential(self._profile.credential_file)

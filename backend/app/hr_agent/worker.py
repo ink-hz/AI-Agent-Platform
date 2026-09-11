@@ -28,6 +28,9 @@ def run_worker(
         parser = getattr(getattr(resources, "materials", None), "parsing", None)
         if parser is not None:
             parser.process_one(worker_id, repository.settings.lease_seconds)
+        candidates = getattr(resources, "candidates", None)
+        if candidates is not None:
+            candidates.advance_one(worker_id)
         if stop_event.is_set():
             break
         fence = repository.claim(worker_id, repository.settings.lease_seconds)

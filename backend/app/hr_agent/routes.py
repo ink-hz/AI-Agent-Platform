@@ -66,6 +66,61 @@ def build_hr_agent_router(service, results=None, materials=None, standards=None)
         service.standards = standards
     router = APIRouter(prefix="/api/hr/agent", route_class=HrAgentRoute)
 
+    @router.post("/candidate-batches", status_code=201)
+    async def candidate_batch(request: Request):
+        return await run_in_threadpool(
+            service.candidate_call,
+            "create_batch",
+            auth(request),
+            await body(request),
+            key(request),
+            writable=True,
+        )
+
+    @router.get("/candidate-batches")
+    def candidate_batches(request: Request, limit: int = Query(50, ge=1, le=100)):
+        return service.candidate_call("list_batches", auth(request), limit)
+
+    @router.get("/candidate-batches/{batch_id}")
+    def read_candidate_batch(request: Request, batch_id: UUID):
+        return service.candidate_call("get_batch", auth(request), batch_id)
+
+    @router.get("/candidate-items/{item_id}")
+    def candidate_item(request: Request, item_id: UUID):
+        return service.candidate_call("get_item", auth(request), item_id)
+
+    @router.post("/candidate-items/{item_id}/retry")
+    async def retry_candidate_item(request: Request, item_id: UUID):
+        return await run_in_threadpool(
+            service.candidate_call,
+            "retry_item",
+            auth(request),
+            item_id,
+            await body(request),
+            key(request),
+            writable=True,
+        )
+
+    @router.post("/candidate-items/{item_id}/confirm")
+    async def confirm_candidate_item(request: Request, item_id: UUID):
+        return await run_in_threadpool(
+            service.candidate_call,
+            "confirm_item",
+            auth(request),
+            item_id,
+            await body(request),
+            key(request),
+            writable=True,
+        )
+
+    @router.get("/candidates")
+    def candidates(request: Request, limit: int = Query(50, ge=1, le=100)):
+        return service.candidate_call("list_candidates", auth(request), limit)
+
+    @router.get("/candidates/{candidate_id}")
+    def candidate(request: Request, candidate_id: UUID):
+        return service.candidate_call("read_candidate", auth(request), candidate_id)
+
     @router.post("/works")
     async def submit(request: Request):
         result = await run_in_threadpool(

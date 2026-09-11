@@ -191,7 +191,7 @@ entries 增加 `kind=summary`，以及 nullable `summary_provenance`（SummaryPr
 
 模型接口 `ModelPort.stream(request: ModelRequest) -> Iterator[ModelEvent]`：事件为 text_delta、tool_delta、usage、stop；最终构建 `ModelReply(text, tool_calls, stop_reason, usage)`。只有完整 stop、有效参数和提供方完成标记俱全才提交步骤、执行工具。正文可作为正常回答，不要求通过 FAE 的 submit_answer 工具。中间 delta 只是临时进度，不能形成“回答结束”。
 
-适配层不自动重试网络请求：一次实际 HTTP 请求对应一个持久 model_attempt，循环决定是否重试并重新扣预算。超时120秒上限且不超过剩余活动预算；新工作测试模型配置只有一个指定端点，不自动 fallback。错误分类为 rate_limited、transport_error、incomplete_response、provider_refused、invalid_response；无完整工具参数不执行任何副作用。
+适配层不自动重试网络请求：一次实际 HTTP 请求对应一个持久 model_attempt，循环决定是否重试并重新扣预算。单次超时默认120秒，模型 profile 可显式设置1–600秒，实际请求不得超过工作剩余活动预算，恢复后重新计算较小值。2026-09-11 C3 的真实 Opus 5 研究多次在持续输出时达到120秒截止，因此将原硬上限改为明确的研究配置能力；本地公开试验使用300秒，未改本机 HR 默认 profile 或生产取舍。此变更不增加任务总预算、不自动延时/切换提供方、不保留半截工具副作用。新工作测试模型配置只有一个指定端点，不自动 fallback。错误分类为 rate_limited、transport_error、incomplete_response、provider_refused、invalid_response；无完整工具参数不执行任何副作用。
 
 上下文窗口以配置模型 profile 的 context_window_tokens 为准，预留本次 max_output_tokens；首批另设主动压缩 input_trigger_tokens=12000、压缩后输入目标 input_target_tokens=8000（按 tokenizer 测量，不按字符数）。筛选并纳入新工具内容后的预计普通输入超过12000即尝试压缩已处理的历史，不等撑满模型窗口。优先保留当前问题、准确基准、未完成位置和待处理工具配对；替换正文使用 §5.1 的有来源 summary。仍不足则暂停说明，不能裁剪成假完整。压缩调用同样经过 ModelPort、持久步骤与预算，不开预算外的“摘要模型”。单次压缩输入必须小于模型窗口减输出预留；若待压缩集合过大，按完整条目/工具对分组，每组单独记账。无法在剩余额度内压到目标则保留检查点，转收尾/等待预算，不无限重压，也不把截断称完整读取。阶段笔记正文是否保留了承重证据仍需业务审读。
 

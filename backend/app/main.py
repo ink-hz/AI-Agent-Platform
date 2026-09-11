@@ -1698,6 +1698,7 @@ def create_app(
             materials=hr_materials,
             standards=StandardService(hr_repository) if hr_repository else None,
             knowledge=_hr_resources.knowledge if hr_repository else None,
+            candidates=getattr(_hr_resources, "candidates", None) if hr_repository else None,
             ready=hr_ready,
         )
     if hr_agent_service is None:

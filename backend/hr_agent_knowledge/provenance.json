@@ -54,5 +54,12 @@
       "source_path": "bots/hr/knowledge/sources/2026-09-09-jd-reading-cases.md",
       "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
     }
+  ],
+  "role_adaptations": [
+    {
+      "date": "2026-09-11",
+      "review": "docs/reviews/2026-09-11-hr-c3-run4-semantic-review.md",
+      "scope": "本地角色适配：要求逻辑、招聘职责与组织现状、合作与外包、市场供给推断边界；不改上游方法正文，不编排固定方法或业务判断规则。"
+    }
   ]
 }

@@ -16,6 +16,7 @@ from psycopg.types.json import Jsonb
 from app.execution_relay.content_crypto import SealedContent
 
 from .types import (
+    DEFAULT_MODEL_TIMEOUT_SECONDS,
     AuthorizedScope,
     ContextRebuildRequired,
     HrAgentProblem,
@@ -85,6 +86,7 @@ class HrAgentRepository(RepositoryViewsMixin):
         self.scope_validator = scope_validator
         self.release_provider = None
         self.release_validator = None
+        self.personal_processing_authorizer = None
 
     @contextmanager
     def transaction(self):
@@ -100,6 +102,15 @@ class HrAgentRepository(RepositoryViewsMixin):
                 paused = error
         if paused is not None:
             raise paused
+
+    def _model_timeout(self):
+        return (
+            self.settings.provider_profile.get(
+                "timeout_seconds", DEFAULT_MODEL_TIMEOUT_SECONDS
+            )
+            if self.settings
+            else DEFAULT_MODEL_TIMEOUT_SECONDS
+        )
 
     def _seal(self, table, identity, field, value):
         sealed = self.codec.seal_json(f"hr-agent:{table}:{identity}:{field}", value)
@@ -175,12 +186,14 @@ class HrAgentRepository(RepositoryViewsMixin):
             raise problem("lease_lost", http_status=409)
         return row
 
-    def _input(self, c, work):
+    def _input_row(self, c, work):
         c.execute(
             "SELECT * FROM platform_hr_agent.inputs WHERE owner_id=%s AND work_id=%s AND revision=%s",
             (work["owner_id"], work["work_id"], work["input_revision"]),
         )
-        row = c.fetchone()
+        return c.fetchone()
+
+    def _validated_input(self, work, row):
         if row["configuration_revision"] != getattr(
             self.settings, "configuration_revision", "a1-test"
         ):
@@ -196,6 +209,9 @@ class HrAgentRepository(RepositoryViewsMixin):
             work["owner_id"], body["objects"], body["references"], work["work_id"]
         )
         return body, row
+
+    def _input(self, c, work):
+        return self._validated_input(work, self._input_row(c, work))
 
     def _idempotency(self, c, owner, namespace, key, request):
         key = str(_uuid(key))
@@ -463,9 +479,15 @@ class HrAgentRepository(RepositoryViewsMixin):
             self._event(c, work, "accepted")
             return self._receipt(c, op, self._view(c, work))
 
-    def _view(self, c, work):
+    def _view(self, c, work, *, control_only=False):
         checkpoint = self._unseal("works", work["work_id"], "sealed_checkpoint", work)
         budget = self._unseal("works", work["work_id"], "sealed_budget", work)
+        if control_only:
+            # Cancellation must not depend on availability of referenced files.
+            # Return control state only; keep the full checkpoint untouched in DB.
+            minimal = self._initial_checkpoint(work["input_revision"], [])
+            minimal["revision"] = checkpoint["revision"]
+            return self._wire_view(work, minimal, budget, [])
         if checkpoint["last_note_entry_id"]:
             c.execute(
                 "SELECT * FROM platform_hr_agent.inputs WHERE owner_id=%s AND work_id=%s AND revision=%s",
@@ -525,6 +547,10 @@ class HrAgentRepository(RepositoryViewsMixin):
             )
             cause = c.fetchone()
             block_reason = cause["error_code"] if cause else "configuration_unavailable"
+        return self._wire_view(work, checkpoint, budget, refs, question, block_reason)
+
+    @staticmethod
+    def _wire_view(work, checkpoint, budget, refs, question=None, block_reason=None):
         return {
             "work_id": str(work["work_id"]),
             "thread_id": str(work["thread_id"]),
@@ -623,7 +649,7 @@ class HrAgentRepository(RepositoryViewsMixin):
             if work["state"] not in ("completed", "cancelled", "failed"):
                 self._state(c, work, "cancelled")
                 self._event(c, work, "state_changed")
-            return self._receipt(c, op, self._view(c, work))
+            return self._receipt(c, op, self._view(c, work, control_only=True))
 
     def extend_budget(self, owner_id, work_id, request, key):
         request = validate_contract("ExtendBudgetInput", request)
@@ -826,14 +852,36 @@ class HrAgentRepository(RepositoryViewsMixin):
                 "next_after": rows[min(limit, len(rows)) - 1]["seq"] if rows else after,
             }
 
-    def _entry_allowed(self, c, work, current, row):
+    def _entry_allowed(self, c, work, current, row, decisions=None):
         if not _objects(row["objects"]) <= _objects(current["objects"]):
             return False
-        try:
-            self._scope(work["owner_id"], row["objects"], [], work["work_id"])
-            for ref in row["source_refs"]:
-                if ref["kind"] == "material" and ref not in current["references"]:
-                    return False
+
+        # A decision table lives for one history read only. Neither send nor
+        # commit uses it; they must validate current permissions again.
+        def check(key, action):
+            if decisions is not None and key in decisions:
+                return decisions[key]
+            try:
+                action()
+                allowed = True
+            except HrAgentProblem:
+                allowed = False
+            if decisions is not None:
+                decisions[key] = allowed
+            return allowed
+
+        objects_key = canonical_json(sorted(_objects(row["objects"])))
+        if not check(
+            ("objects", objects_key),
+            lambda: self._scope(work["owner_id"], row["objects"], [], work["work_id"]),
+        ):
+            return False
+        for ref in row["source_refs"]:
+            if ref["kind"] == "material" and ref not in current["references"]:
+                return False
+            key = ("ref", objects_key, canonical_json(ref))
+
+            def validate(ref=ref):
                 if ref["kind"] == "result":
                     self._validate_result_sources(
                         c, work["owner_id"], ref, work["work_id"]
@@ -842,9 +890,10 @@ class HrAgentRepository(RepositoryViewsMixin):
                     self._scope(
                         work["owner_id"], row["objects"], [ref], work["work_id"]
                     )
-            return True
-        except HrAgentProblem:
-            return False
+
+            if not check(key, validate):
+                return False
+        return True
 
     def list_events(self, owner_id, work_id, after=0, limit=100):
         if after < 0 or not 1 <= limit <= 200:
@@ -980,7 +1029,10 @@ class HrAgentRepository(RepositoryViewsMixin):
                 context.messages,
                 context.tools,
                 max_output,
-                min(120, budget["limits"]["active_seconds"] - budget["active_seconds"]),
+                min(
+                    self._model_timeout(),
+                    budget["limits"]["active_seconds"] - budget["active_seconds"],
+                ),
             )
             payload = {
                 "request": json.loads(canonical_json(asdict(request))),
@@ -1011,15 +1063,21 @@ class HrAgentRepository(RepositoryViewsMixin):
             return request
 
     def mark_model_sending(self, fence, attempt_id):
+        from .personal_processing import authorize_personal_processing
+
         with self.transaction() as c:
             work = self._fence(c, fence)
-            self._input(c, work)
+            current, _ = self._input(c, work)
             attempt = self._attempt(c, work, attempt_id)
+            dependencies = self._decode_request(attempt)[1]["dependencies"]
             self._scope(
                 work["owner_id"],
                 [],
-                self._decode_request(attempt)[1]["dependencies"],
+                dependencies,
                 work["work_id"],
+            )
+            authorize_personal_processing(
+                self, c, work["owner_id"], list(dependencies) + current["references"]
             )
             self._charge_time(c, work)
             if attempt["status"] == "sending":
@@ -1326,7 +1384,9 @@ class HrAgentRepository(RepositoryViewsMixin):
                 raise WorkPaused(self._view(c, work))
             from dataclasses import replace
 
-            return replace(request, deadline_seconds=min(120, remaining))
+            return replace(
+                request, deadline_seconds=min(self._model_timeout(), remaining)
+            )
 
     def load_operation(self, fence, operation_id):
         with self.transaction() as c:
@@ -1532,8 +1592,13 @@ class HrAgentRepository(RepositoryViewsMixin):
                 )
             else:
                 raise problem(
-                    "unsupported_kind"
-                )  # Official source verification is introduced at B1.
+                    "unsupported_kind",
+                    "basis.kind=official_original requires official-source verification, "
+                    "which is unavailable. Research results are supported: cite uploaded "
+                    "materials in source_refs; use basis=[] when no verified standard "
+                    "or explicit temporary requirement applies.",
+                    details={"field": "basis.kind"},
+                )
         proposal_document = None
         if args["kind"] == "standard_proposal":
             from .proposals import prepare_proposal
@@ -1823,31 +1888,39 @@ class HrAgentRepository(RepositoryViewsMixin):
             return self._view(c, work)
 
     def read_selected_entries(self, fence):
+        # Capture immutable encrypted entries under a short work fence. No
+        # attachment/object-store access may run while this work lock is held.
         with self.transaction() as c:
             work = self._fence(c, fence)
-            current, _ = self._input(c, work)
+            input_row = self._input_row(c, work)
             c.execute(
                 "SELECT * FROM platform_hr_agent.entries WHERE owner_id=%s AND work_id=%s ORDER BY seq",
                 (work["owner_id"], work["work_id"]),
             )
             rows = c.fetchall()
-            selected = []
-            covered = set()
+        current, _ = self._validated_input(work, input_row)
+        selected, covered = [], set()
+        index = {r["entry_id"]: r for r in rows}
+        with self.transaction() as c:
+            decisions = {}
+            allowed = {
+                row["entry_id"]: self._entry_allowed(c, work, current, row, decisions)
+                for row in rows
+            }
+            # No history body is decrypted before its scope has been checked.
             for row in reversed(rows):
-                if row["entry_id"] in covered or not self._entry_allowed(
-                    c, work, current, row
-                ):
+                if row["entry_id"] in covered or not allowed[row["entry_id"]]:
                     continue
                 provenance = None
                 if row["kind"] == "summary":
-                    provenance = self._unseal(
-                        "entries", row["entry_id"], "sealed_summary_provenance", row
-                    )
                     sources = self._summary_coverage(
-                        c, work, current, row, {r["entry_id"]: r for r in rows}
+                        c, work, current, row, index, allowed
                     )
                     if sources is None:
                         continue
+                    provenance = self._unseal(
+                        "entries", row["entry_id"], "sealed_summary_provenance", row
+                    )
                     covered.update(sources)
                 body = self._unseal("entries", row["entry_id"], "sealed_body", row)
                 selected.append(
@@ -1862,7 +1935,23 @@ class HrAgentRepository(RepositoryViewsMixin):
                         provenance,
                     )
                 )
-            return tuple(reversed(selected))
+        # Revalidate uncached dependencies, then the execution fence. Cancellation,
+        # input changes, and revocation during I/O cannot release an old context.
+        refs = list(
+            _refs(current["references"] + [r for e in selected for r in e.source_refs])
+        )
+        self._scope(work["owner_id"], current["objects"], refs, work["work_id"])
+        required = {e.entry_id for e in selected} | covered
+        with self.transaction() as c:
+            self._fence(c, fence)
+            if required:
+                c.execute(
+                    "SELECT entry_id FROM platform_hr_agent.entries WHERE owner_id=%s AND work_id=%s AND entry_id=ANY(%s)",
+                    (work["owner_id"], work["work_id"], list(required)),
+                )
+                if {r["entry_id"] for r in c.fetchall()} != required:
+                    raise ContextRebuildRequired()
+        return tuple(reversed(selected))
 
     def commit_summary(self, fence, attempt_id, provenance):
         provenance = validate_contract("SummaryProvenance", provenance)
@@ -1952,12 +2041,13 @@ class HrAgentRepository(RepositoryViewsMixin):
     def context_input(self, fence):
         with self.transaction() as c:
             work = self._fence(c, fence)
-            current, record = self._input(c, work)
-            if record["configuration_revision"] != getattr(
-                self.settings, "configuration_revision", "a1-test"
-            ):
-                raise problem("configuration_unavailable", http_status=503)
-            return current, record, self._view(c, work), work["owner_id"]
+            input_row = self._input_row(c, work)
+        current, record = self._validated_input(work, input_row)
+        with self.transaction() as c:
+            view = self._view(c, work)
+        with self.transaction() as c:
+            self._fence(c, fence)
+        return current, record, view, work["owner_id"]
 
     def operation_context(self, fence, entry_id):
         with self.transaction() as c:
@@ -2002,7 +2092,7 @@ class HrAgentRepository(RepositoryViewsMixin):
             if op["namespace"] == "tool:read_resource":
                 self._scope(work["owner_id"], [], [args["ref"]], work["work_id"])
 
-    def _summary_coverage(self, c, work, current, root, index):
+    def _summary_coverage(self, c, work, current, root, index, allowed=None):
         pending = [root]
         seen = set()
         coverage = set()
@@ -2013,7 +2103,11 @@ class HrAgentRepository(RepositoryViewsMixin):
             seen.add(row["entry_id"])
             if len(seen) > 10000:
                 return None
-            if not self._entry_allowed(c, work, current, row):
+            if not (
+                allowed.get(row["entry_id"], False)
+                if allowed is not None
+                else self._entry_allowed(c, work, current, row)
+            ):
                 return None
             if row["kind"] != "summary":
                 continue

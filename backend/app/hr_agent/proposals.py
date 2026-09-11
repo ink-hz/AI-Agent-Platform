@@ -70,6 +70,12 @@ def validate_sources(
             # later proposal drops their candidate object or changes their title.
             attachment_id = ref["id"].split(":", 1)[0]
             cursor.execute(
+                "SELECT 1 FROM platform_hr_agent.personal_materials WHERE owner_id=%s AND attachment_id=%s",
+                (_uuid(owner), _uuid(attachment_id)),
+            )
+            if cursor.fetchone():
+                raise problem("personal_source_not_allowed")
+            cursor.execute(
                 """SELECT 1 FROM platform_hr_agent.read_records
                 WHERE owner_id=%s AND ref->>'kind'='material'
                 AND split_part(ref->>'id',':',1)=%s

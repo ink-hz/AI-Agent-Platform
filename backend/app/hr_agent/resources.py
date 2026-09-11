@@ -133,6 +133,20 @@ class ResourceReader:
                     identity = UUID(obj["id"])
                 except ValueError:
                     raise problem("not_found", http_status=404) from None
+                if obj["kind"] == "candidate":
+                    row = connection.execute(
+                        "SELECT 1 FROM platform_hr_agent.candidates WHERE owner_id=%s AND candidate_id=%s",
+                        (owner, identity),
+                    ).fetchone()
+                    if row:
+                        if self.materials is None:
+                            raise problem("temporarily_unavailable", http_status=503)
+                        from .candidates import CandidateIntakeService
+
+                        CandidateIntakeService(
+                            self.repository, self.materials
+                        ).read_candidate(owner, identity)
+                        continue
                 table, column = (
                     ("positions", "position_id")
                     if obj["kind"] == "position"
@@ -476,4 +490,8 @@ def build_runtime_services(
         from .material_parsing import MaterialParsingService
 
         MaterialParsingService(repository, material_service)
+        from .candidates import CandidateIntakeService
+
+        # No real personal processing authority is implied by enabling the Loop.
+        resources.candidates = CandidateIntakeService(repository, material_service)
     return repository, resources

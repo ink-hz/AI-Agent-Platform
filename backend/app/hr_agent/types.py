@@ -51,6 +51,10 @@ class HrAgentProblem(RuntimeError):
         super().__init__(problem["code"])
 
 
+DEFAULT_MODEL_TIMEOUT_SECONDS = 120
+MAX_MODEL_TIMEOUT_SECONDS = 600
+
+
 def problem(code, message=None, retryable=False, details=None, http_status=None):
     return HrAgentProblem(
         {

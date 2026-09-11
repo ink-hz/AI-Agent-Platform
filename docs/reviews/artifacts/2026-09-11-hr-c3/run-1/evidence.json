@@ -1,0 +1,1287 @@
+{
+  "provider": {
+    "model": "claude-opus-5",
+    "protocol": "anthropic_messages_sse",
+    "profile_revision": "hr-opus5-20260911",
+    "profile": {
+      "id": "hr-cloud-loop",
+      "revision": "hr-opus5-20260911",
+      "protocol": "anthropic_messages_sse",
+      "model": "claude-opus-5",
+      "tokenizer": "conservative_utf8",
+      "context_window_tokens": 131072,
+      "timeout_seconds": 120,
+      "auth_scheme": "bearer"
+    },
+    "profile_fingerprint": "13bd0c430a6b8a8c2bf87312fa073070d1f260703f8a688aac2c0d6410b4aa7a",
+    "fingerprint_scope": "allowlisted_nonsecret_profile_fields; endpoint_and_credentials_excluded",
+    "identity_assurance": "provider_self_report_only",
+    "source_configuration": {
+      "status": "not_recorded"
+    }
+  },
+  "budget_configuration": {
+    "id": "c3-public",
+    "service_limits": {
+      "model_calls": 24,
+      "total_tokens": 1200000,
+      "active_seconds": 1800
+    },
+    "limits": {
+      "model_calls": 2,
+      "total_tokens": 600000,
+      "active_seconds": 900
+    },
+    "reserve": {
+      "model_calls": 1,
+      "total_tokens": 16000,
+      "active_seconds": 30
+    },
+    "max_output_tokens": 4096,
+    "input_target_tokens": 50000,
+    "input_trigger_tokens": 70000,
+    "work_retention_seconds": 3600
+  },
+  "input": "请研究所选 Revopoint 公开归档的全部19个岗位全文（静态包范围，不是现行官网）。一次回答一个问题：它在从研发到客户交付的过程中，招聘哪些能解决具体问题的人；哪些自建/外采或分工关系有直接证据，哪些不能判断？请先阅读全部职责与要求，自主选择有帮助的方法。使用岗位job_id及少量原文支撑承重判断，保留反例和不能推出的关系，不要用计数或字段复述代替判断，不把共同词汇拼成已运行团队。完成时保存research成果，说明未完成的部分。系统可能因预算暂停；暂停时诚实保留未读范围，追加后继续同一个问题，不把读过一页称为全文读完。",
+  "public_provenance": {
+    "company_key": "revopoint",
+    "job_count": 19,
+    "bundle_manifest_sha256": "5d446fe136a3fe2d3d1bb06873f9584e4a357f9546e9f66e686e14950dab98a3",
+    "jobs": [
+      {
+        "job_id": "c401b56a-7268-5745-99c4-e5afd592febe",
+        "title": "【27秋招】SLAM算法工程师",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "106",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】SLAM算法工程师 收藏职位 一、岗位职责 1.负责 SLAM 系统研发，包括视觉/激光前端跟踪、后端优化、回环检测与多传感器融合； 2.开展相机标定、立体匹配与深度估计，为视觉定位提供高精度数据支撑； 3.负责 2D 图像的识别、检测与分割算法研发，支撑目标检测、语义理解等视觉任务； 4.研究并落地深度学习在 2D/3D 视觉任务中的前沿算法，包括目标检测、位姿估计、深度估计等； 5.探索新型三维表达与场景理解技术，支持视觉定位与重建应用。 二、",
+        "requirements": "1.硕士及以上学历，计算机科学、自动化、机器人等相关专业； 2.熟悉 SLAM 系统架构与关键模块，具备视觉或激光 SLAM 研发经验； 3.熟悉点云处理基础算法，掌握点云配准、滤波、分割等常用方法； 4.熟悉深度学习在计算机视觉中的应用，具备 2D 目标检测、图像分割等研发经验； 5.了解 3D 视觉算法（点云深度学习、位姿估计等）者优先； 6.扎实的编程能力，熟悉 C++ 与 Python，具备良好的代码规范与工程化能力； 7.良好的数学基础与问题分析能力，能独立钻研并解决技术难题； 8.在相关领域顶会顶刊发表论文，或有开源项目贡献者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "977c1fdc-ffe0-5129-a29e-fb80a74b6103",
+        "title": "【27秋招】AI算法工程师",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "107",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】AI算法工程师 收藏职位 一、岗位职责 1、负责计算机视觉领域AI算法的研发，包括目标检测、语义分割、姿态估计等； 2、研究深度学习模型的优化与压缩，提升模型在嵌入式设备上的推理性能； 3、参与AI算法在产品中的落地应用，解决实际场景中的技术挑战； 4、跟踪前沿AI技术发展，探索新算法在公司产品中的应用潜力。 二、",
+        "requirements": "1、硕士及以上学历，计算机、软件工程、人工智能、数据科学与大数据技术、应用数学、统计学等相关专业； 2、具备深度学习理论基础，熟悉PyTorch或TensorFlow框架。 3、熟悉目标检测、语义分割等经典算法，有相关项目或竞赛经验。 4、熟练掌握Python编程，具备良好的代码实现和工程能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "e2e0a6e2-a6c5-5adb-bf12-c807135ab001",
+        "title": "【27秋招】AI应用开发工程师-西安/深圳",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "108",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】AI应用开发工程师-西安/深圳 收藏职位 一、岗位职责 1、AI智能体架构与开发，基于主流Agent框架（LangChain/AutoGen等）设计并开发单/多智能体系统； 2、AI数字员工产品开发，负责数字员工的方案设计与功能开发，涵盖对话交互、任务执行与流程自动化； 3、大模型接入与工程化应用，负责主流大语言模型（GPT/Claude/DeepSeek等）的接入封装与Prompt优化； 4、持续跟踪AI前沿技术动态，对已上线系统进行效果监控与迭代优化，推动智能体能力持续提升。 二、",
+        "requirements": "1、硕士及以上学历，计算机、软件工程、人工智能等相关专业； 2、掌握 Python、Node.js、Java或C++编程语言，了解基本数据结构与算法； 3、使用过 ChatGPT、DeepSeek 等AI工具，有一定的工程实践基础； 4、有 AI 相关实习或项目实践、技术博客、竞赛等经历者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "bae11a6d-c71d-5ea5-aa58-3740e7ee70bf",
+        "title": "【27秋招】软件测试工程师",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "109",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】软件测试工程师 收藏职位 一、岗位职责 1、制定测试计划与策略，编写测试用例，确保测试覆盖全面； 2、执行测试任务并输出规范报告，跟踪缺陷闭环，保障项目质量； 3、收集分析客户反馈，持续优化测试流程与方法； 4、研究应用自动化测试及AI辅助测试等新技术，推动测试效率提升。 二、",
+        "requirements": "1、本科及以上学历，计算机、软件工程、通信、电子信息、自动化等相关专业； 2、掌握Python等编程语言，能编写测试脚本； 3、具备良好的问题分析能力和技术钻研精神，注重细节； 4、具有强烈的责任心、自驱力及跨部门协作能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "8bb1c51e-d66f-5bb6-ae7d-fe40adca543e",
+        "title": "【27秋招】项目管理-西安",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "110",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】项目管理-西安 收藏职位 一、岗位职责 1、协助项目经理进行任务分配及计划制定，跟进项目进度、质量及风险管理； 2、跟进监控产品全流程开发，组织解决开发及售后质量问题； 3、识别评估产品开发风险，及时采取应对措施，确保产品满足质量需求； 4、组织召开相关会议，做好阶段性汇报及关键里程碑项目汇报； 5、协调项目资源、成本、供应链管理，推进项目收尾工作，协助团队日常管理。 二、",
+        "requirements": "1、硕士及以上学历，电子信息、通信、光学、电子科学与技术、微纳制造等相关专业； 2、逻辑清晰，具备良好的组织及沟通协作能力； 3、主动性强，自驱力高，对项目管理流程有一定认知。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "fcb27aec-624f-5bdb-98e3-9d17fc593ba7",
+        "title": "【27秋招】产品经理",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "111",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】产品经理 收藏职位 一、岗位职责 1、负责公司产品的全生命周期管理，包括需求分析、产品规划、产品设计等； 2、与技术团队紧密合作，推动产品的研发和迭代； 3、分析产品市场动态和竞品情况，持续优化产品功能和用户体验。 二、",
+        "requirements": "1、硕士及以上学历，专业不限，产品设计、交互设计方向优先； 2、对硬科技产品有较高的理解力和敏锐度，具备优秀的产品洞察力和用户思维； 3、具备良好的学习能力、逻辑能力、沟通和团队协作能力，能够适应快节奏工作。 4、热衷AI探索，具备较强的同理心、换位思考能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "5eefbd9a-5bcb-55cd-925f-7e7ecdefdab7",
+        "title": "【27秋招】跨境电商运营",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "112",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】跨境电商运营 收藏职位 一、岗位职责 1、负责独立站（Shopify等）的日常运营管理，制定并执行增长策略，通过优化用户体验、转化率提升、复购率增长等手段，实现销售目标； 2、制定多渠道流量获取方案，优化广告投放效果，控制获客成本； 3、深度分析用户行为数据、转化漏斗、订单数据等关键指标，识别增长机会，持续优化网站页面、产品展示、结账流程等环节，提升转化率； 4、参与新品上线策划、营销活动设计、邮件营销、SMS营销等，实现全链路增长。 二、",
+        "requirements": "1、本科及以上学历，市场营销、电子商务、数据分析、商务英语等相关专业优先 2、英文听说读写能力强，能够将英语作为工作语言； 3、熟悉独立站平台的运营管理，了解独立站与第三方平台的差异； 4、熟悉SEO基础知识，能够优化网站关键词、页面结构等提升自然流量； 5、数据驱动思维强，能够通过数据分析发现问题、提出解决方案。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "eb01dc2e-0989-53a1-bc37-f17bde1a0426",
+        "title": "【27秋招】短视频策划剪辑",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "113",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】短视频策划剪辑 收藏职位 一、岗位职责 1、短视频内容策划：负责公司三维扫描仪及相关科技产品的海外短视频内容策划，参与 TikTok、YouTube、Instagram 等平台的选题、脚本及创意策划。 2、短视频剪辑：负责短视频跟拍及后期剪辑，完成素材整理、粗剪、精剪、字幕、音乐、节奏及基础包装等工作。 3、关注海外科技类短视频及平台热点，持续学习优秀内容，挖掘适合三维扫描仪的内容方向和创意形式。 4、根据视频播放、完播、互动等数据进行内容复盘，不断优化选题和剪辑方式。 二、",
+        "requirements": "1、本科及以上学历，新闻传播、影视、数字媒体、广告、动画等相关专业优先； 2、具备基础视频剪辑能力，熟悉 Premiere Pro、剪映、After Effects 等工具； 3、对短视频内容有兴趣，熟悉 TikTok、YouTube、Instagram 等海外平台； 4、学习能力强、执行力强，能够快速理解科技产品及相关专业知识； 5、有较好的内容感和审美，对视频节奏、画面及热门内容有一定敏感度； 6、英语能力良好，能够阅读和理解海外平台及英文产品资料者优先。 7、有个人短视频账号、作品集、海外平台内容经验，或对机器人、AI、3D扫描、智能硬件等科技产品感兴趣者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "498a103e-4dd9-5042-9b0d-71bf16a72532",
+        "title": "【27秋招】国内销售专员-深圳/上海",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "114",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】国内销售专员-深圳/上海 收藏职位 一、岗位职责 1、负责开拓国内新客户，建立并维护客户关系，提升客户满意度和忠诚度； 2、分析市场动态，识别潜在客户，制定并执行销售策略，达成销售目标； 3、参与市场调研，收集行业信息，为公司产品开发和市场策略提供参考； 4、协助团队完成市场推广活动，提升品牌知名度； 5、定期与团队沟通，分享市场反馈和客户意见，优化销售流程。 二、",
+        "requirements": "1、本科及以上学历，理工科相关专业； 2、具备较强的市场分析能力和敏锐的市场洞察力； 3、具备良好的沟通技巧和客户关系处理能力，有相关销售或商务拓展经验者优先； 4、具备强烈的责任心和团队合作精神，能够接受出差，适应高强度工作环境。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "918e443e-701b-53ae-8c0e-a8bcc855dca8",
+        "title": "【27秋招】海外销售专员",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "115",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】海外销售专员 收藏职位 一、岗位职责 1、负责公司海外市场的业务拓展，挖掘并维护潜在客户资源； 2、分析市场需求和竞争态势，制定并执行海外市场的销售策略和推广计划； 3、建立和维护与海外合作伙伴的良好关系，共同开展市场推广、产品演示等活动； 4、跟踪和评估海外市场的业务表现，及时调整和优化销售策略。 二、",
+        "requirements": "1、本科及以上学历，英语、小语种或理工科专业背景优先； 2、熟练掌握英语或其他工作语言（如日语、西班牙语、德语、法语、意大利语、阿拉伯语等），能够无障碍地与海外客户沟通； 3、具备良好的人际及商务沟通能力、市场分析能力和团队协作精神； 4.能够接受海外出差，能够适应快节奏工作。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "e77e8d58-b3c7-533a-9455-c54b84844df3",
+        "title": "【27秋招】国内技术支持",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "116",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】国内技术支持 收藏职位 一、岗位职责 1、负责公司全系3D产品的售前咨询、售中对接、售后全流程技术支持，远程或现场解决客户疑问； 2、协助产品故障诊断、信息收集与反馈，提升客户满意度； 3、收集和整理客户反馈的技术问题，为产品优化提供信息； 4、配合销售完成项目技术对接、方案协助、验收支撑工作，配合完成样机调试、展会技术支持等相关工作。 二、",
+        "requirements": "1、大专及以上学历，机械设计制造及其自动化、机械电子工程、工业设计、智能制造等相关专业； 2、具备较强的责任心、执行力和抗压能力，能够高效落地各项工作任务； 3、沟通表达顺畅，具备优秀的问题分析与处理能力，可精准对接客户需求； 4、具备技术文档撰写能力，可独立完成技术资料整理和工作总结； 5、能适应出差安排和岗位外勤工作模式； 6、拥有三维扫描、逆向建模、3D打印等相关项目实操经验或学科竞赛经历者优先； 7、具备全国职业院校技能大赛\"产品数字化设计与制造\"赛项参赛及获奖经历者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "d7ea90e6-ee33-59f4-bb69-f71ddee42e09",
+        "title": "【27秋招】海外技术支持",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "117",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】海外技术支持 收藏职位 一、岗位职责 1、负责三维扫描仪产品的售前及售后技术支持，响应并解决客户技术问题； 2、为海外客户提供产品操作培训及技术指导，提升客户使用效率与满意度； 3、参与海内外线下展会，负责产品展示、技术演示及现场技术答疑。 二、",
+        "requirements": "1、2027届海外留学生，不限国籍； 2、本科及以上学历，机械工程、精密仪器、工业设计、机电一体化或相关专业； 3、具备三维扫描、光学测量或精密仪器相关行业的技术背景或实操经验，有同类产品支持经验者优先； 4、可以将英语作为工作语言，具备良好的跨文化沟通能力与客户服务意识。 1、Job Responsibilities (1) Provide pre-sales and after-sales technical support for 3D scanner products; respond to and resolve customer technical issues. (2) Provide product operation training and technical guidance to overseas customers to enhance their usage efficiency and satisfaction. (3) Participate in domestic and international offline exhibitions; responsible for product demonstrations, technical presentations, and on-site technical Q&A. 2、Job Requirements (1)Class of 2026/2027 International Graduates,No Nationality Restrictions. (2) Bachelor's degree or above in Mechanical Engineering, Precision Instruments, Industrial Design, Mechatronics, or related fields. (3) Technical background or hands-on experience in 3D scanning, optical measurement, or precision instruments industry; prior experience with similar products is preferred. (4) Ability to use English as a working language; strong cross-cultural communication skills and customer service awareness. 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "c3de5eb6-2c06-5b44-85bb-5257e5a2bdac",
+        "title": "【27秋招】国内品牌专员",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "118",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】国内品牌专员 收藏职位 一、岗位职责 1、负责国内品牌整合营销，制定并落地阶段性品牌传播及整合营销方案； 2、负责社交媒体（公众号、小红书、抖音等）运营与内容输出，根据不同平台制定内容与运营策略，独立完成选题策划、内容创作及发布，优化各平台内容表现； 3、品牌传播效果分析与策略优化，定期复盘传播及转化数据，输出报告，基于数据持续优化传播策略与资源配置效率； 4、参与线下活动及展会等品牌支持工作。 二、",
+        "requirements": "1、硕士及以上学历，新闻、新媒体、广告、市场营销等相关专业优先； 2、能够独立制定并推进传播方案落地，有品牌或展会实习经验者优先； 3、具备良好文案撰写能力，熟悉办公软件、AI工具及品牌管理工具； 4、性格外向，具备良好的沟通协调能力强和创新思维。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "f362b550-4363-5aeb-9395-0e9d95e94c49",
+        "title": "【27秋招】海外品牌专员",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "119",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】海外品牌专员 收藏职位 一、岗位职责 1、负责海外主流社交媒体平台（TikTok、Instagram、YouTube等）的内容策划与创意撰写，制定发布计划，管理粉丝互动，提升品牌曝光率和用户粘性； 2、识别并开发海外社交平台的优质KOL资源，建立长期合作关系；制定KOL营销策略，设计创意合作方案； 3、制定海外PR整体战略规划，建立与国际媒体、行业媒体的合作关系，策划新闻稿发布、媒体采访等PR活动，持续拓展品牌在国际市场的媒体影响力。 二、",
+        "requirements": "1、硕士及以上学历，新闻、国际贸易、市场营销、英语等相关专业优先； 2、熟悉海外主流社交平台的运营特点和传播规律，对社媒运营有浓厚兴趣和实践经验； 3、英文听说读写能力强，能够将英语作为工作语言； 4、具备优秀的沟通表达能力，能有效协调内外部资源；具有敏锐的市场洞察力和创新思维，能够把握国际传播趋势，提出差异化的运营方案。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "63496127-4d6c-575e-96e0-d4ffcf1bdd4f",
+        "title": "【27秋招】财务专员-西安/深圳",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "120",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】财务专员-西安/深圳 收藏职位 一、岗位职责 1、负责供应链管理工作，包括单据检查、月度库存关账等工作； 2、负责成本核算及存货期末结账工作； 3、负责核对物流运费及税费账单，保证物流成本的准确性； 4、负责库存管理工作，定期进行存货盘点工作，出具盘点报告； 5、监控物料账龄，分析制作可视化图表，识别呆滞物料，同步相关人员，跟踪处理意见。 二、",
+        "requirements": "1、本科及以上学历，财务相关专业； 2、熟练运用Excel进行数据处理（透视表、VLOOKUP等函数），具备较强的数据分析； 3、具备良好的沟通表达能力和协作能力，责任心强。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "8e9d916d-2d95-51a1-981b-a31adbd59e7a",
+        "title": "【27秋招】生产计划专员",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "121",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】生产计划专员 收藏职位 一、岗位职责 1、协助PMC经理完成生产订单拆解、排程编制与执行跟进； 2、每日跟进生产进度，及时反馈物料短缺、设备故障等异常情况； 3、协助处理插单、改单，同步更新计划并通知相关部门； 4、跟进物料到货及欠料情况，推动采购与仓库解决； 5、维护生产计划数据报表，整理项目BOM清单并汇总数据。 二、",
+        "requirements": "1、本科及以上学历，工业工程、物流管理、生产管理、会计等相关专业； 2、逻辑思维清晰，具备良好的数据分析与归纳能力； 3、具备优秀的沟通协调能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "a2ab6bb6-ed7f-5dc7-9805-c4f57945f4b3",
+        "title": "【27秋招】产品资料文案策划",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd.html",
+        "observed_at": "2026-09-06T14:38:14.472238+00:00",
+        "public_job_key": "122",
+        "evidence_sha256": "669c4995efe74f7adfc379aedcfe99f4fca8ebed2ad22214a08166ab45f49c25",
+        "duty": "【27秋招】产品资料文案策划 收藏职位 一、岗位职责 1、产品学习与转化：深入掌握公司产品的参数、功能、应用场景等，将技术信息转化为用户易懂的文档内容； 2、文档全流程管理：负责中英文产品文档（操作指南、用户手册、FAQ等）的策划、撰写、校对、发布及版本迭代； 3、多语种本地化：借助AI工具和术语库完成多语种文档的翻译、校对和质量把控； 4、规范体系建设：建立并维护文档模板、术语库、版本管理等规范，提升制作效率和内容一致性； 5、跨部门协作优化：与研发、产品、市场、售后等部门协作，获取产品更新和客户反馈，持续优化文档内容和用户体验。 二、",
+        "requirements": "1、本科及以上，新闻传播、汉语言文学、英语、翻译、小语种、理工科等相关专业优先； 2、核心能力：优秀的文字表达、逻辑思维和信息整理能力，能将复杂技术内容转化为清晰易懂的文档； 3、语言技能：较强的中英文写作能力，可独立完成英文文档撰写或翻译；有海外经历者优先； 4、工具应用：熟练使用Office、AI等办公软件，具备文档排版和图文编辑能力；熟悉AI大模型、机器翻译工具者优先 5、综合素质：具备用户思维和跨部门协作能力，责任心强。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "39006d7c-6a69-50ed-b71e-f0176f67a49d",
+        "title": "AI算法工程师",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd1.html",
+        "observed_at": "2026-09-06T14:38:14.916310+00:00",
+        "public_job_key": "75",
+        "evidence_sha256": "2d618a89dda144baf5bee896160b4243abef3eff188f38134508db3f31483820",
+        "duty": "AI算法工程师 收藏职位 一、岗位职责 1、2D/3D 视觉、机器人领域前沿 AI 算法研发落地 2、目标检测、点云分割、路径规划与运动控制 3、构建管理数据集，完成模型全周期训练迭代 4、协同部署团队优化模型，跟踪顶会技术并沉淀专利文档 二、",
+        "requirements": "1、硕士士及以上人工智能相关专业，精通 Python 和深度学习框架 2、2年以上算法经验，有顶会论文、竞赛成绩或机器人项目经验者优先 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      },
+      {
+        "job_id": "f9893b40-e934-5109-bcb6-ae6b46df21f5",
+        "title": "机器人路径规划工程师",
+        "source_url": "https://hr.revopoint3d.com.cn/gwtd1.html",
+        "observed_at": "2026-09-06T14:38:14.916310+00:00",
+        "public_job_key": "76",
+        "evidence_sha256": "2d618a89dda144baf5bee896160b4243abef3eff188f38134508db3f31483820",
+        "duty": "机器人路径规划工程师 收藏职位 一、岗位职责 1、机器人系统方案规划与设计 2、主导六轴机械臂路径规划、避障算法研发及运动学/动力学建模核心工作 二、",
+        "requirements": "1、本科及以上电气 / 自动化相关专业，精通运动控制器 2、3年以上工业机械臂开发经验，熟悉激光视觉传感器应用 3、掌握 Linux/WINCE 系统及 SPI、CAN 通信，熟练使用 QT/VS 开发工具 4、拥有较强的动手能力，具备六轴机器人项目经验者优先 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }"
+      }
+    ],
+    "scope": "all normalized identities for this company in this static archive; original full bodies; not current company completeness"
+  },
+  "source_text_sha256": "f090893f4afdb640f0b85b585490ccb0c0b1a9ff09f665f6ceb082131ae109e7",
+  "source_text_characters": 16969,
+  "release": {
+    "role_release": "hr-9ced2871a8dc5def26fc4345",
+    "knowledge_release": "hr-9ced2871a8dc5def26fc4345",
+    "role_manifest_sha": "8861b8227b0580e664a8cbc1d8df817811fcce04be1702bc9990bc86f9faaeaf"
+  },
+  "stages": [
+    {
+      "work": {
+        "work_id": "406af666-2c48-459e-9e63-a22694c1f9f6",
+        "thread_id": "c53b872c-9862-4140-b96f-619074303ae5",
+        "input_revision": 1,
+        "state": "waiting_budget",
+        "phase": "finalizing",
+        "answer_state": "none",
+        "result_refs": [],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 88.063206,
+          "charged_calls": 2,
+          "charged_tokens": 69803,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 2,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 1,
+            "total_tokens": 16000
+          },
+          "revision": 1,
+          "usage_quality": "mixed"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "0e3a320d-232c-4d1c-b68d-49a2005ab021:text",
+                "kind": "material",
+                "revision": "f090893f4afdb640f0b85b585490ccb0c0b1a9ff09f665f6ceb082131ae109e7:utf8-v1",
+                "sha256": "740a02bcc25fd6a4fd2fe45ebaa9ee270bc7648a6981f5d00e3db89ca9d625f0"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 16969
+            }
+          ],
+          "revision": 4
+        },
+        "last_event_seq": 7
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "e700672d-10bb-41e4-8c9b-9924247778fa",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "请研究所选 Revopoint 公开归档的全部19个岗位全文（静态包范围，不是现行官网）。一次回答一个问题：它在从研发到客户交付的过程中，招聘哪些能解决具体问题的人；哪些自建/外采或分工关系有直接证据，哪些不能判断？请先阅读全部职责与要求，自主选择有帮助的方法。使用岗位job_id及少量原文支撑承重判断，保留反例和不能推出的关系，不要用计数或字段复述代替判断，不把共同词汇拼成已运行团队。完成时保存research成果，说明未完成的部分。系统可能因预算暂停；暂停时诚实保留未读范围，追加后继续同一个问题，不把读过一页称为全文读完。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 1
+      },
+      "results": [],
+      "attempts": [
+        {
+          "attempt_id": "ae47c37f-4aa2-46e3-a10a-b67915576005",
+          "ordinal": 1,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 19779,
+          "charged_tokens": 15683,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "I'll start by reading the selected material and checking what methods are available.",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "offset": 0,
+                  "ref": {
+                    "id": "0e3a320d-232c-4d1c-b68d-49a2005ab021:text",
+                    "kind": "material",
+                    "revision": "f090893f4afdb640f0b85b585490ccb0c0b1a9ff09f665f6ceb082131ae109e7:utf8-v1",
+                    "sha256": "740a02bcc25fd6a4fd2fe45ebaa9ee270bc7648a6981f5d00e3db89ca9d625f0"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01FWJgrvRHbnY7nRqF2YYusW"
+              },
+              {
+                "arguments": {
+                  "kinds": [
+                    "method",
+                    "intelligence",
+                    "standard",
+                    "result"
+                  ]
+                },
+                "name": "list_resources",
+                "provider_call_id": "toolu_bdrk_01LCCdYyDaKuQkpAitUeZAPq"
+              }
+            ],
+            "usage": {
+              "input_total": 7597,
+              "output_total": 324,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 7597,
+                "output_tokens": 324,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "75b6d306-a82d-4310-98ee-ae2b9a251647",
+          "ordinal": 2,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 54120,
+          "charged_tokens": 54120,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        }
+      ],
+      "tools": [
+        {
+          "operation_id": "bc70ebb7-86c7-4294-90b8-238040f10678",
+          "attempt_id": "ae47c37f-4aa2-46e3-a10a-b67915576005",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 16969,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "5fba1de3-737d-47f5-a6b1-57504ee5bed4",
+              "ref": {
+                "id": "0e3a320d-232c-4d1c-b68d-49a2005ab021:text",
+                "kind": "material",
+                "revision": "f090893f4afdb640f0b85b585490ccb0c0b1a9ff09f665f6ceb082131ae109e7:utf8-v1",
+                "sha256": "740a02bcc25fd6a4fd2fe45ebaa9ee270bc7648a6981f5d00e3db89ca9d625f0"
+              },
+              "text": "# revopoint 公开招聘归档全文\n\n本材料范围仅为该归档中 19 个岗位身份，不代表企业当前全部岗位，也不能证明组织实际运行情况。以下逐条保留原始职责与要求，不使用规范层摘要。\n\n## 【27秋招】SLAM算法工程师\njob_id: c401b56a-7268-5745-99c4-e5afd592febe\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】SLAM算法工程师 收藏职位 一、岗位职责 1.负责 SLAM 系统研发，包括视觉/激光前端跟踪、后端优化、回环检测与多传感器融合； 2.开展相机标定、立体匹配与深度估计，为视觉定位提供高精度数据支撑； 3.负责 2D 图像的识别、检测与分割算法研发，支撑目标检测、语义理解等视觉任务； 4.研究并落地深度学习在 2D/3D 视觉任务中的前沿算法，包括目标检测、位姿估计、深度估计等； 5.探索新型三维表达与场景理解技术，支持视觉定位与重建应用。 二、\n\n### 要求原文\n1.硕士及以上学历，计算机科学、自动化、机器人等相关专业； 2.熟悉 SLAM 系统架构与关键模块，具备视觉或激光 SLAM 研发经验； 3.熟悉点云处理基础算法，掌握点云配准、滤波、分割等常用方法； 4.熟悉深度学习在计算机视觉中的应用，具备 2D 目标检测、图像分割等研发经验； 5.了解 3D 视觉算法（点云深度学习、位姿估计等）者优先； 6.扎实的编程能力，熟悉 C++ 与 Python，具备良好的代码规范与工程化能力； 7.良好的数学基础与问题分析能力，能独立钻研并解决技术难题； 8.在相关领域顶会顶刊发表论文，或有开源项目贡献者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】AI算法工程师\njob_id: 977c1fdc-ffe0-5129-a29e-fb80a74b6103\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】AI算法工程师 收藏职位 一、岗位职责 1、负责计算机视觉领域AI算法的研发，包括目标检测、语义分割、姿态估计等； 2、研究深度学习模型的优化与压缩，提升模型在嵌入式设备上的推理性能； 3、参与AI算法在产品中的落地应用，解决实际场景中的技术挑战； 4、跟踪前沿AI技术发展，探索新算法在公司产品中的应用潜力。 二、\n\n### 要求原文\n1、硕士及以上学历，计算机、软件工程、人工智能、数据科学与大数据技术、应用数学、统计学等相关专业； 2、具备深度学习理论基础，熟悉PyTorch或TensorFlow框架。 3、熟悉目标检测、语义分割等经典算法，有相关项目或竞赛经验。 4、熟练掌握Python编程，具备良好的代码实现和工程能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】AI应用开发工程师-西安/深圳\njob_id: e2e0a6e2-a6c5-5adb-bf12-c807135ab001\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】AI应用开发工程师-西安/深圳 收藏职位 一、岗位职责 1、AI智能体架构与开发，基于主流Agent框架（LangChain/AutoGen等）设计并开发单/多智能体系统； 2、AI数字员工产品开发，负责数字员工的方案设计与功能开发，涵盖对话交互、任务执行与流程自动化； 3、大模型接入与工程化应用，负责主流大语言模型（GPT/Claude/DeepSeek等）的接入封装与Prompt优化； 4、持续跟踪AI前沿技术动态，对已上线系统进行效果监控与迭代优化，推动智能体能力持续提升。 二、\n\n### 要求原文\n1、硕士及以上学历，计算机、软件工程、人工智能等相关专业； 2、掌握 Python、Node.js、Java或C++编程语言，了解基本数据结构与算法； 3、使用过 ChatGPT、DeepSeek 等AI工具，有一定的工程实践基础； 4、有 AI 相关实习或项目实践、技术博客、竞赛等经历者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】软件测试工程师\njob_id: bae11a6d-c71d-5ea5-aa58-3740e7ee70bf\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】软件测试工程师 收藏职位 一、岗位职责 1、制定测试计划与策略，编写测试用例，确保测试覆盖全面； 2、执行测试任务并输出规范报告，跟踪缺陷闭环，保障项目质量； 3、收集分析客户反馈，持续优化测试流程与方法； 4、研究应用自动化测试及AI辅助测试等新技术，推动测试效率提升。 二、\n\n### 要求原文\n1、本科及以上学历，计算机、软件工程、通信、电子信息、自动化等相关专业； 2、掌握Python等编程语言，能编写测试脚本； 3、具备良好的问题分析能力和技术钻研精神，注重细节； 4、具有强烈的责任心、自驱力及跨部门协作能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】项目管理-西安\njob_id: 8bb1c51e-d66f-5bb6-ae7d-fe40adca543e\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】项目管理-西安 收藏职位 一、岗位职责 1、协助项目经理进行任务分配及计划制定，跟进项目进度、质量及风险管理； 2、跟进监控产品全流程开发，组织解决开发及售后质量问题； 3、识别评估产品开发风险，及时采取应对措施，确保产品满足质量需求； 4、组织召开相关会议，做好阶段性汇报及关键里程碑项目汇报； 5、协调项目资源、成本、供应链管理，推进项目收尾工作，协助团队日常管理。 二、\n\n### 要求原文\n1、硕士及以上学历，电子信息、通信、光学、电子科学与技术、微纳制造等相关专业； 2、逻辑清晰，具备良好的组织及沟通协作能力； 3、主动性强，自驱力高，对项目管理流程有一定认知。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】产品经理\njob_id: fcb27aec-624f-5bdb-98e3-9d17fc593ba7\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】产品经理 收藏职位 一、岗位职责 1、负责公司产品的全生命周期管理，包括需求分析、产品规划、产品设计等； 2、与技术团队紧密合作，推动产品的研发和迭代； 3、分析产品市场动态和竞品情况，持续优化产品功能和用户体验。 二、\n\n### 要求原文\n1、硕士及以上学历，专业不限，产品设计、交互设计方向优先； 2、对硬科技产品有较高的理解力和敏锐度，具备优秀的产品洞察力和用户思维； 3、具备良好的学习能力、逻辑能力、沟通和团队协作能力，能够适应快节奏工作。 4、热衷AI探索，具备较强的同理心、换位思考能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】跨境电商运营\njob_id: 5eefbd9a-5bcb-55cd-925f-7e7ecdefdab7\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】跨境电商运营 收藏职位 一、岗位职责 1、负责独立站（Shopify等）的日常运营管理，制定并执行增长策略，通过优化用户体验、转化率提升、复购率增长等手段，实现销售目标； 2、制定多渠道流量获取方案，优化广告投放效果，控制获客成本； 3、深度分析用户行为数据、转化漏斗、订单数据等关键指标，识别增长机会，持续优化网站页面、产品展示、结账流程等环节，提升转化率； 4、参与新品上线策划、营销活动设计、邮件营销、SMS营销等，实现全链路增长。 二、\n\n### 要求原文\n1、本科及以上学历，市场营销、电子商务、数据分析、商务英语等相关专业优先 2、英文听说读写能力强，能够将英语作为工作语言； 3、熟悉独立站平台的运营管理，了解独立站与第三方平台的差异； 4、熟悉SEO基础知识，能够优化网站关键词、页面结构等提升自然流量； 5、数据驱动思维强，能够通过数据分析发现问题、提出解决方案。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】短视频策划剪辑\njob_id: eb01dc2e-0989-53a1-bc37-f17bde1a0426\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】短视频策划剪辑 收藏职位 一、岗位职责 1、短视频内容策划：负责公司三维扫描仪及相关科技产品的海外短视频内容策划，参与 TikTok、YouTube、Instagram 等平台的选题、脚本及创意策划。 2、短视频剪辑：负责短视频跟拍及后期剪辑，完成素材整理、粗剪、精剪、字幕、音乐、节奏及基础包装等工作。 3、关注海外科技类短视频及平台热点，持续学习优秀内容，挖掘适合三维扫描仪的内容方向和创意形式。 4、根据视频播放、完播、互动等数据进行内容复盘，不断优化选题和剪辑方式。 二、\n\n### 要求原文\n1、本科及以上学历，新闻传播、影视、数字媒体、广告、动画等相关专业优先； 2、具备基础视频剪辑能力，熟悉 Premiere Pro、剪映、After Effects 等工具； 3、对短视频内容有兴趣，熟悉 TikTok、YouTube、Instagram 等海外平台； 4、学习能力强、执行力强，能够快速理解科技产品及相关专业知识； 5、有较好的内容感和审美，对视频节奏、画面及热门内容有一定敏感度； 6、英语能力良好，能够阅读和理解海外平台及英文产品资料者优先。 7、有个人短视频账号、作品集、海外平台内容经验，或对机器人、AI、3D扫描、智能硬件等科技产品感兴趣者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】国内销售专员-深圳/上海\njob_id: 498a103e-4dd9-5042-9b0d-71bf16a72532\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】国内销售专员-深圳/上海 收藏职位 一、岗位职责 1、负责开拓国内新客户，建立并维护客户关系，提升客户满意度和忠诚度； 2、分析市场动态，识别潜在客户，制定并执行销售策略，达成销售目标； 3、参与市场调研，收集行业信息，为公司产品开发和市场策略提供参考； 4、协助团队完成市场推广活动，提升品牌知名度； 5、定期与团队沟通，分享市场反馈和客户意见，优化销售流程。 二、\n\n### 要求原文\n1、本科及以上学历，理工科相关专业； 2、具备较强的市场分析能力和敏锐的市场洞察力； 3、具备良好的沟通技巧和客户关系处理能力，有相关销售或商务拓展经验者优先； 4、具备强烈的责任心和团队合作精神，能够接受出差，适应高强度工作环境。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】海外销售专员\njob_id: 918e443e-701b-53ae-8c0e-a8bcc855dca8\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】海外销售专员 收藏职位 一、岗位职责 1、负责公司海外市场的业务拓展，挖掘并维护潜在客户资源； 2、分析市场需求和竞争态势，制定并执行海外市场的销售策略和推广计划； 3、建立和维护与海外合作伙伴的良好关系，共同开展市场推广、产品演示等活动； 4、跟踪和评估海外市场的业务表现，及时调整和优化销售策略。 二、\n\n### 要求原文\n1、本科及以上学历，英语、小语种或理工科专业背景优先； 2、熟练掌握英语或其他工作语言（如日语、西班牙语、德语、法语、意大利语、阿拉伯语等），能够无障碍地与海外客户沟通； 3、具备良好的人际及商务沟通能力、市场分析能力和团队协作精神； 4.能够接受海外出差，能够适应快节奏工作。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】国内技术支持\njob_id: e77e8d58-b3c7-533a-9455-c54b84844df3\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】国内技术支持 收藏职位 一、岗位职责 1、负责公司全系3D产品的售前咨询、售中对接、售后全流程技术支持，远程或现场解决客户疑问； 2、协助产品故障诊断、信息收集与反馈，提升客户满意度； 3、收集和整理客户反馈的技术问题，为产品优化提供信息； 4、配合销售完成项目技术对接、方案协助、验收支撑工作，配合完成样机调试、展会技术支持等相关工作。 二、\n\n### 要求原文\n1、大专及以上学历，机械设计制造及其自动化、机械电子工程、工业设计、智能制造等相关专业； 2、具备较强的责任心、执行力和抗压能力，能够高效落地各项工作任务； 3、沟通表达顺畅，具备优秀的问题分析与处理能力，可精准对接客户需求； 4、具备技术文档撰写能力，可独立完成技术资料整理和工作总结； 5、能适应出差安排和岗位外勤工作模式； 6、拥有三维扫描、逆向建模、3D打印等相关项目实操经验或学科竞赛经历者优先； 7、具备全国职业院校技能大赛\"产品数字化设计与制造\"赛项参赛及获奖经历者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】海外技术支持\njob_id: d7ea90e6-ee33-59f4-bb69-f71ddee42e09\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】海外技术支持 收藏职位 一、岗位职责 1、负责三维扫描仪产品的售前及售后技术支持，响应并解决客户技术问题； 2、为海外客户提供产品操作培训及技术指导，提升客户使用效率与满意度； 3、参与海内外线下展会，负责产品展示、技术演示及现场技术答疑。 二、\n\n### 要求原文\n1、2027届海外留学生，不限国籍； 2、本科及以上学历，机械工程、精密仪器、工业设计、机电一体化或相关专业； 3、具备三维扫描、光学测量或精密仪器相关行业的技术背景或实操经验，有同类产品支持经验者优先； 4、可以将英语作为工作语言，具备良好的跨文化沟通能力与客户服务意识。 1、Job Responsibilities (1) Provide pre-sales and after-sales technical support for 3D scanner products; respond to and resolve customer technical issues. (2) Provide product operation training and technical guidance to overseas customers to enhance their usage efficiency and satisfaction. (3) Participate in domestic and international offline exhibitions; responsible for product demonstrations, technical presentations, and on-site technical Q&A. 2、Job Requirements (1)Class of 2026/2027 International Graduates,No Nationality Restrictions. (2) Bachelor's degree or above in Mechanical Engineering, Precision Instruments, Industrial Design, Mechatronics, or related fields. (3) Technical background or hands-on experience in 3D scanning, optical measurement, or precision instruments industry; prior experience with similar products is preferred. (4) Ability to use English as a working language; strong cross-cultural communication skills and customer service awareness. 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】国内品牌专员\njob_id: c3de5eb6-2c06-5b44-85bb-5257e5a2bdac\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】国内品牌专员 收藏职位 一、岗位职责 1、负责国内品牌整合营销，制定并落地阶段性品牌传播及整合营销方案； 2、负责社交媒体（公众号、小红书、抖音等）运营与内容输出，根据不同平台制定内容与运营策略，独立完成选题策划、内容创作及发布，优化各平台内容表现； 3、品牌传播效果分析与策略优化，定期复盘传播及转化数据，输出报告，基于数据持续优化传播策略与资源配置效率； 4、参与线下活动及展会等品牌支持工作。 二、\n\n### 要求原文\n1、硕士及以上学历，新闻、新媒体、广告、市场营销等相关专业优先； 2、能够独立制定并推进传播方案落地，有品牌或展会实习经验者优先； 3、具备良好文案撰写能力，熟悉办公软件、AI工具及品牌管理工具； 4、性格外向，具备良好的沟通协调能力强和创新思维。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】海外品牌专员\njob_id: f362b550-4363-5aeb-9395-0e9d95e94c49\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】海外品牌专员 收藏职位 一、岗位职责 1、负责海外主流社交媒体平台（TikTok、Instagram、YouTube等）的内容策划与创意撰写，制定发布计划，管理粉丝互动，提升品牌曝光率和用户粘性； 2、识别并开发海外社交平台的优质KOL资源，建立长期合作关系；制定KOL营销策略，设计创意合作方案； 3、制定海外PR整体战略规划，建立与国际媒体、行业媒体的合作关系，策划新闻稿发布、媒体采访等PR活动，持续拓展品牌在国际市场的媒体影响力。 二、\n\n### 要求原文\n1、硕士及以上学历，新闻、国际贸易、市场营销、英语等相关专业优先； 2、熟悉海外主流社交平台的运营特点和传播规律，对社媒运营有浓厚兴趣和实践经验； 3、英文听说读写能力强，能够将英语作为工作语言； 4、具备优秀的沟通表达能力，能有效协调内外部资源；具有敏锐的市场洞察力和创新思维，能够把握国际传播趋势，提出差异化的运营方案。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】财务专员-西安/深圳\njob_id: 63496127-4d6c-575e-96e0-d4ffcf1bdd4f\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】财务专员-西安/深圳 收藏职位 一、岗位职责 1、负责供应链管理工作，包括单据检查、月度库存关账等工作； 2、负责成本核算及存货期末结账工作； 3、负责核对物流运费及税费账单，保证物流成本的准确性； 4、负责库存管理工作，定期进行存货盘点工作，出具盘点报告； 5、监控物料账龄，分析制作可视化图表，识别呆滞物料，同步相关人员，跟踪处理意见。 二、\n\n### 要求原文\n1、本科及以上学历，财务相关专业； 2、熟练运用Excel进行数据处理（透视表、VLOOKUP等函数），具备较强的数据分析； 3、具备良好的沟通表达能力和协作能力，责任心强。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】生产计划专员\njob_id: 8e9d916d-2d95-51a1-981b-a31adbd59e7a\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】生产计划专员 收藏职位 一、岗位职责 1、协助PMC经理完成生产订单拆解、排程编制与执行跟进； 2、每日跟进生产进度，及时反馈物料短缺、设备故障等异常情况； 3、协助处理插单、改单，同步更新计划并通知相关部门； 4、跟进物料到货及欠料情况，推动采购与仓库解决； 5、维护生产计划数据报表，整理项目BOM清单并汇总数据。 二、\n\n### 要求原文\n1、本科及以上学历，工业工程、物流管理、生产管理、会计等相关专业； 2、逻辑思维清晰，具备良好的数据分析与归纳能力； 3、具备优秀的沟通协调能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】产品资料文案策划\njob_id: a2ab6bb6-ed7f-5dc7-9805-c4f57945f4b3\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】产品资料文案策划 收藏职位 一、岗位职责 1、产品学习与转化：深入掌握公司产品的参数、功能、应用场景等，将技术信息转化为用户易懂的文档内容； 2、文档全流程管理：负责中英文产品文档（操作指南、用户手册、FAQ等）的策划、撰写、校对、发布及版本迭代； 3、多语种本地化：借助AI工具和术语库完成多语种文档的翻译、校对和质量把控； 4、规范体系建设：建立并维护文档模板、术语库、版本管理等规范，提升制作效率和内容一致性； 5、跨部门协作优化：与研发、产品、市场、售后等部门协作，获取产品更新和客户反馈，持续优化文档内容和用户体验。 二、\n\n### 要求原文\n1、本科及以上，新闻传播、汉语言文学、英语、翻译、小语种、理工科等相关专业优先； 2、核心能力：优秀的文字表达、逻辑思维和信息整理能力，能将复杂技术内容转化为清晰易懂的文档； 3、语言技能：较强的中英文写作能力，可独立完成英文文档撰写或翻译；有海外经历者优先； 4、工具应用：熟练使用Office、AI等办公软件，具备文档排版和图文编辑能力；熟悉AI大模型、机器翻译工具者优先 5、综合素质：具备用户思维和跨部门协作能力，责任心强。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## AI算法工程师\njob_id: 39006d7c-6a69-50ed-b71e-f0176f67a49d\nsource_url: https://hr.revopoint3d.com.cn/gwtd1.html\nobserved_at: 2026-09-06T14:38:14.916310+00:00\n\n### 职责原文\nAI算法工程师 收藏职位 一、岗位职责 1、2D/3D 视觉、机器人领域前沿 AI 算法研发落地 2、目标检测、点云分割、路径规划与运动控制 3、构建管理数据集，完成模型全周期训练迭代 4、协同部署团队优化模型，跟踪顶会技术并沉淀专利文档 二、\n\n### 要求原文\n1、硕士士及以上人工智能相关专业，精通 Python 和深度学习框架 2、2年以上算法经验，有顶会论文、竞赛成绩或机器人项目经验者优先 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 机器人路径规划工程师\njob_id: f9893b40-e934-5109-bcb6-ae6b46df21f5\nsource_url: https://hr.revopoint3d.com.cn/gwtd1.html\nobserved_at: 2026-09-06T14:38:14.916310+00:00\n\n### 职责原文\n机器人路径规划工程师 收藏职位 一、岗位职责 1、机器人系统方案规划与设计 2、主导六轴机械臂路径规划、避障算法研发及运动学/动力学建模核心工作 二、\n\n### 要求原文\n1、本科及以上电气 / 自动化相关专业，精通运动控制器 2、3年以上工业机械臂开发经验，熟悉激光视觉传感器应用 3、掌握 Linux/WINCE 系统及 SPI、CAN 通信，熟练使用 QT/VS 开发工具 4、拥有较强的动手能力，具备六轴机器人项目经验者优先 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n",
+              "total_characters": 16969
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "e6c1ec1b-3bd5-4af1-9a0c-ec94ae9b31f3",
+          "attempt_id": "ae47c37f-4aa2-46e3-a10a-b67915576005",
+          "namespace": "tool:list_resources",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "items": [
+                {
+                  "description": "来源核验与适配边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-08-hr-methodology-sources",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "公开 JD 阅读案例与证据边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-09-jd-reading-cases",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位原文理解：已复核案例来源",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "comparison-and-learning",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "候选人比较与反馈",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "胜任力与人才画像",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "循证判断",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位与业务情境",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "要求校准与 AMO",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "甄选与工作样本",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "sourcing-and-transfer",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "人才来源与能力迁移",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                }
+              ],
+              "next_cursor": null
+            },
+            "error": null,
+            "status": "ok"
+          }
+        }
+      ]
+    },
+    {
+      "work": {
+        "work_id": "406af666-2c48-459e-9e63-a22694c1f9f6",
+        "thread_id": "c53b872c-9862-4140-b96f-619074303ae5",
+        "input_revision": 1,
+        "state": "failed",
+        "phase": "research",
+        "answer_state": "none",
+        "result_refs": [],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 383.622549,
+          "charged_calls": 7,
+          "charged_tokens": 400256,
+          "limits": {
+            "active_seconds": 1800,
+            "model_calls": 24,
+            "total_tokens": 1200000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 1,
+            "total_tokens": 16000
+          },
+          "revision": 2,
+          "usage_quality": "mixed"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "0e3a320d-232c-4d1c-b68d-49a2005ab021:text",
+                "kind": "material",
+                "revision": "f090893f4afdb640f0b85b585490ccb0c0b1a9ff09f665f6ceb082131ae109e7:utf8-v1",
+                "sha256": "740a02bcc25fd6a4fd2fe45ebaa9ee270bc7648a6981f5d00e3db89ca9d625f0"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 16969
+            },
+            {
+              "ref": {
+                "id": "job-and-context",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1889
+            },
+            {
+              "ref": {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1562
+            },
+            {
+              "ref": {
+                "id": "2026-09-09-jd-reading-cases",
+                "kind": "method",
+                "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 1768
+            }
+          ],
+          "revision": 9
+        },
+        "last_event_seq": 15
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "e700672d-10bb-41e4-8c9b-9924247778fa",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "请研究所选 Revopoint 公开归档的全部19个岗位全文（静态包范围，不是现行官网）。一次回答一个问题：它在从研发到客户交付的过程中，招聘哪些能解决具体问题的人；哪些自建/外采或分工关系有直接证据，哪些不能判断？请先阅读全部职责与要求，自主选择有帮助的方法。使用岗位job_id及少量原文支撑承重判断，保留反例和不能推出的关系，不要用计数或字段复述代替判断，不把共同词汇拼成已运行团队。完成时保存research成果，说明未完成的部分。系统可能因预算暂停；暂停时诚实保留未读范围，追加后继续同一个问题，不把读过一页称为全文读完。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 1
+      },
+      "results": [],
+      "attempts": [
+        {
+          "attempt_id": "ae47c37f-4aa2-46e3-a10a-b67915576005",
+          "ordinal": 1,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 19779,
+          "charged_tokens": 15683,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "I'll start by reading the selected material and checking what methods are available.",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "limit": 20000,
+                  "offset": 0,
+                  "ref": {
+                    "id": "0e3a320d-232c-4d1c-b68d-49a2005ab021:text",
+                    "kind": "material",
+                    "revision": "f090893f4afdb640f0b85b585490ccb0c0b1a9ff09f665f6ceb082131ae109e7:utf8-v1",
+                    "sha256": "740a02bcc25fd6a4fd2fe45ebaa9ee270bc7648a6981f5d00e3db89ca9d625f0"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01FWJgrvRHbnY7nRqF2YYusW"
+              },
+              {
+                "arguments": {
+                  "kinds": [
+                    "method",
+                    "intelligence",
+                    "standard",
+                    "result"
+                  ]
+                },
+                "name": "list_resources",
+                "provider_call_id": "toolu_bdrk_01LCCdYyDaKuQkpAitUeZAPq"
+              }
+            ],
+            "usage": {
+              "input_total": 7597,
+              "output_total": 324,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 7597,
+                "output_tokens": 324,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "75b6d306-a82d-4310-98ee-ae2b9a251647",
+          "ordinal": 2,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 54120,
+          "charged_tokens": 54120,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "862a8a02-105a-4b3a-8929-8e02f6951eed",
+          "ordinal": 3,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 56421,
+          "charged_tokens": 52325,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01BC7VGAP2tDsAtEzXfjqMy8"
+              },
+              {
+                "arguments": {
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_01UjKkM5E1cXroPM2a5Gr8Fn"
+              }
+            ],
+            "usage": {
+              "input_total": 23091,
+              "output_total": 292,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 23091,
+                "output_tokens": 292,
+                "output_tokens_details": {
+                  "thinking_tokens": 49
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "87e3ab43-415e-4bd2-9deb-ceaf0201d43b",
+          "ordinal": 4,
+          "status": "committed",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 67199,
+          "charged_tokens": 63103,
+          "response_model": {
+            "reported_models": [
+              "claude-opus-5"
+            ],
+            "status": "reported",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": {
+            "stop_reason": "tool_use",
+            "text": "",
+            "tool_calls": [
+              {
+                "arguments": {
+                  "ref": {
+                    "id": "2026-09-09-jd-reading-cases",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                  }
+                },
+                "name": "read_resource",
+                "provider_call_id": "toolu_bdrk_018zVbdnuYTGkTVSnoTwQGsk"
+              }
+            ],
+            "usage": {
+              "input_total": 27144,
+              "output_total": 257,
+              "quality": "reported",
+              "raw": {
+                "_response_metadata": {
+                  "identity_assurance": "provider_self_report_only",
+                  "reported_models": [
+                    "claude-opus-5"
+                  ]
+                },
+                "cache_creation": {
+                  "ephemeral_1h_input_tokens": 0,
+                  "ephemeral_5m_input_tokens": 0
+                },
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "input_tokens": 27144,
+                "output_tokens": 257,
+                "output_tokens_details": {
+                  "thinking_tokens": 94
+                },
+                "service_tier": "standard"
+              }
+            }
+          }
+        },
+        {
+          "attempt_id": "16adf659-8d0b-4e5b-b5e1-57ffa4e5ecb9",
+          "ordinal": 5,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 71675,
+          "charged_tokens": 71675,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "ce85af61-8219-4283-8293-43dc1aeba5c4",
+          "ordinal": 6,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 71675,
+          "charged_tokens": 71675,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        },
+        {
+          "attempt_id": "c3e7c1bb-9915-4b93-8697-849c18981876",
+          "ordinal": 7,
+          "status": "interrupted",
+          "purpose": "work",
+          "usage_quality": "estimated",
+          "reserved_tokens": 71675,
+          "charged_tokens": 71675,
+          "response_model": {
+            "reported_models": [],
+            "status": "not_reported_or_not_captured",
+            "identity_assurance": "provider_self_report_only"
+          },
+          "reply": null
+        }
+      ],
+      "tools": [
+        {
+          "operation_id": "bc70ebb7-86c7-4294-90b8-238040f10678",
+          "attempt_id": "ae47c37f-4aa2-46e3-a10a-b67915576005",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 16969,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "5fba1de3-737d-47f5-a6b1-57504ee5bed4",
+              "ref": {
+                "id": "0e3a320d-232c-4d1c-b68d-49a2005ab021:text",
+                "kind": "material",
+                "revision": "f090893f4afdb640f0b85b585490ccb0c0b1a9ff09f665f6ceb082131ae109e7:utf8-v1",
+                "sha256": "740a02bcc25fd6a4fd2fe45ebaa9ee270bc7648a6981f5d00e3db89ca9d625f0"
+              },
+              "text": "# revopoint 公开招聘归档全文\n\n本材料范围仅为该归档中 19 个岗位身份，不代表企业当前全部岗位，也不能证明组织实际运行情况。以下逐条保留原始职责与要求，不使用规范层摘要。\n\n## 【27秋招】SLAM算法工程师\njob_id: c401b56a-7268-5745-99c4-e5afd592febe\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】SLAM算法工程师 收藏职位 一、岗位职责 1.负责 SLAM 系统研发，包括视觉/激光前端跟踪、后端优化、回环检测与多传感器融合； 2.开展相机标定、立体匹配与深度估计，为视觉定位提供高精度数据支撑； 3.负责 2D 图像的识别、检测与分割算法研发，支撑目标检测、语义理解等视觉任务； 4.研究并落地深度学习在 2D/3D 视觉任务中的前沿算法，包括目标检测、位姿估计、深度估计等； 5.探索新型三维表达与场景理解技术，支持视觉定位与重建应用。 二、\n\n### 要求原文\n1.硕士及以上学历，计算机科学、自动化、机器人等相关专业； 2.熟悉 SLAM 系统架构与关键模块，具备视觉或激光 SLAM 研发经验； 3.熟悉点云处理基础算法，掌握点云配准、滤波、分割等常用方法； 4.熟悉深度学习在计算机视觉中的应用，具备 2D 目标检测、图像分割等研发经验； 5.了解 3D 视觉算法（点云深度学习、位姿估计等）者优先； 6.扎实的编程能力，熟悉 C++ 与 Python，具备良好的代码规范与工程化能力； 7.良好的数学基础与问题分析能力，能独立钻研并解决技术难题； 8.在相关领域顶会顶刊发表论文，或有开源项目贡献者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】AI算法工程师\njob_id: 977c1fdc-ffe0-5129-a29e-fb80a74b6103\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】AI算法工程师 收藏职位 一、岗位职责 1、负责计算机视觉领域AI算法的研发，包括目标检测、语义分割、姿态估计等； 2、研究深度学习模型的优化与压缩，提升模型在嵌入式设备上的推理性能； 3、参与AI算法在产品中的落地应用，解决实际场景中的技术挑战； 4、跟踪前沿AI技术发展，探索新算法在公司产品中的应用潜力。 二、\n\n### 要求原文\n1、硕士及以上学历，计算机、软件工程、人工智能、数据科学与大数据技术、应用数学、统计学等相关专业； 2、具备深度学习理论基础，熟悉PyTorch或TensorFlow框架。 3、熟悉目标检测、语义分割等经典算法，有相关项目或竞赛经验。 4、熟练掌握Python编程，具备良好的代码实现和工程能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】AI应用开发工程师-西安/深圳\njob_id: e2e0a6e2-a6c5-5adb-bf12-c807135ab001\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】AI应用开发工程师-西安/深圳 收藏职位 一、岗位职责 1、AI智能体架构与开发，基于主流Agent框架（LangChain/AutoGen等）设计并开发单/多智能体系统； 2、AI数字员工产品开发，负责数字员工的方案设计与功能开发，涵盖对话交互、任务执行与流程自动化； 3、大模型接入与工程化应用，负责主流大语言模型（GPT/Claude/DeepSeek等）的接入封装与Prompt优化； 4、持续跟踪AI前沿技术动态，对已上线系统进行效果监控与迭代优化，推动智能体能力持续提升。 二、\n\n### 要求原文\n1、硕士及以上学历，计算机、软件工程、人工智能等相关专业； 2、掌握 Python、Node.js、Java或C++编程语言，了解基本数据结构与算法； 3、使用过 ChatGPT、DeepSeek 等AI工具，有一定的工程实践基础； 4、有 AI 相关实习或项目实践、技术博客、竞赛等经历者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】软件测试工程师\njob_id: bae11a6d-c71d-5ea5-aa58-3740e7ee70bf\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】软件测试工程师 收藏职位 一、岗位职责 1、制定测试计划与策略，编写测试用例，确保测试覆盖全面； 2、执行测试任务并输出规范报告，跟踪缺陷闭环，保障项目质量； 3、收集分析客户反馈，持续优化测试流程与方法； 4、研究应用自动化测试及AI辅助测试等新技术，推动测试效率提升。 二、\n\n### 要求原文\n1、本科及以上学历，计算机、软件工程、通信、电子信息、自动化等相关专业； 2、掌握Python等编程语言，能编写测试脚本； 3、具备良好的问题分析能力和技术钻研精神，注重细节； 4、具有强烈的责任心、自驱力及跨部门协作能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】项目管理-西安\njob_id: 8bb1c51e-d66f-5bb6-ae7d-fe40adca543e\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】项目管理-西安 收藏职位 一、岗位职责 1、协助项目经理进行任务分配及计划制定，跟进项目进度、质量及风险管理； 2、跟进监控产品全流程开发，组织解决开发及售后质量问题； 3、识别评估产品开发风险，及时采取应对措施，确保产品满足质量需求； 4、组织召开相关会议，做好阶段性汇报及关键里程碑项目汇报； 5、协调项目资源、成本、供应链管理，推进项目收尾工作，协助团队日常管理。 二、\n\n### 要求原文\n1、硕士及以上学历，电子信息、通信、光学、电子科学与技术、微纳制造等相关专业； 2、逻辑清晰，具备良好的组织及沟通协作能力； 3、主动性强，自驱力高，对项目管理流程有一定认知。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】产品经理\njob_id: fcb27aec-624f-5bdb-98e3-9d17fc593ba7\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】产品经理 收藏职位 一、岗位职责 1、负责公司产品的全生命周期管理，包括需求分析、产品规划、产品设计等； 2、与技术团队紧密合作，推动产品的研发和迭代； 3、分析产品市场动态和竞品情况，持续优化产品功能和用户体验。 二、\n\n### 要求原文\n1、硕士及以上学历，专业不限，产品设计、交互设计方向优先； 2、对硬科技产品有较高的理解力和敏锐度，具备优秀的产品洞察力和用户思维； 3、具备良好的学习能力、逻辑能力、沟通和团队协作能力，能够适应快节奏工作。 4、热衷AI探索，具备较强的同理心、换位思考能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】跨境电商运营\njob_id: 5eefbd9a-5bcb-55cd-925f-7e7ecdefdab7\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】跨境电商运营 收藏职位 一、岗位职责 1、负责独立站（Shopify等）的日常运营管理，制定并执行增长策略，通过优化用户体验、转化率提升、复购率增长等手段，实现销售目标； 2、制定多渠道流量获取方案，优化广告投放效果，控制获客成本； 3、深度分析用户行为数据、转化漏斗、订单数据等关键指标，识别增长机会，持续优化网站页面、产品展示、结账流程等环节，提升转化率； 4、参与新品上线策划、营销活动设计、邮件营销、SMS营销等，实现全链路增长。 二、\n\n### 要求原文\n1、本科及以上学历，市场营销、电子商务、数据分析、商务英语等相关专业优先 2、英文听说读写能力强，能够将英语作为工作语言； 3、熟悉独立站平台的运营管理，了解独立站与第三方平台的差异； 4、熟悉SEO基础知识，能够优化网站关键词、页面结构等提升自然流量； 5、数据驱动思维强，能够通过数据分析发现问题、提出解决方案。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】短视频策划剪辑\njob_id: eb01dc2e-0989-53a1-bc37-f17bde1a0426\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】短视频策划剪辑 收藏职位 一、岗位职责 1、短视频内容策划：负责公司三维扫描仪及相关科技产品的海外短视频内容策划，参与 TikTok、YouTube、Instagram 等平台的选题、脚本及创意策划。 2、短视频剪辑：负责短视频跟拍及后期剪辑，完成素材整理、粗剪、精剪、字幕、音乐、节奏及基础包装等工作。 3、关注海外科技类短视频及平台热点，持续学习优秀内容，挖掘适合三维扫描仪的内容方向和创意形式。 4、根据视频播放、完播、互动等数据进行内容复盘，不断优化选题和剪辑方式。 二、\n\n### 要求原文\n1、本科及以上学历，新闻传播、影视、数字媒体、广告、动画等相关专业优先； 2、具备基础视频剪辑能力，熟悉 Premiere Pro、剪映、After Effects 等工具； 3、对短视频内容有兴趣，熟悉 TikTok、YouTube、Instagram 等海外平台； 4、学习能力强、执行力强，能够快速理解科技产品及相关专业知识； 5、有较好的内容感和审美，对视频节奏、画面及热门内容有一定敏感度； 6、英语能力良好，能够阅读和理解海外平台及英文产品资料者优先。 7、有个人短视频账号、作品集、海外平台内容经验，或对机器人、AI、3D扫描、智能硬件等科技产品感兴趣者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】国内销售专员-深圳/上海\njob_id: 498a103e-4dd9-5042-9b0d-71bf16a72532\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】国内销售专员-深圳/上海 收藏职位 一、岗位职责 1、负责开拓国内新客户，建立并维护客户关系，提升客户满意度和忠诚度； 2、分析市场动态，识别潜在客户，制定并执行销售策略，达成销售目标； 3、参与市场调研，收集行业信息，为公司产品开发和市场策略提供参考； 4、协助团队完成市场推广活动，提升品牌知名度； 5、定期与团队沟通，分享市场反馈和客户意见，优化销售流程。 二、\n\n### 要求原文\n1、本科及以上学历，理工科相关专业； 2、具备较强的市场分析能力和敏锐的市场洞察力； 3、具备良好的沟通技巧和客户关系处理能力，有相关销售或商务拓展经验者优先； 4、具备强烈的责任心和团队合作精神，能够接受出差，适应高强度工作环境。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】海外销售专员\njob_id: 918e443e-701b-53ae-8c0e-a8bcc855dca8\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】海外销售专员 收藏职位 一、岗位职责 1、负责公司海外市场的业务拓展，挖掘并维护潜在客户资源； 2、分析市场需求和竞争态势，制定并执行海外市场的销售策略和推广计划； 3、建立和维护与海外合作伙伴的良好关系，共同开展市场推广、产品演示等活动； 4、跟踪和评估海外市场的业务表现，及时调整和优化销售策略。 二、\n\n### 要求原文\n1、本科及以上学历，英语、小语种或理工科专业背景优先； 2、熟练掌握英语或其他工作语言（如日语、西班牙语、德语、法语、意大利语、阿拉伯语等），能够无障碍地与海外客户沟通； 3、具备良好的人际及商务沟通能力、市场分析能力和团队协作精神； 4.能够接受海外出差，能够适应快节奏工作。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】国内技术支持\njob_id: e77e8d58-b3c7-533a-9455-c54b84844df3\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】国内技术支持 收藏职位 一、岗位职责 1、负责公司全系3D产品的售前咨询、售中对接、售后全流程技术支持，远程或现场解决客户疑问； 2、协助产品故障诊断、信息收集与反馈，提升客户满意度； 3、收集和整理客户反馈的技术问题，为产品优化提供信息； 4、配合销售完成项目技术对接、方案协助、验收支撑工作，配合完成样机调试、展会技术支持等相关工作。 二、\n\n### 要求原文\n1、大专及以上学历，机械设计制造及其自动化、机械电子工程、工业设计、智能制造等相关专业； 2、具备较强的责任心、执行力和抗压能力，能够高效落地各项工作任务； 3、沟通表达顺畅，具备优秀的问题分析与处理能力，可精准对接客户需求； 4、具备技术文档撰写能力，可独立完成技术资料整理和工作总结； 5、能适应出差安排和岗位外勤工作模式； 6、拥有三维扫描、逆向建模、3D打印等相关项目实操经验或学科竞赛经历者优先； 7、具备全国职业院校技能大赛\"产品数字化设计与制造\"赛项参赛及获奖经历者优先。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】海外技术支持\njob_id: d7ea90e6-ee33-59f4-bb69-f71ddee42e09\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】海外技术支持 收藏职位 一、岗位职责 1、负责三维扫描仪产品的售前及售后技术支持，响应并解决客户技术问题； 2、为海外客户提供产品操作培训及技术指导，提升客户使用效率与满意度； 3、参与海内外线下展会，负责产品展示、技术演示及现场技术答疑。 二、\n\n### 要求原文\n1、2027届海外留学生，不限国籍； 2、本科及以上学历，机械工程、精密仪器、工业设计、机电一体化或相关专业； 3、具备三维扫描、光学测量或精密仪器相关行业的技术背景或实操经验，有同类产品支持经验者优先； 4、可以将英语作为工作语言，具备良好的跨文化沟通能力与客户服务意识。 1、Job Responsibilities (1) Provide pre-sales and after-sales technical support for 3D scanner products; respond to and resolve customer technical issues. (2) Provide product operation training and technical guidance to overseas customers to enhance their usage efficiency and satisfaction. (3) Participate in domestic and international offline exhibitions; responsible for product demonstrations, technical presentations, and on-site technical Q&A. 2、Job Requirements (1)Class of 2026/2027 International Graduates,No Nationality Restrictions. (2) Bachelor's degree or above in Mechanical Engineering, Precision Instruments, Industrial Design, Mechatronics, or related fields. (3) Technical background or hands-on experience in 3D scanning, optical measurement, or precision instruments industry; prior experience with similar products is preferred. (4) Ability to use English as a working language; strong cross-cultural communication skills and customer service awareness. 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】国内品牌专员\njob_id: c3de5eb6-2c06-5b44-85bb-5257e5a2bdac\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】国内品牌专员 收藏职位 一、岗位职责 1、负责国内品牌整合营销，制定并落地阶段性品牌传播及整合营销方案； 2、负责社交媒体（公众号、小红书、抖音等）运营与内容输出，根据不同平台制定内容与运营策略，独立完成选题策划、内容创作及发布，优化各平台内容表现； 3、品牌传播效果分析与策略优化，定期复盘传播及转化数据，输出报告，基于数据持续优化传播策略与资源配置效率； 4、参与线下活动及展会等品牌支持工作。 二、\n\n### 要求原文\n1、硕士及以上学历，新闻、新媒体、广告、市场营销等相关专业优先； 2、能够独立制定并推进传播方案落地，有品牌或展会实习经验者优先； 3、具备良好文案撰写能力，熟悉办公软件、AI工具及品牌管理工具； 4、性格外向，具备良好的沟通协调能力强和创新思维。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】海外品牌专员\njob_id: f362b550-4363-5aeb-9395-0e9d95e94c49\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】海外品牌专员 收藏职位 一、岗位职责 1、负责海外主流社交媒体平台（TikTok、Instagram、YouTube等）的内容策划与创意撰写，制定发布计划，管理粉丝互动，提升品牌曝光率和用户粘性； 2、识别并开发海外社交平台的优质KOL资源，建立长期合作关系；制定KOL营销策略，设计创意合作方案； 3、制定海外PR整体战略规划，建立与国际媒体、行业媒体的合作关系，策划新闻稿发布、媒体采访等PR活动，持续拓展品牌在国际市场的媒体影响力。 二、\n\n### 要求原文\n1、硕士及以上学历，新闻、国际贸易、市场营销、英语等相关专业优先； 2、熟悉海外主流社交平台的运营特点和传播规律，对社媒运营有浓厚兴趣和实践经验； 3、英文听说读写能力强，能够将英语作为工作语言； 4、具备优秀的沟通表达能力，能有效协调内外部资源；具有敏锐的市场洞察力和创新思维，能够把握国际传播趋势，提出差异化的运营方案。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】财务专员-西安/深圳\njob_id: 63496127-4d6c-575e-96e0-d4ffcf1bdd4f\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】财务专员-西安/深圳 收藏职位 一、岗位职责 1、负责供应链管理工作，包括单据检查、月度库存关账等工作； 2、负责成本核算及存货期末结账工作； 3、负责核对物流运费及税费账单，保证物流成本的准确性； 4、负责库存管理工作，定期进行存货盘点工作，出具盘点报告； 5、监控物料账龄，分析制作可视化图表，识别呆滞物料，同步相关人员，跟踪处理意见。 二、\n\n### 要求原文\n1、本科及以上学历，财务相关专业； 2、熟练运用Excel进行数据处理（透视表、VLOOKUP等函数），具备较强的数据分析； 3、具备良好的沟通表达能力和协作能力，责任心强。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】生产计划专员\njob_id: 8e9d916d-2d95-51a1-981b-a31adbd59e7a\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】生产计划专员 收藏职位 一、岗位职责 1、协助PMC经理完成生产订单拆解、排程编制与执行跟进； 2、每日跟进生产进度，及时反馈物料短缺、设备故障等异常情况； 3、协助处理插单、改单，同步更新计划并通知相关部门； 4、跟进物料到货及欠料情况，推动采购与仓库解决； 5、维护生产计划数据报表，整理项目BOM清单并汇总数据。 二、\n\n### 要求原文\n1、本科及以上学历，工业工程、物流管理、生产管理、会计等相关专业； 2、逻辑思维清晰，具备良好的数据分析与归纳能力； 3、具备优秀的沟通协调能力。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 【27秋招】产品资料文案策划\njob_id: a2ab6bb6-ed7f-5dc7-9805-c4f57945f4b3\nsource_url: https://hr.revopoint3d.com.cn/gwtd.html\nobserved_at: 2026-09-06T14:38:14.472238+00:00\n\n### 职责原文\n【27秋招】产品资料文案策划 收藏职位 一、岗位职责 1、产品学习与转化：深入掌握公司产品的参数、功能、应用场景等，将技术信息转化为用户易懂的文档内容； 2、文档全流程管理：负责中英文产品文档（操作指南、用户手册、FAQ等）的策划、撰写、校对、发布及版本迭代； 3、多语种本地化：借助AI工具和术语库完成多语种文档的翻译、校对和质量把控； 4、规范体系建设：建立并维护文档模板、术语库、版本管理等规范，提升制作效率和内容一致性； 5、跨部门协作优化：与研发、产品、市场、售后等部门协作，获取产品更新和客户反馈，持续优化文档内容和用户体验。 二、\n\n### 要求原文\n1、本科及以上，新闻传播、汉语言文学、英语、翻译、小语种、理工科等相关专业优先； 2、核心能力：优秀的文字表达、逻辑思维和信息整理能力，能将复杂技术内容转化为清晰易懂的文档； 3、语言技能：较强的中英文写作能力，可独立完成英文文档撰写或翻译；有海外经历者优先； 4、工具应用：熟练使用Office、AI等办公软件，具备文档排版和图文编辑能力；熟悉AI大模型、机器翻译工具者优先 5、综合素质：具备用户思维和跨部门协作能力，责任心强。 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## AI算法工程师\njob_id: 39006d7c-6a69-50ed-b71e-f0176f67a49d\nsource_url: https://hr.revopoint3d.com.cn/gwtd1.html\nobserved_at: 2026-09-06T14:38:14.916310+00:00\n\n### 职责原文\nAI算法工程师 收藏职位 一、岗位职责 1、2D/3D 视觉、机器人领域前沿 AI 算法研发落地 2、目标检测、点云分割、路径规划与运动控制 3、构建管理数据集，完成模型全周期训练迭代 4、协同部署团队优化模型，跟踪顶会技术并沉淀专利文档 二、\n\n### 要求原文\n1、硕士士及以上人工智能相关专业，精通 Python 和深度学习框架 2、2年以上算法经验，有顶会论文、竞赛成绩或机器人项目经验者优先 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n\n## 机器人路径规划工程师\njob_id: f9893b40-e934-5109-bcb6-ae6b46df21f5\nsource_url: https://hr.revopoint3d.com.cn/gwtd1.html\nobserved_at: 2026-09-06T14:38:14.916310+00:00\n\n### 职责原文\n机器人路径规划工程师 收藏职位 一、岗位职责 1、机器人系统方案规划与设计 2、主导六轴机械臂路径规划、避障算法研发及运动学/动力学建模核心工作 二、\n\n### 要求原文\n1、本科及以上电气 / 自动化相关专业，精通运动控制器 2、3年以上工业机械臂开发经验，熟悉激光视觉传感器应用 3、掌握 Linux/WINCE 系统及 SPI、CAN 通信，熟练使用 QT/VS 开发工具 4、拥有较强的动手能力，具备六轴机器人项目经验者优先 立即申请 // 模块收藏 function dr_app_favorite(id) { $.get(\"https://hr.revopoint3d.com.cn/index.php?is_ajax=1&s=api&app=join&c=module&m=favorite&id=\"+id, function(data){ dr_cmf_tips(data.code, data.msg); if (data.msg=='收藏成功') { $('#module_favorite').addClass('on'); }else{ $('#module_favorite').removeClass('on'); } }, 'json'); }\n",
+              "total_characters": 16969
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "e6c1ec1b-3bd5-4af1-9a0c-ec94ae9b31f3",
+          "attempt_id": "ae47c37f-4aa2-46e3-a10a-b67915576005",
+          "namespace": "tool:list_resources",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "items": [
+                {
+                  "description": "来源核验与适配边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-08-hr-methodology-sources",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "公开 JD 阅读案例与证据边界",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "2026-09-09-jd-reading-cases",
+                    "kind": "method",
+                    "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                    "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位原文理解：已复核案例来源",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "comparison-and-learning",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "候选人比较与反馈",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "胜任力与人才画像",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "循证判断",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "岗位与业务情境",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "要求校准与 AMO",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "甄选与工作样本",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                },
+                {
+                  "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                  "objects": [],
+                  "observed_at": null,
+                  "original_ref": null,
+                  "ref": {
+                    "id": "sourcing-and-transfer",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                  },
+                  "representation": "authored_text",
+                  "state": "available",
+                  "title": "人才来源与能力迁移",
+                  "visibility": {
+                    "kind": "public",
+                    "subject_id": null
+                  }
+                }
+              ],
+              "next_cursor": null
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "69c949f4-f08f-40a7-94fd-e3828514095b",
+          "attempt_id": "862a8a02-105a-4b3a-8929-8e02f6951eed",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1889,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "886d8c72-74a5-4870-9a17-0a4b429ab6db",
+              "ref": {
+                "id": "job-and-context",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+              },
+              "text": "---\nid: job-and-context\ntitle: 岗位与业务情境\nrevision: 2\ndomains: [recruiting, organization-design]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 岗位与业务情境：从结果、任务到能力\n\n## 帮助理解什么\n\n当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。\n\n## 核心关系\n\n岗位分析的基本链条是“业务结果—关键任务—工作情境—所需能力—可用证据”。OPM 将岗位分析描述为考察岗位任务、完成任务所需胜任力，以及任务与胜任力之间的联系。O*NET 则把任务、工作活动、知识、技能、能力、经验要求和工作情境分开表达。这提醒我们不要把学历、年限、公司品牌或性格形容词直接当成能力。\n\n战略与情境匹配提供更高一层的问题：同一任务在创业期和成熟期、强授权与弱授权、已有团队与从零组建中可能要求不同。岗位要求是关于未来工作的假设，而非对现任优秀员工特征的完整复制。\n\n## 如何结合证据思考\n\n可以先寻找业务负责人、上下游和现任岗位对实际工作的一致与分歧描述，再用历史成果、失败事件、流程材料和真实工作样本交叉检查。每项能力都应能解释它支撑什么任务；每项硬门槛都应能解释缺少它会带来什么岗位风险。信息不足时，应把未知写出来，而不是用常识补成事实。\n\n## 从文字重建任务，并保留结论的对象\n\n职位名和字段名是材料的组织方式，不保证含义正确。一段写在 requirement 中的工作交付可能仍是职责；空的 requirement 也可能只是要求已写在 description 内。先读完整材料，理解语句作用与相互关系，再说明哪些任务和条件有依据。不能因字段为空补默认门槛，也不能因标题含某技术就补出正文没有的工作。\n\n同样的要求文字被多个岗位复用时，要回到各自的交付物：一个岗位需要定义数据产品，另一个需要训练模型，共用编程要求并不解释两者的真实责任。它值得核实，但不证明复制方向或误贴。改写 JD 时，应围绕用户确认的任务与条件组织表达，区分既有要求和新增建议，不照搬另一岗位的筛选口径。\n\n作用域也是证据的一部分。集团招聘入口可能汇集子公司、业务部和归属未明的岗位；某个团队的研究任务不能自动推广到本部或全集团。比较时保留原文对象，确认候选人本人做了什么，而不是以任职公司代替经历。没有子公司标记不代表归属本部，相邻岗位也不证明实际汇报或项目交接关系。\n\n本节来自已复核招聘归档的工作台适配，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不称为 OPM 或 O*NET 原文规则。\n\n## 适用与局限\n\n适合新岗位、职责变化、多人描述不一致、画像缺少任务依据等情况。若用户只是希望润色已经确认的 JD，它可以作为背景而不必重新做完整分析。岗位分析会过时，O*NET 的美国职业数据也不能代替本组织访谈；业务负责人意见是重要证据，但仍可能含有偏好和既有做法偏差。\n\n## 可结合的视角\n\n可与“胜任力与人才画像”连接行为表达，与“要求校准与 AMO”检查环境约束，也可与“甄选与工作样本”思考什么证据更贴近实际任务。这些是建议关系，不是固定流程。\n\n## 案例\n\n一家企业把新客户成功岗描述为“沟通好、抗压强、懂客户”。进一步理解后，目标是提高上线采用率并提前发现续约风险；关键任务包括诊断使用障碍、与产品团队协调、向客户管理层解释取舍。原来的标签因此可以被重新理解为问题诊断、跨团队推进和面向不同受众沟通，并需要在复杂度、独立程度和结果上进一步求证。\n\n## 来源\n\n- U.S. OPM, *Job Analysis*，官方主页面正文。\n- O*NET Resource Center, *The O*NET Content Model*，Worker Requirements、Occupational Requirements、Occupation-Specific Information。\n- Armstrong, *Handbook of Human Resource Management Practice*, 13th ed.，仅使用本地文件可见范围内的战略匹配相关节选；未引用缺失章节。\n",
+              "total_characters": 1889
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "d082d295-7209-49d5-b608-56abd532d97d",
+          "attempt_id": "862a8a02-105a-4b3a-8929-8e02f6951eed",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1562,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "7664557e-dae8-409a-a1b6-c049006656c8",
+              "ref": {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              "text": "---\nid: evidence-informed-judgment\ntitle: 循证判断\nrevision: 2\ndomains: [recruiting, hr-analytics]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 循证判断：让结论强度不超过证据\n\n## 帮助理解什么\n\n本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。\n\n## 核心关系\n\nCEBMa 将循证实践概括为审慎、明确、合理地使用最佳可得证据，并强调可靠性和对当前情境的相关性。它提出 Ask、Acquire、Appraise、Aggregate、Apply、Assess 六个活动。对招聘而言，这不是机械流程，而是提醒：先形成可回答的问题，寻找多类证据，评价质量，整合一致与冲突，再作条件化判断并观察结果。\n\n证据可来自候选人陈述、可核材料、评估观察、组织数据、科学研究、专业经验及相关人员观点。不同来源能互相支持、质疑或澄清。数量多不代表质量高，缺少反证也不等于证实。\n\n## 如何结合证据思考\n\n对每项主张询问来源、与岗位任务的关系、时效、独立性和替代解释。团队成果需要和个人行动、决策权及外部条件分开。表达结论时可以使用“支持”“存在相关线索”“与另一证据冲突”“尚无法判断”等与证据强度相称的语言。\n\n## 让反证、冗余支持和材料缺陷各自发挥作用\n\n多个岗位可能独立支持同一判断，也可能只是复用一段招聘文案。重复文本不能按出现次数累加为更强事实；不同任务提供的支持则可能相互补充。删除一个引用后仍有其他依据支持结论，属于证据冗余，不是分析不依赖证据。要反问的是：承重证据整体失去支持后，结论是否仍被无依据地保留。\n\n主动寻找能收窄结论的材料。某个研究岗说数据生产由专门团队负责，同批却有算法岗同时参与采集与训练，说明前者是局部职责安排；不能推广成所有算法岗都不做数据。存在独立数采岗位可以与自述相互支持，但缺少共同团队或项目标识，仍不能确认它就是所指的支撑团队。\n\n记录缺陷与业务事实要分别解释。正文放错字段但文字完整时，可以恢复对任务的理解并指出原始位置；只有占位符或缺文时，需要补材料。公开岗位没有写某项职责不能证明组织没有该能力，简历没有写某段经历也不能直接认定候选人不具备；同时，未知也不能被包装成已证明匹配。说明当前能判断什么、还缺哪类相关证据。\n\n本节是招聘归档分析的适配总结，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不将这些具体案例归于文献作者。\n\n## 适用与局限\n\n适合候选人证据分析、人才来源假设、画像校准和多人比较。现实中常无法获得理想证据，评价本身也需要判断；循证不会消除价值取舍，也不能把小样本相关性变成因果结论。\n\n## 可结合的视角\n\n几乎可与所有资源结合。它尤其能约束“能力迁移”的乐观推断、“结构化甄选”的分数幻觉，以及比较时将未知当作不满足的倾向。\n\n## 案例\n\n候选人称“主导项目使营收增长 30%”。可确认的只有团队营收和候选人在项目中的任职时间。合理结论不是“已证明商业能力”，而是有相关线索；还需理解基线、个人决策、其他团队贡献、市场变化及候选人能提供的具体产物。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，完整 7 页，重点 pp.1–4。\n- CIPD, *Fair selection: An evidence review*，甄选程序与候选人体验 pp.5–16。\n",
+              "total_characters": 1562
+            },
+            "error": null,
+            "status": "ok"
+          }
+        },
+        {
+          "operation_id": "05d4e951-5e31-4936-8006-fa45ba93d945",
+          "attempt_id": "87e3ab43-415e-4bd2-9deb-ceaf0201d43b",
+          "namespace": "tool:read_resource",
+          "status": "committed",
+          "receipt": {
+            "data": {
+              "coverage_complete": true,
+              "coverage_notes": [],
+              "end": 1768,
+              "next_offset": null,
+              "offset": 0,
+              "read_id": "b26a22c6-32a7-4513-a51f-1286bf5bb5b4",
+              "ref": {
+                "id": "2026-09-09-jd-reading-cases",
+                "kind": "method",
+                "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+              },
+              "text": "# 岗位原文理解：已复核案例来源\n\n来源是招聘归档包 `2ed2262c-63a0-47e5-996c-7d00eb0be1a0`，观察日期为 2026-09-06。2026-09-09 的语义分析及用户提供的独立评审已回查以下记录。这里提炼对材料理解的启示，不将历史招聘广告当作当前岗位或已实现的组织事实，也不把案例推断冒充文献结论。\n\n| 案例 | 可回查岗位身份 | 已确认的材料关系与边界 |\n| --- | --- | --- |\n| 智元多模态生成动作大模型工程师/专家 | `921d9d76-6993-59af-a0d6-5f93278c166d`；原始 ID `7610278886073583914` | 三项能力同时出现在任职要求和加分项。同族研究员 `0d3fa02f-0523-5d15-88fa-27b7f3dcee49`、研究实习生 `bc7a098d-7e53-5bad-9c23-a0d2fa5ebb94` 各只出现一次，加分另有内容。只能确认当前记录的歧义，不能代替岗位方确定真实门槛 |\n| 觅蜂产品经理与算法岗位 | 产品 `0a380957-a3dc-59ce-bb5a-2b81f3310202`；算法 `71db07bb-be9e-52c4-aae0-5ed48e3c8b1c`；优才算法 `8058ad69-1c88-5615-b64c-1e0b86c073e7` | 三条要求内容相同，第三条只少一个末尾换行；产品职责与算法职责不同。可见文本复用，不证明误贴或同一真实岗位 |\n| 模型量化标题与系统集成正文 | `edebba36-f2e4-5538-9674-e572477f832e`；功能集成岗 `78632c11-53cf-5907-8daf-f70f0399d365` | 两条 description 相同，实际任务是端侧系统、固件升级准出及整包管理。另有真实模型压缩任务，不能据单条错位说整个招聘集合没有量化需求 |\n| 字段位置与材料缺失 | 服装设计 `64159b0e-ed67-5233-9d04-48e1b8f877ac`；视觉设计总监 `84bdee53-5627-5268-b911-af4e3516c1d8`；硬件 DRE `88ccbd68-e090-5a0b-94a8-b3aaf2b36120` | 前两条可从全文恢复职责与要求，最后一条职责与要求只有 `/`。可恢复理解不等于修改原始来源，也不能凭标题补占位正文 |\n| 实体归属与局部分工 | 觅蜂预训练 `2d769522-f0fd-5075-b43b-823add5dade2`；归属未明的研究实习生 `a2fac382-ba7a-586e-ad33-1bf4607b9c78`；同时参与数据采集与训练的实习生 `19f60c88-2d47-5319-9699-b21c3ff7fade` | 数据价值研究有具名觅蜂入口，但不能把未标归属岗分给觅蜂或本部。不同岗位数据生产责任不同，不能合并成集团组织规则 |\n\n原始行见包内 `normalized-jobs.jsonl` 的身份对照及原始招聘归档。分析正文、逐字引文、SHA 路径与 JSON 指针保存在 AI-Agent-Platform 仓库工作树的 `docs/research/hr-intelligence/analysis/agibot/q9-technical-intent.md`、`q11-internal-consistency.md`、`text-led-evidence-index.md`；完整阅读与原文回查记录在该工作树本地 `.superpowers/sdd/hr-question-analysis/`。这些审计资料尚未作为情报业务工具的正式发布内容，不能指令 Hannah 去读取一个运行时不存在的工作树路径。\n\n本次只将人工评审后的通用思考材料纳入 `job-and-context`、`requirement-calibration`、`evidence-informed-judgment`。案例不构成固定规则、候选人评分或工具操作授权；当前任务需要某家公司事实时，仍需取得当次可访问的实际材料。\n",
+              "total_characters": 1768
+            },
+            "error": null,
+            "status": "ok"
+          }
+        }
+      ]
+    }
+  ],
+  "acceptance": "Public archived jobs only; semantic quality requires independent professional review; no production publication.",
+  "runner_sha256": "a34319f86f00e1253a885e50f548311c3681db8439cf09b5f58ae8106ebd4c43"
+}

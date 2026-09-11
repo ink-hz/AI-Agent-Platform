@@ -14,7 +14,11 @@ from urllib.parse import urlsplit
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
 
-from .types import canonical_json
+from .types import (
+    DEFAULT_MODEL_TIMEOUT_SECONDS,
+    MAX_MODEL_TIMEOUT_SECONDS,
+    canonical_json,
+)
 
 MIGRATION_SHA256 = "02241fb7872b598c67ea78e84fe5301d2797683680c8f7bf79770b3ae6c8f817"
 
@@ -184,7 +188,11 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
             or stat.S_IMODE(credential.stat().st_mode) != 0o600
         ):
             raise ValueError()
-        if not 0 < integer(provider.get("timeout_seconds", 120)) <= 120:
+        if (
+            not 0
+            < integer(provider.get("timeout_seconds", DEFAULT_MODEL_TIMEOUT_SECONDS))
+            <= MAX_MODEL_TIMEOUT_SECONDS
+        ):
             raise ValueError()
         if any(
             not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", provider[k])
