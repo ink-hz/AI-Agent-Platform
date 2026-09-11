@@ -30,12 +30,14 @@ export function HrSourceWorkspace({account, search, active, onCatalog}: {account
   const [draft, setDraft] = useState(keyword);
   const [companySearch, setCompanySearch] = useState('');
   const main = useRef<HTMLDivElement>(null);
+  const requestInFlight = useRef(false);
   const listScroll = useRef(0);
   const pendingScroll = useRef<'top' | 'list' | null>(null);
   useEffect(() => setDraft(keyword), [keyword]);
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
+    requestInFlight.current=true;
     setLoading(true); setFailure(null); setCompany(null); setJob(null);
     const read = async (path: string) => {
       const response = await fetch(platformPath(path), {credentials:'same-origin', signal:controller.signal});
@@ -65,12 +67,12 @@ export function HrSourceWorkspace({account, search, active, onCatalog}: {account
         if (!controller.signal.aborted) {setCatalog(next); onCatalog(next); setCompany(page); setJob(detail);}
       } catch (error) {
         if (!controller.signal.aborted) {setCatalog(null); onCatalog(null); setCompany(null); setJob(null); setFailure(typeof error === 'number' ? error : 503);}
-      } finally { if (!controller.signal.aborted) setLoading(false); }
+      } finally { if (!controller.signal.aborted) {requestInFlight.current=false;setLoading(false);} }
     })();
     return () => controller.abort();
   }, [account.internal_user_id, account.csrf_token, active, companyKey, edition, jobId, keyword, location, channel, offset, retry, onCatalog]);
   useEffect(() => {
-    if (loading || !active) return;
+    if (requestInFlight.current || loading || !active) return;
     window.dispatchEvent(new Event('hr:intelligence-ready'));
     if (!pendingScroll.current) return;
     const target = pendingScroll.current;

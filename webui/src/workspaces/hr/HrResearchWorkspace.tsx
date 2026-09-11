@@ -56,6 +56,7 @@ export function HrResearchWorkspace({ account, active = true, companyOptions }: 
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const articleTop = useRef<HTMLDivElement>(null);
+  const requestInFlight = useRef(false);
   const query = new URLSearchParams(location);
   const company = query.get("research_company") ?? "";
   const question = query.get("question") ?? "";
@@ -73,6 +74,7 @@ export function HrResearchWorkspace({ account, active = true, companyOptions }: 
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
+    requestInFlight.current = true;
     setLoading(true); setFailure(null); setDocument(null); setCatalog(null);
     async function read(path: string) {
       const response = await fetch(platformPath(path), { credentials: "same-origin", signal: controller.signal });
@@ -92,12 +94,12 @@ export function HrResearchWorkspace({ account, active = true, companyOptions }: 
       } catch (error) {
         if (!controller.signal.aborted) { setCatalog(null); setDocument(null); setFailure(typeof error === "number" ? error : 503); }
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) { requestInFlight.current = false; setLoading(false); }
       }
     })();
     return () => controller.abort();
   }, [account.internal_user_id, account.csrf_token, selected, edition, retry, active]);
-  useEffect(() => { if (!loading && active) window.dispatchEvent(new Event("hr:intelligence-ready")); }, [loading, active]);
+  useEffect(() => { if (!requestInFlight.current && !loading && active) window.dispatchEvent(new Event("hr:intelligence-ready")); }, [loading, active]);
   const navigate = (changes: Record<string, string | null>) => {
     const next = params();
     if ("research_company" in changes && changes.research_company !== next.get("research_company")) {
