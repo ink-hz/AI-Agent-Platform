@@ -107,7 +107,7 @@ class BoundedRealPort:
         yield from self.port.stream(request)
 
 
-def journey(uploaded, intake, database, tmp_path, *, real=False):
+def journey(uploaded, intake, database, tmp_path, *, real=False, without_plan=False):
     from app.hr.models import CreateManualPosition
     from app.hr.repository import HrPositionRepository
     from app.hr_agent.knowledge import KnowledgeReleases
@@ -204,6 +204,7 @@ def journey(uploaded, intake, database, tmp_path, *, real=False):
         "objects": objects,
         "candidate_initialization": "scripted_model_real_user_HTTP_confirmation",
         "model_boundary": "real_configured_opus5" if real else "scripted",
+        "scenario": "record_without_plan" if without_plan else "full_journey",
         "stages": [],
     }
     output = None
@@ -273,6 +274,44 @@ def journey(uploaded, intake, database, tmp_path, *, real=False):
         return found
 
     try:
+        if without_plan:
+            raw_text = content["用户提供的虚构面试原始记录"]
+            _, raw_ref = upload_text(uploaded, database, raw_text)
+            record = post(
+                "/candidates/" + cid + "/interview-records",
+                {
+                    "material_ref": raw_ref,
+                    "title": "虚构原始记录（未提供方案）",
+                    "occurred_at": None,
+                    "position_id": pobj["id"],
+                    "interview_plan_ref": None,
+                },
+            )
+            record_path = (
+                "/api/hr/agent/candidates/"
+                + cid
+                + "/interview-records/"
+                + record["record_id"]
+            )
+            evidence["original_record"] = client.get(record_path).json()
+            found = stage(
+                "record-without-plan",
+                "这是虚构验证。用户仅提供这份实际面试记录，没有提供面试方案。请整理已有记录并保存 interview_record，分清记录陈述和未知。无需先生成方案或等待其他材料。",
+                [raw_ref],
+                [
+                    (
+                        "interview_record",
+                        "记录陈述由同事提出供电假设；没有提供方案，不能评价方案执行。",
+                    )
+                ],
+            )
+            assert raw_ref in found["interview_record"]["source_refs"]
+            assert client.get(record_path).json()["text"] == raw_text
+            assert evidence["original_record"]["interview_plan_ref"] is None
+            evidence["engineering_assertions"] = (
+                "passed; semantic_quality_requires_separate_review"
+            )
+            return evidence
         first = stage(
             "sourcing-assessment",
             "所有材料均为虚构验证。请根据临时岗位要求，形成搜寻策略和这位候选人的岗位评估，分别保存 sourcing 与 candidate_assessment。材料未知处可以保留，不必等待补充，不作录用决定。按问题自主选用方法。",
@@ -390,9 +429,24 @@ def test_fictional_candidate_interview_and_retrospective_http_journey(
     assert len(evidence["stages"]) == 3
 
 
+def test_fictional_record_without_plan_can_be_saved(
+    uploaded, intake, database, tmp_path
+):
+    evidence = journey(uploaded, intake, database, tmp_path, without_plan=True)
+    assert len(evidence["stages"]) == 1
+    assert evidence["original_record"]["interview_plan_ref"] is None
+
+
 @pytest.mark.skipif(
     not os.getenv("HR_D_REAL_PROFILE_FILE"),
     reason="explicit synthetic D real-model profile and evidence directory required",
 )
 def test_fictional_d_real_model_evidence(uploaded, intake, database, tmp_path):
-    journey(uploaded, intake, database, tmp_path, real=True)
+    journey(
+        uploaded,
+        intake,
+        database,
+        tmp_path,
+        real=True,
+        without_plan=os.getenv("HR_D_WITHOUT_PLAN") == "1",
+    )
