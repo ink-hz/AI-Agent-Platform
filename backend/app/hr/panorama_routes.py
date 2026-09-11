@@ -13,6 +13,7 @@ from fastapi.routing import APIRoute
 
 from .panorama_repository import PanoramaConflict, PanoramaNotFound, PanoramaUnavailable
 from .research_library import ResearchLibrary
+from .source_library import SourceLibrary
 
 _PRIVATE_HEADERS = {
     "Cache-Control": "private, no-store",
@@ -77,6 +78,45 @@ def build_panorama_router(service, require_hr_access) -> APIRouter:
             raise HTTPException(422, "HR panorama request invalid") from None
 
     research_library = ResearchLibrary()
+    source_library = SourceLibrary()
+
+    @router.get("/api/hr/panorama/sources")
+    async def source_catalog(request: Request):
+        await authorize(request)
+        return await call(source_library.catalog)
+
+    @router.get("/api/hr/panorama/sources/{company_key}")
+    async def source_company(
+        request: Request,
+        company_key: Annotated[str, Path(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")],
+        edition: Annotated[str, Query(min_length=1, max_length=128)],
+        q: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+        location: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+        channel: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+        offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    ):
+        await authorize(request)
+        return await call(
+            source_library.company,
+            company_key,
+            edition,
+            q=q,
+            location=location,
+            channel=channel,
+            offset=offset,
+            limit=limit,
+        )
+
+    @router.get("/api/hr/panorama/sources/{company_key}/jobs/{job_id}")
+    async def source_job(
+        request: Request,
+        company_key: Annotated[str, Path(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")],
+        job_id: Annotated[str, Path(pattern=r"^[a-f0-9-]{36}$")],
+        edition: Annotated[str, Query(min_length=1, max_length=128)],
+    ):
+        await authorize(request)
+        return await call(source_library.job, company_key, job_id, edition)
 
     @router.get("/api/hr/panorama/research")
     async def research_catalog(request: Request):
