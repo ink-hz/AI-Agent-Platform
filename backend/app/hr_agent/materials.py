@@ -8,7 +8,7 @@ from uuid import UUID
 from psycopg.rows import dict_row
 
 from app.attachments.conversation_repository import attachment_object_subject
-from app.execution_relay.content_crypto import SealedContent
+from app.execution_relay.content_crypto import ContentCryptoError, SealedContent
 
 from .types import (
     HrAgentProblem,
@@ -200,7 +200,20 @@ class MaterialService:
         view["original_ref"] = original
         if row["detected_mime"] != "text/plain":
             if self.parsing is not None:
-                return self.parsing.existing(owner_id, row, view)
+                try:
+                    parsed_view, parsed_text = self.parsing.existing(
+                        owner_id, row, view
+                    )
+                except ContentCryptoError:
+                    raise problem(
+                        "temporarily_unavailable", retryable=True, http_status=503
+                    ) from None
+                if parsed_text is not None:
+                    # Explicit content reads audit both the immutable original
+                    # and the sealed parsed representation. Authorization does not.
+                    self._read_bytes(row)
+                    self._assert_current(owner_id, row)
+                return parsed_view, parsed_text
             from .material_parsing import RELEASES
 
             if row["detected_mime"] not in RELEASES:
@@ -234,23 +247,36 @@ class MaterialService:
         return view, MaterialText(ref, original, "utf8-v1", text, True)
 
     def resolve(self, owner_id, attachment_id):
-        view, _ = self._view(owner_id, self._row(owner_id, attachment_id))
-        return validate_contract("MaterialView", view)
+        from .material_authority import record_verified
+
+        row = self._row(owner_id, attachment_id)
+        view, text = self._view(owner_id, row)
+        view = validate_contract("MaterialView", view)
+        if text is not None:
+            record_verified(self.connection_factory, owner_id, row, text.ref)
+        return view
 
     def read_text(self, owner_id, ref):
         ref = validate_contract("ExactRef", ref)
         if ref["kind"] != "material":
             raise problem("invalid_input")
-        view, text = self._view(
-            owner_id, self._row(owner_id, ref["id"].split(":", 1)[0])
-        )
+        row = self._row(owner_id, ref["id"].split(":", 1)[0])
+        view, text = self._view(owner_id, row)
         if text is None:
             if view["parse_state"] == "unsupported" or ref == view["original_ref"]:
                 raise problem("unsupported_kind")
             raise problem("reference_unavailable", http_status=410)
         if ref != text.ref:
             raise problem("reference_unavailable", http_status=410)
+        from .material_authority import record_verified
+
+        record_verified(self.connection_factory, owner_id, row, ref)
         return text
+
+    def authorize_refs(self, owner_id, refs):
+        from .material_authority import authorize_refs
+
+        authorize_refs(self.connection_factory, owner_id, refs)
 
 
 def build_material_service(

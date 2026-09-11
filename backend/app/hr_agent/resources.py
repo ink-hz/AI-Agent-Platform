@@ -172,6 +172,7 @@ class ResourceReader:
                 if o["kind"] in ("position", "candidate")
             } <= {(o["kind"], o["id"]) for o in current["objects"]}:
                 raise problem("scope_denied", http_status=403)
+        material_refs = []
         for ref in refs:
             validate_contract("ExactRef", ref)
             if ref["kind"] in ("method", "intelligence"):
@@ -195,7 +196,7 @@ class ResourceReader:
                     raise problem("scope_denied", http_status=403)
                 if self.materials is None:
                     raise problem("configuration_unavailable", http_status=503)
-                self.materials.read_text(owner, ref)
+                material_refs.append(ref)
             elif ref["kind"] == "result":
                 with self.repository.transaction() as c:
                     self.repository._validate_result_sources(c, owner, ref, work_id)
@@ -208,6 +209,8 @@ class ResourceReader:
                 StandardService(self.repository).read(owner, ref)
             else:
                 raise problem("unsupported_kind")
+        if material_refs:
+            self.materials.authorize_refs(owner, material_refs)
 
     def knowledge_for(self, fence):
         _, record, _, _ = self.repository.context_input(fence)

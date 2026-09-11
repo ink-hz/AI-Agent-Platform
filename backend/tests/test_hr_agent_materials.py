@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+
 from app.attachments.conversation_models import ObjectReceipt
 from app.attachments.conversation_repository import ConversationAttachmentRepository
 from app.attachments.conversation_routes import build_conversation_attachment_router
@@ -59,25 +60,26 @@ def uploaded(secured, database):
         ConversationAttachmentRepository(database.dsn, content_codec=repo.codec), store
     )
     # Build a fresh app so the middleware route snapshot includes upload endpoints.
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
     from app.control_plane.authorization import AuthorizationService
     from app.control_plane.middleware import IdentitySecurityMiddleware
     from app.hr_agent.access import HrAccess
+    from app.hr_agent.resources import ResourceReader
     from app.hr_agent.routes import build_hr_agent_router
     from app.hr_agent.service import HrAgentService
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
     from tests.test_hr_position_api import _SecurityAuth
 
     materials = MaterialService(database.connection, repo.codec, store)
     access = HrAccess(
         SimpleNamespace(decide_for_user_id=lambda *_: SimpleNamespace(allowed=True)),
-        reference_authorizer=lambda owner, ref, *_: (
-            materials.read_text(owner, ref) is not None
-        ),
     )
-    repo.scope_validator = lambda owner, objects, refs, work: access.authorize_scope(
-        owner, objects, refs, work_id=work
-    )
+    # This upload fixture has no public knowledge. Material scope uses the same
+    # batched authority and actual owner/proof database adapter as the runtime.
+    repo.scope_validator = ResourceReader(
+        repo, None, material_service=materials
+    ).validate_scope
     app = FastAPI()
     app.state.conversation_attachment_upload_service = uploads
     app.include_router(build_conversation_attachment_router())
