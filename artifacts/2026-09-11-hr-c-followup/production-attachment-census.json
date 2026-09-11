@@ -1,0 +1,52 @@
+{
+  "observed_at": "2026-09-11T06:34:54.647072+00:00",
+  "scope": "production attachment census independent of erasure queue; SELECT aggregates only",
+  "erasure_source_sha256": "fe4be437413a1228f737ac96ba1943bd77567ccfe3478d0ac5f987c46abb310d",
+  "legacy_claim_expansion": true,
+  "fixed_claim_from": false,
+  "claim_sql_lines": [
+    "\"select (platform_attachments.claim_attachment_erasure_job_v64(%s)).*\","
+  ],
+  "transaction_read_only": "on",
+  "database_identity": [
+    {
+      "database": "agent_platform_control",
+      "role": "platform_control_maintenance"
+    }
+  ],
+  "tables_rls": [
+    {
+      "relname": "attachments",
+      "relrowsecurity": false,
+      "relforcerowsecurity": false
+    },
+    {
+      "relname": "erasure_jobs",
+      "relrowsecurity": false,
+      "relforcerowsecurity": false
+    }
+  ],
+  "attachment_states": [
+    {
+      "state": "uploading",
+      "has_deleted_at": false,
+      "attachments": 2,
+      "declared_bytes": "1595518"
+    }
+  ],
+  "attachment_totals": [
+    {
+      "attachments": 2,
+      "state_deleted": 0,
+      "timestamp_deleted": 0,
+      "inconsistent_markers": 0,
+      "retention_due": 0
+    }
+  ],
+  "queue_states": [],
+  "uploads_unique_constraints": [
+    {
+      "constraint_definition": "UNIQUE (attachment_id)"
+    }
+  ]
+}

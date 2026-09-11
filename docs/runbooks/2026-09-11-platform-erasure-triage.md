@@ -35,11 +35,11 @@
 
 使用现有受控运维入口和最小只读数据库身份；仓库中可确认的秘密入口是宿主机私有目录下的 migrator/maintenance DSN 文件及附件 worker secrets volume。不要打印、复制到工单或从容器环境回显这些值。配套查询为 `docs/runbooks/2026-09-11-platform-erasure-readonly.sql`；它显式开启只读事务，只输出：
 
-- 各状态数量与最早/最近创建时间；
+- 独立attachments状态/deleted_at普查（不依赖擦除队列），以及任务各状态数量与最早/最近创建时间；
 - running/其他状态的年龄桶与 attempt_count 范围；
 - job 状态与 attachment 状态的聚合组合；
 - 关联原件、写入尝试、派生物的行数和声明字节总量；
-- 迁移 100 回执/checksum 与 maintenance 六列权限布尔值。
+- 迁移64和100回执/仓库checksum比较，与maintenance六列权限布尔值。
 
 查询使用现有获准身份，必须显式只读事务、超时及聚合白名单；凭据在进程内读取，不回显。若某身份无权读取字段，记录不可用，不修改权限。可对已获准的API身份执行只读迁移回执查询，但不得借机调用写函数。生产与preview分开留档，不从生产结果推断preview。
 

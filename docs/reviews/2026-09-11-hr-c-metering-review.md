@@ -37,7 +37,7 @@
 | 阶段 | 日志结果 | 可支持的结论 |
 | --- | --- | --- |
 | 初始红测试 `/tmp/hr-c-review-red.log` | 4 failed、1 passed、16 deselected，2.51s | 三个计量参数用例原发送质量均错误为 mixed；UUID大小写原产生两条请求 |
-| 第一版绿测试 `/tmp/hr-c-review-meter-parse.log` | 52 passed，63.10s | 第一版相关回归通过；尚未覆盖后来发现的旧大写记录与32hex兼容问题 |
+| 第一版绿测试 [补存原始日志](../../artifacts/2026-09-11-hr-c-followup/meter-parse-first-green.log)（原 `/tmp/hr-c-review-meter-parse.log`） | 52 passed，63.10s | 第一版相关回归通过；尚未覆盖后来发现的旧大写记录与32hex兼容问题 |
 | 兼容红测试 `/tmp/hr-c-parse-legacy-red.log` | 2 failed、11 deselected，1.57s | 旧大写键跨附件未报409；原32hex大小写身份被过度合并 |
 | 最终相关绿测试 `/tmp/hr-c-review-meter-parse-final.log` | 38 passed，8.06s | 新增旧大写及不透明键回归通过；结合最终 diff 的计量用例与兼容分支审读，未发现剩余阻断 |
 

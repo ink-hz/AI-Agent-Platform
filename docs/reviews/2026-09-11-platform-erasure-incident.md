@@ -12,6 +12,16 @@
 
 生产影响核查尚不等于修复完成。当前无任务及缺权状态使“立即已在错删”缺乏证据；下次附件服务发布前仍须独立修复，且先停旧Worker再应用100。具体可审补丁和发布顺序见处置手册，生产写操作尚未获本次只读取证授权。
 
+## 补充附件普查与代码保留路径（06:34 UTC）
+
+这次直接查询attachments，不依赖erasure_jobs JOIN：[完整聚合捕获](../../artifacts/2026-09-11-hr-c-followup/production-attachment-census.json)。生产共2条附件，均uploading、deleted_at为空；state=deleted、deleted_at非空、不一致标记、保留期已到期均为0。attachments与erasure_jobs均无RLS。擦除队列仍为空。未读对象定位或字节，也没有领取或修改。
+
+审阅的正常应用路径只新增和更新erasure_jobs，没有删除任务行的生产代码；064的completed更新保留任务行。因此在这些代码正常运行且未发生外部清表/历史版本清理的前提下，空表支持“没有历史入队迹象”，比“当前没有running”强。它不是无法审计的人工维护或所有历史版本从未发生过入队的证明。此次独立附件普查也未发现被标记已删除的记录；仍不声称存储字节已核验。
+
+064回执来源是前轮API脚本 `production_migration_readonly.py`，本轮将仓库064原始文件SHA-256与捕获回执实际比对，相同：[哈希比对](../../artifacts/2026-09-11-hr-c-followup/migration-064-compare.json)。发布用readonly SQL现在同时检查64和100，并加入独立附件普查，避免引用入口与结论来源混淆。
+
+关于uploads JOIN：064明确 `attachment_id uuid not null unique`，生产也返回 `UNIQUE (attachment_id)`；现行schema下不可能一附件多upload，因此此前SQL不会因所指情形放大。仍改为先按attachment聚合uploads，保证查询自身表达清楚的一附件一行，不把防御性改写称为已存在的生产数据缺陷。
+
 ## 结论与风险
 
 机制风险为 **高**；本轮生产观察未发现活动任务或实际错删证据，未查历史对象字节。旧 `AttachmentErasureRepository.claim` 使用 `SELECT (volatile_function()).*` 展开返回复合类型；PostgreSQL可能为每个展开字段重复执行函数。它破坏“一次调用只领取一个完整任务”的身份一致性。该缺陷同时影响通用平台附件，不限于 HR；但先前本地核查时没有生产查询，后续生产观察也没有对象字节盘点或历史审计证据，不能据此断言生产曾成功擦除、从未擦除，或已经删错对象。

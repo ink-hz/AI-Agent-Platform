@@ -1,0 +1,22 @@
+{
+  "observed_at": "2026-09-11T06:42:15.209287+00:00",
+  "configured_model": "claude-opus-5",
+  "configured_profile_revision": "hr-opus5-20260911",
+  "endpoint_relation": "same configured origin and Messages path + /count_tokens",
+  "endpoint_sha256": "9c68593701f0768d78e74370faaf4cb2db772bbda3a9c8f5311582742c92ff3c",
+  "request": {
+    "model": "claude-opus-5",
+    "messages": [
+      {
+        "role": "user",
+        "content": "公开合成计量探针。Synthetic token counting probe."
+      }
+    ]
+  },
+  "generation_requested": false,
+  "redirects_followed": false,
+  "status_code": 404,
+  "response_sha256": "6f40b85fa5244d41a47b990f8ac6122f99781e9cef129a0d0d492d35e8c28aa1",
+  "response_bytes": 120,
+  "error_type": "invalid_request_error"
+}

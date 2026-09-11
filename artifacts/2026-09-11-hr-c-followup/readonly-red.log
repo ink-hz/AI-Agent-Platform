@@ -1,0 +1,36 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_readonly_census_does_not_depend_on_queue_and_checks_reviewed_migrations _
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:51407/postgres', 'port': 51407, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:51407/agent_platform_control_preview', ...}}}
+
+    def test_readonly_census_does_not_depend_on_queue_and_checks_reviewed_migrations(control_database):
+        environment = control_database['environments']['production']
+        with psycopg.connect(environment['admin']) as admin:
+            context = _seed_task(admin)
+            attachment_id = _insert_attachment(admin, context)
+            admin.execute("UPDATE platform_attachments.attachments SET state='deleted',deleted_at=now() WHERE attachment_id=%s", (attachment_id,))
+            assert admin.execute('SELECT count(*) FROM platform_attachments.erasure_jobs').fetchone()[0] == 0
+        script = (Path(__file__).parents[2] / 'docs/runbooks/2026-09-11-platform-erasure-readonly.sql').read_text()
+        script = '\n'.join(line for line in script.splitlines() if not line.startswith('\\'))
+        result_sets = []
+        with psycopg.connect(environment['admin'], autocommit=True) as conn:
+            cursor = conn.execute(script)
+            while True:
+                if cursor.description:
+                    keys = tuple(column.name for column in cursor.description)
+                    result_sets.append((keys, cursor.fetchall()))
+                if not cursor.nextset():
+                    break
+            assert conn.execute('SELECT state,deleted_at IS NOT NULL FROM platform_attachments.attachments WHERE attachment_id=%s', (attachment_id,)).fetchone() == ('deleted', True)
+        census = [rows for keys, rows in result_sets if keys == ('state', 'has_deleted_at', 'attachments', 'declared_bytes')]
+>       assert census == [[('deleted', True, 1, 128)]]
+E       AssertionError: assert [] == [[('deleted', True, 1, 128)]]
+E         
+E         Right contains one more item: [('deleted', True, 1, 128)]
+E         Use -v to get more diff
+
+backend/tests/test_attachment_erasure_readonly_runbook.py:28: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_readonly_runbook.py::test_readonly_census_does_not_depend_on_queue_and_checks_reviewed_migrations
+1 failed in 1.36s

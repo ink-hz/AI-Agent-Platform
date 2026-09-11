@@ -4,6 +4,12 @@ SET LOCAL statement_timeout = '10s';
 SET LOCAL lock_timeout = '1s';
 
 -- Aggregate only: no attachment/job/user IDs, ciphertext, object references, or source text.
+-- Independent census: an empty erasure queue must not hide deleted attachments.
+SELECT state, deleted_at IS NOT NULL AS has_deleted_at,
+       count(*) AS attachments, coalesce(sum(size_bytes), 0) AS declared_bytes
+FROM platform_attachments.attachments
+GROUP BY state, deleted_at IS NOT NULL ORDER BY state, has_deleted_at;
+
 SELECT state, count(*) AS jobs,
        min(created_at) AS oldest_created_at,
        max(created_at) AS newest_created_at
@@ -32,6 +38,11 @@ GROUP BY job.state, attachment.state ORDER BY job.state, attachment.state;
 
 WITH selected AS (
   SELECT DISTINCT attachment_id FROM platform_attachments.erasure_jobs
+), uploads AS (
+  SELECT attachment_id, count(*) AS rows
+  FROM platform_attachments.uploads
+  WHERE attachment_id IN (SELECT attachment_id FROM selected)
+  GROUP BY attachment_id
 ), attempts AS (
   SELECT attachment_id, count(*) AS rows
   FROM platform_attachments.upload_write_attempts
@@ -44,21 +55,23 @@ WITH selected AS (
   WHERE attachment_id IN (SELECT attachment_id FROM selected)
   GROUP BY attachment_id
 )
-SELECT count(*) FILTER (WHERE upload.attachment_id IS NOT NULL) AS upload_rows,
+SELECT coalesce(sum(uploads.rows), 0) AS upload_rows,
        coalesce(sum(attempts.rows), 0) AS write_attempt_rows,
        coalesce(sum(derivatives.rows), 0) AS derivative_rows,
        coalesce(sum(attachment.size_bytes), 0) AS declared_original_bytes,
        coalesce(sum(derivatives.bytes), 0) AS declared_derivative_bytes
 FROM selected
 JOIN platform_attachments.attachments attachment USING (attachment_id)
-LEFT JOIN platform_attachments.uploads upload USING (attachment_id)
+LEFT JOIN uploads USING (attachment_id)
 LEFT JOIN attempts USING (attachment_id)
 LEFT JOIN derivatives USING (attachment_id);
 
 SELECT version, sha256, applied_at,
-       sha256 = '15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177'
-         AS checksum_matches_reviewed_file
-FROM platform_control.schema_migrations WHERE version = 100;
+       sha256 = CASE version
+         WHEN 64 THEN '1f9f083e76c3fc14e14a2ccfc403fcfb83716b4f1602cd5c41882e9ffb04c3aa'
+         WHEN 100 THEN '15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177'
+       END AS checksum_matches_reviewed_file
+FROM platform_control.schema_migrations WHERE version IN (64, 100) ORDER BY version;
 
 WITH expected(role_name) AS (
   VALUES (CASE WHEN current_database() = 'agent_platform_control_preview'
