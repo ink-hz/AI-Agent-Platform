@@ -82,3 +82,17 @@ it('captures a direct report transition and restores the source scroll position 
  await click('原始资料');
  expect(container.scrollTop).toBe(240);
 });
+it('puts aggregation before a collapsed job list and expands details explicitly',async()=>{
+ const base=mockFetch();vi.stubGlobal('fetch',vi.fn(async (url:string)=>{
+  if(url.includes('/sources/')&&!url.includes('/jobs/'))return new Response(JSON.stringify({...page,overview:{edition:'aggregation-1',source_edition:'source-1',source_bundle_id:'bundle-1',rules_schema_version:3,metrics:{job_count:1,job_families:{research_development:1},directions:{硬件:1},secondary_directions:{},locations:{深圳:1},tracks:{social:1},seniority:{mid:1},skills:{Python:1}}}}));
+  return base(url);
+ }));
+ history.replaceState({},'','/hr/panorama?research_company=insta360');
+ await act(async()=>root.render(<HrPanoramaWorkspace account={account}/>));
+ expect(container.textContent).toContain('招聘资料聚合');expect(container.textContent).toContain('Python');
+ const jobs=container.querySelector<HTMLDetailsElement>('.hr-source-job-records');
+ expect(jobs).not.toBeNull();expect(jobs!.open).toBe(false);
+ await act(async()=>jobs!.querySelector('summary')!.click());expect(jobs!.open).toBe(true);
+ await act(async()=> (container.querySelector('[data-source-job="job-1"]') as HTMLButtonElement).click());
+ await click('返回岗位列表');expect(container.querySelector<HTMLDetailsElement>('.hr-source-job-records')!.open).toBe(true);
+});

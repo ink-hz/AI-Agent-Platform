@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowUpRight, ChevronRight, Database, FileText, Search } fro
 import { platformPath, type Account } from '../../auth';
 import { intelligenceScroller, navigateIntelligence } from './hrIntelligenceNavigation';
 import type { SourceCatalog, SourceCompanyPage, SourceJob } from './hrSourceTypes';
+import { HrSourceOverview, metricName, topMetrics } from './HrSourceOverview';
 import './hrResearch.css';
 import './hrSources.css';
 
@@ -10,6 +11,10 @@ const LABELS: Record<string, string> = {succeeded:'已取得资料',partial:'部
 const label = (value: string | null) => value ? LABELS[value] ?? value : '未提供';
 const jobCountLabel = (count: number | null, state: string) => count === null || (count === 0 && state !== 'empty_confirmed') ? '本次未取得岗位记录' : `${count.toLocaleString()} 条岗位记录`;
 const date = (value: string | null) => value ? new Date(value).toLocaleDateString('zh-CN') : '时间未提供';
+function documentPreview(text: string) {
+  const lines=text.split('\n').map(line=>line.trim()).filter(line=>line.length>=28&&!/浏览器|cookie|隐私|copyright|请选择|please select|商业宣传|属于.{0,3}广告/i.test(line));
+  return lines.length ? lines.slice(0,3) : ['本次官网资料主要由产品名称及短条目组成，请展开查看原文。'];
+}
 function SourceLink({url, children}: {url: string; children: React.ReactNode}) { return /^https?:\/\//i.test(url) ? <a href={url} target="_blank" rel="noopener noreferrer">{children} <ArrowUpRight size={13}/></a> : <span>来源地址未提供</span>; }
 
 export function HrSourceWorkspace({account, search, active, onCatalog}: {account: Account; search: string; active: boolean; onCatalog: (value: SourceCatalog | null) => void}) {
@@ -21,6 +26,7 @@ export function HrSourceWorkspace({account, search, active, onCatalog}: {account
   const location = query.get('source_location') ?? '';
   const channel = query.get('source_channel') ?? '';
   const offset = query.get('source_offset') ?? '0';
+  const recordsOpen = query.has('source_records') ? query.get('source_records') === '1' : Boolean(keyword || location || channel || offset !== '0');
   const [catalog, setCatalog] = useState<SourceCatalog | null>(null);
   const [company, setCompany] = useState<SourceCompanyPage | null>(null);
   const [job, setJob] = useState<SourceJob | null>(null);
@@ -85,19 +91,19 @@ export function HrSourceWorkspace({account, search, active, onCatalog}: {account
   }, [loading, active]);
   const selectCompany = (key: string | null) => {
     pendingScroll.current = 'top';
-    navigateIntelligence({layer:'sources',research_company:key,source_edition:catalog?.edition ?? null,source_job:null,source_offset:null,source_q:null,source_location:null,source_channel:null,research:null,edition:null});
+    navigateIntelligence({layer:'sources',research_company:key,source_edition:catalog?.edition ?? null,source_job:null,source_offset:null,source_q:null,source_location:null,source_channel:null,source_records:null,research:null,edition:null});
   };
   const filter = (changes: Record<string,string | null>) => navigateIntelligence({...changes,source_offset:null,source_job:null,source_edition:catalog?.edition ?? null});
   const openJob = (id: string) => {listScroll.current = intelligenceScroller(main.current).scrollTop; pendingScroll.current='top'; navigateIntelligence({source_job:id,source_edition:catalog?.edition ?? null});};
-  const closeJob = () => {pendingScroll.current='list';navigateIntelligence({source_job:null});};
+  const closeJob = () => {pendingScroll.current='list';navigateIntelligence({source_job:null,source_records:'1'});};
   const report = () => navigateIntelligence({layer:'research',research:null,edition:null});
   const companies = catalog?.companies.filter(c => `${c.name} ${c.aliases.join(' ')}`.toLowerCase().includes(companySearch.toLowerCase())) ?? [];
   return <section className="hr-research hr-sources" aria-label="原始资料">
-    <header className="hr-research-header"><div><span className="hr-research-eyebrow">HR INTELLIGENCE · SOURCE LIBRARY</span><h1>先看资料，再形成判断。</h1><p>查阅清洗后的公司资料与岗位正文，保留采集范围和原始出处。</p></div><a className="hr-research-archive" href={platformPath('/hr/panorama?view=archive')}>历史发布归档 <ArrowUpRight size={15}/></a></header>
+    <header className="hr-research-header"><div><span className="hr-research-eyebrow">HR INTELLIGENCE · SOURCE LIBRARY</span><h1>从整理好的资料，看清公司与招聘。</h1><p>汇集公司公开信息、招聘结构与技能分布，按需追溯岗位原文。</p></div><a className="hr-research-archive" href={platformPath('/hr/panorama?view=archive')}>历史发布归档 <ArrowUpRight size={15}/></a></header>
     {failure ? <div className="hr-research-state" role="alert"><h2>{failure===401?'登录状态已失效':failure===403?'当前账号没有 HR 情报权限':failure===404?'这份资料或指定版本暂不可用':'资料暂时无法读取'}</h2><p>{failure===404?'保留原版本引用，不用其他资料替代。':'请重新读取后继续。'}</p>{failure===401?<a href={platformPath('/login?return_path='+encodeURIComponent('/hr/panorama'+window.location.search))}>重新登录</a>:<button onClick={()=>setRetry(v=>v+1)}>重新读取</button>}{failure===404&&<button onClick={()=>navigateIntelligence({source_job:null,source_edition:null,research_company:null})}>返回资料目录</button>}</div> : <>
       {catalog && <div className="hr-research-dateline"><span><Database size={15}/>{catalog.companies.length} 家公司 · {catalog.job_count.toLocaleString()} 条岗位记录</span><span>资料采集截至 {date(catalog.observed_at)}</span><span>岗位记录不等于招聘人数</span></div>}
       <div className="hr-research-layout">
-        <aside className="hr-research-sidebar" aria-label="资料公司"><p>全部采集范围</p><button aria-pressed={!companyKey} onClick={()=>selectCompany(null)}>全部公司 <span>{catalog?.companies.length}</span></button>{catalog?.companies.map(c=><button key={c.company_key} data-source-company={c.company_key} aria-pressed={companyKey===c.company_key} onClick={()=>selectCompany(c.company_key)}>{c.name}<span>{c.job_count === 0 && c.coverage_state !== 'empty_confirmed' ? '—' : c.job_count ?? '—'}</span></button>)}<div className="hr-research-scope-note">正文仅整理格式，不补写缺失信息。渠道采集失败不代表没有招聘需求。</div></aside>
+        <aside className="hr-research-sidebar" aria-label="资料公司"><p>全部采集范围</p><button aria-pressed={!companyKey} onClick={()=>selectCompany(null)}>全部公司 <span>{catalog?.companies.length}</span></button>{catalog?.companies.map(c=><button key={c.company_key} data-source-company={c.company_key} aria-pressed={companyKey===c.company_key} onClick={()=>selectCompany(c.company_key)}>{c.name}<span>{c.job_count === 0 && c.coverage_state !== 'empty_confirmed' ? '—' : c.job_count ?? '—'}</span></button>)}<div className="hr-research-scope-note">原文、规则整理与 AI 分析分层呈现。多标签数量不可直接相加；采集失败不代表没有招聘需求。</div></aside>
         <main className="hr-research-main" ref={main}>
           {loading ? <div className="hr-research-state" role="status">正在读取资料…</div> : job && company ? <article className="hr-research-article hr-source-job-detail">
             <button className="hr-research-back" onClick={closeJob}><ArrowLeft size={16}/>返回岗位列表</button>
@@ -110,16 +116,17 @@ export function HrSourceWorkspace({account, search, active, onCatalog}: {account
           </article> : company ? <>
             <div className="hr-research-heading"><div><span className="hr-research-eyebrow">COMPANY SOURCES</span><h2>{company.company.name}</h2><p className="hr-source-aliases">{company.company.aliases.join(' / ')}</p></div><button className="hr-source-report-link" onClick={report}>查看 AI 分析 <ArrowUpRight size={15}/></button></div>
             <div className="hr-source-coverage"><span>招聘资料：{label(company.company.coverage_state)}</span><span>公司资料：{label(company.company.document_state)}</span>{company.limitations.map((note,i)=><p key={i}>{note}</p>)}<details><summary>来源渠道与采集情况</summary>{company.channels.map((item,i)=><div className="hr-source-channel" key={i}><strong>{label(item.channel)}</strong><span>{label(item.state)} · {date(item.observed_at)} · {item.job_count===null?'记录数未确认':`${item.job_count} 条记录`}</span><SourceLink url={item.source_url}>来源入口</SourceLink></div>)}</details></div>
-            <section className="hr-source-documents"><h3><FileText size={17}/>公司公开资料</h3>{company.documents.length?company.documents.map((doc,index)=><details key={index}><summary>{doc.title || '官网资料'}<span>{date(doc.observed_at)}</span></summary><div className="hr-source-document-text">{doc.text}</div><SourceLink url={doc.source_url}>查看原始页面</SourceLink></details>):<p className="hr-source-note">本次未取得可展示的公司资料正文，采集情况见上方来源渠道。</p>}</section>
-            <div className="hr-source-list-title"><h3>公开岗位</h3><span>{company.total} 条记录</span></div>
+            <section className="hr-source-documents"><h3><FileText size={17}/>公司与业务 · 官网资料</h3>{company.documents.length?company.documents.map((doc,index)=><article className="hr-source-company-document" key={index}><h4>{doc.title || '官网资料'}</h4><p className="hr-source-excerpt-label">官网正文摘录</p><div className="hr-source-document-preview">{documentPreview(doc.text).map((line,i)=><p key={i}>{line}</p>)}</div><details><summary>展开完整官网资料<span>{date(doc.observed_at)}</span></summary><div className="hr-source-document-text">{doc.text}</div><SourceLink url={doc.source_url}>查看原始页面</SourceLink></details></article>):<p className="hr-source-note">本次未取得可展示的公司资料正文，采集情况见上方来源渠道。</p>}</section>
+            <HrSourceOverview overview={company.overview}/>
+            <details className="hr-source-job-records" open={recordsOpen} onToggle={event=>{const open=event.currentTarget.open;if(open!==recordsOpen)navigateIntelligence({source_records:open?'1':'0'});}}><summary><span>岗位原文与明细</span><span>{company.company.job_count ?? '—'} 条记录 · {recordsOpen?'收起':'展开查阅'}</span></summary><p className="hr-source-records-note">查看聚合统计对应的岗位职责、要求与原始来源。筛选仅作用于明细。</p>
             <form className="hr-source-filters" onSubmit={event=>{event.preventDefault();filter({source_q:draft||null});}}><label><Search size={16}/><input aria-label="搜索岗位正文" placeholder="搜索岗位、职责或要求" value={draft} onChange={event=>setDraft(event.target.value)}/></label><button type="submit">搜索</button><select aria-label="筛选岗位地点" value={location} onChange={event=>filter({source_location:event.target.value||null})}><option value="">全部地点</option>{company.locations.map(v=><option key={v}>{v}</option>)}</select><select aria-label="筛选来源渠道" value={channel} onChange={event=>filter({source_channel:event.target.value||null})}><option value="">全部渠道</option>{company.channel_options.map(v=><option value={v} key={v}>{label(v)}</option>)}</select></form>
             <div className="hr-source-job-list">{company.items.map(item=><button key={item.job_id} data-source-job={item.job_id} onClick={()=>openJob(item.job_id)}><div><h4>{item.title}</h4><p>{item.location || '地点未提供'}<span>{label(item.channel)}</span><span>{label(item.status)}</span></p></div><ChevronRight size={18}/></button>)}</div>
             {!company.items.length && <p className="hr-research-state">当前条件下没有岗位记录。</p>}
-            <nav className="hr-source-pagination" aria-label="岗位分页"><button disabled={company.offset===0} onClick={()=>navigateIntelligence({source_offset:String(Math.max(0,company.offset-company.limit))})}>上一页</button><span>{company.total?`${company.offset+1}–${Math.min(company.offset+company.limit,company.total)} / ${company.total}`:'0 条记录'}</span><button disabled={company.offset+company.limit>=company.total} onClick={()=>navigateIntelligence({source_offset:String(company.offset+company.limit)})}>下一页</button></nav>
+            <nav className="hr-source-pagination" aria-label="岗位分页"><button disabled={company.offset===0} onClick={()=>navigateIntelligence({source_offset:String(Math.max(0,company.offset-company.limit))})}>上一页</button><span>{company.total?`${company.offset+1}–${Math.min(company.offset+company.limit,company.total)} / ${company.total}`:'0 条记录'}</span><button disabled={company.offset+company.limit>=company.total} onClick={()=>navigateIntelligence({source_offset:String(company.offset+company.limit)})}>下一页</button></nav></details>
           </> : catalog && <>
-            <div className="hr-research-heading"><div><span className="hr-research-eyebrow">THE SOURCE LIBRARY</span><h2>选择一家公司，查阅原始资料</h2></div></div>
-            <label className="hr-source-company-search"><Search size={17}/><input aria-label="搜索公司或别名" placeholder="搜索公司或别名" value={companySearch} onChange={event=>setCompanySearch(event.target.value)}/></label>
-            <div className="hr-source-company-grid">{companies.map(c=><button key={c.company_key} onClick={()=>selectCompany(c.company_key)}><div><h3>{c.name}</h3><ChevronRight size={18}/></div><p>{c.aliases.join(' / ')}</p><strong>{jobCountLabel(c.job_count,c.coverage_state)}</strong><footer><span>招聘 · {label(c.coverage_state)}</span><span>官网 · {label(c.document_state)}</span></footer></button>)}</div>
+            <div className="hr-research-heading"><div><span className="hr-research-eyebrow">COMPANY LANDSCAPE</span><h2>公司资料总览</h2></div></div>
+            <p className="hr-source-overview-intro">按公司对照已采集的招聘资料。职能、方向与技能来自规则归类，进入公司可查看完整分布及官网信息。</p><label className="hr-source-company-search"><Search size={17}/><input aria-label="搜索公司或别名" placeholder="搜索公司或别名" value={companySearch} onChange={event=>setCompanySearch(event.target.value)}/></label>
+            <div className="hr-source-company-grid">{companies.map(c=><button key={c.company_key} onClick={()=>selectCompany(c.company_key)}><div><h3>{c.name}</h3><ChevronRight size={18}/></div><p>{c.aliases.join(' / ')}</p><strong>{jobCountLabel(c.job_count,c.coverage_state)}</strong>{c.overview?<dl className="hr-source-company-facts"><div><dt>主要职能</dt><dd>{topMetrics(c.overview.metrics.job_families).map(([k,n])=>`${metricName(k)} ${n}`).join(' · ') || '未取得'}</dd></div><div><dt>涉及方向</dt><dd>{topMetrics(c.overview.metrics.directions).map(([k])=>k).join(' / ') || '未取得'}</dd></div><div><dt>技能提及</dt><dd>{topMetrics(c.overview.metrics.skills,4).map(([k])=>k).join(' / ') || '未取得'}</dd></div><div><dt>招聘地域</dt><dd>{topMetrics(c.overview.metrics.locations).map(([k])=>k).join(' / ') || '未取得'}</dd></div></dl>:<p>本次没有可用的招聘聚合，查看公司资料与采集情况。</p>}<footer><span>招聘 · {label(c.coverage_state)}</span><span>官网 · {label(c.document_state)}</span></footer></button>)}</div>
             {!companies.length&&<p className="hr-research-state">没有匹配的公司。</p>}
           </>}
         </main>

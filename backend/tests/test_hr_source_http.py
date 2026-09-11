@@ -74,6 +74,15 @@ def test_source_http_authorization_fixed_edition_pagination_and_ownership(
             assert 1 <= len(page["items"]) <= 2
             assert page["total"] >= len(page["items"])
             assert page["offset"] == 0 and page["limit"] == 2
+            overview = page["overview"]
+            assert overview["metrics"]["job_count"] == 291
+            assert overview["metrics"]["skills"]["Python"] > 0
+            assert overview["source_edition"] == catalog["edition"]
+            assert overview["source_bundle_id"] == catalog["source_bundle_id"]
+            assert sum(overview["metrics"]["job_families"].values()) == 291
+            assert overview["edition"].startswith("aggregation-")
+            entry = next(c for c in catalog["companies"] if c["company_key"] == "robosense")
+            assert entry["overview"] == overview
             job_id = page["items"][0]["job_id"]
             detail_path = f"/api/hr/panorama/sources/robosense/jobs/{job_id}"
             detail = client.get(detail_path, params={"edition": catalog["edition"]})

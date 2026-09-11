@@ -51,7 +51,7 @@ export function HrPanoramaWorkspace(props: Parameters<typeof HrLegacyPanoramaWor
   };
   if (archive) return <><div className="hr-research-archive-banner">历史情报归档 · 保留原发布内容与已有引用 <a href={platformPath('/hr/panorama')}>返回情报资料 →</a></div><HrLegacyPanoramaWorkspace {...props}/></>;
   return <div ref={shell} className="hr-intelligence-layers">
-    <nav className="hr-intelligence-layer-nav" aria-label="情报内容层级"><button aria-current={layer==='sources'?'page':undefined} onClick={()=>changeLayer('sources')}>原始资料</button><button aria-current={layer==='research'?'page':undefined} onClick={()=>changeLayer('research')}>AI 分析报告</button><span>采集事实与分析判断，分层阅读。</span></nav>
+    <nav className="hr-intelligence-layer-nav" aria-label="情报内容层级"><button aria-current={layer==='sources'?'page':undefined} onClick={()=>changeLayer('sources')}>原始资料</button><button aria-current={layer==='research'?'page':undefined} onClick={()=>changeLayer('research')}>AI 分析报告</button><span>原文与规则整理 · AI 分析判断</span></nav>
     <div data-layer="sources" hidden={layer!=='sources'}><HrSourceWorkspace key={identity} account={props.account} search={search} active={layer==='sources'} onCatalog={setSourceCatalog}/></div>
     <div data-layer="research" hidden={layer!=='research'}>{(visitedResearch||layer==='research')&&<HrResearchWorkspace key={identity} account={props.account} active={layer==='research'} companyOptions={sourceCatalog?.companies.map(c=>({id:c.company_key,name:c.name}))}/>}</div>
   </div>;

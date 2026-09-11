@@ -291,3 +291,20 @@ def test_changed_committed_body_cannot_masquerade_as_source_edition(tmp_path):
     path.write_text(path.read_text().replace("激光雷达系统工程师", "伪造岗位", 1))
     with pytest.raises(PanoramaUnavailable):
         SourceLibrary(tmp_path / "content").company("robosense", catalog["edition"])
+
+
+@pytest.mark.parametrize("change", ["identity", "scope"])
+def test_rejects_aggregation_not_matching_source(tmp_path, change):
+    original = SourceLibrary().root
+    shutil.copytree(original, tmp_path / "sources")
+    path = tmp_path / "sources" / "aggregation.json"
+    value = json.loads(path.read_text())
+    if change == "identity":
+        value["source_edition"] = "source-other"
+    else:
+        value["companies"]["robosense"]["job_count"] += 1
+    unsigned = {k: v for k, v in value.items() if k != "edition"}
+    value["edition"] = "aggregation-" + hashlib.sha256(_canonical(unsigned)).hexdigest()[:20]
+    path.write_text(json.dumps(value))
+    with pytest.raises(PanoramaUnavailable):
+        SourceLibrary(tmp_path / "sources").catalog()

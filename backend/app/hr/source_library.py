@@ -150,6 +150,41 @@ class SourceLibrary:
                 raise TypeError("job content invalid")
             all_job_ids.add(job_id)
 
+    @cached_property
+    def _overviews(self) -> dict[str, object]:
+        manifest, companies = self._publication()
+        path = self.root / "aggregation.json"
+        if not path.exists():
+            return {}
+        try:
+            value = json.loads(path.read_text("utf-8"))
+            unsigned = {key: item for key, item in value.items() if key != "edition"}
+            if (
+                value["schema_version"] != 1
+                or value["edition"] != "aggregation-" + hashlib.sha256(_canonical(unsigned)).hexdigest()[:20]
+                or value["source_edition"] != manifest["edition"]
+                or value["source_bundle_id"] != manifest["source_bundle_id"]
+                or set(value["companies"]) != set(companies)
+            ):
+                raise ValueError("aggregation version mismatch")
+            result = {}
+            for key, metrics in value["companies"].items():
+                if metrics is None:
+                    continue
+                if metrics["job_count"] != companies[key]["company"]["job_count"]:
+                    raise ValueError("aggregation scope mismatch")
+                result[key] = {
+                    "edition": value["edition"],
+                    "source_edition": value["source_edition"],
+                    "source_bundle_id": value["source_bundle_id"],
+                    "rules_schema_version": value["rules_schema_version"],
+                    "archive_aggregates_sha256": value["archive_aggregates_sha256"],
+                    "metrics": metrics,
+                }
+            return result
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise PanoramaUnavailable("source aggregation unavailable") from error
+
     def catalog(self) -> dict[str, object]:
         manifest, _ = self._publication()
         return {
@@ -157,7 +192,10 @@ class SourceLibrary:
             "source_bundle_id": manifest["source_bundle_id"],
             "observed_at": manifest["observed_at"],
             "job_count": manifest["job_count"],
-            "companies": [_public_company(item) for item in manifest["companies"]],
+            "companies": [
+                {**_public_company(item), "overview": self._overviews.get(item["company_key"])}
+                for item in manifest["companies"]
+            ],
         }
 
     def company(
@@ -206,6 +244,7 @@ class SourceLibrary:
         return {
             "edition": manifest["edition"],
             "company": _public_company(value["company"]),
+            "overview": self._overviews.get(company_key),
             "documents": value["documents"],
             "channels": value["channels"],
             "limitations": value["limitations"],
