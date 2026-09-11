@@ -63,7 +63,7 @@ class AttachmentErasureRepository:
         try:
             with self._connection() as connection:
                 job = connection.execute(
-                    "select (platform_attachments.claim_attachment_erasure_job_v64(%s)).*",
+                    "select * from platform_attachments.claim_attachment_erasure_job_v64(%s)",
                     (worker_id,),
                 ).fetchone()
                 if job is None or job["erasure_job_id"] is None:
