@@ -15,7 +15,9 @@ from app.agent_brain.orchestrator import MissionOrchestrator
 from app.agent_brain.repository import MissionRepository
 from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
 from test_agent_brain_conversation_context import _complete_mission
-from test_control_plane_migration import control_database
+from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+    control_database as control_database,  # noqa: PLC0414
+)
 
 
 def test_summary_protocol_accepts_only_exact_selected_sequence() -> None:
@@ -229,7 +231,7 @@ def test_summary_prompt_overflow_fails_the_turn_visibly(
 
 
 @pytest.mark.postgres
-def test_direct_agent_follow_up_uses_the_same_summary_phase(
+def test_non_hr_direct_agent_follow_up_uses_the_same_summary_phase(
     brain_database,
 ) -> None:
     environment, owner_id = brain_database
@@ -241,11 +243,14 @@ def test_direct_agent_follow_up_uses_the_same_summary_phase(
         content_codec=missions.content_codec,
         mission_repository=missions,
     )
+    direct_card = next(
+        card for card in load_capability_cards() if card.agent_id == "hr-bot"
+    ).model_copy(update={"agent_id": "fae-bot"})
     relay = ScriptedRelay()
     service = MissionOrchestrator(
         missions,
         relay,
-        capability_provider=lambda _owner: load_capability_cards(),
+        capability_provider=lambda _owner: (direct_card,),
         conversation_context_builder=ConversationContextBuilder(conversations),
         conversation_projection=ConversationProjection(conversations),
     )
@@ -254,7 +259,7 @@ def test_direct_agent_follow_up_uses_the_same_summary_phase(
         uuid4(),
         "A" * 30_000,
         mode="direct_agent",
-        direct_agent_id="hr-bot",
+        direct_agent_id="fae-bot",
     )
     assert service.advance_pending(limit=50) == 1
     first_run = next(iter(relay.payloads))

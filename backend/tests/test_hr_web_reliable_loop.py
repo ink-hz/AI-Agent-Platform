@@ -32,14 +32,6 @@ pytestmark = pytest.mark.postgres
 @pytest.fixture()
 def web_loop(worker_conversation, direct_database):
     environment, owner, _ = direct_database
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute("set local role platform_control_owner")
-        connection.execute(
-            (
-                Path(__file__).parents[1]
-                / "control_migrations/pending/hr_web_result_recovery.sql"
-            ).read_text()
-        )
     loop = WebLoop(environment, owner, worker_conversation.conversation_id)
     try:
         yield loop

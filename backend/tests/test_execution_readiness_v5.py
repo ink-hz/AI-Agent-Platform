@@ -38,10 +38,25 @@ from test_hr_direct_worker import (
 from test_hr_direct_worker import (
     worker_turn as worker_turn,
 )
-
-from tests.helpers.v5_readiness import observation
+from tests.helpers.v5_readiness import observation as v5_observation
 
 pytestmark = pytest.mark.postgres
+
+
+def observation():
+    """The v5 transport endpoint also serves the deployed v6 HR turn contract."""
+    sample = v5_observation()
+    sample["version"] = "hr_v6_readiness_v1"
+    sample["service"].update(
+        contractVersion="core_chat_collaboration_v6",
+        rolePackage={
+            "teamCommit": "a" * 40,
+            "catalogRelease": "recruiting-1",
+            "manifestSha256": "b" * 64,
+        },
+        toolCapabilities=["hr.read_context", "hr.submit_result", "hr.confirm_standard"],
+    )
+    return sample
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +85,41 @@ def test_initial_claim_without_authenticated_v5_readiness_stays_queued(
     }
 
 
+def test_signed_v5_only_observation_cannot_admit_deployed_scoped_turn(
+    signed_api, worker_turn, attempt_repository, transport_worker,
+):
+    client, signer, _ = signed_api
+    with attempt_repository.transaction() as connection:
+        assert connection.execute(
+            "select hr_input_context is not null as scoped "
+            "from platform_control.conversation_turns where turn_id=%s",
+            (worker_turn.turn.turn_id,),
+        ).fetchone()["scoped"]
+    assert post(
+        client, signer, "/api/v1/execution-worker/v5/readiness",
+        json.dumps(v5_observation()).encode(),
+    ).json() == {"recorded": True}
+    with attempt_repository.transaction() as connection:
+        stored = connection.execute(
+            "select v5_observation from platform_control.execution_workers where worker_id=%s",
+            (transport_worker,),
+        ).fetchone()["v5_observation"]
+    assert stored["service"]["contractVersion"] == "core_chat_collaboration_v5"
+    assert attempt_repository.claim_due(uuid4(), 60) is None
+    with attempt_repository.transaction() as connection:
+        row = connection.execute(
+            "select status,executor_id,transport_run_id,reason_code "
+            "from platform_control.turn_attempts where turn_id=%s",
+            (worker_turn.turn.turn_id,),
+        ).fetchone()
+    assert row == {
+        "status": "queued",
+        "executor_id": None,
+        "transport_run_id": None,
+        "reason_code": "executor_capability_missing",
+    }
+
+
 def test_signed_observation_admits_original_attempt(
     signed_api, worker_turn, attempt_repository, transport_worker
 ):
@@ -81,6 +131,7 @@ def test_signed_observation_admits_original_attempt(
     assert lease is not None
     assert lease.status == "running" and lease.lease_epoch == 1
     assert lease.admission["workerId"] == transport_worker
+    assert lease.admission["service"]["contractVersion"] == "core_chat_collaboration_v6"
     assert lease.admission["service"]["config"]["toolPolicy"] == "default"
     assert attempt_repository.claim_due(uuid4(), 60) is None
 
@@ -362,10 +413,9 @@ def test_stale_route_prefix_does_not_starve_ready_conversation(
 def test_completed_turn_with_held_attempt_blocks_admission_and_binding(
     signed_api, worker_turn, attempt_repository, repository, direct_database, bindings
 ):
-    from test_hr_direct_command_binding import frozen_input
-
     from app.agent_brain.direct_command_binding import BindingRejected
     from app.agent_brain.turn_attempts import Lease
+    from test_hr_direct_command_binding import frozen_input
 
     client, signer, _ = signed_api
     post(

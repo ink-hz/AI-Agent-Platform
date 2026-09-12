@@ -1,6 +1,9 @@
 """D1 regressions against the deployed v6/v7 persisted turn-scope shape."""
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
 from uuid import uuid4
 
 import psycopg
@@ -51,6 +54,93 @@ def _scoped_submission(
         hr_scope=scope,
         input_result_refs=() if protocol == "v7" else None,
     )
+
+
+def _assert_current_turn_only(builder, conversation_id, turn_id, current):
+    for build in (builder.build, builder.build_direct):
+        context = build(conversation_id, turn_id)
+        assert context.summary is None
+        assert [message.content for message in context.messages] == [current]
+    assert builder.compaction_candidate(conversation_id, turn_id) is None
+
+
+def _is_hr_v6_mutant(tmp_path):
+    source_path = Path(__file__).parents[1] / "app/agent_brain/conversation_context.py"
+    source = source_path.read_text()
+    original = (
+        'row["user_seq"] - 1 if is_hr_agent\n'
+        '                else conversation.summary_through_seq\n'
+        '            )\n'
+        '            summary = None if is_hr_agent else conversation.summary'
+    )
+    narrowed = (
+        'row["user_seq"] - 1 if is_hr_v6\n'
+        '                else conversation.summary_through_seq\n'
+        '            )\n'
+        '            summary = None if is_hr_v6 else conversation.summary'
+    )
+    assert source.count(original) == 1
+    mutant_path = tmp_path / "conversation_context_is_hr_v6_mutant.py"
+    mutant_path.write_text(source.replace(original, narrowed))
+    module_name = "conversation_context_is_hr_v6_mutant"
+    spec = importlib.util.spec_from_file_location(module_name, mutant_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(module_name, None)
+    return module.ConversationContextBuilder
+
+
+@pytest.mark.postgres
+def test_persisted_legacy_hr_turn_without_scope_excludes_history_and_summary(
+    scoped_database, tmp_path,
+):
+    environment = scoped_database
+    owner = _seed_candidate_scope(environment)["owner"]
+    repo = repository(environment)
+    first = repo.start(
+        owner,
+        uuid4(),
+        A_FACT,
+        mode="direct_agent",
+        direct_agent_id="fae-bot",
+    )
+    _complete(environment, repo, first.turn.turn_id, A_ANALYSIS)
+    second = repo.append_turn(
+        owner, first.conversation.conversation_id, uuid4(), B_FACT
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.conversations set direct_agent_id='hr-bot' "
+            "where conversation_id=%s",
+            (first.conversation.conversation_id,),
+        )
+        rows = connection.execute(
+            "select hr_input_context from platform_control.conversation_turns "
+            "where conversation_id=%s order by created_at,turn_id",
+            (first.conversation.conversation_id,),
+        ).fetchall()
+    assert rows == [(None,), (None,)]
+
+    conversation_id = first.conversation.conversation_id
+    turn_id = second.turn.turn_id
+    _assert_current_turn_only(
+        ConversationContextBuilder(repo), conversation_id, turn_id, B_FACT
+    )
+    mutant = _is_hr_v6_mutant(tmp_path)(repo)
+    with pytest.raises(AssertionError):
+        _assert_current_turn_only(mutant, conversation_id, turn_id, B_FACT)
+
+    repo.store_summary(conversation_id, turn_id, 2, MIXED_SUMMARY)
+    _assert_current_turn_only(
+        ConversationContextBuilder(repo), conversation_id, turn_id, B_FACT
+    )
+    mutant = _is_hr_v6_mutant(tmp_path)(repo)
+    with pytest.raises(AssertionError):
+        _assert_current_turn_only(mutant, conversation_id, turn_id, B_FACT)
 
 
 @pytest.mark.postgres

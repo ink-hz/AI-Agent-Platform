@@ -1,7 +1,3 @@
-# The imported pytest fixtures intentionally share their public fixture names with
-# test parameters throughout this module.
-# ruff: noqa: F401, F811
-
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -45,8 +41,12 @@ from test_agent_brain_api import (
     _write_credentials,
 )
 from test_agent_brain_conversation_api import _app
-from test_agent_brain_conversation_repository import conversation_database
-from test_control_plane_migration import control_database
+from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+    control_database as control_database,  # noqa: PLC0414
+)
+from tests.helpers.hr_direct_database import (
+    conversation_database as conversation_database,  # noqa: PLC0414
+)
 
 
 def _codec() -> ContentCodec:

@@ -1,7 +1,8 @@
 """Authenticated HTTP with real PG identity/message persistence; no model call."""
 
+# ruff: noqa: PLC0414
+
 from uuid import uuid4
-from pathlib import Path
 import psycopg
 
 import pytest
@@ -50,14 +51,6 @@ def test_authorized_browse_and_selected_resource_turn_survive_refresh(
     build_release(source_repo, commit, releases)
     knowledge = HrKnowledgeRepository(releases, "/agent/releases", commit)
     environment, owner, _ = direct_database
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute("set local role platform_control_owner")
-        connection.execute(
-            (
-                Path(__file__).parents[1]
-                / "control_migrations/pending/hr_web_result_recovery.sql"
-            ).read_text()
-        )
     identity = WebLoop(environment, owner, worker_conversation.conversation_id)
     database = environment["urls"]["platform_control_app"]
     secrets = AuthSecrets(b"w" * 32, key_version=1)

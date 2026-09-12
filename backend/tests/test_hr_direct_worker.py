@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from pathlib import Path
 from threading import Barrier, Event
 from time import monotonic
 from uuid import uuid4
@@ -11,16 +10,19 @@ import psycopg
 import pytest
 from test_agent_brain_conversation_context import _complete_mission
 from test_agent_brain_orchestrator import ScriptedRelay
-from test_turn_attempts_database import (
+from tests.helpers.hr_direct_database import (
     attempt_repository as attempt_repository,  # noqa: PLC0414 - pytest fixture export
 )
-from test_turn_attempts_database import (
+from tests.helpers.hr_direct_database import (
     control_database as control_database,  # noqa: PLC0414 - pytest fixture export
 )
-from test_turn_attempts_database import (
+from tests.helpers.hr_direct_database import (
     conversation_database as conversation_database,  # noqa: PLC0414 - pytest fixture export
 )
-from test_turn_attempts_database import (
+from tests.helpers.hr_direct_database import (
+    direct_database as direct_database,  # noqa: PLC0414 - pytest fixture export
+)
+from tests.helpers.hr_direct_database import (
     repository as repository,  # noqa: PLC0414 - pytest fixture export
 )
 
@@ -33,61 +35,6 @@ from app.agent_brain.repository import MissionRepositoryNotFound
 from app.agent_brain.turn_attempts import AttemptNotFound, LeaseRejected
 
 pytestmark = pytest.mark.postgres
-DRAFT = Path(__file__).parents[1] / "control_migrations/pending/hr_direct_dispatch.sql"
-
-
-@pytest.fixture()
-def direct_database(attempt_repository, conversation_database):
-    environment, _, _ = conversation_database
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute("set local role platform_control_owner")
-        connection.execute(DRAFT.read_text())
-        connection.execute(DRAFT.with_name("hr_turn_input_context.sql").read_text())
-    yield conversation_database
-    with psycopg.connect(environment["admin"]) as connection:
-        _drop_direct_draft(connection)
-
-
-def _drop_direct_draft(connection):
-    source = (DRAFT.parent.parent / "069_hr_position_intelligence.sql").read_text()
-    start = source.index("create function platform_hr.create_position_task_record_v69(")
-    end = source.index("$function$;", start) + len("$function$;")
-    connection.execute(source[start:end].replace("create function", "create or replace function", 1))
-    connection.execute("drop table if exists platform_control.result_artifact_intents")
-    connection.execute("drop function if exists platform_control.preserve_result_artifact_intent()")
-    # Restore the applied legacy function before removing its draft dependency.
-    legacy = DRAFT.parent.parent / "088_conversation_result_deliveries.sql"
-    source = legacy.read_text()
-    start = source.index("create or replace function platform_attachments.revoke_terminal_task_grants_v64()")
-    end = source.index("$function$;", start) + len("$function$;")
-    connection.execute(source[start:end])
-    source = (DRAFT.parent.parent / "064_conversation_attachments.sql").read_text()
-    start = source.index("create function platform_attachments.create_artifact_upload_v64(")
-    end = source.index("$function$;", start) + len("$function$;")
-    connection.execute(source[start:end].replace("create function", "create or replace function", 1))
-    connection.execute("drop table if exists platform_control.v5_source_events")
-    connection.execute("drop table if exists platform_control.direct_command_bindings")
-    connection.execute("drop function if exists platform_control.preserve_direct_command_binding()")
-    connection.execute("delete from platform_control.execution_jobs where job_kind='worker_direct_v5'")
-    connection.execute("alter table platform_control.execution_jobs drop constraint execution_jobs_job_kind_v42")
-    connection.execute(
-        "alter table platform_control.execution_jobs add constraint execution_jobs_job_kind_v42 "
-        "check(job_kind in ('legacy_brain','direct_agent','metabot_local'))"
-    )
-    connection.execute(
-        "drop trigger if exists pin_turn_execution_origin "
-        "on platform_control.conversation_turns"
-    )
-    connection.execute(
-        "drop function if exists platform_control.pin_turn_execution_origin()"
-    )
-    connection.execute(
-        "alter table platform_control.conversation_turns "
-        "drop column if exists execution_owner, "
-        "drop column if exists origin_route_epoch"
-    )
-
-
 @pytest.fixture()
 def worker_conversation(direct_database, repository):
     environment, owner_id, _ = direct_database
@@ -131,9 +78,6 @@ def test_real_direct_worker_prepares_existing_turn_without_model_call(worker_tur
     from app.agent_brain.turn_result_projection import TurnResultProjector
     from app.execution_relay.repository import ExecutionRelayRepository
     environment, _, _ = direct_database
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute("set local role platform_control_owner")
-        connection.execute(DRAFT.with_name("hr_web_result_recovery.sql").read_text())
     bindings = DirectCommandBindingRepository(ExecutionRelayRepository(environment["urls"]["platform_control_app"], content_codec=repository.content_codec))
     adapter = DirectMissionAdapter(attempt_repository, bindings, ConversationContextBuilder(repository), TurnResultProjector(attempt_repository, bindings))
     worker = DirectWorker(attempt_repository, adapter)
@@ -222,6 +166,10 @@ def test_worker_intake_missing_provenance_schema_rolls_back(
             "update platform_control.conversations set execution_owner='worker_direct' "
             "where conversation_id=%s",
             (shell.conversation_id,),
+        )
+        connection.execute(
+            "alter table platform_control.conversation_turns "
+            "drop column origin_route_epoch cascade"
         )
     with pytest.raises(ConversationRepositoryError):
         repository.append_turn(
@@ -621,7 +569,7 @@ def test_renewal_joins_caller_transaction_and_rolls_back(
     assert row.lease_expires_at == lease.expires_at
 
 
-def test_provenance_migration_preserves_preexisting_legacy_turn(
+def test_deployed_provenance_preserves_preexisting_legacy_turn(
     attempt_repository, conversation_database, repository
 ):
     environment, owner_id, _ = conversation_database
@@ -632,26 +580,20 @@ def test_provenance_migration_preserves_preexisting_legacy_turn(
         mode="direct_agent",
         direct_agent_id="hr-bot",
     )
-    try:
-        with psycopg.connect(environment["admin"]) as connection:
-            connection.execute(
-                "update platform_control.conversations set execution_owner='worker_direct',route_epoch=7 "
-                "where conversation_id=%s",
-                (legacy.conversation.conversation_id,),
-            )
-            connection.execute("set local role platform_control_owner")
-            connection.execute(DRAFT.read_text())
-            origin = connection.execute(
-                "select execution_owner,origin_route_epoch from platform_control.conversation_turns "
-                "where turn_id=%s",
-                (legacy.turn.turn_id,),
-            ).fetchone()
-        assert origin == ("legacy_api_v1", 0)
-        assert legacy.mission.mission_id in {
-            row.mission_id for row in repository._missions.claim_pending(50)
-        }
-        with pytest.raises(AttemptNotFound):
-            attempt_repository.create_queued(legacy.turn.turn_id, "worker_direct")
-    finally:
-        with psycopg.connect(environment["admin"]) as connection:
-            _drop_direct_draft(connection)
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.conversations set execution_owner='worker_direct',route_epoch=7 "
+            "where conversation_id=%s",
+            (legacy.conversation.conversation_id,),
+        )
+        origin = connection.execute(
+            "select execution_owner,origin_route_epoch from platform_control.conversation_turns "
+            "where turn_id=%s",
+            (legacy.turn.turn_id,),
+        ).fetchone()
+    assert origin == ("legacy_api_v1", 0)
+    assert legacy.mission.mission_id in {
+        row.mission_id for row in repository._missions.claim_pending(50)
+    }
+    with pytest.raises(AttemptNotFound):
+        attempt_repository.create_queued(legacy.turn.turn_id, "worker_direct")

@@ -2,7 +2,6 @@
 
 # ruff: noqa: PLC0414
 import hashlib
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import psycopg
@@ -25,11 +24,9 @@ from test_hr_direct_worker import (
 from test_hr_direct_worker import (
     worker_conversation as worker_conversation,
 )
-from test_hr_direct_worker import (
-    worker_turn as worker_turn,
-)
 
 from app.agent_brain.conversation_context import ConversationContextBuilder
+from app.agent_brain.conversation_models import ConversationTurnSubmission
 from app.agent_brain.direct_command_binding import DirectCommandBindingRepository
 from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
 from app.agent_brain.turn_result_projection import TurnResultProjector
@@ -50,17 +47,11 @@ pytestmark = pytest.mark.postgres
 
 
 @pytest.fixture()
-def material_adapter(direct_database, repository, attempt_repository, worker_turn):
+def material_adapter(
+    direct_database, repository, attempt_repository, worker_conversation
+):
     environment, owner, _ = direct_database
     database_url = environment["urls"]["platform_control_app"]
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute("set local role platform_control_owner")
-        connection.execute(
-            (
-                Path(__file__).parents[1]
-                / "control_migrations/pending/hr_web_result_recovery.sql"
-            ).read_text()
-        )
     bindings = DirectCommandBindingRepository(
         ExecutionRelayRepository(database_url, content_codec=repository.content_codec)
     )
@@ -76,14 +67,14 @@ def material_adapter(direct_database, repository, attempt_repository, worker_tur
         None,
         grant_seconds=24 * 60 * 60,
     )
-    identity = WebLoop(environment, owner, worker_turn.conversation.conversation_id)
+    identity = WebLoop(environment, owner, worker_conversation.conversation_id)
     try:
         yield adapter
     finally:
         identity.close()
 
 
-def _ready_input(environment, codec, worker_turn, attachment_id, name):
+def _ready_input(environment, codec, worker_conversation, attachment_id, name):
     """Synthetic existing archive ledger, not upload/readiness acceptance."""
     data = b"owned ledger fixture: " + name.encode()
     name_value = codec.seal_json(
@@ -97,8 +88,8 @@ def _ready_input(environment, codec, worker_turn, attachment_id, name):
             "insert into platform_attachments.attachments(attachment_id,owner_internal_user_id,conversation_id,source_kind,original_name_ciphertext,original_name_key_version,object_ref_ciphertext,object_ref_key_version,immutable_locator,declared_mime,detected_mime,size_bytes,sha256,state,ready_at) values(%s,%s,%s,'user_input',%s,%s,%s,%s,'etag:owned-ledger-fixture','text/markdown','text/markdown',%s,%s,'ready',clock_timestamp())",
             (
                 attachment_id,
-                worker_turn.conversation.owner_internal_user_id,
-                worker_turn.conversation.conversation_id,
+                worker_conversation.owner_internal_user_id,
+                worker_conversation.conversation_id,
                 name_value.ciphertext,
                 name_value.key_version,
                 object_value.ciphertext,
@@ -107,24 +98,39 @@ def _ready_input(environment, codec, worker_turn, attachment_id, name):
                 hashlib.sha256(data).digest(),
             ),
         )
-        connection.execute(
-            "insert into platform_attachments.bindings(binding_id,attachment_id,owner_internal_user_id,kind,conversation_id,turn_id,agent_id) values(%s,%s,%s,'turn_input',%s,%s,'hr-bot')",
-            (
-                uuid4(),
-                attachment_id,
-                worker_turn.conversation.owner_internal_user_id,
-                worker_turn.conversation.conversation_id,
-                worker_turn.turn.turn_id,
-            ),
-        )
     return data
+
+
+def _material_turn(environment, repository, worker_conversation, attachments):
+    contents = {
+        attachment_id: _ready_input(
+            environment,
+            repository.content_codec,
+            worker_conversation,
+            attachment_id,
+            name,
+        )
+        for attachment_id, name in attachments
+    }
+    ids = tuple(contents)
+    turn = repository.append_turn(
+        worker_conversation.owner_internal_user_id,
+        worker_conversation.conversation_id,
+        uuid4(),
+        ConversationTurnSubmission(
+            "P03 material input",
+            attachment_ids=ids,
+            active_attachment_ids=ids,
+        ),
+    )
+    return turn, contents
 
 
 def test_selected_archive_ids_and_sha_survive_frozen_handoff_and_recovery(
     material_adapter,
     direct_database,
     repository,
-    worker_turn,
+    worker_conversation,
     attempt_repository,
 ):
     environment, _, _ = direct_database
@@ -133,16 +139,12 @@ def test_selected_archive_ids_and_sha_survive_frozen_handoff_and_recovery(
         UUID("bbbbbbbb-1111-4111-8111-111111111111"),
         UUID("aaaaaaaa-1111-4111-8111-111111111111"),
     )
-    contents = {
-        value: _ready_input(
-            environment,
-            repository.content_codec,
-            worker_turn,
-            value,
-            f"resume-{index}.md",
-        )
-        for index, value in enumerate(ids)
-    }
+    _worker_turn, contents = _material_turn(
+        environment,
+        repository,
+        worker_conversation,
+        tuple((value, f"resume-{index}.md") for index, value in enumerate(ids)),
+    )
     lease = attempt_repository.claim_due(uuid4(), 60)
     assert lease is not None
     binding = material_adapter.prepare(lease)
@@ -196,15 +198,18 @@ def test_grant_failure_rolls_back_command_compatibility_and_all_issued_grants(
     material_adapter,
     direct_database,
     repository,
-    worker_turn,
+    worker_conversation,
     attempt_repository,
 ):
     from app.agent_brain.conversation_context import ConversationContextError
 
     environment, _, _ = direct_database
     attachment_id = uuid4()
-    _ready_input(
-        environment, repository.content_codec, worker_turn, attachment_id, "resume.md"
+    worker_turn, _ = _material_turn(
+        environment,
+        repository,
+        worker_conversation,
+        ((attachment_id, "resume.md"),),
     )
     original = material_adapter.attachment_grants.issue_output
 

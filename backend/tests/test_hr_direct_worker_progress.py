@@ -3,7 +3,6 @@
 # ruff: noqa: PLC0414
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from pathlib import Path
 from threading import Event
 from time import monotonic
 from uuid import uuid4
@@ -46,14 +45,6 @@ pytestmark = pytest.mark.postgres
 @pytest.fixture()
 def scheduler(direct_database, repository, attempt_repository, worker_turn):
     environment, owner, _ = direct_database
-    with psycopg.connect(environment["admin"]) as connection:
-        connection.execute("set local role platform_control_owner")
-        connection.execute(
-            (
-                Path(__file__).parents[1]
-                / "control_migrations/pending/hr_web_result_recovery.sql"
-            ).read_text()
-        )
     bindings = DirectCommandBindingRepository(
         ExecutionRelayRepository(
             environment["urls"]["platform_control_app"],
