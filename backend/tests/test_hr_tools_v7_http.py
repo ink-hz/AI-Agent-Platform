@@ -145,3 +145,28 @@ def test_interview_plan_to_record_uses_exact_input_and_material(tool_loop):
     unavailable=post(loop,signer,grant,'query',{'tool':'hr.read_context','operationId':str(uuid4()),'resourceKind':'result',
         'resourceId':ref['resultId'],'readMode':'recorded','versionRef':ref['contentSha256']})
     assert unavailable.status_code==401,unavailable.text
+
+@pytest.mark.parametrize('tool_loop',['v7'],indirect=True)
+def test_position_results_follow_owned_turn_scope_and_paginate(tool_loop):
+    loop,signer,grant,service,lease,ids=tool_loop
+    refs=[]
+    for title in ['搜寻讨论','复盘讨论']:
+        response=post(loop,signer,grant,'results',{'tool':'hr.submit_result','operationId':str(uuid4()),'result':{'schemaId':'hr.analysis.v1','title':title,'markdown':'岗位级讨论','sourceRefs':[],'methodSteps':[]}})
+        assert response.status_code==200,response.text
+        refs.append(response.json()['resultRef']['resultId'])
+    path='/api/v1/hr/positions/'+str(ids['position'])+'/results'
+    page=loop.client.get(path,params={'limit':1})
+    assert page.status_code==200,page.text
+    first=page.json()
+    assert first['positionId']==str(ids['position'])
+    assert len(first['items'])==1 and first['nextOffset']==1
+    second=loop.client.get(path,params={'limit':1,'offset':first['nextOffset']}).json()
+    assert {first['items'][0]['resultId'],second['items'][0]['resultId']}==set(refs)
+    assert first['items'][0]['conversationId']==str(loop.conversation_id)
+    assert first['items'][0]['title'] in ['搜寻讨论','复盘讨论']
+    assert loop.client.get('/api/v1/hr/positions/'+str(uuid4())+'/results').status_code==404
+    assert httpx.get(loop.origin+path).status_code==401
+    import psycopg
+    with psycopg.connect(loop.environment['admin']) as connection:
+        connection.execute("delete from platform_control.agent_use_grants where target_internal_user_id=%s and agent_id='hr-bot'",(ids['owner'],))
+    assert loop.client.get(path).status_code==403

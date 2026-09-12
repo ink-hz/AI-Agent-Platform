@@ -130,6 +130,7 @@ _VOC_MUTATION_ROUTES = frozenset({
 _HR_POSITION_ROUTES = frozenset({
     ("GET", "/api/hr/knowledge"),
     ("GET", "/api/v1/hr/results/{result_id}"),
+    ("GET", "/api/v1/hr/positions/{position_id}/results"),
     ("GET", "/api/v1/hr/conversations/{conversation_id}/results"),
     ("GET", "/api/hr/knowledge/{source_commit}/{resource_id}"),
     ("GET", "/api/hr/positions"),

@@ -3,7 +3,7 @@ import { platformPath } from "../../auth";
 import type { HrComposerDraft, HrTurnScope, HrInputResultRef } from "../../conversationTypes";
 import { MessageMarkdown } from "../../components/MessageMarkdown";
 
-type ResultRef={turnId:string;resultId:string;schemaId:string;contentSha256:string};
+export type ResultRef={turnId:string;resultId:string;schemaId:string;contentSha256:string;title?:string};
 export interface HrConversationResults {error?:string;knowledgeReads?:{turnId:string;methodId:string;revision:string;teamCommit:string;sha256:string;toolUseId:string}[];turns:{turnId:string;scope:HrTurnScope;positionTitle:string|null}[];results:ResultRef[]}
 export function useHrConversationResults(conversationId:string|undefined,revision:number){
   const [data,setData]=useState<HrConversationResults>({turns:[],results:[]});
@@ -25,16 +25,16 @@ export function HrTurnResults({turnId,data,readOnly,onDraft}:{turnId:string;data
   const results=data.results.filter(item=>item.turnId===turnId);
   return <div className="hr-turn-context">{turn&&<small>本轮 · {turn.positionTitle??'通用对话'}{turn.scope.positionCandidateIds.length?` · ${turn.scope.positionCandidateIds.length} 位候选人`:''}</small>}
     {data.knowledgeReads?.filter(read=>read.turnId===turnId).map(read=><small key={read.toolUseId} title={`版本 ${read.teamCommit} · SHA-256 ${read.sha256}`}>已读取：{read.methodId} · r{read.revision}</small>)}
-    {results.map(ref=><Result key={ref.resultId} reference={ref} readOnly={readOnly} onDraft={onDraft}/>)}</div>;
+    {results.map(ref=><HrSavedResultCard key={ref.resultId} reference={ref} readOnly={readOnly} onDraft={onDraft}/>)}</div>;
 }
-function Result({reference,readOnly,onDraft,referenceOnly=false}:{reference:ResultRef;readOnly:boolean;referenceOnly?:boolean;onDraft:(draft:HrComposerDraft,positionId:string|null)=>void}){
+export function HrSavedResultCard({reference,readOnly,onDraft,referenceOnly=false}:{reference:ResultRef;readOnly:boolean;referenceOnly?:boolean;onDraft:(draft:HrComposerDraft,positionId:string|null)=>void}){
   const [open,setOpen]=useState(false);const [saved,setSaved]=useState<SavedResult|null>(null);const [error,setError]=useState(false);const [selected,setSelected]=useState<string[]>([]);const [reviewed,setReviewed]=useState(false);
   useEffect(()=>{if(!open||saved)return;const controller=new AbortController();setError(false);
     fetch(platformPath(`/api/v1/hr/results/${reference.resultId}`),{credentials:'include',signal:controller.signal}).then(async response=>{if(!response.ok)throw new Error();return response.json();})
       .then(value=>{if(!controller.signal.aborted)setSaved(value);}).catch(()=>{if(!controller.signal.aborted)setError(true);});return()=>controller.abort();
   },[open,saved,reference.resultId]);
   const result=saved?.result;
-  return <details className="hr-turn-result" onToggle={event=>setOpen(event.currentTarget.open)}><summary>{result?.title??(reference.schemaId==='hr.standard-proposal.v1'?'查看岗位标准建议':'查看本轮成果')}</summary>
+  return <details className="hr-turn-result" onToggle={event=>setOpen(event.currentTarget.open)}><summary>{result?.title??reference.title??(reference.schemaId==='hr.standard-proposal.v1'?'查看岗位标准建议':'查看本轮成果')}</summary>
     {error?<p role="alert">成果暂时无法读取，请关闭后重新打开。</p>:!result?<p>正在读取…</p>:<>
       {result.markdown&&<MessageMarkdown content={result.markdown}/>}
       {result.changes?.map(change=><label className="hr-standard-change" key={change.changeId}><input type="checkbox" disabled={readOnly} checked={selected.includes(change.changeId)} onChange={event=>{setReviewed(false);setSelected(ids=>event.target.checked?[...ids,change.changeId]:ids.filter(id=>id!==change.changeId));}}/><span><MessageMarkdown content={change.markdown}/></span></label>)}
@@ -48,5 +48,5 @@ function Result({reference,readOnly,onDraft,referenceOnly=false}:{reference:Resu
 
 export function HrInputResults({items,onRemove}:{items:HrInputResultRef[];onRemove:(id:string)=>void}){
   if(!items.length)return null;
-  return <details className="hr-input-results" open><summary>本次参考 · {items.length} 份成果</summary>{items.map(item=><div key={item.resultId}><span>{item.title}</span><button type="button" aria-label={`移除参考：${item.title}`} onClick={()=>onRemove(item.resultId)}>移除</button><Result reference={{...item,turnId:'input'}} readOnly referenceOnly onDraft={()=>{}}/></div>)}</details>;
+  return <details className="hr-input-results" open><summary>本次参考 · {items.length} 份成果</summary>{items.map(item=><div key={item.resultId}><span>{item.title}</span><button type="button" aria-label={`移除参考：${item.title}`} onClick={()=>onRemove(item.resultId)}>移除</button><HrSavedResultCard reference={{...item,turnId:'input'}} readOnly referenceOnly onDraft={()=>{}}/></div>)}</details>;
 }

@@ -301,6 +301,34 @@ class HrToolService:
             return {'knowledgeReads':[{'turnId':str(r['turn_id']),**r['proof']} for r in reads], 'turns':[{'turnId':str(t['turn_id']),'scope':t['hr_input_context']['scope'],'positionTitle':t['title']} for t in turns],
                 'results':[{'turnId':str(r['turn_id']),'resultId':str(r['receipt_id']),'schemaId':r['schema_id'],'contentSha256':r['content_sha256']} for r in receipts]}
 
+    def position_results(self, owner_id, position_id, *, offset=0, limit=50):
+        with self.repository._connection() as connection:
+            position = connection.execute(
+                'select 1 from platform_hr.positions where position_id=%s and owner_internal_user_id=%s',
+                (position_id, owner_id)).fetchone()
+            if position is None:
+                raise HrToolError('scope_mismatch', '岗位不存在')
+            rows = connection.execute(
+                "select o.* from platform_hr.tool_operations_v6 o "
+                "join platform_control.conversation_turns t on t.turn_id=o.turn_id and t.conversation_id=o.conversation_id "
+                "where o.owner_internal_user_id=%s and o.tool='hr.submit_result' "
+                "and t.hr_input_context->'scope'->>'positionId'=%s "
+                "order by o.created_at desc,o.receipt_id desc offset %s limit %s",
+                (owner_id, str(position_id), offset, limit + 1)).fetchall()
+            items = []
+            for row in rows[:limit]:
+                scope = load_authorized_turn_scope(owner_id, row['conversation_id'], row['turn_id'], connection=connection)
+                if scope.scope.position_id != position_id:
+                    raise HrToolError('scope_mismatch', '岗位归属不一致')
+                result = self._decode(row)['result']
+                items.append({'resultId': str(row['receipt_id']), 'turnId': str(row['turn_id']),
+                              'conversationId': str(row['conversation_id']), 'schemaId': row['schema_id'],
+                              'contentSha256': row['content_sha256'], 'title': result['title'],
+                              'createdAt': row['created_at'].isoformat(),
+                              'positionCandidateIds': [str(value) for value in (row.get('result_candidate_ids') or [])]})
+            return {'positionId': str(position_id), 'items': items,
+                    'nextOffset': offset + limit if len(rows) > limit else None}
+
     def result(self, owner_id, result_id):
         with self.repository._connection() as connection:
             row = connection.execute('select * from platform_hr.tool_operations_v6 where receipt_id=%s '
