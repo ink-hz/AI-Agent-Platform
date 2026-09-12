@@ -8,7 +8,7 @@
 - `operations/`：运维原始日志、20个外部工具因果mock场景、真实PG持锁慢count回执、准确源码/fence/patch快照。早期运行缺同期准确源码的限制见`task1-report.md`，其“未提交”描述是该报告写作时状态，最终三份源码已在`3504c20`提交。
 - `forensics/`：三份明确标注的历史精确重建与两份存活临时patch复制；`aeff5307…`原文仍缺失，没有伪造原件保存或当前提交身份。
 - `cosmetic-before/`：本轮导入排序前的实际文件字节及哈希回执。
-- `lint/baseline-comparison-final.json`：本轮13个变更Python文件相对基线没有新增Ruff问题；保留两条既有问题，不声称全仓静态检查通过。
+- `lint/baseline-comparison-final.json`：本轮12个变更Python文件相对基线没有新增Ruff问题；保留两条既有问题，不声称全仓静态检查通过。
 - `final/historical-identity.json`：357份历史artifact及102/103/104三个迁移文件逐字节保持不变。
 - `review/`：准确Git提交的独立审核、保留在仓库内的patch及指纹。
 

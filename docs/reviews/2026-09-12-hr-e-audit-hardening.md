@@ -32,7 +32,7 @@
 
 最终关联回归在准确提交`6eaefc21199ea92f3a6572b8aa02653f2a0d689b`运行：**567 passed / 1 skipped / 23 warnings，421.98秒，退出码0**。[准确命令](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/command.json)、[原始日志](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/output.log)、[运行期间源码未变核对](../../artifacts/2026-09-12-hr-e-audit-hardening/final/integration-source-verification.json)。范围为原27文件加遗漏search、旧recovery、新recovery/diagnostics/operations五文件及owner健康两个节点。条件跳过是`test_actual_process_loop_same_request_and_api_restart`缺自有MetaBot进程夹具；23条为既有TestClient逐请求cookie弃用警告。未将其记为进程闭环通过。
 
-本轮13个变更Python文件Ruff相对基线新增0条，既有2条保留；357份历史artifact及102/103/104三个迁移共360份原字节未变。静态检查及历史身份记录在本轮`lint/`、`final/historical-identity.json`。
+本轮12个变更Python文件Ruff相对基线新增0条，既有2条保留；357份历史artifact及102/103/104三个迁移共360份原字节未变。静态检查及历史身份记录在本轮`lint/`、`final/historical-identity.json`。
 
 定向证据分别为运维29项（9个真实PG/手册用例、20个外部工具因果mock）、部署/preflight37项、恢复/诊断/search22项；范围有交叠，不能加总为全仓覆盖。新恢复测试曾因缺导入、使用v5冻结夹具、未匹配v6冻结策略/哈希而收集失败或夹具失败，完整记录保留；最终v6负例在未修实现上4失败/3通过，修闸门后及补同锁/权限失败案例后9项通过。这些夹具调试错误不冒充产品缺陷RED。
 
