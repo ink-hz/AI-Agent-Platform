@@ -187,6 +187,7 @@ class Supervisor:
             (100, "100_attachment_erasure_worker_access.sql"),
             (102, "102_hr_execution_cutover.sql"),
             (103, "103_hr_execution_drain_occupancy.sql"),
+            (104, "104_hr_execution_drain_terminal_contract.sql"),
         ):
             path = root / name
             if path.is_symlink() or not path.is_file():

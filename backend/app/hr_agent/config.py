@@ -47,6 +47,13 @@ ERASURE_ACCESS_MIGRATION_SHA256 = (
     "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177"
 )
 
+# Full cloud runtime requires the reviewed cutover contract identities.
+CUTOVER_MIGRATION_SHA256 = {
+    102: "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
+    103: "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+    104: "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
+}
+
 TABLES = (
     "threads",
     "works",
@@ -348,6 +355,13 @@ def check_schema_ready(connection_factory) -> bool:
             ).fetchone()
             if row is None or row[0] != INTERVIEW_RECORD_MIGRATION_SHA256:
                 return False
+            for version, checksum in CUTOVER_MIGRATION_SHA256.items():
+                row = connection.execute(
+                    "select sha256 from platform_control.schema_migrations where version=%s",
+                    (version,),
+                ).fetchone()
+                if row is None or row[0] != checksum:
+                    return False
             row = connection.execute(
                 "SELECT CASE current_user "
                 "WHEN 'platform_control_app' THEN 'platform_control_maintenance' "

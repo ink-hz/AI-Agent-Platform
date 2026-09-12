@@ -130,3 +130,87 @@ def test_additive_count_replacement_preserves_maintenance_only_control(database)
         assert c.execute('select * from platform_control.hr_execution_cutover_counts_v102()').fetchone() == (0, 0)
         c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
         c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+
+@pytest.mark.parametrize("kind", ["metabot_local", "legacy_brain", "direct_agent", "worker_direct_v5"])
+def test_interrupted_without_terminal_timestamp_is_rejected_by_028(database, kind):
+    import psycopg
+    with database.admin_connection() as c:
+        with pytest.raises(psycopg.errors.CheckViolation) as error:
+            interrupted_job(c, kind, terminal_recorded=False)
+        assert error.value.diag.table_name == "execution_jobs"
+        assert "terminal_at" in error.value.diag.message_detail or error.value.diag.constraint_name == "execution_jobs_check1"
+
+
+@pytest.mark.parametrize("fault", ["transport_run", "executor_kind", "conversation_lineage"])
+def test_v5_exact_lineage_residual_blocks_count_and_transition(
+    database, repository, conversation_database, attempt_repository, bindings,
+    signed_api, transport_worker, fault,
+):
+    _turn, lease, _binding = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
+    other = None
+    if fault == "conversation_lineage":
+        other, _, _ = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
+    with database.admin_connection() as c:
+        assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 0
+        # Residual provenance faults only; successful results were published by
+        # signed HTTP and fenced projection before any metadata mutation.
+        if fault == "transport_run":
+            c.execute("update platform_control.turn_attempts set transport_run_id=%s where attempt_id=%s", (uuid4(), lease.attempt_id))
+        elif fault == "executor_kind":
+            c.execute("update platform_control.turn_attempts set executor_kind='legacy_api_v1' where attempt_id=%s", (lease.attempt_id,))
+        else:
+            c.execute("update platform_control.turn_attempts set turn_id=%s,attempt_no=2 where attempt_id=%s", (other.turn.turn_id, lease.attempt_id))
+        assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+        c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+    with database.admin_connection() as c, pytest.raises(Exception, match="drain is incomplete"):
+        c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+
+
+@pytest.mark.parametrize("fault", ["turn_owner", "binding_conversation", "binding_job"])
+def test_v5_pinned_lineage_cannot_be_rewritten(
+    database, repository, conversation_database, attempt_repository, bindings,
+    signed_api, transport_worker, fault,
+):
+    import psycopg
+    turn, lease, _binding = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
+    with database.admin_connection() as c:
+        message = "turn execution origin is immutable" if fault == "turn_owner" else "direct command identity is immutable"
+        with (
+            c.transaction(),
+            pytest.raises(psycopg.errors.CheckViolation, match=message),
+            c.transaction(),
+        ):
+            if fault == "turn_owner":
+                c.execute("update platform_control.conversation_turns set execution_owner='legacy_api_v1' where turn_id=%s", (turn.turn.turn_id,))
+            elif fault == "binding_conversation":
+                c.execute("update platform_control.direct_command_bindings set conversation_id=%s where attempt_id=%s", (uuid4(), lease.attempt_id))
+            else:
+                c.execute("update platform_control.direct_command_bindings set job_id=%s where attempt_id=%s", (uuid4(), lease.attempt_id))
+        assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("relation", [
+    "platform_control.conversations", "platform_control.conversation_turns",
+    "platform_control.turn_attempts", "platform_control.execution_jobs",
+    "platform_control.direct_command_bindings", "platform_control.mission_runs",
+    "platform_hr.candidate_drafts", "platform_hr.candidate_draft_batches",
+    "platform_hr.position_conversations", "platform_hr.candidate_draft_processing_attempts",
+    "platform_hr_agent.works", "platform_hr_agent.material_parses",
+    "platform_hr_agent.candidate_intake_items",
+])
+def test_missing_inventory_relation_fails_closed_for_count_and_transition(database, relation):
+    from psycopg import sql
+    schema, table = relation.split(".")
+    with database.admin_connection() as c:
+        c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+        # Rename preserves all data/constraints; rollback restores the fixture.
+        c.execute(sql.SQL("alter table {}.{} rename to {}").format(
+            sql.Identifier(schema), sql.Identifier(table), sql.Identifier(table + "_unavailable")))
+        for query in (
+            "select * from platform_control.hr_execution_cutover_counts_v102()",
+            "select platform_control.transition_hr_execution_cutover_v102('cloud',gen_random_uuid())",
+        ):
+            with pytest.raises(Exception, match="hr execution inventory unavailable"), c.transaction():
+                c.execute(query)
+        assert c.execute("select phase from platform_control.hr_execution_cutover").fetchone()[0] == "draining_legacy"
+        c.rollback()

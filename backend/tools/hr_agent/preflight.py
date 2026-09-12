@@ -36,6 +36,10 @@ CUTOVER_MIGRATION = (
 DRAIN_OCCUPANCY_MIGRATION = (
     Path(__file__).parents[2] / "control_migrations" / "103_hr_execution_drain_occupancy.sql"
 )
+DRAIN_TERMINAL_MIGRATION = (
+    Path(__file__).parents[2] / "control_migrations" / "104_hr_execution_drain_terminal_contract.sql"
+)
+
 ATTACHMENT_KEYS = (
     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
     "PLATFORM_ATTACHMENT_S3_BUCKET",
@@ -204,6 +208,7 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
         expected_migrations = dict(EXPECTED_MIGRATIONS)
         expected_migrations[102] = _fingerprint(CUTOVER_MIGRATION.read_bytes())
         expected_migrations[103] = _fingerprint(DRAIN_OCCUPANCY_MIGRATION.read_bytes())
+        expected_migrations[104] = _fingerprint(DRAIN_TERMINAL_MIGRATION.read_bytes())
         with connection_factory() as connection:
             rows = connection.execute(
                 "select version,sha256 from platform_control.schema_migrations "

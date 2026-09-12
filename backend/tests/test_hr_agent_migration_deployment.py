@@ -219,6 +219,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
             "100_attachment_erasure_worker_access.sql",
             "102_hr_execution_cutover.sql",
             "103_hr_execution_drain_occupancy.sql",
+            "104_hr_execution_drain_terminal_contract.sql",
         ):
             target = broken_release / "backend/control_migrations" / name
             target.write_bytes(
@@ -262,6 +263,7 @@ def test_helper_never_runs_root_migration_directory():
     assert "100_attachment_erasure_worker_access.sql" in source
     assert "102_hr_execution_cutover.sql" in source
     assert "103_hr_execution_drain_occupancy.sql" in source
+    assert "104_hr_execution_drain_terminal_contract.sql" in source
     assert "finally:" in source
     assert "self.cleanup()" in source
     assert "revoke {self.granted_owner} from {self.granted_migrator}" in source
@@ -492,3 +494,48 @@ def test_dirty_at_rest_receipt_is_never_cleanup_verified(tmp_path):
         assert result.returncode != 0
         assert receipt["failure_code"] == "at_rest_not_clean"
         assert receipt["cleanup_verified"] is False
+
+@pytest.mark.parametrize("receipt", [None, "0" * 64])
+def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
+    with hr_agent_database(migrate_hr=False) as database:
+        preview_dsn = _prepare_preview_and_revoke(database)
+        with database.admin_connection() as c:
+            if receipt is None:
+                c.execute("delete from platform_control.schema_migrations where version=104")
+            else:
+                c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
+        private = tmp_path / "private"
+        private.mkdir()
+        (private / "control-migrator-database-url").write_text(database.migrator_dsn)
+        (private / "preview-control-migrator-database-url").write_text(preview_dsn)
+        for item in private.iterdir():
+            item.chmod(0o600)
+        fake = tmp_path / "docker"
+        _write_fake_docker(fake)
+        environment = {
+            **os.environ,
+            "HR_MIGRATION_DOCKER": str(fake),
+            "TEST_ADMIN_DSN": database.admin_dsn,
+            "TEST_PRIVATE": str(private),
+            "TEST_RELEASE": str(ROOT),
+            "TEST_DOCKER_STATE": str(tmp_path / "docker-state.json"),
+            "TEST_DOCKER_CALLS": str(tmp_path / "docker-calls.log"),
+            "PYTHONPATH": str(ROOT / "backend"),
+        }
+        result = subprocess.run(
+            [str(HELPER), str(ROOT), str(private), "sha256:" + "a" * 64, "test-postgres",
+             "--receipt-dir", str(tmp_path / "receipts")],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode != 0
+        assert result.stderr.strip() == "HR_AGENT_MIGRATIONS_FAILED"
+        receipts = list((tmp_path / "receipts").glob("*.json"))
+        assert len(receipts) == 1
+        receipt_data = __import__("json").loads(receipts[0].read_text())
+        assert receipt_data["failure_code"] == "root_migration_gate_failed"
+        assert receipt_data["cleanup_verified"] is True
+        assert _memberships(database) == 0
+        assert not (tmp_path / "docker-calls.log").exists()
