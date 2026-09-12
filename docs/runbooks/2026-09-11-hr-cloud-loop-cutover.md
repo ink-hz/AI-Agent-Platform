@@ -15,6 +15,106 @@
 
 通用 `remote-stage.sh` 的旧版回滚会恢复 previous release 的附件 Worker，因此没有附加的 fail-closed 防护时不能执行上述热修复。热修复完成回执至少绑定 release SHA、新附件镜像 ID、修复源文件 SHA、迁移 100 checksum、停止/启动时间和验证结果。
 
+执行者须先把下面APPROVED占位符替换为经批准的不可变release、容器、镜像ID与SHA；新source SHA来自独立审读的erasure.py，不能临时把错误镜像自身的SHA当批准值。证据目录须新建、0700，并在同一维护窗口内排除其他部署器；无此独占条件不执行。下面只完成停旧、100/六列权限与新镜像身份核验；启动后真实擦除canary另有业务验证回执，不能仅凭Running认定热修复完成。失败清理只尝试停止准确容器；若Docker不可达或stop失败，不能保证停止，保持后续发布关闭并要求独立inspect核验，不产生成功回执。
+
+```bash
+(
+set -euo pipefail
+umask 077
+# HR_ATTACHMENT_HOTFIX
+export attachment_release=/opt/orbbec-agent-platform/releases/APPROVED_RELEASE
+export attachment_release_sha=APPROVED_RELEASE_SHA
+attachment_private=/opt/orbbec-agent-platform/private
+export attachment_evidence=/opt/orbbec-agent-platform/release-evidence/APPROVED_ATTACHMENT_CHANGE
+export attachment_image=APPROVED_NEW_IMAGE_ID
+export attachment_old_image=APPROVED_OLD_IMAGE_ID
+export attachment_old_id=APPROVED_OLD_CONTAINER_ID
+export attachment_source_sha=APPROVED_SOURCE_SHA256
+export attachment_migration_sha=APPROVED_MIGRATION_100_SHA256
+export attachment_runbook_sha=APPROVED_RUNBOOK_SHA256
+attachment_postgres=APPROVED_POSTGRES_CONTAINER_ID
+test -d "$attachment_evidence"
+export PLATFORM_IMAGE="$attachment_image"
+attachment_compose=(/usr/bin/docker compose --env-file "$attachment_private/runtime.env" -f "$attachment_release/deploy/cloud/compose.yaml")
+# Verify the exact approved text and release inputs before stopping anything.
+python3 - <<'PY'
+import hashlib, os, pathlib, re
+assert re.fullmatch('[0-9a-f]{40}', os.environ['attachment_release_sha'])
+root = pathlib.Path(os.environ['attachment_evidence'])
+assert not any((root / name).exists() for name in ('compose-before.json', 'attachment-hotfix-receipt.json', 'attachment-stop-identity.json'))
+release = pathlib.Path(os.environ['attachment_release'])
+for path, expected in (
+    (release / 'docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md', os.environ['attachment_runbook_sha']),
+    (release / 'backend/control_migrations/100_attachment_erasure_worker_access.sql', os.environ['attachment_migration_sha']),
+):
+    assert path.is_file() and not path.is_symlink()
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == expected
+assert os.environ['attachment_image'].startswith('sha256:') and len(os.environ['attachment_image']) == 71
+PY
+test "$(/usr/bin/docker image inspect --format '{{.Id}}' "$attachment_image")" = "$attachment_image"
+"${attachment_compose[@]}" config --format json | python3 -c '
+import json, os, pathlib, sys
+image = json.load(sys.stdin)["services"]["platform-attachments"]["image"]
+assert image == os.environ["attachment_image"]
+with (pathlib.Path(os.environ["attachment_evidence"]) / "compose-before.json").open("x") as stream:
+    json.dump({"service": "platform-attachments", "image": image}, stream)
+'
+test "$(/usr/bin/docker run --cap-drop ALL --security-opt no-new-privileges:true --rm --read-only --user 10001:10001 --network none "$attachment_image" python -c 'import hashlib,pathlib; print(hashlib.sha256(pathlib.Path("/app/backend/app/attachments/erasure.py").read_bytes()).hexdigest())')" = "$attachment_source_sha"
+test "$(/usr/bin/docker inspect --format '{{.Image}}' "$attachment_old_id")" = "$attachment_old_image"
+test "$(/usr/bin/docker inspect --format '{{.State.Running}}' "$attachment_old_id")" = true
+# Explicit stop plus restart-policy removal prevent daemon restart of the old image.
+/usr/bin/docker update --restart=no "$attachment_old_id"
+/usr/bin/docker stop "$attachment_old_id"
+test "$(/usr/bin/docker inspect --format '{{.State.Running}}' "$attachment_old_id")" = false
+python3 - <<'PY'
+import datetime, json, os, pathlib
+with (pathlib.Path(os.environ['attachment_evidence']) / 'attachment-stop-identity.json').open('x') as stream:
+    json.dump({'oldContainerId': os.environ['attachment_old_id'], 'oldImageId': os.environ['attachment_old_image'],
+               'stoppedAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}, stream)
+PY
+# After this boundary every failure keeps attachment workers stopped.
+attachment_done=0
+attachment_cleanup() {
+  status=$?
+  if test "$attachment_done" != 1; then
+    /usr/bin/docker stop "$attachment_old_id" >/dev/null 2>&1 || true
+    for candidate in $("${attachment_compose[@]}" ps -q platform-attachments); do
+      /usr/bin/docker stop "$candidate" >/dev/null 2>&1 || true
+    done
+    echo ATTACHMENT_HOTFIX_FAILED_KEEP_STOPPED >&2
+  fi
+  exit "$status"
+}
+trap attachment_cleanup EXIT
+/bin/bash "$attachment_release/deploy/cloud/bootstrap-control-db.sh" "$attachment_release" "$attachment_private" "$attachment_image" "$attachment_postgres"
+# Verify100 and each of its six column privileges before starting any worker.
+attachment_ledger=$(/usr/bin/docker exec "$attachment_postgres" psql -X -A -t -v ON_ERROR_STOP=1 -U platform_owner -d agent_platform_control -c "select sha256 || '|' || (has_column_privilege('platform_control_maintenance','platform_attachments.uploads','attachment_id','SELECT') and has_column_privilege('platform_control_maintenance','platform_attachments.uploads','write_attempt_id','SELECT') and has_column_privilege('platform_control_maintenance','platform_attachments.upload_write_attempts','attachment_id','SELECT') and has_column_privilege('platform_control_maintenance','platform_attachments.upload_write_attempts','attempt_id','SELECT') and has_column_privilege('platform_control_maintenance','platform_attachments.upload_write_attempts','object_ref_ciphertext','SELECT') and has_column_privilege('platform_control_maintenance','platform_attachments.upload_write_attempts','object_ref_key_version','SELECT'))::text from platform_control.schema_migrations where version=100")
+test "$attachment_ledger" = "$attachment_migration_sha|true"
+"${attachment_compose[@]}" up -d --no-deps --force-recreate platform-attachments
+export attachment_new_id
+attachment_new_id=$("${attachment_compose[@]}" ps -q platform-attachments)
+test -n "$attachment_new_id"
+test "$attachment_new_id" != "$attachment_old_id"
+test "$(/usr/bin/docker inspect --format '{{.Image}}' "$attachment_new_id")" = "$attachment_image"
+test "$(/usr/bin/docker inspect --format '{{.State.Running}}' "$attachment_new_id")" = true
+python3 - <<'PY'
+import datetime, json, os, pathlib
+receipt = {key: os.environ[value] for key, value in {
+    'runbookSha256': 'attachment_runbook_sha', 'releasePath': 'attachment_release', 'releaseSha': 'attachment_release_sha',
+    'imageId': 'attachment_image', 'oldImageId': 'attachment_old_image',
+    'oldContainerId': 'attachment_old_id', 'newContainerId': 'attachment_new_id',
+    'sourceSha256': 'attachment_source_sha', 'migration100Sha256': 'attachment_migration_sha',
+}.items()}
+receipt['stoppedAt'] = json.loads((pathlib.Path(os.environ['attachment_evidence']) / 'attachment-stop-identity.json').read_text())['stoppedAt']
+receipt.update(block='HR_ATTACHMENT_HOTFIX', checkedAt=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+               limitation='Identity/order verification only; real erasure canary is separately required')
+with (pathlib.Path(os.environ['attachment_evidence']) / 'attachment-hotfix-receipt.json').open('x') as stream:
+    json.dump(receipt, stream, indent=2)
+PY
+attachment_done=1
+)
+```
+
 只有该回执通过后，HR 发布才能进入迁移阶段。
 
 ## 2. 固定 compose 生命周期
@@ -40,7 +140,7 @@ hr_compose=(
 preflight 从待发布镜像内运行；镜像必须包含 `backend/tools/hr_agent/preflight.py`。API/Worker 快照中的路径是容器路径，因此检查容器挂载与真实服务一致的 secrets、knowledge 和 work。快照文件由 provisioning 写入 `platform-hr-agent-secrets`，uid/gid 10001 所有、0600，不经 shell source。公开配置检查使用 `--network none`，不调用模型或网络；省略数据库参数时结果会明确 `database_not_checked`：
 
 ```bash
-/usr/bin/docker run --rm --read-only --user 10001:10001 --network none \
+/usr/bin/docker run --cap-drop ALL --security-opt no-new-privileges:true --rm --read-only --user 10001:10001 --network none \
   --tmpfs /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700 \
   -v orbbec-agent-platform-hr-agent-secrets:/run/hr-agent-secrets:ro \
   -v orbbec-agent-platform-api-secrets:/run/secrets:ro \
@@ -55,7 +155,7 @@ preflight 从待发布镜像内运行；镜像必须包含 `backend/tools/hr_age
 已获相应数据库只读检查授权时，增加 app 身份 DSN 文件。工具为连接设置只读事务，调用现有 `load_hr_agent_settings`、`KnowledgeReleases` 和 `check_schema_ready`，并读取 096–104 回执及 public 102 cutover gate（103修订排空函数，104移除不可达条件并保持实际保护）：
 
 ```bash
-/usr/bin/docker run --rm --read-only --user 10001:10001 \
+/usr/bin/docker run --cap-drop ALL --security-opt no-new-privileges:true --rm --read-only --user 10001:10001 \
   --network orbbec-agent-platform-internal \
   --tmpfs /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700 \
   -v orbbec-agent-platform-hr-agent-secrets:/run/hr-agent-secrets:ro \
@@ -91,7 +191,7 @@ Production：
 
 助手由 `hr_agent_migrate.py` 监督实际具名迁移容器。授予的是**整个控制库 owner 的角色成员身份**，不是 HR 表级权限，也不是会话级权限。production 清理并核实后才授予 preview；不跨两个迁移同时持权。同部署主机的文件锁阻止本助手并发；其他部署工具仍须遵守独占维护窗口。开始前必须核实两个 owner 的所有 membership 为 0、两个 migrator 的数据库会话为 0。
 
-每个环境的迁移等待默认 900 秒，`--migration-timeout` 可明确设为不超过 3600 秒；单个管理命令默认 10 秒，`--command-timeout` 不超过 30 秒，SQL 另有 statement/lock timeout。容器使用不可变镜像、`--read-only`、受限 tmpfs 和该环境唯一的 DSN 文件。INT/TERM/HUP、SQL 失败和超时均进入清理：检查并停止准确容器，必要时 kill，再撤销 membership、核实容器停止且两个 migrator 会话及 membership 均为 0。不能用 Docker CLI 已退出代替容器停止，不能用 REVOKE 代替已 SET ROLE 会话结束。
+每个环境的迁移等待默认 900 秒，`--migration-timeout` 可明确设为不超过 3600 秒；单个管理命令默认 10 秒，`--command-timeout` 不超过 30 秒，SQL 另有 statement/lock timeout。容器使用不可变镜像、`--read-only`、`--cap-drop ALL`、`--security-opt no-new-privileges:true`、受限 tmpfs 和该环境唯一的 DSN 文件。INT/TERM/HUP/QUIT、SQL 失败和超时均进入清理：检查并停止准确容器，必要时 kill，再撤销 membership、核实容器停止且两个 migrator 会话及 membership 均为 0。不能用 Docker CLI 已退出代替容器停止，不能用 REVOKE 代替已 SET ROLE 会话结束。
 
 回执保存于 private 下 `hr-agent-migration-receipts/<run UUID>.json`（目录 0700，文件 0600），在 GRANT 前记录可能的授权与具名容器，包含阶段、环境、容器身份、时间及 `cleanup_verified`，不含 DSN、SQL 输出或异常原文。`cleanup_verified=false` 或 `HR_AGENT_MIGRATIONS_CLEANUP_UNRESOLVED` 是必须交给发布监控处理的失败信号；本轮没有装配生产告警系统。成功回执证明本次监督范围内的清理，不证明 HR 业务上线。
 
@@ -102,7 +202,7 @@ public 102 提供 `platform_control.hr_execution_cutover` 单例状态、幂等�
 经单独授权初始化时，maintenance 容器的具体调用形态为：
 
 ```bash
-/usr/bin/docker run --rm -i --read-only --user 0:0 \
+/usr/bin/docker run --cap-drop ALL --security-opt no-new-privileges:true --rm -i --read-only --user 0:0 \
   --network orbbec-agent-platform-internal \
   -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
   -e HR_CUTOVER_REQUEST_ID=EXPLICIT_UUID PLATFORM_IMAGE_SHA \
@@ -115,13 +215,14 @@ from app.local_secrets import read_secret_file
 
 # HR_CUTOVER_INITIALIZE
 dsn = read_secret_file("/run/control-secrets/control-maintenance-database-url")
-with psycopg.connect(dsn, connect_timeout=3, row_factory=dict_row) as connection:
-    connection.execute("SET LOCAL lock_timeout = '2s'")
-    connection.execute("SET LOCAL statement_timeout = '30s'")
-    receipt = connection.execute(
-        "select * from platform_control.initialize_hr_execution_cutover_v102(%s)",
-        (os.environ["HR_CUTOVER_REQUEST_ID"],),
-    ).fetchone()
+with psycopg.connect(dsn, connect_timeout=3, autocommit=True, row_factory=dict_row) as connection:
+    with connection.transaction():
+        connection.execute("SET LOCAL lock_timeout = '2s'")
+        connection.execute("SET LOCAL statement_timeout = '3s'")
+        receipt = connection.execute(
+            "select * from platform_control.initialize_hr_execution_cutover_v102(%s)",
+            (os.environ["HR_CUTOVER_REQUEST_ID"],),
+        ).fetchone()
 print(json.dumps(receipt, default=str))
 PY
 ```
@@ -129,7 +230,7 @@ PY
 正式窗口先用maintenance身份执行以下准确计数。事务只读且使用一致快照；返回的是阻止切换的占用计数，不是去重用户任务数。超时或错误必须停止步骤，不能填零、复用旧计数或自动进入下一phase。
 
 ```bash
-/usr/bin/docker run --rm -i --read-only --user 0:0 \
+/usr/bin/docker run --cap-drop ALL --security-opt no-new-privileges:true --rm -i --read-only --user 0:0 \
   --network orbbec-agent-platform-internal \
   -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
   PLATFORM_IMAGE_SHA python - <<'PY'
@@ -139,21 +240,22 @@ from app.local_secrets import read_secret_file
 
 # HR_CUTOVER_COUNT
 dsn = read_secret_file("/run/control-secrets/control-maintenance-database-url")
-with psycopg.connect(dsn, connect_timeout=3) as connection:
-    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-    connection.execute("SET LOCAL lock_timeout = '2s'")
-    connection.execute("SET LOCAL statement_timeout = '30s'")
-    counts = connection.execute(
-        "select * from platform_control.hr_execution_cutover_counts_v102()"
-    ).fetchone()
+with psycopg.connect(dsn, connect_timeout=3, autocommit=True) as connection:
+    with connection.transaction():
+        connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        connection.execute("SET LOCAL lock_timeout = '2s'")
+        connection.execute("SET LOCAL statement_timeout = '3s'")
+        counts = connection.execute(
+            "select * from platform_control.hr_execution_cutover_counts_v102()"
+        ).fetchone()
 print(json.dumps(dict(zip(("legacy_nonterminal", "cloud_nonterminal"), counts))))
 PY
 ```
 
-进入drain或完成切换时，使用准确目标phase和新的显式request UUID。切换函数会在互斥锁内重新计数，前一次只读盘点不代替该检查。
+进入drain或完成切换时，使用准确目标phase和新的显式request UUID。当前命令只允许draining_legacy、cloud和draining_cloud，legacy恢复目标按§6.2延期，不在可执行入口中开放。切换函数会在互斥锁内重新计数，前一次只读盘点不代替该检查。
 
 ```bash
-/usr/bin/docker run --rm -i --read-only --user 0:0 \
+/usr/bin/docker run --cap-drop ALL --security-opt no-new-privileges:true --rm -i --read-only --user 0:0 \
   --network orbbec-agent-platform-internal \
   -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
   -e HR_CUTOVER_REQUEST_ID=EXPLICIT_UUID \
@@ -167,21 +269,24 @@ from app.local_secrets import read_secret_file
 
 # HR_CUTOVER_TRANSITION
 target = os.environ["HR_CUTOVER_TARGET_PHASE"]
-if target not in {"legacy", "draining_legacy", "cloud", "draining_cloud"}:
+if target not in {"draining_legacy", "cloud", "draining_cloud"}:
     raise ValueError("invalid HR cutover target phase")
 dsn = read_secret_file("/run/control-secrets/control-maintenance-database-url")
-with psycopg.connect(dsn, connect_timeout=3, row_factory=dict_row) as connection:
-    connection.execute("SET LOCAL lock_timeout = '2s'")
-    connection.execute("SET LOCAL statement_timeout = '30s'")
-    receipt = connection.execute(
-        "select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)",
-        (target, os.environ["HR_CUTOVER_REQUEST_ID"]),
-    ).fetchone()
+with psycopg.connect(dsn, connect_timeout=3, autocommit=True, row_factory=dict_row) as connection:
+    with connection.transaction():
+        connection.execute("SET LOCAL lock_timeout = '2s'")
+        connection.execute("SET LOCAL statement_timeout = '3s'")
+        receipt = connection.execute(
+            "select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)",
+            (target, os.environ["HR_CUTOVER_REQUEST_ID"]),
+        ).fetchone()
 print(json.dumps(receipt, default=str))
 PY
 ```
 
-初始化、计数和切换的数据库锁等待上限均为2秒，单条SQL上限30秒，超时抛错并回滚事务。它们不是Docker/网络的总运行时限；命令成功打印的回执须与变更记录一起留存。`EXPLICIT_UUID`和`EXPLICIT_PHASE`须替换为窗口中的准确值；这些命令不授予执行许可。若响应丢失，不换新request UUID盲重试，应核对原操作回执后用原UUID进行幂等重放。
+初始化、计数和切换的数据库锁等待上限均为2秒，单条SQL上限3秒，显著低于应用追加事务的10秒statement_timeout。连接显式使用transaction()，即使autocommit开启SET LOCAL也在该事务内生效；超时抛错并回滚事务，释放切换排他锁。该界限控制数据库执行，不保证网络断连、主机挂起或Docker调用的墙钟上限；命令成功打印的回执须与变更记录一起留存。`EXPLICIT_UUID`和`EXPLICIT_PHASE`须替换为窗口中的准确值；这些命令不授予执行许可。若响应丢失，不换新request UUID盲重试，应核对原操作回执后用原UUID进行幂等重放。
+
+上一轮operations-final-1属于历史中间运行，仅覆盖当时的30秒命令和旧恢复假设；不能套用到本版3秒持锁上限与恢复延期路线。新的运维回执必须绑定本版准确runbook SHA，并分别列出已执行和未覆盖的fenced块。
 
 迁移后再次运行带数据库的 preflight。096–104 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
 
@@ -196,7 +301,7 @@ PY
 
 预激活阶段只执行不创建工作的检查：
 
-1. 用真实认证用户读取现有 `GET /api/hr/agent/configuration` 和 `GET /api/hr/agent/knowledge?kind=method`。两者成功证明 API 当前能通过身份、HR 权限、schema/config 和知识读取；仓库没有独立 HR health/readiness endpoint，平台 `/api/health` 通过不算 HR ready。
+1. 先以真实platform owner身份读取并留存 `GET /api/v1/manage/system-health` 的 `dependencies.services.hr_agent`：api_ready须为true，worker_checked仍为false。api_ready仅是API启动装配快照，不是实时数据库、Worker或业务探针；随后仍须执行带数据库preflight。再用真实认证且有HR权限的用户读取 `GET /api/hr/agent/configuration` 和 `GET /api/hr/agent/knowledge?kind=method`，核对身份、HR权限和实际知识读取。自动compose HR探针本轮延期，共享平台 `/api/health` 只表示公共liveness，不能代替以上前置，也不能声称发布或HR已可用。
 2. 检查 API/Worker 容器使用预期 image、配置/knowledge 指纹，且 Worker 在没有 cloud-lane continuation 时保持空闲。进程存在只证明 supervisor 状态。
 3. 不提交 public canary work：`legacy` gate 正确拒绝 cloud root admission。在 production gate 仍为 `legacy` 时强行创建 canary 会绕过切换契约。
 
@@ -226,7 +331,7 @@ PY
 
 1. `cloud -> draining_cloud`，立即关闭云端新 root admission；云端 Worker 继续领取/恢复该 lane 已 accepted/queued 的 work 及派生 parse/candidate work。
 2. 按 owner/work/source 身份让新链 continuation 完成或明确取消，直到非终态计数为 0；保留已保存成果、确认标准和材料。不得笼统停止认领而把 accepted 工作滞留在队列。
-3. 默认保持 `draining_cloud` 修复新链。只有另行批准恢复旧链、按§6.2恢复并核验旧HR执行器、确认飞书去向及无重复归属后，才可 `draining_cloud -> legacy`。数据库phase切回不会重新创建已删除的PM2条目，也不会把停用配置改回启用。
+3. 当前承诺的唯一恢复终点是保持 `draining_cloud` 修复新链。旧链恢复按§6.2延期，本文不提供可执行恢复或回切路线。数据库四边状态机不代表能随时撤销；不得先切legacy再用draining_legacy伪装为可逆回滚。
 4. 附件热修复后的旧附件 Worker始终保持停止。HR 回滚绝不能恢复它，即使当前 release 或通用 deploy 失败。
 
 所有状态切换使用唯一 transition request id，记录前后 epoch/row_version 和只读计数；不得直接 UPDATE 102 表或伪造“零在途”。
@@ -261,60 +366,83 @@ done
 )
 ```
 
-私有运行配置必须持久化 `PLATFORM_HR_WEB_WORKER_ENABLED=0`，日常发布及自动回滚清单不得再启动 `platform-hr-web-worker`；只有§6.2显式批准的旧链恢复流程可以改回。核实API实际配置与镜像。没有匹配容器时上面的步骤失败而非推定已经停用，须由服务负责人提供“该环境不存在旧HR direct Worker”的准确进程/服务证据。
+私有运行配置必须持久化 `PLATFORM_HR_WEB_WORKER_ENABLED=0`，日常发布及自动回滚清单不得再启动 `platform-hr-web-worker`；当前流程不改回；另行恢复设计按§6.2延期。核实API实际配置与镜像。没有匹配容器时上面的步骤失败而非推定已经停用，须由服务负责人提供“该环境不存在旧HR direct Worker”的准确进程/服务证据。
 
 已读取本机Team仓库的入库配置与脚本，其中将HR Bot映射为独立PM2条目 `metabot-hr`，并提供单实例控制命令。它仅证明仓库声明的能力，实际生产部署身份未核验（原指纹记录为 `production_identity_verified: false`），不能称内网实际控制能力已验。见[仓库只读审计](../../artifacts/2026-09-11-hr-e-review/final/legacy-worker-stop-audit.md)。实际主机、部署wrapper/checksum、无外部watchdog重建及批准目标absent核实后，才可采用以下退出操作；命令未执行：
 
 ```bash
 (
 set -euo pipefail
-OPS_PM2=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
-hr_stop_evidence=/Users/agentops/AgentRuntime/release-evidence/APPROVED_CHANGE
+umask 077
+# HR_LEGACY_STOP
+export OPS_PM2=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
+export ECOSYSTEM=/Users/agentops/AgentRuntime/metabot/ecosystem.config.cjs
+export hr_stop_evidence=/Users/agentops/AgentRuntime/release-evidence/APPROVED_CHANGE
 test -d "$hr_stop_evidence"
+# approved-hr-stop.json and the exact approved runbook.md must already exist.
+python3 - <<'PY'
+import hashlib, json, os, pathlib, socket
+root = pathlib.Path(os.environ['hr_stop_evidence'])
+approved = json.loads((root / 'approved-hr-stop.json').read_text())
+assert not any((root / name).exists() for name in ('hr-before.txt', 'others-before.json', 'hr-before-identity.json', 'wrapper-before.sh', 'ecosystem-before.cjs', 'pm2-stop-receipt.json'))
+assert approved['hostname'] == socket.gethostname()
+assert approved['expectedState'] in {'online', 'stopped'}
+for path, key in ((pathlib.Path(os.environ['OPS_PM2']), 'wrapperSha256'),
+                  (pathlib.Path(os.environ['ECOSYSTEM']), 'ecosystemSha256'),
+                  (root / 'runbook.md', 'runbookSha256')):
+    assert path.is_file() and not path.is_symlink()
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == approved[key]
+PY
 sudo -n -H -u agentops /bin/bash "$OPS_PM2" state-one metabot-hr > "$hr_stop_evidence/hr-before.txt"
 sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_stop_evidence/others-before.json"
+python3 - <<'PY'
+import json, os, pathlib
+root = pathlib.Path(os.environ['hr_stop_evidence'])
+identity = json.loads((root / 'approved-hr-stop.json').read_text())
+identity['beforeState'] = (root / 'hr-before.txt').read_text().strip()
+assert identity['beforeState'] == identity['expectedState']
+identity['otherInstances'] = json.loads((root / 'others-before.json').read_text())
+for variable, name in (('OPS_PM2', 'wrapper-before.sh'), ('ECOSYSTEM', 'ecosystem-before.cjs')):
+    with (root / name).open('xb') as stream:
+        stream.write(pathlib.Path(os.environ[variable]).read_bytes())
+        stream.flush()
+        os.fsync(stream.fileno())
+# Persist exit prerequisites before delete, without overwriting earlier evidence.
+with (root / 'hr-before-identity.json').open('x') as stream:
+    json.dump(identity, stream, indent=2)
+    stream.flush()
+    os.fsync(stream.fileno())
+PY
 sudo -n -H -u agentops /bin/bash "$OPS_PM2" delete-one metabot-hr
 test "$(sudo -n -H -u agentops /bin/bash "$OPS_PM2" state-one metabot-hr)" = absent
 sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_stop_evidence/others-after.json"
 cmp "$hr_stop_evidence/others-before.json" "$hr_stop_evidence/others-after.json"
 sudo -n -H -u agentops /bin/bash "$OPS_PM2" save
+python3 - <<'PY'
+import datetime, json, os, pathlib
+root = pathlib.Path(os.environ['hr_stop_evidence'])
+receipt = json.loads((root / 'hr-before-identity.json').read_text())
+receipt.update(block='HR_LEGACY_STOP', afterState='absent', saved=True,
+               checkedAt=datetime.datetime.now(datetime.timezone.utc).isoformat())
+with (root / 'pm2-stop-receipt.json').open('x') as stream:
+    json.dump(receipt, stream, indent=2)
+PY
 )
 ```
 
-证据目录须在窗口前创建并限制权限；APPROVED_CHANGE 换成准确变更号。只有HR absent、其他实例快照一致才save；任一步失败停止切换并调查，不自动全量恢复。选择delete-one是因为wrapper的restore-one stopped会先重新启动该实例再停止，不适合作为退出命令。禁止replace-all/delete-all；后续fleet发布和自动回滚清单必须排除HR，只有§6.2的显式恢复例外。实际主机和持久状态未在本轮验证，仓库提供操作能力不等于已停止。
+证据目录须在窗口前新建、0700并禁止复用；APPROVED_CHANGE换成准确变更号。approved-hr-stop.json须持久保存并经批准，包含hostname、wrapperSha256、ecosystemSha256、expectedState（online或stopped）及runbookSha256；runbook.md须为该批准SHA对应的准确正文副本。代码会逐项读取校验后持久保存hr-before-identity.json、wrapper-before.sh和ecosystem-before.cjs，再执行delete；任一记录缺失、身份不符或退出前状态不符都不删除。只有HR absent、其他实例快照一致才save；任一步失败停止切换并调查，不自动全量恢复。选择delete-one是因为wrapper的restore-one stopped会先重新启动该实例再停止，不适合作为退出命令。禁止replace-all/delete-all；后续fleet发布和自动回滚清单必须排除HR，当前流程没有恢复例外，另行恢复设计按§6.2延期。实际主机和持久状态未在本轮验证，仓库提供操作能力不等于已停止。
 
 Relay 注册仍通常共用于多个 Bot，现有 register_worker CLI 固定非验收 Worker 的完整 agent 列表，不能假设支持只移除 hr-bot。保留共享 Relay 及其他 Bot，依赖活 handoff gate 拒绝其 HR 派发；禁止整体 revoke 来冒充 HR 退出。若实际存在 HR 专用 Worker，维护者才可按已确认 worker_id 使用 `python -m app.execution_relay.register_worker revoke-worker <worker_id> <change_reference>` 注销，并保留维护回执。
 
 活的 `/v5/handoff` 已在每次 offer 前取共享闸门锁；cloud/draining_cloud 不再发 HR 命令，legacy/draining_legacy 允许准确已受理工作的续作。已接受工作回调保留原身份/租约校验，避免因切换丢掉完成回执。确认门控代码已在实际 API 镜像生效；本地签名 HTTP 测试不能替代这一步。Feishu HR 的用户入口、存量会话去向与 HR Bot 停用必须由产品/服务负责人一起确认，仍未知时不能进入 cloud。
 
-### 6.2 仅在明确批准时恢复旧HR执行器
+### 6.2 旧HR执行器恢复延期
 
-此流程是持久退出的显式例外，不是通用deploy失败后的自动动作。开始前保持 `draining_cloud`，新链在途均完成或明确取消；旧链恢复镜像必须保留D1保守隔离、活handoff闸门及附件热修复，不可简单回退到存在这些缺陷的旧release。核对飞书恢复去向、共享Relay状态、原部署清单及唯一执行归属；缺少任一项时保持draining_cloud修复新链。
+本轮只承诺保持draining_cloud修复新链，不提供恢复PM2、启用旧Worker、重启共享API或切回legacy的执行步骤。四边状态机没有draining_legacy直接撤销入口；旧链恢复后再次失败时原路线会落入不能原地撤销的阶段，因此不能把它称为安全恢复。
 
-1. 从已批准的配置记录恢复旧HR direct Worker所需的 `PLATFORM_HR_WEB_WORKER_ENABLED=1` 和准确镜像引用，保留当前数据库及附件热修复。重新生成并核对API实际配置；不是整份旧env无差别覆盖。使用§2同一compose数组及 `--profile hr-web up -d --force-recreate platform-api platform-hr-web-worker`，随后inspect准确容器镜像/状态并核对实际readiness。此时gate仍为draining_cloud，旧handoff必须拒绝offer。
-2. 若实际部署清单包含内网HR Bot，先核实旧ecosystem和wrapper的准确身份。按下面仅恢复 `metabot-hr`；其他Bot快照一致且HR online后才save。若退出前并不存在该执行器，不能因手册列了命令就创建它。
+旧链恢复必须另行设计并验证：读取§6.1持久保存的退出前主机、wrapper、ecosystem和实例状态，核验批准镜像、配置、实际readiness、飞书去向及唯一执行归属；明确恢复中途失败和恢复后canary失败的可达处理终点。缺失任何退出前记录不得猜测或创建原本不存在的PM2实例。仅批准启动旧进程不足以批准状态机回切，不以读取不到的hr-before文件作为恢复依据。
 
-```bash
-(
-set -euo pipefail
-# HR_LEGACY_RESTORE
-OPS_PM2=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
-ECOSYSTEM=/Users/agentops/AgentRuntime/metabot/ecosystem.config.cjs
-hr_restore_evidence=/Users/agentops/AgentRuntime/release-evidence/APPROVED_RESTORE
-test -d "$hr_restore_evidence"
-sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_restore_evidence/others-before.json"
-sudo -n -H -u agentops /bin/bash "$OPS_PM2" restore-one "$ECOSYSTEM" metabot-hr online
-test "$(sudo -n -H -u agentops /bin/bash "$OPS_PM2" state-one metabot-hr)" = online
-sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_restore_evidence/others-after.json"
-cmp "$hr_restore_evidence/others-before.json" "$hr_restore_evidence/others-after.json"
-sudo -n -H -u agentops /bin/bash "$OPS_PM2" save
-)
-```
-
-3. 按原准确Worker身份核查HR注册、协议readiness及单一执行器配置；共享Relay不整体撤销/重注册。进程online只证明进程状态，不能当作执行能力通过。所有恢复命令失败均停止，不执行phase转换；部分已启动的旧进程仍受draining_cloud闸门约束，逐项记录状态并修复。
-4. 确认旧运行配置、实际实例、readiness与无新链在途后，才用§4有时限的transition命令执行 `draining_cloud -> legacy`，保存epoch和操作回执，再按批准范围做一次公开/虚构canary。失败则 `legacy -> draining_legacy` 停新受理并保留原归属，不恢复旧附件Worker或抹掉数据。
-
-此恢复拓扑及实际命令尚未在生产验证；缺少部署指纹和窗口决定时，不因手册已有步骤宣称支持安全回滚。
+后续方案若需重建platform-api，必须单独批准共享API短时中断及其他Bot影响，并验证非HR受理连续性；现行draining_cloud修复路线没有为恢复旧Worker重启共享API的步骤。§5初次部署platform-api的force-recreate同样可能短时影响所有共享API用户，须纳入原发布窗口影响确认。
 
 ## 7. 当前明确未完成
 
