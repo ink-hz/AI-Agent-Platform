@@ -1,0 +1,98 @@
+diff --git a/artifacts/2026-09-12-hr-e-audit-hardening/README.md b/artifacts/2026-09-12-hr-e-audit-hardening/README.md
+new file mode 100644
+index 0000000..9a8d77e
+--- /dev/null
++++ b/artifacts/2026-09-12-hr-e-audit-hardening/README.md
+@@ -0,0 +1,23 @@
++# E 第二轮审计证据入口
++
++基线：`5978eaa0bf657721d1ef7ab64d5b4a7ada5ca43a`。本轮工程代码先冻结为`3504c20`（运维）及`6eaefc2`（恢复/部署/诊断）；整组回归运行期间不改源码。最终关联回归为567 passed / 1 skipped / 23 warnings，421.98秒，退出码0；[原始日志](runs/final-integration/output.log)与[命令](runs/final-integration/command.json)绑定准确代码提交。条件跳过为缺自有MetaBot进程夹具；正式上线前置仍不满足。
++
++事实说明见[本轮交接正文](../../docs/reviews/2026-09-12-hr-e-audit-hardening.md)。最终被审提交与每份源文件的准确身份以`manifest.json`中的`reviewed_commit`和`sources`为准；该正文先提交再审，最终审阅放在独立文件，不修改被审正文加入结案段落。
++
++- `runs/`：root每次运行的命令、起始HEAD、退出码、原始日志、工作树patch和未提交新测试原字节。夹具调试失败与产品负例分开说明；不是每次失败都是产品缺陷。
++- `operations/`：运维原始日志、20个外部工具因果mock场景、真实PG持锁慢count回执、准确源码/fence/patch快照。早期运行缺同期准确源码的限制见`task1-report.md`，其“未提交”描述是该报告写作时状态，最终三份源码已在`3504c20`提交。
++- `forensics/`：三份明确标注的历史精确重建与两份存活临时patch复制；`aeff5307…`原文仍缺失，没有伪造原件保存或当前提交身份。
++- `cosmetic-before/`：本轮导入排序前的实际文件字节及哈希回执。
++- `lint/baseline-comparison-final.json`：本轮13个变更Python文件相对基线没有新增Ruff问题；保留两条既有问题，不声称全仓静态检查通过。
++- `final/historical-identity.json`：357份历史artifact及102/103/104三个迁移文件逐字节保持不变。
++- `review/`：准确Git提交的独立审核、保留在仓库内的patch及指纹。
++
++本地真实数据库、HTTP身份/签名/授权和自有进程只证明列出的工程性质；模型/角色冻结输入、Docker/PM2等替换边界按正文与各测试明示。没有生产、真实模型、浏览器、消息发送或部署操作。自动HR编排探针、旧链安全恢复、生产计数与正式窗口验证仍未完成；既有专业缺陷和历史缺失证据没有被测试数量消除。
++
++复算（从任意目录均可调用此脚本）：
++
++```bash
++python3 artifacts/2026-09-12-hr-e-audit-hardening/verify_evidence.py
++```
++
++manifest覆盖本目录全部普通文件，排除它自己及`final/manifest-verification.json`自引用回执；同时核对被审Git源文件、当前源码、历史原件和恢复文件。新增或修改证据都会报错。
+diff --git a/docs/reviews/2026-09-12-hr-e-audit-hardening.md b/docs/reviews/2026-09-12-hr-e-audit-hardening.md
+index 384ac09..f441cfe 100644
+--- a/docs/reviews/2026-09-12-hr-e-audit-hardening.md
++++ b/docs/reviews/2026-09-12-hr-e-audit-hardening.md
+@@ -16,7 +16,7 @@
+ 
+ | 意见 | 当前结果或延期原因 |
+ | --- | --- |
+-| /v5/recovery仍可续签授权 | 已确认不是纯只读：v6/v7分支会刷新businessToolGrant。非停止请求现在先取共享闸门，再取领域行锁，按legacy continuation检查；错误链既不返回已有授权也不新发授权，不改payload/grant/poll时间。停止请求及原身份观察/结果回执保留。真实签名HTTP、v6授权、同锁等待重读与数据库故障回归已补；v7未独立重跑专业流程 |
++| /v5/recovery仍可续签授权 | 已确认不是纯只读：v6/v7分支会刷新businessToolGrant。非停止请求现在先取共享闸门，再取领域行锁，按legacy continuation检查；错误链既不返回已有授权也不新发授权，不改payload/grant/poll时间。停止请求及原身份观察/结果回执保留。真实签名HTTP、v6授权、同锁等待重读与数据库故障回归已补；v7及缺失闸门兼容由共用代码审读，未新增独立参数化测试；新增跨阶段回执为missing=True观察，不是完整停止证明或结果事件重放 |
+ | SIGQUIT没有清理 | 加入原INT/TERM/HUP处理集合；新增真实SIGQUIT先复现退出-3，再验证131退出、停止自有模拟容器、membership归零及cleanup_verified。Docker CLI仍为替身；SIGKILL、宿主机失效和长期daemon不可达仍需人工恢复 |
+ | 迁移/运维容器缺加固参数 | create/run增加`--cap-drop=ALL`和`--security-opt=no-new-privileges:true`；测试读取实际传入模拟Docker的创建参数，不仅搜索源码。未运行真实容器验证 |
+ | preflight重算磁盘“期望值” | 逐迁移期望值改用评审常量；账本match与镜像image_match分开报告。修改102/103/104镜像文件且是否同时篡改账本共六个负例；镜像缺失也拒绝。不能再以被改文件自身作为正确身份 |
+@@ -30,6 +30,10 @@
+ 
+ ## 3. 验证范围与失败记录
+ 
++最终关联回归在准确提交`6eaefc21199ea92f3a6572b8aa02653f2a0d689b`运行：**567 passed / 1 skipped / 23 warnings，421.98秒，退出码0**。[准确命令](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/command.json)、[原始日志](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/output.log)、[运行期间源码未变核对](../../artifacts/2026-09-12-hr-e-audit-hardening/final/integration-source-verification.json)。范围为原27文件加遗漏search、旧recovery、新recovery/diagnostics/operations五文件及owner健康两个节点。条件跳过是`test_actual_process_loop_same_request_and_api_restart`缺自有MetaBot进程夹具；23条为既有TestClient逐请求cookie弃用警告。未将其记为进程闭环通过。
++
++本轮13个变更Python文件Ruff相对基线新增0条，既有2条保留；357份历史artifact及102/103/104三个迁移共360份原字节未变。静态检查及历史身份记录在本轮`lint/`、`final/historical-identity.json`。
++
+ 定向证据分别为运维29项（9个真实PG/手册用例、20个外部工具因果mock）、部署/preflight37项、恢复/诊断/search22项；范围有交叠，不能加总为全仓覆盖。新恢复测试曾因缺导入、使用v5冻结夹具、未匹配v6冻结策略/哈希而收集失败或夹具失败，完整记录保留；最终v6负例在未修实现上4失败/3通过，修闸门后及补同锁/权限失败案例后9项通过。这些夹具调试错误不冒充产品缺陷RED。
+ 
+ root运行的命令、退出码、原始输出、起始git HEAD、worktree patch与新测试原字节在本轮`runs/<name>/`。Task1早期运行未在运行当时保存准确源码，只有命令/输出，明确不补猜测快照；最终运维运行已有完整源码、patch、fence与SHA回执。root本轮import排序前字节直接保存在`cosmetic-before/`，不是哈希自述。
+diff --git a/docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md b/docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md
+index 7de8e7a..7be2bba 100644
+--- a/docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md
++++ b/docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md
+@@ -14,24 +14,25 @@
+ 
+ 范围：`docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md`、`backend/tests/test_hr_cutover_runbook.py`及确有必要的独立运维测试/helper；不修改102/103/104。
+ 
+-- [ ] 复现maintenance已持有排他锁时慢count阻塞其他Bot追加；把持锁语句限制为显著低于应用10秒阈值，显式事务避免autocommit使SET LOCAL失效。用真实双连接、实际transition与非HR repository追加验证超时回滚、epoch/回执不变及追加成功。说明数据库超时不保证网络/主机挂起的墙钟上限。
+-- [ ] 修复§6.2失败路线死角；不增加状态机边。当前唯一承诺的恢复终点是保持draining_cloud修复，legacy恢复只能作为另行设计、验证恢复失败方案后的延期步骤，不能暗示四边状态机能随意撤销。
+-- [ ] 把附件停旧→inspect→100→只启动修复镜像做成可执行受控步骤并纳入顺序/失败/错镜像负例；仅mock外部工具，完整说明不是真实Docker/生产验收。
+-- [ ] 新手册mock回执绑定准确runbook SHA；记录所覆盖与未覆盖的fenced块，不复用旧SHA。
+-- [ ] PM2 mock状态须因果依赖实际delete/restore；§6.1持久保存并校验退出前身份/配置前置，§6.2不得凭未读取的hr-before文件恢复；指出共享API重启影响或避免在现行恢复路径重启。
+-- [ ] 运维Docker命令按现有基线加入cap-drop及no-new-privileges；30秒旧承诺同步纠正，旧operations-final-1作为历史中间运行披露。
++- [x] 复现maintenance已持有排他锁时慢count阻塞其他Bot追加；把持锁语句限制为显著低于应用10秒阈值，显式事务避免autocommit使SET LOCAL失效。用真实双连接、实际transition与非HR repository追加验证超时回滚、epoch/回执不变及追加成功。说明数据库超时不保证网络/主机挂起的墙钟上限。
++- [x] 修复§6.2失败路线死角；不增加状态机边。当前唯一承诺的恢复终点是保持draining_cloud修复，legacy恢复只能作为另行设计、验证恢复失败方案后的延期步骤，不能暗示四边状态机能随意撤销。
++- [x] 把附件停旧→inspect→100→只启动修复镜像做成可执行受控步骤并纳入顺序/失败/错镜像负例；仅mock外部工具，完整说明不是真实Docker/生产验收。
++- [x] 新手册mock回执绑定准确runbook SHA；记录所覆盖与未覆盖的fenced块，不复用旧SHA。
++- [x] PM2 mock状态须因果依赖实际delete/restore；§6.1持久保存并校验退出前身份/配置前置，§6.2不得凭未读取的hr-before文件恢复；指出共享API重启影响或避免在现行恢复路径重启。
++- [x] 运维Docker命令按现有基线加入cap-drop及no-new-privileges；30秒旧承诺同步纠正，旧operations-final-1作为历史中间运行披露。
+ 
+ ## Task 2：遗漏的恢复与部署边界（root负责）
+ 
+-- [ ] 先复现search recovery三项失败，再仅修完整迁移夹具；resume_search_turn创建新轮次，补draining_legacy/cloud/draining_cloud拒绝且无副作用的回归，不把用户重新搜索误当旧执行续作。
+-- [ ] 检查/v5/recovery及recovery_work是否继续授权旧HR执行；根据真实协议语义补闸门与签名HTTP负例，保留非HR及必要停止/结果回执。
+-- [ ] SIGQUIT加入迁移助手清理路径，用真实本地信号/数据库验证；迁移容器加入既有cap-drop/no-new-privileges限制。
+-- [ ] preflight逐迁移诊断使用评审常量并识别镜像文件篡改，避免match与schema_ready矛盾。
+-- [ ] 明确并处理或延期编排探针不可见的HR readiness、CandidateUnavailable吞数据库错误。不能把API启动成功当成HR可用或发布成功。
++- [x] 先复现search recovery三项失败，再仅修完整迁移夹具；resume_search_turn创建新轮次，补draining_legacy/cloud/draining_cloud拒绝且无副作用的回归，不把用户重新搜索误当旧执行续作。
++- [x] 检查/v5/recovery及recovery_work是否继续授权旧HR执行；根据真实协议语义补闸门与签名HTTP负例，保留非HR及必要停止/结果回执。
++- [x] SIGQUIT加入迁移助手清理路径，用真实本地信号/数据库验证；迁移容器加入既有cap-drop/no-new-privileges限制。
++- [x] preflight逐迁移诊断使用评审常量并识别镜像文件篡改，避免match与schema_ready矛盾。
++- [x] 明确并处理或延期编排探针不可见的HR readiness、CandidateUnavailable吞数据库错误。不能把API启动成功当成HR可用或发布成功。
+ 
+ ## Task 3：证据与交接（root，独立只读协作）
+ 
+-- [ ] 核实并保存cosmetic之前两份源码、旧closure正文与临时review patch。精确重建时验证旧哈希，无法恢复就明确缺失。
+-- [ ] 对aeff5307旧审阅对象漂移补纠正说明；不修改历史原件。
+-- [ ] 两份根HR文档同步运维行为；新报告逐项映射所有意见与延期理由。
+-- [ ] 精准相关回归、静态检查、完整历史哈希核对；先提交冻结正文，再独立复审准确commit/patch及证据，最后只新增审阅回执与manifest。
++- [x] 核实并保存cosmetic之前两份源码、旧closure正文与临时review patch。精确重建时验证旧哈希，无法恢复就明确缺失。
++- [x] 对aeff5307旧审阅对象漂移补纠正说明；不修改历史原件。
++- [x] 两份根HR文档同步运维行为；新报告逐项映射所有意见与延期理由。
++- [x] 精准相关回归567通过/1条件跳过、静态新增0、历史360份哈希核对完成；代码独立审核已完成。
++- [ ] 本文与交接正文冻结提交后独立复审准确commit/patch及最终证据，最后只新增审阅回执与manifest（此复选框保留冻结时状态，完成结果以单独审阅回执为准，不再修改被审正文）。

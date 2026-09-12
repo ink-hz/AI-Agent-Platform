@@ -1,0 +1,26 @@
+diff --git a/artifacts/2026-09-12-hr-e-audit-hardening/README.md b/artifacts/2026-09-12-hr-e-audit-hardening/README.md
+index 9a8d77e..b391a7b 100644
+--- a/artifacts/2026-09-12-hr-e-audit-hardening/README.md
++++ b/artifacts/2026-09-12-hr-e-audit-hardening/README.md
+@@ -8,7 +8,7 @@
+ - `operations/`：运维原始日志、20个外部工具因果mock场景、真实PG持锁慢count回执、准确源码/fence/patch快照。早期运行缺同期准确源码的限制见`task1-report.md`，其“未提交”描述是该报告写作时状态，最终三份源码已在`3504c20`提交。
+ - `forensics/`：三份明确标注的历史精确重建与两份存活临时patch复制；`aeff5307…`原文仍缺失，没有伪造原件保存或当前提交身份。
+ - `cosmetic-before/`：本轮导入排序前的实际文件字节及哈希回执。
+-- `lint/baseline-comparison-final.json`：本轮13个变更Python文件相对基线没有新增Ruff问题；保留两条既有问题，不声称全仓静态检查通过。
++- `lint/baseline-comparison-final.json`：本轮12个变更Python文件相对基线没有新增Ruff问题；保留两条既有问题，不声称全仓静态检查通过。
+ - `final/historical-identity.json`：357份历史artifact及102/103/104三个迁移文件逐字节保持不变。
+ - `review/`：准确Git提交的独立审核、保留在仓库内的patch及指纹。
+ 
+diff --git a/docs/reviews/2026-09-12-hr-e-audit-hardening.md b/docs/reviews/2026-09-12-hr-e-audit-hardening.md
+index f441cfe..1ed8f38 100644
+--- a/docs/reviews/2026-09-12-hr-e-audit-hardening.md
++++ b/docs/reviews/2026-09-12-hr-e-audit-hardening.md
+@@ -32,7 +32,7 @@
+ 
+ 最终关联回归在准确提交`6eaefc21199ea92f3a6572b8aa02653f2a0d689b`运行：**567 passed / 1 skipped / 23 warnings，421.98秒，退出码0**。[准确命令](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/command.json)、[原始日志](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/output.log)、[运行期间源码未变核对](../../artifacts/2026-09-12-hr-e-audit-hardening/final/integration-source-verification.json)。范围为原27文件加遗漏search、旧recovery、新recovery/diagnostics/operations五文件及owner健康两个节点。条件跳过是`test_actual_process_loop_same_request_and_api_restart`缺自有MetaBot进程夹具；23条为既有TestClient逐请求cookie弃用警告。未将其记为进程闭环通过。
+ 
+-本轮13个变更Python文件Ruff相对基线新增0条，既有2条保留；357份历史artifact及102/103/104三个迁移共360份原字节未变。静态检查及历史身份记录在本轮`lint/`、`final/historical-identity.json`。
++本轮12个变更Python文件Ruff相对基线新增0条，既有2条保留；357份历史artifact及102/103/104三个迁移共360份原字节未变。静态检查及历史身份记录在本轮`lint/`、`final/historical-identity.json`。
+ 
+ 定向证据分别为运维29项（9个真实PG/手册用例、20个外部工具因果mock）、部署/preflight37项、恢复/诊断/search22项；范围有交叠，不能加总为全仓覆盖。新恢复测试曾因缺导入、使用v5冻结夹具、未匹配v6冻结策略/哈希而收集失败或夹具失败，完整记录保留；最终v6负例在未修实现上4失败/3通过，修闸门后及补同锁/权限失败案例后9项通过。这些夹具调试错误不冒充产品缺陷RED。
+ 

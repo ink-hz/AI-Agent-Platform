@@ -1,0 +1,91 @@
+{
+  "reviewed_commit": "270db56b0a2c2bdedc4331a8de9c7027652727a8",
+  "previous_reviewed_commit": "6603c06e5a130dbddfddd8f03badbda4b26e8360",
+  "tested_commit": "6eaefc21199ea92f3a6572b8aa02653f2a0d689b",
+  "sources": {
+    "docs/reviews/2026-09-12-hr-e-audit-hardening.md": {
+      "sha256": "936b36ea367b32cf47f8c31831a812cae2e2e757fe9da0d0da0c6c124077fb70",
+      "blob": "1ed8f387e53e179131ec6e00f27e378b81d53ea1"
+    },
+    "docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md": {
+      "sha256": "0128c1f7a308af5e0226ef0735fcf69d8d2b7a6d16ae68a114f720f9bfb8e7b3",
+      "blob": "7be2bbace72c5fb8df1029cf590918079bb4daa1"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/README.md": {
+      "sha256": "376b0d1a1b4fb0ca7948e6e7cfcee60e1f9bcb2ca0236d47c42a0d05e8e878f8",
+      "blob": "b391a7b0a39c903b70099820323fcf326ba9d114"
+    }
+  },
+  "correction_patch_sha256": "2c767b87678ed932597c73ec6062ceea5869283201654f49377fac4cd1e290f4",
+  "evidence": {
+    "artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/command.json": {
+      "sha256": "7b626a50be32ebaad691d9fc9e5b5b5ec7156256ef69fdd14f0232673919364c",
+      "blob": "24a3aa59e62d8b2b7f11a56a55a34eef7b6a1313"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/output.log": {
+      "sha256": "203e1716f436ac48c4f0a017e834549aa95f1c9c0ce6dc302269fb8c044d0d1f",
+      "blob": "3fc319746248e950a743300e5d41ee903a9e7806"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/source.patch": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/final/integration-source-before.json": {
+      "sha256": "ffabed56c63238c932d43d4d2013b87ad029068aa3351590d8ee314b26d38f7a",
+      "blob": "1ce4b74e62dcbe2a85665cdb2db23f707fd00bf6"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/final/integration-source-verification.json": {
+      "sha256": "127b7996748d9c75ef9887b938881b27d55b3c6b1b9b48fe4b1341f428399d12",
+      "blob": "d36fd77e31e551934fb5ace42dd9131e2e291f0b"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/final/historical-identity.json": {
+      "sha256": "7ea44cbb6776e25e7aeb58a5da7ba02f111ddb8c895fd61e584193038df8c543",
+      "blob": "4abc0279703079282472f26a690d22a150935cfa"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/lint/baseline-comparison-final.json": {
+      "sha256": "3ed34a96e2522fdf3ccf7dacf308a52dec31ce29191e56ec19aa5f7d6418d240",
+      "blob": "a691784ff8364f986896fc722bd396b78d9ae9d1"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/forensics/manifest.json": {
+      "sha256": "2a28da27c0136c517830c1004e2158783714126c12a7c4efd245e97710c437c8",
+      "blob": "2a0ce1eafee349e75eb57ed35f543b091a1a3005"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/forensics/report.md": {
+      "sha256": "d556df19dd21f11b4eee132c297a643947317ab5a9d8abb26919e93ea13ac1fe",
+      "blob": "5a641e4e0a4c06e263d9d061bc0cf3f8e7380eca"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/operations/task1-report.md": {
+      "sha256": "32e5dc40c0a478a98a6e776c2555e4efe558e8821b4a2e94fdf7c02629ba9fd7",
+      "blob": "8ddf54606c61f5c8b7d3da607d9e82db4ec7d457"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/review/task1-3504c20-20260912T060349237452Z/task1-review.md": {
+      "sha256": "42de042482663c175ba0fc0446b5fe24e8a12844ee8decf67e444f698406b84d",
+      "blob": "30bbe45a7e136518cb23b03eb538a33382f71b42"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/review/task1-3504c20-20260912T060349237452Z/commit-fingerprints.json": {
+      "sha256": "23524dcc7224ded6d08b07464519a57f9300df6a67879ea350eb731cf4ee9f2e",
+      "blob": "0085abeab7671c996f20d8c8d6fc4e529b7fc2a1"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/review/code-6eaefc2/code-review.md": {
+      "sha256": "94096642c5030090c45a9157e971271bb9a7eeff23fb7df093b2a16bb621f49d",
+      "blob": "4a32b262e8d358de67d3e5430adb98d2363465a8"
+    },
+    "artifacts/2026-09-12-hr-e-audit-hardening/review/code-6eaefc2/fingerprints.json": {
+      "sha256": "d272bc5f5f206b94f099ef3171a0457904014370a854600cd9be33bc9e7f03a9",
+      "blob": "240c98830d4e6987e540b23382225251358fc91f"
+    }
+  },
+  "verified_checks": {
+    "integration_source_entries_matching_tested_commit": 1653,
+    "integration_source_hash_mismatches": [],
+    "historical_entries_matching_baseline_and_reviewed_commit": 360,
+    "historical_hash_mismatches": [],
+    "forensics_saved_items_matching_hashes": 5,
+    "ruff_files": 12,
+    "ruff_current": 2,
+    "ruff_new": 0,
+    "integration_whole_files": 32,
+    "integration_owner_health_nodes": 2,
+    "product_test_runbook_changes_since_tested_commit": []
+  }
+}
