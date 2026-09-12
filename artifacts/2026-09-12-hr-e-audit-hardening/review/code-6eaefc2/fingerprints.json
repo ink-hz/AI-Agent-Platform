@@ -1,0 +1,66 @@
+{
+  "baseline": "5978eaa0bf657721d1ef7ab64d5b4a7ada5ca43a",
+  "prior_task1_commit": "3504c20cb2266887759c00759b8675e2894521fa",
+  "review_target": "6eaefc21199ea92f3a6572b8aa02653f2a0d689b",
+  "scope": "ROOT product/tests after prior Task1; immutable git show objects, not current workingtree",
+  "patch_sha256": {
+    "full_base": "feb663dd26659b7b77e9eaf7a075a26801e78e5b96312488bda2bbdbb4d40498",
+    "root_only": "df7da201588d847577914d63fb4d3f9641bf0c2aefc79f5e96d9a80640c7f726"
+  },
+  "sources": {
+    "backend/app/execution_relay/recovery_v5.py": {
+      "sha256": "1276eea3f36957b0aa1e2f7c631bdd61d051241e068abfaac408ff72338cbb96",
+      "git_blob": "c1a65182a59ba3eb58365b2f635095640ab85cae"
+    },
+    "backend/app/health/platform.py": {
+      "sha256": "b5672008e238230fd819e6c90ff84042ace53ccec1a1a61d24d1db836496364d",
+      "git_blob": "704a5d018f64bfd69ad8095182d382829a8a44af"
+    },
+    "backend/app/hr/candidate_repository.py": {
+      "sha256": "97ce167e0f12d108b72460e7c16dc228ff55b950cb4c4cc05eb0118b3377a45d",
+      "git_blob": "3c449d734b4e86b8a34fbcd52a1bf95decc21608"
+    },
+    "backend/tests/test_agent_brain_search_recovery.py": {
+      "sha256": "d77915c48f46816605511ab753aac43c98a0d6d1d3d2349b3c60dfaca6256db1",
+      "git_blob": "b09f574fb87f95dd35d32d6b291c73d10bd6cbdf"
+    },
+    "backend/tests/test_hr_agent_migration_deployment.py": {
+      "sha256": "78c70e28d4b63d988096b484df1f37d97b5dd16c9ea82dedf311b9a879484e2d",
+      "git_blob": "2ad2b0c7793900ee8603587ad6d9afb6e0ef2a72"
+    },
+    "backend/tests/test_hr_agent_preflight.py": {
+      "sha256": "d7b0c3a10228e0378c159de555c4091c26dcad340c72105a43a13c30aded141f",
+      "git_blob": "5029389beae26b0a4d2679fcd028819e41677835"
+    },
+    "backend/tests/test_hr_operational_diagnostics.py": {
+      "sha256": "e776396024b50d0509f77dd74d9f466a405644556c837239139631617e84031c",
+      "git_blob": "d1682a5a6604fcebeaa2adc0ab47ad41c9dbdd71"
+    },
+    "backend/tests/test_hr_recovery_cutover.py": {
+      "sha256": "086dfd1365a786f9eb22f6d64123a7ec048bd29f599338c8ce6eda71a4b05cfb",
+      "git_blob": "48bf87313475451942b2a4638bec825b73565a5c"
+    },
+    "backend/tools/hr_agent/preflight.py": {
+      "sha256": "433425b64f0c7c95ed9a2e0268e4c2a31d841eb067f00f5d73c28c7fee1ae152",
+      "git_blob": "c811a4f6ce46d47a5ce3ddff496dd265a060606e"
+    },
+    "deploy/cloud/hr_agent_migrate.py": {
+      "sha256": "5449a40f3cf08215fe44a813ee1b6947770313c87d40e2cb0f230d7865a8cf00",
+      "git_blob": "16483370afe5290478a96a54e14794602371b550"
+    },
+    "docs/reviews/2026-09-12-hr-e-audit-hardening.md": {
+      "sha256": "763a5dc32ed8b1fcd45a10602c1636626fbd62ea58fd86d6d7f1ee0a15511602",
+      "git_blob": "384ac0948b3e0fcbfa031acda38c135c0d7d389b"
+    },
+    "docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md": {
+      "sha256": "bbcc2f8f3166106b96eb82502ca76baa80be4b05535d276cb664621adfd30694",
+      "git_blob": "7de8e7a20a2a5d5e070ffa7f49ef09d548a9a418"
+    }
+  },
+  "evidence": {
+    "artifacts/2026-09-12-hr-e-audit-hardening/runs/root-focused-final/command.json": "7a143140182244a519adb44d2d4ba5650a929b9d17a70533fd2c04df1fd860b1",
+    "artifacts/2026-09-12-hr-e-audit-hardening/runs/root-focused-final/output.log": "6ebbc0c6d2d198eee4261e3e357938274b1bb14b42e0b026a63ab8dc3223bf71",
+    "artifacts/2026-09-12-hr-e-audit-hardening/runs/deployment-preflight-green/command.json": "74b144cab8d6051dba59a353932c671b2c85a6ff6561dc641d14f9bd65519905",
+    "artifacts/2026-09-12-hr-e-audit-hardening/runs/deployment-preflight-green/output.log": "484f5b19b086e6e29acf0674448ef9a6645cda81c6508983ca78cbc1c4349f53"
+  }
+}

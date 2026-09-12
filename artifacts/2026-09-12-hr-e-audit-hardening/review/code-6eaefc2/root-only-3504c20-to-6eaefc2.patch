@@ -1,0 +1,769 @@
+diff --git "a/HR_Agent\345\267\245\344\275\234\346\265\201.md" "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+index 64acd37..b55a09d 100644
+--- "a/HR_Agent\345\267\245\344\275\234\346\265\201.md"
++++ "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+@@ -1,5 +1,7 @@
+ # HR Agent 工作流
+ 
++> E二次审计（2026-09-12）：切换SQL采用显式事务与3秒语句时限，实际持锁超时/其他Bot追加另留证；当前只承诺保持draining_cloud修复，恢复legacy受理延期。搜索恢复夹具、用户重新搜索闸门、v5恢复授权、SIGQUIT与部署预检补验，见[第二轮修订交接](docs/reviews/2026-09-12-hr-e-audit-hardening.md)。自动编排HR探针、生产负载及专业验收仍未完成。
++
+ > E审计追加（2026-09-12）：上轮W表已收窄到具体测试范围；遗漏夹具、旧NULL上下文与计数边界补验，104以追加方式移除103不可达条件。失败草稿逐项处置、切换SQL时限与旧执行器显式恢复条件见[本轮修订](docs/reviews/2026-09-12-hr-e-audit-followup.md)。原25项审读缺运行日志；PM2材料仅为本机仓库代码，生产身份未核验。
+ 
+ > E复审收尾（2026-09-11）：活 `/v5/handoff`、并发分类、旧草稿写入已接切换闸门；新增103区分命令记录与活跃工作，D1覆盖及受控异常补回，迁移监督与失败清理留证。3条queued和28条interrupted已做只读聚合定性；旧执行器实际停用、飞书去向、D专业/真实候选人/D7与发布窗口仍未通过。本轮610/6、身份872、HR前端317；全仓前端1193通过/3既有失败/2条件跳过，证据见[E复审收尾](docs/reviews/2026-09-11-hr-e-review-followup.md)。
+@@ -240,4 +242,6 @@ E发布整合补充：生产v6/v7的岗位标签不能证明历史消息具有
+ 
+ E复审执行契约：旧派发每次offer与切换共用锁；历史技术终态不证明业务成功或进程停止。ready及failed旧草稿须在draining_legacy内明确选择现有可用动作或保留只读；failed在此阶段可放弃但不可重试，进入drain前才允许旧链重试。cloud后不接受旧确认/放弃/重试写入。104生效后的实际计数、完整lineage、旧HR Worker停止和飞书去向分别验收；本地部分用例通过不替代整条W。迁移授予整个控制库owner，按环境清理；SIGKILL/主机故障依赖外部核验与恢复，不以正常退出测试冒充无条件回收。详见[E复审](docs/reviews/2026-09-11-hr-e-review-followup.md)。
+ 
+-E审计补充：初始化、计数与切换命令使用事务局部2秒lock_timeout、30秒statement_timeout；超时回滚、不视为零占用。实际生产计数及超时行为未验。默认回滚保留draining_cloud修复新链；只有按批准配置恢复旧HR实例、验证readiness及单一归属之后才允许恢复legacy受理。数据库phase不会自动重建已删除PM2条目或恢复停用配置；本机脚本及纯模拟验证不证明实际主机可恢复。
++E审计补充（第二轮更正）：初始化、计数与切换命令在显式事务内设置2秒lock_timeout、3秒statement_timeout，后者约束已持有排他锁时的SQL；不保证网络/主机挂起的墙钟上限。实际生产计数及负载仍未验。当前回滚只承诺保留draining_cloud修复新链；legacy恢复因四边状态机缺少失败返回路径而延期，不再提供恢复接单的可执行步骤。附件与PM2停止顺序有绑定完整手册SHA的因果mock和负例，仍不证明实际主机已停止或可恢复。
++
++E恢复与诊断补充：用户resume_search_turn创建新轮次，drain后作为新受理拒绝；v5 recovery可能续签业务工具授权，非停止轮询按旧链continuation受同事务闸门约束，停止与原身份观察回执保留。owner健康详情仅呈现HR API装配状态，worker_checked=false，公共liveness不证明HR可用；自动编排探针与生产告警仍须另行装配。CandidateUnavailable外部503契约保持，内部日志区分切换暂停与数据库故障且不含原异常或SQL。
+diff --git "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md" "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+index d60974d..f2518f4 100644
+--- "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
++++ "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+@@ -1,5 +1,7 @@
+ # HR 总体架构设计
+ 
++> E二次审计（2026-09-12）：切换SQL采用显式事务与3秒语句时限，实际持锁超时/其他Bot追加另留证；当前只承诺保持draining_cloud修复，恢复legacy受理延期。搜索恢复夹具、用户重新搜索闸门、v5恢复授权、SIGQUIT与部署预检补验，见[第二轮修订交接](docs/reviews/2026-09-12-hr-e-audit-hardening.md)。自动编排HR探针、生产负载及专业验收仍未完成。
++
+ > E审计追加（2026-09-12）：上轮W表已收窄到具体测试范围；遗漏夹具、旧NULL上下文与计数边界补验，104以追加方式移除103不可达条件。失败草稿逐项处置、切换SQL时限与旧执行器显式恢复条件见[本轮修订](docs/reviews/2026-09-12-hr-e-audit-followup.md)。原25项审读缺运行日志；PM2材料仅为本机仓库代码，生产身份未核验。
+ 
+ > E复审收尾（2026-09-11）：活 `/v5/handoff`、并发分类、旧草稿写入已接切换闸门；新增103区分命令记录与活跃工作，D1覆盖及受控异常补回，迁移监督与失败清理留证。3条queued和28条interrupted已做只读聚合定性；旧执行器实际停用、飞书去向、D专业/真实候选人/D7与发布窗口仍未通过。本轮610/6、身份872、HR前端317；全仓前端1193通过/3既有失败/2条件跳过，证据见[E复审收尾](docs/reviews/2026-09-11-hr-e-review-followup.md)。
+@@ -308,4 +310,6 @@ E发布整合补充：生产v6/v7的岗位标签不能证明历史消息具有
+ 
+ E复审执行契约：旧派发每次offer与切换共用锁；历史技术终态不证明业务成功或进程停止。ready及failed旧草稿须在draining_legacy内明确选择现有可用动作或保留只读；failed在此阶段可放弃但不可重试，进入drain前才允许旧链重试。cloud后不接受旧确认/放弃/重试写入。104生效后的实际计数、完整lineage、旧HR Worker停止和飞书去向分别验收；本地部分用例通过不替代整条W。迁移授予整个控制库owner，按环境清理；SIGKILL/主机故障依赖外部核验与恢复，不以正常退出测试冒充无条件回收。详见[E复审](docs/reviews/2026-09-11-hr-e-review-followup.md)。
+ 
+-E审计补充：初始化、计数与切换命令使用事务局部2秒lock_timeout、30秒statement_timeout；超时回滚、不视为零占用。实际生产计数及超时行为未验。默认回滚保留draining_cloud修复新链；只有按批准配置恢复旧HR实例、验证readiness及单一归属之后才允许恢复legacy受理。数据库phase不会自动重建已删除PM2条目或恢复停用配置；本机脚本及纯模拟验证不证明实际主机可恢复。
++E审计补充（第二轮更正）：初始化、计数与切换命令在显式事务内设置2秒lock_timeout、3秒statement_timeout，后者约束已持有排他锁时的SQL；不保证网络/主机挂起的墙钟上限。实际生产计数及负载仍未验。当前回滚只承诺保留draining_cloud修复新链；legacy恢复因四边状态机缺少失败返回路径而延期，不再提供恢复接单的可执行步骤。附件与PM2停止顺序有绑定完整手册SHA的因果mock和负例，仍不证明实际主机已停止或可恢复。
++
++E恢复与诊断补充：用户resume_search_turn创建新轮次，drain后作为新受理拒绝；v5 recovery可能续签业务工具授权，非停止轮询按旧链continuation受同事务闸门约束，停止与原身份观察回执保留。owner健康详情仅呈现HR API装配状态，worker_checked=false，公共liveness不证明HR可用；自动编排探针与生产告警仍须另行装配。CandidateUnavailable外部503契约保持，内部日志区分切换暂停与数据库故障且不含原异常或SQL。
+diff --git a/backend/app/execution_relay/recovery_v5.py b/backend/app/execution_relay/recovery_v5.py
+index 61f1b83..c1a6518 100644
+--- a/backend/app/execution_relay/recovery_v5.py
++++ b/backend/app/execution_relay/recovery_v5.py
+@@ -1,7 +1,7 @@
+ """Nondispatch bound-run recovery on the existing signed Worker authority.
+ 
+-Current cloud ownership authorizes inspection, never a launch. Original launch
+-and callback credentials remain those of the durable command transport.
++Recovery can renew HR business-tool authority and is a legacy continuation.
++Stops and result observations retain their original durable transport authority.
+ """
+ 
+ import asyncio
+@@ -10,6 +10,7 @@ from uuid import UUID
+ 
+ from app.agent_brain.direct_command_binding import BindingRejected
+ from app.agent_brain.turn_attempts import Lease, LeaseRejected
++from app.hr_agent.cutover import CutoverRejected, lock_state, require_lane
+ 
+ from .acceptance_v5 import parse_v5_acceptance
+ from .contracts_v5 import ExecutionRecoveryV5
+@@ -97,6 +98,9 @@ def recovery_work(bindings, worker_id):
+         for candidate in candidates:
+             try:
+                 with connection.transaction():
++                    # Serialize with cutover before taking any domain row lock or
++                    # returning an existing/renewed business execution grant.
++                    cutover = lock_state(connection)
+                     lease = Lease(
+                         candidate["attempt_id"],
+                         "worker_direct",
+@@ -106,6 +110,8 @@ def recovery_work(bindings, worker_id):
+                         "reconciling",
+                     )
+                     attempt, row = _current(bindings, connection, worker_id, lease)
++                    if attempt["cancel_requested_at"] is None:
++                        require_lane(cutover, "legacy", continuing=True)
+                     wrapper=bindings._wrapper(row)
+                     transport=wrapper['transport']
+                     if (wrapper['command']['contractVersion']in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
+@@ -133,7 +139,7 @@ def recovery_work(bindings, worker_id):
+                         "command": command.model_dump(mode="json", by_alias=True),
+                         "stop": attempt["cancel_requested_at"] is not None,
+                     }
+-            except (BindingRejected, LeaseRejected):
++            except (BindingRejected, LeaseRejected, CutoverRejected):
+                 continue
+     return None
+ 
+diff --git a/backend/app/health/platform.py b/backend/app/health/platform.py
+index 5914f03..704a5d0 100644
+--- a/backend/app/health/platform.py
++++ b/backend/app/health/platform.py
+@@ -62,6 +62,7 @@ def build_detailed_platform_health(
+         item.model_dump(mode="json") for item in app.state.health_cache.all()
+     ]
+     deployment = build_deployment_status(app, config)
++    hr_service = getattr(app.state, "hr_agent_service", None)
+     return {
+         "status": "ok",
+         "build": {
+@@ -90,6 +91,12 @@ def build_detailed_platform_health(
+                 ),
+                 "operations": app.state.operations_service is not None,
+                 "attachments": app.state.attachment_service is not None,
++                "hr_agent": {
++                    "api_ready": bool(hr_service and hr_service.ready
++                                      and hr_service.repository is not None
++                                      and hr_service.access is not None),
++                    "worker_checked": False,
++                },
+             },
+         },
+         "agents": {
+diff --git a/backend/app/hr/candidate_repository.py b/backend/app/hr/candidate_repository.py
+index 1b8e587..3c449d7 100644
+--- a/backend/app/hr/candidate_repository.py
++++ b/backend/app/hr/candidate_repository.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import json
++import logging
+ from collections.abc import Callable
+ from typing import Any
+ from uuid import UUID
+@@ -8,7 +9,12 @@ from uuid import UUID
+ import psycopg
+ from psycopg.rows import dict_row
+ 
+-from app.hr_agent.cutover import lock_admission, lock_state, require_lane
++from app.hr_agent.cutover import (
++    CutoverRejected,
++    lock_admission,
++    lock_state,
++    require_lane,
++)
+ 
+ from .candidate_models import (
+     AppendHumanFeedback,
+@@ -210,6 +216,11 @@ class CandidateRepository:
+ 
+     @staticmethod
+     def _raise_repository_error(error: Exception) -> None:
++        if isinstance(error, CutoverRejected):
++            logging.getLogger(__name__).info("candidate_repository_unavailable kind=cutover_paused sqlstate=none", extra={
++                "failure_kind": "cutover_paused", "sqlstate": None,
++            })
++            raise CandidateUnavailable("candidate repository unavailable") from None
+         if isinstance(error, psycopg.errors.NoDataFound):
+             raise CandidateNotFound("candidate resource not found") from None
+         if isinstance(
+@@ -221,6 +232,12 @@ class CandidateRepository:
+             ),
+         ):
+             raise CandidateConflict("candidate mutation conflict") from None
++        kind = "database" if isinstance(error, psycopg.Error) else "data_contract"
++        state = error.sqlstate if isinstance(error, psycopg.Error) else None
++        logging.getLogger(__name__).warning(
++            "candidate_repository_unavailable kind=%s sqlstate=%s", kind, state or "none",
++            extra={"failure_kind": kind, "sqlstate": state},
++        )
+         raise CandidateUnavailable("candidate repository unavailable") from None
+ 
+     def create_draft(
+diff --git a/backend/tests/test_agent_brain_search_recovery.py b/backend/tests/test_agent_brain_search_recovery.py
+index 9251fdc..b09f574 100644
+--- a/backend/tests/test_agent_brain_search_recovery.py
++++ b/backend/tests/test_agent_brain_search_recovery.py
+@@ -23,8 +23,8 @@ from test_agent_brain_conversation_repository import (
+     repository,
+ )
+ from test_agent_brain_orchestrator import ScriptedRelay
+-from test_control_plane_migration import control_database
+ from test_conversation_attachment_binding import _ready_attachment
++from tests.helpers.hr_direct_database import control_database
+ 
+ 
+ def _recovery_result(status: str, *, resumable: bool) -> dict[str, object]:
+@@ -259,3 +259,46 @@ def test_no_results_remains_distinct_and_cannot_be_resumed(
+     assert messages[-1].search_recovery is not None
+     assert messages[-1].search_recovery.status == "no_results"
+     assert messages[-1].search_recovery.resumable is False
++
++
++@pytest.mark.postgres
++@pytest.mark.parametrize("phase", ["draining_legacy", "cloud", "draining_cloud"])
++def test_search_resume_is_new_admission_and_cutover_rejection_is_atomic(
++    conversation_database, repository, phase,
++):
++    environment, owner, _ = conversation_database
++    started, commands = _completed_direct_turn(
++        repository, owner, _recovery_result("unavailable", resumable=True),
++    )
++    phases = ["draining_legacy", "cloud", "draining_cloud"]
++    with psycopg.connect(environment["admin"]) as connection:
++        for target in phases[:phases.index(phase) + 1]:
++            connection.execute(
++                "select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)",
++                (target, uuid4()),
++            )
++
++    def snapshot():
++        with psycopg.connect(environment["admin"]) as connection:
++            return connection.execute(
++                "select (select count(*) from platform_control.conversation_turns),"
++                "(select count(*) from platform_control.conversation_messages),"
++                "(select count(*) from platform_control.missions),"
++                "(select count(*) from platform_attachments.bindings)"
++            ).fetchone()
++
++    before = snapshot()
++    app, auth, _ = _app(owner, repository, command_service=commands)
++    request_id = uuid4()
++    with TestClient(app) as client:
++        response = client.post(
++            f"/api/v1/conversations/{started.conversation.conversation_id}/turns/{started.turn.turn_id}/resume",
++            headers={**_write_credentials(auth)["headers"], "Idempotency-Key": str(request_id)},
++            cookies=_credentials(auth)["cookies"],
++        )
++    assert response.status_code == 503
++    assert snapshot() == before
++    with psycopg.connect(environment["admin"]) as connection:
++        assert connection.execute(
++            "select count(*) from platform_control.conversation_turns where client_request_id=%s", (request_id,),
++        ).fetchone() == (0,)
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index aded9c6..2ad2b0c 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -49,7 +49,7 @@ elif args[0]=='create':
+             key,item=args[index+1].split('=',1); environment[key]=item
+         elif value=='-v': mounts.append(args[index+1])
+     identifier=uuid.uuid4().hex
+-    state_path.write_text(json.dumps({'id':identifier,'name':name,'running':False,'exit':None,'environment':environment,'mounts':mounts}))
++    state_path.write_text(json.dumps({'id':identifier,'name':name,'running':False,'exit':None,'environment':environment,'mounts':mounts,'security':[a for a in args if a.startswith(('--cap-drop=','--security-opt='))]}))
+     pathlib.Path(os.environ['TEST_DOCKER_CALLS']).open('a').write('create '+name+'\\n')
+     print(identifier)
+ elif args[0]=='start':
+@@ -182,6 +182,8 @@ def test_helper_grants_only_transiently_and_applies_hr_migrations(tmp_path):
+         calls = (tmp_path / "docker-calls.log").read_text().splitlines()
+         assert [line.split()[0] for line in calls].count("create") == 2
+         assert [line.split()[0] for line in calls].count("start") == 2
++        docker_state = __import__("json").loads((tmp_path / "docker-state.json").read_text())
++        assert docker_state["security"] == ["--cap-drop=ALL", "--security-opt=no-new-privileges:true"]
+         with database.connection() as connection:
+             assert (
+                 connection.execute(
+@@ -293,7 +295,7 @@ def test_supervisor_owns_named_container_lifecycle_and_redacted_receipt():
+     assert "128 +" in source or "128+" in source
+ 
+ 
+-@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
++@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT])
+ def test_signal_stops_container_before_revoke(tmp_path, number):
+     with hr_agent_database(migrate_hr=False) as database:
+         preview_dsn = _prepare_preview_and_revoke(database)
+@@ -313,24 +315,32 @@ def test_signal_stops_container_before_revoke(tmp_path, number):
+                  "TEST_RELEASE": str(ROOT), "TEST_DOCKER_STATE": str(state),
+                  "TEST_DOCKER_CALLS": str(calls), "TEST_DOCKER_SCENARIO": "ignore-term",
+                  "PYTHONPATH": str(ROOT / "backend")},
+-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
++            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+         )
+-        deadline = time.monotonic() + 10
+-        while time.monotonic() < deadline and (
+-            not calls.exists() or "start " not in calls.read_text()
+-        ):
+-            time.sleep(0.02)
+-        assert calls.exists() and "start " in calls.read_text()
+-        process.send_signal(number)
+-        _, stderr = process.communicate(timeout=15)
+-        assert process.returncode == 128 + number
+-        assert _memberships(database) == 0
+-        operations = calls.read_text().splitlines()
+-        assert "stop" in [item.split()[0] for item in operations]
+-        receipt = __import__("json").loads(next(receipts.glob("*.json")).read_text())
+-        assert receipt["status"] == "interrupted"
+-        assert receipt["cleanup_verified"] is True
+-        assert "CLEANUP_UNRESOLVED" not in stderr
++        try:
++            deadline = time.monotonic() + 10
++            while time.monotonic() < deadline and (
++                not calls.exists() or "start " not in calls.read_text()
++            ):
++                time.sleep(0.02)
++            assert calls.exists() and "start " in calls.read_text()
++            process.send_signal(number)
++            _, stderr = process.communicate(timeout=15)
++            assert process.returncode == 128 + number
++            assert _memberships(database) == 0
++            operations = calls.read_text().splitlines()
++            assert "stop" in [item.split()[0] for item in operations]
++            receipt = __import__("json").loads(next(receipts.glob("*.json")).read_text())
++            assert receipt["status"] == "interrupted"
++            assert receipt["cleanup_verified"] is True
++            assert "CLEANUP_UNRESOLVED" not in stderr
++
++        finally:
++            # Only this test-owned helper group; also cleans an untrapped-signal RED.
++            try:
++                os.killpg(process.pid, signal.SIGKILL)
++            except ProcessLookupError:
++                pass
+ 
+ 
+ @pytest.mark.parametrize(
+diff --git a/backend/tests/test_hr_agent_preflight.py b/backend/tests/test_hr_agent_preflight.py
+index 52c421b..5029389 100644
+--- a/backend/tests/test_hr_agent_preflight.py
++++ b/backend/tests/test_hr_agent_preflight.py
+@@ -325,3 +325,36 @@ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, r
+     assert "migration_identity_mismatch" in report["blockers"]
+     entry = next(item for item in report["database"]["migrations"] if item["version"] == version)
+     assert entry["match"] is False
++
++
++@pytest.mark.parametrize("version,path_name", [
++    (102, "CUTOVER_MIGRATION"),
++    (103, "DRAIN_OCCUPANCY_MIGRATION"),
++    (104, "DRAIN_TERMINAL_MIGRATION"),
++])
++@pytest.mark.parametrize("replace_ledger", [False, True])
++def test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image(
++    tmp_path, monkeypatch, version, path_name, replace_ledger,
++):
++    import hashlib
++
++    from app.hr_agent.config import CUTOVER_MIGRATION_SHA256
++    from tools.hr_agent import preflight
++
++    changed_file = tmp_path / "changed.sql"
++    changed_file.write_bytes(getattr(preflight, path_name).read_bytes() + b"\n-- changed image\n")
++    changed_digest = hashlib.sha256(changed_file.read_bytes()).hexdigest()
++    monkeypatch.setattr(preflight, path_name, changed_file)
++    with hr_agent_database() as database:
++        if replace_ledger:
++            with database.admin_connection() as connection:
++                connection.execute(
++                    "update platform_control.schema_migrations set sha256=%s where version=%s",
++                    (changed_digest, version),
++                )
++        report, blockers = preflight._database_report(database.connection)
++    entry = next(item for item in report["migrations"] if item["version"] == version)
++    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
++    assert entry["match"] is (not replace_ledger)
++    assert entry["image_match"] is False
++    assert "migration_image_identity_mismatch" in blockers
+diff --git a/backend/tests/test_hr_operational_diagnostics.py b/backend/tests/test_hr_operational_diagnostics.py
+new file mode 100644
+index 0000000..d1682a5
+--- /dev/null
++++ b/backend/tests/test_hr_operational_diagnostics.py
+@@ -0,0 +1,58 @@
++"""Owner health presentation and real-DB candidate availability diagnostics."""
++import logging
++from uuid import uuid4
++
++import pytest
++from app.hr.candidate_models import RetryCandidateDraft
++from app.hr.candidate_repository import CandidateUnavailable
++from app.hr_agent.service import HrAgentService
++from fastapi.testclient import TestClient
++from test_dingtalk_auth_api import FakeAuth, _app
++from test_hr_failed_draft_cutover import failed_draft
++
++_FIXTURES = (failed_draft,)
++
++
++@pytest.mark.parametrize("ready,has_repository,expected", [(False, False, False), (True, False, False), (True, True, True)])
++def test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness(
++    tmp_path, monkeypatch, ready, has_repository, expected,
++):
++    auth = FakeAuth()
++    app = _app(tmp_path, monkeypatch, auth)
++    audited = []
++    app.state.system_health_audit = lambda context: audited.append(context.session_id)
++    # Only HR assembly is substituted; actual owner route, audit gate and public route execute.
++    app.state.hr_agent_service = HrAgentService(object() if has_repository else None, object(), ready=ready)
++    with TestClient(app) as client:
++        result = client.get("/api/v1/manage/system-health", cookies={auth.cookie_name: "valid-cookie"})
++        assert result.status_code == 200
++        assert result.json()["dependencies"]["services"]["hr_agent"] == {
++            "api_ready": expected, "worker_checked": False,
++        }
++        assert client.get("/api/health").json() == {"status": "ok"}
++    assert audited == [auth.context.session_id]
++
++
++@pytest.mark.postgres
++@pytest.mark.parametrize("failure_kind", ["cutover_paused", "database"])
++def test_candidate_unavailable_keeps_safe_distinct_operational_reason(failed_draft, caplog, failure_kind):
++    database, repository, ids = failed_draft
++    caplog.set_level(logging.INFO, logger="app.hr.candidate_repository")
++    with database.admin_connection() as connection:
++        if failure_kind == "cutover_paused":
++            connection.execute(
++                "select * from platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)",
++                (uuid4(),),
++            )
++        else:
++            connection.execute("alter table platform_hr.candidate_drafts rename to synthetic_unavailable_drafts")
++    with pytest.raises(CandidateUnavailable):
++        repository.retry_draft(RetryCandidateDraft(ids["owner"], ids["draft"], uuid4(), 2))
++    records = [r for r in caplog.records if r.name == "app.hr.candidate_repository"]
++    assert len(records) == 1
++    expected_state = "none" if failure_kind == "cutover_paused" else "42P01"
++    assert records[0].getMessage() == f"candidate_repository_unavailable kind={failure_kind} sqlstate={expected_state}"
++    assert records[0].failure_kind == failure_kind
++    assert records[0].sqlstate == (None if failure_kind == "cutover_paused" else "42P01")
++    assert records[0].exc_info is None
++    assert "candidate_drafts" not in caplog.text
+diff --git a/backend/tests/test_hr_recovery_cutover.py b/backend/tests/test_hr_recovery_cutover.py
+new file mode 100644
+index 0000000..48bf873
+--- /dev/null
++++ b/backend/tests/test_hr_recovery_cutover.py
+@@ -0,0 +1,186 @@
++"""Signed recovery: explicit wrong-lane fault fixtures, never fake cutover success."""
++import hashlib
++import json
++from concurrent.futures import ThreadPoolExecutor
++from dataclasses import replace
++from time import monotonic, sleep
++from uuid import uuid4
++
++import pytest
++from app.hr_agent.cutover import ADVISORY_LOCK_KEY
++from test_execution_recovery_v5 import observation
++from test_execution_transport_v5 import PREFIX, post
++from test_hr_cutover_dispatch_review import (
++    attempt_repository,
++    authorize,
++    bindings,
++    conversation_database,
++    database,
++    direct_database,
++    repository,
++    set_residual_phase,
++    signed_api,
++    signed_http_app,
++    transport_worker,
++    worker_conversation,
++    worker_turn,
++)
++
++_FIXTURES = (attempt_repository, bindings, conversation_database, database,
++             direct_database, repository, signed_api, signed_http_app,
++             transport_worker, worker_conversation, worker_turn)
++pytestmark = pytest.mark.postgres
++
++
++@pytest.fixture
++def prepared(bindings, worker_turn, attempt_repository):
++    from app.execution_relay.contracts_v5 import canonical_command_bytes
++    from app.hr.turn_scope import load_authorized_turn_scope
++    from test_hr_direct_command_binding import frozen_input
++
++    lease = attempt_repository.claim_due(uuid4(), 60)
++    with attempt_repository.transaction() as connection:
++        scope = load_authorized_turn_scope(
++            worker_turn.conversation.owner_internal_user_id,
++            worker_turn.conversation.conversation_id, worker_turn.turn.turn_id,
++            connection=connection,
++        )
++        # Synthetic frozen intent, actual authorized persisted scope and v6 grant path.
++        metadata = {
++            "scope": scope.scope.model_dump(mode="json", by_alias=True),
++            "rolePackage": lease.admission["service"]["rolePackage"],
++            "methodSelection": None,
++            "toolCapabilities": ["hr.read_context", "hr.submit_result", "hr.confirm_standard"],
++        }
++        base = frozen_input(worker_turn)
++        context_hash = hashlib.sha256(canonical_command_bytes({
++            "prompt": base.prompt,
++            **{key: metadata[key] for key in ("scope", "rolePackage", "methodSelection")},
++        })).hexdigest()
++        frozen = replace(base, hr_v6=metadata, tool_policy="default", context_hash=context_hash)
++        binding = bindings.prepare(lease, frozen, connection=connection)
++    assert binding.frozen.document["contractVersion"] == "core_chat_collaboration_v6"
++    return lease, binding
++
++
++@pytest.fixture
++def recovering(database, signed_api, bindings, prepared, attempt_repository, transport_worker):
++    client, signer, _ = signed_api
++    authorize(bindings, prepared, attempt_repository, transport_worker)
++    assert post(client, signer, PREFIX + "/handoff", b"{}").status_code == 200
++    with database.admin_connection() as connection:
++        connection.execute(
++            "update platform_control.turn_attempts set lease_expires_at=clock_timestamp()-interval '1 second' "
++            "where attempt_id=%s", (prepared[0].attempt_id,),
++        )
++    lease = attempt_repository.claim_due(uuid4(), 60)
++    assert lease.status == "reconciling"
++    assert lease.lease_epoch == prepared[0].lease_epoch + 1
++    return lease
++
++
++def state(database, attempt_id):
++    with database.admin_connection() as connection:
++        return connection.execute(
++            "select j.payload_ciphertext,j.encryption_key_version,b.recovery_poll_after,"
++            "(select count(*) from platform_hr.tool_grants_v6 g where g.attempt_id=b.attempt_id) "
++            "from platform_control.direct_command_bindings b join platform_control.execution_jobs j using(job_id) "
++            "where b.attempt_id=%s", (attempt_id,),
++        ).fetchone()
++
++
++@pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
++@pytest.mark.parametrize("already_refreshed", [False, True])
++def test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation(
++    database, signed_api, recovering, phase, already_refreshed,
++):
++    client, signer, _ = signed_api
++    if already_refreshed:
++        assert post(client, signer, PREFIX + "/recovery", b"{}").status_code == 200
++        with database.admin_connection() as connection:
++            connection.execute(
++                "update platform_control.direct_command_bindings set recovery_poll_after=null where attempt_id=%s",
++                (recovering.attempt_id,),
++            )
++    set_residual_phase(database, phase)
++    before = state(database, recovering.attempt_id)
++    result = post(client, signer, PREFIX + "/recovery", b"{}")
++    assert result.status_code == 204
++    assert state(database, recovering.attempt_id) == before
++
++
++def test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant(
++    database, signed_api, recovering,
++):
++    client, signer, _ = signed_api
++    with database.admin_connection() as connection:
++        connection.execute(
++            "select * from platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)",
++            (uuid4(),),
++        )
++    before = state(database, recovering.attempt_id)
++    work = post(client, signer, PREFIX + "/recovery", b"{}")
++    assert work.status_code == 200
++    assert work.json()["stop"] is False
++    assert work.json()["leaseEpoch"] == recovering.lease_epoch
++    assert state(database, recovering.attempt_id)[3] == before[3] + 1
++
++
++@pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
++def test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority(
++    database, signed_api, recovering, attempt_repository, worker_turn, prepared, phase,
++):
++    client, signer, _ = signed_api
++    attempt_repository.request_cancel(
++        worker_turn.conversation.owner_internal_user_id, worker_turn.turn.turn_id,
++    )
++    set_residual_phase(database, phase)
++    before = state(database, recovering.attempt_id)
++    work = post(client, signer, PREFIX + "/recovery", b"{}")
++    assert work.status_code == 200
++    assert work.json()["stop"] is True
++    after = state(database, recovering.attempt_id)
++    assert after[:2] == before[:2]
++    assert after[3] == before[3]
++    body = {"executorId": str(recovering.executor_id), "leaseEpoch": recovering.lease_epoch,
++            "observation": observation(work.json()["command"], missing=True)}
++    assert post(client, signer, f"{PREFIX}/runs/{prepared[1].run_id}/recovery", json.dumps(body).encode()).status_code == 200
++
++
++def test_recovery_waits_on_same_gate_before_domain_locks_and_rechecks_phase(database, signed_api, recovering):
++    client, signer, _ = signed_api
++    before = state(database, recovering.attempt_id)
++    with ThreadPoolExecutor(max_workers=1) as pool:
++        with database.admin_connection() as connection:
++            connection.execute("select pg_advisory_xact_lock(%s)", (ADVISORY_LOCK_KEY,))
++            connection.execute("select 1 from platform_control.turn_attempts where attempt_id=%s for update", (recovering.attempt_id,))
++            pending = pool.submit(post, client, signer, PREFIX + "/recovery", b"{}")
++            deadline = monotonic() + 3
++            blocked = False
++            while monotonic() < deadline and not pending.done():
++                blocked = connection.execute(
++                    "select exists(select 1 from pg_locks w join pg_locks h "
++                    "on w.locktype=h.locktype and w.database=h.database and w.classid=h.classid "
++                    "and w.objid=h.objid and w.objsubid=h.objsubid "
++                    "where h.pid=pg_backend_pid() and h.locktype='advisory' and h.granted "
++                    "and not w.granted and w.mode='ShareLock')"
++                ).fetchone()[0]
++                if blocked:
++                    break
++                sleep(.01)
++            # Explicit residual fault injection; real transition rejects active old work.
++            connection.execute("update platform_control.hr_execution_cutover set phase='cloud'")
++        result = pending.result(timeout=5)
++    assert blocked
++    assert result.status_code == 204
++    assert state(database, recovering.attempt_id) == before
++
++
++def test_recovery_gate_database_error_is_unavailable_without_mutation(database, signed_api, recovering):
++    client, signer, _ = signed_api
++    before = state(database, recovering.attempt_id)
++    with database.admin_connection() as connection:
++        connection.execute("revoke select on platform_control.hr_execution_cutover from platform_control_app")
++    result = post(client, signer, PREFIX + "/recovery", b"{}")
++    assert result.status_code == 503
++    assert state(database, recovering.attempt_id) == before
+diff --git a/backend/tools/hr_agent/preflight.py b/backend/tools/hr_agent/preflight.py
+index 8ab1422..c811a4f 100644
+--- a/backend/tools/hr_agent/preflight.py
++++ b/backend/tools/hr_agent/preflight.py
+@@ -12,6 +12,7 @@ from pathlib import Path
+ 
+ from app.hr_agent.config import (
+     CANDIDATE_INTAKE_MIGRATION_SHA256,
++    CUTOVER_MIGRATION_SHA256,
+     ERASURE_ACCESS_MIGRATION_SHA256,
+     INTERVIEW_RECORD_MIGRATION_SHA256,
+     MATERIAL_AUTHORITY_MIGRATION_SHA256,
+@@ -206,9 +207,14 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+     permissions_complete = False
+     try:
+         expected_migrations = dict(EXPECTED_MIGRATIONS)
+-        expected_migrations[102] = _fingerprint(CUTOVER_MIGRATION.read_bytes())
+-        expected_migrations[103] = _fingerprint(DRAIN_OCCUPANCY_MIGRATION.read_bytes())
+-        expected_migrations[104] = _fingerprint(DRAIN_TERMINAL_MIGRATION.read_bytes())
++        expected_migrations.update(CUTOVER_MIGRATION_SHA256)
++        image_digests = {}
++        for version, path in ((102, CUTOVER_MIGRATION), (103, DRAIN_OCCUPANCY_MIGRATION),
++                              (104, DRAIN_TERMINAL_MIGRATION)):
++            try:
++                image_digests[version] = _fingerprint(path.read_bytes())
++            except OSError:
++                image_digests[version] = None
+         with connection_factory() as connection:
+             rows = connection.execute(
+                 "select version,sha256 from platform_control.schema_migrations "
+@@ -230,6 +236,8 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+                         "match": safe_actual == expected,
+                         "expected_sha256": expected,
+                         "actual_sha256": safe_actual,
++                        **({"image_match": image_digests[version] == expected,
++                            "image_sha256": image_digests[version]} if version in image_digests else {}),
+                     }
+                 )
+             table = connection.execute(
+@@ -312,6 +320,8 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+             blockers.append("schema_not_ready")
+         if not all(item["match"] for item in migrations):
+             blockers.append("migration_identity_mismatch")
++        if not all(item.get("image_match", True) for item in migrations):
++            blockers.append("migration_image_identity_mismatch")
+         if not cutover["initialized"]:
+             blockers.append("cutover_gate_not_initialized")
+         if not permissions_complete:
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 8d173c1..1648337 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -295,6 +295,8 @@ class Supervisor:
+                 "--name",
+                 self.name,
+                 "--read-only",
++                "--cap-drop=ALL",
++                "--security-opt=no-new-privileges:true",
+                 "--user",
+                 "0:0",
+                 "--tmpfs",
+@@ -400,7 +402,7 @@ def main():
+     except (OSError, ValueError):
+         print("HR_AGENT_MIGRATIONS_FAILED", file=sys.stderr)
+         return 1
+-    for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
++    for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
+         signal.signal(number, supervisor.on_signal)
+     return supervisor.run()
+ 
+diff --git a/docs/reviews/2026-09-12-hr-e-audit-hardening.md b/docs/reviews/2026-09-12-hr-e-audit-hardening.md
+new file mode 100644
+index 0000000..384ac09
+--- /dev/null
++++ b/docs/reviews/2026-09-12-hr-e-audit-hardening.md
+@@ -0,0 +1,45 @@
++# E 第二轮审计修订交接
++
++基线为`5978eaa0bf657721d1ef7ab64d5b4a7ada5ca43a`，工作树`.worktrees/hr-cloud-loop-e-release`、分支`feat/hr-cloud-loop-e-review`。本轮只修本地工程与证据；没有生产访问、发布、模型、浏览器或业务消息操作。上一轮517通过/1条件跳过属于上一轮准确范围，不包含当时遗漏且仍失败的`test_agent_brain_search_recovery.py`。
++
++## 1. 按审计优先级逐项处理
++
++| 意见 | 本轮处理 | 证据及未关闭范围 |
++| --- | --- | --- |
++| 切换已持锁时仍可阻塞30秒 | 手册initialize/count/transition采用显式transaction，2秒lock_timeout、3秒statement_timeout；真实transition调用原count，再注入可取消延迟 | 观察同一key的maintenance ExclusiveLock与非HR追加ShareLock等待；QueryCanceled回滚，追加约2.995秒成功，phase/epoch/回执不变。[运维报告](../../artifacts/2026-09-12-hr-e-audit-hardening/operations/task1-report.md)。不承诺网络、主机挂起或生产负载SLA；生产准确count与负载仍未测 |
++| 恢复legacy后失败落入无出口的draining_legacy | §6.2移除旧Worker/PM2恢复、共享API重启和回legacy步骤；当前transition命令拒绝legacy目标 | 当前唯一承诺是保持draining_cloud修复。旧链恢复延期，须先设计和验证失败返回路径；没有增加102状态机边，也不称已经支持安全回滚 |
++| 第四个红文件遗漏、resume闸门未验 | 先复现search recovery三失败，仅替换完整迁移fixture；保留原三个测试断言，新增三阶段拒绝及数据库无副作用验证 | [原三失败](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/search-baseline/output.log)、[修订后六通过](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/search-green/output.log)。resume创建新轮次，是新受理，draining_legacy也拒绝；不是旧执行continuation |
++| 附件发布顺序只有正文、mock缺手册SHA | 新增可执行HR_ATTACHMENT_HOTFIX块，批准身份→镜像/源文件核对→停旧/inspect→100账本及最小权限核验→仅启动准确新镜像；失败关闭后续步骤 | 因果mock覆盖停失败/停无效/迁移失败/账本失败/源文件及镜像不符；20个shell场景的回执绑定完整runbook、具体fence和实际执行脚本SHA。真实Docker、擦除和生产验证仍未执行 |
++| 审阅正文与cosmetic前字节未保存 | 保存两份旧cosmetic源码与旧closure正文的精确重建、两份仍存活临时patch；验证原记录SHA | [法证报告](../../artifacts/2026-09-12-hr-e-audit-hardening/forensics/report.md)区分复制与重建，未假称当时原件保存。`aeff5307…`正文仍不可得，旧审阅只能作为该未知快照的报告，不能绑定任一当前提交。新正文先提交冻结，再审准确commit，不再修改正文加入其自身结案段落 |
++
++## 2. 其余意见的完整登记
++
++| 意见 | 当前结果或延期原因 |
++| --- | --- |
++| /v5/recovery仍可续签授权 | 已确认不是纯只读：v6/v7分支会刷新businessToolGrant。非停止请求现在先取共享闸门，再取领域行锁，按legacy continuation检查；错误链既不返回已有授权也不新发授权，不改payload/grant/poll时间。停止请求及原身份观察/结果回执保留。真实签名HTTP、v6授权、同锁等待重读与数据库故障回归已补；v7未独立重跑专业流程 |
++| SIGQUIT没有清理 | 加入原INT/TERM/HUP处理集合；新增真实SIGQUIT先复现退出-3，再验证131退出、停止自有模拟容器、membership归零及cleanup_verified。Docker CLI仍为替身；SIGKILL、宿主机失效和长期daemon不可达仍需人工恢复 |
++| 迁移/运维容器缺加固参数 | create/run增加`--cap-drop=ALL`和`--security-opt=no-new-privileges:true`；测试读取实际传入模拟Docker的创建参数，不仅搜索源码。未运行真实容器验证 |
++| preflight重算磁盘“期望值” | 逐迁移期望值改用评审常量；账本match与镜像image_match分开报告。修改102/103/104镜像文件且是否同时篡改账本共六个负例；镜像缺失也拒绝。不能再以被改文件自身作为正确身份 |
++| API可启动而HR503、编排无感知 | owner审计健康详情新增`dependencies.services.hr_agent.api_ready`装配状态及`worker_checked=false`；不改变公共liveness。自动compose HR探针仍延期：需独立HR探针、权限和失败处置设计，不能让HR停用错误地触发共享API/其他Bot重启。上线必须核对数据库preflight、实际owner装配状态、真实HR授权读取及canary；未宣称自动发布闸门已经完整 |
++| CandidateUnavailable吞数据库故障 | 外部503契约保持；内部可见日志及结构化字段区分cutover_paused/database/data_contract，仅输出固定类别和SQLSTATE，不输出异常正文、SQL或traceback。真实暂停与缺表两类回归验证可区分 |
++| count positional参数、SET LOCAL可能无效 | 执行片段采用显式事务；count列名与输出位置仍由已固定返回签名对应，签名变更属于需重审的契约变更。没有把autocommit下的SET LOCAL当作有效保护 |
++| PM2 mock success无因果 | 状态必须由实际delete操作改变；delete无效、错状态、同伴改变、save失败均不能写成功回执。旧restore mock随未获支持的恢复路径一起移除，明确延期，未当作保留测试通过 |
++| hr-before与ecosystem前置不被读取 | 批准hostname、wrapper/ecosystem SHA、退出前状态、runbook SHA均须读入核对；持久保存真实退出前状态、脚本字节和同伴快照后才删除。证据目录复用拒绝；未知部署身份仍为正式窗口前置 |
++| 恢复步骤会重启共享API | 现行恢复路径移除该命令；初次启动的共享API重建影响在§5明确列出，仍需批准窗口 |
++| operations-final-1不是最终运行 | 原12项不含后来初始化回执测试，属于历史中间运行；不改文件名、不覆盖原字节。本轮完整运维29项绑定新手册SHA，不能与原12项相加 |
++
++## 3. 验证范围与失败记录
++
++定向证据分别为运维29项（9个真实PG/手册用例、20个外部工具因果mock）、部署/preflight37项、恢复/诊断/search22项；范围有交叠，不能加总为全仓覆盖。新恢复测试曾因缺导入、使用v5冻结夹具、未匹配v6冻结策略/哈希而收集失败或夹具失败，完整记录保留；最终v6负例在未修实现上4失败/3通过，修闸门后及补同锁/权限失败案例后9项通过。这些夹具调试错误不冒充产品缺陷RED。
++
++root运行的命令、退出码、原始输出、起始git HEAD、worktree patch与新测试原字节在本轮`runs/<name>/`。Task1早期运行未在运行当时保存准确源码，只有命令/输出，明确不补猜测快照；最终运维运行已有完整源码、patch、fence与SHA回执。root本轮import排序前字节直接保存在`cosmetic-before/`，不是哈希自述。
++
++接口回归保留真实路由、签名/nonce、权限、幂等与数据库；部分owner登录使用既有测试身份，HR装配对象在健康呈现测试中替换。失败草稿及计数另含repository/数据库验证。真实进程验证限本地PostgreSQL、自有HTTP服务和迁移监督/信号，Docker/PM2为明确替身。未启动已有MetaBot进程恢复场景，未调用真实模型，未进行前端组件或浏览器验收、生产验收。
++
++## 4. W表与上线判断
++
++W2仅沿用D1含NULL旧数据的已验证隔离范围；旧NULL大历史压缩阈值尚未独立突变验证。W7/W8不因fixture恢复可运行而升级为整个情报/撤权业务通过。W9新增search恢复新受理闸门、恢复授权及持锁超时证据；仍不能证明生产准确在途、远端进程停止或所有恢复场景通过。W5继续要求ready/failed逐项处置，零占用不代替人工决定。W1/W3/W4/W6/W10/W11/W12没有新增模型或专业通过结论。
++
++工程修订及最终关联结果按本轮独立日志审阅；正式上线前置仍不满足。D三项专业缺陷、真实候选人许可/authorizer、D7配置/计量、飞书去向、正式窗口/镜像、生产迁移/计数/停用、浏览器与canary仍待完成。旧8份缺失日志和3项styles失败不变，旧25项无运行原日志的限制不变。自动HR编排探针与旧链安全恢复现在明确延期，不再隐含为已完成。
++
++本报告为提交内的事实快照。最终独立审阅作为单独文件交付，以准确commit、patch及文件字节为审核对象；不向本报告追加会改变其被审SHA的结案段落。
+diff --git a/docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md b/docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md
+new file mode 100644
+index 0000000..7de8e7a
+--- /dev/null
++++ b/docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md
+@@ -0,0 +1,37 @@
++# E 第二轮审计保留项处理
++
++基线 `5978eaa0bf657721d1ef7ab64d5b4a7ada5ca43a`，既有隔离工作树与review分支。采用既有设计修复，不创建新切换边，不发布或运行生产操作。
++
++## 共同约束
++
++- 接口优先；本地真实身份、签名、权限、幂等、PostgreSQL与自有进程。无真实模型、生产、浏览器或消息发送。
++- 上轮全部artifact及102/103/104保持原字节。新证据独立放在 `artifacts/2026-09-12-hr-e-audit-hardening/`，失败记录不覆盖。
++- 每项意见必须有处理或明确延期条目。旧517及30项不合并、不冒充本轮结果。
++- 最终代码与审核正文先提交并冻结，再独立审阅准确提交；审阅报告单独留存，不再改被审正文去添加其自身审阅链接。
++- 当审核对象为未提交快照，留存原始字节或可校验的准确patch，不能只有临时路径和哈希。历史重建须标明重建方法，不冒充当时直接保存。
++
++## Task 1：运维闸门与手册（子代理负责）
++
++范围：`docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md`、`backend/tests/test_hr_cutover_runbook.py`及确有必要的独立运维测试/helper；不修改102/103/104。
++
++- [ ] 复现maintenance已持有排他锁时慢count阻塞其他Bot追加；把持锁语句限制为显著低于应用10秒阈值，显式事务避免autocommit使SET LOCAL失效。用真实双连接、实际transition与非HR repository追加验证超时回滚、epoch/回执不变及追加成功。说明数据库超时不保证网络/主机挂起的墙钟上限。
++- [ ] 修复§6.2失败路线死角；不增加状态机边。当前唯一承诺的恢复终点是保持draining_cloud修复，legacy恢复只能作为另行设计、验证恢复失败方案后的延期步骤，不能暗示四边状态机能随意撤销。
++- [ ] 把附件停旧→inspect→100→只启动修复镜像做成可执行受控步骤并纳入顺序/失败/错镜像负例；仅mock外部工具，完整说明不是真实Docker/生产验收。
++- [ ] 新手册mock回执绑定准确runbook SHA；记录所覆盖与未覆盖的fenced块，不复用旧SHA。
++- [ ] PM2 mock状态须因果依赖实际delete/restore；§6.1持久保存并校验退出前身份/配置前置，§6.2不得凭未读取的hr-before文件恢复；指出共享API重启影响或避免在现行恢复路径重启。
++- [ ] 运维Docker命令按现有基线加入cap-drop及no-new-privileges；30秒旧承诺同步纠正，旧operations-final-1作为历史中间运行披露。
++
++## Task 2：遗漏的恢复与部署边界（root负责）
++
++- [ ] 先复现search recovery三项失败，再仅修完整迁移夹具；resume_search_turn创建新轮次，补draining_legacy/cloud/draining_cloud拒绝且无副作用的回归，不把用户重新搜索误当旧执行续作。
++- [ ] 检查/v5/recovery及recovery_work是否继续授权旧HR执行；根据真实协议语义补闸门与签名HTTP负例，保留非HR及必要停止/结果回执。
++- [ ] SIGQUIT加入迁移助手清理路径，用真实本地信号/数据库验证；迁移容器加入既有cap-drop/no-new-privileges限制。
++- [ ] preflight逐迁移诊断使用评审常量并识别镜像文件篡改，避免match与schema_ready矛盾。
++- [ ] 明确并处理或延期编排探针不可见的HR readiness、CandidateUnavailable吞数据库错误。不能把API启动成功当成HR可用或发布成功。
++
++## Task 3：证据与交接（root，独立只读协作）
++
++- [ ] 核实并保存cosmetic之前两份源码、旧closure正文与临时review patch。精确重建时验证旧哈希，无法恢复就明确缺失。
++- [ ] 对aeff5307旧审阅对象漂移补纠正说明；不修改历史原件。
++- [ ] 两份根HR文档同步运维行为；新报告逐项映射所有意见与延期理由。
++- [ ] 精准相关回归、静态检查、完整历史哈希核对；先提交冻结正文，再独立复审准确commit/patch及证据，最后只新增审阅回执与manifest。

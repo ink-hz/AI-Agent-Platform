@@ -16,7 +16,7 @@
 
 | 意见 | 当前结果或延期原因 |
 | --- | --- |
-| /v5/recovery仍可续签授权 | 已确认不是纯只读：v6/v7分支会刷新businessToolGrant。非停止请求现在先取共享闸门，再取领域行锁，按legacy continuation检查；错误链既不返回已有授权也不新发授权，不改payload/grant/poll时间。停止请求及原身份观察/结果回执保留。真实签名HTTP、v6授权、同锁等待重读与数据库故障回归已补；v7及缺失闸门兼容由共用代码审读，未新增独立参数化测试；新增跨阶段回执为missing=True观察，不是完整停止证明或结果事件重放 |
+| /v5/recovery仍可续签授权 | 已确认不是纯只读：v6/v7分支会刷新businessToolGrant。非停止请求现在先取共享闸门，再取领域行锁，按legacy continuation检查；错误链既不返回已有授权也不新发授权，不改payload/grant/poll时间。停止请求及原身份观察/结果回执保留。真实签名HTTP、v6授权、同锁等待重读与数据库故障回归已补；v7未独立重跑专业流程 |
 | SIGQUIT没有清理 | 加入原INT/TERM/HUP处理集合；新增真实SIGQUIT先复现退出-3，再验证131退出、停止自有模拟容器、membership归零及cleanup_verified。Docker CLI仍为替身；SIGKILL、宿主机失效和长期daemon不可达仍需人工恢复 |
 | 迁移/运维容器缺加固参数 | create/run增加`--cap-drop=ALL`和`--security-opt=no-new-privileges:true`；测试读取实际传入模拟Docker的创建参数，不仅搜索源码。未运行真实容器验证 |
 | preflight重算磁盘“期望值” | 逐迁移期望值改用评审常量；账本match与镜像image_match分开报告。修改102/103/104镜像文件且是否同时篡改账本共六个负例；镜像缺失也拒绝。不能再以被改文件自身作为正确身份 |
@@ -29,10 +29,6 @@
 | operations-final-1不是最终运行 | 原12项不含后来初始化回执测试，属于历史中间运行；不改文件名、不覆盖原字节。本轮完整运维29项绑定新手册SHA，不能与原12项相加 |
 
 ## 3. 验证范围与失败记录
-
-最终关联回归在准确提交`6eaefc21199ea92f3a6572b8aa02653f2a0d689b`运行：**567 passed / 1 skipped / 23 warnings，421.98秒，退出码0**。[准确命令](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/command.json)、[原始日志](../../artifacts/2026-09-12-hr-e-audit-hardening/runs/final-integration/output.log)、[运行期间源码未变核对](../../artifacts/2026-09-12-hr-e-audit-hardening/final/integration-source-verification.json)。范围为原27文件加遗漏search、旧recovery、新recovery/diagnostics/operations五文件及owner健康两个节点。条件跳过是`test_actual_process_loop_same_request_and_api_restart`缺自有MetaBot进程夹具；23条为既有TestClient逐请求cookie弃用警告。未将其记为进程闭环通过。
-
-本轮13个变更Python文件Ruff相对基线新增0条，既有2条保留；357份历史artifact及102/103/104三个迁移共360份原字节未变。静态检查及历史身份记录在本轮`lint/`、`final/historical-identity.json`。
 
 定向证据分别为运维29项（9个真实PG/手册用例、20个外部工具因果mock）、部署/preflight37项、恢复/诊断/search22项；范围有交叠，不能加总为全仓覆盖。新恢复测试曾因缺导入、使用v5冻结夹具、未匹配v6冻结策略/哈希而收集失败或夹具失败，完整记录保留；最终v6负例在未修实现上4失败/3通过，修闸门后及补同锁/权限失败案例后9项通过。这些夹具调试错误不冒充产品缺陷RED。
 

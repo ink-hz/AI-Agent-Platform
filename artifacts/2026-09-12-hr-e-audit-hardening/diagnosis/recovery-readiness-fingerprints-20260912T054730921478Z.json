@@ -1,0 +1,16 @@
+{
+  "backend/app/execution_relay/recovery_v5.py": "0e02bb28f203e47d4c4f9152ce8eb2d51a2b04ca729e45cf85907854abac89ac",
+  "backend/app/execution_relay/routes_v5.py": "38903d1e247bf628480ae37b977b98bae3b8f05193490586f28f9e8efb5619d9",
+  "backend/app/execution_relay/metabot_client.py": "23e0d30ca3ed2819ef65b8469d783c1d37862c76893f069642738d51305bf6be",
+  "backend/app/hr/tool_service.py": "91bbf0b4cd65ba7ad0ff496c77ff493971ea42e9543c169613f54aa168aaf28a",
+  "backend/control_migrations/hr_web/094_hr_role_tools_v6.sql": "e742c86cb6f0e80b20c3f90e338c11fe4c968653140455bde57032422e3f1784",
+  "backend/app/hr_agent/cutover.py": "1d933bfcc5069597d3f44174b24a46f3386987e4522bdbe5dd6af977d2389684",
+  "backend/app/health/platform.py": "5ab4feef9fad3a77ae65cf5c7a4b0691295598fbdf50e9cfae76965678f2aac7",
+  "backend/app/main.py": "1e817853cd260451d7c7c5ceddd3ba2bd47f5965d66f0cb6e3fa22913f6d8394",
+  "backend/app/hr_agent/service.py": "9bb437b6d6e394ce2225e0a0262bb1ed61825bd29e5602d1b6839ffbf149d874",
+  "backend/app/hr/candidate_repository.py": "e4adc3a20abd2670dcee6548f38e8ae14883a5f60fbadb84efa58c36589576b8",
+  "backend/app/hr/candidate_routes.py": "39126c52a5ae3a12d46679960b29f5f05116b410c4725c7972b9b7fa11a1f92f",
+  "deploy/cloud/compose.yaml": "8234ae027b5c66e00537faa95d695fcd6a325052463a7411906601d394ce00e8",
+  "deploy/cloud/compose.hr-agent.yaml": "c86ab7df64082ee3a1053821da8c52cf46160cc89758568076f6ed9a40a77e9f",
+  "docs/superpowers/plans/2026-09-12-hr-e-audit-hardening.md": "78fc81cbe29a230b408e631649086eeeea5a01a135a1ad12b6d645b96c58e619"
+}

@@ -1,0 +1,122 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest -q tests/test_hr_cutover_runbook.py
+F.....FF                                                                 [100%]
+=================================== FAILURES ===================================
+____ test_documented_count_runs_real_query_in_read_only_bounded_transaction ____
+
+database = HrTestDatabase()
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107d0d990>
+capsys = <_pytest.capture.CaptureFixture object at 0x107d0d8d0>
+
+    def test_documented_count_runs_real_query_in_read_only_bounded_transaction(database, monkeypatch, capsys):
+        original = psycopg.connect
+        observed = []
+    
+        class Connection:
+            def __init__(self, connection):
+                self.connection = connection
+    
+            def __enter__(self):
+                self.connection.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.connection.__exit__(*args)
+    
+            def transaction(self):
+                return self.connection.transaction()
+    
+            def execute(self, query, *args, **kwargs):
+                if "hr_execution_cutover_counts_v102()" in query:
+                    observed.append(tuple(self.connection.execute(
+                        "select current_user, current_setting('transaction_read_only'), "
+                        "current_setting('lock_timeout'), current_setting('statement_timeout')"
+                    ).fetchone()))
+                return self.connection.execute(query, *args, **kwargs)
+    
+        monkeypatch.setattr(psycopg, "connect", lambda *a, **k: Connection(original(*a, **k)))
+        run_documented("count", database, monkeypatch, uuid4())
+>       assert observed == [("platform_control_maintenance", "on", "2s", "3s")]
+E       AssertionError: assert [('platform_c... '2s', '30s')] == [('platform_c..., '2s', '3s')]
+E         
+E         At index 0 diff: ('platform_control_maintenance', 'on', '2s', '30s') != ('platform_control_maintenance', 'on', '2s', '3s')
+E         Use -v to get more diff
+
+tests/test_hr_cutover_runbook.py:81: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"legacy_nonterminal": 0, "cloud_nonterminal": 0}
+_____ test_held_exclusive_slow_count_times_out_before_non_hr_append_limit ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107dfd2d0>
+
+    def test_held_exclusive_slow_count_times_out_before_non_hr_append_limit(monkeypatch):
+        """Instrument only local count latency; execute real count/transition/append."""
+        from concurrent.futures import ThreadPoolExecutor
+        from time import sleep
+    
+        from app.agent_brain.conversation_repository import ConversationRepository
+        from test_agent_brain_conversation_repository import _codec
+    
+        with hr_agent_database(cutover_phase="legacy") as db:
+            owner, request = uuid4(), uuid4()
+            with db.admin_connection() as c:
+                c.execute("insert into platform_control.internal_users(internal_user_id,display_name,status) values(%s,'Synthetic non-HR','active')", (owner,))
+                c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+                before = c.execute("select phase,epoch,row_version from platform_control.hr_execution_cutover").fetchone()
+                c.execute("alter function platform_control.hr_execution_cutover_counts_v102() rename to audit_original_count")
+                c.execute("""create function platform_control.hr_execution_cutover_counts_v102()
+                    returns table(legacy_nonterminal bigint,cloud_nonterminal bigint)
+                    language plpgsql security definer set search_path=pg_catalog,platform_control
+                    as $$ begin
+                        return query select * from platform_control.audit_original_count();
+                        perform pg_sleep(6);
+                    end $$""")
+            repo = ConversationRepository(db.dsn, content_codec=_codec())
+            shell = repo.ensure_direct_conversation_shell(owner, uuid4(), direct_agent_id="fae-bot", title="Non-HR continuity")
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                transition = pool.submit(run_documented, "transition", db, monkeypatch, request, "cloud")
+                # Observe the granted exclusive lock and actual in-function sleep;
+                # waiting for another lock is not the risk reproduced here.
+                deadline = monotonic() + 2
+                with db.admin_connection() as observer:
+                    while monotonic() < deadline:
+                        locked = observer.execute("""select exists(
+                            select 1 from pg_locks l join pg_stat_activity a on a.pid=l.pid
+                            where l.locktype='advisory' and l.mode='ExclusiveLock' and l.granted
+                              and a.usename='platform_control_maintenance' and a.wait_event='PgSleep')""").fetchone()[0]
+                        if locked:
+                            break
+                        sleep(.02)
+                    assert locked
+                started = monotonic()
+                append = pool.submit(repo.append_turn, owner, shell.conversation_id, uuid4(), "Non-HR append survives maintenance")
+>               with pytest.raises(psycopg.errors.QueryCanceled):
+E               Failed: DID NOT RAISE QueryCanceled
+
+tests/test_hr_cutover_runbook.py:180: Failed
+----------------------------- Captured stdout call -----------------------------
+{"singleton": true, "phase": "cloud", "epoch": 3, "transition_request_id": "4a8b3453-0493-4357-96bf-a616fee354c9", "transitioned_at": "2026-09-12 13:46:38.565423+08:00", "row_version": 3}
+________ test_current_runbook_defers_legacy_restore_and_protects_docker ________
+
+    def test_current_runbook_defers_legacy_restore_and_protects_docker():
+        source = RUNBOOK.read_text()
+>       assert "# HR_LEGACY_RESTORE" not in source
+E       AssertionError: assert '# HR_LEGACY_RESTORE' not in '# HR 云端 Loo...和生产验收均未完成。\n'
+E         
+E         '# HR_LEGACY_RESTORE' is contained here:
+E            pipefail
+E           # HR_LEGACY_RESTORE
+E           OPS_PM2=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
+E           ECOSYSTEM=/Users/agentops/AgentRuntime/metabot/ecosystem.config.cjs
+E           hr_restore_evidence=/Users/agentops/AgentRuntime/release-evidence/APPROVED_RESTORE...
+E         
+E         ...Full output truncated (24 lines hidden), use '-vv' to show
+
+tests/test_hr_cutover_runbook.py:192: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_hr_cutover_runbook.py::test_documented_count_runs_real_query_in_read_only_bounded_transaction
+FAILED tests/test_hr_cutover_runbook.py::test_held_exclusive_slow_count_times_out_before_non_hr_append_limit
+FAILED tests/test_hr_cutover_runbook.py::test_current_runbook_defers_legacy_restore_and_protects_docker
+3 failed, 5 passed in 14.39s
+
+exit_code=1

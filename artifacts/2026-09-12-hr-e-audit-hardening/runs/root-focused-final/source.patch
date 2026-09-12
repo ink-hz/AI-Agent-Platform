@@ -1,0 +1,379 @@
+diff --git a/backend/app/execution_relay/recovery_v5.py b/backend/app/execution_relay/recovery_v5.py
+index 61f1b83..c1a6518 100644
+--- a/backend/app/execution_relay/recovery_v5.py
++++ b/backend/app/execution_relay/recovery_v5.py
+@@ -1,7 +1,7 @@
+ """Nondispatch bound-run recovery on the existing signed Worker authority.
+ 
+-Current cloud ownership authorizes inspection, never a launch. Original launch
+-and callback credentials remain those of the durable command transport.
++Recovery can renew HR business-tool authority and is a legacy continuation.
++Stops and result observations retain their original durable transport authority.
+ """
+ 
+ import asyncio
+@@ -10,6 +10,7 @@ from uuid import UUID
+ 
+ from app.agent_brain.direct_command_binding import BindingRejected
+ from app.agent_brain.turn_attempts import Lease, LeaseRejected
++from app.hr_agent.cutover import CutoverRejected, lock_state, require_lane
+ 
+ from .acceptance_v5 import parse_v5_acceptance
+ from .contracts_v5 import ExecutionRecoveryV5
+@@ -97,6 +98,9 @@ def recovery_work(bindings, worker_id):
+         for candidate in candidates:
+             try:
+                 with connection.transaction():
++                    # Serialize with cutover before taking any domain row lock or
++                    # returning an existing/renewed business execution grant.
++                    cutover = lock_state(connection)
+                     lease = Lease(
+                         candidate["attempt_id"],
+                         "worker_direct",
+@@ -106,6 +110,8 @@ def recovery_work(bindings, worker_id):
+                         "reconciling",
+                     )
+                     attempt, row = _current(bindings, connection, worker_id, lease)
++                    if attempt["cancel_requested_at"] is None:
++                        require_lane(cutover, "legacy", continuing=True)
+                     wrapper=bindings._wrapper(row)
+                     transport=wrapper['transport']
+                     if (wrapper['command']['contractVersion']in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
+@@ -133,7 +139,7 @@ def recovery_work(bindings, worker_id):
+                         "command": command.model_dump(mode="json", by_alias=True),
+                         "stop": attempt["cancel_requested_at"] is not None,
+                     }
+-            except (BindingRejected, LeaseRejected):
++            except (BindingRejected, LeaseRejected, CutoverRejected):
+                 continue
+     return None
+ 
+diff --git a/backend/app/health/platform.py b/backend/app/health/platform.py
+index 5914f03..704a5d0 100644
+--- a/backend/app/health/platform.py
++++ b/backend/app/health/platform.py
+@@ -62,6 +62,7 @@ def build_detailed_platform_health(
+         item.model_dump(mode="json") for item in app.state.health_cache.all()
+     ]
+     deployment = build_deployment_status(app, config)
++    hr_service = getattr(app.state, "hr_agent_service", None)
+     return {
+         "status": "ok",
+         "build": {
+@@ -90,6 +91,12 @@ def build_detailed_platform_health(
+                 ),
+                 "operations": app.state.operations_service is not None,
+                 "attachments": app.state.attachment_service is not None,
++                "hr_agent": {
++                    "api_ready": bool(hr_service and hr_service.ready
++                                      and hr_service.repository is not None
++                                      and hr_service.access is not None),
++                    "worker_checked": False,
++                },
+             },
+         },
+         "agents": {
+diff --git a/backend/app/hr/candidate_repository.py b/backend/app/hr/candidate_repository.py
+index 1b8e587..3c449d7 100644
+--- a/backend/app/hr/candidate_repository.py
++++ b/backend/app/hr/candidate_repository.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import json
++import logging
+ from collections.abc import Callable
+ from typing import Any
+ from uuid import UUID
+@@ -8,7 +9,12 @@ from uuid import UUID
+ import psycopg
+ from psycopg.rows import dict_row
+ 
+-from app.hr_agent.cutover import lock_admission, lock_state, require_lane
++from app.hr_agent.cutover import (
++    CutoverRejected,
++    lock_admission,
++    lock_state,
++    require_lane,
++)
+ 
+ from .candidate_models import (
+     AppendHumanFeedback,
+@@ -210,6 +216,11 @@ class CandidateRepository:
+ 
+     @staticmethod
+     def _raise_repository_error(error: Exception) -> None:
++        if isinstance(error, CutoverRejected):
++            logging.getLogger(__name__).info("candidate_repository_unavailable kind=cutover_paused sqlstate=none", extra={
++                "failure_kind": "cutover_paused", "sqlstate": None,
++            })
++            raise CandidateUnavailable("candidate repository unavailable") from None
+         if isinstance(error, psycopg.errors.NoDataFound):
+             raise CandidateNotFound("candidate resource not found") from None
+         if isinstance(
+@@ -221,6 +232,12 @@ class CandidateRepository:
+             ),
+         ):
+             raise CandidateConflict("candidate mutation conflict") from None
++        kind = "database" if isinstance(error, psycopg.Error) else "data_contract"
++        state = error.sqlstate if isinstance(error, psycopg.Error) else None
++        logging.getLogger(__name__).warning(
++            "candidate_repository_unavailable kind=%s sqlstate=%s", kind, state or "none",
++            extra={"failure_kind": kind, "sqlstate": state},
++        )
+         raise CandidateUnavailable("candidate repository unavailable") from None
+ 
+     def create_draft(
+diff --git a/backend/tests/test_agent_brain_search_recovery.py b/backend/tests/test_agent_brain_search_recovery.py
+index 9251fdc..b09f574 100644
+--- a/backend/tests/test_agent_brain_search_recovery.py
++++ b/backend/tests/test_agent_brain_search_recovery.py
+@@ -23,8 +23,8 @@ from test_agent_brain_conversation_repository import (
+     repository,
+ )
+ from test_agent_brain_orchestrator import ScriptedRelay
+-from test_control_plane_migration import control_database
+ from test_conversation_attachment_binding import _ready_attachment
++from tests.helpers.hr_direct_database import control_database
+ 
+ 
+ def _recovery_result(status: str, *, resumable: bool) -> dict[str, object]:
+@@ -259,3 +259,46 @@ def test_no_results_remains_distinct_and_cannot_be_resumed(
+     assert messages[-1].search_recovery is not None
+     assert messages[-1].search_recovery.status == "no_results"
+     assert messages[-1].search_recovery.resumable is False
++
++
++@pytest.mark.postgres
++@pytest.mark.parametrize("phase", ["draining_legacy", "cloud", "draining_cloud"])
++def test_search_resume_is_new_admission_and_cutover_rejection_is_atomic(
++    conversation_database, repository, phase,
++):
++    environment, owner, _ = conversation_database
++    started, commands = _completed_direct_turn(
++        repository, owner, _recovery_result("unavailable", resumable=True),
++    )
++    phases = ["draining_legacy", "cloud", "draining_cloud"]
++    with psycopg.connect(environment["admin"]) as connection:
++        for target in phases[:phases.index(phase) + 1]:
++            connection.execute(
++                "select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)",
++                (target, uuid4()),
++            )
++
++    def snapshot():
++        with psycopg.connect(environment["admin"]) as connection:
++            return connection.execute(
++                "select (select count(*) from platform_control.conversation_turns),"
++                "(select count(*) from platform_control.conversation_messages),"
++                "(select count(*) from platform_control.missions),"
++                "(select count(*) from platform_attachments.bindings)"
++            ).fetchone()
++
++    before = snapshot()
++    app, auth, _ = _app(owner, repository, command_service=commands)
++    request_id = uuid4()
++    with TestClient(app) as client:
++        response = client.post(
++            f"/api/v1/conversations/{started.conversation.conversation_id}/turns/{started.turn.turn_id}/resume",
++            headers={**_write_credentials(auth)["headers"], "Idempotency-Key": str(request_id)},
++            cookies=_credentials(auth)["cookies"],
++        )
++    assert response.status_code == 503
++    assert snapshot() == before
++    with psycopg.connect(environment["admin"]) as connection:
++        assert connection.execute(
++            "select count(*) from platform_control.conversation_turns where client_request_id=%s", (request_id,),
++        ).fetchone() == (0,)
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index aded9c6..2ad2b0c 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -49,7 +49,7 @@ elif args[0]=='create':
+             key,item=args[index+1].split('=',1); environment[key]=item
+         elif value=='-v': mounts.append(args[index+1])
+     identifier=uuid.uuid4().hex
+-    state_path.write_text(json.dumps({'id':identifier,'name':name,'running':False,'exit':None,'environment':environment,'mounts':mounts}))
++    state_path.write_text(json.dumps({'id':identifier,'name':name,'running':False,'exit':None,'environment':environment,'mounts':mounts,'security':[a for a in args if a.startswith(('--cap-drop=','--security-opt='))]}))
+     pathlib.Path(os.environ['TEST_DOCKER_CALLS']).open('a').write('create '+name+'\\n')
+     print(identifier)
+ elif args[0]=='start':
+@@ -182,6 +182,8 @@ def test_helper_grants_only_transiently_and_applies_hr_migrations(tmp_path):
+         calls = (tmp_path / "docker-calls.log").read_text().splitlines()
+         assert [line.split()[0] for line in calls].count("create") == 2
+         assert [line.split()[0] for line in calls].count("start") == 2
++        docker_state = __import__("json").loads((tmp_path / "docker-state.json").read_text())
++        assert docker_state["security"] == ["--cap-drop=ALL", "--security-opt=no-new-privileges:true"]
+         with database.connection() as connection:
+             assert (
+                 connection.execute(
+@@ -293,7 +295,7 @@ def test_supervisor_owns_named_container_lifecycle_and_redacted_receipt():
+     assert "128 +" in source or "128+" in source
+ 
+ 
+-@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
++@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT])
+ def test_signal_stops_container_before_revoke(tmp_path, number):
+     with hr_agent_database(migrate_hr=False) as database:
+         preview_dsn = _prepare_preview_and_revoke(database)
+@@ -313,24 +315,32 @@ def test_signal_stops_container_before_revoke(tmp_path, number):
+                  "TEST_RELEASE": str(ROOT), "TEST_DOCKER_STATE": str(state),
+                  "TEST_DOCKER_CALLS": str(calls), "TEST_DOCKER_SCENARIO": "ignore-term",
+                  "PYTHONPATH": str(ROOT / "backend")},
+-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
++            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+         )
+-        deadline = time.monotonic() + 10
+-        while time.monotonic() < deadline and (
+-            not calls.exists() or "start " not in calls.read_text()
+-        ):
+-            time.sleep(0.02)
+-        assert calls.exists() and "start " in calls.read_text()
+-        process.send_signal(number)
+-        _, stderr = process.communicate(timeout=15)
+-        assert process.returncode == 128 + number
+-        assert _memberships(database) == 0
+-        operations = calls.read_text().splitlines()
+-        assert "stop" in [item.split()[0] for item in operations]
+-        receipt = __import__("json").loads(next(receipts.glob("*.json")).read_text())
+-        assert receipt["status"] == "interrupted"
+-        assert receipt["cleanup_verified"] is True
+-        assert "CLEANUP_UNRESOLVED" not in stderr
++        try:
++            deadline = time.monotonic() + 10
++            while time.monotonic() < deadline and (
++                not calls.exists() or "start " not in calls.read_text()
++            ):
++                time.sleep(0.02)
++            assert calls.exists() and "start " in calls.read_text()
++            process.send_signal(number)
++            _, stderr = process.communicate(timeout=15)
++            assert process.returncode == 128 + number
++            assert _memberships(database) == 0
++            operations = calls.read_text().splitlines()
++            assert "stop" in [item.split()[0] for item in operations]
++            receipt = __import__("json").loads(next(receipts.glob("*.json")).read_text())
++            assert receipt["status"] == "interrupted"
++            assert receipt["cleanup_verified"] is True
++            assert "CLEANUP_UNRESOLVED" not in stderr
++
++        finally:
++            # Only this test-owned helper group; also cleans an untrapped-signal RED.
++            try:
++                os.killpg(process.pid, signal.SIGKILL)
++            except ProcessLookupError:
++                pass
+ 
+ 
+ @pytest.mark.parametrize(
+diff --git a/backend/tests/test_hr_agent_preflight.py b/backend/tests/test_hr_agent_preflight.py
+index 52c421b..5029389 100644
+--- a/backend/tests/test_hr_agent_preflight.py
++++ b/backend/tests/test_hr_agent_preflight.py
+@@ -325,3 +325,36 @@ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, r
+     assert "migration_identity_mismatch" in report["blockers"]
+     entry = next(item for item in report["database"]["migrations"] if item["version"] == version)
+     assert entry["match"] is False
++
++
++@pytest.mark.parametrize("version,path_name", [
++    (102, "CUTOVER_MIGRATION"),
++    (103, "DRAIN_OCCUPANCY_MIGRATION"),
++    (104, "DRAIN_TERMINAL_MIGRATION"),
++])
++@pytest.mark.parametrize("replace_ledger", [False, True])
++def test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image(
++    tmp_path, monkeypatch, version, path_name, replace_ledger,
++):
++    import hashlib
++
++    from app.hr_agent.config import CUTOVER_MIGRATION_SHA256
++    from tools.hr_agent import preflight
++
++    changed_file = tmp_path / "changed.sql"
++    changed_file.write_bytes(getattr(preflight, path_name).read_bytes() + b"\n-- changed image\n")
++    changed_digest = hashlib.sha256(changed_file.read_bytes()).hexdigest()
++    monkeypatch.setattr(preflight, path_name, changed_file)
++    with hr_agent_database() as database:
++        if replace_ledger:
++            with database.admin_connection() as connection:
++                connection.execute(
++                    "update platform_control.schema_migrations set sha256=%s where version=%s",
++                    (changed_digest, version),
++                )
++        report, blockers = preflight._database_report(database.connection)
++    entry = next(item for item in report["migrations"] if item["version"] == version)
++    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
++    assert entry["match"] is (not replace_ledger)
++    assert entry["image_match"] is False
++    assert "migration_image_identity_mismatch" in blockers
+diff --git a/backend/tools/hr_agent/preflight.py b/backend/tools/hr_agent/preflight.py
+index 8ab1422..c811a4f 100644
+--- a/backend/tools/hr_agent/preflight.py
++++ b/backend/tools/hr_agent/preflight.py
+@@ -12,6 +12,7 @@ from pathlib import Path
+ 
+ from app.hr_agent.config import (
+     CANDIDATE_INTAKE_MIGRATION_SHA256,
++    CUTOVER_MIGRATION_SHA256,
+     ERASURE_ACCESS_MIGRATION_SHA256,
+     INTERVIEW_RECORD_MIGRATION_SHA256,
+     MATERIAL_AUTHORITY_MIGRATION_SHA256,
+@@ -206,9 +207,14 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+     permissions_complete = False
+     try:
+         expected_migrations = dict(EXPECTED_MIGRATIONS)
+-        expected_migrations[102] = _fingerprint(CUTOVER_MIGRATION.read_bytes())
+-        expected_migrations[103] = _fingerprint(DRAIN_OCCUPANCY_MIGRATION.read_bytes())
+-        expected_migrations[104] = _fingerprint(DRAIN_TERMINAL_MIGRATION.read_bytes())
++        expected_migrations.update(CUTOVER_MIGRATION_SHA256)
++        image_digests = {}
++        for version, path in ((102, CUTOVER_MIGRATION), (103, DRAIN_OCCUPANCY_MIGRATION),
++                              (104, DRAIN_TERMINAL_MIGRATION)):
++            try:
++                image_digests[version] = _fingerprint(path.read_bytes())
++            except OSError:
++                image_digests[version] = None
+         with connection_factory() as connection:
+             rows = connection.execute(
+                 "select version,sha256 from platform_control.schema_migrations "
+@@ -230,6 +236,8 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+                         "match": safe_actual == expected,
+                         "expected_sha256": expected,
+                         "actual_sha256": safe_actual,
++                        **({"image_match": image_digests[version] == expected,
++                            "image_sha256": image_digests[version]} if version in image_digests else {}),
+                     }
+                 )
+             table = connection.execute(
+@@ -312,6 +320,8 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+             blockers.append("schema_not_ready")
+         if not all(item["match"] for item in migrations):
+             blockers.append("migration_identity_mismatch")
++        if not all(item.get("image_match", True) for item in migrations):
++            blockers.append("migration_image_identity_mismatch")
+         if not cutover["initialized"]:
+             blockers.append("cutover_gate_not_initialized")
+         if not permissions_complete:
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 8d173c1..1648337 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -295,6 +295,8 @@ class Supervisor:
+                 "--name",
+                 self.name,
+                 "--read-only",
++                "--cap-drop=ALL",
++                "--security-opt=no-new-privileges:true",
+                 "--user",
+                 "0:0",
+                 "--tmpfs",
+@@ -400,7 +402,7 @@ def main():
+     except (OSError, ValueError):
+         print("HR_AGENT_MIGRATIONS_FAILED", file=sys.stderr)
+         return 1
+-    for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
++    for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
+         signal.signal(number, supervisor.on_signal)
+     return supervisor.run()
+ 

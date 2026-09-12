@@ -1,0 +1,31 @@
+{
+  "kind": "external-command-mock-not-production",
+  "block": "HR_LEGACY_STOP",
+  "scenario": "wrong_state",
+  "runbookSha256": "70174ca7b60dc86ae8b47c5da048aeb7c2890bfbcf71abdb00fa7d59f0d0adfb",
+  "sourceBlockSha256": "bf2054ceaeda34b7dcd1d538e102a96af368afc31cb0ef10eddcc280e1ef2950",
+  "executedScriptSha256": "db892e519d3e61c00184ec813779a8f6bb06b6888d8b0d200e382da54e067c3f",
+  "exit": 1,
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 5, in <module>\nAssertionError\n",
+  "state": {
+    "hr": "stopped",
+    "saved": false,
+    "old_running": true,
+    "new_running": false,
+    "new_created": false,
+    "migrated": false,
+    "calls": [
+      [
+        "mock-pm2",
+        "state-one",
+        "metabot-hr"
+      ],
+      [
+        "mock-pm2",
+        "snapshot-except",
+        "metabot-hr"
+      ]
+    ]
+  }
+}

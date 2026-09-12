@@ -1,0 +1,161 @@
+{
+  "review_commit": "3504c20cb2266887759c00759b8675e2894521fa",
+  "base_commit": "5978eaa0bf657721d1ef7ab64d5b4a7ada5ca43a",
+  "exact_changed_files": [
+    "backend/tests/test_hr_cutover_operations.py",
+    "backend/tests/test_hr_cutover_runbook.py",
+    "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md"
+  ],
+  "sources": {
+    "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md": {
+      "commit_sha256": "70174ca7b60dc86ae8b47c5da048aeb7c2890bfbcf71abdb00fa7d59f0d0adfb",
+      "matches_saved_full_bytes": true,
+      "matches_manifest_sha256": true
+    },
+    "backend/tests/test_hr_cutover_runbook.py": {
+      "commit_sha256": "6d9fd5cd23ecb91f89d0b589995f6b48a9c7e8417c311f81b6b9c40c778d93ea",
+      "matches_saved_full_bytes": true,
+      "matches_manifest_sha256": true
+    },
+    "backend/tests/test_hr_cutover_operations.py": {
+      "commit_sha256": "dc25dd0036b38ee3efaa908067b243fefb70ee4d465b62c5eaa28426a990dc35",
+      "matches_saved_full_bytes": true,
+      "matches_manifest_sha256": true
+    }
+  },
+  "source_snapshot_patch_sha256": "59813ddc0ea3566fdf3b726957833557cb5f979424c9159489f0a2c34bfdf38c",
+  "receipts": {
+    "HR_ATTACHMENT_HOTFIX-ledger_failure": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_ATTACHMENT_HOTFIX-migration_failure": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 2
+    },
+    "HR_ATTACHMENT_HOTFIX-source_mismatch": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_ATTACHMENT_HOTFIX-start_failure": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 2
+    },
+    "HR_ATTACHMENT_HOTFIX-stop_failure": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 2
+    },
+    "HR_ATTACHMENT_HOTFIX-stop_no_effect": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_ATTACHMENT_HOTFIX-success": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 0
+    },
+    "HR_ATTACHMENT_HOTFIX-wrong_config_image": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_ATTACHMENT_HOTFIX-wrong_started_image": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_LEGACY_STOP-delete_failure": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 2
+    },
+    "HR_LEGACY_STOP-delete_no_effect": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_LEGACY_STOP-missing_approval": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_LEGACY_STOP-peers_changed": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_LEGACY_STOP-reused_evidence": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_LEGACY_STOP-save_failure": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 2
+    },
+    "HR_LEGACY_STOP-success": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 0
+    },
+    "HR_LEGACY_STOP-wrong_host": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_LEGACY_STOP-wrong_runbook": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_LEGACY_STOP-wrong_state": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    },
+    "HR_LEGACY_STOP-wrong_wrapper": {
+      "runbook_matches_commit": true,
+      "executed_script_matches": true,
+      "source_fence_matches": true,
+      "exit": 1
+    }
+  },
+  "migrations_102_103_104_unchanged": {
+    "102_hr_execution_cutover.sql": true,
+    "103_hr_execution_drain_occupancy.sql": true,
+    "104_hr_execution_drain_terminal_contract.sql": true
+  },
+  "evidence_sha256": {
+    "artifacts/2026-09-12-hr-e-audit-hardening/operations/task1-report.md": "32e5dc40c0a478a98a6e776c2555e4efe558e8821b4a2e94fdf7c02629ba9fd7",
+    "artifacts/2026-09-12-hr-e-audit-hardening/operations/20260912T055820127971Z-frozen-operations.log": "608aeb0cb7351d1e7ceb5dd26f03ecee8b3aa4aab7364717e0e147d1f59984bf",
+    "artifacts/2026-09-12-hr-e-audit-hardening/operations/20260912T055820127971Z-receipts/real-postgres-slow-count.json": "6bed4d18426b78874b9d37fa08bc386ed94ab956cf8711fe0e16ff8e21fc730f",
+    "artifacts/2026-09-12-hr-e-audit-hardening/operations/20260912T055907547751Z-static-and-snapshot.json": "16fd9333af995c1c7390570840817d5e18126b152eae347b31e5222273e4cf9b",
+    "artifacts/2026-09-12-hr-e-audit-hardening/operations/20260912T055907547751Z-source-snapshot/manifest.json": "11454e1fd331d2d8d9c5b819e343573ccc9c571833446f37df09e4cd06f0e704"
+  }
+}

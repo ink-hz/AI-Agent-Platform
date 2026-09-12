@@ -1,0 +1,33 @@
+FFFFF..                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-cloud] _
+backend/tests/test_hr_recovery_cutover.py:62: in test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation
+    assert result.status_code == 204
+E   assert 200 == 204
+E    +  where 200 = <Response [200 OK]>.status_code
+_ test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-draining_cloud] _
+backend/tests/test_hr_recovery_cutover.py:62: in test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation
+    assert result.status_code == 204
+E   assert 200 == 204
+E    +  where 200 = <Response [200 OK]>.status_code
+_ test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-cloud] _
+backend/tests/test_hr_recovery_cutover.py:62: in test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation
+    assert result.status_code == 204
+E   assert 200 == 204
+E    +  where 200 = <Response [200 OK]>.status_code
+_ test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-draining_cloud] _
+backend/tests/test_hr_recovery_cutover.py:62: in test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation
+    assert result.status_code == 204
+E   assert 200 == 204
+E    +  where 200 = <Response [200 OK]>.status_code
+____ test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant ____
+backend/tests/test_hr_recovery_cutover.py:80: in test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant
+    assert state(database, recovering.attempt_id)[3] == before[3] + 1
+E   assert 0 == (0 + 1)
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-cloud]
+FAILED backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-draining_cloud]
+FAILED backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-cloud]
+FAILED backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-draining_cloud]
+FAILED backend/tests/test_hr_recovery_cutover.py::test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant
+5 failed, 2 passed in 9.37s

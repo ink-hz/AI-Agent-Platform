@@ -1,0 +1,104 @@
+{
+  "baseline": "5978eaa0bf657721d1ef7ab64d5b4a7ada5ca43a",
+  "sources": {
+    "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md": "70174ca7b60dc86ae8b47c5da048aeb7c2890bfbcf71abdb00fa7d59f0d0adfb",
+    "backend/tests/test_hr_cutover_runbook.py": "6d9fd5cd23ecb91f89d0b589995f6b48a9c7e8417c311f81b6b9c40c778d93ea",
+    "backend/tests/test_hr_cutover_operations.py": "dc25dd0036b38ee3efaa908067b243fefb70ee4d465b62c5eaa28426a990dc35"
+  },
+  "fenced_blocks": [
+    {
+      "index": 1,
+      "start_line": 20,
+      "language": "bash",
+      "marker": "HR_ATTACHMENT_HOTFIX",
+      "sha256": "45e4183f0dc023ba62e4284e952b8789461e447fb10a6b6dfc3035e4181bbabc",
+      "coverage": "executed with causal external-command mocks; no Docker/PM2/production validation"
+    },
+    {
+      "index": 2,
+      "start_line": 124,
+      "language": "bash",
+      "marker": null,
+      "sha256": "75c4d24ed88c2bc8dd2825bd16c095a2b6dfe70df5711518d1ec54eeba0db105",
+      "coverage": "not executed: prose/config/other deployment step"
+    },
+    {
+      "index": 3,
+      "start_line": 142,
+      "language": "bash",
+      "marker": null,
+      "sha256": "a2487a241b3a4e4b978c59e57d87a7e73395676fddfc3cf94e69a392bb1cce71",
+      "coverage": "not executed: prose/config/other deployment step"
+    },
+    {
+      "index": 4,
+      "start_line": 157,
+      "language": "bash",
+      "marker": null,
+      "sha256": "57f351d6a678603dc3c4c7f56a9daddc77bcb347cd183ca950126aaad4a9e64a",
+      "coverage": "not executed: prose/config/other deployment step"
+    },
+    {
+      "index": 5,
+      "start_line": 182,
+      "language": "bash",
+      "marker": null,
+      "sha256": "e7f9b6e905ef6cf30dd76ebc2c12d2208e8a515265a00ce1aade4d88ef0f136b",
+      "coverage": "not executed: prose/config/other deployment step"
+    },
+    {
+      "index": 6,
+      "start_line": 204,
+      "language": "bash",
+      "marker": "HR_CUTOVER_INITIALIZE",
+      "sha256": "669b507625d08f453830de67f43a430c3677c39a648f8612a473a4c8b9bc2d6c",
+      "coverage": "embedded Python executed against real local PostgreSQL; outer Docker invocation not executed"
+    },
+    {
+      "index": 7,
+      "start_line": 232,
+      "language": "bash",
+      "marker": "HR_CUTOVER_COUNT",
+      "sha256": "fca20c51f8b129ea13906f76faf19f00ab750ab91e898df030e74a64db1eddce",
+      "coverage": "embedded Python executed against real local PostgreSQL; outer Docker invocation not executed"
+    },
+    {
+      "index": 8,
+      "start_line": 257,
+      "language": "bash",
+      "marker": "HR_CUTOVER_TRANSITION",
+      "sha256": "f615b63131264aa082e6bc3c8b250f24b372d8da3885e3dac93bcc3d80171026",
+      "coverage": "embedded Python executed against real local PostgreSQL; outer Docker invocation not executed"
+    },
+    {
+      "index": 9,
+      "start_line": 297,
+      "language": "bash",
+      "marker": null,
+      "sha256": "e59b989e12c49d9cd66c5aa3eecca8d259b9c51eb0e7f1278f34ebaaf2b5a27c",
+      "coverage": "not executed: prose/config/other deployment step"
+    },
+    {
+      "index": 10,
+      "start_line": 357,
+      "language": "bash",
+      "marker": null,
+      "sha256": "8094b31abe70884b7ab8b5f769bb866061ea4a75e8bb57dd7da4cb6f9f9fd4b4",
+      "coverage": "not executed: prose/config/other deployment step"
+    },
+    {
+      "index": 11,
+      "start_line": 373,
+      "language": "bash",
+      "marker": "HR_LEGACY_STOP",
+      "sha256": "bf2054ceaeda34b7dcd1d538e102a96af368afc31cb0ef10eddcc280e1ef2950",
+      "coverage": "executed with causal external-command mocks; no Docker/PM2/production validation"
+    }
+  ],
+  "sql_immutability": {
+    "102_hr_execution_cutover.sql": "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
+    "103_hr_execution_drain_occupancy.sql": "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+    "104_hr_execution_drain_terminal_contract.sql": "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d"
+  },
+  "runbookSha256": "70174ca7b60dc86ae8b47c5da048aeb7c2890bfbcf71abdb00fa7d59f0d0adfb"
+}

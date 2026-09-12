@@ -1,0 +1,40 @@
+{
+  "command": [
+    "backend/.venv/bin/ruff",
+    "check",
+    "--select",
+    "I",
+    "--fix",
+    "backend/app/hr/candidate_repository.py",
+    "backend/tests/test_agent_brain_search_recovery.py",
+    "backend/tests/test_hr_operational_diagnostics.py",
+    "backend/tests/test_hr_recovery_cutover.py"
+  ],
+  "exit_code": 0,
+  "files": [
+    {
+      "path": "backend/app/hr/candidate_repository.py",
+      "before_sha256": "747233b28caf93fb6a269dcd6956b035092d88ad56fce6c6b04acf04bf8ae0a9",
+      "after_sha256": "97ce167e0f12d108b72460e7c16dc228ff55b950cb4c4cc05eb0118b3377a45d",
+      "change_kind": "import ordering only; exact before bytes retained"
+    },
+    {
+      "path": "backend/tests/test_agent_brain_search_recovery.py",
+      "before_sha256": "5c999910b22f0f40132396b55683f45a799051fda8eba1ec28924b2b0c954238",
+      "after_sha256": "d77915c48f46816605511ab753aac43c98a0d6d1d3d2349b3c60dfaca6256db1",
+      "change_kind": "import ordering only; exact before bytes retained"
+    },
+    {
+      "path": "backend/tests/test_hr_operational_diagnostics.py",
+      "before_sha256": "0a224ce2c1aca17f4392ff19e8f1fa8f2c1f8dc836aef09deb193114f568e2e3",
+      "after_sha256": "e776396024b50d0509f77dd74d9f466a405644556c837239139631617e84031c",
+      "change_kind": "import ordering only; exact before bytes retained"
+    },
+    {
+      "path": "backend/tests/test_hr_recovery_cutover.py",
+      "before_sha256": "a767545858d9eb29943db7cd7dc94d136fc14e042979119f3d39089bdb5990ac",
+      "after_sha256": "086dfd1365a786f9eb22f6d64123a7ec048bd29f599338c8ce6eda71a4b05cfb",
+      "change_kind": "import ordering only; exact before bytes retained"
+    }
+  ]
+}

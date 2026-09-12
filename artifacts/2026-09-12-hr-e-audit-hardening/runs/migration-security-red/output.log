@@ -1,0 +1,12 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_helper_grants_only_transiently_and_applies_hr_migrations _________
+backend/tests/test_hr_agent_migration_deployment.py:186: in test_helper_grants_only_transiently_and_applies_hr_migrations
+    assert docker_state["security"] == ["--cap-drop=ALL", "--security-opt=no-new-privileges:true"]
+E   AssertionError: assert [] == ['--cap-drop=...vileges:true']
+E     
+E     Right contains 2 more items, first extra item: '--cap-drop=ALL'
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_migration_deployment.py::test_helper_grants_only_transiently_and_applies_hr_migrations
+1 failed, 16 deselected in 3.94s

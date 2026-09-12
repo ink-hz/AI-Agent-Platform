@@ -1,0 +1,5 @@
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/ruff check backend/tests/test_hr_cutover_runbook.py backend/tests/test_hr_cutover_operations.py
+All checks passed!
+exit_code=0
+command=git diff --check -- backend/tests/test_hr_cutover_runbook.py backend/tests/test_hr_cutover_operations.py docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md
+exit_code=0

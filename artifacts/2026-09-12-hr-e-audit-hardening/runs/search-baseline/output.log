@@ -1,0 +1,37 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+____ test_search_unavailable_is_projected_and_resumes_as_a_linked_new_turn _____
+backend/tests/test_agent_brain_search_recovery.py:92: in test_search_unavailable_is_projected_and_resumes_as_a_linked_new_turn
+    started, commands = _completed_direct_turn(
+backend/tests/test_agent_brain_search_recovery.py:58: in _completed_direct_turn
+    started = commands.start(
+backend/app/agent_brain/conversation_service.py:98: in start
+    return self._repository.start(
+backend/app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+_ test_search_resume_reuses_original_inputs_without_copying_registered_outputs _
+backend/tests/test_agent_brain_search_recovery.py:184: in test_search_resume_reuses_original_inputs_without_copying_registered_outputs
+    started, commands = _completed_direct_turn(
+backend/tests/test_agent_brain_search_recovery.py:58: in _completed_direct_turn
+    started = commands.start(
+backend/app/agent_brain/conversation_service.py:98: in start
+    return self._repository.start(
+backend/app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+____________ test_no_results_remains_distinct_and_cannot_be_resumed ____________
+backend/tests/test_agent_brain_search_recovery.py:235: in test_no_results_remains_distinct_and_cannot_be_resumed
+    started, commands = _completed_direct_turn(
+backend/tests/test_agent_brain_search_recovery.py:58: in _completed_direct_turn
+    started = commands.start(
+backend/app/agent_brain/conversation_service.py:98: in start
+    return self._repository.start(
+backend/app/agent_brain/conversation_repository.py:1152: in start
+    raise ConversationRepositoryError() from None
+E   app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+=========================== short test summary info ============================
+FAILED backend/tests/test_agent_brain_search_recovery.py::test_search_unavailable_is_projected_and_resumes_as_a_linked_new_turn
+FAILED backend/tests/test_agent_brain_search_recovery.py::test_search_resume_reuses_original_inputs_without_copying_registered_outputs
+FAILED backend/tests/test_agent_brain_search_recovery.py::test_no_results_remains_distinct_and_cannot_be_resumed
+3 failed in 1.83s

@@ -1,0 +1,52 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[False-102-CUTOVER_MIGRATION] _
+backend/tests/test_hr_agent_preflight.py:357: in test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image
+    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
+E   AssertionError: assert '05a034d30091...309427c25aa16' == '70fd110bb17c...7708e23ac0ce6'
+E     
+E     - 70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6
+E     + 05a034d3009136afc7cd333fce9f7d7bbbfe5783702a942a5d5309427c25aa16
+_ test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[False-103-DRAIN_OCCUPANCY_MIGRATION] _
+backend/tests/test_hr_agent_preflight.py:357: in test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image
+    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
+E   AssertionError: assert 'e7b8d32871e7...634c7506e802d' == '1795af66ae8a...17bd40aadd6d0'
+E     
+E     - 1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0
+E     + e7b8d32871e7f84d87ffd9b67dc8ff7c0fb908c85a66445a985634c7506e802d
+_ test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[False-104-DRAIN_TERMINAL_MIGRATION] _
+backend/tests/test_hr_agent_preflight.py:357: in test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image
+    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
+E   AssertionError: assert '23e49b0afa6d...3d8e37a27ccd8' == 'cb25b4f81b01...38456fa7a4a8d'
+E     
+E     - cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d
+E     + 23e49b0afa6d32c0e81490bb9ed1e9385ccba8f79e34722073e3d8e37a27ccd8
+_ test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[True-102-CUTOVER_MIGRATION] _
+backend/tests/test_hr_agent_preflight.py:357: in test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image
+    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
+E   AssertionError: assert '05a034d30091...309427c25aa16' == '70fd110bb17c...7708e23ac0ce6'
+E     
+E     - 70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6
+E     + 05a034d3009136afc7cd333fce9f7d7bbbfe5783702a942a5d5309427c25aa16
+_ test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[True-103-DRAIN_OCCUPANCY_MIGRATION] _
+backend/tests/test_hr_agent_preflight.py:357: in test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image
+    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
+E   AssertionError: assert 'e7b8d32871e7...634c7506e802d' == '1795af66ae8a...17bd40aadd6d0'
+E     
+E     - 1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0
+E     + e7b8d32871e7f84d87ffd9b67dc8ff7c0fb908c85a66445a985634c7506e802d
+_ test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[True-104-DRAIN_TERMINAL_MIGRATION] _
+backend/tests/test_hr_agent_preflight.py:357: in test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image
+    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
+E   AssertionError: assert '23e49b0afa6d...3d8e37a27ccd8' == 'cb25b4f81b01...38456fa7a4a8d'
+E     
+E     - cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d
+E     + 23e49b0afa6d32c0e81490bb9ed1e9385ccba8f79e34722073e3d8e37a27ccd8
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_preflight.py::test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[False-102-CUTOVER_MIGRATION]
+FAILED backend/tests/test_hr_agent_preflight.py::test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[False-103-DRAIN_OCCUPANCY_MIGRATION]
+FAILED backend/tests/test_hr_agent_preflight.py::test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[False-104-DRAIN_TERMINAL_MIGRATION]
+FAILED backend/tests/test_hr_agent_preflight.py::test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[True-102-CUTOVER_MIGRATION]
+FAILED backend/tests/test_hr_agent_preflight.py::test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[True-103-DRAIN_OCCUPANCY_MIGRATION]
+FAILED backend/tests/test_hr_agent_preflight.py::test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image[True-104-DRAIN_TERMINAL_MIGRATION]
+6 failed, 14 deselected in 6.60s

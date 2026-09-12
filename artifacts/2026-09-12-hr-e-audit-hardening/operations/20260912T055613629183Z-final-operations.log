@@ -1,0 +1,7 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+HR_OPERATIONS_MOCK_RECEIPT_DIR=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-12-hr-e-audit-hardening/operations/20260912T055613629183Z-receipts
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest -q tests/test_hr_cutover_runbook.py tests/test_hr_cutover_operations.py
+.............................                                            [100%]
+29 passed in 19.10s
+
+exit_code=0

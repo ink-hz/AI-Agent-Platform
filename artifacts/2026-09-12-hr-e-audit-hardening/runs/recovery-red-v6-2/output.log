@@ -1,0 +1,28 @@
+FFFF...                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-cloud] _
+backend/tests/test_hr_recovery_cutover.py:95: in test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation
+    assert result.status_code == 204
+E   assert 200 == 204
+E    +  where 200 = <Response [200 OK]>.status_code
+_ test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-draining_cloud] _
+backend/tests/test_hr_recovery_cutover.py:95: in test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation
+    assert result.status_code == 204
+E   assert 200 == 204
+E    +  where 200 = <Response [200 OK]>.status_code
+_ test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-cloud] _
+backend/tests/test_hr_recovery_cutover.py:95: in test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation
+    assert result.status_code == 204
+E   assert 200 == 204
+E    +  where 200 = <Response [200 OK]>.status_code
+_ test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-draining_cloud] _
+backend/tests/test_hr_recovery_cutover.py:95: in test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation
+    assert result.status_code == 204
+E   assert 200 == 204
+E    +  where 200 = <Response [200 OK]>.status_code
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-cloud]
+FAILED backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-draining_cloud]
+FAILED backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-cloud]
+FAILED backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-draining_cloud]
+4 failed, 3 passed in 9.69s

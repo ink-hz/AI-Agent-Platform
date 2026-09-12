@@ -1,0 +1,388 @@
+[
+  {
+    "path": "backend/app/execution_relay/recovery_v5.py",
+    "baseline": [],
+    "current": [],
+    "new": []
+  },
+  {
+    "path": "backend/app/health/platform.py",
+    "baseline": [
+      {
+        "cell": null,
+        "code": "I001",
+        "end_location": {
+          "column": 56,
+          "row": 7
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/health/platform.py",
+        "fix": {
+          "applicability": "safe",
+          "edits": [
+            {
+              "content": "from __future__ import annotations\n\nimport re\nfrom typing import Any\n\nfrom app.config import Config, is_cloud_mode\nfrom app.review.service import UnavailableReviewService\n\n",
+              "end_location": {
+                "column": 1,
+                "row": 10
+              },
+              "location": {
+                "column": 1,
+                "row": 1
+              }
+            }
+          ],
+          "message": "Organize imports"
+        },
+        "location": {
+          "column": 1,
+          "row": 1
+        },
+        "message": "Import block is un-sorted or un-formatted",
+        "name": "unsorted-imports",
+        "noqa_row": 1,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+      }
+    ],
+    "current": [
+      {
+        "cell": null,
+        "code": "I001",
+        "end_location": {
+          "column": 56,
+          "row": 7
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/health/platform.py",
+        "fix": {
+          "applicability": "safe",
+          "edits": [
+            {
+              "content": "from __future__ import annotations\n\nimport re\nfrom typing import Any\n\nfrom app.config import Config, is_cloud_mode\nfrom app.review.service import UnavailableReviewService\n\n",
+              "end_location": {
+                "column": 1,
+                "row": 10
+              },
+              "location": {
+                "column": 1,
+                "row": 1
+              }
+            }
+          ],
+          "message": "Organize imports"
+        },
+        "location": {
+          "column": 1,
+          "row": 1
+        },
+        "message": "Import block is un-sorted or un-formatted",
+        "name": "unsorted-imports",
+        "noqa_row": 1,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+      }
+    ],
+    "new": []
+  },
+  {
+    "path": "backend/app/hr/candidate_repository.py",
+    "baseline": [
+      {
+        "cell": null,
+        "code": "TRY004",
+        "end_location": {
+          "column": 66,
+          "row": 54
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/hr/candidate_repository.py",
+        "fix": null,
+        "location": {
+          "column": 9,
+          "row": 54
+        },
+        "message": "Prefer `TypeError` exception for invalid type",
+        "name": "type-check-without-type-error",
+        "noqa_row": 54,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/type-check-without-type-error"
+      }
+    ],
+    "current": [
+      {
+        "cell": null,
+        "code": "I001",
+        "end_location": {
+          "column": 2,
+          "row": 33
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/hr/candidate_repository.py",
+        "fix": {
+          "applicability": "safe",
+          "edits": [
+            {
+              "content": "from __future__ import annotations\n\nimport json\nimport logging\nfrom collections.abc import Callable\nfrom typing import Any\nfrom uuid import UUID\n\nimport psycopg\nfrom psycopg.rows import dict_row\n\nfrom app.hr_agent.cutover import (\n    CutoverRejected,\n    lock_admission,\n    lock_state,\n    require_lane,\n)\n\nfrom .candidate_models import (\n    AppendHumanFeedback,\n    AttachCandidateDraftExecution,\n    Candidate,\n    CandidateAnalysisVersion,\n    CandidateDocument,\n    CandidateDraft,\n    CandidateDraftProcessingAttempt,\n    ClaimNextCandidateDraft,\n    ComparePositionCandidates,\n    CompleteCandidateDraft,\n    ConfirmCandidateDraft,\n    ConfirmedCandidate,\n    CreateCandidateAnalysis,\n    CreateCandidateDraftBatch,\n    FailCandidateDraft,\n    HumanFeedback,\n    PositionCandidate,\n    RetryCandidateDraft,\n)\n\n\n",
+              "end_location": {
+                "column": 1,
+                "row": 36
+              },
+              "location": {
+                "column": 1,
+                "row": 1
+              }
+            }
+          ],
+          "message": "Organize imports"
+        },
+        "location": {
+          "column": 1,
+          "row": 1
+        },
+        "message": "Import block is un-sorted or un-formatted",
+        "name": "unsorted-imports",
+        "noqa_row": 1,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+      },
+      {
+        "cell": null,
+        "code": "TRY004",
+        "end_location": {
+          "column": 66,
+          "row": 55
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/hr/candidate_repository.py",
+        "fix": null,
+        "location": {
+          "column": 9,
+          "row": 55
+        },
+        "message": "Prefer `TypeError` exception for invalid type",
+        "name": "type-check-without-type-error",
+        "noqa_row": 55,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/type-check-without-type-error"
+      }
+    ],
+    "new": [
+      {
+        "code": "I001",
+        "message": "Import block is un-sorted or un-formatted",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "backend/tests/test_agent_brain_search_recovery.py",
+    "baseline": [],
+    "current": [
+      {
+        "cell": null,
+        "code": "I001",
+        "end_location": {
+          "column": 67,
+          "row": 27
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_agent_brain_search_recovery.py",
+        "fix": {
+          "applicability": "safe",
+          "edits": [
+            {
+              "content": "from __future__ import annotations\n\n# Imported fixture names intentionally become pytest fixtures in this module.\n# ruff: noqa: F401,F811\nfrom datetime import datetime, timezone\nfrom uuid import UUID, uuid4\n\nimport psycopg\nimport pytest\nfrom app.agent_brain.conversation_context import ConversationContextBuilder\nfrom app.agent_brain.conversation_models import ConversationTurnSubmission\nfrom app.agent_brain.conversation_projection import ConversationProjection\nfrom app.agent_brain.conversation_repository import ConversationRepository\nfrom app.agent_brain.conversation_service import ConversationCommandService\nfrom app.agent_brain.models import load_capability_cards\nfrom app.agent_brain.orchestrator import MissionOrchestrator\nfrom app.attachments.result_projection import ConversationResultProjection\nfrom fastapi.testclient import TestClient\nfrom test_agent_brain_api import _credentials, _write_credentials\nfrom test_agent_brain_conversation_api import _app\nfrom test_agent_brain_conversation_repository import (\n    conversation_database,\n    repository,\n)\nfrom test_agent_brain_orchestrator import ScriptedRelay\nfrom test_conversation_attachment_binding import _ready_attachment\nfrom tests.helpers.hr_direct_database import control_database\n\n\n",
+              "end_location": {
+                "column": 1,
+                "row": 30
+              },
+              "location": {
+                "column": 1,
+                "row": 1
+              }
+            }
+          ],
+          "message": "Organize imports"
+        },
+        "location": {
+          "column": 1,
+          "row": 1
+        },
+        "message": "Import block is un-sorted or un-formatted",
+        "name": "unsorted-imports",
+        "noqa_row": 1,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+      }
+    ],
+    "new": [
+      {
+        "code": "I001",
+        "message": "Import block is un-sorted or un-formatted",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "backend/tests/test_hr_agent_migration_deployment.py",
+    "baseline": [],
+    "current": [],
+    "new": []
+  },
+  {
+    "path": "backend/tests/test_hr_agent_preflight.py",
+    "baseline": [],
+    "current": [],
+    "new": []
+  },
+  {
+    "path": "backend/tests/test_hr_cutover_operations.py",
+    "baseline": [],
+    "current": [],
+    "new": []
+  },
+  {
+    "path": "backend/tests/test_hr_cutover_runbook.py",
+    "baseline": [],
+    "current": [],
+    "new": []
+  },
+  {
+    "path": "backend/tests/test_hr_operational_diagnostics.py",
+    "baseline": [],
+    "current": [
+      {
+        "cell": null,
+        "code": "I001",
+        "end_location": {
+          "column": 54,
+          "row": 11
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_operational_diagnostics.py",
+        "fix": {
+          "applicability": "safe",
+          "edits": [
+            {
+              "content": "import logging\nfrom uuid import uuid4\n\nimport pytest\nfrom app.hr.candidate_models import RetryCandidateDraft\nfrom app.hr.candidate_repository import CandidateUnavailable\nfrom app.hr_agent.service import HrAgentService\nfrom fastapi.testclient import TestClient\nfrom test_dingtalk_auth_api import FakeAuth, _app\nfrom test_hr_failed_draft_cutover import failed_draft\n\n",
+              "end_location": {
+                "column": 1,
+                "row": 13
+              },
+              "location": {
+                "column": 1,
+                "row": 2
+              }
+            }
+          ],
+          "message": "Organize imports"
+        },
+        "location": {
+          "column": 1,
+          "row": 2
+        },
+        "message": "Import block is un-sorted or un-formatted",
+        "name": "unsorted-imports",
+        "noqa_row": 2,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+      }
+    ],
+    "new": [
+      {
+        "code": "I001",
+        "message": "Import block is un-sorted or un-formatted",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "backend/tests/test_hr_recovery_cutover.py",
+    "baseline": [],
+    "current": [
+      {
+        "cell": null,
+        "code": "I001",
+        "end_location": {
+          "column": 2,
+          "row": 17
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py",
+        "fix": {
+          "applicability": "safe",
+          "edits": [
+            {
+              "content": "import hashlib\nimport json\nfrom concurrent.futures import ThreadPoolExecutor\nfrom dataclasses import replace\nfrom time import monotonic, sleep\nfrom uuid import uuid4\n\nimport pytest\nfrom app.hr_agent.cutover import ADVISORY_LOCK_KEY\nfrom test_execution_recovery_v5 import observation\nfrom test_execution_transport_v5 import PREFIX, post\nfrom test_hr_cutover_dispatch_review import (\n    attempt_repository,\n    authorize,\n    bindings,\n    conversation_database,\n    database,\n    direct_database,\n    repository,\n    set_residual_phase,\n    signed_api,\n    signed_http_app,\n    transport_worker,\n    worker_conversation,\n    worker_turn,\n)\n\n",
+              "end_location": {
+                "column": 1,
+                "row": 19
+              },
+              "location": {
+                "column": 1,
+                "row": 2
+              }
+            }
+          ],
+          "message": "Organize imports"
+        },
+        "location": {
+          "column": 1,
+          "row": 2
+        },
+        "message": "Import block is un-sorted or un-formatted",
+        "name": "unsorted-imports",
+        "noqa_row": 2,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+      },
+      {
+        "cell": null,
+        "code": "I001",
+        "end_location": {
+          "column": 60,
+          "row": 29
+        },
+        "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py",
+        "fix": {
+          "applicability": "safe",
+          "edits": [
+            {
+              "content": "    from app.execution_relay.contracts_v5 import canonical_command_bytes\n    from app.hr.turn_scope import load_authorized_turn_scope\n    from test_hr_direct_command_binding import frozen_input\n",
+              "end_location": {
+                "column": 1,
+                "row": 30
+              },
+              "location": {
+                "column": 1,
+                "row": 27
+              }
+            }
+          ],
+          "message": "Organize imports"
+        },
+        "location": {
+          "column": 5,
+          "row": 27
+        },
+        "message": "Import block is un-sorted or un-formatted",
+        "name": "unsorted-imports",
+        "noqa_row": 27,
+        "severity": "error",
+        "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+      }
+    ],
+    "new": [
+      {
+        "code": "I001",
+        "message": "Import block is un-sorted or un-formatted",
+        "count": 2
+      }
+    ]
+  },
+  {
+    "path": "backend/tools/hr_agent/preflight.py",
+    "baseline": [],
+    "current": [],
+    "new": []
+  },
+  {
+    "path": "deploy/cloud/hr_agent_migrate.py",
+    "baseline": [],
+    "current": [],
+    "new": []
+  }
+]

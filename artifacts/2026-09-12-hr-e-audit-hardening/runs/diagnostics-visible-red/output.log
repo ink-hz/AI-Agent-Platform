@@ -1,0 +1,24 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_candidate_unavailable_keeps_safe_distinct_operational_reason[cutover_paused] _
+backend/tests/test_hr_operational_diagnostics.py:54: in test_candidate_unavailable_keeps_safe_distinct_operational_reason
+    assert records[0].getMessage() == f"candidate_repository_unavailable kind={failure_kind} sqlstate={expected_state}"
+E   AssertionError: assert 'candidate_re...y_unavailable' == 'candidate_re...sqlstate=none'
+E     
+E     - candidate_repository_unavailable kind=cutover_paused sqlstate=none
+E     + candidate_repository_unavailable
+------------------------------ Captured log call -------------------------------
+INFO     app.hr.candidate_repository:candidate_repository.py:215 candidate_repository_unavailable
+_ test_candidate_unavailable_keeps_safe_distinct_operational_reason[database] __
+backend/tests/test_hr_operational_diagnostics.py:54: in test_candidate_unavailable_keeps_safe_distinct_operational_reason
+    assert records[0].getMessage() == f"candidate_repository_unavailable kind={failure_kind} sqlstate={expected_state}"
+E   AssertionError: assert 'candidate_re...y_unavailable' == 'candidate_re...qlstate=42P01'
+E     
+E     - candidate_repository_unavailable kind=database sqlstate=42P01
+E     + candidate_repository_unavailable
+------------------------------ Captured log call -------------------------------
+WARNING  app.hr.candidate_repository:candidate_repository.py:230 candidate_repository_unavailable
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_operational_diagnostics.py::test_candidate_unavailable_keeps_safe_distinct_operational_reason[cutover_paused]
+FAILED backend/tests/test_hr_operational_diagnostics.py::test_candidate_unavailable_keeps_safe_distinct_operational_reason[database]
+2 failed, 3 deselected in 2.44s

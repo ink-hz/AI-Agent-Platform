@@ -1,0 +1,14 @@
+......                                                                   [100%]
+=============================== warnings summary ===============================
+tests/test_agent_brain_search_recovery.py::test_search_unavailable_is_projected_and_resumes_as_a_linked_new_turn
+tests/test_agent_brain_search_recovery.py::test_search_unavailable_is_projected_and_resumes_as_a_linked_new_turn
+tests/test_agent_brain_search_recovery.py::test_search_unavailable_is_projected_and_resumes_as_a_linked_new_turn
+tests/test_agent_brain_search_recovery.py::test_no_results_remains_distinct_and_cannot_be_resumed
+tests/test_agent_brain_search_recovery.py::test_search_resume_is_new_admission_and_cutover_rejection_is_atomic[draining_legacy]
+tests/test_agent_brain_search_recovery.py::test_search_resume_is_new_admission_and_cutover_rejection_is_atomic[cloud]
+tests/test_agent_brain_search_recovery.py::test_search_resume_is_new_admission_and_cutover_rejection_is_atomic[draining_cloud]
+  /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/starlette/testclient.py:454: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+6 passed, 7 warnings in 7.67s

@@ -1,0 +1,47 @@
+{
+  "head_observed": "5978eaa0bf657721d1ef7ab64d5b4a7ada5ca43a",
+  "items": [
+    {
+      "path": "reconstructed-pre-cosmetic/test_conversation_attachment_binding.py",
+      "classification": "deterministic reconstruction; not an originally saved byte copy",
+      "sha256": "b10b776ad3b5245c5b6043caf7faefb28e79fb7c5f8b8f2d9f43ec0562f656db",
+      "expected_from": "artifacts/2026-09-12-hr-e-audit-followup/final/cosmetic-delta.json",
+      "verification": "exact hash match"
+    },
+    {
+      "path": "reconstructed-pre-cosmetic/test_hr_direct_material_transport.py",
+      "classification": "deterministic reconstruction; not an originally saved byte copy",
+      "sha256": "ce4e3787062f9110fa3a8dd162524c617fbbc5a1ca9c12df86886da823aa3450",
+      "expected_from": "artifacts/2026-09-12-hr-e-audit-followup/final/cosmetic-delta.json",
+      "verification": "exact hash match"
+    },
+    {
+      "path": "recovered-old-closure/2026-09-12-hr-e-audit-followup.md",
+      "classification": "deterministic reconstruction; not an originally saved byte copy",
+      "sha256": "00c73705918af67f3f8e4f13a2127e0eb918ed8967bd44debedb9bb53bdac632",
+      "expected_from": "artifacts/2026-09-12-hr-e-audit-followup/review/final-closure-independent-20260912T015150956409Z/fingerprints-and-checks.json",
+      "verification": "exact hash match"
+    },
+    {
+      "path": "observed-tmp/hr-e-audit-fixtures-192a448.patch",
+      "classification": "observed byte-for-byte copy from surviving /tmp file",
+      "sha256": "ec8cf2fa2056816d38dfd9def46db601e108bb5f1e41e5096a6c026796efb04f",
+      "expected_from": "artifacts/2026-09-12-hr-e-audit-followup/review/fixture-review.md",
+      "verification": "exact hash match"
+    },
+    {
+      "path": "observed-tmp/hr-e-audit-counts-operations-192a448.patch",
+      "classification": "observed byte-for-byte copy from surviving /tmp file",
+      "sha256": "40d2747042b20cb821063218f61ec223282d12b9ecb454df66666c11ee2e5bfe",
+      "expected_from": "artifacts/2026-09-12-hr-e-audit-followup/review/counts-operations-independent-20260912T013115391051Z/fingerprints.json",
+      "verification": "exact hash match"
+    },
+    {
+      "path": null,
+      "classification": "unavailable",
+      "sha256": "aeff5307660b06c1446ff8e91234e23d6f9040d36cbd614c104ac9381ae400c7",
+      "expected_from": "artifacts/2026-09-11-hr-e-review/final/runbook-independent-review.md",
+      "verification": "reference observed, but no matching committed revision, surviving known /tmp working copy, or searched Git blob"
+    }
+  ]
+}

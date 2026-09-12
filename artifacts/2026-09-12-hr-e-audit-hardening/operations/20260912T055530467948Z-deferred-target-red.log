@@ -1,0 +1,60 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest -q tests/test_hr_cutover_runbook.py -k deferred_legacy_restore
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_current_transition_command_cannot_execute_deferred_legacy_restore ____
+
+database = HrTestDatabase()
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108049cd0>
+
+    def test_current_transition_command_cannot_execute_deferred_legacy_restore(database, monkeypatch):
+        with pytest.raises(ValueError, match="invalid HR cutover target phase"):
+>           run_documented("transition", database, monkeypatch, uuid4(), "legacy")
+
+tests/test_hr_cutover_runbook.py:235: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_runbook.py:47: in run_documented
+    exec(documented_script(action), {"__name__": "__main__"})  # noqa: S102 - executes the checked-in runbook against the test database
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md:16: in <module>
+    通用 `remote-stage.sh` 的旧版回滚会恢复 previous release 的附件 Worker，因此没有附加的 fail-closed 防护时不能执行上述热修复。热修复完成回执至少绑定 release SHA、新附件镜像 ID、修复源文件 SHA、迁移 100 checksum、停止/启动时间和验证结果。
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x10804a310>
+query = 'select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)'
+params = ('legacy', '2dd064af-0d4c-4f43-8dad-9b1024390362'), prepare = None
+binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.RaiseException: invalid HR execution transition
+E           CONTEXT:  PL/pgSQL function transition_hr_execution_cutover_v102(text,uuid) line 20 at RAISE
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: RaiseException
+=========================== short test summary info ============================
+FAILED tests/test_hr_cutover_runbook.py::test_current_transition_command_cannot_execute_deferred_legacy_restore
+1 failed, 8 deselected in 1.19s
+
+exit_code=1

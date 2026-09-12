@@ -1,0 +1,979 @@
+Base 192a448; uncommitted task2/task3 source snapshot
+--- a/backend/control_migrations/104_hr_execution_drain_terminal_contract.sql
++++ b/backend/control_migrations/104_hr_execution_drain_terminal_contract.sql
+@@ -0,0 +1,98 @@
++-- Additive clarification of 103; keep both historical migration receipts intact.
++-- 028 already requires terminal_at for interrupted (and every terminal status),
++-- so the removed NULL branch was unreachable under the enforced schema.
++-- Drain safety comes from unacknowledged stops, live linked Turn/Attempt state,
++-- and the exact terminal v5 lineage below, not from business-success inference.
++-- CREATE OR REPLACE preserves the existing owner and maintenance-only grants.
++CREATE OR REPLACE FUNCTION platform_control.hr_execution_cutover_counts_v102()
++RETURNS TABLE(legacy_nonterminal bigint, cloud_nonterminal bigint)
++LANGUAGE plpgsql SECURITY DEFINER
++SET search_path = pg_catalog, platform_control, platform_hr, platform_hr_agent
++AS $function$
++BEGIN
++  -- Missing coverage is an error, never an inferred zero. These are all
++  -- required by the release that may initialize this gate.
++  IF to_regclass('platform_control.conversations') IS NULL
++     OR to_regclass('platform_control.turn_attempts') IS NULL
++     OR to_regclass('platform_control.execution_jobs') IS NULL
++     OR to_regclass('platform_control.direct_command_bindings') IS NULL
++     OR to_regclass('platform_control.mission_runs') IS NULL
++     OR to_regclass('platform_hr.candidate_drafts') IS NULL
++     OR to_regclass('platform_hr.candidate_draft_batches') IS NULL
++     OR to_regclass('platform_hr.position_conversations') IS NULL
++     OR to_regclass('platform_hr.candidate_draft_processing_attempts') IS NULL
++     OR to_regclass('platform_hr_agent.works') IS NULL
++     OR to_regclass('platform_hr_agent.material_parses') IS NULL
++     OR to_regclass('platform_hr_agent.candidate_intake_items') IS NULL THEN
++    RAISE EXCEPTION 'hr execution inventory unavailable';
++  END IF;
++
++  RETURN QUERY
++  SELECT
++    (SELECT count(DISTINCT c.conversation_id)
++       FROM platform_control.conversations c
++       LEFT JOIN platform_control.conversation_turns t USING (conversation_id)
++       LEFT JOIN platform_control.turn_attempts a USING (turn_id)
++      WHERE ((c.mode='direct_agent' AND c.direct_agent_id='hr-bot')
++             OR EXISTS (SELECT 1 FROM platform_hr.position_conversations pc
++                         WHERE pc.conversation_id=c.conversation_id))
++        AND (t.status NOT IN ('completed','failed','cancelled','interrupted')
++             OR a.status NOT IN ('completed','failed','cancelled','interrupted')))
++    + (SELECT count(*) FROM platform_control.execution_jobs j
++        WHERE j.agent_id='hr-bot' AND (
++          -- A terminal Relay status does not acknowledge executor stop.
++          (j.stop_requested_status IS NOT NULL AND j.stop_acknowledged_at IS NULL)
++          OR EXISTS (
++            SELECT 1 FROM platform_control.conversation_turns jt
++            WHERE (
++              EXISTS (SELECT 1 FROM platform_control.direct_command_bindings jb
++                      JOIN platform_control.turn_attempts ja USING(attempt_id)
++                      WHERE jb.job_id=j.job_id AND ja.turn_id=jt.turn_id
++                        AND jb.conversation_id=jt.conversation_id)
++              OR EXISTS (SELECT 1 FROM platform_control.mission_runs jr
++                         WHERE jr.run_id=j.run_id AND jr.mission_id=jt.mission_id)
++            ) AND (
++              jt.status NOT IN ('completed','failed','cancelled','interrupted')
++              OR EXISTS (SELECT 1 FROM platform_control.turn_attempts ja
++                         WHERE ja.turn_id=jt.turn_id
++                           AND ja.status NOT IN ('completed','failed','cancelled','interrupted'))
++            )
++          )
++          OR CASE WHEN j.job_kind='worker_direct_v5' THEN
++            -- v5 jobs store immutable transport envelopes. Normal fenced result
++            -- publication terminates Attempt/Turn while this row stays queued.
++            -- Exclude only an exact, terminal lineage; orphan/unknown blocks.
++            j.status NOT IN ('queued','completed','failed','cancelled','interrupted')
++            OR NOT EXISTS (
++              SELECT 1 FROM platform_control.direct_command_bindings jb
++              JOIN platform_control.turn_attempts ja USING(attempt_id)
++              JOIN platform_control.conversation_turns jt USING(turn_id)
++              WHERE jb.job_id=j.job_id AND ja.transport_run_id=j.run_id
++                AND jb.conversation_id=jt.conversation_id
++                AND ja.executor_kind='worker_direct' AND jt.execution_owner='worker_direct'
++                AND ja.status IN ('completed','failed','cancelled','interrupted')
++                AND jt.status IN ('completed','failed','cancelled','interrupted')
++            )
++          ELSE
++            j.status NOT IN ('completed','failed','cancelled','interrupted')
++          END
++        ))
++    + (SELECT count(*) FROM platform_hr.candidate_drafts d
++        WHERE d.state NOT IN ('ready','failed','confirmed','dismissed'))
++    + (SELECT count(*) FROM platform_hr.candidate_draft_batches b
++        WHERE cardinality(b.attachment_ids) <>
++          (SELECT count(*) FROM platform_hr.candidate_drafts d
++            WHERE d.owner_internal_user_id=b.owner_internal_user_id
++              AND d.batch_request_id=b.batch_request_id))
++    + (SELECT count(*) FROM platform_hr.candidate_draft_processing_attempts p
++        WHERE p.state NOT IN ('completed','failed','expired')),
++    (SELECT count(*) FROM platform_hr_agent.works w
++      WHERE w.state NOT IN ('completed','cancelled','failed'))
++    + (SELECT count(*) FROM platform_hr_agent.material_parses p
++        WHERE p.state NOT IN ('ready','failed','unsupported'))
++    + (SELECT count(*) FROM platform_hr_agent.candidate_intake_items i
++        WHERE i.state NOT IN ('awaiting_review','failed','confirmed'));
++EXCEPTION WHEN undefined_table OR undefined_column THEN
++  RAISE EXCEPTION 'hr execution inventory unavailable';
++END
++$function$;
+--- a/backend/app/hr_agent/config.py
++++ b/backend/app/hr_agent/config.py
+@@ -41,16 +41,23 @@
+ )
+ INTERVIEW_RECORD_MIGRATION_SHA256 = (
+     "9080e664256748eb5972c92478c5aea9b09a4a56ddd40395dff9266a81c582fa"
+ )
+ 
+ ERASURE_ACCESS_MIGRATION_SHA256 = (
+     "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177"
+ )
++
++# Full cloud runtime requires the reviewed cutover contract identities.
++CUTOVER_MIGRATION_SHA256 = {
++    102: "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
++    103: "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
++    104: "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
++}
+ 
+ TABLES = (
+     "threads",
+     "works",
+     "inputs",
+     "entries",
+     "model_attempts",
+     "operations",
+@@ -343,16 +350,23 @@
+             ).fetchone()
+             if row is None or row[0] != ERASURE_ACCESS_MIGRATION_SHA256:
+                 return False
+             row = connection.execute(
+                 "select sha256 from platform_control.schema_migrations where version=101"
+             ).fetchone()
+             if row is None or row[0] != INTERVIEW_RECORD_MIGRATION_SHA256:
+                 return False
++            for version, checksum in CUTOVER_MIGRATION_SHA256.items():
++                row = connection.execute(
++                    "select sha256 from platform_control.schema_migrations where version=%s",
++                    (version,),
++                ).fetchone()
++                if row is None or row[0] != checksum:
++                    return False
+             row = connection.execute(
+                 "SELECT CASE current_user "
+                 "WHEN 'platform_control_app' THEN 'platform_control_maintenance' "
+                 "WHEN 'platform_control_app_preview' THEN 'platform_control_maintenance_preview' END"
+             ).fetchone()
+             if row is None or row[0] is None:
+                 return False
+             maintenance_role = row[0]
+--- a/backend/tools/hr_agent/preflight.py
++++ b/backend/tools/hr_agent/preflight.py
+@@ -31,16 +31,20 @@
+     101: INTERVIEW_RECORD_MIGRATION_SHA256,
+ }
+ CUTOVER_MIGRATION = (
+     Path(__file__).parents[2] / "control_migrations" / ("102_hr_execution_cutover.sql")
+ )
+ DRAIN_OCCUPANCY_MIGRATION = (
+     Path(__file__).parents[2] / "control_migrations" / "103_hr_execution_drain_occupancy.sql"
+ )
++DRAIN_TERMINAL_MIGRATION = (
++    Path(__file__).parents[2] / "control_migrations" / "104_hr_execution_drain_terminal_contract.sql"
++)
++
+ ATTACHMENT_KEYS = (
+     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
+     "PLATFORM_ATTACHMENT_S3_BUCKET",
+     "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
+     "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+     "PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE",
+     "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE",
+ )
+@@ -199,16 +203,17 @@
+         "app_admin_execute": False,
+         "maintenance_admin_execute": False,
+     }
+     permissions_complete = False
+     try:
+         expected_migrations = dict(EXPECTED_MIGRATIONS)
+         expected_migrations[102] = _fingerprint(CUTOVER_MIGRATION.read_bytes())
+         expected_migrations[103] = _fingerprint(DRAIN_OCCUPANCY_MIGRATION.read_bytes())
++        expected_migrations[104] = _fingerprint(DRAIN_TERMINAL_MIGRATION.read_bytes())
+         with connection_factory() as connection:
+             rows = connection.execute(
+                 "select version,sha256 from platform_control.schema_migrations "
+                 "where version=any(%s) order by version",
+                 (list(expected_migrations),),
+             ).fetchall()
+             found = {int(row[0]): row[1] for row in rows}
+             for version, expected in expected_migrations.items():
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -182,16 +182,17 @@
+             self.at_rest_unresolved = True
+             raise DeploymentFailure("at_rest_not_clean")
+         root = self.release / "backend/control_migrations"
+         checks = []
+         for number, name in (
+             (100, "100_attachment_erasure_worker_access.sql"),
+             (102, "102_hr_execution_cutover.sql"),
+             (103, "103_hr_execution_drain_occupancy.sql"),
++            (104, "104_hr_execution_drain_terminal_contract.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+                 raise DeploymentFailure("migration_file_invalid")
+             checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+             checks.append(f"(version={number} and sha256='{checksum}')")
+         self.migrations = root / "hr_agent"
+         if self.migrations.is_symlink() or not self.migrations.is_dir():
+--- a/backend/tests/test_hr_cutover_count_review.py
++++ b/backend/tests/test_hr_cutover_count_review.py
+@@ -125,8 +125,92 @@
+     import psycopg
+     with psycopg.connect(database.dsn) as c:
+         with pytest.raises(psycopg.errors.InsufficientPrivilege):
+             c.execute('select * from platform_control.hr_execution_cutover_counts_v102()')
+     with psycopg.connect(database.dsn, user='platform_control_maintenance') as c:
+         assert c.execute('select * from platform_control.hr_execution_cutover_counts_v102()').fetchone() == (0, 0)
+         c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+         c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
++
++@pytest.mark.parametrize("kind", ["metabot_local", "legacy_brain", "direct_agent", "worker_direct_v5"])
++def test_interrupted_without_terminal_timestamp_is_rejected_by_028(database, kind):
++    import psycopg
++    with database.admin_connection() as c:
++        with pytest.raises(psycopg.errors.CheckViolation) as error:
++            interrupted_job(c, kind, terminal_recorded=False)
++        assert error.value.diag.table_name == "execution_jobs"
++        assert "terminal_at" in error.value.diag.message_detail or error.value.diag.constraint_name == "execution_jobs_check1"
++
++
++@pytest.mark.parametrize("fault", ["transport_run", "executor_kind", "conversation_lineage"])
++def test_v5_exact_lineage_residual_blocks_count_and_transition(
++    database, repository, conversation_database, attempt_repository, bindings,
++    signed_api, transport_worker, fault,
++):
++    turn, lease, binding = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
++    other = None
++    if fault == "conversation_lineage":
++        other, _, _ = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
++    with database.admin_connection() as c:
++        assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 0
++        # Residual provenance faults only; successful results were published by
++        # signed HTTP and fenced projection before any metadata mutation.
++        if fault == "transport_run":
++            c.execute("update platform_control.turn_attempts set transport_run_id=%s where attempt_id=%s", (uuid4(), lease.attempt_id))
++        elif fault == "executor_kind":
++            c.execute("update platform_control.turn_attempts set executor_kind='legacy_api_v1' where attempt_id=%s", (lease.attempt_id,))
++        else:
++            c.execute("update platform_control.turn_attempts set turn_id=%s,attempt_no=2 where attempt_id=%s", (other.turn.turn_id, lease.attempt_id))
++        assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
++        c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
++    with database.admin_connection() as c:
++        with pytest.raises(Exception, match="drain is incomplete"):
++            c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
++
++
++@pytest.mark.parametrize("fault", ["turn_owner", "binding_conversation", "binding_job"])
++def test_v5_pinned_lineage_cannot_be_rewritten(
++    database, repository, conversation_database, attempt_repository, bindings,
++    signed_api, transport_worker, fault,
++):
++    import psycopg
++    turn, lease, binding = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, transport_worker)
++    with database.admin_connection() as c:
++        message = "turn execution origin is immutable" if fault == "turn_owner" else "direct command identity is immutable"
++        with c.transaction():
++            with pytest.raises(psycopg.errors.CheckViolation, match=message):
++                with c.transaction():
++                    if fault == "turn_owner":
++                        c.execute("update platform_control.conversation_turns set execution_owner='legacy_api_v1' where turn_id=%s", (turn.turn.turn_id,))
++                    elif fault == "binding_conversation":
++                        c.execute("update platform_control.direct_command_bindings set conversation_id=%s where attempt_id=%s", (uuid4(), lease.attempt_id))
++                    else:
++                        c.execute("update platform_control.direct_command_bindings set job_id=%s where attempt_id=%s", (uuid4(), lease.attempt_id))
++        assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 0
++
++
++@pytest.mark.parametrize("relation", [
++    "platform_control.conversations", "platform_control.conversation_turns",
++    "platform_control.turn_attempts", "platform_control.execution_jobs",
++    "platform_control.direct_command_bindings", "platform_control.mission_runs",
++    "platform_hr.candidate_drafts", "platform_hr.candidate_draft_batches",
++    "platform_hr.position_conversations", "platform_hr.candidate_draft_processing_attempts",
++    "platform_hr_agent.works", "platform_hr_agent.material_parses",
++    "platform_hr_agent.candidate_intake_items",
++])
++def test_missing_inventory_relation_fails_closed_for_count_and_transition(database, relation):
++    from psycopg import sql
++    schema, table = relation.split(".")
++    with database.admin_connection() as c:
++        c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
++        # Rename preserves all data/constraints; rollback restores the fixture.
++        c.execute(sql.SQL("alter table {}.{} rename to {}").format(
++            sql.Identifier(schema), sql.Identifier(table), sql.Identifier(table + "_unavailable")))
++        for query in (
++            "select * from platform_control.hr_execution_cutover_counts_v102()",
++            "select platform_control.transition_hr_execution_cutover_v102('cloud',gen_random_uuid())",
++        ):
++            with pytest.raises(Exception, match="hr execution inventory unavailable"):
++                with c.transaction():
++                    c.execute(query)
++        assert c.execute("select phase from platform_control.hr_execution_cutover").fetchone()[0] == "draining_legacy"
++        c.rollback()
+--- a/backend/tests/test_hr_agent_foundation.py
++++ b/backend/tests/test_hr_agent_foundation.py
+@@ -188,8 +188,21 @@
+     }))
+     path.chmod(0o600)
+     if input_capacity < 88192:
+         with pytest.raises(ValueError, match='^HR configuration invalid$'):
+             make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+     else:
+         loaded = make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+         assert loaded.provider_profile['context_window_tokens'] == input_capacity + 4096
++
++@pytest.mark.parametrize("version", [102, 103, 104])
++@pytest.mark.parametrize("receipt", [None, "0" * 64])
++def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
++    from app.hr_agent.config import check_schema_ready
++    from hr_agent_support import hr_agent_database
++    with hr_agent_database() as db:
++        with db.admin_connection() as c:
++            if receipt is None:
++                c.execute("DELETE FROM platform_control.schema_migrations WHERE version=%s", (version,))
++            else:
++                c.execute("UPDATE platform_control.schema_migrations SET sha256=%s WHERE version=%s", (receipt, version))
++        assert not check_schema_ready(db)
+--- a/backend/tests/test_hr_agent_preflight.py
++++ b/backend/tests/test_hr_agent_preflight.py
+@@ -255,16 +255,17 @@
+         96,
+         97,
+         98,
+         99,
+         100,
+         101,
+         102,
+         103,
++        104,
+     ]
+     assert all(item["match"] for item in report["database"]["migrations"])
+     assert report["database"]["permissions_complete"] is True
+     assert report["database"]["permissions"] == {
+         "app_gate_select": True,
+         "app_gate_write": False,
+         "app_admin_execute": False,
+         "maintenance_admin_execute": True,
+@@ -303,23 +304,24 @@
+         ]
+     )
+     output = capsys.readouterr().out
+     assert status == 1
+     assert json.loads(output)["ok"] is False
+     assert str(tmp_path) not in output
+ 
+ 
++@pytest.mark.parametrize("version", [103, 104])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+-def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt):
++def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt, version):
+     knowledge = _knowledge(tmp_path / "knowledge")
+     environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+     with hr_agent_database() as database:
+         with database.admin_connection() as connection:
+             if receipt is None:
+-                connection.execute("delete from platform_control.schema_migrations where version=103")
++                connection.execute("delete from platform_control.schema_migrations where version=%s", (version,))
+             else:
+-                connection.execute("update platform_control.schema_migrations set sha256=%s where version=103", (receipt,))
++                connection.execute("update platform_control.schema_migrations set sha256=%s where version=%s", (receipt, version))
+         report = build_report(environment, dict(environment), connection_factory=database.connection)
+     assert report["ok"] is False
+     assert "migration_identity_mismatch" in report["blockers"]
+-    entry = next(item for item in report["database"]["migrations"] if item["version"] == 103)
++    entry = next(item for item in report["database"]["migrations"] if item["version"] == version)
+     assert entry["match"] is False
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -214,16 +214,17 @@
+             broken_release
+             / "backend/control_migrations/hr_agent/096_hr_agent_runtime.sql"
+         ).write_text("invalid sql")
+         # Root gate files are immutable release inputs too.
+         for name in (
+             "100_attachment_erasure_worker_access.sql",
+             "102_hr_execution_cutover.sql",
+             "103_hr_execution_drain_occupancy.sql",
++            "104_hr_execution_drain_terminal_contract.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+                 (ROOT / "backend/control_migrations" / name).read_bytes()
+             )
+         result = subprocess.run(
+             [
+                 str(HELPER),
+@@ -257,16 +258,17 @@
+     source = SUPERVISOR.read_text(encoding="utf-8")
+     assert (
+         "PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations/hr_agent"
+         in source
+     )
+     assert "100_attachment_erasure_worker_access.sql" in source
+     assert "102_hr_execution_cutover.sql" in source
+     assert "103_hr_execution_drain_occupancy.sql" in source
++    assert "104_hr_execution_drain_terminal_contract.sql" in source
+     assert "finally:" in source
+     assert "self.cleanup()" in source
+     assert "revoke {self.granted_owner} from {self.granted_migrator}" in source
+ 
+ 
+ def test_wrapper_delegates_to_bounded_stdlib_supervisor():
+     source = HELPER.read_text(encoding="utf-8")
+     assert SUPERVISOR.is_file()
+@@ -487,8 +489,53 @@
+                  "TEST_DOCKER_CALLS": str(tmp_path / "calls"),
+                  "PYTHONPATH": str(ROOT / "backend")},
+             capture_output=True, text=True, check=False, timeout=10,
+         )
+         receipt = __import__("json").loads(next(receipts.glob("*.json")).read_text())
+         assert result.returncode != 0
+         assert receipt["failure_code"] == "at_rest_not_clean"
+         assert receipt["cleanup_verified"] is False
++
++@pytest.mark.parametrize("receipt", [None, "0" * 64])
++def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
++    with hr_agent_database(migrate_hr=False) as database:
++        preview_dsn = _prepare_preview_and_revoke(database)
++        with database.admin_connection() as c:
++            if receipt is None:
++                c.execute("delete from platform_control.schema_migrations where version=104")
++            else:
++                c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
++        private = tmp_path / "private"
++        private.mkdir()
++        (private / "control-migrator-database-url").write_text(database.migrator_dsn)
++        (private / "preview-control-migrator-database-url").write_text(preview_dsn)
++        for item in private.iterdir():
++            item.chmod(0o600)
++        fake = tmp_path / "docker"
++        _write_fake_docker(fake)
++        environment = {
++            **os.environ,
++            "HR_MIGRATION_DOCKER": str(fake),
++            "TEST_ADMIN_DSN": database.admin_dsn,
++            "TEST_PRIVATE": str(private),
++            "TEST_RELEASE": str(ROOT),
++            "TEST_DOCKER_STATE": str(tmp_path / "docker-state.json"),
++            "TEST_DOCKER_CALLS": str(tmp_path / "docker-calls.log"),
++            "PYTHONPATH": str(ROOT / "backend"),
++        }
++        result = subprocess.run(
++            [str(HELPER), str(ROOT), str(private), "sha256:" + "a" * 64, "test-postgres",
++             "--receipt-dir", str(tmp_path / "receipts")],
++            env=environment,
++            text=True,
++            capture_output=True,
++            check=False,
++        )
++        assert result.returncode != 0
++        assert result.stderr.strip() == "HR_AGENT_MIGRATIONS_FAILED"
++        receipts = list((tmp_path / "receipts").glob("*.json"))
++        assert len(receipts) == 1
++        receipt_data = __import__("json").loads(receipts[0].read_text())
++        assert receipt_data["failure_code"] == "root_migration_gate_failed"
++        assert receipt_data["cleanup_verified"] is True
++        assert _memberships(database) == 0
++        assert not (tmp_path / "docker-calls.log").exists()
+--- a/backend/tests/test_hr_cutover_runbook.py
++++ b/backend/tests/test_hr_cutover_runbook.py
+@@ -0,0 +1,157 @@
++"""Run the documented maintenance Python against disposable PostgreSQL.
++
++Only secret-file resolution is substituted; SQL, roles, locks and transactions
++are real. No Docker command or production connection is executed.
++"""
++from pathlib import Path
++import os
++import re
++import shlex
++import subprocess
++from time import monotonic
++from uuid import uuid4
++
++import psycopg
++import pytest
++
++from app.hr_agent.cutover import ADVISORY_LOCK_KEY
++from app import local_secrets
++from tests.hr_agent_support import hr_agent_database
++
++
++RUNBOOK = Path(__file__).parents[2] / "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md"
++
++
++@pytest.fixture(scope="module")
++def database():
++    with hr_agent_database(cutover_phase="legacy") as db:
++        yield db
++
++
++def documented_script(action):
++    scripts = re.findall(r"python - <<'PY'\n(.*?)\nPY", RUNBOOK.read_text(), re.S)
++    matches = [script for script in scripts if f"# HR_CUTOVER_{action.upper()}\n" in script]
++    assert len(matches) == 1, f"missing unique executable {action} maintenance command"
++    return compile(matches[0], str(RUNBOOK), "exec")
++
++
++def run_documented(action, database, monkeypatch, request_id):
++    from psycopg.conninfo import conninfo_to_dict, make_conninfo
++
++    values = conninfo_to_dict(database.dsn)
++    values["user"] = "platform_control_maintenance"
++    dsn = make_conninfo(**values)
++
++    def secret(path):
++        assert path == "/run/control-secrets/control-maintenance-database-url"
++        return dsn
++
++    monkeypatch.setattr(local_secrets, "read_secret_file", secret)
++    monkeypatch.setenv("HR_CUTOVER_REQUEST_ID", str(request_id))
++    monkeypatch.setenv("HR_CUTOVER_TARGET_PHASE", "draining_legacy")
++    exec(documented_script(action), {"__name__": "__main__"})
++
++
++def test_documented_count_runs_real_query_in_read_only_bounded_transaction(database, monkeypatch, capsys):
++    original = psycopg.connect
++    observed = []
++
++    class Connection:
++        def __init__(self, connection):
++            self.connection = connection
++
++        def __enter__(self):
++            self.connection.__enter__()
++            return self
++
++        def __exit__(self, *args):
++            return self.connection.__exit__(*args)
++
++        def execute(self, query, *args, **kwargs):
++            if "hr_execution_cutover_counts_v102()" in query:
++                observed.append(tuple(self.connection.execute(
++                    "select current_user, current_setting('transaction_read_only'), "
++                    "current_setting('lock_timeout'), current_setting('statement_timeout')"
++                ).fetchone()))
++            return self.connection.execute(query, *args, **kwargs)
++
++    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: Connection(original(*a, **k)))
++    run_documented("count", database, monkeypatch, uuid4())
++    assert observed == [("platform_control_maintenance", "on", "2s", "30s")]
++    assert '"legacy_nonterminal": 0' in capsys.readouterr().out
++
++
++@pytest.mark.parametrize("action", ["initialize", "transition"])
++def test_documented_mutation_lock_timeout_leaves_gate_and_operation_unchanged(database, monkeypatch, action):
++    request_id = uuid4()
++    with database.admin_connection() as blocker:
++        before = blocker.execute("select phase,epoch,row_version from platform_control.hr_execution_cutover").fetchone()
++        blocker.execute("select pg_advisory_xact_lock_shared(%s)", (ADVISORY_LOCK_KEY,))
++        started = monotonic()
++        with pytest.raises(psycopg.errors.LockNotAvailable):
++            run_documented(action, database, monkeypatch, request_id)
++        assert monotonic() - started < 10
++        assert blocker.execute("select phase,epoch,row_version from platform_control.hr_execution_cutover").fetchone() == before
++        assert blocker.execute(
++            "select count(*) from platform_control.hr_execution_cutover_operations where request_id=%s", (request_id,)
++        ).fetchone() == (0,)
++
++
++def test_documented_count_lock_timeout_is_error_not_zero(database, monkeypatch, capsys):
++    with database.admin_connection() as blocker:
++        blocker.execute("lock table platform_control.execution_jobs in access exclusive mode")
++        with pytest.raises(psycopg.errors.LockNotAvailable):
++            run_documented("count", database, monkeypatch, uuid4())
++    assert capsys.readouterr().out == ""
++
++
++def test_documented_transition_executes_once_and_replay_preserves_epoch(database, monkeypatch, capsys):
++    request_id = uuid4()
++    with database.admin_connection() as observer:
++        before = observer.execute("select epoch from platform_control.hr_execution_cutover").fetchone()[0]
++    run_documented("transition", database, monkeypatch, request_id)
++    run_documented("transition", database, monkeypatch, request_id)
++    with database.admin_connection() as observer:
++        assert observer.execute("select phase,epoch from platform_control.hr_execution_cutover").fetchone() == ("draining_legacy", before + 1)
++        assert observer.execute(
++            "select count(*) from platform_control.hr_execution_cutover_operations where request_id=%s", (request_id,)
++        ).fetchone() == (1,)
++    assert capsys.readouterr().out.count('"phase": "draining_legacy"') == 2
++
++
++@pytest.mark.parametrize("scenario", ["restore_failure", "state_failure", "peers_changed", "success"])
++def test_documented_legacy_restore_saves_only_after_instance_and_peer_checks(tmp_path, scenario):
++    blocks = re.findall(r"```bash\n(.*?)```", RUNBOOK.read_text(), re.S)
++    snippet = next(block for block in blocks if "# HR_LEGACY_RESTORE" in block)
++    snippet = snippet.replace('sudo -n -H -u agentops /bin/bash "$OPS_PM2"', "mock_pm2")
++    snippet = snippet.replace(
++        "hr_restore_evidence=/Users/agentops/AgentRuntime/release-evidence/APPROVED_RESTORE",
++        "hr_restore_evidence=" + shlex.quote(str(tmp_path)),
++    )
++    assert "sudo " not in snippet
++    functions = r'''
++mock_pm2() {
++  printf '%s\n' "$1" >> "$MOCK_ROOT/calls"
++  case "$1" in
++    restore-one)
++      test "$2" = /Users/agentops/AgentRuntime/metabot/ecosystem.config.cjs || return 98
++      test "$3" = metabot-hr && test "$4" = online || return 99
++      test "$MOCK_SCENARIO" != restore_failure || return 2
++      touch "$MOCK_ROOT/restored" ;;
++    state-one)
++      if test "$MOCK_SCENARIO" = state_failure; then printf 'stopped\n'; else printf 'online\n'; fi ;;
++    snapshot-except)
++      if test "$MOCK_SCENARIO" = peers_changed && test -f "$MOCK_ROOT/restored";
++      then printf '{"peer":"changed"}\n'; else printf '{}\n'; fi ;;
++    save) touch "$MOCK_ROOT/saved" ;;
++    *) return 99 ;;
++  esac
++}
++'''
++    result = subprocess.run(
++        ["bash", "-c", functions + snippet],
++        env={**os.environ, "MOCK_ROOT": str(tmp_path), "MOCK_SCENARIO": scenario},
++        capture_output=True, text=True, timeout=3,
++    )
++    assert (result.returncode == 0) == (scenario == "success")
++    assert (tmp_path / "saved").exists() == (scenario == "success")
+--- a/backend/tests/test_hr_failed_draft_cutover.py
++++ b/backend/tests/test_hr_failed_draft_cutover.py
+@@ -0,0 +1,81 @@
++"""Disposition of a failed historical draft is distinct from execution drain.
++
++The failed row is an explicit historical fixture, not a fabricated successful
++parse. All subsequent user repository operations use the real application role.
++"""
++from uuid import uuid4
++
++import pytest
++
++from app.hr.candidate_models import RetryCandidateDraft
++from app.hr.candidate_repository import CandidateRepository, CandidateUnavailable
++from tests.hr_agent_support import hr_agent_database
++from tests.test_hr_candidate_database import _seed_candidate_scope
++
++
++@pytest.fixture
++def failed_draft():
++    with hr_agent_database(cutover_phase="legacy") as database:
++        ids = _seed_candidate_scope({"admin": database.admin_dsn})
++        with database.admin_connection() as connection:
++            connection.execute(
++                "update platform_hr.candidate_drafts set state='failed', "
++                "extracted_facts='{}',error_code='fixture_parse_failed' where draft_id=%s",
++                (ids["draft"],),
++            )
++        yield database, CandidateRepository(database.dsn), ids
++
++
++def drain(database):
++    with database.admin_connection() as connection:
++        connection.execute(
++            "select * from platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)",
++            (uuid4(),),
++        )
++
++
++def test_failed_draft_can_be_explicitly_dismissed_during_legacy_drain(failed_draft):
++    database, repository, ids = failed_draft
++    drain(database)
++    result = repository.dismiss_draft(RetryCandidateDraft(ids["owner"], ids["draft"], uuid4(), 2))
++    assert result.state == "dismissed"
++    assert result.error_code is None
++    with database.admin_connection() as connection:
++        assert connection.execute("select count(*) from platform_hr.candidates").fetchone() == (0,)
++        assert connection.execute(
++            "select mutation_kind from platform_hr.candidate_draft_mutation_events where draft_id=%s",
++            (ids["draft"],),
++        ).fetchall() == [("dismiss",)]
++
++
++def test_failed_draft_kept_read_only_cannot_retry_during_drain_or_mutate_after_cloud(failed_draft):
++    database, repository, ids = failed_draft
++    drain(database)
++    command = RetryCandidateDraft(ids["owner"], ids["draft"], uuid4(), 2)
++    with pytest.raises(CandidateUnavailable):
++        repository.retry_draft(command)
++    with database.admin_connection() as connection:
++        assert connection.execute("select * from platform_control.hr_execution_cutover_counts_v102()").fetchone() == (0, 0)
++        connection.execute(
++            "select * from platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),)
++        )
++    for operation in (repository.retry_draft, repository.dismiss_draft):
++        with pytest.raises(CandidateUnavailable):
++            operation(command)
++    actual = repository.draft_for_owner(ids["owner"], ids["draft"])
++    assert actual.state == "failed"
++    assert actual.error_code == "fixture_parse_failed"
++    assert actual.row_version == 2
++    with database.admin_connection() as connection:
++        assert connection.execute("select count(*) from platform_hr.candidate_draft_mutation_events").fetchone() == (0,)
++        assert connection.execute("select count(*) from platform_hr.candidate_draft_processing_attempts").fetchone() == (0,)
++
++
++def test_failed_draft_retry_is_available_before_legacy_drain(failed_draft):
++    database, repository, ids = failed_draft
++    result = repository.retry_draft(RetryCandidateDraft(ids["owner"], ids["draft"], uuid4(), 2))
++    assert result.state == "pending"
++    assert result.attachment_id == ids["attachment"]
++    with database.admin_connection() as connection:
++        assert connection.execute("select count(*) from platform_hr.candidate_drafts").fetchone() == (1,)
++        assert connection.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+--- a/docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md
++++ b/docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md
+@@ -47,17 +47,17 @@
+   -v /data/orbbec-agent-platform/hr-knowledge:/data/hr-knowledge:ro \
+   -v /data/orbbec-agent-platform/hr-work:/data/hr-work:ro \
+   PLATFORM_IMAGE_SHA python -m tools.hr_agent.preflight \
+   --scope public-only \
+   --api-env-file /run/hr-agent-secrets/api-runtime.env \
+   --worker-env-file /run/hr-agent-secrets/worker-runtime.env
+ ```
+ 
+-已获相应数据库只读检查授权时，增加 app 身份 DSN 文件。工具为连接设置只读事务，调用现有 `load_hr_agent_settings`、`KnowledgeReleases` 和 `check_schema_ready`，并读取 096–103 回执及 public 102 cutover gate（103 修正排空函数）：
++已获相应数据库只读检查授权时，增加 app 身份 DSN 文件。工具为连接设置只读事务，调用现有 `load_hr_agent_settings`、`KnowledgeReleases` 和 `check_schema_ready`，并读取 096–104 回执及 public 102 cutover gate（103修订排空函数，104移除不可达条件并保持实际保护）：
+ 
+ ```bash
+ /usr/bin/docker run --rm --read-only --user 10001:10001 \
+   --network orbbec-agent-platform-internal \
+   --tmpfs /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700 \
+   -v orbbec-agent-platform-hr-agent-secrets:/run/hr-agent-secrets:ro \
+   -v orbbec-agent-platform-api-secrets:/run/secrets:ro \
+   -v /data/orbbec-agent-platform/hr-knowledge:/data/hr-knowledge:ro \
+@@ -70,29 +70,29 @@
+ ```
+ 
+ 输出仅含稳定配置/知识/profile/attachment 指纹、迁移身份、cutover 状态、blockers 和 limitations；不输出 endpoint、路径、DSN、credential 或原始异常。相同的自报指纹只能证明两份输入一致，不能证明生产容器确实加载它们。容器存在/运行也不能证明认领、续租、知识、附件、provider 或业务功能正常，仍需后续 API 与进程 canary。
+ 
+ `--scope public-only` 不把个人材料策略混入公开材料配置结论，但仍不授权真实个人材料。`--scope full-candidate` 会保留 `personal_processing_authorizer_absent`；当前生产装配没有该 authorizer，profile 声称“approved”不能解除阻断。D7 尚无产品确认，两种 scope 都保留 `d7_product_approval_absent`。不得通过命令行布尔值伪造二者通过。
+ 
+ ## 4. 控制库迁移（需单独执行授权）
+ 
+-以下是获准窗口内的具体命令形态。根迁移由现有 `bootstrap-control-db.sh` 的短时 owner membership 生命周期负责；它必须已经应用并验证 102、103。根目录中的 100 必须更早由第 1 节独立附件热修复完成，不能在旧附件 Worker 仍可恢复时首次应用。HR opt-in 096–099/101 只由 `migrate-hr-agent.sh` 应用；它不会运行根迁移目录。
++以下是获准窗口内的具体命令形态。根迁移由现有 `bootstrap-control-db.sh` 的短时 owner membership 生命周期负责；它必须已经应用并验证 102、103、104。根目录中的 100 必须更早由第 1 节独立附件热修复完成，不能在旧附件 Worker 仍可恢复时首次应用。HR opt-in 096–099/101 只由 `migrate-hr-agent.sh` 应用；它不会运行根迁移目录。
+ 
+ Production：
+ 
+ ```bash
+ /opt/orbbec-agent-platform/current/deploy/cloud/migrate-hr-agent.sh \
+   /opt/orbbec-agent-platform/current \
+   /opt/orbbec-agent-platform/private \
+   PLATFORM_IMAGE_SHA \
+   PLATFORM_POSTGRES_CONTAINER_ID
+ ```
+ 
+-`PLATFORM_IMAGE_SHA` 和 `PLATFORM_POSTGRES_CONTAINER_ID` 必须替换为已核验的准确值，镜像不能使用浮动 tag。provisioning须确认两个 migrator DSN 为root-owned mode-0600文件；助手实际检查普通文件和0600，未检查owner UID，这一项仍是外部前置。助手先验证：owner membership at rest 为0且没有migrator会话；production/preview 的根迁移100、102、103 checksum与当前release一致。任一条件不满足时，在授予权限前失败，不补跑根迁移。
++`PLATFORM_IMAGE_SHA` 和 `PLATFORM_POSTGRES_CONTAINER_ID` 必须替换为已核验的准确值，镜像不能使用浮动 tag。provisioning须确认两个 migrator DSN 为root-owned mode-0600文件；助手实际检查普通文件和0600，未检查owner UID，这一项仍是外部前置。助手先验证：owner membership at rest 为0且没有migrator会话；production/preview 的根迁移100、102、103、104 checksum与当前release一致。任一条件不满足时，在授予权限前失败，不补跑根迁移。
+ 
+ 助手由 `hr_agent_migrate.py` 监督实际具名迁移容器。授予的是**整个控制库 owner 的角色成员身份**，不是 HR 表级权限，也不是会话级权限。production 清理并核实后才授予 preview；不跨两个迁移同时持权。同部署主机的文件锁阻止本助手并发；其他部署工具仍须遵守独占维护窗口。开始前必须核实两个 owner 的所有 membership 为 0、两个 migrator 的数据库会话为 0。
+ 
+ 每个环境的迁移等待默认 900 秒，`--migration-timeout` 可明确设为不超过 3600 秒；单个管理命令默认 10 秒，`--command-timeout` 不超过 30 秒，SQL 另有 statement/lock timeout。容器使用不可变镜像、`--read-only`、受限 tmpfs 和该环境唯一的 DSN 文件。INT/TERM/HUP、SQL 失败和超时均进入清理：检查并停止准确容器，必要时 kill，再撤销 membership、核实容器停止且两个 migrator 会话及 membership 均为 0。不能用 Docker CLI 已退出代替容器停止，不能用 REVOKE 代替已 SET ROLE 会话结束。
+ 
+ 回执保存于 private 下 `hr-agent-migration-receipts/<run UUID>.json`（目录 0700，文件 0600），在 GRANT 前记录可能的授权与具名容器，包含阶段、环境、容器身份、时间及 `cleanup_verified`，不含 DSN、SQL 输出或异常原文。`cleanup_verified=false` 或 `HR_AGENT_MIGRATIONS_CLEANUP_UNRESOLVED` 是必须交给发布监控处理的失败信号；本轮没有装配生产告警系统。成功回执证明本次监督范围内的清理，不证明 HR 业务上线。
+ 
+ SIGKILL、主机掉电、Docker daemon 长期不可用不能被进程内 trap 保证恢复；上述超时也不是这类故障下的角色 TTL。出现此情况禁止直接重跑或恢复旧发布。值班管理员按最后一份 private 回执：用 `docker inspect <准确 container_id/name>` 确认并停止对应容器；检查 `pg_stat_activity` 中两个 migrator 的会话，核实身份后终止残留会话；撤销准确 owner/migrator membership；复核容器、会话与 membership 三项均为空或已停止，并另存人工恢复回执。恢复操作需要维护窗口的数据库/容器权限，不由助手自动扩大权限。对未确认归属的容器或会话不得猜测后删除。
+@@ -106,28 +106,86 @@
+   --network orbbec-agent-platform-internal \
+   -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
+   -e HR_CUTOVER_REQUEST_ID=EXPLICIT_UUID PLATFORM_IMAGE_SHA \
+   python - <<'PY'
+ import os
+ import psycopg
+ from app.local_secrets import read_secret_file
+ 
++# HR_CUTOVER_INITIALIZE
+ dsn = read_secret_file("/run/control-secrets/control-maintenance-database-url")
+ with psycopg.connect(dsn, connect_timeout=3) as connection:
++    connection.execute("SET LOCAL lock_timeout = '2s'")
++    connection.execute("SET LOCAL statement_timeout = '30s'")
+     connection.execute(
+-        "select platform_control.initialize_hr_execution_cutover_v102(%s)",
++        "select * from platform_control.initialize_hr_execution_cutover_v102(%s)",
+         (os.environ["HR_CUTOVER_REQUEST_ID"],),
+     ).fetchone()
+ PY
+ ```
+ 
+-进入 drain 或完成切换时，Python 参数化 SQL 使用 `select platform_control.transition_hr_execution_cutover_v102(%s,%s)`，参数依次为准确目标 phase 和新的显式 request UUID。这里的命令是受权后的操作形态，不是本手册授予的执行许可。
+-
+-迁移后再次运行带数据库的 preflight。096–103 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
++正式窗口先用maintenance身份执行以下准确计数。事务只读且使用一致快照；返回的是阻止切换的占用计数，不是去重用户任务数。超时或错误必须停止步骤，不能填零、复用旧计数或自动进入下一phase。
++
++```bash
++/usr/bin/docker run --rm -i --read-only --user 0:0 \
++  --network orbbec-agent-platform-internal \
++  -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
++  PLATFORM_IMAGE_SHA python - <<'PY'
++import json
++import psycopg
++from app.local_secrets import read_secret_file
++
++# HR_CUTOVER_COUNT
++dsn = read_secret_file("/run/control-secrets/control-maintenance-database-url")
++with psycopg.connect(dsn, connect_timeout=3) as connection:
++    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
++    connection.execute("SET LOCAL lock_timeout = '2s'")
++    connection.execute("SET LOCAL statement_timeout = '30s'")
++    counts = connection.execute(
++        "select * from platform_control.hr_execution_cutover_counts_v102()"
++    ).fetchone()
++print(json.dumps(dict(zip(("legacy_nonterminal", "cloud_nonterminal"), counts))))
++PY
++```
++
++进入drain或完成切换时，使用准确目标phase和新的显式request UUID。切换函数会在互斥锁内重新计数，前一次只读盘点不代替该检查。
++
++```bash
++/usr/bin/docker run --rm -i --read-only --user 0:0 \
++  --network orbbec-agent-platform-internal \
++  -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
++  -e HR_CUTOVER_REQUEST_ID=EXPLICIT_UUID \
++  -e HR_CUTOVER_TARGET_PHASE=EXPLICIT_PHASE PLATFORM_IMAGE_SHA \
++  python - <<'PY'
++import json
++import os
++import psycopg
++from psycopg.rows import dict_row
++from app.local_secrets import read_secret_file
++
++# HR_CUTOVER_TRANSITION
++target = os.environ["HR_CUTOVER_TARGET_PHASE"]
++if target not in {"legacy", "draining_legacy", "cloud", "draining_cloud"}:
++    raise ValueError("invalid HR cutover target phase")
++dsn = read_secret_file("/run/control-secrets/control-maintenance-database-url")
++with psycopg.connect(dsn, connect_timeout=3, row_factory=dict_row) as connection:
++    connection.execute("SET LOCAL lock_timeout = '2s'")
++    connection.execute("SET LOCAL statement_timeout = '30s'")
++    receipt = connection.execute(
++        "select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)",
++        (target, os.environ["HR_CUTOVER_REQUEST_ID"]),
++    ).fetchone()
++print(json.dumps(receipt, default=str))
++PY
++```
++
++初始化、计数和切换的数据库锁等待上限均为2秒，单条SQL上限30秒，超时抛错并回滚事务。它们不是Docker/网络的总运行时限；命令成功打印的回执须与变更记录一起留存。`EXPLICIT_UUID`和`EXPLICIT_PHASE`须替换为窗口中的准确值；这些命令不授予执行许可。若响应丢失，不换新request UUID盲重试，应核对原操作回执后用原UUID进行幂等重放。
++
++迁移后再次运行带数据库的 preflight。096–104 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
+ 
+ ## 5. 隔离启动与验证
+ 
+ 迁移和 provisioning 完成后，可先启动 production 服务但保持 102 gate 为 `legacy`，因此云端新 root admission 会被拒绝：
+ 
+ ```bash
+ "${hr_compose[@]}" up -d --force-recreate platform-api platform-hr-agent-worker
+ "${hr_compose[@]}" ps platform-api platform-hr-agent-worker
+@@ -160,45 +218,54 @@
+ 2. owner-preserving drain：已受理工作留给原执行者完成、认领、恢复或明确取消；只拒绝新的 root admission，不停止已有 continuation 的领取。不得将旧命令改写为新任务，不得同一附件双解析。
+ 3. 按下节停止旧 HR Worker 并核实后，旧链非终态为 0 且证据完整，才执行 `draining_legacy -> cloud`，只允许云端 Loop 新受理。
+ 4. 切换后持续核对新链任务、等待、恢复和解析归属；不能把单次 health 当稳定性证明。
+ 
+ 回滚不回退数据库、不删除或覆盖成果，也不把同一 work 自动交给旧执行器：
+ 
+ 1. `cloud -> draining_cloud`，立即关闭云端新 root admission；云端 Worker 继续领取/恢复该 lane 已 accepted/queued 的 work 及派生 parse/candidate work。
+ 2. 按 owner/work/source 身份让新链 continuation 完成或明确取消，直到非终态计数为 0；保留已保存成果、确认标准和材料。不得笼统停止认领而把 accepted 工作滞留在队列。
+-3. 只有另行确认旧链仍安全、飞书去向允许且不存在重复归属后，才可 `draining_cloud -> legacy` 恢复旧接单；否则保持停止接单并修复。
++3. 默认保持 `draining_cloud` 修复新链。只有另行批准恢复旧链、按§6.2恢复并核验旧HR执行器、确认飞书去向及无重复归属后，才可 `draining_cloud -> legacy`。数据库phase切回不会重新创建已删除的PM2条目，也不会把停用配置改回启用。
+ 4. 附件热修复后的旧附件 Worker始终保持停止。HR 回滚绝不能恢复它，即使当前 release 或通用 deploy 失败。
+ 
+ 所有状态切换使用唯一 transition request id，记录前后 epoch/row_version 和只读计数；不得直接 UPDATE 102 表或伪造“零在途”。
+ 
+ 
+ ### 6.1 排空记录与旧 HR 执行器停止
+ 
+-103 不改历史状态。v5 queued 只是命令记录时，只有 job/binding/transport-run/Attempt/Turn 准确关联且 Attempt、Turn 都已终结才从占用中排除；孤立或关联不明仍阻断。任何未确认停止或关联活跃 Turn/Attempt 均阻断，包括 interrupted。旧 interrupted 有 terminal_at、无待确认停止及活跃关联时按技术终态排除，**不代表任务已成功，也不证明远端进程停止**。2026-09-11 11:51 UTC 的聚合盘点有 3 条终结轮次关联的 queued v5 记录，以及 28 条满足上述聚合技术终态条件的 interrupted；没有修改或重放这些记录。正式窗口仍须运行 103 的准确计数及原执行器停止核验，不能把聚合结果当作已经切换。
+-
+-ready 旧简历草稿仍需在切换前逐批决定：在 `draining_legacy` 内确认/放弃，或明确保留只读历史；保留只读不自动转成新链待办。cloud 激活后旧 confirm/dismiss（含重放）被拒绝。切换不自动重新上传或重新解析同一材料。
++103/104不改历史状态。028已强制interrupted具有terminal_at；104从当前生效函数移除不可能命中的NULL分支，真实阻断依靠未确认stop、活跃关联与v5准确lineage。v5 queued 只是命令记录时，只有 job/binding/transport-run/Attempt/Turn 准确关联且 Attempt、Turn 都已终结才从占用中排除；孤立或关联不明仍阻断。任何未确认停止或关联活跃 Turn/Attempt 均阻断，包括 interrupted。旧 interrupted 有 terminal_at、无待确认停止及活跃关联时按技术终态排除，**不代表任务已成功，也不证明远端进程停止**。2026-09-11 11:51 UTC 的聚合盘点仅覆盖v5排除条件的部分关联事实，有3条终结轮次关联的queued v5记录，以及 28 条满足上述聚合技术终态条件的 interrupted；没有修改或重放这些记录。正式窗口仍须运行104生效后的计数函数及原执行器停止核验，不能把聚合结果当作已经切换。
++
++ready和failed旧简历草稿都必须在切换清单中逐项登记处置，而不是只清点仍在执行的解析。计数将二者视为执行终态，不表示已确认、成功或用户不再需要处理；SQL计数不校验这份人工处置清单。
++
++| 草稿与阶段 | 当前可执行操作 | 切换前必须登记的去向 |
++| --- | --- | --- |
++| failed，尚在legacy | 单份retry，沿用原附件；成功后人工核对 | 要求旧链重试的，必须在进入draining_legacy前完成 |
++| ready，draining_legacy | 用户confirm或dismiss；也可保留只读 | 记录选定动作、准确草稿/材料身份与回执，保留只读须明确仍未确认 |
++| failed，draining_legacy | 用户dismiss或保留只读；retry作为新受理会被拒绝 | 记录失败原因和用户选择；没有选择就不以计数为零继续切换 |
++| ready/failed，cloud或draining_cloud | 原授权范围内只读；旧confirm/dismiss/retry及重放均拒绝 | 保留历史，不自动转为新链待办或再次上传/解析 |
++
++排空过程中刚失败的旧解析也进入上述清单。需要重试但尚未取得处置决定时，暂停后续切换；现行状态机没有 `draining_legacy -> legacy` 直接撤销入口，不能手改phase表或绕过新受理闸门。失败草稿在drain内可放弃，在cloud后仍可读的数据库验证仅证明这些接口可达，不代替用户已选择。任何后续重新处理都须明确授权与归属，不能同一材料双解析。
+ 
+ 下列命令只在已批准窗口内执行。先保持 draining_legacy，让已有工作和派生解析完成，再停云端旧 HR direct Worker；保持与 §2 完全相同的 compose 数组，并为该服务显式启用其旧 profile：
+ 
+ ```bash
+ (
+ set -euo pipefail
+ legacy_hr_ids=$("${hr_compose[@]}" --profile hr-web ps -q platform-hr-web-worker)
+ test -n "$legacy_hr_ids"
+ "${hr_compose[@]}" --profile hr-web stop platform-hr-web-worker
+ for legacy_hr_id in $legacy_hr_ids; do
+   test "$(/usr/bin/docker inspect --format '{{.State.Running}}' "$legacy_hr_id")" = false
+ done
+ )
+ ```
+ 
+-私有运行配置必须持久化 `PLATFORM_HR_WEB_WORKER_ENABLED=0`，发布/回滚清单不得再启动 `platform-hr-web-worker`；核实 API 实际配置与镜像。没有匹配容器时上面的步骤失败而非推定已经停用，须由服务负责人提供“该环境不存在旧 HR direct Worker”的准确进程/服务证据。
+-
+-本机 Team 仓库已核实 HR Bot 独立映射为 PM2 `metabot-hr`，不是整个共享 MetaBot 进程。内网具体控制能力见[只读审计](../../artifacts/2026-09-11-hr-e-review/final/legacy-worker-stop-audit.md)。在已核实实际主机、部署 wrapper/checksum、无外部 watchdog 重建及批准目标为 absent 后，采用以下退出操作；命令未执行：
++私有运行配置必须持久化 `PLATFORM_HR_WEB_WORKER_ENABLED=0`，日常发布及自动回滚清单不得再启动 `platform-hr-web-worker`；只有§6.2显式批准的旧链恢复流程可以改回。核实API实际配置与镜像。没有匹配容器时上面的步骤失败而非推定已经停用，须由服务负责人提供“该环境不存在旧HR direct Worker”的准确进程/服务证据。
++
++已读取本机Team仓库的入库配置与脚本，其中将HR Bot映射为独立PM2条目 `metabot-hr`，并提供单实例控制命令。它仅证明仓库声明的能力，实际生产部署身份未核验（原指纹记录为 `production_identity_verified: false`），不能称内网实际控制能力已验。见[仓库只读审计](../../artifacts/2026-09-11-hr-e-review/final/legacy-worker-stop-audit.md)。实际主机、部署wrapper/checksum、无外部watchdog重建及批准目标absent核实后，才可采用以下退出操作；命令未执行：
+ 
+ ```bash
+ (
+ set -euo pipefail
+ OPS_PM2=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
+ hr_stop_evidence=/Users/agentops/AgentRuntime/release-evidence/APPROVED_CHANGE
+ test -d "$hr_stop_evidence"
+ sudo -n -H -u agentops /bin/bash "$OPS_PM2" state-one metabot-hr > "$hr_stop_evidence/hr-before.txt"
+@@ -206,23 +273,52 @@
+ sudo -n -H -u agentops /bin/bash "$OPS_PM2" delete-one metabot-hr
+ test "$(sudo -n -H -u agentops /bin/bash "$OPS_PM2" state-one metabot-hr)" = absent
+ sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_stop_evidence/others-after.json"
+ cmp "$hr_stop_evidence/others-before.json" "$hr_stop_evidence/others-after.json"
+ sudo -n -H -u agentops /bin/bash "$OPS_PM2" save
+ )
+ ```
+ 
+-证据目录须在窗口前创建并限制权限；APPROVED_CHANGE 换成准确变更号。只有 HR absent、其他实例快照一致才 save；任一步失败停止切换并调查，不自动全量恢复。选择 delete-one 是因为 wrapper 的 restore-one stopped 会先重新启动该实例再停止，不适合作为“退出过程中不重启旧HR”的默认命令。禁止 replace-all/delete-all；后续 fleet 发布和回滚清单必须排除 HR，避免重新创建。实际主机和持久状态未在本轮验证，仓库提供操作能力不等于已停止。
++证据目录须在窗口前创建并限制权限；APPROVED_CHANGE 换成准确变更号。只有HR absent、其他实例快照一致才save；任一步失败停止切换并调查，不自动全量恢复。选择delete-one是因为wrapper的restore-one stopped会先重新启动该实例再停止，不适合作为退出命令。禁止replace-all/delete-all；后续fleet发布和自动回滚清单必须排除HR，只有§6.2的显式恢复例外。实际主机和持久状态未在本轮验证，仓库提供操作能力不等于已停止。
+ 
+ Relay 注册仍通常共用于多个 Bot，现有 register_worker CLI 固定非验收 Worker 的完整 agent 列表，不能假设支持只移除 hr-bot。保留共享 Relay 及其他 Bot，依赖活 handoff gate 拒绝其 HR 派发；禁止整体 revoke 来冒充 HR 退出。若实际存在 HR 专用 Worker，维护者才可按已确认 worker_id 使用 `python -m app.execution_relay.register_worker revoke-worker <worker_id> <change_reference>` 注销，并保留维护回执。
+ 
+ 活的 `/v5/handoff` 已在每次 offer 前取共享闸门锁；cloud/draining_cloud 不再发 HR 命令，legacy/draining_legacy 允许准确已受理工作的续作。已接受工作回调保留原身份/租约校验，避免因切换丢掉完成回执。确认门控代码已在实际 API 镜像生效；本地签名 HTTP 测试不能替代这一步。Feishu HR 的用户入口、存量会话去向与 HR Bot 停用必须由产品/服务负责人一起确认，仍未知时不能进入 cloud。
++
++### 6.2 仅在明确批准时恢复旧HR执行器
++
++此流程是持久退出的显式例外，不是通用deploy失败后的自动动作。开始前保持 `draining_cloud`，新链在途均完成或明确取消；旧链恢复镜像必须保留D1保守隔离、活handoff闸门及附件热修复，不可简单回退到存在这些缺陷的旧release。核对飞书恢复去向、共享Relay状态、原部署清单及唯一执行归属；缺少任一项时保持draining_cloud修复新链。
++
++1. 从已批准的配置记录恢复旧HR direct Worker所需的 `PLATFORM_HR_WEB_WORKER_ENABLED=1` 和准确镜像引用，保留当前数据库及附件热修复。重新生成并核对API实际配置；不是整份旧env无差别覆盖。使用§2同一compose数组及 `--profile hr-web up -d --force-recreate platform-api platform-hr-web-worker`，随后inspect准确容器镜像/状态并核对实际readiness。此时gate仍为draining_cloud，旧handoff必须拒绝offer。
++2. 若实际部署清单包含内网HR Bot，先核实旧ecosystem和wrapper的准确身份。按下面仅恢复 `metabot-hr`；其他Bot快照一致且HR online后才save。若退出前并不存在该执行器，不能因手册列了命令就创建它。
++
++```bash
++(
++set -euo pipefail
++# HR_LEGACY_RESTORE
++OPS_PM2=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
++ECOSYSTEM=/Users/agentops/AgentRuntime/metabot/ecosystem.config.cjs
++hr_restore_evidence=/Users/agentops/AgentRuntime/release-evidence/APPROVED_RESTORE
++test -d "$hr_restore_evidence"
++sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_restore_evidence/others-before.json"
++sudo -n -H -u agentops /bin/bash "$OPS_PM2" restore-one "$ECOSYSTEM" metabot-hr online
++test "$(sudo -n -H -u agentops /bin/bash "$OPS_PM2" state-one metabot-hr)" = online
++sudo -n -H -u agentops /bin/bash "$OPS_PM2" snapshot-except metabot-hr > "$hr_restore_evidence/others-after.json"
++cmp "$hr_restore_evidence/others-before.json" "$hr_restore_evidence/others-after.json"
++sudo -n -H -u agentops /bin/bash "$OPS_PM2" save
++)
++```
++
++3. 按原准确Worker身份核查HR注册、协议readiness及单一执行器配置；共享Relay不整体撤销/重注册。进程online只证明进程状态，不能当作执行能力通过。所有恢复命令失败均停止，不执行phase转换；部分已启动的旧进程仍受draining_cloud闸门约束，逐项记录状态并修复。
++4. 确认旧运行配置、实际实例、readiness与无新链在途后，才用§4有时限的transition命令执行 `draining_cloud -> legacy`，保存epoch和操作回执，再按批准范围做一次公开/虚构canary。失败则 `legacy -> draining_legacy` 停新受理并保留原归属，不恢复旧附件Worker或抹掉数据。
++
++此恢复拓扑及实际命令尚未在生产验证；缺少部署指纹和窗口决定时，不因手册已有步骤宣称支持安全回滚。
+ 
+ ## 7. 当前明确未完成
+ 
+ - 发布窗口、停服授权和执行责任人未知。
+ - 真实候选人模型服务、传输、保留、训练与日志策略未获确认；生产 personal-processing authorizer 不存在。
+ - D7 的 300 秒/16384 输出候选配置尚未由产品确认延迟和成本，计量校准也未完成。
+-- 100/102/103 的发布回执、103 准确排空计数和实际 handoff 镜像未在生产验收。
+-- 已做受限只读聚合盘点，但本机已核实内网metabot-hr单实例退出能力；实际主机部署指纹、持久停止证据、共享Worker不受影响及独立HR飞书去向仍待验。
++- 100/102/103/104的发布回执、104生效后的实际排空计数、完整v5关联条件及handoff镜像未在生产验收。
++- 已做受限只读聚合盘点，并读取本机仓库中metabot-hr单实例退出脚本；实际主机部署身份、持久停止/恢复证据、共享Worker不受影响及独立HR飞书去向仍待验。
+ - 最新只读观察生产为 fe10fae；发布分支已在96f412f承接该生产代码；发布窗口仍须复查最新生产HEAD，不能覆盖随后上线的能力。
+ - 浏览器验收、真实模型专业审读和生产验收均未完成。

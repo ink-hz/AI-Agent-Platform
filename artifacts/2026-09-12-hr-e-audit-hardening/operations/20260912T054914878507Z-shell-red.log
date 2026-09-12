@@ -1,0 +1,58 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest -q tests/test_hr_cutover_operations.py -k success
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_pm2_exit_is_causal_and_saves_only_verified_absence[success] _______
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9506/test_pm2_exit_is_causal_and_sa0')
+scenario = 'success'
+
+    @pytest.mark.parametrize("scenario", ["success", "wrong_wrapper", "wrong_host", "missing_approval", "delete_failure", "delete_no_effect", "peers_changed"])
+    def test_pm2_exit_is_causal_and_saves_only_verified_absence(tmp_path, scenario):
+>       result, state = run_block(tmp_path, "HR_LEGACY_STOP", scenario)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_hr_cutover_operations.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9506/test_pm2_exit_is_causal_and_sa0')
+marker = 'HR_LEGACY_STOP', scenario = 'success'
+
+    def run_block(tmp_path, marker, scenario):
+        blocks = re.findall(r"```bash\n(.*?)```", RUNBOOK.read_text(), re.DOTALL)
+        selected = [block for block in blocks if f"# {marker}\n" in block]
+>       assert len(selected) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_hr_cutover_operations.py:64: AssertionError
+_ test_attachment_sequence_fails_closed_and_never_restarts_old_image[success] __
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9506/test_attachment_sequence_fails0')
+scenario = 'success'
+
+    @pytest.mark.parametrize("scenario", ["success", "wrong_config_image", "source_mismatch", "stop_failure", "stop_no_effect", "migration_failure", "ledger_failure", "start_failure", "wrong_started_image"])
+    def test_attachment_sequence_fails_closed_and_never_restarts_old_image(tmp_path, scenario):
+>       result, state = run_block(tmp_path, "HR_ATTACHMENT_HOTFIX", scenario)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_hr_cutover_operations.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9506/test_attachment_sequence_fails0')
+marker = 'HR_ATTACHMENT_HOTFIX', scenario = 'success'
+
+    def run_block(tmp_path, marker, scenario):
+        blocks = re.findall(r"```bash\n(.*?)```", RUNBOOK.read_text(), re.DOTALL)
+        selected = [block for block in blocks if f"# {marker}\n" in block]
+>       assert len(selected) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_hr_cutover_operations.py:64: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_hr_cutover_operations.py::test_pm2_exit_is_causal_and_saves_only_verified_absence[success]
+FAILED tests/test_hr_cutover_operations.py::test_attachment_sequence_fails_closed_and_never_restarts_old_image[success]
+2 failed, 14 deselected in 0.04s
+
+exit_code=1

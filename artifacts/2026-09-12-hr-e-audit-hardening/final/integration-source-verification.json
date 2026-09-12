@@ -1,0 +1,8 @@
+{
+  "tested_commit": "6eaefc21199ea92f3a6572b8aa02653f2a0d689b",
+  "source_files": 1653,
+  "source_changes_during_run": [],
+  "command": "runs/final-integration/command.json",
+  "result": "567 passed, 1 skipped, 23 warnings in 421.98s",
+  "exit_code": 0
+}

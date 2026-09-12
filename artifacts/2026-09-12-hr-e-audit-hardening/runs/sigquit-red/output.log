@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_signal_stops_container_before_revoke[3] _________________
+backend/tests/test_hr_agent_migration_deployment.py:327: in test_signal_stops_container_before_revoke
+    assert process.returncode == 128 + number
+E   AssertionError: assert -3 == (128 + <Signals.SIGQUIT: 3>)
+E    +  where -3 = <Popen: returncode: -3 args: ['/Users/neo/Developer/work/AI-Agent-Platform/....>.returncode
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_migration_deployment.py::test_signal_stops_container_before_revoke[3]
+1 failed, 16 deselected in 2.63s

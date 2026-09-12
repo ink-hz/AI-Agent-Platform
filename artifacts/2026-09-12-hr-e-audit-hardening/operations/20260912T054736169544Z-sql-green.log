@@ -1,0 +1,6 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest -q tests/test_hr_cutover_runbook.py
+........                                                                 [100%]
+8 passed in 11.22s
+
+exit_code=0

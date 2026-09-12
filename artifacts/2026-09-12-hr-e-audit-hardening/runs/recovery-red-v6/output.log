@@ -1,0 +1,95 @@
+EEEEEEE                                                                  [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-cloud] _
+backend/tests/test_hr_recovery_cutover.py:40: in prepared
+    binding = bindings.prepare(lease, frozen, connection=connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/direct_command_binding.py:365: in prepare
+    frozen = parse_frozen_command(
+backend/app/execution_relay/frozen_command_v5.py:105: in parse_frozen_command
+    return parse_frozen_v6(value)
+           ^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/frozen_command_v6.py:24: in parse_frozen_v6
+    raise V6ContractError('v6 frozen capabilities invalid')
+E   app.execution_relay.contracts_v6.V6ContractError: v6 frozen capabilities invalid
+_ ERROR at setup of test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-draining_cloud] _
+backend/tests/test_hr_recovery_cutover.py:40: in prepared
+    binding = bindings.prepare(lease, frozen, connection=connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/direct_command_binding.py:365: in prepare
+    frozen = parse_frozen_command(
+backend/app/execution_relay/frozen_command_v5.py:105: in parse_frozen_command
+    return parse_frozen_v6(value)
+           ^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/frozen_command_v6.py:24: in parse_frozen_v6
+    raise V6ContractError('v6 frozen capabilities invalid')
+E   app.execution_relay.contracts_v6.V6ContractError: v6 frozen capabilities invalid
+_ ERROR at setup of test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-cloud] _
+backend/tests/test_hr_recovery_cutover.py:40: in prepared
+    binding = bindings.prepare(lease, frozen, connection=connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/direct_command_binding.py:365: in prepare
+    frozen = parse_frozen_command(
+backend/app/execution_relay/frozen_command_v5.py:105: in parse_frozen_command
+    return parse_frozen_v6(value)
+           ^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/frozen_command_v6.py:24: in parse_frozen_v6
+    raise V6ContractError('v6 frozen capabilities invalid')
+E   app.execution_relay.contracts_v6.V6ContractError: v6 frozen capabilities invalid
+_ ERROR at setup of test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-draining_cloud] _
+backend/tests/test_hr_recovery_cutover.py:40: in prepared
+    binding = bindings.prepare(lease, frozen, connection=connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/direct_command_binding.py:365: in prepare
+    frozen = parse_frozen_command(
+backend/app/execution_relay/frozen_command_v5.py:105: in parse_frozen_command
+    return parse_frozen_v6(value)
+           ^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/frozen_command_v6.py:24: in parse_frozen_v6
+    raise V6ContractError('v6 frozen capabilities invalid')
+E   app.execution_relay.contracts_v6.V6ContractError: v6 frozen capabilities invalid
+_ ERROR at setup of test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant _
+backend/tests/test_hr_recovery_cutover.py:40: in prepared
+    binding = bindings.prepare(lease, frozen, connection=connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/direct_command_binding.py:365: in prepare
+    frozen = parse_frozen_command(
+backend/app/execution_relay/frozen_command_v5.py:105: in parse_frozen_command
+    return parse_frozen_v6(value)
+           ^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/frozen_command_v6.py:24: in parse_frozen_v6
+    raise V6ContractError('v6 frozen capabilities invalid')
+E   app.execution_relay.contracts_v6.V6ContractError: v6 frozen capabilities invalid
+_ ERROR at setup of test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority[cloud] _
+backend/tests/test_hr_recovery_cutover.py:40: in prepared
+    binding = bindings.prepare(lease, frozen, connection=connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/direct_command_binding.py:365: in prepare
+    frozen = parse_frozen_command(
+backend/app/execution_relay/frozen_command_v5.py:105: in parse_frozen_command
+    return parse_frozen_v6(value)
+           ^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/frozen_command_v6.py:24: in parse_frozen_v6
+    raise V6ContractError('v6 frozen capabilities invalid')
+E   app.execution_relay.contracts_v6.V6ContractError: v6 frozen capabilities invalid
+_ ERROR at setup of test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority[draining_cloud] _
+backend/tests/test_hr_recovery_cutover.py:40: in prepared
+    binding = bindings.prepare(lease, frozen, connection=connection)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/direct_command_binding.py:365: in prepare
+    frozen = parse_frozen_command(
+backend/app/execution_relay/frozen_command_v5.py:105: in parse_frozen_command
+    return parse_frozen_v6(value)
+           ^^^^^^^^^^^^^^^^^^^^^^
+backend/app/execution_relay/frozen_command_v6.py:24: in parse_frozen_v6
+    raise V6ContractError('v6 frozen capabilities invalid')
+E   app.execution_relay.contracts_v6.V6ContractError: v6 frozen capabilities invalid
+=========================== short test summary info ============================
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-draining_cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-draining_cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority[cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority[draining_cloud]
+7 errors in 9.11s

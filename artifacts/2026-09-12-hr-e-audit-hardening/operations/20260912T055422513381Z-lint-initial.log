@@ -1,0 +1,55 @@
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/ruff check backend/tests/test_hr_cutover_runbook.py backend/tests/test_hr_cutover_operations.py
+F401 [*] `os` imported but unused
+ --> backend/tests/test_hr_cutover_runbook.py:6:8
+  |
+4 | are real. No Docker command or production connection is executed.
+5 | """
+6 | import os
+  |        ^^
+7 | import re
+8 | import shlex
+  |
+help: Remove unused import: `os`
+  |
+5 | """
+  - import os
+6 | import re
+  |
+
+F401 [*] `shlex` imported but unused
+  --> backend/tests/test_hr_cutover_runbook.py:8:8
+   |
+ 6 | import os
+ 7 | import re
+ 8 | import shlex
+   |        ^^^^^
+ 9 | import subprocess
+10 | from pathlib import Path
+   |
+help: Remove unused import: `shlex`
+  |
+7 | import re
+  - import shlex
+8 | import subprocess
+  |
+
+F401 [*] `subprocess` imported but unused
+  --> backend/tests/test_hr_cutover_runbook.py:9:8
+   |
+ 7 | import re
+ 8 | import shlex
+ 9 | import subprocess
+   |        ^^^^^^^^^^
+10 | from pathlib import Path
+11 | from time import monotonic
+   |
+help: Remove unused import: `subprocess`
+  |
+8 | import shlex
+  - import subprocess
+9 | from pathlib import Path
+  |
+
+Found 3 errors.
+[*] 3 fixable with the `--fix` option.
+exit_code=1

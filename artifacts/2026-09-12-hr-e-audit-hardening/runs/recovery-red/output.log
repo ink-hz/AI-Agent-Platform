@@ -1,0 +1,98 @@
+EEEEEEE                                                                  [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-cloud] _
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py, line 46
+  @pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
+  @pytest.mark.parametrize("already_refreshed", [False, True])
+  def test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation(
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py, line 75
+  @pytest.fixture()
+  def signed_api(signed_http_app):
+E       fixture 'signed_http_app' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, attempt_repository, bindings, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, conversation_database, database, direct_database, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, prepared, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recovering, recwarn, repository, respx_mock, signed_api, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, transport_worker, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory, worker_conversation, worker_turn
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py:75
+_ ERROR at setup of test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-draining_cloud] _
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py, line 46
+  @pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
+  @pytest.mark.parametrize("already_refreshed", [False, True])
+  def test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation(
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py, line 75
+  @pytest.fixture()
+  def signed_api(signed_http_app):
+E       fixture 'signed_http_app' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, attempt_repository, bindings, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, conversation_database, database, direct_database, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, prepared, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recovering, recwarn, repository, respx_mock, signed_api, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, transport_worker, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory, worker_conversation, worker_turn
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py:75
+_ ERROR at setup of test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-cloud] _
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py, line 46
+  @pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
+  @pytest.mark.parametrize("already_refreshed", [False, True])
+  def test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation(
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py, line 75
+  @pytest.fixture()
+  def signed_api(signed_http_app):
+E       fixture 'signed_http_app' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, attempt_repository, bindings, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, conversation_database, database, direct_database, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, prepared, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recovering, recwarn, repository, respx_mock, signed_api, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, transport_worker, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory, worker_conversation, worker_turn
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py:75
+_ ERROR at setup of test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-draining_cloud] _
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py, line 46
+  @pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
+  @pytest.mark.parametrize("already_refreshed", [False, True])
+  def test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation(
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py, line 75
+  @pytest.fixture()
+  def signed_api(signed_http_app):
+E       fixture 'signed_http_app' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, attempt_repository, bindings, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, conversation_database, database, direct_database, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, prepared, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recovering, recwarn, repository, respx_mock, signed_api, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, transport_worker, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory, worker_conversation, worker_turn
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py:75
+_ ERROR at setup of test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant _
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py, line 66
+  def test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant(
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py, line 75
+  @pytest.fixture()
+  def signed_api(signed_http_app):
+E       fixture 'signed_http_app' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, attempt_repository, bindings, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, conversation_database, database, direct_database, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, prepared, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recovering, recwarn, repository, respx_mock, signed_api, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, transport_worker, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory, worker_conversation, worker_turn
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py:75
+_ ERROR at setup of test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority[cloud] _
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py, line 83
+  @pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
+  def test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority(
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py, line 75
+  @pytest.fixture()
+  def signed_api(signed_http_app):
+E       fixture 'signed_http_app' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, attempt_repository, bindings, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, conversation_database, database, direct_database, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, prepared, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recovering, recwarn, repository, respx_mock, signed_api, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, transport_worker, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory, worker_conversation, worker_turn
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py:75
+_ ERROR at setup of test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority[draining_cloud] _
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_recovery_cutover.py, line 83
+  @pytest.mark.parametrize("phase", ["cloud", "draining_cloud"])
+  def test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority(
+file /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py, line 75
+  @pytest.fixture()
+  def signed_api(signed_http_app):
+E       fixture 'signed_http_app' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, attempt_repository, bindings, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, conversation_database, database, direct_database, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, prepared, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recovering, recwarn, repository, respx_mock, signed_api, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, transport_worker, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory, worker_conversation, worker_turn
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_dispatch_review.py:75
+=========================== short test summary info ============================
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[False-draining_cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_recovery_returns_no_authority_and_makes_no_mutation[True-draining_cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_draining_legacy_allows_owned_recovery_and_refreshes_current_grant
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority[cloud]
+ERROR backend/tests/test_hr_recovery_cutover.py::test_wrong_lane_stopping_and_observation_callbacks_keep_original_authority[draining_cloud]
+7 errors in 7.47s

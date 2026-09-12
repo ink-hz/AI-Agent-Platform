@@ -1,0 +1,42 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[False-False-False] _
+backend/tests/test_hr_operational_diagnostics.py:29: in test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness
+    assert result.json()["dependencies"]["services"]["hr_agent"] == {
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'hr_agent'
+_ test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[True-False-False] _
+backend/tests/test_hr_operational_diagnostics.py:29: in test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness
+    assert result.json()["dependencies"]["services"]["hr_agent"] == {
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'hr_agent'
+_ test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[True-True-True] _
+backend/tests/test_hr_operational_diagnostics.py:29: in test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness
+    assert result.json()["dependencies"]["services"]["hr_agent"] == {
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'hr_agent'
+_ test_candidate_unavailable_keeps_safe_distinct_operational_reason[cutover_paused] _
+backend/tests/test_hr_operational_diagnostics.py:52: in test_candidate_unavailable_keeps_safe_distinct_operational_reason
+    assert len(records) == 1
+E   assert 0 == 1
+E    +  where 0 = len([])
+_ test_candidate_unavailable_keeps_safe_distinct_operational_reason[database] __
+backend/tests/test_hr_operational_diagnostics.py:52: in test_candidate_unavailable_keeps_safe_distinct_operational_reason
+    assert len(records) == 1
+E   assert 0 == 1
+E    +  where 0 = len([])
+=============================== warnings summary ===============================
+tests/test_hr_operational_diagnostics.py::test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[False-False-False]
+tests/test_hr_operational_diagnostics.py::test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[True-False-False]
+tests/test_hr_operational_diagnostics.py::test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[True-True-True]
+  /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/starlette/testclient.py:454: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_operational_diagnostics.py::test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[False-False-False]
+FAILED backend/tests/test_hr_operational_diagnostics.py::test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[True-False-False]
+FAILED backend/tests/test_hr_operational_diagnostics.py::test_owner_health_exposes_api_assembly_readiness_without_changing_public_liveness[True-True-True]
+FAILED backend/tests/test_hr_operational_diagnostics.py::test_candidate_unavailable_keeps_safe_distinct_operational_reason[cutover_paused]
+FAILED backend/tests/test_hr_operational_diagnostics.py::test_candidate_unavailable_keeps_safe_distinct_operational_reason[database]
+5 failed, 3 warnings in 2.70s
