@@ -12,6 +12,7 @@ from pathlib import Path
 
 from app.hr_agent.config import (
     CANDIDATE_INTAKE_MIGRATION_SHA256,
+    CUTOVER_MIGRATION_SHA256,
     ERASURE_ACCESS_MIGRATION_SHA256,
     INTERVIEW_RECORD_MIGRATION_SHA256,
     MATERIAL_AUTHORITY_MIGRATION_SHA256,
@@ -206,9 +207,14 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
     permissions_complete = False
     try:
         expected_migrations = dict(EXPECTED_MIGRATIONS)
-        expected_migrations[102] = _fingerprint(CUTOVER_MIGRATION.read_bytes())
-        expected_migrations[103] = _fingerprint(DRAIN_OCCUPANCY_MIGRATION.read_bytes())
-        expected_migrations[104] = _fingerprint(DRAIN_TERMINAL_MIGRATION.read_bytes())
+        expected_migrations.update(CUTOVER_MIGRATION_SHA256)
+        image_digests = {}
+        for version, path in ((102, CUTOVER_MIGRATION), (103, DRAIN_OCCUPANCY_MIGRATION),
+                              (104, DRAIN_TERMINAL_MIGRATION)):
+            try:
+                image_digests[version] = _fingerprint(path.read_bytes())
+            except OSError:
+                image_digests[version] = None
         with connection_factory() as connection:
             rows = connection.execute(
                 "select version,sha256 from platform_control.schema_migrations "
@@ -230,6 +236,8 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
                         "match": safe_actual == expected,
                         "expected_sha256": expected,
                         "actual_sha256": safe_actual,
+                        **({"image_match": image_digests[version] == expected,
+                            "image_sha256": image_digests[version]} if version in image_digests else {}),
                     }
                 )
             table = connection.execute(
@@ -312,6 +320,8 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
             blockers.append("schema_not_ready")
         if not all(item["match"] for item in migrations):
             blockers.append("migration_identity_mismatch")
+        if not all(item.get("image_match", True) for item in migrations):
+            blockers.append("migration_image_identity_mismatch")
         if not cutover["initialized"]:
             blockers.append("cutover_gate_not_initialized")
         if not permissions_complete:

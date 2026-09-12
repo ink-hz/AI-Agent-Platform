@@ -1,7 +1,7 @@
 """Nondispatch bound-run recovery on the existing signed Worker authority.
 
-Current cloud ownership authorizes inspection, never a launch. Original launch
-and callback credentials remain those of the durable command transport.
+Recovery can renew HR business-tool authority and is a legacy continuation.
+Stops and result observations retain their original durable transport authority.
 """
 
 import asyncio
@@ -10,6 +10,7 @@ from uuid import UUID
 
 from app.agent_brain.direct_command_binding import BindingRejected
 from app.agent_brain.turn_attempts import Lease, LeaseRejected
+from app.hr_agent.cutover import CutoverRejected, lock_state, require_lane
 
 from .acceptance_v5 import parse_v5_acceptance
 from .contracts_v5 import ExecutionRecoveryV5
@@ -97,6 +98,9 @@ def recovery_work(bindings, worker_id):
         for candidate in candidates:
             try:
                 with connection.transaction():
+                    # Serialize with cutover before taking any domain row lock or
+                    # returning an existing/renewed business execution grant.
+                    cutover = lock_state(connection)
                     lease = Lease(
                         candidate["attempt_id"],
                         "worker_direct",
@@ -106,6 +110,8 @@ def recovery_work(bindings, worker_id):
                         "reconciling",
                     )
                     attempt, row = _current(bindings, connection, worker_id, lease)
+                    if attempt["cancel_requested_at"] is None:
+                        require_lane(cutover, "legacy", continuing=True)
                     wrapper=bindings._wrapper(row)
                     transport=wrapper['transport']
                     if (wrapper['command']['contractVersion']in {'core_chat_collaboration_v6','core_chat_collaboration_v7'}
@@ -133,7 +139,7 @@ def recovery_work(bindings, worker_id):
                         "command": command.model_dump(mode="json", by_alias=True),
                         "stop": attempt["cancel_requested_at"] is not None,
                     }
-            except (BindingRejected, LeaseRejected):
+            except (BindingRejected, LeaseRejected, CutoverRejected):
                 continue
     return None
 

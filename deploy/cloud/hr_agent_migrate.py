@@ -295,6 +295,8 @@ class Supervisor:
                 "--name",
                 self.name,
                 "--read-only",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges:true",
                 "--user",
                 "0:0",
                 "--tmpfs",
@@ -400,7 +402,7 @@ def main():
     except (OSError, ValueError):
         print("HR_AGENT_MIGRATIONS_FAILED", file=sys.stderr)
         return 1
-    for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
         signal.signal(number, supervisor.on_signal)
     return supervisor.run()
 

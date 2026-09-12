@@ -62,6 +62,7 @@ def build_detailed_platform_health(
         item.model_dump(mode="json") for item in app.state.health_cache.all()
     ]
     deployment = build_deployment_status(app, config)
+    hr_service = getattr(app.state, "hr_agent_service", None)
     return {
         "status": "ok",
         "build": {
@@ -90,6 +91,12 @@ def build_detailed_platform_health(
                 ),
                 "operations": app.state.operations_service is not None,
                 "attachments": app.state.attachment_service is not None,
+                "hr_agent": {
+                    "api_ready": bool(hr_service and hr_service.ready
+                                      and hr_service.repository is not None
+                                      and hr_service.access is not None),
+                    "worker_checked": False,
+                },
             },
         },
         "agents": {

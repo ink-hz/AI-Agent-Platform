@@ -49,7 +49,7 @@ elif args[0]=='create':
             key,item=args[index+1].split('=',1); environment[key]=item
         elif value=='-v': mounts.append(args[index+1])
     identifier=uuid.uuid4().hex
-    state_path.write_text(json.dumps({'id':identifier,'name':name,'running':False,'exit':None,'environment':environment,'mounts':mounts}))
+    state_path.write_text(json.dumps({'id':identifier,'name':name,'running':False,'exit':None,'environment':environment,'mounts':mounts,'security':[a for a in args if a.startswith(('--cap-drop=','--security-opt='))]}))
     pathlib.Path(os.environ['TEST_DOCKER_CALLS']).open('a').write('create '+name+'\\n')
     print(identifier)
 elif args[0]=='start':
@@ -182,6 +182,8 @@ def test_helper_grants_only_transiently_and_applies_hr_migrations(tmp_path):
         calls = (tmp_path / "docker-calls.log").read_text().splitlines()
         assert [line.split()[0] for line in calls].count("create") == 2
         assert [line.split()[0] for line in calls].count("start") == 2
+        docker_state = __import__("json").loads((tmp_path / "docker-state.json").read_text())
+        assert docker_state["security"] == ["--cap-drop=ALL", "--security-opt=no-new-privileges:true"]
         with database.connection() as connection:
             assert (
                 connection.execute(
@@ -293,7 +295,7 @@ def test_supervisor_owns_named_container_lifecycle_and_redacted_receipt():
     assert "128 +" in source or "128+" in source
 
 
-@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
+@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT])
 def test_signal_stops_container_before_revoke(tmp_path, number):
     with hr_agent_database(migrate_hr=False) as database:
         preview_dsn = _prepare_preview_and_revoke(database)
@@ -313,24 +315,32 @@ def test_signal_stops_container_before_revoke(tmp_path, number):
                  "TEST_RELEASE": str(ROOT), "TEST_DOCKER_STATE": str(state),
                  "TEST_DOCKER_CALLS": str(calls), "TEST_DOCKER_SCENARIO": "ignore-term",
                  "PYTHONPATH": str(ROOT / "backend")},
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
         )
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and (
-            not calls.exists() or "start " not in calls.read_text()
-        ):
-            time.sleep(0.02)
-        assert calls.exists() and "start " in calls.read_text()
-        process.send_signal(number)
-        _, stderr = process.communicate(timeout=15)
-        assert process.returncode == 128 + number
-        assert _memberships(database) == 0
-        operations = calls.read_text().splitlines()
-        assert "stop" in [item.split()[0] for item in operations]
-        receipt = __import__("json").loads(next(receipts.glob("*.json")).read_text())
-        assert receipt["status"] == "interrupted"
-        assert receipt["cleanup_verified"] is True
-        assert "CLEANUP_UNRESOLVED" not in stderr
+        try:
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and (
+                not calls.exists() or "start " not in calls.read_text()
+            ):
+                time.sleep(0.02)
+            assert calls.exists() and "start " in calls.read_text()
+            process.send_signal(number)
+            _, stderr = process.communicate(timeout=15)
+            assert process.returncode == 128 + number
+            assert _memberships(database) == 0
+            operations = calls.read_text().splitlines()
+            assert "stop" in [item.split()[0] for item in operations]
+            receipt = __import__("json").loads(next(receipts.glob("*.json")).read_text())
+            assert receipt["status"] == "interrupted"
+            assert receipt["cleanup_verified"] is True
+            assert "CLEANUP_UNRESOLVED" not in stderr
+
+        finally:
+            # Only this test-owned helper group; also cleans an untrapped-signal RED.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 @pytest.mark.parametrize(

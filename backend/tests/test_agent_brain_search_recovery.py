@@ -23,8 +23,8 @@ from test_agent_brain_conversation_repository import (
     repository,
 )
 from test_agent_brain_orchestrator import ScriptedRelay
-from test_control_plane_migration import control_database
 from test_conversation_attachment_binding import _ready_attachment
+from tests.helpers.hr_direct_database import control_database
 
 
 def _recovery_result(status: str, *, resumable: bool) -> dict[str, object]:
@@ -259,3 +259,46 @@ def test_no_results_remains_distinct_and_cannot_be_resumed(
     assert messages[-1].search_recovery is not None
     assert messages[-1].search_recovery.status == "no_results"
     assert messages[-1].search_recovery.resumable is False
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("phase", ["draining_legacy", "cloud", "draining_cloud"])
+def test_search_resume_is_new_admission_and_cutover_rejection_is_atomic(
+    conversation_database, repository, phase,
+):
+    environment, owner, _ = conversation_database
+    started, commands = _completed_direct_turn(
+        repository, owner, _recovery_result("unavailable", resumable=True),
+    )
+    phases = ["draining_legacy", "cloud", "draining_cloud"]
+    with psycopg.connect(environment["admin"]) as connection:
+        for target in phases[:phases.index(phase) + 1]:
+            connection.execute(
+                "select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)",
+                (target, uuid4()),
+            )
+
+    def snapshot():
+        with psycopg.connect(environment["admin"]) as connection:
+            return connection.execute(
+                "select (select count(*) from platform_control.conversation_turns),"
+                "(select count(*) from platform_control.conversation_messages),"
+                "(select count(*) from platform_control.missions),"
+                "(select count(*) from platform_attachments.bindings)"
+            ).fetchone()
+
+    before = snapshot()
+    app, auth, _ = _app(owner, repository, command_service=commands)
+    request_id = uuid4()
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/conversations/{started.conversation.conversation_id}/turns/{started.turn.turn_id}/resume",
+            headers={**_write_credentials(auth)["headers"], "Idempotency-Key": str(request_id)},
+            cookies=_credentials(auth)["cookies"],
+        )
+    assert response.status_code == 503
+    assert snapshot() == before
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.conversation_turns where client_request_id=%s", (request_id,),
+        ).fetchone() == (0,)

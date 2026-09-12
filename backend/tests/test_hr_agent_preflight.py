@@ -325,3 +325,36 @@ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, r
     assert "migration_identity_mismatch" in report["blockers"]
     entry = next(item for item in report["database"]["migrations"] if item["version"] == version)
     assert entry["match"] is False
+
+
+@pytest.mark.parametrize("version,path_name", [
+    (102, "CUTOVER_MIGRATION"),
+    (103, "DRAIN_OCCUPANCY_MIGRATION"),
+    (104, "DRAIN_TERMINAL_MIGRATION"),
+])
+@pytest.mark.parametrize("replace_ledger", [False, True])
+def test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image(
+    tmp_path, monkeypatch, version, path_name, replace_ledger,
+):
+    import hashlib
+
+    from app.hr_agent.config import CUTOVER_MIGRATION_SHA256
+    from tools.hr_agent import preflight
+
+    changed_file = tmp_path / "changed.sql"
+    changed_file.write_bytes(getattr(preflight, path_name).read_bytes() + b"\n-- changed image\n")
+    changed_digest = hashlib.sha256(changed_file.read_bytes()).hexdigest()
+    monkeypatch.setattr(preflight, path_name, changed_file)
+    with hr_agent_database() as database:
+        if replace_ledger:
+            with database.admin_connection() as connection:
+                connection.execute(
+                    "update platform_control.schema_migrations set sha256=%s where version=%s",
+                    (changed_digest, version),
+                )
+        report, blockers = preflight._database_report(database.connection)
+    entry = next(item for item in report["migrations"] if item["version"] == version)
+    assert entry["expected_sha256"] == CUTOVER_MIGRATION_SHA256[version]
+    assert entry["match"] is (not replace_ledger)
+    assert entry["image_match"] is False
+    assert "migration_image_identity_mismatch" in blockers

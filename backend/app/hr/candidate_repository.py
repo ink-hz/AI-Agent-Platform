@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -8,7 +9,12 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
-from app.hr_agent.cutover import lock_admission, lock_state, require_lane
+from app.hr_agent.cutover import (
+    CutoverRejected,
+    lock_admission,
+    lock_state,
+    require_lane,
+)
 
 from .candidate_models import (
     AppendHumanFeedback,
@@ -210,6 +216,11 @@ class CandidateRepository:
 
     @staticmethod
     def _raise_repository_error(error: Exception) -> None:
+        if isinstance(error, CutoverRejected):
+            logging.getLogger(__name__).info("candidate_repository_unavailable kind=cutover_paused sqlstate=none", extra={
+                "failure_kind": "cutover_paused", "sqlstate": None,
+            })
+            raise CandidateUnavailable("candidate repository unavailable") from None
         if isinstance(error, psycopg.errors.NoDataFound):
             raise CandidateNotFound("candidate resource not found") from None
         if isinstance(
@@ -221,6 +232,12 @@ class CandidateRepository:
             ),
         ):
             raise CandidateConflict("candidate mutation conflict") from None
+        kind = "database" if isinstance(error, psycopg.Error) else "data_contract"
+        state = error.sqlstate if isinstance(error, psycopg.Error) else None
+        logging.getLogger(__name__).warning(
+            "candidate_repository_unavailable kind=%s sqlstate=%s", kind, state or "none",
+            extra={"failure_kind": kind, "sqlstate": state},
+        )
         raise CandidateUnavailable("candidate repository unavailable") from None
 
     def create_draft(
