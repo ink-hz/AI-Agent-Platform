@@ -1,0 +1,10 @@
+{
+  "command": [
+    "python3",
+    "artifacts/2026-09-12-hr-e-audit-followup/verify_evidence.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 0,
+  "stdout": "{\n  \"artifact_files\": 88,\n  \"source_files\": 1142,\n  \"historical_files_and_migrations\": 269,\n  \"excluded_self_receipts\": [\n    \"manifest.json\",\n    \"final/manifest-verification.json\"\n  ],\n  \"problems\": []\n}\n",
+  "stderr": ""
+}

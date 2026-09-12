@@ -1,0 +1,25 @@
+phase	command	log
+red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_conversation_attachment_binding.py	red-conversation-attachment-binding.log
+red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_conversation_summary.py	red-agent-brain-conversation-summary.log
+red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_worker.py	red-hr-direct-worker.log
+red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_worker_progress.py	red-hr-direct-worker-progress.log
+red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_knowledge_context.py	red-hr-knowledge-context.log
+contract-red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_conversation_summary.py	contract-red-agent-brain-conversation-summary.log
+contract-red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_conversation_summary.py	contract-red-agent-brain-conversation-summary-capability.log
+green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_conversation_attachment_binding.py	green-conversation-attachment-binding.log
+green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_conversation_summary.py	green-agent-brain-conversation-summary.log
+green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_worker.py	green-hr-direct-worker.log
+green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_worker_progress.py	green-hr-direct-worker-progress.log
+green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_knowledge_context.py	green-hr-knowledge-context.log
+green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_hr_history_isolation.py	green-agent-brain-hr-history-isolation.log
+upgrade-first	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_provenance_upgrade.py	provenance-upgrade-first-run.log
+upgrade-final	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_provenance_upgrade.py	provenance-upgrade-final.log
+transitive-red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_material_transport.py	transitive-red-hr-direct-material-transport.log
+transitive-red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_knowledge_http.py	transitive-red-hr-knowledge-http.log
+transitive-red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_web_reliable_loop.py	transitive-red-hr-web-reliable-loop.log
+transitive-scope-red	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_material_transport.py	transitive-scope-red-hr-direct-material-transport.log
+transitive-green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_material_transport.py	transitive-green-hr-direct-material-transport.log
+transitive-green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_knowledge_http.py	transitive-green-hr-knowledge-http.log
+transitive-green	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_web_reliable_loop.py	transitive-green-hr-web-reliable-loop.log
+transitive-final	PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_direct_material_transport.py backend/tests/test_hr_knowledge_http.py backend/tests/test_hr_web_reliable_loop.py	transitive-final-three.log
+lint-final	backend/.venv/bin/ruff check backend/tests/test_hr_direct_provenance_upgrade.py && backend/.venv/bin/ruff check --select F401,F811,RUF059 backend/tests/test_conversation_attachment_binding.py backend/tests/test_hr_direct_material_transport.py backend/tests/test_hr_knowledge_http.py backend/tests/test_hr_web_reliable_loop.py	transitive-ruff-introduced-final.log

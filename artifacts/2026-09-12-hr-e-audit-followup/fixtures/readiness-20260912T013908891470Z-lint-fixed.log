@@ -1,0 +1,8 @@
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/ruff check --fix backend/tests/test_execution_readiness_v5.py
+Found 2 errors (2 fixed, 0 remaining).
+exit_code=0
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/ruff check backend/tests/test_execution_readiness_v5.py
+All checks passed!
+exit_code=0
+command=git diff --check -- backend/tests/test_execution_readiness_v5.py
+exit_code=0

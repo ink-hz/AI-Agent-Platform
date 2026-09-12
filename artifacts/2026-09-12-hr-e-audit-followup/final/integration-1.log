@@ -1,0 +1,141 @@
+........................................................................ [ 14%]
+........................................................................ [ 28%]
+........................F............FFF.FFEEFEEEEEEs................... [ 43%]
+........................................................................ [ 57%]
+........................................................................ [ 71%]
+........................................................................ [ 86%]
+......................................................................   [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_selected_archive_ids_and_sha_survive_frozen_handoff_and_recovery _
+backend/tests/test_hr_direct_material_transport.py:58: in material_adapter
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+_ ERROR at setup of test_grant_failure_rolls_back_command_compatibility_and_all_issued_grants _
+backend/tests/test_hr_direct_material_transport.py:58: in material_adapter
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+_________ ERROR at setup of test_public_snapshot_resolves_real_intake __________
+backend/tests/test_hr_web_reliable_loop.py:37: in web_loop
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+_ ERROR at setup of test_turn_message_read_is_not_limited_by_first_120_history_messages _
+backend/tests/test_hr_web_reliable_loop.py:37: in web_loop
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+_ ERROR at setup of test_opted_in_public_new_hr_conversation_pins_worker_before_intake _
+backend/tests/test_hr_web_reliable_loop.py:37: in web_loop
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+_ ERROR at setup of test_public_cancel_records_worker_intent_without_legacy_execution _
+backend/tests/test_hr_web_reliable_loop.py:37: in web_loop
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+_ ERROR at setup of test_real_worker_cancels_queued_turn_without_any_execution_capability _
+backend/tests/test_hr_web_reliable_loop.py:37: in web_loop
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+_ ERROR at setup of test_worker_http_snapshot_and_sse_never_advance_execution_state _
+backend/tests/test_hr_web_reliable_loop.py:37: in web_loop
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+=================================== FAILURES ===================================
+_______________ test_signed_observation_admits_original_attempt ________________
+backend/tests/test_execution_readiness_v5.py:81: in test_signed_observation_admits_original_attempt
+    assert lease is not None
+E   assert None is not None
+_________ test_fresh_observation_after_delay_claims_same_attempt_once __________
+backend/tests/test_execution_readiness_v5.py:302: in test_fresh_observation_after_delay_claims_same_attempt_once
+    assert len([lease for lease in leases if lease]) == 1
+E   assert 0 == 1
+E    +  where 0 = len([])
+__________ test_stale_route_prefix_does_not_starve_ready_conversation __________
+backend/tests/test_execution_readiness_v5.py:351: in test_stale_route_prefix_does_not_starve_ready_conversation
+    assert lease is not None
+E   assert None is not None
+______ test_completed_turn_with_held_attempt_blocks_admission_and_binding ______
+backend/tests/test_execution_readiness_v5.py:391: in test_completed_turn_with_held_attempt_blocks_admission_and_binding
+    assert attempt_repository.renew(old, 60).attempt_id == old.attempt_id
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/turn_attempts.py:257: in renew
+    return self.renew(lease, lease_seconds, connection=owned_connection)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/turn_attempts.py:265: in renew
+    (lease.attempt_id,),
+     ^^^^^^^^^^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'attempt_id'
+___________ test_locked_conversation_does_not_block_unrelated_claim ____________
+backend/tests/test_execution_readiness_v5.py:494: in test_locked_conversation_does_not_block_unrelated_claim
+    assert lease is not None
+E   assert None is not None
+__ test_unreachable_slow_probe_does_not_block_actual_renewal_or_cancellation ___
+backend/tests/test_execution_readiness_v5.py:582: in test_unreachable_slow_probe_does_not_block_actual_renewal_or_cancellation
+    asyncio.run(scenario())
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend/tests/test_execution_readiness_v5.py:562: in scenario
+    await asyncio.to_thread(attempt_repository.renew, lease, 60)
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/turn_attempts.py:257: in renew
+    return self.renew(lease, lease_seconds, connection=owned_connection)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/app/agent_brain/turn_attempts.py:265: in renew
+    (lease.attempt_id,),
+     ^^^^^^^^^^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'attempt_id'
+______ test_authorized_browse_and_selected_resource_turn_survive_refresh _______
+backend/tests/test_hr_knowledge_http.py:55: in test_authorized_browse_and_selected_resource_turn_survive_refresh
+    connection.execute(
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+=============================== warnings summary ===============================
+tests/test_conversation_attachment_binding.py: 10 warnings
+  /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/starlette/testclient.py:454: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/test_execution_readiness_v5.py::test_signed_observation_admits_original_attempt
+FAILED backend/tests/test_execution_readiness_v5.py::test_fresh_observation_after_delay_claims_same_attempt_once
+FAILED backend/tests/test_execution_readiness_v5.py::test_stale_route_prefix_does_not_starve_ready_conversation
+FAILED backend/tests/test_execution_readiness_v5.py::test_completed_turn_with_held_attempt_blocks_admission_and_binding
+FAILED backend/tests/test_execution_readiness_v5.py::test_locked_conversation_does_not_block_unrelated_claim
+FAILED backend/tests/test_execution_readiness_v5.py::test_unreachable_slow_probe_does_not_block_actual_renewal_or_cancellation
+FAILED backend/tests/test_hr_knowledge_http.py::test_authorized_browse_and_selected_resource_turn_survive_refresh
+ERROR backend/tests/test_hr_direct_material_transport.py::test_selected_archive_ids_and_sha_survive_frozen_handoff_and_recovery
+ERROR backend/tests/test_hr_direct_material_transport.py::test_grant_failure_rolls_back_command_compatibility_and_all_issued_grants
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_public_snapshot_resolves_real_intake
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_turn_message_read_is_not_limited_by_first_120_history_messages
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_opted_in_public_new_hr_conversation_pins_worker_before_intake
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_public_cancel_records_worker_intent_without_legacy_execution
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_real_worker_cancels_queued_turn_without_any_execution_capability
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_worker_http_snapshot_and_sse_never_advance_execution_state
+7 failed, 486 passed, 1 skipped, 10 warnings, 8 errors in 343.73s (0:05:43)

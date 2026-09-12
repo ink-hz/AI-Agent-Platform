@@ -1,0 +1,11 @@
+{
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_cutover_runbook.py",
+    "-q",
+    "--tb=short"
+  ],
+  "exit_code": 1
+}

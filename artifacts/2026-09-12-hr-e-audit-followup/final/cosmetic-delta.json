@@ -1,0 +1,17 @@
+{
+  "reason": "Remove now-redundant fixture lint directives and fix tuple continuation indentation; no AST changes after integration-2",
+  "files": [
+    {
+      "path": "backend/tests/test_conversation_attachment_binding.py",
+      "before_sha256": "b10b776ad3b5245c5b6043caf7faefb28e79fb7c5f8b8f2d9f43ec0562f656db",
+      "after_sha256": "53fd008f09289f49bac90a6114890d55be409cf16eed782e867174e9b80e0763",
+      "ast_identical": true
+    },
+    {
+      "path": "backend/tests/test_hr_direct_material_transport.py",
+      "before_sha256": "ce4e3787062f9110fa3a8dd162524c617fbbc5a1ca9c12df86886da823aa3450",
+      "after_sha256": "deb5285d575f5c488ec03b2ae30ee404a8643a2c2dc242f50aa4cf9365a5778b",
+      "ast_identical": true
+    }
+  ]
+}

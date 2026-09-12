@@ -1,0 +1,114 @@
+EE                                                                       [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_selected_archive_ids_and_sha_survive_frozen_handoff_and_recovery _
+
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-c8fzyxvt/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('7bb44dae-3306-4221-869d-9e2ea5aa7412'), UUID('ac60e493-3c7b-456b-8497-6ed981fc9511'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x108894a90>
+worker_turn = ConversationCreateResult(conversation=ConversationRecord(conversation_id=UUID('aa9a71e5-a69c-4a2c-9597-2f85dc75a0aa'),...840ff-19b5-4099-9d7f-c75abb8446b8'), triggering_message_id=UUID('57d83454-cb96-402b-9ea4-0c602f82ca6e')), created=True)
+
+    @pytest.fixture()
+    def material_adapter(direct_database, repository, attempt_repository, worker_turn):
+        environment, owner, _ = direct_database
+        database_url = environment["urls"]["platform_control_app"]
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_direct_material_transport.py:58: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x1088918d0>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+_ ERROR at setup of test_grant_failure_rolls_back_command_compatibility_and_all_issued_grants _
+
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-_40dodi8/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('b65e85cd-0178-4ee6-adc8-373f9361f44c'), UUID('5d2f452c-50e2-4ed3-b657-b26b3f9705cd'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x1088d6b50>
+worker_turn = ConversationCreateResult(conversation=ConversationRecord(conversation_id=UUID('51553e05-3eac-47a3-bc24-6d6adeb9eb42'),...cc699-1704-441d-8ab6-2fcc5afd597d'), triggering_message_id=UUID('19c8f411-4d55-4247-bd35-b00808ae1c81')), created=True)
+
+    @pytest.fixture()
+    def material_adapter(direct_database, repository, attempt_repository, worker_turn):
+        environment, owner, _ = direct_database
+        database_url = environment["urls"]["platform_control_app"]
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_direct_material_transport.py:58: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x108895110>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+=========================== short test summary info ============================
+ERROR backend/tests/test_hr_direct_material_transport.py::test_selected_archive_ids_and_sha_survive_frozen_handoff_and_recovery
+ERROR backend/tests/test_hr_direct_material_transport.py::test_grant_failure_rolls_back_command_compatibility_and_all_issued_grants
+2 errors in 2.34s

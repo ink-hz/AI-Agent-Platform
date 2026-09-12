@@ -1,0 +1,4 @@
+{
+  "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md": "3c02fd1aad0c4e2c2023d6b54a485ff0728c5d8a172c8ef2b83e8b146a6244c0",
+  "backend/tests/test_hr_cutover_runbook.py": "76d12204f4364fc5a0816b19deb27347e1cb57c5415b810f659879ff77d71c9c"
+}

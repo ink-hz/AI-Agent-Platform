@@ -1,0 +1,85 @@
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/ruff check backend/tests/test_execution_readiness_v5.py
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_execution_readiness_v5.py:4:1
+   |
+ 2 |   # ruff: noqa: PLC0414
+ 3 |
+ 4 | / import asyncio
+ 5 | | import json
+ 6 | | from concurrent.futures import ThreadPoolExecutor
+ 7 | | from contextlib import contextmanager
+ 8 | | from datetime import datetime, timedelta, timezone
+ 9 | | from uuid import uuid4
+10 | |
+11 | | import httpx
+12 | | import psycopg
+13 | | import pytest
+14 | | from test_execution_transport_v5 import post
+15 | | from test_execution_transport_v5 import signed_api as signed_api
+16 | | from test_execution_worker_v5_receiver import receiver as receiver
+17 | | from test_execution_worker_v5_receiver import worker_database as worker_database
+18 | | from test_hr_direct_command_binding import bindings as bindings
+19 | | from test_hr_direct_command_binding import transport_worker as transport_worker
+20 | | from test_hr_direct_worker import (
+21 | |     attempt_repository as attempt_repository,
+22 | | )
+23 | | from test_hr_direct_worker import (
+24 | |     control_database as control_database,
+25 | | )
+26 | | from test_hr_direct_worker import (
+27 | |     conversation_database as conversation_database,
+28 | | )
+29 | | from test_hr_direct_worker import (
+30 | |     direct_database as direct_database,
+31 | | )
+32 | | from test_hr_direct_worker import (
+33 | |     repository as repository,
+34 | | )
+35 | | from test_hr_direct_worker import (
+36 | |     worker_conversation as worker_conversation,
+37 | | )
+38 | | from test_hr_direct_worker import (
+39 | |     worker_turn as worker_turn,
+40 | | )
+41 | |
+42 | | from tests.helpers.v5_readiness import observation as v5_observation
+   | |____________________________________________________________________^
+43 |
+44 |   pytestmark = pytest.mark.postgres
+   |
+help: Organize imports
+   |
+40 | )
+   -
+41 | from tests.helpers.v5_readiness import observation as v5_observation
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> backend/tests/test_execution_readiness_v5.py:417:5
+    |
+415 |       signed_api, worker_turn, attempt_repository, repository, direct_database, bindings
+416 |   ):
+417 | /     from test_hr_direct_command_binding import frozen_input
+418 | |
+419 | |     from app.agent_brain.direct_command_binding import BindingRejected
+420 | |     from app.agent_brain.turn_attempts import Lease
+    | |___________________________________________________^
+421 |
+422 |       client, signer, _ = signed_api
+    |
+help: Organize imports
+    |
+416 | ):
+    -     from test_hr_direct_command_binding import frozen_input
+    -
+417 |     from app.agent_brain.direct_command_binding import BindingRejected
+418 |     from app.agent_brain.turn_attempts import Lease
+419 +     from test_hr_direct_command_binding import frozen_input
+420 |
+    |
+
+Found 2 errors.
+[*] 2 fixable with the `--fix` option.
+exit_code=1
+command=git diff --check -- backend/tests/test_execution_readiness_v5.py
+exit_code=0

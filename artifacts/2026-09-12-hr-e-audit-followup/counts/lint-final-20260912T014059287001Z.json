@@ -1,0 +1,143 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/ruff",
+    "check",
+    "--output-format=json",
+    "backend/tests/test_hr_cutover_count_review.py"
+  ],
+  "ruff_exit": 1,
+  "ruff_diagnostics": [
+    {
+      "cell": null,
+      "code": "I001",
+      "end_location": {
+        "column": 78,
+        "row": 14
+      },
+      "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_count_review.py",
+      "fix": {
+        "applicability": "safe",
+        "edits": [
+          {
+            "content": "import json\nfrom uuid import uuid4\n\nimport pytest\nfrom app.agent_brain.turn_result_projection import TurnResultProjector\nfrom app.execution_relay.contracts_v5 import parse_v5_command, parse_v5_event\nfrom test_hr_cutover_dispatch_review import (\n    PREFIX,\n    attempt_repository,\n    bindings,\n    conversation_database,\n    database,\n    direct_database,\n    event,\n    post,\n    repository,\n    response,\n    signed_api,\n    signed_http_app,\n    transport_worker,\n)\nfrom test_hr_direct_command_binding import frozen_input\n\n",
+            "end_location": {
+              "column": 1,
+              "row": 16
+            },
+            "location": {
+              "column": 1,
+              "row": 2
+            }
+          }
+        ],
+        "message": "Organize imports"
+      },
+      "location": {
+        "column": 1,
+        "row": 2
+      },
+      "message": "Import block is un-sorted or un-formatted",
+      "name": "unsorted-imports",
+      "noqa_row": 2,
+      "severity": "error",
+      "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+    },
+    {
+      "cell": null,
+      "code": "RUF059",
+      "end_location": {
+        "column": 25,
+        "row": 55
+      },
+      "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_count_review.py",
+      "fix": {
+        "applicability": "unsafe",
+        "edits": [
+          {
+            "content": "_binding",
+            "end_location": {
+              "column": 25,
+              "row": 55
+            },
+            "location": {
+              "column": 18,
+              "row": 55
+            }
+          }
+        ],
+        "message": "Prefix it with an underscore or any other dummy variable pattern"
+      },
+      "location": {
+        "column": 18,
+        "row": 55
+      },
+      "message": "Unpacked variable `binding` is never used",
+      "name": "unused-unpacked-variable",
+      "noqa_row": 55,
+      "severity": "error",
+      "url": "https://docs.astral.sh/ruff/rules/unused-unpacked-variable"
+    },
+    {
+      "cell": null,
+      "code": "SIM117",
+      "end_location": {
+        "column": 68,
+        "row": 66
+      },
+      "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_count_review.py",
+      "fix": null,
+      "location": {
+        "column": 5,
+        "row": 65
+      },
+      "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+      "name": "multiple-with-statements",
+      "noqa_row": 65,
+      "severity": "error",
+      "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+    },
+    {
+      "cell": null,
+      "code": "SIM117",
+      "end_location": {
+        "column": 68,
+        "row": 104
+      },
+      "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_count_review.py",
+      "fix": null,
+      "location": {
+        "column": 5,
+        "row": 103
+      },
+      "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+      "name": "multiple-with-statements",
+      "noqa_row": 103,
+      "severity": "error",
+      "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+    },
+    {
+      "cell": null,
+      "code": "SIM117",
+      "end_location": {
+        "column": 66,
+        "row": 127
+      },
+      "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_cutover_count_review.py",
+      "fix": null,
+      "location": {
+        "column": 5,
+        "row": 126
+      },
+      "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+      "name": "multiple-with-statements",
+      "noqa_row": 126,
+      "severity": "error",
+      "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+    }
+  ],
+  "new_diagnostics_vs_baseline": [],
+  "diff_check_exit": 0,
+  "diff_check_output": "",
+  "sha256": "23776e9dfb08e619464781334e131cb227562ee27fd8472eee7322441cfb9c82",
+  "note": "Only new unused tuple variables and equivalent nested-with contexts corrected; existing baseline diagnostics retained. No assertion removed. Integration validates final source."
+}

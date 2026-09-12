@@ -1,0 +1,17 @@
+........................................................................ [ 13%]
+........................................................................ [ 27%]
+.....................................................s.................. [ 41%]
+........................................................................ [ 55%]
+........................................................................ [ 69%]
+........................................................................ [ 83%]
+........................................................................ [ 97%]
+..............                                                           [100%]
+=============================== warnings summary ===============================
+tests/test_conversation_attachment_binding.py: 10 warnings
+  /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/starlette/testclient.py:454: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] backend/tests/test_hr_web_reliable_loop.py:170: owned MetaBot process fixture required
+517 passed, 1 skipped, 10 warnings in 365.41s (0:06:05)

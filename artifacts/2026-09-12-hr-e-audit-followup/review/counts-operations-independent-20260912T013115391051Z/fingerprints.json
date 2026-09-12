@@ -1,0 +1,30 @@
+{
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "HEAD": "192a4489cc1a199259b4b10c591b0ee7b23420e7",
+  "patch": {
+    "path": "/tmp/hr-e-audit-counts-operations-192a448.patch",
+    "sha256": "40d2747042b20cb821063218f61ec223282d12b9ecb454df66666c11ee2e5bfe"
+  },
+  "sources": {
+    "backend/control_migrations/104_hr_execution_drain_terminal_contract.sql": "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
+    "backend/app/hr_agent/config.py": "1cdf0d3755762513935943cb4349567cdd4c365c98c6f23eb5ad65b65729d6d0",
+    "backend/tools/hr_agent/preflight.py": "2fbd4d05c85ee14163b63cc27790a69d5262c73f598a2e6b7346b711dd7b6a53",
+    "deploy/cloud/hr_agent_migrate.py": "92e5e8bcbca09e53fd89c025fff7c769c98c5e372f0f57dbaea7b6065264edfd",
+    "backend/tests/test_hr_cutover_count_review.py": "b12faeba52b80206df68d4a7ef881ee2c780df7f9ed8bbe920d894249e17986b",
+    "backend/tests/test_hr_agent_foundation.py": "2facce02e52ef75510869303d195aaeed22b2b9d6bcea75649e313e907f7c3eb",
+    "backend/tests/test_hr_agent_preflight.py": "54918e5de4425f3c358c9be72e79d22b4c5378af89f79a7be2322eabe940d4e3",
+    "backend/tests/test_hr_agent_migration_deployment.py": "e4831d3e61f8a4e3e862f69d587206cc309f5e89acb4a2eef6888d792b96a756",
+    "backend/tests/test_hr_cutover_runbook.py": "76d12204f4364fc5a0816b19deb27347e1cb57c5415b810f659879ff77d71c9c",
+    "backend/tests/test_hr_failed_draft_cutover.py": "893da71c58ad31502b6b8beed965b4bd7d4ae896bad9c02f5da994035b68c0ea",
+    "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md": "3c02fd1aad0c4e2c2023d6b54a485ff0728c5d8a172c8ef2b83e8b146a6244c0",
+    "backend/control_migrations/102_hr_execution_cutover.sql": "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
+    "backend/control_migrations/103_hr_execution_drain_occupancy.sql": "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+    "artifacts/2026-09-12-hr-e-audit-followup/counts/README.md": "d32318335dd4ad4ebe038e957c5e68f097517b3c141c9858e199b784e0ce029b",
+    "artifacts/2026-09-12-hr-e-audit-followup/operations/operations-final-1.log": "82e95c43a2d64f584888adbe020b5242e2603164a5d8d7709783845ad2dd9351",
+    "artifacts/2026-09-12-hr-e-audit-followup/operations/operations-final-1-command.json": "6cf237b7900a30fbee08683de65db56dde91c07d3a2c4c8b6311207734c72897"
+  },
+  "baseline_migration_identity": {
+    "backend/control_migrations/102_hr_execution_cutover.sql": true,
+    "backend/control_migrations/103_hr_execution_drain_occupancy.sql": true
+  }
+}

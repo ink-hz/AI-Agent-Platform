@@ -1,0 +1,67 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_authorized_browse_and_selected_resource_turn_survive_refresh _______
+
+source_repo = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9486/test_authorized_browse_and_sel0/source')
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9486/test_authorized_browse_and_sel0')
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-ypuim6ss/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('2d2a8332-dd99-432e-a388-85cce6321897'), UUID('3074183d-5246-43d1-a534-15cfcd1cc98b'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+worker_conversation = ConversationRecord(conversation_id=UUID('da5d2cb8-b454-4967-893e-6a3a8c153e8f'), owner_internal_user_id=UUID('2d2a8332..., tzinfo=datetime.timezone.utc), archived_at=None, activity_status=None, unread=False, execution_owner='legacy_api_v1')
+
+    @pytest.mark.postgres
+    def test_authorized_browse_and_selected_resource_turn_survive_refresh(
+        source_repo, tmp_path, direct_database, repository, worker_conversation
+    ):
+        from app.hr.reference_knowledge_routes import build_hr_knowledge_router
+    
+        commit = _commit_knowledge(source_repo)
+        releases = tmp_path / "releases"
+        build_release(source_repo, commit, releases)
+        knowledge = HrKnowledgeRepository(releases, "/agent/releases", commit)
+        environment, owner, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_knowledge_http.py:55: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x108aef490>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_knowledge_http.py::test_authorized_browse_and_selected_resource_turn_survive_refresh
+1 failed in 1.56s

@@ -1,0 +1,28 @@
+{
+  "command": [
+    "backend/.venv/bin/ruff",
+    "check",
+    "backend/app/hr_agent/config.py",
+    "backend/tests/test_agent_brain_conversation_summary.py",
+    "backend/tests/test_agent_brain_hr_history_isolation.py",
+    "backend/tests/test_conversation_attachment_binding.py",
+    "backend/tests/test_execution_readiness_v5.py",
+    "backend/tests/test_hr_agent_foundation.py",
+    "backend/tests/test_hr_agent_migration_deployment.py",
+    "backend/tests/test_hr_agent_preflight.py",
+    "backend/tests/test_hr_cutover_count_review.py",
+    "backend/tests/test_hr_cutover_runbook.py",
+    "backend/tests/test_hr_direct_material_transport.py",
+    "backend/tests/test_hr_direct_provenance_upgrade.py",
+    "backend/tests/test_hr_direct_worker.py",
+    "backend/tests/test_hr_direct_worker_progress.py",
+    "backend/tests/test_hr_failed_draft_cutover.py",
+    "backend/tests/test_hr_knowledge_http.py",
+    "backend/tests/test_hr_web_reliable_loop.py",
+    "backend/tools/hr_agent/preflight.py",
+    "deploy/cloud/hr_agent_migrate.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 1,
+  "time": "2026-09-12T01:39:36.760196+00:00"
+}

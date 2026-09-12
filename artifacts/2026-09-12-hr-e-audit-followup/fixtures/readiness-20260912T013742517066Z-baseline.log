@@ -1,0 +1,386 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest -q tests/test_execution_readiness_v5.py
+.F............FFF.FF                                                     [100%]
+=================================== FAILURES ===================================
+_______________ test_signed_observation_admits_original_attempt ________________
+
+signed_api = (<starlette.testclient.TestClient object at 0x10a6748d0>, WorkerRequestSigner(worker_id='v5-transport-776d79ed17e445439ce3843c4b814d5e', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x10a68bad0>)
+worker_turn = ConversationCreateResult(conversation=ConversationRecord(conversation_id=UUID('f4562bcf-554c-4eea-a0c2-af0850d2e347'),...2bbde-2279-4543-8546-0e9b35415ae0'), triggering_message_id=UUID('2b11bedd-9cfd-469e-8e24-9057b97d2750')), created=True)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10a689110>
+transport_worker = 'v5-transport-776d79ed17e445439ce3843c4b814d5e'
+
+    def test_signed_observation_admits_original_attempt(
+        signed_api, worker_turn, attempt_repository, transport_worker
+    ):
+        client, signer, _ = signed_api
+        path = "/api/v1/execution-worker/v5/readiness"
+        value = observation()
+        assert post(client, signer, path, json.dumps(value).encode()).status_code == 200
+        lease = attempt_repository.claim_due(uuid4(), 60)
+>       assert lease is not None
+E       assert None is not None
+
+tests/test_execution_readiness_v5.py:81: AssertionError
+_________ test_fresh_observation_after_delay_claims_same_attempt_once __________
+
+signed_api = (<starlette.testclient.TestClient object at 0x10a9a7e90>, WorkerRequestSigner(worker_id='v5-transport-23ff4f86f1f64eaf9edad57d37c9d140', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x10a9839d0>)
+worker_turn = ConversationCreateResult(conversation=ConversationRecord(conversation_id=UUID('6d3f07aa-7f84-4dfa-96ff-deb09f3b80dc'),...20e7d-5c3a-4398-bbd7-8ce904699aeb'), triggering_message_id=UUID('1949defd-6d27-41e5-8522-bceb4e976c79')), created=True)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10a982910>
+
+    def test_fresh_observation_after_delay_claims_same_attempt_once(
+        signed_api, worker_turn, attempt_repository
+    ):
+        assert attempt_repository.claim_due(uuid4(), 60) is None
+        client, signer, _ = signed_api
+        assert (
+            post(
+                client,
+                signer,
+                "/api/v1/execution-worker/v5/readiness",
+                json.dumps(observation()).encode(),
+            ).status_code
+            == 200
+        )
+        assert (
+            attempt_repository.claim_due(uuid4(), 60) is None
+        )  # actual 30-second admission schedule
+        with attempt_repository.transaction() as connection:
+            connection.execute(
+                "update platform_control.turn_attempts set readiness_check_after=clock_timestamp()-interval '1 second'"
+            )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            leases = list(
+                pool.map(lambda _: attempt_repository.claim_due(uuid4(), 60), range(2))
+            )
+>       assert len([lease for lease in leases if lease]) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_execution_readiness_v5.py:302: AssertionError
+__________ test_stale_route_prefix_does_not_starve_ready_conversation __________
+
+signed_api = (<starlette.testclient.TestClient object at 0x10a979390>, WorkerRequestSigner(worker_id='v5-transport-2e8f981284ce4644a3a412c4c5bd8c26', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x10a937f10>)
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-hgpasru4/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('42e2d39e-dd7c-4448-bbb2-dbe69ff29241'), UUID('4dd3d45f-d745-4613-8456-0eb7b3538d97'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10a928a90>
+worker_turn = ConversationCreateResult(conversation=ConversationRecord(conversation_id=UUID('dd060fe4-2cea-4260-9237-7905f3f6e3d7'),...b6d0e-918d-4a57-8cc1-d0575afb90c1'), triggering_message_id=UUID('611f5d55-5ebf-4628-a88b-e7ae387051d3')), created=True)
+
+    def test_stale_route_prefix_does_not_starve_ready_conversation(
+        signed_api, direct_database, repository, attempt_repository, worker_turn
+    ):
+        environment, owner_id, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "update platform_control.conversations set route_epoch=route_epoch+1 where conversation_id=%s",
+                (worker_turn.conversation.conversation_id,),
+            )
+        for _ in range(16):
+            shell = repository.ensure_direct_conversation_shell(
+                owner_id, uuid4(), direct_agent_id="hr-bot", title="admission fixture"
+            )
+            with psycopg.connect(environment["admin"]) as connection:
+                connection.execute(
+                    "update platform_control.conversations set execution_owner='worker_direct' where conversation_id=%s",
+                    (shell.conversation_id,),
+                )
+            turn = repository.append_turn(
+                owner_id, shell.conversation_id, uuid4(), "admission fixture"
+            )
+            if _ < 15:
+                with psycopg.connect(environment["admin"]) as connection:
+                    connection.execute(
+                        "update platform_control.conversations set route_epoch=route_epoch+1 where conversation_id=%s",
+                        (shell.conversation_id,),
+                    )
+        client, signer, _ = signed_api
+        post(
+            client,
+            signer,
+            "/api/v1/execution-worker/v5/readiness",
+            json.dumps(observation()).encode(),
+        )
+        lease = attempt_repository.claim_due(uuid4(), 60)
+>       assert lease is not None
+E       assert None is not None
+
+tests/test_execution_readiness_v5.py:351: AssertionError
+______ test_completed_turn_with_held_attempt_blocks_admission_and_binding ______
+
+signed_api = (<starlette.testclient.TestClient object at 0x10a9a5590>, WorkerRequestSigner(worker_id='v5-transport-c36458d0f95446a18da277bb768b28ff', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x10a9c6d90>)
+worker_turn = ConversationCreateResult(conversation=ConversationRecord(conversation_id=UUID('32a7cd6b-09e4-4da1-ba1b-01e13db6ffec'),...1c7cb-ca41-44e3-b605-8b778ba018b4'), triggering_message_id=UUID('0392a98f-110f-439d-9408-cf4f1f6e4c23')), created=True)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10a9c41d0>
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-we4sbux7/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('c058407f-8c22-4d70-a7f3-f749c9d29d5a'), UUID('15b5eaf5-8f82-4327-a96d-2d968dab6acb'))
+bindings = <app.agent_brain.direct_command_binding.DirectCommandBindingRepository object at 0x10a9c6f10>
+
+    def test_completed_turn_with_held_attempt_blocks_admission_and_binding(
+        signed_api, worker_turn, attempt_repository, repository, direct_database, bindings
+    ):
+        from test_hr_direct_command_binding import frozen_input
+    
+        from app.agent_brain.direct_command_binding import BindingRejected
+        from app.agent_brain.turn_attempts import Lease
+    
+        client, signer, _ = signed_api
+        post(
+            client,
+            signer,
+            "/api/v1/execution-worker/v5/readiness",
+            json.dumps(observation()).encode(),
+        )
+        old = attempt_repository.claim_due(uuid4(), 60)
+        environment, owner_id, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "update platform_control.conversation_turns set status='completed' where turn_id=%s",
+                (worker_turn.turn.turn_id,),
+            )
+        later = repository.append_turn(
+            owner_id,
+            worker_turn.conversation.conversation_id,
+            uuid4(),
+            "later admission fixture",
+        )
+        assert attempt_repository.claim_due(uuid4(), 60) is None
+>       assert attempt_repository.renew(old, 60).attempt_id == old.attempt_id
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_execution_readiness_v5.py:391: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/agent_brain/turn_attempts.py:257: in renew
+    return self.renew(lease, lease_seconds, connection=owned_connection)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10a9c41d0>
+lease = None, lease_seconds = 60
+connection = <psycopg.Connection [BAD] at 0x10a93a210>
+
+    def renew(
+        self,
+        lease: Lease,
+        lease_seconds: int,
+        *,
+        connection: psycopg.Connection | None = None,
+    ) -> Lease:
+        """Extend the current holder in a short Conversation -> Turn -> Attempt transaction.
+    
+        Caller-owned transactions (including future Result publication) must acquire
+        these locks in the same order. Network work must occur after commit.
+        """
+        if type(lease_seconds) is not int or lease_seconds <= 0:
+            raise ValueError("positive integer lease seconds required")
+        if connection is None:
+            with self.transaction() as owned_connection:
+                return self.renew(lease, lease_seconds, connection=owned_connection)
+        if connection.autocommit:
+            raise ValueError("caller-owned transaction required")
+        conversation = connection.execute(
+            "select conversation_id from platform_control.conversations "
+            "where conversation_id=(select t.conversation_id from "
+            "platform_control.conversation_turns t join platform_control.turn_attempts a "
+            "using(turn_id) where a.attempt_id=%s) for update",
+>           (lease.attempt_id,),
+             ^^^^^^^^^^^^^^^^
+        ).fetchone()
+E       AttributeError: 'NoneType' object has no attribute 'attempt_id'
+
+app/agent_brain/turn_attempts.py:265: AttributeError
+___________ test_locked_conversation_does_not_block_unrelated_claim ____________
+
+signed_api = (<starlette.testclient.TestClient object at 0x10a874290>, WorkerRequestSigner(worker_id='v5-transport-8936b555fa574012b50b25ad21ada8dc', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x10a676d90>)
+worker_turn = ConversationCreateResult(conversation=ConversationRecord(conversation_id=UUID('96e64ed1-6c34-412e-8a81-249ff2ecef40'),...4af72-a3a0-4e86-8a2f-5d53d4fcca80'), triggering_message_id=UUID('ca20d2c6-332c-4b80-9c8e-f9d30873afa5')), created=True)
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-cr0m87u1/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('eb038b1b-6337-44fb-8e73-a6e9cc07ba9c'), UUID('8d94dd89-488d-49a6-8f8f-f8b9d2fd8e49'))
+repository = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10a9c67d0>
+
+    def test_locked_conversation_does_not_block_unrelated_claim(
+        signed_api, worker_turn, direct_database, repository, attempt_repository
+    ):
+        environment, owner_id, _ = direct_database
+        shell = repository.ensure_direct_conversation_shell(
+            owner_id, uuid4(), direct_agent_id="hr-bot", title="lock admission fixture"
+        )
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "update platform_control.conversations set execution_owner='worker_direct' where conversation_id=%s",
+                (shell.conversation_id,),
+            )
+        later = repository.append_turn(
+            owner_id, shell.conversation_id, uuid4(), "lock admission fixture"
+        )
+        client, signer, _ = signed_api
+        post(
+            client,
+            signer,
+            "/api/v1/execution-worker/v5/readiness",
+            json.dumps(observation()).encode(),
+        )
+        with psycopg.connect(environment["admin"]) as held:
+            held.execute(
+                "select 1 from platform_control.conversations where conversation_id=%s for update",
+                (worker_turn.conversation.conversation_id,),
+            )
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                lease = pool.submit(attempt_repository.claim_due, uuid4(), 60).result(
+                    timeout=2
+                )
+>           assert lease is not None
+E           assert None is not None
+
+tests/test_execution_readiness_v5.py:494: AssertionError
+__ test_unreachable_slow_probe_does_not_block_actual_renewal_or_cancellation ___
+
+receiver = ('postgresql://worker_test_admin@127.0.0.1:56751/postgres', WorkerStore(database_url=<redacted>), <app.execution_relay...9edd9233906742b4cd3e0d9424e9', launch_lease_epoch=1, transport_lease_epoch=1, callback_origin='http://127.0.0.1:9120'))
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9487/test_unreachable_slow_probe_do0')
+signed_api = (<starlette.testclient.TestClient object at 0x10a886090>, WorkerRequestSigner(worker_id='v5-transport-0745f60965204822a1ac92013b5524da', key_id='worker-v1', private_key=<redacted>), <fastapi.applications.FastAPI object at 0x10a9f19d0>)
+worker_turn = ConversationCreateResult(conversation=ConversationRecord(conversation_id=UUID('4e446cd0-725b-4245-8bdd-3fe2e91ad128'),...4ae98-efde-4640-ae9f-f31e14f807ec'), triggering_message_id=UUID('c4ea6468-6773-4d32-9508-82a34f5b13d5')), created=True)
+attempt_repository = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10a647150>
+
+    def test_unreachable_slow_probe_does_not_block_actual_renewal_or_cancellation(
+        receiver, tmp_path, signed_api, worker_turn, attempt_repository
+    ):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from threading import Event, Thread
+        from time import monotonic
+    
+        from app.execution_relay.metabot_client import (
+            _APPROVED_AGENT_IDS,
+            MetaBotClient,
+            MetaBotRuntimeMap,
+        )
+        from app.execution_relay.worker import callback_server
+        from app.execution_relay.worker_readiness_v5 import V5WorkerService
+    
+        client, signer, _ = signed_api
+        post(
+            client,
+            signer,
+            "/api/v1/execution-worker/v5/readiness",
+            json.dumps(observation()).encode(),
+        )
+        lease = attempt_repository.claim_due(uuid4(), 60)
+        entered, release = Event(), Event()
+    
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+    
+            def do_GET(self):
+                entered.set()
+                release.wait(timeout=5)
+                self.send_response(503)
+                self.end_headers()
+    
+        http = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=http.serve_forever, daemon=True)
+        thread.start()
+        _, _, runtime, _, _ = receiver
+        directory = tmp_path / "probe-private"
+        directory.mkdir(mode=0o700)
+        secret = directory / "machine"
+        secret.write_text("owned-probe-secret")
+        secret.chmod(0o600)
+        ports = {name: 20000 + i for i, name in enumerate(sorted(_APPROVED_AGENT_IDS))}
+        ports["hr-bot"] = http.server_port
+        runtime.metabot = MetaBotClient(MetaBotRuntimeMap(ports), secret)
+    
+        async def scenario():
+            callback = asyncio.create_task(callback_server(runtime))
+            await runtime.callback_ready.wait()
+            service = V5WorkerService(runtime)
+            before = monotonic()
+            sampling = asyncio.create_task(service.sample())
+            try:
+                assert await asyncio.to_thread(entered.wait, 2)
+                assert (
+                    await asyncio.to_thread(attempt_repository.renew, lease, 60)
+                ).attempt_id == lease.attempt_id
+                assert (
+                    await asyncio.to_thread(
+                        attempt_repository.request_cancel,
+                        worker_turn.conversation.owner_internal_user_id,
+                        worker_turn.turn.turn_id,
+                    )
+                    == "accepted"
+                )
+                assert not sampling.done()
+                sample = await sampling
+                assert sample["service"] is None and sample["receiverReady"] is False
+                assert monotonic() - before < 4
+            finally:
+                release.set()
+                runtime.stop()
+                await callback
+    
+        try:
+>           asyncio.run(scenario())
+
+tests/test_execution_readiness_v5.py:582: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_execution_readiness_v5.py:562: in scenario
+    await asyncio.to_thread(attempt_repository.renew, lease, 60)
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app/agent_brain/turn_attempts.py:257: in renew
+    return self.renew(lease, lease_seconds, connection=owned_connection)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.agent_brain.turn_attempts.TurnAttemptRepository object at 0x10a647150>
+lease = None, lease_seconds = 60
+connection = <psycopg.Connection [BAD] at 0x10a8232d0>
+
+    def renew(
+        self,
+        lease: Lease,
+        lease_seconds: int,
+        *,
+        connection: psycopg.Connection | None = None,
+    ) -> Lease:
+        """Extend the current holder in a short Conversation -> Turn -> Attempt transaction.
+    
+        Caller-owned transactions (including future Result publication) must acquire
+        these locks in the same order. Network work must occur after commit.
+        """
+        if type(lease_seconds) is not int or lease_seconds <= 0:
+            raise ValueError("positive integer lease seconds required")
+        if connection is None:
+            with self.transaction() as owned_connection:
+                return self.renew(lease, lease_seconds, connection=owned_connection)
+        if connection.autocommit:
+            raise ValueError("caller-owned transaction required")
+        conversation = connection.execute(
+            "select conversation_id from platform_control.conversations "
+            "where conversation_id=(select t.conversation_id from "
+            "platform_control.conversation_turns t join platform_control.turn_attempts a "
+            "using(turn_id) where a.attempt_id=%s) for update",
+>           (lease.attempt_id,),
+             ^^^^^^^^^^^^^^^^
+        ).fetchone()
+E       AttributeError: 'NoneType' object has no attribute 'attempt_id'
+
+app/agent_brain/turn_attempts.py:265: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_execution_readiness_v5.py::test_signed_observation_admits_original_attempt
+FAILED tests/test_execution_readiness_v5.py::test_fresh_observation_after_delay_claims_same_attempt_once
+FAILED tests/test_execution_readiness_v5.py::test_stale_route_prefix_does_not_starve_ready_conversation
+FAILED tests/test_execution_readiness_v5.py::test_completed_turn_with_held_attempt_blocks_admission_and_binding
+FAILED tests/test_execution_readiness_v5.py::test_locked_conversation_does_not_block_unrelated_claim
+FAILED tests/test_execution_readiness_v5.py::test_unreachable_slow_probe_does_not_block_actual_renewal_or_cancellation
+6 failed, 14 passed in 23.03s
+
+exit_code=1

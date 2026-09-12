@@ -1,0 +1,45 @@
+{
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "checks": {
+    "integration_files": 27,
+    "integration_exit": 0,
+    "source_file_count": 1137,
+    "source_changes_during_run": [],
+    "lint": {
+      "exit_code": 1,
+      "baseline_diagnostics": 34,
+      "current_diagnostics": 24,
+      "introduced_count": 0
+    },
+    "cosmetic_files_match_recorded_after_hash": {
+      "backend/tests/test_conversation_attachment_binding.py": true,
+      "backend/tests/test_hr_direct_material_transport.py": true
+    },
+    "cosmetic_rerun_exit": 0,
+    "cosmetic_rerun_tail": "30 passed, 10 warnings in 25.55s",
+    "w_evidence_links_exist": {
+      "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-agent-brain-hr-history-isolation.log": true,
+      "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-conversation-attachment-binding.log": true,
+      "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-hr-direct-worker.log": true,
+      "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-agent-brain-conversation-summary.log": true,
+      "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-hr-knowledge-context.log": true,
+      "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/transitive-fixture-addendum.md": true,
+      "../../artifacts/2026-09-12-hr-e-audit-followup/final/dispatch-final.log": true,
+      "../../artifacts/2026-09-12-hr-e-audit-followup/counts/README.md": true,
+      "../../artifacts/2026-09-12-hr-e-audit-followup/final/integration-2.log": true
+    }
+  },
+  "sha256": {
+    "docs/reviews/2026-09-12-hr-e-audit-followup.md": "00c73705918af67f3f8e4f13a2127e0eb918ed8967bd44debedb9bb53bdac632",
+    "artifacts/2026-09-12-hr-e-audit-followup/final/integration-2-command.json": "24ea7a967b2588621669a213333bf00cac21e965c37e49618ebd61759cda879d",
+    "artifacts/2026-09-12-hr-e-audit-followup/final/integration-2.log": "4bf0c3a54879cc96ab3d8c021c2173d583b71d4017164ec769a527a21dd85e54",
+    "artifacts/2026-09-12-hr-e-audit-followup/final/integration-1-command.json": "71220e4b0265f7d6a0e09b9bda3c67eac62c60a7aa01b27b2036b0a916597a48",
+    "artifacts/2026-09-12-hr-e-audit-followup/final/integration-1.log": "f34bbf9278e4767c5d9d6c6f769ab662cff6f5b5681c88fd182083a8cd5be1b4",
+    "artifacts/2026-09-12-hr-e-audit-followup/final/cosmetic-delta.json": "161f51fd14c0991ea32a06530adc5701b7786608d0ad9d7918faeb068fbf382f",
+    "artifacts/2026-09-12-hr-e-audit-followup/final/cosmetic-regression-command.json": "b1cd32b3c4d4289324eb0d9996176c78bfe6f4bbdd9a7edc1028b7ca19eabe78",
+    "artifacts/2026-09-12-hr-e-audit-followup/final/cosmetic-regression.log": "04eb7e65898ef0d6c392c29125b9ddca6b60323f78c7ca6251e3693d6c96e7fc",
+    "artifacts/2026-09-12-hr-e-audit-followup/final/lint-final-2-comparison.json": "6da01a41eb87ddda668a94f49d054f4396163783677e84c6bcfa3af0a46f5f76",
+    "backend/tests/test_conversation_attachment_binding.py": "53fd008f09289f49bac90a6114890d55be409cf16eed782e867174e9b80e0763",
+    "backend/tests/test_hr_direct_material_transport.py": "deb5285d575f5c488ec03b2ae30ee404a8643a2c2dc242f50aa4cf9365a5778b"
+  }
+}

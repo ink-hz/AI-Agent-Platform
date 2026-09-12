@@ -1,0 +1,137 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest tests/test_hr_agent_foundation.py -k exact_cutover tests/test_hr_agent_preflight.py tests/test_hr_agent_migration_deployment.py -q
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_______ test_schema_readiness_requires_exact_cutover_migration[None-102] _______
+
+version = 102, receipt = None
+
+    @pytest.mark.parametrize("version", [102, 103, 104])
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+        from app.hr_agent.config import check_schema_ready
+        from hr_agent_support import hr_agent_database
+        with hr_agent_database() as db:
+            with db.admin_connection() as c:
+                if receipt is None:
+                    c.execute("DELETE FROM platform_control.schema_migrations WHERE version=%s", (version,))
+                else:
+                    c.execute("UPDATE platform_control.schema_migrations SET sha256=%s WHERE version=%s", (receipt, version))
+>           assert not check_schema_ready(db)
+E           assert not True
+E            +  where True = <function check_schema_ready at 0x1069e3ba0>(HrTestDatabase())
+
+tests/test_hr_agent_foundation.py:208: AssertionError
+_______ test_schema_readiness_requires_exact_cutover_migration[None-103] _______
+
+version = 103, receipt = None
+
+    @pytest.mark.parametrize("version", [102, 103, 104])
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+        from app.hr_agent.config import check_schema_ready
+        from hr_agent_support import hr_agent_database
+        with hr_agent_database() as db:
+            with db.admin_connection() as c:
+                if receipt is None:
+                    c.execute("DELETE FROM platform_control.schema_migrations WHERE version=%s", (version,))
+                else:
+                    c.execute("UPDATE platform_control.schema_migrations SET sha256=%s WHERE version=%s", (receipt, version))
+>           assert not check_schema_ready(db)
+E           assert not True
+E            +  where True = <function check_schema_ready at 0x1069e3ba0>(HrTestDatabase())
+
+tests/test_hr_agent_foundation.py:208: AssertionError
+_______ test_schema_readiness_requires_exact_cutover_migration[None-104] _______
+
+version = 104, receipt = None
+
+    @pytest.mark.parametrize("version", [102, 103, 104])
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+        from app.hr_agent.config import check_schema_ready
+        from hr_agent_support import hr_agent_database
+        with hr_agent_database() as db:
+            with db.admin_connection() as c:
+                if receipt is None:
+                    c.execute("DELETE FROM platform_control.schema_migrations WHERE version=%s", (version,))
+                else:
+                    c.execute("UPDATE platform_control.schema_migrations SET sha256=%s WHERE version=%s", (receipt, version))
+>           assert not check_schema_ready(db)
+E           assert not True
+E            +  where True = <function check_schema_ready at 0x1069e3ba0>(HrTestDatabase())
+
+tests/test_hr_agent_foundation.py:208: AssertionError
+_ test_schema_readiness_requires_exact_cutover_migration[0000000000000000000000000000000000000000000000000000000000000000-102] _
+
+version = 102
+receipt = '0000000000000000000000000000000000000000000000000000000000000000'
+
+    @pytest.mark.parametrize("version", [102, 103, 104])
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+        from app.hr_agent.config import check_schema_ready
+        from hr_agent_support import hr_agent_database
+        with hr_agent_database() as db:
+            with db.admin_connection() as c:
+                if receipt is None:
+                    c.execute("DELETE FROM platform_control.schema_migrations WHERE version=%s", (version,))
+                else:
+                    c.execute("UPDATE platform_control.schema_migrations SET sha256=%s WHERE version=%s", (receipt, version))
+>           assert not check_schema_ready(db)
+E           assert not True
+E            +  where True = <function check_schema_ready at 0x1069e3ba0>(HrTestDatabase())
+
+tests/test_hr_agent_foundation.py:208: AssertionError
+_ test_schema_readiness_requires_exact_cutover_migration[0000000000000000000000000000000000000000000000000000000000000000-103] _
+
+version = 103
+receipt = '0000000000000000000000000000000000000000000000000000000000000000'
+
+    @pytest.mark.parametrize("version", [102, 103, 104])
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+        from app.hr_agent.config import check_schema_ready
+        from hr_agent_support import hr_agent_database
+        with hr_agent_database() as db:
+            with db.admin_connection() as c:
+                if receipt is None:
+                    c.execute("DELETE FROM platform_control.schema_migrations WHERE version=%s", (version,))
+                else:
+                    c.execute("UPDATE platform_control.schema_migrations SET sha256=%s WHERE version=%s", (receipt, version))
+>           assert not check_schema_ready(db)
+E           assert not True
+E            +  where True = <function check_schema_ready at 0x1069e3ba0>(HrTestDatabase())
+
+tests/test_hr_agent_foundation.py:208: AssertionError
+_ test_schema_readiness_requires_exact_cutover_migration[0000000000000000000000000000000000000000000000000000000000000000-104] _
+
+version = 104
+receipt = '0000000000000000000000000000000000000000000000000000000000000000'
+
+    @pytest.mark.parametrize("version", [102, 103, 104])
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+        from app.hr_agent.config import check_schema_ready
+        from hr_agent_support import hr_agent_database
+        with hr_agent_database() as db:
+            with db.admin_connection() as c:
+                if receipt is None:
+                    c.execute("DELETE FROM platform_control.schema_migrations WHERE version=%s", (version,))
+                else:
+                    c.execute("UPDATE platform_control.schema_migrations SET sha256=%s WHERE version=%s", (receipt, version))
+>           assert not check_schema_ready(db)
+E           assert not True
+E            +  where True = <function check_schema_ready at 0x1069e3ba0>(HrTestDatabase())
+
+tests/test_hr_agent_foundation.py:208: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_hr_agent_foundation.py::test_schema_readiness_requires_exact_cutover_migration[None-102]
+FAILED tests/test_hr_agent_foundation.py::test_schema_readiness_requires_exact_cutover_migration[None-103]
+FAILED tests/test_hr_agent_foundation.py::test_schema_readiness_requires_exact_cutover_migration[None-104]
+FAILED tests/test_hr_agent_foundation.py::test_schema_readiness_requires_exact_cutover_migration[0000000000000000000000000000000000000000000000000000000000000000-102]
+FAILED tests/test_hr_agent_foundation.py::test_schema_readiness_requires_exact_cutover_migration[0000000000000000000000000000000000000000000000000000000000000000-103]
+FAILED tests/test_hr_agent_foundation.py::test_schema_readiness_requires_exact_cutover_migration[0000000000000000000000000000000000000000000000000000000000000000-104]
+6 failed, 77 deselected in 6.15s
+
+exit_code=1

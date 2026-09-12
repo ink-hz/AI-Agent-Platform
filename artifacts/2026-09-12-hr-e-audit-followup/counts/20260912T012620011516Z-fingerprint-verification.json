@@ -1,0 +1,20 @@
+{
+  "command": "compare migration102/103 bytes against git192a448; compare104 function body with103 minus unreachable branch; sha256 owned final files; git diff --check",
+  "baseline": "192a448",
+  "immutable_102_103": true,
+  "only_count_body_change": "remove unreachable interrupted AND terminal_at IS NULL branch",
+  "sha256": {
+    "backend/control_migrations/102_hr_execution_cutover.sql": "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
+    "backend/control_migrations/103_hr_execution_drain_occupancy.sql": "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+    "backend/control_migrations/104_hr_execution_drain_terminal_contract.sql": "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
+    "backend/app/hr_agent/config.py": "1cdf0d3755762513935943cb4349567cdd4c365c98c6f23eb5ad65b65729d6d0",
+    "backend/tools/hr_agent/preflight.py": "2fbd4d05c85ee14163b63cc27790a69d5262c73f598a2e6b7346b711dd7b6a53",
+    "deploy/cloud/hr_agent_migrate.py": "92e5e8bcbca09e53fd89c025fff7c769c98c5e372f0f57dbaea7b6065264edfd",
+    "backend/tests/test_hr_cutover_count_review.py": "b12faeba52b80206df68d4a7ef881ee2c780df7f9ed8bbe920d894249e17986b",
+    "backend/tests/test_hr_agent_foundation.py": "2facce02e52ef75510869303d195aaeed22b2b9d6bcea75649e313e907f7c3eb",
+    "backend/tests/test_hr_agent_preflight.py": "54918e5de4425f3c358c9be72e79d22b4c5378af89f79a7be2322eabe940d4e3",
+    "backend/tests/test_hr_agent_migration_deployment.py": "e4831d3e61f8a4e3e862f69d587206cc309f5e89acb4a2eef6888d792b96a756"
+  },
+  "diff_check_output": "",
+  "exit_code": 0
+}

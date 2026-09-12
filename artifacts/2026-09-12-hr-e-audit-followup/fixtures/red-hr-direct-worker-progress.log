@@ -1,0 +1,1511 @@
+EEEEEEEEEEE                                                              [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_context_version_conflict_finishes_without_ever_dispatching _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_context_version_conflict_finishes_without_ever_dispatching>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('5c6517a3-aad5-4f7b-b64e-2578781dfc69')
+conversation_id = UUID('b477da9a-71cb-428a-afbe-eb52ace6136d')
+client_request_id = UUID('bbf945d1-0543-4b15-84c5-bb09bf50da81')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_snapshot_version_tracks_claim_and_manifest_but_not_lease_renewal _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_snapshot_version_tracks_claim_and_manifest_but_not_lease_renewal>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('19af0fee-4ef2-4834-89a0-9ffe6c4c473f')
+conversation_id = UUID('b49dcb36-b5a2-4fe0-a5ff-529717976888')
+client_request_id = UUID('eae33b4c-8355-484a-b6b7-ac4c8cfaee97')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_slow_context_does_not_block_other_cancel_and_lease_renewal _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_slow_context_does_not_block_other_cancel_and_lease_renewal>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('1ed0fee4-a17d-4aec-bd40-a422ecd6c769')
+conversation_id = UUID('0e4ff336-9f14-49de-8546-eebdeb015107')
+client_request_id = UUID('f7e01daa-26c4-44c5-9095-3d7cba1e4fb1')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_corrupt_history_isolates_one_preparation_without_stopping_worker _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_corrupt_history_isolates_one_preparation_without_stopping_worker>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('c6efb584-e940-4272-b7cc-92653cea8b79')
+conversation_id = UUID('34c97cfe-ea80-49eb-a5f8-64e7c99c624f')
+client_request_id = UUID('96f73dc9-d1d2-4e7f-8c78-ea29e606a307')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_transient_context_read_retries_before_one_preparation _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_transient_context_read_retries_before_one_preparation>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('b737a82c-8d63-4a38-9b66-adb652a2cc5d')
+conversation_id = UUID('b708e6b3-df16-428e-9939-d2719c64cc91')
+client_request_id = UUID('341103d3-e025-4a54-a8f7-5c9f4e235010')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_context_read_retry_exhaustion_does_not_block_other_cancel _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_context_read_retry_exhaustion_does_not_block_other_cancel>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('1395d3c7-73de-42d5-9a9b-f8ef0aafb0a2')
+conversation_id = UUID('ffad73bf-58c4-4f0d-959c-3f677b6492a9')
+client_request_id = UUID('32d57c77-db36-4ad3-918d-5e8042296db0')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_failed_preparation_retries_only_terminal_write_after_storage_fault _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_failed_preparation_retries_only_terminal_write_after_storage_fault>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('07f82052-0f92-496f-b19d-11da767e32ae')
+conversation_id = UUID('28a4a1f8-0cad-405b-a64e-3427fc1a1f77')
+client_request_id = UUID('66027d10-4169-4c8c-9681-9b9e752c1fd6')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_scheduler_survives_storage_outage_without_fabricating_a_terminal _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_scheduler_survives_storage_outage_without_fabricating_a_terminal>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('664a2ed2-8e26-46e7-8e8d-427aa381e6b8')
+conversation_id = UUID('cb4bd14b-4ce1-4260-8ebc-252bd3fa717f')
+client_request_id = UUID('11cf33c1-fad7-476d-abc1-4dd3a0533dd9')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_uncertain_preparation_write_preserves_offered_run_and_cancel_hold _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_uncertain_preparation_write_preserves_offered_run_and_cancel_hold>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('3e1fdb2c-fa85-4c97-ab00-a0db84e0249d')
+conversation_id = UUID('8b55f79f-2c49-4d1e-9dcb-14a1531f104c')
+client_request_id = UUID('aadee794-2463-4b28-b940-41ccd30093f7')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_lost_claim_response_does_not_renew_an_unprepared_turn_forever _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_lost_claim_response_does_not_renew_an_unprepared_turn_forever>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('c94b6b10-05c0-4e39-b323-5b90d048d42c')
+conversation_id = UUID('922658ba-5892-4625-9782-bb937b125cff')
+client_request_id = UUID('e18f46b6-a785-469d-a71f-1bab24ad4f65')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+_ ERROR at setup of test_expired_owned_lease_does_not_block_its_existing_recovery_at_capacity _
+
+fixturedef = <FixtureDef argname='worker_turn' scope='function' baseid='tests/test_hr_direct_worker_progress.py'>
+request = <SubRequest 'worker_turn' for <Function test_expired_owned_lease_does_not_block_its_existing_recovery_at_capacity>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_hr_direct_worker.py:108: in worker_turn
+    return repository.append_turn(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ConversationRepository(control_database_url=<redacted>, environment='production', content_codec=<redacted>)
+internal_user_id = UUID('d6dffe6c-3fee-4242-8cbe-8dd6e782e4e6')
+conversation_id = UUID('89251c2c-53a9-4ace-89c3-ffec214879c0')
+client_request_id = UUID('b6d85aa9-6487-4024-bd50-059867c56760')
+submission = ConversationTurnSubmission(text='P03 disposable input', attachment_ids=(), active_attachment_ids=(), user_selected_resources=(), hr_scope=None, method_selection=None, standard_consent=None, input_result_refs=None)
+
+    def append_turn(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        submission: str | ConversationTurnSubmission,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        submission = _require_submission(submission)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                # HR binding may change while waiting for the conversation.
+                # Acquire the shared gate first, then classify from a fresh read
+                # after the row lock; other Bots never receive a lane check.
+                cutover = lock_state(cursor)
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                hr_bound = cursor.execute(
+                    "select exists(select 1 from platform_hr.position_conversations "
+                    "where conversation_id=%s) as hr_bound", (conversation_id,),
+                ).fetchone()["hr_bound"]
+                existing = cursor.execute(
+                    "select turn_id from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    conversation, message, turn, mission_id = self._replay_locked(
+                        cursor, conversation_row, client_request_id, submission
+                    )
+                    mission = None
+                    created = False
+                else:
+                    if ((conversation_row["mode"] == "direct_agent"
+                         and conversation_row["direct_agent_id"] == "hr-bot")
+                            or hr_bound):
+                        require_lane(cutover, "legacy")
+                    if conversation_row["status"] != "active":
+                        raise ConversationRepositoryConflict()
+                    active = cursor.execute(
+                        "select 1 from platform_control.conversation_turns "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
+                        "limit 1",
+                        (conversation_id,),
+                    ).fetchone()
+                    if active is not None:
+                        raise ConversationTurnInProgress()
+                    next_seq = cursor.execute(
+                        "select coalesce(max(seq),0)+1 as next_seq from "
+                        "platform_control.conversation_messages "
+                        "where conversation_id=%s",
+                        (conversation_id,),
+                    ).fetchone()["next_seq"]
+                    conversation, message, turn, mission = self._new_turn_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        submission,
+                        message_seq=next_seq,
+                    )
+                    mission_id = mission.mission_id
+                    created = True
+            if mission is None:
+                mission = self._missions.mission_for_owner(
+                    internal_user_id, mission_id
+                )
+            return ConversationCreateResult(
+                conversation=conversation,
+                message=message,
+                turn=turn,
+                mission=mission,
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except MissionRepositoryError:
+            raise ConversationRepositoryError() from None
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+>           raise ConversationRepositoryError() from None
+E           app.agent_brain.conversation_repository.ConversationRepositoryError: conversation repository unavailable
+
+backend/app/agent_brain/conversation_repository.py:1444: ConversationRepositoryError
+=========================== short test summary info ============================
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_context_version_conflict_finishes_without_ever_dispatching
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_snapshot_version_tracks_claim_and_manifest_but_not_lease_renewal
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_slow_context_does_not_block_other_cancel_and_lease_renewal
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_corrupt_history_isolates_one_preparation_without_stopping_worker
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_transient_context_read_retries_before_one_preparation
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_context_read_retry_exhaustion_does_not_block_other_cancel
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_failed_preparation_retries_only_terminal_write_after_storage_fault
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_scheduler_survives_storage_outage_without_fabricating_a_terminal
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_uncertain_preparation_write_preserves_offered_run_and_cancel_hold
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_lost_claim_response_does_not_renew_an_unprepared_turn_forever
+ERROR backend/tests/test_hr_direct_worker_progress.py::test_expired_owned_lease_does_not_block_its_existing_recovery_at_capacity
+11 errors in 2.60s

@@ -1,0 +1,473 @@
+{
+  "checked_at": "2026-09-12T01:50:38.365069+00:00",
+  "documents": 16,
+  "links": 93,
+  "missing": [],
+  "checks": [
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "HR_Agent工作流.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/superpowers/plans/2026-09-09-hr-cloud-loop-delivery.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/superpowers/plans/2026-09-11-hr-c-execution.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/superpowers/plans/2026-09-11-hr-d-execution.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/archive/hr/2026-09-09/README.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-cloud-loop-ab-revision.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-material-authority.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-cloud-loop-d.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-d1-remediation.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-platform-erasure-incident.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-c-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/superpowers/plans/2026-09-09-hr-cloud-loop-delivery.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/superpowers/specs/2026-09-09-hr-cloud-loop-runtime-spec.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/superpowers/plans/2026-09-10-hr-cloud-loop-b.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-10-hr-cloud-loop-b.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-c1-erasure-audit.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-cloud-loop-c.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-d-review-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/superpowers/plans/2026-09-11-hr-e-execution.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-cloud-loop-e.md",
+      "exists": true
+    },
+    {
+      "document": "HR总体架构设计.md",
+      "link": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-cloud-loop-d.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "HR总体架构设计.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/superpowers/plans/2026-09-11-hr-d-execution.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/superpowers/plans/2026-09-09-hr-cloud-loop-delivery.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/superpowers/specs/2026-09-09-hr-cloud-loop-runtime-spec.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/superpowers/plans/2026-09-10-hr-cloud-loop-b.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-10-hr-cloud-loop-b.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-10-hr-cloud-loop-ab.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-cloud-loop-ab-revision.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-cloud-loop-c.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-c-review-revision.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-c-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-d-review-followup.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/superpowers/plans/2026-09-11-hr-e-execution.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-cloud-loop-e.md",
+      "exists": true
+    },
+    {
+      "document": "HR_Agent工作流.md",
+      "link": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "exists": true
+    },
+    {
+      "document": "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/final/legacy-worker-stop-audit.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "2026-09-12-hr-e-audit-followup.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-session-takeover/README.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/handoff/README.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/handoff/independent-review.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/migration/independent-review.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/inventory/README.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/final/",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/evidence-retention-gap.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/final/runbook-independent-review.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-11-hr-e-review-followup.md",
+      "link": "../../artifacts/2026-09-11-hr-e-review/record-corrections.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/README.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/provenance-upgrade-addendum.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/counts/README.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/transitive-fixture-addendum.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/readiness-followup.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/integration-1-command.json",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/integration-1.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/dispatch-final.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/integration-2-command.json",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/integration-2.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/cosmetic-delta.json",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/cosmetic-regression.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/lint-final-2-comparison.json",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-agent-brain-hr-history-isolation.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-conversation-attachment-binding.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-hr-direct-worker.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-agent-brain-conversation-summary.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-hr-knowledge-context.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/transitive-fixture-addendum.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-conversation-attachment-binding.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/dispatch-final.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/counts/README.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/integration-2.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/fixtures/green-hr-knowledge-context.log",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/review/counts-operations-independent-20260912T013115391051Z/review.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/review/counts-operations-independent-20260912T013115391051Z/receipt-followup-review.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/review/fixture-review.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/review/fixture-readiness-docs-independent-20260912T014230390760Z/review.md",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/final/historical-identity.json",
+      "exists": true
+    },
+    {
+      "document": "docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "link": "../../artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "../../docs/reviews/2026-09-12-hr-e-audit-followup.md",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "final/integration-2.log",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "final/integration-2-command.json",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "final/cosmetic-regression.log",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "fixtures/README.md",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "fixtures/provenance-upgrade-addendum.md",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "fixtures/transitive-fixture-addendum.md",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "fixtures/readiness-followup.md",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "counts/README.md",
+      "exists": true
+    },
+    {
+      "document": "artifacts/2026-09-12-hr-e-audit-followup/README.md",
+      "link": "final/historical-identity.json",
+      "exists": true
+    }
+  ]
+}

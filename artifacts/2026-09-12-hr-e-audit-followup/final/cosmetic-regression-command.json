@@ -1,0 +1,15 @@
+{
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "backend/tests/test_conversation_attachment_binding.py",
+    "backend/tests/test_hr_direct_material_transport.py",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-12T01:48:45.071540+00:00",
+  "exit_code": 0,
+  "finished_at": "2026-09-12T01:49:10.847130+00:00"
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "commit": "894661d3a75e25b7e15906409bd0449c98b45b30",
+    "title": "test(hr): restore deployed fixture and legacy scope coverage",
+    "files": [
+      "backend/tests/test_conversation_attachment_binding.py",
+      "backend/tests/test_agent_brain_conversation_summary.py",
+      "backend/tests/test_agent_brain_hr_history_isolation.py",
+      "backend/tests/test_hr_direct_worker.py",
+      "backend/tests/test_hr_direct_worker_progress.py",
+      "backend/tests/test_hr_direct_provenance_upgrade.py",
+      "backend/tests/test_execution_readiness_v5.py",
+      "backend/tests/test_hr_direct_material_transport.py",
+      "backend/tests/test_hr_knowledge_http.py",
+      "backend/tests/test_hr_web_reliable_loop.py"
+    ]
+  },
+  {
+    "commit": "396da84262aea5059ddb876e5d71678ddf002825",
+    "title": "fix(hr): require the reviewed cutover terminal contract",
+    "files": [
+      "backend/control_migrations/104_hr_execution_drain_terminal_contract.sql",
+      "backend/app/hr_agent/config.py",
+      "backend/tools/hr_agent/preflight.py",
+      "deploy/cloud/hr_agent_migrate.py",
+      "backend/tests/test_hr_cutover_count_review.py",
+      "backend/tests/test_hr_agent_foundation.py",
+      "backend/tests/test_hr_agent_preflight.py",
+      "backend/tests/test_hr_agent_migration_deployment.py"
+    ]
+  }
+]

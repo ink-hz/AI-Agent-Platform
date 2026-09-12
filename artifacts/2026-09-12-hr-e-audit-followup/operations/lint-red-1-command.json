@@ -1,0 +1,11 @@
+{
+  "command": [
+    "backend/.venv/bin/ruff",
+    "check",
+    "backend/tests/test_hr_cutover_runbook.py",
+    "backend/tests/test_hr_failed_draft_cutover.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 1,
+  "time": "2026-09-12T01:37:42.608811+00:00"
+}

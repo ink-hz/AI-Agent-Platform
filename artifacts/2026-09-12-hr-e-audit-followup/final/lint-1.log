@@ -1,0 +1,1009 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_agent_brain_conversation_summary.py:1:1
+   |
+ 1 | / from __future__ import annotations
+ 2 | |
+ 3 | | import json
+ 4 | | from uuid import uuid4
+ 5 | |
+ 6 | | import psycopg
+ 7 | | import pytest
+ 8 | |
+ 9 | | from app.agent_brain import conversation_context
+10 | | from app.agent_brain.conversation_context import ConversationContextBuilder
+11 | | from app.agent_brain.conversation_projection import ConversationProjection
+12 | | from app.agent_brain.conversation_repository import ConversationRepository
+13 | | from app.agent_brain.models import load_capability_cards
+14 | | from app.agent_brain.orchestrator import MissionOrchestrator
+15 | | from app.agent_brain.repository import MissionRepository
+16 | | from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+17 | | from test_agent_brain_conversation_context import _complete_mission
+18 | | from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+19 | |     control_database as control_database,  # noqa: PLC0414
+20 | | )
+   | |_^
+help: Organize imports
+   |
+7  | import pytest
+   -
+8  | from app.agent_brain import conversation_context
+--------------------------------------------------------------------------------
+14 | from app.agent_brain.repository import MissionRepository
+   - from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+15 | from test_agent_brain_conversation_context import _complete_mission
+16 + from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+17 | from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+   |
+
+F401 [*] `test_agent_brain_orchestrator.brain_database` imported but unused
+  --> backend/tests/test_agent_brain_conversation_summary.py:16:66
+   |
+14 | from app.agent_brain.orchestrator import MissionOrchestrator
+15 | from app.agent_brain.repository import MissionRepository
+16 | from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+   |                                                                  ^^^^^^^^^^^^^^
+17 | from test_agent_brain_conversation_context import _complete_mission
+18 | from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+   |
+help: Remove unused import: `test_agent_brain_orchestrator.brain_database`
+   |
+15 | from app.agent_brain.repository import MissionRepository
+   - from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+16 + from test_agent_brain_orchestrator import ScriptedRelay, _codec
+17 | from test_agent_brain_conversation_context import _complete_mission
+   |
+
+F811 Redefinition of unused `brain_database` from line 16
+  --> backend/tests/test_agent_brain_conversation_summary.py:49:5
+   |
+47 | @pytest.mark.postgres
+48 | def test_over_budget_follow_up_runs_summary_before_planning(
+49 |     brain_database,
+   |     ^^^^^^^^^^^^^^ `brain_database` redefined here
+50 | ) -> None:
+51 |     environment, owner_id = brain_database
+   |
+  ::: backend/tests/test_agent_brain_conversation_summary.py:16:66
+   |
+14 | from app.agent_brain.orchestrator import MissionOrchestrator
+15 | from app.agent_brain.repository import MissionRepository
+16 | from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+   |                                                                  -------------- previous definition of `brain_database` here
+17 | from test_agent_brain_conversation_context import _complete_mission
+18 | from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+   |
+help: Remove definition: `brain_database`
+
+F811 Redefinition of unused `brain_database` from line 16
+   --> backend/tests/test_agent_brain_conversation_summary.py:135:5
+    |
+133 | @pytest.mark.postgres
+134 | def test_invalid_summary_keeps_previous_summary_and_writes_visible_failure(
+135 |     brain_database,
+    |     ^^^^^^^^^^^^^^ `brain_database` redefined here
+136 | ) -> None:
+137 |     environment, owner_id = brain_database
+    |
+   ::: backend/tests/test_agent_brain_conversation_summary.py:16:66
+    |
+ 14 | from app.agent_brain.orchestrator import MissionOrchestrator
+ 15 | from app.agent_brain.repository import MissionRepository
+ 16 | from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+    |                                                                  -------------- previous definition of `brain_database` here
+ 17 | from test_agent_brain_conversation_context import _complete_mission
+ 18 | from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+    |
+help: Remove definition: `brain_database`
+
+F811 Redefinition of unused `brain_database` from line 16
+   --> backend/tests/test_agent_brain_conversation_summary.py:193:5
+    |
+191 | @pytest.mark.postgres
+192 | def test_summary_prompt_overflow_fails_the_turn_visibly(
+193 |     brain_database,
+    |     ^^^^^^^^^^^^^^ `brain_database` redefined here
+194 |     monkeypatch,
+195 | ) -> None:
+    |
+   ::: backend/tests/test_agent_brain_conversation_summary.py:16:66
+    |
+ 14 | from app.agent_brain.orchestrator import MissionOrchestrator
+ 15 | from app.agent_brain.repository import MissionRepository
+ 16 | from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+    |                                                                  -------------- previous definition of `brain_database` here
+ 17 | from test_agent_brain_conversation_context import _complete_mission
+ 18 | from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+    |
+help: Remove definition: `brain_database`
+
+F811 Redefinition of unused `brain_database` from line 16
+   --> backend/tests/test_agent_brain_conversation_summary.py:235:5
+    |
+233 | @pytest.mark.postgres
+234 | def test_non_hr_direct_agent_follow_up_uses_the_same_summary_phase(
+235 |     brain_database,
+    |     ^^^^^^^^^^^^^^ `brain_database` redefined here
+236 | ) -> None:
+237 |     environment, owner_id = brain_database
+    |
+   ::: backend/tests/test_agent_brain_conversation_summary.py:16:66
+    |
+ 14 | from app.agent_brain.orchestrator import MissionOrchestrator
+ 15 | from app.agent_brain.repository import MissionRepository
+ 16 | from test_agent_brain_orchestrator import ScriptedRelay, _codec, brain_database
+    |                                                                  -------------- previous definition of `brain_database` here
+ 17 | from test_agent_brain_conversation_context import _complete_mission
+ 18 | from tests.helpers.hr_direct_database import (  # deployed HR fixture chain
+    |
+help: Remove definition: `brain_database`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_agent_brain_hr_history_isolation.py:2:1
+   |
+ 1 |   """D1 regressions against the deployed v6/v7 persisted turn-scope shape."""
+ 2 | / from __future__ import annotations
+ 3 | |
+ 4 | | import importlib.util
+ 5 | | import sys
+ 6 | | from pathlib import Path
+ 7 | | from uuid import uuid4
+ 8 | |
+ 9 | | import psycopg
+10 | | import pytest
+11 | | from test_agent_brain_conversation_context import _complete_mission
+12 | | from test_control_plane_migration import control_database  # noqa: F401
+13 | | from test_hr_candidate_database import _seed_candidate_scope
+14 | | from test_hr_turn_scope_v6_database import (
+15 | |     repository as repository,  # noqa: PLC0414 - helper re-export
+16 | | )
+17 | | from test_hr_turn_scope_v6_database import (
+18 | |     scoped_database as scoped_database,  # noqa: PLC0414 - pytest fixture export
+19 | | )
+20 | |
+21 | | from app.agent_brain.conversation_context import ConversationContextBuilder
+22 | | from app.agent_brain.conversation_models import ConversationTurnSubmission
+23 | | from app.agent_brain.conversation_projection import ConversationProjection
+24 | | from app.agent_brain.conversation_repository import ConversationRepositoryNotFound
+25 | | from app.execution_relay.contracts_v6 import HrTurnScope
+   | |________________________________________________________^
+26 |
+27 |   A_FACT = "虚构甲独有经历：紫铜海鸥项目七次冷启动"
+   |
+help: Organize imports
+   |
+10 | import pytest
+11 + from app.agent_brain.conversation_context import ConversationContextBuilder
+12 + from app.agent_brain.conversation_models import ConversationTurnSubmission
+13 + from app.agent_brain.conversation_projection import ConversationProjection
+14 + from app.agent_brain.conversation_repository import ConversationRepositoryNotFound
+15 + from app.execution_relay.contracts_v6 import HrTurnScope
+16 | from test_agent_brain_conversation_context import _complete_mission
+--------------------------------------------------------------------------------
+24 | )
+   -
+   - from app.agent_brain.conversation_context import ConversationContextBuilder
+   - from app.agent_brain.conversation_models import ConversationTurnSubmission
+   - from app.agent_brain.conversation_projection import ConversationProjection
+   - from app.agent_brain.conversation_repository import ConversationRepositoryNotFound
+   - from app.execution_relay.contracts_v6 import HrTurnScope
+25 |
+   |
+
+RUF100 [*] Unused `noqa` directive (unused: `F401`, `F811`)
+ --> backend/tests/test_conversation_attachment_binding.py:3:1
+  |
+1 | # The imported pytest fixtures intentionally share their public fixture names with
+2 | # test parameters throughout this module.
+3 | # ruff: noqa: F401, F811
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
+4 |
+5 | from __future__ import annotations
+  |
+help: Remove unused `noqa` directive
+  |
+2 | # test parameters throughout this module.
+  - # ruff: noqa: F401, F811
+3 |
+  |
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+  --> backend/tests/test_hr_agent_foundation.py:14:5
+   |
+12 |   def test_database_schema_has_contract_tables_and_restricted_app():
+13 |       from hr_agent_support import hr_agent_database
+14 | /     with hr_agent_database() as db:
+15 | |         with db.connection() as conn:
+   | |_____________________________________^
+16 |               assert conn.execute("select count(*) from information_schema.tables where table_schema='platform_hr_agent'").fetchone()[…
+17 |               with pytest.raises(Exception):
+   |
+help: Combine `with` statements
+
+B017 Do not assert blind exception: `Exception`
+  --> backend/tests/test_hr_agent_foundation.py:17:18
+   |
+15 | …     with db.connection() as conn:
+16 | …         assert conn.execute("select count(*) from information_schema.tables where table_schema='platform_hr_agent'").fetchone()[0] =…
+17 | …         with pytest.raises(Exception):
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^
+18 | …             conn.execute('create table platform_hr_agent.forbidden(id int)')
+   |
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+  --> backend/tests/test_hr_agent_foundation.py:72:9
+   |
+70 |   …     with db.connection() as c:
+71 |   …         c.execute('INSERT INTO platform_hr_agent.threads(owner_id,thread_id,sealed_title,sealed_title_key_version) VALUES(%s,%s,%s…
+72 | / …     with db.connection() as c:
+73 | | …         with pytest.raises(psycopg.errors.ForeignKeyViolation):
+   | |_________________________________________________________________^
+74 |   …             c.execute("INSERT INTO platform_hr_agent.works(owner_id,work_id,thread_id,state,sealed_budget,sealed_budget_key_versio…
+75 |   …     with db.connection() as c:
+   |
+help: Combine `with` statements
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> backend/tests/test_hr_agent_foundation.py:155:5
+    |
+154 |   def test_readiness_rejects_missing_erasure_migration_receipt():
+155 | /     from hr_agent_support import hr_agent_database
+156 | |     from app.hr_agent.config import check_schema_ready
+    | |______________________________________________________^
+157 |       with hr_agent_database() as db:
+158 |           with db.admin_connection() as c:
+    |
+help: Organize imports
+    |
+154 | def test_readiness_rejects_missing_erasure_migration_receipt():
+155 +     from app.hr_agent.config import check_schema_ready
+156 |     from hr_agent_support import hr_agent_database
+    -     from app.hr_agent.config import check_schema_ready
+157 |     with hr_agent_database() as db:
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> backend/tests/test_hr_agent_foundation.py:169:5
+    |
+167 |   ])
+168 |   def test_readiness_rejects_missing_erasure_maintenance_column(table, column):
+169 | /     from psycopg import sql
+170 | |     from hr_agent_support import hr_agent_database
+171 | |     from app.hr_agent.config import check_schema_ready
+    | |______________________________________________________^
+172 |       with hr_agent_database() as db:
+173 |           with db.admin_connection() as c:
+    |
+help: Organize imports
+    |
+168 | def test_readiness_rejects_missing_erasure_maintenance_column(table, column):
+169 +     from app.hr_agent.config import check_schema_ready
+170 +     from hr_agent_support import hr_agent_database
+171 |     from psycopg import sql
+    -     from hr_agent_support import hr_agent_database
+    -     from app.hr_agent.config import check_schema_ready
+172 |     with hr_agent_database() as db:
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> backend/tests/test_hr_agent_foundation.py:180:5
+    |
+178 |   @pytest.mark.parametrize('input_capacity', [28672, 88191, 88192])
+179 |   def test_config_reserves_full_unicode_read_capacity_before_start(tmp_path, input_capacity):
+180 | /     import json
+181 | |     from hr_agent_support import make_hr_settings
+    | |_________________________________________________^
+182 |
+183 |       settings = make_hr_settings(tmp_path / 'seed')
+    |
+help: Organize imports
+    |
+180 |     import json
+181 +
+182 |     from hr_agent_support import make_hr_settings
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_cutover_count_review.py:2:1
+   |
+ 1 |   """Drain occupancy differs from business success; all records are disposable."""
+ 2 | / import json
+ 3 | | from uuid import uuid4
+ 4 | |
+ 5 | | import pytest
+ 6 | |
+ 7 | | from test_hr_cutover_dispatch_review import (
+ 8 | |     database, conversation_database, direct_database, attempt_repository,
+ 9 | |     repository, bindings, signed_http_app, signed_api, transport_worker,
+10 | |     PREFIX, post, response, event,
+11 | | )
+12 | | from test_hr_direct_command_binding import frozen_input
+13 | | from app.agent_brain.turn_result_projection import TurnResultProjector
+14 | | from app.execution_relay.contracts_v5 import parse_v5_command, parse_v5_event
+   | |_____________________________________________________________________________^
+15 |
+16 |   _FIXTURES = (database, conversation_database, direct_database, attempt_repository,
+   |
+help: Organize imports
+   |
+5  | import pytest
+   -
+6  + from app.agent_brain.turn_result_projection import TurnResultProjector
+7  + from app.execution_relay.contracts_v5 import parse_v5_command, parse_v5_event
+8  | from test_hr_cutover_dispatch_review import (
+   -     database, conversation_database, direct_database, attempt_repository,
+   -     repository, bindings, signed_http_app, signed_api, transport_worker,
+   -     PREFIX, post, response, event,
+9  +     PREFIX,
+10 +     attempt_repository,
+11 +     bindings,
+12 +     conversation_database,
+13 +     database,
+14 +     direct_database,
+15 +     event,
+16 +     post,
+17 +     repository,
+18 +     response,
+19 +     signed_api,
+20 +     signed_http_app,
+21 +     transport_worker,
+22 | )
+23 | from test_hr_direct_command_binding import frozen_input
+   - from app.agent_brain.turn_result_projection import TurnResultProjector
+   - from app.execution_relay.contracts_v5 import parse_v5_command, parse_v5_event
+24 |
+   |
+
+RUF059 Unpacked variable `binding` is never used
+  --> backend/tests/test_hr_cutover_count_review.py:55:18
+   |
+53 | @pytest.mark.parametrize('fault', ['orphan', 'nonterminal_attempt', 'nonterminal_turn'])
+54 | def test_v5_orphan_or_nonterminal_provenance_blocks_cutover(database, repository, conversation_database, attempt_repository, bindings,…
+55 |     turn, lease, binding = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, trans…
+   |                  ^^^^^^^
+56 |     with database.admin_connection() as c:
+57 |         # Explicit malformed/residual state injection, never success evidence.
+   |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+  --> backend/tests/test_hr_cutover_count_review.py:65:5
+   |
+63 |               c.execute("update platform_control.conversation_turns set status='running',assistant_message_id=null where turn_id=%s", …
+64 |           c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+65 | /     with database.admin_connection() as c:
+66 | |         with pytest.raises(Exception, match='drain is incomplete'):
+   | |___________________________________________________________________^
+67 |               c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+   |
+help: Combine `with` statements
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+   --> backend/tests/test_hr_cutover_count_review.py:103:5
+    |
+101 |           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+102 |           c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+103 | /     with database.admin_connection() as c:
+104 | |         with pytest.raises(Exception, match='drain is incomplete'):
+    | |___________________________________________________________________^
+105 |               c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+    |
+help: Combine `with` statements
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+   --> backend/tests/test_hr_cutover_count_review.py:126:5
+    |
+124 |   def test_additive_count_replacement_preserves_maintenance_only_control(database):
+125 |       import psycopg
+126 | /     with psycopg.connect(database.dsn) as c:
+127 | |         with pytest.raises(psycopg.errors.InsufficientPrivilege):
+    | |_________________________________________________________________^
+128 |               c.execute('select * from platform_control.hr_execution_cutover_counts_v102()')
+129 |       with psycopg.connect(database.dsn, user='platform_control_maintenance') as c:
+    |
+help: Combine `with` statements
+
+RUF059 Unpacked variable `turn` is never used
+   --> backend/tests/test_hr_cutover_count_review.py:149:5
+    |
+147 |     signed_api, transport_worker, fault,
+148 | ):
+149 |     turn, lease, binding = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, tran…
+    |     ^^^^
+150 |     other = None
+151 |     if fault == "conversation_lineage":
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `binding` is never used
+   --> backend/tests/test_hr_cutover_count_review.py:149:18
+    |
+147 |     signed_api, transport_worker, fault,
+148 | ):
+149 |     turn, lease, binding = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, tran…
+    |                  ^^^^^^^
+150 |     other = None
+151 |     if fault == "conversation_lineage":
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+   --> backend/tests/test_hr_cutover_count_review.py:165:5
+    |
+163 |           assert c.execute("select legacy_nonterminal from platform_control.hr_execution_cutover_counts_v102()").fetchone()[0] == 1
+164 |           c.execute("select platform_control.transition_hr_execution_cutover_v102('draining_legacy',%s)", (uuid4(),))
+165 | /     with database.admin_connection() as c:
+166 | |         with pytest.raises(Exception, match="drain is incomplete"):
+    | |___________________________________________________________________^
+167 |               c.execute("select platform_control.transition_hr_execution_cutover_v102('cloud',%s)", (uuid4(),))
+    |
+help: Combine `with` statements
+
+RUF059 Unpacked variable `binding` is never used
+   --> backend/tests/test_hr_cutover_count_review.py:176:18
+    |
+174 | ):
+175 |     import psycopg
+176 |     turn, lease, binding = complete_v5(database, repository, conversation_database[1], attempt_repository, bindings, signed_api, tran…
+    |                  ^^^^^^^
+177 |     with database.admin_connection() as c:
+178 |         message = "turn execution origin is immutable" if fault == "turn_owner" else "direct command identity is immutable"
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+   --> backend/tests/test_hr_cutover_count_review.py:179:9
+    |
+177 |       with database.admin_connection() as c:
+178 |           message = "turn execution origin is immutable" if fault == "turn_owner" else "direct command identity is immutable"
+179 | /         with c.transaction():
+180 | |             with pytest.raises(psycopg.errors.CheckViolation, match=message):
+    | |_____________________________________________________________________________^
+181 |                   with c.transaction():
+182 |                       if fault == "turn_owner":
+    |
+help: Combine `with` statements
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+   --> backend/tests/test_hr_cutover_count_review.py:212:13
+    |
+210 |               "select platform_control.transition_hr_execution_cutover_v102('cloud',gen_random_uuid())",
+211 |           ):
+212 | /             with pytest.raises(Exception, match="hr execution inventory unavailable"):
+213 | |                 with c.transaction():
+    | |_____________________________________^
+214 |                       c.execute(query)
+215 |           assert c.execute("select phase from platform_control.hr_execution_cutover").fetchone()[0] == "draining_legacy"
+    |
+help: Combine `with` statements
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_direct_material_transport.py:4:1
+   |
+ 3 |   # ruff: noqa: PLC0414
+ 4 | / import hashlib
+ 5 | | from uuid import UUID, uuid4
+ 6 | |
+ 7 | | import psycopg
+ 8 | | import pytest
+ 9 | | from test_hr_direct_worker import (
+10 | |     attempt_repository as attempt_repository,
+11 | | )
+12 | | from test_hr_direct_worker import (
+13 | |     control_database as control_database,
+14 | | )
+15 | | from test_hr_direct_worker import (
+16 | |     conversation_database as conversation_database,
+17 | | )
+18 | | from test_hr_direct_worker import (
+19 | |     direct_database as direct_database,
+20 | | )
+21 | | from test_hr_direct_worker import (
+22 | |     repository as repository,
+23 | | )
+24 | | from test_hr_direct_worker import (
+25 | |     worker_conversation as worker_conversation,
+26 | | )
+27 | | from test_hr_direct_worker import (
+28 | |     worker_turn as worker_turn,
+29 | | )
+30 | |
+31 | | from app.agent_brain.conversation_context import ConversationContextBuilder
+32 | | from app.agent_brain.conversation_models import ConversationTurnSubmission
+33 | | from app.agent_brain.direct_command_binding import DirectCommandBindingRepository
+34 | | from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
+35 | | from app.agent_brain.turn_result_projection import TurnResultProjector
+36 | | from app.attachments.conversation_repository import (
+37 | |     attachment_name_subject,
+38 | |     attachment_object_subject,
+39 | | )
+40 | | from app.attachments.grant_service import (
+41 | |     AttachmentGrantService,
+42 | |     TaskGrantRepository,
+43 | |     TaskGrantUnavailable,
+44 | | )
+45 | | from app.execution_relay.recovery_v5 import bound_command
+46 | | from app.execution_relay.repository import ExecutionRelayRepository
+47 | | from tests.helpers.hr_web_loop import WebLoop
+   | |_____________________________________________^
+48 |
+49 |   pytestmark = pytest.mark.postgres
+   |
+help: Organize imports
+   |
+8  | import pytest
+9  + from app.agent_brain.conversation_context import ConversationContextBuilder
+10 + from app.agent_brain.conversation_models import ConversationTurnSubmission
+11 + from app.agent_brain.direct_command_binding import DirectCommandBindingRepository
+12 + from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
+13 + from app.agent_brain.turn_result_projection import TurnResultProjector
+14 + from app.attachments.conversation_repository import (
+15 +     attachment_name_subject,
+16 +     attachment_object_subject,
+17 + )
+18 + from app.attachments.grant_service import (
+19 +     AttachmentGrantService,
+20 +     TaskGrantRepository,
+21 +     TaskGrantUnavailable,
+22 + )
+23 + from app.execution_relay.recovery_v5 import bound_command
+24 + from app.execution_relay.repository import ExecutionRelayRepository
+25 | from test_hr_direct_worker import (
+--------------------------------------------------------------------------------
+45 | )
+   -
+   - from app.agent_brain.conversation_context import ConversationContextBuilder
+   - from app.agent_brain.conversation_models import ConversationTurnSubmission
+   - from app.agent_brain.direct_command_binding import DirectCommandBindingRepository
+   - from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
+   - from app.agent_brain.turn_result_projection import TurnResultProjector
+   - from app.attachments.conversation_repository import (
+   -     attachment_name_subject,
+   -     attachment_object_subject,
+   - )
+   - from app.attachments.grant_service import (
+   -     AttachmentGrantService,
+   -     TaskGrantRepository,
+   -     TaskGrantUnavailable,
+   - )
+   - from app.execution_relay.recovery_v5 import bound_command
+   - from app.execution_relay.repository import ExecutionRelayRepository
+46 | from tests.helpers.hr_web_loop import WebLoop
+   |
+
+RUF059 Unpacked variable `worker_turn` is never used
+   --> backend/tests/test_hr_direct_material_transport.py:145:5
+    |
+143 |         UUID("aaaaaaaa-1111-4111-8111-111111111111"),
+144 |     )
+145 |     worker_turn, contents = _material_turn(
+    |     ^^^^^^^^^^^
+146 |         environment,
+147 |         repository,
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_direct_provenance_upgrade.py:3:1
+   |
+ 1 |   """Historical HR turn provenance across the real 089-091 upgrade order."""
+ 2 |
+ 3 | / from pathlib import Path
+ 4 | | from uuid import uuid4
+ 5 | |
+ 6 | | import psycopg
+ 7 | | import pytest
+ 8 | | from hr_agent_support import hr_agent_database
+ 9 | | from test_agent_brain_conversation_repository import _codec
+10 | |
+11 | | from app.agent_brain.conversation_repository import ConversationRepository
+12 | | from app.agent_brain.repository import MissionRepository
+13 | | from app.agent_brain.turn_attempts import AttemptNotFound, TurnAttemptRepository
+   | |________________________________________________________________________________^
+help: Organize imports
+   |
+7  | import pytest
+   - from hr_agent_support import hr_agent_database
+   - from test_agent_brain_conversation_repository import _codec
+   -
+8  | from app.agent_brain.conversation_repository import ConversationRepository
+9  | from app.agent_brain.repository import MissionRepository
+10 | from app.agent_brain.turn_attempts import AttemptNotFound, TurnAttemptRepository
+   -
+11 + from hr_agent_support import hr_agent_database
+12 + from test_agent_brain_conversation_repository import _codec
+13 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_direct_worker.py:1:1
+   |
+ 1 | / from __future__ import annotations
+ 2 | |
+ 3 | | from concurrent.futures import ThreadPoolExecutor
+ 4 | | from dataclasses import replace
+ 5 | | from threading import Barrier, Event
+ 6 | | from time import monotonic
+ 7 | | from uuid import uuid4
+ 8 | |
+ 9 | | import psycopg
+10 | | import pytest
+11 | | from test_agent_brain_conversation_context import _complete_mission
+12 | | from test_agent_brain_orchestrator import ScriptedRelay
+13 | | from tests.helpers.hr_direct_database import (
+14 | |     attempt_repository as attempt_repository,  # noqa: PLC0414 - pytest fixture export
+15 | | )
+16 | | from tests.helpers.hr_direct_database import (
+17 | |     control_database as control_database,  # noqa: PLC0414 - pytest fixture export
+18 | | )
+19 | | from tests.helpers.hr_direct_database import (
+20 | |     conversation_database as conversation_database,  # noqa: PLC0414 - pytest fixture export
+21 | | )
+22 | | from tests.helpers.hr_direct_database import (
+23 | |     direct_database as direct_database,  # noqa: PLC0414 - pytest fixture export
+24 | | )
+25 | | from tests.helpers.hr_direct_database import (
+26 | |     repository as repository,  # noqa: PLC0414 - pytest fixture export
+27 | | )
+28 | |
+29 | | from app.agent_brain.conversation_context import ConversationContextBuilder
+30 | | from app.agent_brain.conversation_projection import ConversationProjection
+31 | | from app.agent_brain.conversation_repository import ConversationRepositoryError
+32 | | from app.agent_brain.models import load_capability_cards
+33 | | from app.agent_brain.orchestrator import MissionOrchestrator
+34 | | from app.agent_brain.repository import MissionRepositoryNotFound
+35 | | from app.agent_brain.turn_attempts import AttemptNotFound, LeaseRejected
+   | |________________________________________________________________________^
+36 |
+37 |   pytestmark = pytest.mark.postgres
+   |
+help: Organize imports
+   |
+10 | import pytest
+11 + from app.agent_brain.conversation_context import ConversationContextBuilder
+12 + from app.agent_brain.conversation_projection import ConversationProjection
+13 + from app.agent_brain.conversation_repository import ConversationRepositoryError
+14 + from app.agent_brain.models import load_capability_cards
+15 + from app.agent_brain.orchestrator import MissionOrchestrator
+16 + from app.agent_brain.repository import MissionRepositoryNotFound
+17 + from app.agent_brain.turn_attempts import AttemptNotFound, LeaseRejected
+18 | from test_agent_brain_conversation_context import _complete_mission
+--------------------------------------------------------------------------------
+34 | )
+   -
+   - from app.agent_brain.conversation_context import ConversationContextBuilder
+   - from app.agent_brain.conversation_projection import ConversationProjection
+   - from app.agent_brain.conversation_repository import ConversationRepositoryError
+   - from app.agent_brain.models import load_capability_cards
+   - from app.agent_brain.orchestrator import MissionOrchestrator
+   - from app.agent_brain.repository import MissionRepositoryNotFound
+   - from app.agent_brain.turn_attempts import AttemptNotFound, LeaseRejected
+35 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_direct_worker_progress.py:4:1
+   |
+ 3 |   # ruff: noqa: PLC0414
+ 4 | / from concurrent.futures import ThreadPoolExecutor
+ 5 | | from contextlib import contextmanager
+ 6 | | from threading import Event
+ 7 | | from time import monotonic
+ 8 | | from uuid import uuid4
+ 9 | |
+10 | | import psycopg
+11 | | import pytest
+12 | | from test_hr_direct_worker import (
+13 | |     attempt_repository as attempt_repository,
+14 | | )
+15 | | from test_hr_direct_worker import (
+16 | |     control_database as control_database,
+17 | | )
+18 | | from test_hr_direct_worker import (
+19 | |     conversation_database as conversation_database,
+20 | | )
+21 | | from test_hr_direct_worker import (
+22 | |     direct_database as direct_database,
+23 | | )
+24 | | from test_hr_direct_worker import (
+25 | |     repository as repository,
+26 | | )
+27 | | from test_hr_direct_worker import (
+28 | |     worker_conversation as worker_conversation,
+29 | | )
+30 | | from test_hr_direct_worker import (
+31 | |     worker_turn as worker_turn,
+32 | | )
+33 | |
+34 | | from app.agent_brain.conversation_context import ConversationContextBuilder
+35 | | from app.agent_brain.direct_command_binding import DirectCommandBindingRepository
+36 | | from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
+37 | | from app.agent_brain.direct_worker import DirectWorker
+38 | | from app.agent_brain.turn_result_projection import TurnResultProjector
+39 | | from app.execution_relay.repository import ExecutionRelayRepository
+40 | | from tests.helpers.hr_web_loop import WebLoop
+   | |_____________________________________________^
+41 |
+42 |   pytestmark = pytest.mark.postgres
+   |
+help: Organize imports
+   |
+11 | import pytest
+12 + from app.agent_brain.conversation_context import ConversationContextBuilder
+13 + from app.agent_brain.direct_command_binding import DirectCommandBindingRepository
+14 + from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
+15 + from app.agent_brain.direct_worker import DirectWorker
+16 + from app.agent_brain.turn_result_projection import TurnResultProjector
+17 + from app.execution_relay.repository import ExecutionRelayRepository
+18 | from test_hr_direct_worker import (
+--------------------------------------------------------------------------------
+38 | )
+   -
+   - from app.agent_brain.conversation_context import ConversationContextBuilder
+   - from app.agent_brain.direct_command_binding import DirectCommandBindingRepository
+   - from app.agent_brain.direct_mission_adapter import DirectMissionAdapter
+   - from app.agent_brain.direct_worker import DirectWorker
+   - from app.agent_brain.turn_result_projection import TurnResultProjector
+   - from app.execution_relay.repository import ExecutionRelayRepository
+39 | from tests.helpers.hr_web_loop import WebLoop
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_knowledge_http.py:3:1
+   |
+ 1 |   """Authenticated HTTP with real PG identity/message persistence; no model call."""
+ 2 |
+ 3 | / from uuid import uuid4
+ 4 | | import psycopg
+ 5 | |
+ 6 | | import pytest
+ 7 | | from fastapi import FastAPI
+ 8 | | from fastapi.testclient import TestClient
+ 9 | | from test_hr_direct_worker_progress import (
+10 | |     attempt_repository as attempt_repository,
+11 | |     control_database as control_database,
+12 | |     conversation_database as conversation_database,
+13 | |     direct_database as direct_database,
+14 | |     repository as repository,
+15 | |     worker_conversation as worker_conversation,
+16 | | )
+17 | | from test_hr_reference_knowledge import (
+18 | |     source_repo as source_repo,
+19 | |     _commit_knowledge,
+20 | |     _git,
+21 | |     _resource,
+22 | | )
+23 | | from tests.helpers.hr_web_loop import WebLoop
+24 | |
+25 | | from app.agent_brain.authorization import AgentUseAuthorization
+26 | | from app.agent_brain.conversation_routes import (
+27 | |     ConversationCursorCodec,
+28 | |     build_conversation_router,
+29 | | )
+30 | | from app.agent_brain.conversation_service import ConversationCommandService
+31 | | from app.control_plane.auth import AuthSecrets, DingTalkWebAuth, WebSessionRepository
+32 | | from app.control_plane.authorization import (
+33 | |     AuthorizationRepository,
+34 | |     AuthorizationService,
+35 | | )
+36 | | from app.control_plane.middleware import IdentitySecurityMiddleware
+37 | | from app.hr.reference_knowledge import HrKnowledgeRepository
+38 | | from app.hr.reference_knowledge_release import build_release
+   | |____________________________________________________________^
+help: Organize imports
+   |
+3  | from uuid import uuid4
+4  +
+5  | import psycopg
+   -
+6  | import pytest
+7  + from app.agent_brain.authorization import AgentUseAuthorization
+8  + from app.agent_brain.conversation_routes import (
+9  +     ConversationCursorCodec,
+10 +     build_conversation_router,
+11 + )
+12 + from app.agent_brain.conversation_service import ConversationCommandService
+13 + from app.control_plane.auth import AuthSecrets, DingTalkWebAuth, WebSessionRepository
+14 + from app.control_plane.authorization import (
+15 +     AuthorizationRepository,
+16 +     AuthorizationService,
+17 + )
+18 + from app.control_plane.middleware import IdentitySecurityMiddleware
+19 + from app.hr.reference_knowledge import HrKnowledgeRepository
+20 + from app.hr.reference_knowledge_release import build_release
+21 | from fastapi import FastAPI
+22 | from fastapi.testclient import TestClient
+23 | from test_hr_direct_worker_progress import (
+24 |     attempt_repository as attempt_repository,
+25 + )
+26 + from test_hr_direct_worker_progress import (
+27 |     control_database as control_database,
+28 + )
+29 + from test_hr_direct_worker_progress import (
+30 |     conversation_database as conversation_database,
+31 + )
+32 + from test_hr_direct_worker_progress import (
+33 |     direct_database as direct_database,
+34 + )
+35 + from test_hr_direct_worker_progress import (
+36 |     repository as repository,
+37 + )
+38 + from test_hr_direct_worker_progress import (
+39 |     worker_conversation as worker_conversation,
+40 | )
+41 | from test_hr_reference_knowledge import (
+   -     source_repo as source_repo,
+42 |     _commit_knowledge,
+43 |     _git,
+44 |     _resource,
+45 | )
+46 + from test_hr_reference_knowledge import (
+47 +     source_repo as source_repo,
+48 + )
+49 | from tests.helpers.hr_web_loop import WebLoop
+   -
+   - from app.agent_brain.authorization import AgentUseAuthorization
+   - from app.agent_brain.conversation_routes import (
+   -     ConversationCursorCodec,
+   -     build_conversation_router,
+   - )
+   - from app.agent_brain.conversation_service import ConversationCommandService
+   - from app.control_plane.auth import AuthSecrets, DingTalkWebAuth, WebSessionRepository
+   - from app.control_plane.authorization import (
+   -     AuthorizationRepository,
+   -     AuthorizationService,
+   - )
+   - from app.control_plane.middleware import IdentitySecurityMiddleware
+   - from app.hr.reference_knowledge import HrKnowledgeRepository
+   - from app.hr.reference_knowledge_release import build_release
+50 |
+   |
+
+PLC0414 Import alias does not rename original package
+  --> backend/tests/test_hr_knowledge_http.py:10:5
+   |
+ 8 | from fastapi.testclient import TestClient
+ 9 | from test_hr_direct_worker_progress import (
+10 |     attempt_repository as attempt_repository,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+11 |     control_database as control_database,
+12 |     conversation_database as conversation_database,
+   |
+help: Remove import alias
+
+PLC0414 Import alias does not rename original package
+  --> backend/tests/test_hr_knowledge_http.py:11:5
+   |
+ 9 | from test_hr_direct_worker_progress import (
+10 |     attempt_repository as attempt_repository,
+11 |     control_database as control_database,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+12 |     conversation_database as conversation_database,
+13 |     direct_database as direct_database,
+   |
+help: Remove import alias
+
+PLC0414 Import alias does not rename original package
+  --> backend/tests/test_hr_knowledge_http.py:12:5
+   |
+10 |     attempt_repository as attempt_repository,
+11 |     control_database as control_database,
+12 |     conversation_database as conversation_database,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     direct_database as direct_database,
+14 |     repository as repository,
+   |
+help: Remove import alias
+
+PLC0414 Import alias does not rename original package
+  --> backend/tests/test_hr_knowledge_http.py:13:5
+   |
+11 |     control_database as control_database,
+12 |     conversation_database as conversation_database,
+13 |     direct_database as direct_database,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     repository as repository,
+15 |     worker_conversation as worker_conversation,
+   |
+help: Remove import alias
+
+PLC0414 Import alias does not rename original package
+  --> backend/tests/test_hr_knowledge_http.py:14:5
+   |
+12 |     conversation_database as conversation_database,
+13 |     direct_database as direct_database,
+14 |     repository as repository,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+15 |     worker_conversation as worker_conversation,
+16 | )
+   |
+help: Remove import alias
+
+PLC0414 Import alias does not rename original package
+  --> backend/tests/test_hr_knowledge_http.py:15:5
+   |
+13 |     direct_database as direct_database,
+14 |     repository as repository,
+15 |     worker_conversation as worker_conversation,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+16 | )
+17 | from test_hr_reference_knowledge import (
+   |
+help: Remove import alias
+
+PLC0414 Import alias does not rename original package
+  --> backend/tests/test_hr_knowledge_http.py:18:5
+   |
+16 | )
+17 | from test_hr_reference_knowledge import (
+18 |     source_repo as source_repo,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     _commit_knowledge,
+20 |     _git,
+   |
+help: Remove import alias
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> backend/tests/test_hr_knowledge_http.py:142:13
+    |
+140 |               new_commit = _git(source_repo, "rev-parse", "HEAD")
+141 |               build_release(source_repo, new_commit, releases)
+142 | /             from app.agent_brain.conversation_context import ConversationContextBuilder
+143 | |             from uuid import UUID
+    | |_________________________________^
+144 |
+145 |               context = ConversationContextBuilder(
+    |
+help: Organize imports
+    |
+141 |             build_release(source_repo, new_commit, releases)
+    -             from app.agent_brain.conversation_context import ConversationContextBuilder
+142 |             from uuid import UUID
+143 |
+144 +             from app.agent_brain.conversation_context import ConversationContextBuilder
+145 +
+146 |             context = ConversationContextBuilder(
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_web_reliable_loop.py:2:1
+   |
+ 1 |   # ruff: noqa: PLC0414
+ 2 | / import os
+ 3 | | from pathlib import Path
+ 4 | |
+ 5 | | import psycopg
+ 6 | | import pytest
+ 7 | | from test_execution_worker_store import worker_database as worker_database
+ 8 | | from test_hr_direct_worker import (
+ 9 | |     attempt_repository as attempt_repository,
+10 | | )
+11 | | from test_hr_direct_worker import (
+12 | |     control_database as control_database,
+13 | | )
+14 | | from test_hr_direct_worker import (
+15 | |     conversation_database as conversation_database,
+16 | | )
+17 | | from test_hr_direct_worker import (
+18 | |     direct_database as direct_database,
+19 | | )
+20 | | from test_hr_direct_worker import (
+21 | |     repository as repository,
+22 | | )
+23 | | from test_hr_direct_worker import (
+24 | |     worker_conversation as worker_conversation,
+25 | | )
+26 | |
+27 | | from tests.helpers.hr_web_loop import WebLoop, wait_until
+   | |_________________________________________________________^
+28 |
+29 |   pytestmark = pytest.mark.postgres
+   |
+help: Organize imports
+   |
+25 | )
+   -
+26 | from tests.helpers.hr_web_loop import WebLoop, wait_until
+   |
+
+Found 40 errors.
+[*] 15 fixable with the `--fix` option (12 hidden fixes can be enabled with the `--unsafe-fixes` option).

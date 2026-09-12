@@ -1,0 +1,316 @@
+EEEEEEs                                                                  [100%]
+==================================== ERRORS ====================================
+_________ ERROR at setup of test_public_snapshot_resolves_real_intake __________
+
+worker_conversation = ConversationRecord(conversation_id=UUID('63c2fb05-9fe5-4f3a-aa7d-b82e3aac7f70'), owner_internal_user_id=UUID('930489a6..., tzinfo=datetime.timezone.utc), archived_at=None, activity_status=None, unread=False, execution_owner='legacy_api_v1')
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-olb4fpv7/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('930489a6-92c5-474f-bc69-f0e0b3d5fc4c'), UUID('f04196ba-9dff-42ce-965f-8ab67309ad9a'))
+
+    @pytest.fixture()
+    def web_loop(worker_conversation, direct_database):
+        environment, owner, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_web_reliable_loop.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x10af8b210>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+_ ERROR at setup of test_turn_message_read_is_not_limited_by_first_120_history_messages _
+
+worker_conversation = ConversationRecord(conversation_id=UUID('2f931a29-416d-41e7-ab00-4993a3f8dd50'), owner_internal_user_id=UUID('fc5403ee..., tzinfo=datetime.timezone.utc), archived_at=None, activity_status=None, unread=False, execution_owner='legacy_api_v1')
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-b0lpuskh/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('fc5403ee-669f-4fc0-a06d-e4e8184b483f'), UUID('1f5c4df1-b3da-43e9-93f5-262658d9434f'))
+
+    @pytest.fixture()
+    def web_loop(worker_conversation, direct_database):
+        environment, owner, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_web_reliable_loop.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x10b3e66d0>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+_ ERROR at setup of test_opted_in_public_new_hr_conversation_pins_worker_before_intake _
+
+worker_conversation = ConversationRecord(conversation_id=UUID('220e7400-7105-45ac-8ffd-190fbb8b62cb'), owner_internal_user_id=UUID('0f58b94f..., tzinfo=datetime.timezone.utc), archived_at=None, activity_status=None, unread=False, execution_owner='legacy_api_v1')
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-534idq4q/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('0f58b94f-e464-4255-abd7-25715c1bae1f'), UUID('98e7c2cf-21a0-497b-a773-022c67994200'))
+
+    @pytest.fixture()
+    def web_loop(worker_conversation, direct_database):
+        environment, owner, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_web_reliable_loop.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x10b441850>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+_ ERROR at setup of test_public_cancel_records_worker_intent_without_legacy_execution _
+
+worker_conversation = ConversationRecord(conversation_id=UUID('844d163e-ce5a-43bd-a272-22ba5d590f4d'), owner_internal_user_id=UUID('a16ad327..., tzinfo=datetime.timezone.utc), archived_at=None, activity_status=None, unread=False, execution_owner='legacy_api_v1')
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-31_73a_y/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('a16ad327-baba-44c1-a063-59f822ff140e'), UUID('dbdf9225-fa2d-4399-8e1c-a8dda5b5daef'))
+
+    @pytest.fixture()
+    def web_loop(worker_conversation, direct_database):
+        environment, owner, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_web_reliable_loop.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x10b4f4750>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+_ ERROR at setup of test_real_worker_cancels_queued_turn_without_any_execution_capability _
+
+worker_conversation = ConversationRecord(conversation_id=UUID('d2a653d0-ed24-4617-af71-ba840c3f8d04'), owner_internal_user_id=UUID('275abdc9..., tzinfo=datetime.timezone.utc), archived_at=None, activity_status=None, unread=False, execution_owner='legacy_api_v1')
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-fghv591q/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('275abdc9-f085-4933-9bcd-aefb51de76b3'), UUID('ed6dbf10-c93b-484a-bee0-7fbdd7a81d3e'))
+
+    @pytest.fixture()
+    def web_loop(worker_conversation, direct_database):
+        environment, owner, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_web_reliable_loop.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x10b3e9450>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+_ ERROR at setup of test_worker_http_snapshot_and_sse_never_advance_execution_state _
+
+worker_conversation = ConversationRecord(conversation_id=UUID('edcfcbc7-50cf-4f96-9e5f-adf05db27770'), owner_internal_user_id=UUID('aef91492..., tzinfo=datetime.timezone.utc), archived_at=None, activity_status=None, unread=False, execution_owner='legacy_api_v1')
+direct_database = ({'admin': 'host=/tmp/hr-agent-a1-pqg94zy1/socket port=5432 dbname=agent_platform_control user=postgres', 'urls': {'pl...er=platform_control_app'}}, UUID('aef91492-80f5-4446-b61f-9a263c501e6b'), UUID('5fc29d2c-bcaa-4dfa-af37-701533328234'))
+
+    @pytest.fixture()
+    def web_loop(worker_conversation, direct_database):
+        environment, owner, _ = direct_database
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute("set local role platform_control_owner")
+>           connection.execute(
+                (
+                    Path(__file__).parents[1]
+                    / "control_migrations/pending/hr_web_result_recovery.sql"
+                ).read_text()
+            )
+
+backend/tests/test_hr_web_reliable_loop.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x10b3fd3d0>
+query = '-- UNNUMBERED DRAFT: owned disposable databases only; no production activation.\n-- Link publication and late native ...   where grant_row.task_id=new.task_id and grant_row.revoked_at is null;\n  end if;\n  return new;\nend\n$function$;\n'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.DuplicateColumn: column "progress_source_seq" of relation "direct_command_bindings" already exists
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: DuplicateColumn
+=========================== short test summary info ============================
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_public_snapshot_resolves_real_intake
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_turn_message_read_is_not_limited_by_first_120_history_messages
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_opted_in_public_new_hr_conversation_pins_worker_before_intake
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_public_cancel_records_worker_intent_without_legacy_execution
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_real_worker_cancels_queued_turn_without_any_execution_capability
+ERROR backend/tests/test_hr_web_reliable_loop.py::test_worker_http_snapshot_and_sse_never_advance_execution_state
+1 skipped, 6 errors in 6.64s

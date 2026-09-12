@@ -1,0 +1,64 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+____ test_documented_count_runs_real_query_in_read_only_bounded_transaction ____
+backend/tests/test_hr_cutover_runbook.py:76: in test_documented_count_runs_real_query_in_read_only_bounded_transaction
+    run_documented("count", database, monkeypatch, uuid4())
+backend/tests/test_hr_cutover_runbook.py:49: in run_documented
+    exec(documented_script(action), {"__name__": "__main__"})
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_cutover_runbook.py:31: in documented_script
+    assert len(matches) == 1, f"missing unique executable {action} maintenance command"
+E   AssertionError: missing unique executable count maintenance command
+E   assert 0 == 1
+E    +  where 0 = len([])
+_ test_documented_mutation_lock_timeout_leaves_gate_and_operation_unchanged[initialize] _
+backend/tests/test_hr_cutover_runbook.py:89: in test_documented_mutation_lock_timeout_leaves_gate_and_operation_unchanged
+    run_documented(action, database, monkeypatch, request_id)
+backend/tests/test_hr_cutover_runbook.py:49: in run_documented
+    exec(documented_script(action), {"__name__": "__main__"})
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_cutover_runbook.py:31: in documented_script
+    assert len(matches) == 1, f"missing unique executable {action} maintenance command"
+E   AssertionError: missing unique executable initialize maintenance command
+E   assert 0 == 1
+E    +  where 0 = len([])
+_ test_documented_mutation_lock_timeout_leaves_gate_and_operation_unchanged[transition] _
+backend/tests/test_hr_cutover_runbook.py:89: in test_documented_mutation_lock_timeout_leaves_gate_and_operation_unchanged
+    run_documented(action, database, monkeypatch, request_id)
+backend/tests/test_hr_cutover_runbook.py:49: in run_documented
+    exec(documented_script(action), {"__name__": "__main__"})
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_cutover_runbook.py:31: in documented_script
+    assert len(matches) == 1, f"missing unique executable {action} maintenance command"
+E   AssertionError: missing unique executable transition maintenance command
+E   assert 0 == 1
+E    +  where 0 = len([])
+_____________ test_documented_count_lock_timeout_is_error_not_zero _____________
+backend/tests/test_hr_cutover_runbook.py:101: in test_documented_count_lock_timeout_is_error_not_zero
+    run_documented("count", database, monkeypatch, uuid4())
+backend/tests/test_hr_cutover_runbook.py:49: in run_documented
+    exec(documented_script(action), {"__name__": "__main__"})
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_cutover_runbook.py:31: in documented_script
+    assert len(matches) == 1, f"missing unique executable {action} maintenance command"
+E   AssertionError: missing unique executable count maintenance command
+E   assert 0 == 1
+E    +  where 0 = len([])
+_____ test_documented_transition_executes_once_and_replay_preserves_epoch ______
+backend/tests/test_hr_cutover_runbook.py:109: in test_documented_transition_executes_once_and_replay_preserves_epoch
+    run_documented("transition", database, monkeypatch, request_id)
+backend/tests/test_hr_cutover_runbook.py:49: in run_documented
+    exec(documented_script(action), {"__name__": "__main__"})
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_cutover_runbook.py:31: in documented_script
+    assert len(matches) == 1, f"missing unique executable {action} maintenance command"
+E   AssertionError: missing unique executable transition maintenance command
+E   assert 0 == 1
+E    +  where 0 = len([])
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cutover_runbook.py::test_documented_count_runs_real_query_in_read_only_bounded_transaction
+FAILED backend/tests/test_hr_cutover_runbook.py::test_documented_mutation_lock_timeout_leaves_gate_and_operation_unchanged[initialize]
+FAILED backend/tests/test_hr_cutover_runbook.py::test_documented_mutation_lock_timeout_leaves_gate_and_operation_unchanged[transition]
+FAILED backend/tests/test_hr_cutover_runbook.py::test_documented_count_lock_timeout_is_error_not_zero
+FAILED backend/tests/test_hr_cutover_runbook.py::test_documented_transition_executes_once_and_replay_preserves_epoch
+5 failed in 1.13s

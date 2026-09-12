@@ -1,0 +1,6 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest tests/test_hr_agent_migration_deployment.py -q
+................                                                         [100%]
+16 passed in 35.60s
+
+exit_code=0

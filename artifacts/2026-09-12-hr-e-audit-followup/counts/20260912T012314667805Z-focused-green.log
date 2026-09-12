@@ -1,0 +1,2513 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest tests/test_hr_cutover_count_review.py tests/test_hr_agent_foundation.py tests/test_hr_agent_preflight.py tests/test_hr_agent_migration_deployment.py -q
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE.FF..F................................ [ 61%]
+......................F....................FF                            [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1091cd0c0>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_v5_orphan_or_nonterminal_provenance_blocks_cutover[orphan] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_orphan_or_nonterminal_provenance_blocks_cutover[orphan]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923b100>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_v5_orphan_or_nonterminal_provenance_blocks_cutover[nonterminal_attempt] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_orphan_or_nonterminal_provenance_blocks_cutover[nonterminal_attempt]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923b940>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_v5_orphan_or_nonterminal_provenance_blocks_cutover[nonterminal_turn] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_orphan_or_nonterminal_provenance_blocks_cutover[nonterminal_turn]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1091cd540>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_historical_interrupted_split_is_drain_terminal_without_claiming_success _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_historical_interrupted_split_is_drain_terminal_without_claiming_success>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744340>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923b280>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744d00>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1091cd540>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job[turn] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job[turn]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1057456c0>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job[attempt] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job[attempt]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744c40>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_additive_count_replacement_preserves_maintenance_only_control _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_additive_count_replacement_preserves_maintenance_only_control>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1057450c0>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_without_terminal_timestamp_is_rejected_by_028[metabot_local] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_without_terminal_timestamp_is_rejected_by_028[metabot_local]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1091cd540>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_without_terminal_timestamp_is_rejected_by_028[legacy_brain] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_without_terminal_timestamp_is_rejected_by_028[legacy_brain]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923be80>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_without_terminal_timestamp_is_rejected_by_028[direct_agent] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_without_terminal_timestamp_is_rejected_by_028[direct_agent]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744c40>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_interrupted_without_terminal_timestamp_is_rejected_by_028[worker_direct_v5] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_interrupted_without_terminal_timestamp_is_rejected_by_028[worker_direct_v5]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923b400>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_v5_exact_lineage_residual_blocks_count_and_transition[transport_run] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_exact_lineage_residual_blocks_count_and_transition[transport_run]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105745c00>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_v5_exact_lineage_residual_blocks_count_and_transition[executor_kind] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_exact_lineage_residual_blocks_count_and_transition[executor_kind]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923b4c0>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_v5_exact_lineage_residual_blocks_count_and_transition[conversation_lineage] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_exact_lineage_residual_blocks_count_and_transition[conversation_lineage]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744dc0>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+___ ERROR at setup of test_v5_pinned_lineage_cannot_be_rewritten[turn_owner] ___
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_pinned_lineage_cannot_be_rewritten[turn_owner]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923be80>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_v5_pinned_lineage_cannot_be_rewritten[binding_conversation] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_pinned_lineage_cannot_be_rewritten[binding_conversation]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105745b40>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+__ ERROR at setup of test_v5_pinned_lineage_cannot_be_rewritten[binding_job] ___
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_v5_pinned_lineage_cannot_be_rewritten[binding_job]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1091cd540>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.conversations] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.conversations]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744f40>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.conversation_turns] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.conversation_turns]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923b400>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.turn_attempts] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.turn_attempts]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744400>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.execution_jobs] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.execution_jobs]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105745cc0>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.direct_command_bindings] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.direct_command_bindings]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923b400>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.mission_runs] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.mission_runs]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105745d80>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_drafts] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_drafts]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1057453c0>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_draft_batches] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_draft_batches]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105745e40>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.position_conversations] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.position_conversations]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x1091cd0c0>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_draft_processing_attempts] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_draft_processing_attempts]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744d00>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.works] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.works]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923b400>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.material_parses] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.material_parses]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744b80>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+_ ERROR at setup of test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.candidate_intake_items] _
+
+fixturedef = <FixtureDef argname='database' scope='function' baseid='tests/test_hr_cutover_count_review.py'>
+request = <SubRequest 'database' for <Function test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.candidate_intake_items]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+../../../backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:926: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_hr_cutover_dispatch_review.py:44: in database
+    with hr_agent_database(cutover_phase="legacy") as db:
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744c40>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+=================================== FAILURES ===================================
+_________ test_database_schema_has_contract_tables_and_restricted_app __________
+
+    def test_database_schema_has_contract_tables_and_restricted_app():
+        from hr_agent_support import hr_agent_database
+>       with hr_agent_database() as db:
+
+tests/test_hr_agent_foundation.py:14: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x10923bd00>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+__________________ test_missing_schema_does_not_create_tables __________________
+
+    def test_missing_schema_does_not_create_tables():
+        from app.hr_agent.config import check_schema_ready
+        from hr_agent_support import hr_agent_database
+>       with hr_agent_database(migrate_hr=False) as db:
+
+tests/test_hr_agent_foundation.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+tests/hr_agent_support.py:52: in hr_agent_database
+    migrate_control_database(db.migrator_dsn,migrations,owner_role='platform_control_owner')
+app/control_plane/migrate.py:117: in migrate_control_database
+    verify_or_apply(
+app/control_plane/migrate.py:67: in verify_or_apply
+    cursor.execute(sql)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Cursor [closed] [BAD] at 0x105744880>
+query = "-- Additive clarification of 103; keep both historical migration receipts intact.\n-- 028 already requires terminal_a... undefined_table OR undefined_column THEN\n  RAISE EXCEPTION 'hr execution inventory unavailable';\nEND\n$function$;\n"
+params = None, prepare = None, binary = None
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.SyntaxError: syntax error at or near "preserves"
+E           LINE 7: CREATE OR REPLACE preserves the existing function owner and ...
+E                                     ^
+
+../../../backend/.venv/lib/python3.11/site-packages/psycopg/cursor.py:117: SyntaxError
+______________ test_schema_ready_is_true_after_explicit_migration ______________
+
+    def test_schema_ready_is_true_after_explicit_migration():
+        from app.hr_agent.config import check_schema_ready
+        from hr_agent_support import hr_agent_database
+        with hr_agent_database() as db:
+>           assert check_schema_ready(db)
+E           assert False
+E            +  where False = <function check_schema_ready at 0x107547380>(HrTestDatabase())
+
+tests/test_hr_agent_foundation.py:61: AssertionError
+_______ test_database_readiness_reports_exact_migrations_without_writes ________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9478/test_database_readiness_report0')
+
+    def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
+        knowledge = _knowledge(tmp_path / "knowledge")
+        api = _environment(tmp_path / "api", knowledge=knowledge)
+        worker = _environment(tmp_path / "worker", knowledge=knowledge)
+        with hr_agent_database() as database:
+            with database.connection() as connection:
+                before = connection.execute(
+                    "select version,sha256 from platform_control.schema_migrations order by version"
+                ).fetchall()
+            report = build_report(api, worker, connection_factory=database.connection)
+            with database.connection() as connection:
+                after = connection.execute(
+                    "select version,sha256 from platform_control.schema_migrations order by version"
+                ).fetchall()
+        assert before == after
+>       assert report["database"]["schema_ready"] is True
+E       assert False is True
+
+tests/test_hr_agent_preflight.py:253: AssertionError
+______ test_helper_rejects_missing_or_mismatched_terminal_contract[None] _______
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9478/test_helper_rejects_missing_or0')
+receipt = None
+
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
+        with hr_agent_database(migrate_hr=False) as database:
+            preview_dsn = _prepare_preview_and_revoke(database)
+            with database.admin_connection() as c:
+                if receipt is None:
+                    c.execute("delete from platform_control.schema_migrations where version=104")
+                else:
+                    c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
+            private = tmp_path / "private"
+            private.mkdir()
+            (private / "control-migrator-database-url").write_text(database.migrator_dsn)
+            (private / "preview-control-migrator-database-url").write_text(preview_dsn)
+            for item in private.iterdir():
+                item.chmod(0o600)
+            fake = tmp_path / "docker"
+            _write_fake_docker(fake)
+            environment = {
+                **os.environ,
+                "HR_MIGRATION_DOCKER": str(fake),
+                "TEST_ADMIN_DSN": database.admin_dsn,
+                "TEST_PRIVATE": str(private),
+                "TEST_RELEASE": str(ROOT),
+                "TEST_DOCKER_STATE": str(tmp_path / "docker-state.json"),
+                "TEST_DOCKER_CALLS": str(tmp_path / "docker-calls.log"),
+                "PYTHONPATH": str(ROOT / "backend"),
+            }
+            result = subprocess.run(
+                [str(HELPER), str(ROOT), str(private), "sha256:" + "a" * 64, "test-postgres",
+                 "--receipt-dir", str(tmp_path / "receipts")],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert result.returncode != 0
+>           assert "root_migration_gate_failed" in result.stderr
+E           AssertionError: assert 'root_migration_gate_failed' in 'HR_AGENT_MIGRATIONS_FAILED\n'
+E            +  where 'HR_AGENT_MIGRATIONS_FAILED\n' = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/deploy/cloud/mi...pytest-9478/test_helper_rejects_missing_or0/receipts'], returncode=1, stdout='', stderr='HR_AGENT_MIGRATIONS_FAILED\n').stderr
+
+tests/test_hr_agent_migration_deployment.py:534: AssertionError
+_ test_helper_rejects_missing_or_mismatched_terminal_contract[0000000000000000000000000000000000000000000000000000000000000000] _
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9478/test_helper_rejects_missing_or1')
+receipt = '0000000000000000000000000000000000000000000000000000000000000000'
+
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
+        with hr_agent_database(migrate_hr=False) as database:
+            preview_dsn = _prepare_preview_and_revoke(database)
+            with database.admin_connection() as c:
+                if receipt is None:
+                    c.execute("delete from platform_control.schema_migrations where version=104")
+                else:
+                    c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
+            private = tmp_path / "private"
+            private.mkdir()
+            (private / "control-migrator-database-url").write_text(database.migrator_dsn)
+            (private / "preview-control-migrator-database-url").write_text(preview_dsn)
+            for item in private.iterdir():
+                item.chmod(0o600)
+            fake = tmp_path / "docker"
+            _write_fake_docker(fake)
+            environment = {
+                **os.environ,
+                "HR_MIGRATION_DOCKER": str(fake),
+                "TEST_ADMIN_DSN": database.admin_dsn,
+                "TEST_PRIVATE": str(private),
+                "TEST_RELEASE": str(ROOT),
+                "TEST_DOCKER_STATE": str(tmp_path / "docker-state.json"),
+                "TEST_DOCKER_CALLS": str(tmp_path / "docker-calls.log"),
+                "PYTHONPATH": str(ROOT / "backend"),
+            }
+            result = subprocess.run(
+                [str(HELPER), str(ROOT), str(private), "sha256:" + "a" * 64, "test-postgres",
+                 "--receipt-dir", str(tmp_path / "receipts")],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert result.returncode != 0
+>           assert "root_migration_gate_failed" in result.stderr
+E           AssertionError: assert 'root_migration_gate_failed' in 'HR_AGENT_MIGRATIONS_FAILED\n'
+E            +  where 'HR_AGENT_MIGRATIONS_FAILED\n' = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/deploy/cloud/mi...pytest-9478/test_helper_rejects_missing_or1/receipts'], returncode=1, stdout='', stderr='HR_AGENT_MIGRATIONS_FAILED\n').stderr
+
+tests/test_hr_agent_migration_deployment.py:534: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_hr_agent_foundation.py::test_database_schema_has_contract_tables_and_restricted_app
+FAILED tests/test_hr_agent_foundation.py::test_missing_schema_does_not_create_tables
+FAILED tests/test_hr_agent_foundation.py::test_schema_ready_is_true_after_explicit_migration
+FAILED tests/test_hr_agent_preflight.py::test_database_readiness_reports_exact_migrations_without_writes
+FAILED tests/test_hr_agent_migration_deployment.py::test_helper_rejects_missing_or_mismatched_terminal_contract[None]
+FAILED tests/test_hr_agent_migration_deployment.py::test_helper_rejects_missing_or_mismatched_terminal_contract[0000000000000000000000000000000000000000000000000000000000000000]
+ERROR tests/test_hr_cutover_count_review.py::test_three_completed_v5_envelopes_stay_queued_but_do_not_block_real_cutover
+ERROR tests/test_hr_cutover_count_review.py::test_v5_orphan_or_nonterminal_provenance_blocks_cutover[orphan]
+ERROR tests/test_hr_cutover_count_review.py::test_v5_orphan_or_nonterminal_provenance_blocks_cutover[nonterminal_attempt]
+ERROR tests/test_hr_cutover_count_review.py::test_v5_orphan_or_nonterminal_provenance_blocks_cutover[nonterminal_turn]
+ERROR tests/test_hr_cutover_count_review.py::test_historical_interrupted_split_is_drain_terminal_without_claiming_success
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[metabot_local]
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[legacy_brain]
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_unacknowledged_stop_blocks_cutover[direct_agent]
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job[turn]
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_job_with_unrelated_bot_live_turn_still_blocks_hr_job[attempt]
+ERROR tests/test_hr_cutover_count_review.py::test_additive_count_replacement_preserves_maintenance_only_control
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_without_terminal_timestamp_is_rejected_by_028[metabot_local]
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_without_terminal_timestamp_is_rejected_by_028[legacy_brain]
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_without_terminal_timestamp_is_rejected_by_028[direct_agent]
+ERROR tests/test_hr_cutover_count_review.py::test_interrupted_without_terminal_timestamp_is_rejected_by_028[worker_direct_v5]
+ERROR tests/test_hr_cutover_count_review.py::test_v5_exact_lineage_residual_blocks_count_and_transition[transport_run]
+ERROR tests/test_hr_cutover_count_review.py::test_v5_exact_lineage_residual_blocks_count_and_transition[executor_kind]
+ERROR tests/test_hr_cutover_count_review.py::test_v5_exact_lineage_residual_blocks_count_and_transition[conversation_lineage]
+ERROR tests/test_hr_cutover_count_review.py::test_v5_pinned_lineage_cannot_be_rewritten[turn_owner]
+ERROR tests/test_hr_cutover_count_review.py::test_v5_pinned_lineage_cannot_be_rewritten[binding_conversation]
+ERROR tests/test_hr_cutover_count_review.py::test_v5_pinned_lineage_cannot_be_rewritten[binding_job]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.conversations]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.conversation_turns]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.turn_attempts]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.execution_jobs]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.direct_command_bindings]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_control.mission_runs]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_drafts]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_draft_batches]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.position_conversations]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr.candidate_draft_processing_attempts]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.works]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.material_parses]
+ERROR tests/test_hr_cutover_count_review.py::test_missing_inventory_relation_fails_closed_for_count_and_transition[platform_hr_agent.candidate_intake_items]
+6 failed, 77 passed, 34 errors in 102.27s (0:01:42)
+
+exit_code=1

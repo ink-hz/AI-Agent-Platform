@@ -1,0 +1,119 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_cutover_runbook.py:6:1
+   |
+ 4 |   are real. No Docker command or production connection is executed.
+ 5 |   """
+ 6 | / from pathlib import Path
+ 7 | | import os
+ 8 | | import re
+ 9 | | import shlex
+10 | | import subprocess
+11 | | from time import monotonic
+12 | | from uuid import uuid4
+13 | |
+14 | | import psycopg
+15 | | import pytest
+16 | |
+17 | | from app.hr_agent.cutover import ADVISORY_LOCK_KEY
+18 | | from app import local_secrets
+19 | | from tests.hr_agent_support import hr_agent_database
+   | |____________________________________________________^
+help: Organize imports
+   |
+5  | """
+   - from pathlib import Path
+6  | import os
+7  | import re
+8  | import shlex
+9  | import subprocess
+10 + from pathlib import Path
+11 | from time import monotonic
+--------------------------------------------------------------------------------
+15 | import pytest
+   -
+16 + from app import local_secrets
+17 | from app.hr_agent.cutover import ADVISORY_LOCK_KEY
+   - from app import local_secrets
+18 | from tests.hr_agent_support import hr_agent_database
+   -
+19 |
+   |
+
+FURB167 [*] Use of regular expression alias `re.S`
+  --> backend/tests/test_hr_cutover_runbook.py:32:78
+   |
+31 | def documented_script(action):
+32 |     scripts = re.findall(r"python - <<'PY'\n(.*?)\nPY", RUNBOOK.read_text(), re.S)
+   |                                                                              ^^^^
+33 |     matches = [script for script in scripts if f"# HR_CUTOVER_{action.upper()}\n" in script]
+34 |     assert len(matches) == 1, f"missing unique executable {action} maintenance command"
+   |
+help: Replace with `re.DOTALL`
+   |
+31 | def documented_script(action):
+   -     scripts = re.findall(r"python - <<'PY'\n(.*?)\nPY", RUNBOOK.read_text(), re.S)
+32 +     scripts = re.findall(r"python - <<'PY'\n(.*?)\nPY", RUNBOOK.read_text(), re.DOTALL)
+33 |     matches = [script for script in scripts if f"# HR_CUTOVER_{action.upper()}\n" in script]
+   |
+
+S102 Use of `exec` detected
+  --> backend/tests/test_hr_cutover_runbook.py:52:5
+   |
+50 |     monkeypatch.setenv("HR_CUTOVER_REQUEST_ID", str(request_id))
+51 |     monkeypatch.setenv("HR_CUTOVER_TARGET_PHASE", "draining_legacy")
+52 |     exec(documented_script(action), {"__name__": "__main__"})
+   |     ^^^^
+
+FURB167 [*] Use of regular expression alias `re.S`
+   --> backend/tests/test_hr_cutover_runbook.py:139:68
+    |
+137 | @pytest.mark.parametrize("scenario", ["restore_failure", "state_failure", "peers_changed", "success"])
+138 | def test_documented_legacy_restore_saves_only_after_instance_and_peer_checks(tmp_path, scenario):
+139 |     blocks = re.findall(r"```bash\n(.*?)```", RUNBOOK.read_text(), re.S)
+    |                                                                    ^^^^
+140 |     snippet = next(block for block in blocks if "# HR_LEGACY_RESTORE" in block)
+141 |     snippet = snippet.replace('sudo -n -H -u agentops /bin/bash "$OPS_PM2"', "mock_pm2")
+    |
+help: Replace with `re.DOTALL`
+    |
+138 | def test_documented_legacy_restore_saves_only_after_instance_and_peer_checks(tmp_path, scenario):
+    -     blocks = re.findall(r"```bash\n(.*?)```", RUNBOOK.read_text(), re.S)
+139 +     blocks = re.findall(r"```bash\n(.*?)```", RUNBOOK.read_text(), re.DOTALL)
+140 |     snippet = next(block for block in blocks if "# HR_LEGACY_RESTORE" in block)
+    |
+
+PLW1510 `subprocess.run` without explicit `check` argument
+   --> backend/tests/test_hr_cutover_runbook.py:166:14
+    |
+164 | }
+165 | '''
+166 |     result = subprocess.run(
+    |              ^^^^^^^^^^^^^^
+167 |         ["bash", "-c", functions + snippet],
+168 |         env={**os.environ, "MOCK_ROOT": str(tmp_path), "MOCK_SCENARIO": scenario},
+    |
+help: Add explicit `check=False`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_hr_failed_draft_cutover.py:6:1
+   |
+ 4 |   parse. All subsequent user repository operations use the real application role.
+ 5 |   """
+ 6 | / from uuid import uuid4
+ 7 | |
+ 8 | | import pytest
+ 9 | |
+10 | | from app.hr.candidate_models import RetryCandidateDraft
+11 | | from app.hr.candidate_repository import CandidateRepository, CandidateUnavailable
+12 | | from tests.hr_agent_support import hr_agent_database
+13 | | from tests.test_hr_candidate_database import _seed_candidate_scope
+   | |__________________________________________________________________^
+help: Organize imports
+  |
+8 | import pytest
+  -
+9 | from app.hr.candidate_models import RetryCandidateDraft
+  |
+
+Found 6 errors.
+[*] 4 fixable with the `--fix` option.

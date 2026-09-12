@@ -1,0 +1,163 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+command=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python -m pytest tests/test_hr_agent_preflight.py tests/test_hr_agent_migration_deployment.py -k 'exact_drain or terminal_contract or never_runs_root' -q
+.F.FFFF                                                                  [100%]
+=================================== FAILURES ===================================
+__ test_database_readiness_requires_exact_drain_occupancy_migration[None-104] __
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9476/test_database_readiness_requir1')
+receipt = None, version = 104
+
+    @pytest.mark.parametrize("version", [103, 104])
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt, version):
+        knowledge = _knowledge(tmp_path / "knowledge")
+        environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+        with hr_agent_database() as database:
+            with database.admin_connection() as connection:
+                if receipt is None:
+                    connection.execute("delete from platform_control.schema_migrations where version=%s", (version,))
+                else:
+                    connection.execute("update platform_control.schema_migrations set sha256=%s where version=%s", (receipt, version))
+            report = build_report(environment, dict(environment), connection_factory=database.connection)
+        assert report["ok"] is False
+>       assert "migration_identity_mismatch" in report["blockers"]
+E       AssertionError: assert 'migration_identity_mismatch' in ['personal_processing_authorizer_absent', 'd7_product_approval_absent']
+
+tests/test_hr_agent_preflight.py:325: AssertionError
+_ test_database_readiness_requires_exact_drain_occupancy_migration[0000000000000000000000000000000000000000000000000000000000000000-104] _
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9476/test_database_readiness_requir3')
+receipt = '0000000000000000000000000000000000000000000000000000000000000000'
+version = 104
+
+    @pytest.mark.parametrize("version", [103, 104])
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt, version):
+        knowledge = _knowledge(tmp_path / "knowledge")
+        environment = _environment(tmp_path / "runtime", knowledge=knowledge)
+        with hr_agent_database() as database:
+            with database.admin_connection() as connection:
+                if receipt is None:
+                    connection.execute("delete from platform_control.schema_migrations where version=%s", (version,))
+                else:
+                    connection.execute("update platform_control.schema_migrations set sha256=%s where version=%s", (receipt, version))
+            report = build_report(environment, dict(environment), connection_factory=database.connection)
+        assert report["ok"] is False
+>       assert "migration_identity_mismatch" in report["blockers"]
+E       AssertionError: assert 'migration_identity_mismatch' in ['personal_processing_authorizer_absent', 'd7_product_approval_absent']
+
+tests/test_hr_agent_preflight.py:325: AssertionError
+_______________ test_helper_never_runs_root_migration_directory ________________
+
+    def test_helper_never_runs_root_migration_directory():
+        source = SUPERVISOR.read_text(encoding="utf-8")
+        assert (
+            "PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations/hr_agent"
+            in source
+        )
+        assert "100_attachment_erasure_worker_access.sql" in source
+        assert "102_hr_execution_cutover.sql" in source
+        assert "103_hr_execution_drain_occupancy.sql" in source
+>       assert "104_hr_execution_drain_terminal_contract.sql" in source
+E       assert '104_hr_execution_drain_terminal_contract.sql' in '#!/usr/bin/env python3\n"""Bounded local supervisor for explicitly authorized HR schema deployment.\n\nOwner membersh...nal(number, supervisor.on_signal)\n    return supervisor.run()\n\n\nif __name__ == "__main__":\n    sys.exit(main())\n'
+
+tests/test_hr_agent_migration_deployment.py:266: AssertionError
+______ test_helper_rejects_missing_or_mismatched_terminal_contract[None] _______
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9476/test_helper_rejects_missing_or0')
+receipt = None
+
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
+        with hr_agent_database(migrate_hr=False) as database:
+            preview_dsn = _prepare_preview_and_revoke(database)
+            with database.admin_connection() as c:
+                if receipt is None:
+                    c.execute("delete from platform_control.schema_migrations where version=104")
+                else:
+                    c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
+            private = tmp_path / "private"
+            private.mkdir()
+            (private / "control-migrator-database-url").write_text(database.migrator_dsn)
+            (private / "preview-control-migrator-database-url").write_text(preview_dsn)
+            for item in private.iterdir():
+                item.chmod(0o600)
+            fake = tmp_path / "docker"
+            _write_fake_docker(fake)
+            environment = {
+                **os.environ,
+                "HR_MIGRATION_DOCKER": str(fake),
+                "TEST_ADMIN_DSN": database.admin_dsn,
+                "TEST_PRIVATE": str(private),
+                "TEST_RELEASE": str(ROOT),
+                "TEST_DOCKER_STATE": str(tmp_path / "docker-state.json"),
+                "TEST_DOCKER_CALLS": str(tmp_path / "docker-calls.log"),
+                "PYTHONPATH": str(ROOT / "backend"),
+            }
+            result = subprocess.run(
+                [str(HELPER), str(ROOT), str(private), "sha256:" + "a" * 64, "test-postgres",
+                 "--receipt-dir", str(tmp_path / "receipts")],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+>           assert result.returncode != 0
+E           AssertionError: assert 0 != 0
+E            +  where 0 = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/deploy/cloud/mi...cts_missing_or0/receipts'], returncode=0, stdout='HR_AGENT_MIGRATIONS_OK environments=2 cleanup=verified\n', stderr='').returncode
+
+tests/test_hr_agent_migration_deployment.py:533: AssertionError
+_ test_helper_rejects_missing_or_mismatched_terminal_contract[0000000000000000000000000000000000000000000000000000000000000000] _
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9476/test_helper_rejects_missing_or1')
+receipt = '0000000000000000000000000000000000000000000000000000000000000000'
+
+    @pytest.mark.parametrize("receipt", [None, "0" * 64])
+    def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
+        with hr_agent_database(migrate_hr=False) as database:
+            preview_dsn = _prepare_preview_and_revoke(database)
+            with database.admin_connection() as c:
+                if receipt is None:
+                    c.execute("delete from platform_control.schema_migrations where version=104")
+                else:
+                    c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
+            private = tmp_path / "private"
+            private.mkdir()
+            (private / "control-migrator-database-url").write_text(database.migrator_dsn)
+            (private / "preview-control-migrator-database-url").write_text(preview_dsn)
+            for item in private.iterdir():
+                item.chmod(0o600)
+            fake = tmp_path / "docker"
+            _write_fake_docker(fake)
+            environment = {
+                **os.environ,
+                "HR_MIGRATION_DOCKER": str(fake),
+                "TEST_ADMIN_DSN": database.admin_dsn,
+                "TEST_PRIVATE": str(private),
+                "TEST_RELEASE": str(ROOT),
+                "TEST_DOCKER_STATE": str(tmp_path / "docker-state.json"),
+                "TEST_DOCKER_CALLS": str(tmp_path / "docker-calls.log"),
+                "PYTHONPATH": str(ROOT / "backend"),
+            }
+            result = subprocess.run(
+                [str(HELPER), str(ROOT), str(private), "sha256:" + "a" * 64, "test-postgres",
+                 "--receipt-dir", str(tmp_path / "receipts")],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+>           assert result.returncode != 0
+E           AssertionError: assert 0 != 0
+E            +  where 0 = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/deploy/cloud/mi...cts_missing_or1/receipts'], returncode=0, stdout='HR_AGENT_MIGRATIONS_OK environments=2 cleanup=verified\n', stderr='').returncode
+
+tests/test_hr_agent_migration_deployment.py:533: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_hr_agent_preflight.py::test_database_readiness_requires_exact_drain_occupancy_migration[None-104]
+FAILED tests/test_hr_agent_preflight.py::test_database_readiness_requires_exact_drain_occupancy_migration[0000000000000000000000000000000000000000000000000000000000000000-104]
+FAILED tests/test_hr_agent_migration_deployment.py::test_helper_never_runs_root_migration_directory
+FAILED tests/test_hr_agent_migration_deployment.py::test_helper_rejects_missing_or_mismatched_terminal_contract[None]
+FAILED tests/test_hr_agent_migration_deployment.py::test_helper_rejects_missing_or_mismatched_terminal_contract[0000000000000000000000000000000000000000000000000000000000000000]
+5 failed, 2 passed, 23 deselected in 12.16s
+
+exit_code=1
