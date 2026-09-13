@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/history/replay_h03_real.py", line 17, in <module>
+    report=replay_case(ROOT/'artifacts/2026-09-13-hr-launch/history/replay-v2','H03',Path(temporary)/'runtime',output/'H03',profile=profile,port=port)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/helpers/hr_history_replay.py", line 331, in replay_case
+    from tests.test_hr_agent_d_journey import upload_text
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_agent_d_journey.py", line 21, in <module>
+    from tests.test_hr_agent_runtime import ScriptModel, answer, tool
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_agent_runtime.py", line 11, in <module>
+    from hr_agent_support import hr_agent_database, make_hr_settings
+ModuleNotFoundError: No module named 'hr_agent_support'

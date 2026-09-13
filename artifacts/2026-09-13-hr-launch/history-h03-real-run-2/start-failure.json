@@ -1,0 +1,7 @@
+{
+  "status": "failed_before_replay",
+  "generation_calls": 0,
+  "reason": "standalone driver omitted backend/tests from import path; ModuleNotFoundError before replay environment and model stream",
+  "driver_sha256": "11afde44328b6d1ea2cfd90ce89c63749b1721de6a1e59f9f2631208fd976d64",
+  "original_log": "runs/history-h03-real-2/output.log"
+}
