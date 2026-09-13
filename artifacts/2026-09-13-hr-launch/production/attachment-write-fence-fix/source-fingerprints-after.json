@@ -1,0 +1,74 @@
+{
+  "head_before_commit": "5ef983922cf9edbbd9e54d88603e046ac4f22e27",
+  "migration_106_sha256": "7c4ae854dccb96292d33ed66af2070d8f555fcdf5539150fd7a592fedcd0cabb",
+  "files": {
+    "HR总体架构设计.md": {
+      "sha256": "7c96a8d2b0f55410938b32e4387cd9bf8b822a42e1f225221a52e1cc0af463af",
+      "bytes": 54728
+    },
+    "HR_Agent工作流.md": {
+      "sha256": "13b6aa0906e842d6ec15168380d587bd16398cf698ad3bdadf9e962a2999b38c",
+      "bytes": 38861
+    },
+    "backend/app/main.py": {
+      "sha256": "7403f6b0bb4a29fff4c895f23bb11f184986c5fb98b69fd895ff4b19262ed943",
+      "bytes": 73705
+    },
+    "backend/app/attachments/erasure.py": {
+      "sha256": "adc37008e7c76fa0637e9c7922a41ad959eabbfac21a28e61b4e2a5b0efab7e1",
+      "bytes": 6821
+    },
+    "backend/app/attachments/fence_capability.py": {
+      "sha256": "97d2e8e046ef5fce184bb8ae3f74a164dd50fbc5b256873d10a6d6a1818a9a55",
+      "bytes": 2812
+    },
+    "backend/app/attachments/object_keys.py": {
+      "sha256": "d99ca37d9a3cd06fda85a99b9b9c5effc625d0bb17714259846d00427658fc70",
+      "bytes": 688
+    },
+    "backend/app/attachments/object_writer.py": {
+      "sha256": "dd974dafafa38146b71c56a221c300bbe9773bbeaae8e074027b8bbfcfe1a1d3",
+      "bytes": 6519
+    },
+    "backend/app/attachments/s3_erasure.py": {
+      "sha256": "06bece78e4711df636e7e92e424c7eb9cd1e2e39054ac9b4a2b4eb79e9f694ba",
+      "bytes": 6993
+    },
+    "backend/app/attachments/worker.py": {
+      "sha256": "2fd97664c91683212acc1a366262af7137380b7b76bf1af5ade445762c23122b",
+      "bytes": 11871
+    },
+    "backend/app/attachments/worker_runtime.py": {
+      "sha256": "ced56a5661cc0717785eb47b8b5f9d2dadd55c5cf35ff1c8224f4b2d762bfd37",
+      "bytes": 27795
+    },
+    "backend/control_migrations/106_attachment_erasure_write_fence.sql": {
+      "sha256": "7c4ae854dccb96292d33ed66af2070d8f555fcdf5539150fd7a592fedcd0cabb",
+      "bytes": 3111
+    },
+    "backend/tests/test_attachment_erasure_hotfix_database.py": {
+      "sha256": "13d9ab8d2c669ab97862a0ea77f04d3a084c4f43b52adc01c57a7c808792d800",
+      "bytes": 10567
+    },
+    "backend/tests/test_attachment_fence_capability.py": {
+      "sha256": "c0ff6c0c672db0f86f30aea3649fbfa4673ca558cf6db3e526ca10a5737100c8",
+      "bytes": 5213
+    },
+    "backend/tests/test_attachment_s3_version_erasure.py": {
+      "sha256": "1842b9eab624590d0dbfa6ba6362550fcab0d046de9314c2ae2cbe65eb9b4f7a",
+      "bytes": 14621
+    },
+    "backend/tests/test_attachment_upload_service.py": {
+      "sha256": "02d743591455fcba5c6b94244d7d06f7421fb32b1b29c55a365e6762b5615276",
+      "bytes": 15799
+    },
+    "backend/tests/test_attachment_write_fence.py": {
+      "sha256": "c1c06b381bb49d0397ac9b1a9a04bc098a5870aba487b61ba2730b3fca8f072f",
+      "bytes": 13938
+    },
+    "backend/tests/test_attachment_write_fence_database.py": {
+      "sha256": "cfd7fc9a281f0eb12b4c689070973c281b4544561ae2f005132794caf805d227",
+      "bytes": 12668
+    }
+  }
+}

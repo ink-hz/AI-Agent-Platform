@@ -1,0 +1,106 @@
+{
+  "recorded_after_execution": true,
+  "commands": [
+    {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_attachment_fence_capability.py",
+        "tests/test_attachment_write_fence.py",
+        "tests/test_attachment_write_fence_database.py"
+      ],
+      "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+      "stdout": "core.stdout.log",
+      "stderr": "core.stderr.log",
+      "exit": 0
+    },
+    {
+      "shell_selection": "tests/test_attachment*.py",
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_attachment_api.py",
+        "tests/test_attachment_artifacts.py",
+        "tests/test_attachment_derivatives.py",
+        "tests/test_attachment_erasure.py",
+        "tests/test_attachment_erasure_hotfix_database.py",
+        "tests/test_attachment_erasure_observer.py",
+        "tests/test_attachment_erasure_production_canary.py",
+        "tests/test_attachment_erasure_readonly_runbook.py",
+        "tests/test_attachment_fence_capability.py",
+        "tests/test_attachment_grants.py",
+        "tests/test_attachment_hotfix_supervisor.py",
+        "tests/test_attachment_repository.py",
+        "tests/test_attachment_retention.py",
+        "tests/test_attachment_s3_version_erasure.py",
+        "tests/test_attachment_scanner.py",
+        "tests/test_attachment_service.py",
+        "tests/test_attachment_upload_service.py",
+        "tests/test_attachment_validation.py",
+        "tests/test_attachment_view_migration.py",
+        "tests/test_attachment_worker_runtime.py",
+        "tests/test_attachment_write_fence.py",
+        "tests/test_attachment_write_fence_database.py"
+      ],
+      "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+      "stdout": "attachment-suite.stdout.log",
+      "stderr": "attachment-suite.stderr.log",
+      "exit": 0
+    },
+    {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_attachment*.py"
+      ],
+      "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+      "note": "First receipt attempt quoted the glob, so pytest received it literally.",
+      "stdout": "attachment-suite-attempt1.stdout.log",
+      "stderr": "attachment-suite-attempt1.stderr.log",
+      "exit": 4
+    },
+    {
+      "argv": [
+        ".venv/bin/ruff",
+        "check",
+        "app/attachments/fence_capability.py",
+        "app/attachments/erasure.py",
+        "app/attachments/object_keys.py",
+        "app/attachments/object_writer.py",
+        "app/attachments/s3_erasure.py",
+        "app/attachments/worker.py",
+        "app/attachments/worker_runtime.py",
+        "tests/test_attachment_fence_capability.py",
+        "tests/test_attachment_write_fence.py",
+        "tests/test_attachment_write_fence_database.py",
+        "tests/test_attachment_s3_version_erasure.py",
+        "tests/test_attachment_upload_service.py",
+        "tests/test_attachment_erasure_hotfix_database.py"
+      ],
+      "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+      "stdout": "ruff.stdout.log",
+      "stderr": "ruff.stderr.log",
+      "exit": 0
+    },
+    {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "compileall",
+        "-q",
+        "app/attachments",
+        "app/main.py"
+      ],
+      "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+      "stdout": "compile.stdout.log",
+      "stderr": "compile.stderr.log",
+      "exit": 0
+    }
+  ]
+}

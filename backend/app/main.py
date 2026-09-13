@@ -51,6 +51,7 @@ from .attachments.download_service import (
     ConversationAttachmentDownloadService,
     S3ImmutableAttachmentStore,
 )
+from .attachments.fence_capability import require_attachment_fence_capability
 from .attachments.grant_service import AttachmentGrantService, TaskGrantRepository
 from .attachments.logging import install_attachment_ticket_redaction
 from .attachments.object_writer import AttachmentObjectWriter
@@ -498,13 +499,14 @@ def build_attachment_service(config: Config) -> AttachmentService:
 
 
 def build_conversation_attachment_services(config: Config):
+    database_url = read_secret_file(config.attachment_control_database_url_file)
+    require_attachment_fence_capability(database_url, purpose="app")
     keyring = IdentityKeyring.from_file(
         config.content_encryption_keyring_file,
         expected_purpose="platform-content-encryption",
         expected_key_length=32,
     )
     codec = ContentCodec(keyring)
-    database_url = read_secret_file(config.attachment_control_database_url_file)
     repository = ConversationAttachmentRepository.from_config(
         config, content_codec=codec
     )

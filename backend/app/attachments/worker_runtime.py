@@ -7,12 +7,14 @@ import os
 import secrets
 import sys
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import psycopg
+from botocore.exceptions import ClientError
 from psycopg.rows import dict_row
 
 from app.control_plane.crypto import IdentityKeyring
@@ -23,6 +25,7 @@ from app.local_secrets import read_secret_file
 from .conversation_repository import attachment_object_subject
 from .derivatives import BubblewrapPdfSandbox, Derivative, DerivativeBuilder
 from .erasure import AttachmentErasureRepository, AttachmentErasureService
+from .fence_capability import require_attachment_fence_capability
 from .object_writer import _credential
 from .retention import AttachmentRetentionRepository, AttachmentRetentionService
 from .s3_erasure import erase_s3_object
@@ -394,10 +397,84 @@ class S3ProcessingObjectStore:
                 Body=data,
                 ContentLength=len(data),
                 ContentType="application/octet-stream",
+                IfNoneMatch="*",
             )
             return StoredDerivative(object_ref, len(data), digest)
-        except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
+        except Exception as error:  # noqa: BLE001 - storage adapter errors are sanitized
+            if self._precondition_failed(error):
+                return self._existing_derivative(data, object_ref, digest)
             raise AttachmentWorkerRuntimeError() from None
+
+    @staticmethod
+    def _precondition_failed(error: BaseException) -> bool:
+        if not isinstance(error, ClientError):
+            return False
+        response = error.response
+        if not isinstance(response, dict):
+            return False
+        detail = response.get("Error")
+        metadata = response.get("ResponseMetadata")
+        return (
+            isinstance(detail, dict)
+            and detail.get("Code") in {"412", "PreconditionFailed"}
+            and isinstance(metadata, dict)
+            and metadata.get("HTTPStatusCode") == 412
+        )
+
+    def _existing_derivative(
+        self, data: bytes, object_ref: str, digest: bytes
+    ) -> StoredDerivative:
+        body = None
+        try:
+            head = self._client.head_object(Bucket=self._bucket, Key=object_ref)
+            if (
+                not isinstance(head, dict)
+                or type(head.get("ContentLength")) is not int
+                or head["ContentLength"] != len(data)
+                or head.get("Metadata", {}) != {}
+            ):
+                raise AttachmentWorkerRuntimeError()
+            request = {"Bucket": self._bucket, "Key": object_ref}
+            version_id = head.get("VersionId")
+            etag = head.get("ETag")
+            if isinstance(version_id, str) and version_id and version_id != "null":
+                request["VersionId"] = version_id
+            elif isinstance(etag, str) and etag:
+                request["IfMatch"] = etag
+            else:
+                raise AttachmentWorkerRuntimeError()
+            response = self._client.get_object(**request)
+            if (
+                not isinstance(response, dict)
+                or type(response.get("ContentLength")) is not int
+                or response["ContentLength"] != len(data)
+                or response.get("Metadata", {}) != {}
+            ):
+                raise AttachmentWorkerRuntimeError()
+            body = response.get("Body")
+            if body is None or not callable(getattr(body, "read", None)):
+                raise AttachmentWorkerRuntimeError()
+            chunks = []
+            remaining = len(data) + 1
+            while remaining:
+                chunk = body.read(remaining)
+                if not isinstance(chunk, bytes):
+                    raise AttachmentWorkerRuntimeError()
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            if b"".join(chunks) != data:
+                raise AttachmentWorkerRuntimeError()
+            return StoredDerivative(object_ref, len(data), digest)
+        except AttachmentWorkerRuntimeError:
+            raise
+        except Exception:  # noqa: BLE001 - storage clients are an opaque boundary
+            raise AttachmentWorkerRuntimeError() from None
+        finally:
+            if body is not None:
+                with suppress(Exception):
+                    body.close()
 
     def delete(self, object_ref: str) -> None:
         try:
@@ -464,6 +541,7 @@ def build_processor(
         "PLATFORM_ATTACHMENT_WORKER_DATABASE_URL_FILE"
     )
     database_url = read_secret_file(str(database_file))
+    require_attachment_fence_capability(database_url, purpose="brain")
     codec = content_codec or _build_content_codec()
     client = client or _build_s3_client()
     worker_id = os.getenv(
@@ -495,6 +573,7 @@ def build_maintenance_services(*, content_codec: ContentCodec, object_store):
         "PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE"
     )
     database_url = read_secret_file(str(database_file))
+    require_attachment_fence_capability(database_url, purpose="maintenance")
     return (
         AttachmentRetentionService(
             AttachmentRetentionRepository(database_url, content_codec=content_codec),
@@ -582,13 +661,7 @@ def healthcheck() -> int:
             ("PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE", "maintenance"),
         ):
             database_url = read_secret_file(str(_required_absolute_path(name)))
-            validate_control_dsn(database_url, purpose=purpose)
-            with psycopg.connect(
-                database_url,
-                connect_timeout=3,
-                options="-c statement_timeout=3000 -c timezone=UTC",
-            ) as connection:
-                connection.execute("select 1").fetchone()
+            require_attachment_fence_capability(database_url, purpose=purpose)
         client = _build_s3_client()
         client.head_bucket(
             Bucket=os.getenv(

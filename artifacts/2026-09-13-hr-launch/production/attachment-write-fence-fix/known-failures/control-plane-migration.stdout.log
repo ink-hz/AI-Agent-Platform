@@ -1,0 +1,42 @@
+F........................F....................                           [100%]
+=================================== FAILURES ===================================
+__________ test_control_migration_versions_are_unique_and_contiguous ___________
+
+    def test_control_migration_versions_are_unique_and_contiguous() -> None:
+        versions = [int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")]
+    
+        assert len(versions) == len(set(versions))
+>       assert sorted(versions) == list(range(1, max(versions) + 1))
+E       assert [1, 2, 3, 4, 5, 6, ...] == [1, 2, 3, 4, 5, 6, ...]
+E         
+E         At index 88 diff: 100 != 89
+E         Right contains 12 more items, first extra item: 95
+E         Use -v to get more diff
+
+tests/test_control_plane_migration.py:242: AssertionError
+__________ test_migration_creates_complete_constrained_control_model ___________
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:60941/postgres', 'port': 60941, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:60941/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_migration_creates_complete_constrained_control_model(control_database):
+        for environment in control_database["environments"].values():
+            with psycopg.connect(environment["admin"]) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "select table_name from information_schema.tables "
+                        "where table_schema = 'platform_control'"
+                    )
+>                   assert {row[0] for row in cursor.fetchall()} == TABLES
+E                   AssertionError: assert {'access_page..._events', ...} == {'access_page..._events', ...}
+E                     
+E                     Extra items in the left set:
+E                     'hr_execution_cutover'
+E                     'hr_execution_cutover_operations'
+E                     Use -v to get more diff
+
+tests/test_control_plane_migration.py:1399: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_control_plane_migration.py::test_control_migration_versions_are_unique_and_contiguous
+FAILED tests/test_control_plane_migration.py::test_migration_creates_complete_constrained_control_model
+2 failed, 44 passed in 2.39s

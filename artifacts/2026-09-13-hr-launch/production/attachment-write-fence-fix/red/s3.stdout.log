@@ -1,0 +1,249 @@
+FFFFFFFFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+_ test_erasure_retains_verified_fence_and_removes_payloads_and_markers[Enabled] _
+
+status = 'Enabled'
+
+    @pytest.mark.parametrize("status", ("Enabled", "Suspended", None))
+    def test_erasure_retains_verified_fence_and_removes_payloads_and_markers(status):
+        entries = (
+            _payload("owned", "v2"),
+            _marker("owned", "m1"),
+            _payload("owned", "v1", b""),
+            _payload("owned-other", "sibling"),
+        )
+        client = FenceS3(entries, status=status)
+    
+        erase_s3_object(client, "bucket", "owned")
+    
+        exact = client.exact("owned")
+>       assert exact
+E       assert []
+
+tests/test_attachment_write_fence.py:242: AssertionError
+_ test_erasure_retains_verified_fence_and_removes_payloads_and_markers[Suspended] _
+
+status = 'Suspended'
+
+    @pytest.mark.parametrize("status", ("Enabled", "Suspended", None))
+    def test_erasure_retains_verified_fence_and_removes_payloads_and_markers(status):
+        entries = (
+            _payload("owned", "v2"),
+            _marker("owned", "m1"),
+            _payload("owned", "v1", b""),
+            _payload("owned-other", "sibling"),
+        )
+        client = FenceS3(entries, status=status)
+    
+        erase_s3_object(client, "bucket", "owned")
+    
+        exact = client.exact("owned")
+>       assert exact
+E       assert []
+
+tests/test_attachment_write_fence.py:242: AssertionError
+__ test_erasure_retains_verified_fence_and_removes_payloads_and_markers[None] __
+
+status = None
+
+    @pytest.mark.parametrize("status", ("Enabled", "Suspended", None))
+    def test_erasure_retains_verified_fence_and_removes_payloads_and_markers(status):
+        entries = (
+            _payload("owned", "v2"),
+            _marker("owned", "m1"),
+            _payload("owned", "v1", b""),
+            _payload("owned-other", "sibling"),
+        )
+        client = FenceS3(entries, status=status)
+    
+>       erase_s3_object(client, "bucket", "owned")
+
+tests/test_attachment_write_fence.py:239: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+client = <test_attachment_write_fence.FenceS3 object at 0x1077f1450>
+bucket = 'bucket', object_ref = 'owned'
+
+    def erase_s3_object(client: Any, bucket: str, object_ref: str) -> None:
+        if not isinstance(bucket, str) or not bucket.strip():
+            raise S3ObjectErasureError()
+        if not isinstance(object_ref, str) or not object_ref:
+            raise S3ObjectErasureError()
+        try:
+            if _versioning_status(client, bucket) is None:
+                client.delete_object(Bucket=bucket, Key=object_ref)
+                return
+            for _sweep in range(_MAX_VERSION_PURGE_SWEEPS):
+                identifiers = _exact_version_identifiers(client, bucket, object_ref)
+                if not identifiers:
+                    return
+                for version_id in identifiers:
+                    client.delete_object(
+                        Bucket=bucket,
+                        Key=object_ref,
+                        VersionId=version_id,
+                    )
+            if _exact_version_identifiers(client, bucket, object_ref):
+                raise S3ObjectErasureError()
+        except S3ObjectErasureError:
+            raise
+        except Exception:  # noqa: BLE001 - injected storage errors are sanitized
+>           raise S3ObjectErasureError() from None
+E           app.attachments.s3_erasure.S3ObjectErasureError
+
+app/attachments/s3_erasure.py:101: S3ObjectErasureError
+____________ test_two_erasers_preserve_each_others_verified_fences _____________
+
+    def test_two_erasers_preserve_each_others_verified_fences():
+        client = FenceS3((_payload("owned", "v1"),))
+    
+        erase_s3_object(client, "bucket", "owned")
+        erase_s3_object(client, "bucket", "owned")
+    
+        exact = client.exact("owned")
+>       assert len(exact) == 2
+E       assert 0 == 2
+E        +  where 0 = len([])
+
+tests/test_attachment_write_fence.py:264: AssertionError
+_ test_unknown_fence_or_head_result_fails_without_claiming_erasure[put_object] _
+
+fail_at = 'put_object'
+
+    @pytest.mark.parametrize("fail_at", ("put_object", "head_object"))
+    def test_unknown_fence_or_head_result_fails_without_claiming_erasure(fail_at):
+        client = FenceS3((_payload("owned", "v1"),), fail_at=fail_at)
+    
+>       with pytest.raises(Exception):
+E       Failed: DID NOT RAISE Exception
+
+tests/test_attachment_write_fence.py:272: Failed
+_ test_unknown_fence_or_head_result_fails_without_claiming_erasure[head_object] _
+
+fail_at = 'head_object'
+
+    @pytest.mark.parametrize("fail_at", ("put_object", "head_object"))
+    def test_unknown_fence_or_head_result_fails_without_claiming_erasure(fail_at):
+        client = FenceS3((_payload("owned", "v1"),), fail_at=fail_at)
+    
+>       with pytest.raises(Exception):
+E       Failed: DID NOT RAISE Exception
+
+tests/test_attachment_write_fence.py:272: Failed
+_____________________ test_bucket_mode_drift_fails_closed ______________________
+
+    def test_bucket_mode_drift_fails_closed():
+        client = FenceS3(
+            (_payload("owned", "v1"),), status="Enabled", status_after="Suspended"
+        )
+    
+>       with pytest.raises(Exception):
+E       Failed: DID NOT RAISE Exception
+
+tests/test_attachment_write_fence.py:283: Failed
+__________ test_payload_put_is_conditional_and_cannot_overwrite_fence __________
+
+    def test_payload_put_is_conditional_and_cannot_overwrite_fence():
+        client = FenceS3((_fence("owned", "f1"),))
+        writer = AttachmentObjectWriter(client, "bucket")
+    
+>       with pytest.raises(AttachmentObjectWriterError):
+E       Failed: DID NOT RAISE AttachmentObjectWriterError
+
+tests/test_attachment_write_fence.py:291: Failed
+_______ test_delayed_payload_put_loses_to_fence_without_leaving_payload ________
+
+    def test_delayed_payload_put_loses_to_fence_without_leaving_payload():
+        class Delayed(FenceS3):
+            def __init__(self):
+                super().__init__()
+                self.started = threading.Event()
+                self.release = threading.Event()
+    
+            def put_object(self, **kwargs):
+                if kwargs.get("Metadata") != FENCE_METADATA:
+                    self.started.set()
+                    assert self.release.wait(timeout=5)
+                return super().put_object(**kwargs)
+    
+        client = Delayed()
+        writer = AttachmentObjectWriter(client, "bucket")
+        outcome = []
+    
+        def write():
+            try:
+                writer.put_stream("owned", io.BytesIO(b"personal"), 8)
+            except Exception as error:  # noqa: BLE001 - thread returns exact outcome
+                outcome.append(error)
+    
+        thread = threading.Thread(target=write)
+        thread.start()
+        assert client.started.wait(timeout=5)
+        erase_s3_object(client, "bucket", "owned")
+        client.release.set()
+        thread.join(timeout=5)
+    
+        assert not thread.is_alive()
+>       assert len(outcome) == 1 and isinstance(outcome[0], AttachmentObjectWriterError)
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+tests/test_attachment_write_fence.py:329: AssertionError
+________________ test_derivative_key_is_shared_and_byte_stable _________________
+
+    def test_derivative_key_is_shared_and_byte_stable():
+        import app.attachments.worker as worker
+    
+        processing_job_id = UUID("00000000-0000-0000-0000-000000000123")
+        expected = hashlib.sha256(
+            b"attachment-derivative-v1\0" + processing_job_id.bytes + b"preview"
+        ).hexdigest()
+    
+>       assert worker.derivative_object_key(processing_job_id, "preview") == expected
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.attachments.worker' has no attribute 'derivative_object_key'
+
+tests/test_attachment_write_fence.py:341: AttributeError
+___ test_matching_existing_derivative_is_idempotent_but_fence_is_not_payload ___
+
+    def test_matching_existing_derivative_is_idempotent_but_fence_is_not_payload():
+        key = "a" * 64
+        data = b"derived"
+        matching = FenceS3((_payload(key, "v1", data),))
+    
+        stored = S3ProcessingObjectStore(matching, "bucket").put_derivative(
+            data, object_key=key
+        )
+    
+        assert stored == StoredDerivative(key, len(data), hashlib.sha256(data).digest())
+>       assert len(matching.exact(key)) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([{'Kind': 'version', 'Key': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'VersionId': 'written-...'Key': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'VersionId': 'v1', 'Body': b'derived', ...}])
+E        +    where [{'Kind': 'version', 'Key': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'VersionId': 'written-...'Key': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'VersionId': 'v1', 'Body': b'derived', ...}] = exact('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+E        +      where exact = <test_attachment_write_fence.FenceS3 object at 0x107818790>.exact
+
+tests/test_attachment_write_fence.py:354: AssertionError
+_____ test_different_existing_derivative_fails_without_delete_or_overwrite _____
+
+    def test_different_existing_derivative_fails_without_delete_or_overwrite():
+        key = "a" * 64
+        client = FenceS3((_payload(key, "v1", b"other"),))
+    
+>       with pytest.raises(AttachmentWorkerRuntimeError):
+E       Failed: DID NOT RAISE AttachmentWorkerRuntimeError
+
+tests/test_attachment_write_fence.py:368: Failed
+=========================== short test summary info ============================
+FAILED tests/test_attachment_write_fence.py::test_erasure_retains_verified_fence_and_removes_payloads_and_markers[Enabled]
+FAILED tests/test_attachment_write_fence.py::test_erasure_retains_verified_fence_and_removes_payloads_and_markers[Suspended]
+FAILED tests/test_attachment_write_fence.py::test_erasure_retains_verified_fence_and_removes_payloads_and_markers[None]
+FAILED tests/test_attachment_write_fence.py::test_two_erasers_preserve_each_others_verified_fences
+FAILED tests/test_attachment_write_fence.py::test_unknown_fence_or_head_result_fails_without_claiming_erasure[put_object]
+FAILED tests/test_attachment_write_fence.py::test_unknown_fence_or_head_result_fails_without_claiming_erasure[head_object]
+FAILED tests/test_attachment_write_fence.py::test_bucket_mode_drift_fails_closed
+FAILED tests/test_attachment_write_fence.py::test_payload_put_is_conditional_and_cannot_overwrite_fence
+FAILED tests/test_attachment_write_fence.py::test_delayed_payload_put_loses_to_fence_without_leaving_payload
+FAILED tests/test_attachment_write_fence.py::test_derivative_key_is_shared_and_byte_stable
+FAILED tests/test_attachment_write_fence.py::test_matching_existing_derivative_is_idempotent_but_fence_is_not_payload
+FAILED tests/test_attachment_write_fence.py::test_different_existing_derivative_fails_without_delete_or_overwrite
+12 failed in 0.18s

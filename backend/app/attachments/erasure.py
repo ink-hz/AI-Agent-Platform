@@ -13,6 +13,7 @@ from app.control_plane.dsn import validate_control_dsn
 from app.execution_relay.content_crypto import ContentCodec, SealedContent
 
 from .conversation_repository import attachment_object_subject
+from .object_keys import derivative_object_key
 
 
 class AttachmentErasureError(RuntimeError):
@@ -85,23 +86,41 @@ class AttachmentErasureRepository:
                     "platform_attachments.derivatives where attachment_id=%s",
                     (job["attachment_id"],),
                 ).fetchall()
-            if base is None:
-                raise AttachmentErasureError()
-            refs = [self._object_ref(
-                attachment_object_subject(job["attachment_id"], base["write_attempt_id"]),
-                base["object_ref_ciphertext"], base["object_ref_key_version"],
-            )]
-            refs.extend(self._object_ref(
-                attachment_object_subject(job["attachment_id"], row["attempt_id"]),
-                row["object_ref_ciphertext"], row["object_ref_key_version"],
-            ) for row in attempts)
-            refs.extend(self._object_ref(
-                f"attachment:{job['attachment_id']}:derivative:{row['derivative_id']}:object-ref",
-                row["object_ref_ciphertext"], row["object_ref_key_version"],
-            ) for row in derivatives)
-            return ErasureJob(
-                job["erasure_job_id"], job["attachment_id"], tuple(dict.fromkeys(refs))
-            )
+                derive_jobs = connection.execute(
+                    "select processing_job_id,derivative_kind from "
+                    "platform_attachments.processing_jobs where attachment_id=%s "
+                    "and job_kind='derive' order by processing_job_id",
+                    (job["attachment_id"],),
+                ).fetchall()
+                if base is None:
+                    raise AttachmentErasureError()
+                refs = [self._object_ref(
+                    attachment_object_subject(
+                        job["attachment_id"], base["write_attempt_id"]
+                    ),
+                    base["object_ref_ciphertext"], base["object_ref_key_version"],
+                )]
+                refs.extend(self._object_ref(
+                    attachment_object_subject(
+                        job["attachment_id"], row["attempt_id"]
+                    ),
+                    row["object_ref_ciphertext"], row["object_ref_key_version"],
+                ) for row in attempts)
+                refs.extend(self._object_ref(
+                    f"attachment:{job['attachment_id']}:derivative:"
+                    f"{row['derivative_id']}:object-ref",
+                    row["object_ref_ciphertext"], row["object_ref_key_version"],
+                ) for row in derivatives)
+                refs.extend(
+                    derivative_object_key(
+                        row["processing_job_id"], row["derivative_kind"]
+                    )
+                    for row in derive_jobs
+                )
+                return ErasureJob(
+                    job["erasure_job_id"], job["attachment_id"],
+                    tuple(dict.fromkeys(refs)),
+                )
         except AttachmentErasureError:
             raise
         except Exception as error:

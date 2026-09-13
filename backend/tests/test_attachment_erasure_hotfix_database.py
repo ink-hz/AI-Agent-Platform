@@ -130,6 +130,7 @@ class _ObjectClient:
     def __init__(self, refs):
         self.refs = set(refs)
         self.deleted = []
+        self.fenced = []
 
     def delete_object(self, *, Bucket, Key):
         assert Bucket == "attachment-regression"
@@ -140,6 +141,22 @@ class _ObjectClient:
     def get_bucket_versioning(self, *, Bucket):
         assert Bucket == "attachment-regression"
         return {}
+
+    def put_object(self, *, Bucket, Key, Body, ContentLength, Metadata):
+        assert Bucket == "attachment-regression"
+        assert Body == b"" and ContentLength == 0
+        assert Metadata == {"platform-erasure-fence": "v1"}
+        self.refs.discard(Key)
+        self.fenced.append(Key)
+        return {}
+
+    def head_object(self, *, Bucket, Key):
+        assert Bucket == "attachment-regression"
+        assert Key in self.fenced
+        return {
+            "ContentLength": 0,
+            "Metadata": {"platform-erasure-fence": "v1"},
+        }
 
 
 @pytest.mark.postgres
@@ -210,7 +227,8 @@ def test_fixed_worker_claims_one_job_and_deletes_every_object(control_database):
     )
 
     assert service.process_next("fixed-worker") is True
-    assert set(client.deleted) == refs
+    assert set(client.fenced) == refs
+    assert client.deleted == []
     assert client.refs == set()
     with psycopg.connect(environment["admin"]) as admin:
         assert admin.execute(

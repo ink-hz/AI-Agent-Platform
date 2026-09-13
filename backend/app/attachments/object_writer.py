@@ -127,15 +127,22 @@ class AttachmentObjectWriter:
     def _best_effort_delete(self, object_ref: str, put_response) -> None:
         if not isinstance(put_response, dict):
             return
-        request = {"Bucket": self._bucket, "Key": object_ref}
         if "VersionId" in put_response:
             version_id = put_response["VersionId"]
             if not isinstance(version_id, str) or not version_id:
                 return
-            request["VersionId"] = version_id
+            try:
+                self._client.delete_object(
+                    Bucket=self._bucket,
+                    Key=object_ref,
+                    VersionId=version_id,
+                )
+            except (BotoCoreError, ClientError, OSError, RuntimeError):
+                pass
+            return
         try:
-            self._client.delete_object(**request)
-        except (BotoCoreError, ClientError, OSError, RuntimeError):
+            erase_s3_object(self._client, self._bucket, object_ref)
+        except Exception:  # noqa: BLE001, S110 - retry ledger retains the key
             pass
 
     def put_stream(
@@ -160,6 +167,7 @@ class AttachmentObjectWriter:
                 Key=object_ref,
                 Body=reader,
                 ContentLength=expected_size,
+                IfNoneMatch="*",
             )
             return reader.receipt()
         except AttachmentObjectWriterSizeMismatch:

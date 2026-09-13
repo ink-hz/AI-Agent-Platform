@@ -1,0 +1,217 @@
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+_________ test_capability_accepts_exact_106_identity_ledger_and_grants _________
+
+    def test_capability_accepts_exact_106_identity_ledger_and_grants():
+>       from app.attachments.fence_capability import (
+            ATTACHMENT_FENCE_MIGRATION_SHA256,
+            require_attachment_fence_capability,
+        )
+E       ModuleNotFoundError: No module named 'app.attachments.fence_capability'
+
+tests/test_attachment_fence_capability.py:36: ModuleNotFoundError
+____ test_capability_rejects_missing_or_wrong_ledger_role_and_grants[rows0] ____
+
+rows = (('platform_control_app', 'platform_control_app', 'agent_platform_control'), None, (True, True, True, True))
+
+    @pytest.mark.parametrize(
+        "rows",
+        (
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                None,
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                ("0" * 64,),
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_maintenance", "platform_control_maintenance", "agent_platform_control"),
+                ("unused",),
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                ("unused",),
+                (True, True, False, True),
+            ),
+        ),
+    )
+    def test_capability_rejects_missing_or_wrong_ledger_role_and_grants(rows):
+>       from app.attachments.fence_capability import (
+            AttachmentFenceCapabilityError,
+            require_attachment_fence_capability,
+        )
+E       ModuleNotFoundError: No module named 'app.attachments.fence_capability'
+
+tests/test_attachment_fence_capability.py:84: ModuleNotFoundError
+____ test_capability_rejects_missing_or_wrong_ledger_role_and_grants[rows1] ____
+
+rows = (('platform_control_app', 'platform_control_app', 'agent_platform_control'), ('0000000000000000000000000000000000000000000000000000000000000000',), (True, True, True, True))
+
+    @pytest.mark.parametrize(
+        "rows",
+        (
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                None,
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                ("0" * 64,),
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_maintenance", "platform_control_maintenance", "agent_platform_control"),
+                ("unused",),
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                ("unused",),
+                (True, True, False, True),
+            ),
+        ),
+    )
+    def test_capability_rejects_missing_or_wrong_ledger_role_and_grants(rows):
+>       from app.attachments.fence_capability import (
+            AttachmentFenceCapabilityError,
+            require_attachment_fence_capability,
+        )
+E       ModuleNotFoundError: No module named 'app.attachments.fence_capability'
+
+tests/test_attachment_fence_capability.py:84: ModuleNotFoundError
+____ test_capability_rejects_missing_or_wrong_ledger_role_and_grants[rows2] ____
+
+rows = (('platform_control_maintenance', 'platform_control_maintenance', 'agent_platform_control'), ('unused',), (True, True, True, True))
+
+    @pytest.mark.parametrize(
+        "rows",
+        (
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                None,
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                ("0" * 64,),
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_maintenance", "platform_control_maintenance", "agent_platform_control"),
+                ("unused",),
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                ("unused",),
+                (True, True, False, True),
+            ),
+        ),
+    )
+    def test_capability_rejects_missing_or_wrong_ledger_role_and_grants(rows):
+>       from app.attachments.fence_capability import (
+            AttachmentFenceCapabilityError,
+            require_attachment_fence_capability,
+        )
+E       ModuleNotFoundError: No module named 'app.attachments.fence_capability'
+
+tests/test_attachment_fence_capability.py:84: ModuleNotFoundError
+____ test_capability_rejects_missing_or_wrong_ledger_role_and_grants[rows3] ____
+
+rows = (('platform_control_app', 'platform_control_app', 'agent_platform_control'), ('unused',), (True, True, False, True))
+
+    @pytest.mark.parametrize(
+        "rows",
+        (
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                None,
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                ("0" * 64,),
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_maintenance", "platform_control_maintenance", "agent_platform_control"),
+                ("unused",),
+                (True, True, True, True),
+            ),
+            (
+                ("platform_control_app", "platform_control_app", "agent_platform_control"),
+                ("unused",),
+                (True, True, False, True),
+            ),
+        ),
+    )
+    def test_capability_rejects_missing_or_wrong_ledger_role_and_grants(rows):
+>       from app.attachments.fence_capability import (
+            AttachmentFenceCapabilityError,
+            require_attachment_fence_capability,
+        )
+E       ModuleNotFoundError: No module named 'app.attachments.fence_capability'
+
+tests/test_attachment_fence_capability.py:84: ModuleNotFoundError
+___ test_api_attachment_construction_checks_capability_before_other_services ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x102e69f50>
+
+    def test_api_attachment_construction_checks_capability_before_other_services(
+        monkeypatch,
+    ):
+        from app import main
+>       from app.attachments.fence_capability import AttachmentFenceCapabilityError
+E       ModuleNotFoundError: No module named 'app.attachments.fence_capability'
+
+tests/test_attachment_fence_capability.py:101: ModuleNotFoundError
+_ test_worker_builders_check_brain_and_maintenance_before_constructing_services _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106b70fd0>
+
+    def test_worker_builders_check_brain_and_maintenance_before_constructing_services(
+        monkeypatch,
+    ):
+        from app.attachments import worker_runtime
+>       from app.attachments.fence_capability import AttachmentFenceCapabilityError
+E       ModuleNotFoundError: No module named 'app.attachments.fence_capability'
+
+tests/test_attachment_fence_capability.py:126: ModuleNotFoundError
+______________ test_worker_healthcheck_uses_same_capability_gate _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106dfd3d0>
+
+    def test_worker_healthcheck_uses_same_capability_gate(monkeypatch):
+        from app.attachments import worker_runtime
+    
+        calls = []
+        monkeypatch.setattr(
+            worker_runtime,
+            "_required_absolute_path",
+            lambda name: Path("/secret/" + name.lower()),
+        )
+        monkeypatch.setattr(worker_runtime, "read_secret_file", lambda path: str(path))
+    
+        def reject(database_url, *, purpose):
+            calls.append((database_url, purpose))
+            raise RuntimeError("missing 106")
+    
+>       monkeypatch.setattr(worker_runtime, "require_attachment_fence_capability", reject)
+E       AttributeError: <module 'app.attachments.worker_runtime' from '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/attachments/worker_runtime.py'> has no attribute 'require_attachment_fence_capability'
+
+tests/test_attachment_fence_capability.py:169: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_attachment_fence_capability.py::test_capability_accepts_exact_106_identity_ledger_and_grants
+FAILED tests/test_attachment_fence_capability.py::test_capability_rejects_missing_or_wrong_ledger_role_and_grants[rows0]
+FAILED tests/test_attachment_fence_capability.py::test_capability_rejects_missing_or_wrong_ledger_role_and_grants[rows1]
+FAILED tests/test_attachment_fence_capability.py::test_capability_rejects_missing_or_wrong_ledger_role_and_grants[rows2]
+FAILED tests/test_attachment_fence_capability.py::test_capability_rejects_missing_or_wrong_ledger_role_and_grants[rows3]
+FAILED tests/test_attachment_fence_capability.py::test_api_attachment_construction_checks_capability_before_other_services
+FAILED tests/test_attachment_fence_capability.py::test_worker_builders_check_brain_and_maintenance_before_constructing_services
+FAILED tests/test_attachment_fence_capability.py::test_worker_healthcheck_uses_same_capability_gate
+8 failed in 0.38s

@@ -4,6 +4,7 @@ import io
 from types import SimpleNamespace
 
 import pytest
+from botocore.exceptions import ClientError
 
 from app.attachments.erasure import AttachmentErasureService, ErasureJob
 from app.attachments.object_writer import (
@@ -37,6 +38,10 @@ class VersionedS3:
         self.added = False
         self.calls = []
         self.next_version = 0
+
+    @staticmethod
+    def _payload(entry):
+        return entry.get("Body", b"payload"), entry.get("Metadata", {})
 
     def _call(self, operation, kwargs):
         self.calls.append((operation, dict(kwargs)))
@@ -88,19 +93,75 @@ class VersionedS3:
             for entry in self.entries
             if not (entry["Key"] == key and entry["VersionId"] == version_id)
         ]
-        if not any(entry["Key"] == key for entry in self.entries) and (
+        if not any(
+            entry["Key"] == key
+            and entry["Kind"] == "version"
+            and entry.get("Metadata") != {"platform-erasure-fence": "v1"}
+            for entry in self.entries
+        ) and (
             self.keep_adding or (self.add_after_empty and not self.added)
         ):
             self.added = True
             self.next_version += 1
-            self.entries.append(
+            self.entries.insert(
+                0,
                 {
                     "Kind": "version",
                     "Key": key,
                     "VersionId": f"concurrent-{self.next_version}",
-                }
+                    "Body": b"late payload",
+                    "Metadata": {},
+                },
             )
         return {"VersionId": version_id}
+
+    def put_object(self, **kwargs):
+        self._call("put_object", kwargs)
+        key = kwargs["Key"]
+        if kwargs.get("IfNoneMatch") == "*" and self.exact(key):
+            raise ClientError(
+                {
+                    "Error": {"Code": "PreconditionFailed"},
+                    "ResponseMetadata": {"HTTPStatusCode": 412},
+                },
+                "PutObject",
+            )
+        body = kwargs["Body"]
+        if hasattr(body, "read"):
+            body = body.read()
+        entry = {
+            "Kind": "version",
+            "Key": key,
+            "VersionId": "null" if self.status is None else f"put-{len(self.calls)}",
+            "Body": body,
+            "Metadata": dict(kwargs.get("Metadata", {})),
+        }
+        if self.status is None:
+            self.entries = [item for item in self.entries if item["Key"] != key]
+        self.entries.insert(0, entry)
+        return {} if self.status is None else {"VersionId": entry["VersionId"]}
+
+    def head_object(self, **kwargs):
+        self._call("head_object", kwargs)
+        selected = [entry for entry in self.entries if entry["Key"] == kwargs["Key"]]
+        version_id = kwargs.get("VersionId")
+        if version_id is not None:
+            selected = [entry for entry in selected if entry["VersionId"] == version_id]
+        selected = [entry for entry in selected if entry["Kind"] == "version"]
+        if not selected:
+            raise ClientError(
+                {
+                    "Error": {"Code": "NoSuchVersion"},
+                    "ResponseMetadata": {"HTTPStatusCode": 404},
+                },
+                "HeadObject",
+            )
+        body, metadata = self._payload(selected[0])
+        return {
+            "ContentLength": len(body),
+            "Metadata": metadata,
+            "VersionId": selected[0]["VersionId"],
+        }
 
     def exact(self, key):
         return [entry for entry in self.entries if entry["Key"] == key]
@@ -121,7 +182,9 @@ def test_processing_delete_purges_every_exact_version_and_marker_across_pages(st
 
     S3ProcessingObjectStore(client, "private-bucket").delete("owned")
 
-    assert client.exact("owned") == []
+    assert [entry.get("Metadata") for entry in client.exact("owned")] == [
+        {"platform-erasure-fence": "v1"}
+    ]
     assert client.exact("owned-other") == [
         {"Kind": "version", "Key": "owned-other", "VersionId": "sibling"}
     ]
@@ -140,7 +203,7 @@ def test_processing_delete_purges_every_exact_version_and_marker_across_pages(st
     assert all(call["Key"] == "owned" for call in deleted)
 
 
-def test_unversioned_delete_keeps_single_exact_delete_compatibility():
+def test_unversioned_delete_replaces_payload_with_erasure_fence():
     client = VersionedS3(
         ({"Kind": "version", "Key": "owned", "VersionId": "unversioned"},),
         status=None,
@@ -148,12 +211,15 @@ def test_unversioned_delete_keeps_single_exact_delete_compatibility():
 
     AttachmentObjectWriter(client, "private-bucket").delete("owned")
 
-    assert client.exact("owned") == []
+    assert [entry.get("Metadata") for entry in client.exact("owned")] == [
+        {"platform-erasure-fence": "v1"}
+    ]
     assert [operation for operation, _kwargs in client.calls] == [
         "get_bucket_versioning",
-        "delete_object",
+        "put_object",
+        "head_object",
+        "get_bucket_versioning",
     ]
-    assert "VersionId" not in client.calls[-1][1]
 
 
 def test_object_writer_delete_uses_the_same_version_purge():
@@ -166,7 +232,9 @@ def test_object_writer_delete_uses_the_same_version_purge():
 
     AttachmentObjectWriter(client, "private-bucket").delete("owned")
 
-    assert client.exact("owned") == []
+    assert [entry.get("Metadata") for entry in client.exact("owned")] == [
+        {"platform-erasure-fence": "v1"}
+    ]
     assert {
         kwargs["VersionId"]
         for operation, kwargs in client.calls
@@ -225,7 +293,9 @@ def test_version_arriving_during_purge_is_removed_by_followup_sweep():
     S3ProcessingObjectStore(client, "private-bucket").delete("owned")
 
     assert client.added is True
-    assert client.exact("owned") == []
+    assert [entry.get("Metadata") for entry in client.exact("owned")] == [
+        {"platform-erasure-fence": "v1"}
+    ]
     deleted = [
         kwargs["VersionId"]
         for operation, kwargs in client.calls

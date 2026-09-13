@@ -1,0 +1,13 @@
+{
+  "recorded_after_execution": true,
+  "argv": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_control_plane_migration.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+  "exit": 1,
+  "classification": "Two repository-wide static inventory assertions are stale after independently introduced root migrations 102-106; 44 behavioral tests passed."
+}

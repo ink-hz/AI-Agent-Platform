@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from botocore.exceptions import EndpointConnectionError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from app.attachments.conversation_models import (
     MAX_FILE_BYTES,
@@ -49,15 +49,45 @@ class StreamingS3:
         self.fail_once = fail_once
         self.puts: list[tuple[str, str, int]] = []
         self.deletes: list[tuple[str, str]] = []
+        self.fences: list[tuple[str, str]] = []
+        self.objects = {}
 
-    def put_object(self, *, Bucket, Key, Body, ContentLength):
+    def put_object(
+        self,
+        *,
+        Bucket,
+        Key,
+        Body,
+        ContentLength,
+        IfNoneMatch=None,
+        Metadata=None,
+    ):
+        if IfNoneMatch == "*" and Key in self.objects:
+            raise ClientError(
+                {
+                    "Error": {"Code": "PreconditionFailed"},
+                    "ResponseMetadata": {"HTTPStatusCode": 412},
+                },
+                "PutObject",
+            )
         total = 0
-        while chunk := Body.read(1024 * 1024):
-            total += len(chunk)
-            if self.fail_once:
-                self.fail_once = False
-                raise OSError("partial transport failure")
-        self.puts.append((Bucket, Key, total))
+        if isinstance(Body, bytes):
+            payload = Body
+            total = len(payload)
+        else:
+            chunks = []
+            while chunk := Body.read(1024 * 1024):
+                chunks.append(chunk)
+                total += len(chunk)
+                if self.fail_once:
+                    self.fail_once = False
+                    raise OSError("partial transport failure")
+            payload = b"".join(chunks)
+        self.objects[Key] = (payload, dict(Metadata or {}))
+        if Metadata == {"platform-erasure-fence": "v1"}:
+            self.fences.append((Bucket, Key))
+        else:
+            self.puts.append((Bucket, Key, total))
         return {"ETag": "opaque"}
 
     def get_bucket_versioning(self, *, Bucket):
@@ -66,6 +96,11 @@ class StreamingS3:
 
     def delete_object(self, *, Bucket, Key):
         self.deletes.append((Bucket, Key))
+
+    def head_object(self, *, Bucket, Key):
+        assert Bucket == "private-attachments"
+        payload, metadata = self.objects[Key]
+        return {"ContentLength": len(payload), "Metadata": metadata}
 
 
 def test_object_writer_streams_fifty_mb_and_calculates_sha256() -> None:
@@ -85,14 +120,15 @@ def test_object_writer_streams_fifty_mb_and_calculates_sha256() -> None:
     assert s3.puts == [("private-attachments", "objects/random", MAX_FILE_BYTES)]
 
 
-def test_object_writer_rejects_extra_bytes_and_deletes_written_object() -> None:
+def test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write() -> None:
     s3 = StreamingS3()
     writer = AttachmentObjectWriter(s3, "private-attachments")
 
     with pytest.raises(AttachmentObjectWriterSizeMismatch):
         writer.put_stream("objects/random", io.BytesIO(b"abcd"), 3)
 
-    assert s3.deletes == [("private-attachments", "objects/random")]
+    assert s3.deletes == []
+    assert s3.fences == [("private-attachments", "objects/random")]
 
 
 def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup() -> None:
@@ -103,7 +139,8 @@ def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup() 
         writer.put_stream("objects/random", io.BytesIO(b"payload"), 7)
     writer.delete("objects/random")
 
-    assert s3.deletes == [("private-attachments", "objects/random")]
+    assert s3.deletes == []
+    assert s3.fences == [("private-attachments", "objects/random")]
 
 
 def test_storage_error_redacts_endpoint_object_key_and_cause() -> None:
@@ -315,7 +352,8 @@ def test_authoritatively_superseded_finalize_failure_deletes_only_its_object() -
             io.BytesIO(b"payload"),
             7,
         )
-    assert s3.deletes == [("private-attachments", "objects/random-0")]
+    assert s3.deletes == []
+    assert s3.fences == [("private-attachments", "objects/random-0")]
     assert repository.abandon_calls == 0
 
 

@@ -9,6 +9,7 @@ from typing import Protocol
 from uuid import UUID
 
 from .derivatives import Derivative, DerivativeBuilder, DerivativeError
+from .object_keys import derivative_object_key
 from .scanner import MalwareScanner, ScanDisposition, ScannerUnavailable
 from .validation import (
     AttachmentValidationError,
@@ -285,11 +286,7 @@ class AttachmentProcessor:
             derivative = derivatives[0]
             if job.derivative_kind != derivative.kind:
                 raise DerivativeError()
-            object_key = hashlib.sha256(
-                b"attachment-derivative-v1\0"
-                + job.processing_job_id.bytes
-                + derivative.kind.encode("ascii")
-            ).hexdigest()
+            object_key = derivative_object_key(job.processing_job_id, derivative.kind)
             stored = self._object_store.put_derivative(
                 derivative.data, object_key=object_key
             )

@@ -1,0 +1,147 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_______ test_106_grants_only_derive_key_identity_columns_to_maintenance ________
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:55793/postgres', 'port': 55793, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:55793/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_106_grants_only_derive_key_identity_columns_to_maintenance(control_database):
+>       assert MIGRATION.is_file()
+E       AssertionError: assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/control_migrations/106_attachment_erasure_write_fence.sql').is_file
+
+tests/test_attachment_write_fence_database.py:29: AssertionError
+___ test_claim_logically_deletes_but_retains_refs_and_unrecorded_derive_key ____
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:55793/postgres', 'port': 55793, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:55793/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_claim_logically_deletes_but_retains_refs_and_unrecorded_derive_key(
+        control_database,
+    ):
+        environment = control_database["environments"]["production"]
+        codec = _codec()
+        with psycopg.connect(environment["admin"]) as admin:
+            context = _seed_task(admin)
+            attachment_id, erasure_job_id, known_refs = _seed_object_graph(
+                admin, codec, context
+            )
+            processing_job_id = uuid4()
+            admin.execute(
+                "insert into platform_attachments.processing_jobs "
+                "(processing_job_id,attachment_id,job_kind,derivative_kind,state,"
+                "completed_at) values (%s,%s,'derive','preview','completed',now())",
+                (processing_job_id, attachment_id),
+            )
+            before = admin.execute(
+                "select object_ref_ciphertext,object_ref_key_version from "
+                "platform_attachments.attachments where attachment_id=%s",
+                (attachment_id,),
+            ).fetchone()
+            admin.commit()
+    
+        repository = AttachmentErasureRepository(
+            environment["urls"]["platform_control_maintenance"], content_codec=codec
+        )
+        job = repository.claim("fence-claimer")
+    
+        import app.attachments.worker as worker
+    
+        assert job is not None and job.erasure_job_id == erasure_job_id
+        assert set(job.object_refs) == known_refs | {
+>           worker.derivative_object_key(processing_job_id, "preview")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        }
+E       AttributeError: module 'app.attachments.worker' has no attribute 'derivative_object_key'
+
+tests/test_attachment_write_fence_database.py:86: AttributeError
+__________ test_scan_commit_first_closes_job_set_before_erasure_claim __________
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:55793/postgres', 'port': 55793, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:55793/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_scan_commit_first_closes_job_set_before_erasure_claim(control_database):
+        environment = control_database["environments"]["production"]
+        attachment_id, erasure_job_id, processing_job_id, attempt_token = (
+            _seed_running_scan(environment)
+        )
+    
+        def claim():
+            with psycopg.connect(
+                environment["urls"]["platform_control_maintenance"]
+            ) as maintenance:
+                row = maintenance.execute(
+                    "select * from platform_attachments."
+                    "claim_attachment_erasure_job_v64('after-scan')"
+                ).fetchone()
+                maintenance.commit()
+                return row[0]
+    
+        with psycopg.connect(environment["urls"]["platform_brain_worker"]) as brain:
+            brain.execute(
+                "select platform_attachments.record_attachment_processing_result_v64("
+                "%s,%s,'ready',null)",
+                (processing_job_id, attempt_token),
+            )
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(claim)
+                time.sleep(0.1)
+>               assert not future.done(), "erasure claim must wait for scan attachment lock"
+E               AssertionError: erasure claim must wait for scan attachment lock
+E               assert not True
+E                +  where True = done()
+E                +    where done = <Future at 0x1082b8710 state=finished returned UUID>.done
+
+tests/test_attachment_write_fence_database.py:144: AssertionError
+_____ test_erasure_claim_first_rejects_scan_completion_without_new_derive ______
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:55793/postgres', 'port': 55793, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:55793/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_erasure_claim_first_rejects_scan_completion_without_new_derive(
+        control_database,
+    ):
+        environment = control_database["environments"]["production"]
+        attachment_id, erasure_job_id, processing_job_id, attempt_token = (
+            _seed_running_scan(environment)
+        )
+    
+        def finish_scan():
+            with psycopg.connect(environment["urls"]["platform_brain_worker"]) as brain:
+                try:
+                    brain.execute(
+                        "select platform_attachments."
+                        "record_attachment_processing_result_v64(%s,%s,'ready',null)",
+                        (processing_job_id, attempt_token),
+                    )
+                    brain.commit()
+                    return None
+                except Exception as error:  # noqa: BLE001 - return DB ordering outcome
+                    brain.rollback()
+                    return error
+    
+        with psycopg.connect(
+            environment["urls"]["platform_control_maintenance"]
+        ) as maintenance:
+            row = maintenance.execute(
+                "select * from platform_attachments."
+                "claim_attachment_erasure_job_v64('before-scan')"
+            ).fetchone()
+            assert row[0] == erasure_job_id
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(finish_scan)
+                time.sleep(0.1)
+>               assert not future.done(), "scan result must wait for erasure attachment lock"
+E               AssertionError: scan result must wait for erasure attachment lock
+E               assert not True
+E                +  where True = done()
+E                +    where done = <Future at 0x1082d4510 state=finished returned NoneType>.done
+
+tests/test_attachment_write_fence_database.py:198: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_attachment_write_fence_database.py::test_106_grants_only_derive_key_identity_columns_to_maintenance
+FAILED tests/test_attachment_write_fence_database.py::test_claim_logically_deletes_but_retains_refs_and_unrecorded_derive_key
+FAILED tests/test_attachment_write_fence_database.py::test_scan_commit_first_closes_job_set_before_erasure_claim
+FAILED tests/test_attachment_write_fence_database.py::test_erasure_claim_first_rejects_scan_completion_without_new_derive
+4 failed in 1.80s
