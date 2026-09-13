@@ -458,7 +458,7 @@ def main():
                 bucket = os.environ.get("PLATFORM_ATTACHMENT_S3_BUCKET", "")
                 if not bucket:
                     raise Unknown("bucket_required")
-                with httpx.Client(trust_env=False) as http:
+                with httpx.Client() as http:
                     authenticate(http, config, selected["attachment_id"], args.phase)
                 result, frozen = observe(
                     args.phase,

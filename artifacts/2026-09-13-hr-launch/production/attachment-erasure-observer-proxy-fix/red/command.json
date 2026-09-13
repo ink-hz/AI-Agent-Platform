@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_attachment_erasure_observer.py::test_cli_whole_deadline_retains_unknown_receipt",
+    "-q"
+  ],
+  "exit_code": 1,
+  "sha256": {
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py": "a73032911c4149aa1985758970269886440eaee24cc41d8e758635f94fb55260",
+    "backend/tests/test_attachment_erasure_observer.py": "df4fe5979939a702e79e43a720e9e6dcf72cb2878c063be711dc20c3ff45752b"
+  }
+}

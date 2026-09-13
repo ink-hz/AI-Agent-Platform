@@ -1,0 +1,10 @@
+.........{"observer_sha256": "5a0fd77a090d2cd0b0ede10dba5ddffb46c143e6065c2538a63052246fab9abe", "phase": "before", "physical_erasure_verified": false, "status": "unknown"}
+{"blocking_observation_elapsed_seconds": 0.15991745982319117, "budget_seconds": 0.15, "unknown_receipt": true}
+..
+=============================== warnings summary ===============================
+tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+11 passed, 1 warning in 1.58s

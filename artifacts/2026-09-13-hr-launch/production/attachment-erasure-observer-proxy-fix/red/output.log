@@ -1,0 +1,82 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_cli_whole_deadline_retains_unknown_receipt ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10375dd10>
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9607/test_cli_whole_deadline_retain0')
+
+    def test_cli_whole_deadline_retains_unknown_receipt(monkeypatch, tmp_path):
+        import json
+        import signal
+        import sys
+        import time
+    
+        observer = module(monkeypatch)
+        trust_env_values = []
+        real_client = observer.httpx.Client
+    
+        def client_factory(**kwargs):
+            trust_env_values.append(kwargs.get("trust_env"))
+            return real_client(**kwargs)
+    
+        monkeypatch.setattr(observer.httpx, "Client", client_factory)
+        receipt = tmp_path / "receipt.json"
+        snapshot = tmp_path / "snapshot.json"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "observer",
+                "before",
+                "--config",
+                "/unused",
+                "--ledger",
+                "/unused",
+                "--snapshot",
+                str(snapshot),
+                "--receipt",
+                str(receipt),
+            ],
+        )
+        monkeypatch.setattr(observer, "load_config", lambda _: {})
+        monkeypatch.setattr(observer, "private_json", lambda _: {})
+        monkeypatch.setattr(observer, "binding", lambda *_: {"attachment_id": "unused"})
+        monkeypatch.setattr(observer, "_build_content_codec", lambda: None)
+        monkeypatch.setattr(observer, "read_secret_file", lambda _: "unused")
+        monkeypatch.setattr(observer, "Repository", lambda _: None)
+        monkeypatch.setattr(observer, "authenticate", lambda *_: None)
+        monkeypatch.setattr(observer, "_build_s3_client", lambda: None)
+        monkeypatch.setenv("PLATFORM_CONTROL_DATABASE_URL_FILE", "/unused")
+        monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_BUCKET", "unused")
+    
+        def blocked(*args):
+            time.sleep(2)
+            raise AssertionError("deadline did not interrupt blocking observation")
+    
+        monkeypatch.setattr(observer, "observe", blocked)
+        real = observer.bounded_request
+    
+        def short(client, **kwargs):
+            assert kwargs["timeout"] == 60
+            return real(client, timeout=0.15)
+    
+        monkeypatch.setattr(observer, "bounded_request", short)
+        handler = signal.getsignal(signal.SIGALRM)
+        started = time.monotonic()
+        assert observer.main() == 1
+        elapsed = time.monotonic() - started
+        assert elapsed < 1.5
+        assert json.loads(receipt.read_text())["status"] == "unknown"
+        assert not snapshot.exists()
+>       assert trust_env_values == [False]
+E       assert [None] == [False]
+E         
+E         At index 0 diff: None != False
+E         Use -v to get more diff
+
+backend/tests/test_attachment_erasure_observer.py:407: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"observer_sha256": "a73032911c4149aa1985758970269886440eaee24cc41d8e758635f94fb55260", "phase": "before", "physical_erasure_verified": false, "status": "unknown"}
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_observer.py::test_cli_whole_deadline_retains_unknown_receipt
+1 failed in 0.30s
