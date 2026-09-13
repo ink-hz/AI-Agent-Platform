@@ -1,0 +1,24 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_production_canary_deadline.py",
+    "tests/test_hr_agent_production_canary.py",
+    "tests/test_attachment_erasure_production_canary.py",
+    "-q",
+    "-s"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+  "exit_code": 0,
+  "sha256": {
+    "backend/tests/test_production_canary_deadline.py": "abd2660f3b1e4cc9de59735c7450dc2aa430ec0acc3c66f08a68eb48f6cabfa8",
+    "backend/tests/test_hr_agent_production_canary.py": "3aa754bc75b36ca9c1d2bf0db920b04578fda78cc7b501d0abed084229a0630b",
+    "backend/tests/test_attachment_erasure_production_canary.py": "91c358b7d50626f401f81514d3ccb5a63696b5184f00a998abf8487b2f9d25ca",
+    "artifacts/2026-09-13-hr-launch/production/api_canary.py": "13fcb02d28132afbe84268b0b5576946f2bc32dbaea8f1c2f74abaf702e0abd5",
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py": "295fbc85c6d7179577971adf082bebec1140fcdca7149be8c1f4fcc3e4d96573"
+  },
+  "source_unchanged": true,
+  "head": "7207228894c08092c71944fc1d958f9e63526f88",
+  "boundary": "Owned slow loopback socket and existing real local auth/PG canary engineering; no production/model/browser/process restart."
+}

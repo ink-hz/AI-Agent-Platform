@@ -1,0 +1,24 @@
+{'kind': 'hr', 'budget_seconds': 0.15, 'elapsed_seconds': 0.1567612076178193}
+.{'kind': 'attachment', 'budget_seconds': 0.15, 'elapsed_seconds': 0.1612438326701522}
+..............
+=============================== warnings summary ===============================
+tests/test_hr_agent_production_canary.py::test_actual_http_upload_saved_revision_same_work_replay_and_safe_evidence
+tests/test_hr_agent_production_canary.py::test_lost_real_http_acceptance_resume_never_duplicates_owned_resources[upload]
+tests/test_hr_agent_production_canary.py::test_lost_real_http_acceptance_resume_never_duplicates_owned_resources[work]
+tests/test_hr_agent_production_canary.py::test_running_pause_and_resume_are_observations_not_invented_restart_proof
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_agent_production_canary.py:213: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    response = client.request(method, url, **kwargs)
+
+tests/test_hr_agent_production_canary.py::test_owner_csrf_origin_and_live_readiness_fail_before_any_canary_write
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/api_canary.py:51: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    return client.request(*args, **kwargs)
+
+tests/test_attachment_erasure_production_canary.py::test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure
+tests/test_attachment_erasure_production_canary.py::test_expired_mutation_deadline_allows_only_bounded_observation
+tests/test_attachment_erasure_production_canary.py::test_lost_delete_reply_stops_without_reissuing_delete
+tests/test_attachment_erasure_production_canary.py::test_unknown_initial_upload_and_wrong_owner_never_create_a_replacement
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+15 passed, 9 warnings in 32.26s

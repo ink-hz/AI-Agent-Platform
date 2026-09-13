@@ -1,0 +1,265 @@
+diff --git a/artifacts/2026-09-13-hr-launch/production/api_canary.py b/artifacts/2026-09-13-hr-launch/production/api_canary.py
+index 1ec5576..801115a 100644
+--- a/artifacts/2026-09-13-hr-launch/production/api_canary.py
++++ b/artifacts/2026-09-13-hr-launch/production/api_canary.py
+@@ -1,7 +1,8 @@
+ """Bounded public/synthetic HTTP canary. No credential issuance or service control.
+ 
+ Requires an existing owner session in an absolute, regular 0600 JSON file.
+-See api-canary-engineering/README.md before explicitly executing against production.
++Read api-canary-engineering/README.md and the canary-deadline-fix/README.md
++correction before explicitly executing against production.
+ """
+ 
+ from __future__ import annotations
+@@ -10,7 +11,9 @@ import argparse
+ import hashlib
+ import json
+ import os
++import signal
+ import stat
++import threading
+ import time
+ from pathlib import Path
+ from urllib.parse import urlsplit
+@@ -23,6 +26,34 @@ class CanaryError(Exception):
+     """Fixed safe diagnosis, never raw server exceptions or credential values."""
+ 
+ 
++class RequestDeadline(BaseException):
++    """Bypass HTTP transport retry handlers, then persist an unknown outcome."""
++
++
++def bounded_request(client, *args, **kwargs):
++    if (
++        threading.current_thread() is not threading.main_thread()
++        or not hasattr(signal, "setitimer")
++        or signal.getitimer(signal.ITIMER_REAL) != (0.0, 0.0)
++    ):
++        raise CanaryError("deadline_supervision_unavailable")
++    remaining = kwargs["timeout"]
++    if remaining <= 0:
++        raise CanaryError("deadline_exhausted")
++    previous = signal.getsignal(signal.SIGALRM)
++
++    def expired(_number, _frame):
++        raise RequestDeadline()
++
++    signal.signal(signal.SIGALRM, expired)
++    try:
++        signal.setitimer(signal.ITIMER_REAL, remaining)
++        return client.request(*args, **kwargs)
++    finally:
++        signal.setitimer(signal.ITIMER_REAL, 0)
++        signal.signal(signal.SIGALRM, previous)
++
++
+ def private_json(path):
+     path = Path(path)
+     if not path.is_absolute():
+@@ -154,16 +185,17 @@ class Canary:
+                 }
+             )
+         try:
+-            response = self.client.request(
++            response = bounded_request(
++                self.client,
+                 method,
+                 self.config["api_base_url"] + path,
+                 headers=headers,
+                 json=body,
+                 content=content,
+-                timeout=min(20, remaining),
++                timeout=min(20, self.ledger["deadline"] - time.time()),
+                 follow_redirects=False,
+             )
+-        except httpx.HTTPError:
++        except (httpx.HTTPError, RequestDeadline):
+             receipt["status"] = "transport_unknown"
+             self.save()
+             raise CanaryError("outcome_unknown") from None
+diff --git a/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py b/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py
+index 234183e..a563762 100644
+--- a/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py
++++ b/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py
+@@ -1,4 +1,7 @@
+-"""Account/attachment-only canary. HTTP deletion is NOT physical object erasure."""
++"""Account/attachment-only canary. HTTP deletion is NOT physical object erasure.
++
++The canary-deadline-fix/README.md corrects the original timeout claims.
++"""
+ 
+ from __future__ import annotations
+ 
+@@ -8,7 +11,14 @@ import time
+ from uuid import UUID, uuid4
+ 
+ import httpx
+-from api_canary import Canary, CanaryError, load_config, sha
++from api_canary import (
++    Canary,
++    CanaryError,
++    RequestDeadline,
++    bounded_request,
++    load_config,
++    sha,
++)
+ 
+ 
+ class AttachmentCanary(Canary):
+@@ -64,16 +74,25 @@ class AttachmentCanary(Canary):
+                 }
+             )
+         try:
+-            response = self.client.request(
++            response = bounded_request(
++                self.client,
+                 method,
+                 self.config["api_base_url"] + path,
+                 headers=headers,
+                 json=body,
+                 content=content,
+-                timeout=min(20, remaining),
++                timeout=min(
++                    20,
++                    (
++                        self.readonly_until
++                        if self.readonly_until is not None
++                        else self.ledger["deadline"]
++                    )
++                    - time.time(),
++                ),
+                 follow_redirects=False,
+             )
+-        except httpx.HTTPError:
++        except (httpx.HTTPError, RequestDeadline):
+             receipt["status"] = "transport_unknown"
+             self.save()
+             raise CanaryError("outcome_unknown") from None
+diff --git a/backend/tests/test_production_canary_deadline.py b/backend/tests/test_production_canary_deadline.py
+new file mode 100644
+index 0000000..e6929f4
+--- /dev/null
++++ b/backend/tests/test_production_canary_deadline.py
+@@ -0,0 +1,121 @@
++"""Actual slow socket response; no authentication or production acceptance claim."""
++
++import importlib
++import signal
++import threading
++import time
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++from pathlib import Path
++from uuid import uuid4
++
++import httpx
++import pytest
++
++PRODUCTION = Path(__file__).parents[2] / "artifacts/2026-09-13-hr-launch/production"
++
++
++@pytest.mark.parametrize("kind", ["hr", "attachment"])
++def test_slow_stream_is_cut_off_and_ambiguous_upload_never_repeats(
++    tmp_path, monkeypatch, kind
++):
++    monkeypatch.syspath_prepend(str(PRODUCTION))
++    common = importlib.import_module("api_canary")
++    cls = (
++        common.Canary
++        if kind == "hr"
++        else importlib.import_module("attachment_erasure_canary").AttachmentCanary
++    )
++    received = []
++
++    class Handler(BaseHTTPRequestHandler):
++        def log_message(self, *_):
++            pass
++
++        def do_POST(self):
++            received.append(self.path)
++            self.rfile.read(int(self.headers.get("Content-Length", "0")))
++            payload = b" " * 24 + b"{}"
++            self.send_response(201)
++            self.send_header("Content-Length", str(len(payload)))
++            self.end_headers()
++            try:
++                for byte in payload:
++                    self.wfile.write(bytes([byte]))
++                    self.wfile.flush()
++                    time.sleep(0.04)  # Every chunk arrives inside httpx's read timeout.
++            except (BrokenPipeError, ConnectionResetError):
++                pass
++
++    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
++    thread = threading.Thread(target=server.serve_forever, daemon=True)
++    thread.start()
++    try:
++        with httpx.Client(trust_env=False) as actual:
++
++            class LocalTransport:
++                def request(self, method, url, **kwargs):
++                    # Only map the test origin to our owned cleartext loopback socket.
++                    return actual.request(
++                        method,
++                        "http://127.0.0.1:" + str(server.server_port) + "/upload",
++                        **kwargs,
++                    )
++
++            config = {
++                "owner_id": str(uuid4()),
++                "session_cookie": "local-test-token",
++                "csrf": "local-test-csrf",
++                "public_origin": "https://localhost",
++                "api_base_url": "https://localhost",
++            }
++            runner = cls(config, tmp_path / "run", LocalTransport())
++            runner.ledger["deadline"] = time.time() + 0.15
++            runner.save()
++            previous = signal.getsignal(signal.SIGALRM)
++            started = time.monotonic()
++            with pytest.raises(common.CanaryError, match="outcome_unknown"):
++                runner.mutate(
++                    "upload_begin",
++                    "/api/v1/attachments/uploads",
++                    {"synthetic": True},
++                    (201,),
++                )
++            elapsed = time.monotonic() - started
++            print({"kind": kind, "budget_seconds": 0.15, "elapsed_seconds": elapsed})
++            assert elapsed < 0.8
++            assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
++            assert signal.getsignal(signal.SIGALRM) == previous
++            assert (
++                runner.ledger["operations"]["upload_begin"]["status"]
++                == "outcome_unknown"
++            )
++            resumed = cls(config, runner.directory, LocalTransport(), resume=True)
++            with pytest.raises(common.CanaryError, match="outcome_unknown"):
++                resumed.mutate(
++                    "upload_begin",
++                    "/api/v1/attachments/uploads",
++                    {"synthetic": True},
++                    (201,),
++                )
++            assert received == ["/upload"]
++    finally:
++        server.shutdown()
++        server.server_close()
++        thread.join(timeout=2)
++
++
++def test_existing_timer_is_not_replaced(monkeypatch):
++    monkeypatch.syspath_prepend(str(PRODUCTION))
++    common = importlib.import_module("api_canary")
++    assert hasattr(common, "bounded_request"), "wall-clock request supervisor missing"
++    before = signal.getsignal(signal.SIGALRM)
++    signal.setitimer(signal.ITIMER_REAL, 10)
++    try:
++        with pytest.raises(
++            common.CanaryError, match="deadline_supervision_unavailable"
++        ):
++            common.bounded_request(None, "GET", "https://localhost", timeout=0.1)
++        assert signal.getitimer(signal.ITIMER_REAL)[0] > 9
++        assert signal.getsignal(signal.SIGALRM) == before
++    finally:
++        signal.setitimer(signal.ITIMER_REAL, 0)

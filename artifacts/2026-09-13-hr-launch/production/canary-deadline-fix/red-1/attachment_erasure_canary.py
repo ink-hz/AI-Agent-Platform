@@ -1,7 +1,4 @@
-"""Account/attachment-only canary. HTTP deletion is NOT physical object erasure.
-
-The canary-deadline-fix/README.md corrects the original timeout claims.
-"""
+"""Account/attachment-only canary. HTTP deletion is NOT physical object erasure."""
 
 from __future__ import annotations
 
@@ -11,14 +8,7 @@ import time
 from uuid import UUID, uuid4
 
 import httpx
-from api_canary import (
-    Canary,
-    CanaryError,
-    RequestDeadline,
-    bounded_request,
-    load_config,
-    sha,
-)
+from api_canary import Canary, CanaryError, load_config, sha
 
 
 class AttachmentCanary(Canary):
@@ -74,25 +64,16 @@ class AttachmentCanary(Canary):
                 }
             )
         try:
-            response = bounded_request(
-                self.client,
+            response = self.client.request(
                 method,
                 self.config["api_base_url"] + path,
                 headers=headers,
                 json=body,
                 content=content,
-                timeout=min(
-                    20,
-                    (
-                        self.readonly_until
-                        if self.readonly_until is not None
-                        else self.ledger["deadline"]
-                    )
-                    - time.time(),
-                ),
+                timeout=min(20, remaining),
                 follow_redirects=False,
             )
-        except (httpx.HTTPError, RequestDeadline):
+        except httpx.HTTPError:
             receipt["status"] = "transport_unknown"
             self.save()
             raise CanaryError("outcome_unknown") from None

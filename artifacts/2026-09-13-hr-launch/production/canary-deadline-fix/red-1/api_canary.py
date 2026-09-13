@@ -1,8 +1,7 @@
 """Bounded public/synthetic HTTP canary. No credential issuance or service control.
 
 Requires an existing owner session in an absolute, regular 0600 JSON file.
-Read api-canary-engineering/README.md and the canary-deadline-fix/README.md
-correction before explicitly executing against production.
+See api-canary-engineering/README.md before explicitly executing against production.
 """
 
 from __future__ import annotations
@@ -11,9 +10,7 @@ import argparse
 import hashlib
 import json
 import os
-import signal
 import stat
-import threading
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -24,34 +21,6 @@ import httpx
 
 class CanaryError(Exception):
     """Fixed safe diagnosis, never raw server exceptions or credential values."""
-
-
-class RequestDeadline(BaseException):
-    """Bypass HTTP transport retry handlers, then persist an unknown outcome."""
-
-
-def bounded_request(client, *args, **kwargs):
-    if (
-        threading.current_thread() is not threading.main_thread()
-        or not hasattr(signal, "setitimer")
-        or signal.getitimer(signal.ITIMER_REAL) != (0.0, 0.0)
-    ):
-        raise CanaryError("deadline_supervision_unavailable")
-    remaining = kwargs["timeout"]
-    if remaining <= 0:
-        raise CanaryError("deadline_exhausted")
-    previous = signal.getsignal(signal.SIGALRM)
-
-    def expired(_number, _frame):
-        raise RequestDeadline()
-
-    signal.signal(signal.SIGALRM, expired)
-    try:
-        signal.setitimer(signal.ITIMER_REAL, remaining)
-        return client.request(*args, **kwargs)
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
 
 
 def private_json(path):
@@ -185,17 +154,16 @@ class Canary:
                 }
             )
         try:
-            response = bounded_request(
-                self.client,
+            response = self.client.request(
                 method,
                 self.config["api_base_url"] + path,
                 headers=headers,
                 json=body,
                 content=content,
-                timeout=min(20, self.ledger["deadline"] - time.time()),
+                timeout=min(20, remaining),
                 follow_redirects=False,
             )
-        except (httpx.HTTPError, RequestDeadline):
+        except httpx.HTTPError:
             receipt["status"] = "transport_unknown"
             self.save()
             raise CanaryError("outcome_unknown") from None
