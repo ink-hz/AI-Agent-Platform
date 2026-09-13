@@ -1,0 +1,8 @@
+{
+  "platform_hr_local_nonterminal": null,
+  "status": "unknown",
+  "feishu_sessions_counted": false,
+  "credentials_read": false,
+  "storage_mutations": false,
+  "reason": "Actual WorkerStore and MetaBot v5 persistent-store association not queried; no inferred zero from generic sessions."
+}

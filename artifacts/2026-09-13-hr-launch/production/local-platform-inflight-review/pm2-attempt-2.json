@@ -1,0 +1,15 @@
+{
+  "command": [
+    "sudo",
+    "-n",
+    "-H",
+    "-u",
+    "agentops",
+    "/bin/bash",
+    "/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh",
+    "jlist"
+  ],
+  "exit_code": 1,
+  "reason": "pm2_read_failed",
+  "stderr_sha256": "9b933bae8afcb7f9de71cf9b45343e999006d46393e37c01ad7143ec115f2f6d"
+}

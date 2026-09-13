@@ -1,0 +1,26 @@
+[
+  {
+    "path": "/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh",
+    "sha256": "a0097fc5465c945fcb007799b5367b974558f0a0fc36fb7334eccabe76878680"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/platform-releases/1a705ebb4b6598c61bc0d767ff44e2afc038a539/backend/app/execution_relay/worker.py",
+    "sha256": "3b21133ca95c89de0b33cc537f0178949753e108468ad23b0a4a2bf196a1136b"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/platform-releases/1a705ebb4b6598c61bc0d767ff44e2afc038a539/backend/app/execution_relay/worker_store.py",
+    "sha256": "781d9d0f1e0305475257c9663784f7b5d6dec5925d1f980334f5acfe13b2268b"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/metabot-releases/releases/d49adf0519a415d64a73f04d3b4191a53a4629dd/dist/api/routes/core-chat-routes.js",
+    "sha256": "ecff9e5e6f455eba1402af6ac934f327928a025477b0bd41d355b3f81576fefd"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/metabot-releases/releases/d49adf0519a415d64a73f04d3b4191a53a4629dd/dist/api/routes/core-chat-session-store.js",
+    "sha256": "fea5036bd8b1bb6be8727bcaf3c3a14888d7ec436a4d709c4888bbf7cc2f2073"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/metabot-releases/releases/d49adf0519a415d64a73f04d3b4191a53a4629dd/dist/api/routes/core-chat-v5-routes.js",
+    "sha256": "206a0203fc3018ea7abad57a1aa53120fb24f6953dfcae15059a054b093d01d7"
+  }
+]

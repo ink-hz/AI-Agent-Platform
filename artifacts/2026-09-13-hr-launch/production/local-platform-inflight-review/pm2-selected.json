@@ -1,0 +1,42 @@
+{
+  "command": [
+    "sudo",
+    "-n",
+    "-H",
+    "-u",
+    "agentops",
+    "/bin/bash",
+    "/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh",
+    "jlist"
+  ],
+  "cwd": "/tmp",
+  "exit_code": 0,
+  "observed_at": "2026-09-13T04:06:31.823378+00:00",
+  "rows": [
+    {
+      "name": "orbbec-agent-execution-worker",
+      "pid": 4221,
+      "pm_cwd": "/Users/agentops/AgentRuntime/platform-releases/1a705ebb4b6598c61bc0d767ff44e2afc038a539/backend",
+      "pm_exec_path": "/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python",
+      "status": "online",
+      "pm_uptime": 1788925554550,
+      "created_at": 1788925554550,
+      "restart_time": 0,
+      "exec_interpreter": "none",
+      "uid": null
+    },
+    {
+      "name": "metabot-hr",
+      "pid": 66872,
+      "pm_cwd": "/Users/agentops/AgentRuntime/metabot-releases/releases/d49adf0519a415d64a73f04d3b4191a53a4629dd",
+      "pm_exec_path": "/Users/agentops/AgentRuntime/metabot-releases/releases/d49adf0519a415d64a73f04d3b4191a53a4629dd/dist/index.js",
+      "status": "online",
+      "pm_uptime": 1789116929077,
+      "created_at": 1789116929077,
+      "restart_time": 0,
+      "exec_interpreter": "node",
+      "uid": null
+    }
+  ],
+  "raw_response_saved": false
+}

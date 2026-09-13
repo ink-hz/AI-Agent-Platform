@@ -1,0 +1,14 @@
+{
+  "command": [
+    "sudo",
+    "-n",
+    "-u",
+    "agentops",
+    "/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh",
+    "jlist"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 1,
+  "reason": "pm2_read_failed",
+  "raw_stdout_stderr_saved": false
+}

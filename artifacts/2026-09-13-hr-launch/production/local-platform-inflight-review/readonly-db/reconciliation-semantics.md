@@ -1,0 +1,11 @@
+# 三条reconciliation_required=true的承重语义
+
+按实际PM2加载d49adf0519a415d64a73f04d3b4191a53a4629dd的dist源码，不按当前开发树推断。完整相关两文件字节保存在loaded-source/，实际路径/SHA在recovery-source-fingerprints.json。
+
+RecoveryLedger.markReconciliationRequired（execution-recovery-ledger.js:73–80）只把标志设true并把evidence_complete设false。recordNativeExit（约129–144）核验准确绑定/identity后写executor exited_at；确认无未退出executor后写stop_proof/stopped_at，不清除reconciliation_required。因此完成+停止后该标志可能仍保留，不能用它单独推断还有执行器在运行，更不能以SQL清flag制造排空。
+
+决定能否重放的承重路径是requestReplayPermit（82–95）：若该turn任一command已有completed和terminal_event_seq，返回 **{kind:'denied',reason:'result_available'}**；其他分支同样只返回denied（execution_uncertain/replay_not_safe/authority_unavailable）。本次3条均满足首分支，reconciliation=true不发放重放权限。registerExecutor（106–114）也拒绝已有terminal或intent非claimed；releaseStopped（146–163）要求terminal event和准确stop proof，已ended只返回duplicate，不重新claim。
+
+HTTP recoverV5Http（core-chat-v5-routes.js:33–61）先inspectBound精确command/run/attempt等；v6/v7非stop时最多rotateTransport/prepareV6，注释及调用明确只准备凭据，不接受或启动native执行；随后可验证停止/返回recovery证据，没有startV5Execution调用。因此这里reconciliation标志不是恢复执行入口。
+
+可支持的结论：已观察3条平台HR精确绑定command都terminal+intent ended+native退出/stop记录+terminal已上传，所审恢复入口不因true重跑它们。不能泛称“全部效果已对账”：该true/evidence不完整仍作为历史业务核对限制保留。本次没有请求恢复API、读问题正文、写SQL或清标志，也不需要为不存在的已证明重放权限输出私人task ID清单。未来新command/新attempt的受理仍应由云端cutover gate拒绝旧lane；不将本地这段保护替代平台切换。

@@ -1,0 +1,26 @@
+[
+  {
+    "path": "supplement.md",
+    "sha256": "503eb8c15303c06ce29327e9bb219d1d569115f06aadbcbfedfa56230da2a4df"
+  },
+  {
+    "path": "structure.json",
+    "sha256": "e4982df2ab5b3edddebb8b1dd179fc0f9ae69ffe9b6338a3d8a3cda60a3ef553"
+  },
+  {
+    "path": "counts.json",
+    "sha256": "bbfeb86b3cff99c9e5bf54e84315868e0c6611dca56f5507322773232abb9d00"
+  },
+  {
+    "path": "attempt-1-source.py.txt",
+    "sha256": "e04ae7f6a033eb07c7663266536675195c77f79f24182ca3745882f390b14b65"
+  },
+  {
+    "path": "read_structure.py",
+    "sha256": "e04ae7f6a033eb07c7663266536675195c77f79f24182ca3745882f390b14b65"
+  },
+  {
+    "path": "counts.py",
+    "sha256": "ae5ed140a0fc72b737f983b2c609829bfc8f35dca124f565d43a83b75a3be460"
+  }
+]

@@ -1,0 +1,74 @@
+{
+  "scope": "read-only actual local process and platform task metadata; no channel shutdown",
+  "files": {
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/result.json": {
+      "sha256": "9b5410dc14c22fb42d808d58a966354c0f225b0e3ee290a295e3f34ba592d551",
+      "bytes": 293
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/pm2-attempt-2.json": {
+      "sha256": "62549a036741a13085883d94aed1393fc318fe390722e30b036b4018aef3fe5b",
+      "bytes": 323
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/pm2-selected.json": {
+      "sha256": "08165c7ffa915ce3fe3071a1baa3d050847e33a5e6aadb3de18af619e533614d",
+      "bytes": 1260
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/fingerprints.json": {
+      "sha256": "8a00dec751d32c81e24fc0cae384495dddaefb7c5522ff8dd338617f19598b0f",
+      "bytes": 1368
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/pm2-attempt-1.json": {
+      "sha256": "290fb68ef3cc60ac75535443b9c6ec08606b91f6135874f8548cb720c0c3169a",
+      "bytes": 337
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/review.md": {
+      "sha256": "121f9720861e36e31ba7e5b28a3cfe4e44eadfe611affec2165bba76cff10def",
+      "bytes": 3068
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/reconciliation-semantics.md": {
+      "sha256": "b5732bc055645038c7e2616ae185826ec57646842fad35fedcdc3ff5168dce00",
+      "bytes": 2187
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/recovery-source-fingerprints.json": {
+      "sha256": "db9212a60675d1d907fe063fefa7b6474687040ccf46ebbe98dfdb7160e0c5b4",
+      "bytes": 499
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/supplement.md": {
+      "sha256": "503eb8c15303c06ce29327e9bb219d1d569115f06aadbcbfedfa56230da2a4df",
+      "bytes": 2675
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/structure.json": {
+      "sha256": "e4982df2ab5b3edddebb8b1dd179fc0f9ae69ffe9b6338a3d8a3cda60a3ef553",
+      "bytes": 12240
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/counts.json": {
+      "sha256": "bbfeb86b3cff99c9e5bf54e84315868e0c6611dca56f5507322773232abb9d00",
+      "bytes": 3060
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/attempt-1-source.py.txt": {
+      "sha256": "e04ae7f6a033eb07c7663266536675195c77f79f24182ca3745882f390b14b65",
+      "bytes": 1090
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/fingerprints.json": {
+      "sha256": "27a5d94d52e093434eec0aa7bfc59fab295a0eac42ec02977491a1b77c560802",
+      "bytes": 726
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/read_structure.py": {
+      "sha256": "e04ae7f6a033eb07c7663266536675195c77f79f24182ca3745882f390b14b65",
+      "bytes": 1090
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/counts.py": {
+      "sha256": "ae5ed140a0fc72b737f983b2c609829bfc8f35dca124f565d43a83b75a3be460",
+      "bytes": 2941
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/loaded-source/bridge/execution-recovery-ledger.js": {
+      "sha256": "e35b78a87147756b7a10af12c882d5ac29c65db75e89719bc60acd6a5599b15a",
+      "bytes": 10804
+    },
+    "artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/readonly-db/loaded-source/api/routes/core-chat-v5-routes.js": {
+      "sha256": "206a0203fc3018ea7abad57a1aa53120fb24f6953dfcae15059a054b093d01d7",
+      "bytes": 12627
+    }
+  },
+  "exact_provider_credential_found": false
+}

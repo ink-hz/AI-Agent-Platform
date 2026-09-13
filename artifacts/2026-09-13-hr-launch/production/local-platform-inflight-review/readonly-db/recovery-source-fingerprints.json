@@ -1,0 +1,10 @@
+[
+  {
+    "loaded_path": "/Users/agentops/AgentRuntime/metabot-releases/releases/d49adf0519a415d64a73f04d3b4191a53a4629dd/dist/bridge/execution-recovery-ledger.js",
+    "sha256": "e35b78a87147756b7a10af12c882d5ac29c65db75e89719bc60acd6a5599b15a"
+  },
+  {
+    "loaded_path": "/Users/agentops/AgentRuntime/metabot-releases/releases/d49adf0519a415d64a73f04d3b4191a53a4629dd/dist/api/routes/core-chat-v5-routes.js",
+    "sha256": "206a0203fc3018ea7abad57a1aa53120fb24f6953dfcae15059a054b093d01d7"
+  }
+]
