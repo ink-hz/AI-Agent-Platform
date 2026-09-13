@@ -1,0 +1,9 @@
+{
+  "suggested.patch": "9bdf64fecceb22714711564319e476a2e38b546a889447334af0beb82439e7f3",
+  "fingerprints.json": "e8bb559cb7c5f849e92a29b14530488e8b4797dcb760fed4f234f8c9de951de4",
+  "design.md": "c4dae0de6859636261e3fa17371f23603b159646a9b765e940dbb31f70adba69",
+  "source/backend/hr_agent_knowledge/role.md": "a1e8e7c73194b503d6c9a8b5efe356cd97aba43d5d997f631278574e465da290",
+  "source/backend/hr_agent_knowledge/methods/competency-and-profile.md": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763",
+  "source/backend/hr_agent_knowledge/methods/requirement-calibration.md": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac",
+  "source/backend/hr_agent_knowledge/methods/job-and-context.md": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+}

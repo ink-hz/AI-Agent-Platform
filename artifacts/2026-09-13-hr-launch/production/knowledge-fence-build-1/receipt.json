@@ -1,0 +1,31 @@
+{
+  "command": [
+    "backend/.venv/bin/python",
+    "backend/tools/hr_agent/build_intelligence_release.py",
+    "--source",
+    "backend/hr_agent_knowledge",
+    "--bundle",
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-intelligence-experience/.superpowers/sdd/hr-topic-consumption/bundles/aebca08a-1715-536a-869a-39663b81c8e4",
+    "--output",
+    "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-launch-2026-09-13/knowledge-release-fence-v2"
+  ],
+  "exit_code": 0,
+  "started_at": 1789278016.033107,
+  "finished_at": 1789278016.806166,
+  "source_commit": "b80ea68890d8a16bb959cb171e2709cc2bd61cbc",
+  "source_hashes": {
+    "backend/hr_agent_knowledge/methods/comparison-and-learning.md": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf",
+    "backend/hr_agent_knowledge/methods/competency-and-profile.md": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763",
+    "backend/hr_agent_knowledge/methods/evidence-informed-judgment.md": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330",
+    "backend/hr_agent_knowledge/methods/job-and-context.md": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff",
+    "backend/hr_agent_knowledge/methods/requirement-calibration.md": "cc530e1de12b78c23d3fc288df32a37255837a77fc99b7d362b912ca464d3eaa",
+    "backend/hr_agent_knowledge/methods/selection-and-work-samples.md": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517",
+    "backend/hr_agent_knowledge/methods/sourcing-and-transfer.md": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b",
+    "backend/hr_agent_knowledge/provenance.json": "e354bb0fa4399f64516462d543d0cd1c716b18b1d5c3d8b36f86342fcea8f87f",
+    "backend/hr_agent_knowledge/role.md": "819f680b8a3906dec156734dcfd55177c52c3321e7249853e6e52e5b94c4523f",
+    "backend/hr_agent_knowledge/sources/2026-09-08-hr-methodology-sources.md": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93",
+    "backend/hr_agent_knowledge/sources/2026-09-09-jd-reading-cases.md": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6",
+    "backend/hr_agent_knowledge/sources/README.md": "8e2c7e68f54a507a6988ba864057a3c7edd480b3ae71f2a4b74d576aa9a96a81"
+  },
+  "boundary": "Local reviewed methods/role and unchanged explicit public bundle;no production installation/model calls;private output directory"
+}

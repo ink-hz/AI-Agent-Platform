@@ -1,0 +1,12 @@
+{
+  "added": [],
+  "removed": [],
+  "changed": [
+    "intelligence-provenance.json",
+    "manifest.json",
+    "methods/requirement-calibration.md",
+    "provenance.json",
+    "role.md"
+  ],
+  "unchanged_count": 95
+}

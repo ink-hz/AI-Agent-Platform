@@ -1,0 +1,16 @@
+{
+  "head": "6cf9fd71db6c192af31a153f8299f41bfde1025b",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/history/replay_h03_real_v6.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T05:28:13.429808+00:00",
+  "source_patch_sha256": "308f1a979749677e23ca357231b885dabf9d7672f18bdd60fdcfdbb54dcf93ce",
+  "untracked_source_snapshots": {
+    "backend/tests/test_attachment_object_writer_botocore.py": "af5922458763bd3844fa647cb74a081720af4671b8c5588701c493b24c895c65"
+  },
+  "boundary": "One H03 four-turn synthetic historical-intent replay after general draft-authority/requirement calibration rule repair, exact detached7a7d7d8 source, real configured provider/local HTTP/PG; login exchange and object storage substituted;32calls/1.2Mestimated tokens/1800seconds work budget,96 hard cap. No production/candidate data. Prior real5 content rejection retained; no professional pass inferred from completed.",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T05:40:10.775507+00:00"
+}

@@ -1,0 +1,593 @@
+{
+  "boundary": "Final runtime tests and actual local MinIO pass. H03 v6 execution completes with remaining content review finding. New production-host image build only; all running services remain old. New knowledge archive local only. No owner credentials/session issuance/production HTTP acceptance or migration/cutover. Prior failed runs preserved including diagnostic2 serialization failure. Generated source archive excluded; exactGit object and archive hash retained.",
+  "files": {
+    "history-h03-real-run-6/H03/report.json": {
+      "bytes": 787195,
+      "sha256": "2641868b8f10316422048d7a0b1b4a70365ec62032758e83c6bf6e59a0b67cf1"
+    },
+    "history-h03-real-run-6/H03/turn-01.json": {
+      "bytes": 82623,
+      "sha256": "b9f220d6ed78e7dc9e8a24c98484650039f48101bbe753c380f830024882f8b0"
+    },
+    "history-h03-real-run-6/H03/turn-02.json": {
+      "bytes": 143535,
+      "sha256": "b2d458136376aa1a396701351216bc2465586e7ba4c57c17e579ffafe971ba2c"
+    },
+    "history-h03-real-run-6/H03/turn-03.json": {
+      "bytes": 225393,
+      "sha256": "105d237e5c979ca26285d4721337c07bf4239981602a8dd45741dc5e83dc3cd9"
+    },
+    "history-h03-real-run-6/H03/turn-04.json": {
+      "bytes": 293795,
+      "sha256": "2c3b428adedd7881c5a360bcef80c0eee798e8ca310de50809efb93efc98fe9f"
+    },
+    "history-h03-real-run-6/configuration.json": {
+      "bytes": 618,
+      "sha256": "597634706bcd877743d8275395917e67e549e99ac221c9f06755d8b0e43953e0"
+    },
+    "history-h03-real-run-6/summary.json": {
+      "bytes": 23113,
+      "sha256": "ca3a901eaf94638ed71194dbac36a6fc903ed7635313befd384fdfd1bc6da0b7"
+    },
+    "history-h03-real-review-6/input-fingerprints.json": {
+      "bytes": 1799,
+      "sha256": "7e2404df8515d94fa48de5a3ad24bb857dca8f00c85574a2001be9f1f0c283b3"
+    },
+    "history-h03-real-review-6/inputs/history/replay-v2/corpus.json": {
+      "bytes": 173319,
+      "sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e"
+    },
+    "history-h03-real-review-6/inputs/history/replay-v2/manifest.json": {
+      "bytes": 28005,
+      "sha256": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739"
+    },
+    "history-h03-real-review-6/inputs/history/replay_h03_real_v6.py": {
+      "bytes": 1911,
+      "sha256": "6e5ad2fb0155e8b39de15687661de6161fcb38d288716fe035db974b9d513ceb"
+    },
+    "history-h03-real-review-6/inputs/history-h03-real-run-6/H03/report.json": {
+      "bytes": 787195,
+      "sha256": "2641868b8f10316422048d7a0b1b4a70365ec62032758e83c6bf6e59a0b67cf1"
+    },
+    "history-h03-real-review-6/inputs/history-h03-real-run-6/H03/turn-01.json": {
+      "bytes": 82623,
+      "sha256": "b9f220d6ed78e7dc9e8a24c98484650039f48101bbe753c380f830024882f8b0"
+    },
+    "history-h03-real-review-6/inputs/history-h03-real-run-6/H03/turn-02.json": {
+      "bytes": 143535,
+      "sha256": "b2d458136376aa1a396701351216bc2465586e7ba4c57c17e579ffafe971ba2c"
+    },
+    "history-h03-real-review-6/inputs/history-h03-real-run-6/H03/turn-03.json": {
+      "bytes": 225393,
+      "sha256": "105d237e5c979ca26285d4721337c07bf4239981602a8dd45741dc5e83dc3cd9"
+    },
+    "history-h03-real-review-6/inputs/history-h03-real-run-6/H03/turn-04.json": {
+      "bytes": 293795,
+      "sha256": "2c3b428adedd7881c5a360bcef80c0eee798e8ca310de50809efb93efc98fe9f"
+    },
+    "history-h03-real-review-6/inputs/history-h03-real-run-6/configuration.json": {
+      "bytes": 618,
+      "sha256": "597634706bcd877743d8275395917e67e549e99ac221c9f06755d8b0e43953e0"
+    },
+    "history-h03-real-review-6/inputs/history-h03-real-run-6/summary.json": {
+      "bytes": 23113,
+      "sha256": "ca3a901eaf94638ed71194dbac36a6fc903ed7635313befd384fdfd1bc6da0b7"
+    },
+    "history-h03-real-review-6/inputs/runs/history-h03-real-6/command.json": {
+      "bytes": 1087,
+      "sha256": "4a8efef5d06dc6f3d9df995444ecc98dd014cde04855f70b02519ed50c8ef64b"
+    },
+    "history-h03-real-review-6/inputs/runs/history-h03-real-6/output.log": {
+      "bytes": 323,
+      "sha256": "6707c363e8a405b7dbf572a33979b7798d48ea793f9f0f7c4f2be3ca0ea17898"
+    },
+    "history-h03-real-review-6/result-revisions.json": {
+      "bytes": 1663,
+      "sha256": "942666669517273cab09c12d735818c496079936ef200e723841fa020126b01a"
+    },
+    "history-h03-real-review-6/review-manifest.json": {
+      "bytes": 2500,
+      "sha256": "b738bc4f887360dca71c1f2c2ec85c3eb5ea6315bbeca6195c046b5af2079840"
+    },
+    "history-h03-real-review-6/review.md": {
+      "bytes": 6110,
+      "sha256": "6790df65190359d9391c500cf1bb0caf036bb4384eeb0c8dcf12ef61c03b6ec0"
+    },
+    "history-h03-real-review-6/turn-01-assistant.md": {
+      "bytes": 2514,
+      "sha256": "283e4b35b0353b3ccdb839b95d46597827f22ecf57433befddd29b05d2ed8ba4"
+    },
+    "history-h03-real-review-6/turn-01-body.md": {
+      "bytes": 8140,
+      "sha256": "9d3d023c8e4ce4ec41d107739186d901d0f20ac8752e4b2cac8d86f8c571d75d"
+    },
+    "history-h03-real-review-6/turn-02-assistant.md": {
+      "bytes": 2569,
+      "sha256": "6c644a2901277ac76cc65753f66c46bcfdfe3bfd2302cd8e93cfd28dafa1c7dd"
+    },
+    "history-h03-real-review-6/turn-02-body.md": {
+      "bytes": 13483,
+      "sha256": "966c3cc6ba8834c5425d4a2008e50a286e503d47c9a6e5a8834979cd7a390b74"
+    },
+    "history-h03-real-review-6/turn-03-assistant.md": {
+      "bytes": 2005,
+      "sha256": "422b2e0ddcf916179c2c4ec4e583efbcb616db6941f6b5aa3dc5c5e4b8ddb43f"
+    },
+    "history-h03-real-review-6/turn-03-body.md": {
+      "bytes": 9691,
+      "sha256": "0be0a54ed4e1768fc5280d3ee95f46e88580f6869cc42740e0e62d002eccde9c"
+    },
+    "history-h03-real-review-6/turn-04-assistant.md": {
+      "bytes": 2479,
+      "sha256": "7d4d9b2704f7b2394e78e492a092eb4d6d69819bbd8a1ace680601300fd8a165"
+    },
+    "history-h03-real-review-6/turn-04-body.md": {
+      "bytes": 12281,
+      "sha256": "bc30aa0dfb99c54b57b80306c96c6bd7775e375b01b01cd5f3b7fae45e34dafe"
+    },
+    "history-h03-real-review-6/turn-index.json": {
+      "bytes": 3213,
+      "sha256": "dea9133dc62908942a8480b0e77bd8e1d3c8fdb67ab1e61ae07008864d9227a1"
+    },
+    "history-h03-role-calibration-design-review/design.md": {
+      "bytes": 5256,
+      "sha256": "c4dae0de6859636261e3fa17371f23603b159646a9b765e940dbb31f70adba69"
+    },
+    "history-h03-role-calibration-design-review/fingerprints.json": {
+      "bytes": 507,
+      "sha256": "e8bb559cb7c5f849e92a29b14530488e8b4797dcb760fed4f234f8c9de951de4"
+    },
+    "history-h03-role-calibration-design-review/review-fingerprints.json": {
+      "bytes": 798,
+      "sha256": "ccbe1c1f2f3edc67bdab701d982253fb2110b62236a03b03eb9394ad8619eb73"
+    },
+    "history-h03-role-calibration-design-review/source/backend/hr_agent_knowledge/methods/competency-and-profile.md": {
+      "bytes": 2581,
+      "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+    },
+    "history-h03-role-calibration-design-review/source/backend/hr_agent_knowledge/methods/job-and-context.md": {
+      "bytes": 4539,
+      "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+    },
+    "history-h03-role-calibration-design-review/source/backend/hr_agent_knowledge/methods/requirement-calibration.md": {
+      "bytes": 4429,
+      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+    },
+    "history-h03-role-calibration-design-review/source/backend/hr_agent_knowledge/role.md": {
+      "bytes": 9026,
+      "sha256": "a1e8e7c73194b503d6c9a8b5efe356cd97aba43d5d997f631278574e465da290"
+    },
+    "history-h03-role-calibration-design-review/suggested.patch": {
+      "bytes": 5244,
+      "sha256": "9bdf64fecceb22714711564319e476a2e38b546a889447334af0beb82439e7f3"
+    },
+    "runs/history-h03-real-6/command.json": {
+      "bytes": 1087,
+      "sha256": "4a8efef5d06dc6f3d9df995444ecc98dd014cde04855f70b02519ed50c8ef64b"
+    },
+    "runs/history-h03-real-6/output.log": {
+      "bytes": 323,
+      "sha256": "6707c363e8a405b7dbf572a33979b7798d48ea793f9f0f7c4f2be3ca0ea17898"
+    },
+    "runs/history-h03-real-6/source.patch": {
+      "bytes": 22692,
+      "sha256": "308f1a979749677e23ca357231b885dabf9d7672f18bdd60fdcfdbb54dcf93ce"
+    },
+    "runs/history-h03-real-6/untracked/backend/tests/test_attachment_object_writer_botocore.py": {
+      "bytes": 3032,
+      "sha256": "af5922458763bd3844fa647cb74a081720af4671b8c5588701c493b24c895c65"
+    },
+    "production/attachment-fence-executor-design-review/addendum-fingerprints.json": {
+      "bytes": 980,
+      "sha256": "6f6463fefd5f156d4a95625366b532d608ef7fbe6964ee76657f88880ead9e03"
+    },
+    "production/attachment-fence-executor-design-review/design.md": {
+      "bytes": 9458,
+      "sha256": "1883b93971b2d74451321b1cfb96a912c791a69925de5c5f39c86ec8bd281de2"
+    },
+    "production/attachment-fence-executor-design-review/fingerprints.json": {
+      "bytes": 574,
+      "sha256": "df7274a8fba19a2063078f86d6ca8e2111af27331a88de2c75ecac5598ee202d"
+    },
+    "production/attachment-fence-executor-design-review/observer-fingerprint.json": {
+      "bytes": 170,
+      "sha256": "ed9f585a06562c964eb9f6c19a4a6d46ac4d9291b2dec91c63782e7854e030c9"
+    },
+    "production/attachment-fence-executor-design-review/receipt-contract-addendum.md": {
+      "bytes": 2977,
+      "sha256": "01627341fb557e83fbc014bc5fceedcc699ba454e24ae4b35246854039b7d7a6"
+    },
+    "production/attachment-fence-executor-design-review/review-fingerprints.json": {
+      "bytes": 571,
+      "sha256": "bf068eb4a8ade64a6783eec6039ea8d9cda3f40978ebf695560ab08dba29d99c"
+    },
+    "production/attachment-fence-executor-design-review/source/api_canary.py": {
+      "bytes": 23627,
+      "sha256": "13fcb02d28132afbe84268b0b5576946f2bc32dbaea8f1c2f74abaf702e0abd5"
+    },
+    "production/attachment-fence-executor-design-review/source/attachment_erasure_canary.py": {
+      "bytes": 11278,
+      "sha256": "295fbc85c6d7179577971adf082bebec1140fcdca7149be8c1f4fcc3e4d96573"
+    },
+    "production/attachment-fence-executor-design-review/source/attachment_erasure_observe.py": {
+      "bytes": 23572,
+      "sha256": "4321f952e7db4f28464f545f46a164b159f24e80a83fa21ea30097ead181bc38"
+    },
+    "production/attachment-fence-executor-design-review/source/attachment_hotfix.py": {
+      "bytes": 30358,
+      "sha256": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34"
+    },
+    "production/attachment-fence-executor-design-review/source/review.md": {
+      "bytes": 11801,
+      "sha256": "58edfbd80a2e7a95f74d98cac7b7eb8537b09ff689cd74c9b8a4b40f2f36535c"
+    },
+    "production/minio-version-readonly-1/read.py": {
+      "bytes": 1049,
+      "sha256": "ba017bd31783d54c8cb4d13de91ffda1c1f52c66f5a76f1f9eaeab2e529f1a8b"
+    },
+    "production/minio-version-readonly-1/receipt.json": {
+      "bytes": 792,
+      "sha256": "8fb30ef2709bd2c86104f0b41cb9113fe2036b5ffce45dc75ea03e4c7be8ca22"
+    },
+    "production/minio-version-readonly-1/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/minio-version-readonly-1/stdout.log": {
+      "bytes": 224,
+      "sha256": "6793e100e0107bbcd2ac531f2e13f22c7fb6774023336adb1b1377591b47f1c7"
+    },
+    "production/owner-contract-readonly-1/receipt.json": {
+      "bytes": 970,
+      "sha256": "517c878b646720325b3a037fd006e03edeafe51b7b6040b1c89f8ba278f6b632"
+    },
+    "production/owner-contract-readonly-1/stderr.log": {
+      "bytes": 559,
+      "sha256": "b3191bf4fc2c0dc1f72ed5f0b1347039ce302aafb971b6aa434d302ecb186870"
+    },
+    "production/owner-contract-readonly-1/stdout.json": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/owner-contract-readonly-2/receipt.json": {
+      "bytes": 1168,
+      "sha256": "1c8b411936c2d666dbca406f52d0f06f0530a3fa4bc68076f53952642e25cffe"
+    },
+    "production/owner-contract-readonly-2/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/owner-contract-readonly-2/stdout.json": {
+      "bytes": 357,
+      "sha256": "a129cb84c823b75e7586e272741082e6135310ddcbe992214c46e47da64c7a73"
+    },
+    "production/knowledge-fence-build-1/archive.json": {
+      "bytes": 18094,
+      "sha256": "54a2526dbb862c83abfe0cd6c275c5fd4a1990e5ab4e68cf19824784d7c6914b"
+    },
+    "production/knowledge-fence-build-1/old-new-comparison.json": {
+      "bytes": 216,
+      "sha256": "8f5b8eb0cce4cd82fb9707d4736a4264e20e3fd333e81aae4465ffe4839ca32f"
+    },
+    "production/knowledge-fence-build-1/receipt.json": {
+      "bytes": 2399,
+      "sha256": "101effda5515de76f09055f49837ce8b22eea6ad2858222f05b8d26aaa781e00"
+    },
+    "production/knowledge-fence-build-1/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/knowledge-fence-build-1/stdout.log": {
+      "bytes": 76,
+      "sha256": "caf4901eb525b3ca81bb07a9d0eeaf34a367bf124f1b3c4c7fca849dc71547d1"
+    },
+    "production/post-build-v3-readonly-1/container-comparison.json": {
+      "bytes": 484,
+      "sha256": "3f943e9de9e72f48e9ee44fd0fe677df24381964402d9a5fa5a486a162062037"
+    },
+    "production/post-build-v3-readonly-1/receipt.json": {
+      "bytes": 547,
+      "sha256": "23ed5f60326d654d8d1c07e946d50bbad53687a80c0d39f16aca2348f758d7df"
+    },
+    "production/post-build-v3-readonly-1/source.py": {
+      "bytes": 1168,
+      "sha256": "5f7471cac9fcd1620619f9ce9a34216b3ea5bddcafb6a49bca680c0c9c572ca3"
+    },
+    "production/post-build-v3-readonly-1/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/post-build-v3-readonly-1/stdout.json": {
+      "bytes": 7460,
+      "sha256": "ee3bc3724c8bde40d1cf7bd4780b7ae13659e1ba55a419cbde0b161eb02fa623"
+    },
+    "review/fence-runtime-closure-b80ea688/closure.patch": {
+      "bytes": 11766,
+      "sha256": "a7b4ae03656d2fb2d97c38be8152e2e87bb329c04a94bc5e9ecf126400ee553d"
+    },
+    "review/fence-runtime-closure-b80ea688/fingerprints.json": {
+      "bytes": 5763,
+      "sha256": "6b5b7ec234ef04e109d10edefa9a1f2f45bb70725a28ae460a145e1be0151da1"
+    },
+    "review/fence-runtime-closure-b80ea688/inputs/artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-4/receipt.json": {
+      "bytes": 2090,
+      "sha256": "9b71c7f53645766d1e201bf165c8898cb3bd0c82a3d0dd867512364db681be0d"
+    },
+    "review/fence-runtime-closure-b80ea688/inputs/artifacts/2026-09-13-hr-launch/runs/s3-fence-real-local-4/command.json": {
+      "bytes": 896,
+      "sha256": "62d45bbfaceab7247756f84c23b001aa607c8f506f5205c071f3a8e870a746d5"
+    },
+    "review/fence-runtime-closure-b80ea688/inputs/artifacts/2026-09-13-hr-launch/runs/s3-fence-real-local-4/output.log": {
+      "bytes": 1908,
+      "sha256": "9db32cdcf17b29dbe430a4994a0185d5bb6e0774ff88e51ad988dc5942d3c74c"
+    },
+    "review/fence-runtime-closure-b80ea688/inputs/backend/app/attachments/object_writer.py": {
+      "bytes": 5894,
+      "sha256": "3ac26ca1d99d27a08426018a58c5a68e2171f84161ccd9ee0425fe65fc073564"
+    },
+    "review/fence-runtime-closure-b80ea688/inputs/backend/app/attachments/s3_erasure.py": {
+      "bytes": 7140,
+      "sha256": "42c230ff413fd53402176dd988ff78b511a79a28489130890808d7331cc44933"
+    },
+    "review/fence-runtime-closure-b80ea688/inputs/backend/tests/test_attachment_s3_version_erasure.py": {
+      "bytes": 17081,
+      "sha256": "9fb0cc410a3555823e2324e0ecd1288635ec6e0114e1cc21826801a8a81f9e51"
+    },
+    "review/fence-runtime-closure-b80ea688/review-manifest.json": {
+      "bytes": 1092,
+      "sha256": "ae74c2deb3c971794a01f52319cec0fcf9b1ba1425f16d80ef67f798e058fa97"
+    },
+    "review/fence-runtime-closure-b80ea688/review.md": {
+      "bytes": 2684,
+      "sha256": "ca123b0d53b93e465d977cea3d5df0f510f48c4e3e144bebf18df7685b9167c1"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/deploy-input-lock.py": {
+      "bytes": 12209,
+      "sha256": "45c2d3fce8a5ef2e3dd6306eaa15b7cdbfc85072bed164033684f84b425a4eb4"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/fetch-exit_code.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/fetch-exit_code.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/fetch-result.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/fetch-result.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/fetch-stderr.log.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/fetch-stderr.log.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/fetch-stdout.log.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/fetch-stdout.log.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/launch.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/launch.stdout.log": {
+      "bytes": 20,
+      "sha256": "bebdfb2d5b2afb70a3cd5838abf1ad886b7287ad24d7c124695ca693b036c369"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/poll-20260913T055138Z.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/poll-20260913T055138Z.stdout.log": {
+      "bytes": 11,
+      "sha256": "25065bc8874df01049d3f5bd5eedb2dd02b4a7931b7664f40579b2eccc2ac843"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/prepare.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/prepare.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/receipt.json": {
+      "bytes": 1828,
+      "sha256": "41fd2a4ccf5d932e5d59d50f9a9330ce7b9d92e37d09a287dd1ee0196e3a7f96"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/remote-exit_code": {
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/remote-job.sh": {
+      "bytes": 11988,
+      "sha256": "46aea72845124ff9894ada45849c670a332e931da2a2328359b2d9f821ea4713"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/remote-result.json": {
+      "bytes": 1092,
+      "sha256": "2588d10fa2efca0aea70fb5f95ec210d79ef2cd2eba390f2fcde45109736a1fc"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/remote-stderr.log": {
+      "bytes": 206,
+      "sha256": "d86cb49dd44ce17a9da506b4e732433d5755f98bac9a709da0462523638defc5"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/remote-stdout.log": {
+      "bytes": 5265,
+      "sha256": "151234b555ded4ee672cf5f152f51d1aeaa7b1c81c4d8e716551f65c28a6145f"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/state.json": {
+      "bytes": 1626,
+      "sha256": "58aef858efccb14a02b37c3a4063edc53621953b6261841c05856074a075277f"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/upload-archive.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/upload-archive.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/upload-deploy-lock.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/upload-deploy-lock.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/upload-remote-job.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/stage-build-v3-runs/394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76-48218a156bb21b7be9304ddab429d788/upload-remote-job.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/s3-fence-real-local-2/receipt.json": {
+      "bytes": 2056,
+      "sha256": "9aee80602ebe4db714fbce1cacca4b535c99aa49f1e248afda208a3b63c0c9d2"
+    },
+    "production/s3-fence-real-local-2/run.py": {
+      "bytes": 18430,
+      "sha256": "e3eb3df9aa1f572b68435c929204dbf767dacf7bf707aadfbd04fd32510cabf1"
+    },
+    "production/s3-fence-real-local-2/server.log": {
+      "bytes": 439,
+      "sha256": "1c8400ea719fbf9d7064fda1ded132b3f73b7768cfd874c38c7b62ccba1a6274"
+    },
+    "production/s3-fence-real-local-3/receipt.json": {
+      "bytes": 2090,
+      "sha256": "fc414a909ff42af79f42c40af8211fe2ee14ab390821f8182faa435f1d61c033"
+    },
+    "production/s3-fence-real-local-3/run.py": {
+      "bytes": 18982,
+      "sha256": "62ad4d5145c4fbd997a8fdca1ba4407cf3f955e47808f706d3ad81d8ac9afaeb"
+    },
+    "production/s3-fence-real-local-3/server.log": {
+      "bytes": 439,
+      "sha256": "7cbad1c149921453d3f0e0fc7999732fecd051f7ad593df77a7757601d7bb66a"
+    },
+    "production/s3-fence-real-local-4/receipt.json": {
+      "bytes": 2090,
+      "sha256": "9b71c7f53645766d1e201bf165c8898cb3bd0c82a3d0dd867512364db681be0d"
+    },
+    "production/s3-fence-real-local-4/run.py": {
+      "bytes": 18982,
+      "sha256": "62ad4d5145c4fbd997a8fdca1ba4407cf3f955e47808f706d3ad81d8ac9afaeb"
+    },
+    "production/s3-fence-real-local-4/server.log": {
+      "bytes": 439,
+      "sha256": "af852f4181d634385bdc11ddb093026e2d44197d648646a441b047601f717ad4"
+    },
+    "production/s3-fence-real-local-diagnostic-2/run.py": {
+      "bytes": 18981,
+      "sha256": "5a662478f2cb41a4b6770b3833c8c613209bd3821d3ee3dc7099c8153057691c"
+    },
+    "production/s3-fence-real-local-diagnostic-2/server.log": {
+      "bytes": 439,
+      "sha256": "22c26b04de1a1f3b8260551904ce7930a3abd630c68776d0dae9b6ffd0d8f8d3"
+    },
+    "production/s3-fence-real-local-diagnostic-3/receipt.json": {
+      "bytes": 3373,
+      "sha256": "d0125370e1ddd3c5371fd3d65038e91ff261d7bcd929f3c8573f7d7193bf0031"
+    },
+    "production/s3-fence-real-local-diagnostic-3/run.py": {
+      "bytes": 19350,
+      "sha256": "7ccad5367bf5fd7ea5eb140637a8a21ce13258bfc82d0010f4eea2ad52a84269"
+    },
+    "production/s3-fence-real-local-diagnostic-3/server.log": {
+      "bytes": 439,
+      "sha256": "8d15658c0dd3d0d7f821bba34fe79e2373e3cbb3b8d30ca33a0ca7a5614132ed"
+    },
+    "production/s3-fence-real-local-diagnostic-3/suspended-trace.jsonl": {
+      "bytes": 870,
+      "sha256": "0c340f95319cbdcfcc7727ed27f5eef58f641af7029987346ea98b93f2e414e7"
+    },
+    "runs/s3-fence-real-local-2/command.json": {
+      "bytes": 814,
+      "sha256": "82163d0fc3b26ca12caaa1d5336b1261da92468c414df69f1d8eee28197332ef"
+    },
+    "runs/s3-fence-real-local-2/output.log": {
+      "bytes": 1878,
+      "sha256": "cb8c6453a510a6fb5a867bdbaff28ea2f29e9d63241cb1c7c43cd6ecdc503cd5"
+    },
+    "runs/s3-fence-real-local-2/source.patch": {
+      "bytes": 8411,
+      "sha256": "85b6a3012c9c070767740f2278b4378d3a0abae677cbaa5d68d25357910a4fdc"
+    },
+    "runs/s3-fence-real-local-3/command.json": {
+      "bytes": 966,
+      "sha256": "e50012f34bd897eba0d46f795e4647b57d279425c36c279e74c8a2c969e1face"
+    },
+    "runs/s3-fence-real-local-3/output.log": {
+      "bytes": 1908,
+      "sha256": "e19b083dd51525ac3cec1d720a505fab1dbe8e28190c08b0e8913b4d00c81088"
+    },
+    "runs/s3-fence-real-local-3/source.patch": {
+      "bytes": 21058,
+      "sha256": "9ff634b83b7da79cfe90daa3c8d41e6f9a316b29c9bd10dd7bd70e0186656710"
+    },
+    "runs/s3-fence-real-local-3/untracked/backend/tests/test_owner_preflight.py": {
+      "bytes": 6810,
+      "sha256": "b836d67c97af4cea83720794a74067723f26f9e1abcb200df0f70de928edc477"
+    },
+    "runs/s3-fence-real-local-4/command.json": {
+      "bytes": 896,
+      "sha256": "62d45bbfaceab7247756f84c23b001aa607c8f506f5205c071f3a8e870a746d5"
+    },
+    "runs/s3-fence-real-local-4/output.log": {
+      "bytes": 1908,
+      "sha256": "9db32cdcf17b29dbe430a4994a0185d5bb6e0774ff88e51ad988dc5942d3c74c"
+    },
+    "runs/s3-fence-real-local-4/source.patch": {
+      "bytes": 21707,
+      "sha256": "194429f71a71509155f105f8351571160fd05be52244dbdf12597b964b99bb41"
+    },
+    "runs/s3-fence-real-local-4/untracked/backend/tests/test_owner_preflight.py": {
+      "bytes": 6810,
+      "sha256": "b836d67c97af4cea83720794a74067723f26f9e1abcb200df0f70de928edc477"
+    },
+    "runs/s3-fence-real-local-diagnostic-2/command.json": {
+      "bytes": 884,
+      "sha256": "a16dbd2f8c51d238539b371f25a63a0facb260fa1e23c759ebfc6b4f10b03bca"
+    },
+    "runs/s3-fence-real-local-diagnostic-2/output.log": {
+      "bytes": 3574,
+      "sha256": "54a52e30d6a7f2ba5aec6622809a156fd25e16ec12e0662ae5cdea5e4eafd067"
+    },
+    "runs/s3-fence-real-local-diagnostic-2/source.patch": {
+      "bytes": 8411,
+      "sha256": "85b6a3012c9c070767740f2278b4378d3a0abae677cbaa5d68d25357910a4fdc"
+    },
+    "runs/s3-fence-real-local-diagnostic-2/untracked/backend/tests/test_owner_preflight.py": {
+      "bytes": 2966,
+      "sha256": "c105b5cb0b32f9fb682cd5a88c376aa8a9ac8b4ca997c8b0737345dc65c88dcb"
+    },
+    "runs/s3-fence-real-local-diagnostic-3/command.json": {
+      "bytes": 942,
+      "sha256": "b2b19795d67c2eb6f75443021b9eea9f2f27c8986b3f7c646bdae9f46e49c393"
+    },
+    "runs/s3-fence-real-local-diagnostic-3/output.log": {
+      "bytes": 2775,
+      "sha256": "93d47b6029828181ed728c361179190d70dbf6fd6299d76a174a46e9aed08291"
+    },
+    "runs/s3-fence-real-local-diagnostic-3/source.patch": {
+      "bytes": 8411,
+      "sha256": "85b6a3012c9c070767740f2278b4378d3a0abae677cbaa5d68d25357910a4fdc"
+    },
+    "runs/s3-fence-real-local-diagnostic-3/untracked/backend/tests/test_owner_preflight.py": {
+      "bytes": 2966,
+      "sha256": "c105b5cb0b32f9fb682cd5a88c376aa8a9ac8b4ca997c8b0737345dc65c88dcb"
+    }
+  }
+}

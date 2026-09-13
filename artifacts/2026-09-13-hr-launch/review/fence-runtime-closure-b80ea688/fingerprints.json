@@ -1,0 +1,115 @@
+{
+  "writer_commit": "b80ea68890d8a16bb959cb171e2709cc2bd61cbc",
+  "reviewed_head": "b80ea68890d8a16bb959cb171e2709cc2bd61cbc",
+  "null_fix": "uncommitted exact bytes bound below",
+  "files": {
+    "backend/app/attachments/object_writer.py": {
+      "sha256": "3ac26ca1d99d27a08426018a58c5a68e2171f84161ccd9ee0425fe65fc073564",
+      "bytes": 5894
+    },
+    "backend/app/attachments/s3_erasure.py": {
+      "sha256": "42c230ff413fd53402176dd988ff78b511a79a28489130890808d7331cc44933",
+      "bytes": 7140
+    },
+    "backend/tests/test_attachment_s3_version_erasure.py": {
+      "sha256": "9fb0cc410a3555823e2324e0ecd1288635ec6e0114e1cc21826801a8a81f9e51",
+      "bytes": 17081
+    },
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-4/run.py": {
+      "sha256": "62ad4d5145c4fbd997a8fdca1ba4407cf3f955e47808f706d3ad81d8ac9afaeb",
+      "bytes": 18982
+    },
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-4/server.log": {
+      "sha256": "af852f4181d634385bdc11ddb093026e2d44197d648646a441b047601f717ad4",
+      "bytes": 439
+    },
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-4/receipt.json": {
+      "sha256": "9b71c7f53645766d1e201bf165c8898cb3bd0c82a3d0dd867512364db681be0d",
+      "bytes": 2090
+    },
+    "artifacts/2026-09-13-hr-launch/runs/s3-fence-real-local-4/source.patch": {
+      "sha256": "194429f71a71509155f105f8351571160fd05be52244dbdf12597b964b99bb41",
+      "bytes": 21707
+    },
+    "artifacts/2026-09-13-hr-launch/runs/s3-fence-real-local-4/output.log": {
+      "sha256": "9db32cdcf17b29dbe430a4994a0185d5bb6e0774ff88e51ad988dc5942d3c74c",
+      "bytes": 1908
+    },
+    "artifacts/2026-09-13-hr-launch/runs/s3-fence-real-local-4/command.json": {
+      "sha256": "62d45bbfaceab7247756f84c23b001aa607c8f506f5205c071f3a8e870a746d5",
+      "bytes": 896
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/focused-final.stdout.log": {
+      "sha256": "6b9ffd6b9a3baa1f0f65b43fd8e9939ac47909d796917593222ef0ccd5a23556",
+      "bytes": 98
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/ruff.exit": {
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/attachment-suite.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/attachment-suite-final.stdout.log": {
+      "sha256": "c688a24e243b27ca2c5aa3b330301264e8845036cb8aee3c9f5f5eb1959252f8",
+      "bytes": 1523
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/focused.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/attachment-suite-final.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/ruff-final.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/focused-final.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/ruff.stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/focused.stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/attachment-suite.stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/ruff-final.stdout.log": {
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "bytes": 19
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/focused-final.stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/attachment-suite-final.stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/attachment-suite.stdout.log": {
+      "sha256": "227664fe7da0ca56e16643ab539b85a27abdf13bbd790abfd246f40cce28404a",
+      "bytes": 1523
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/ruff-final.stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/ruff.stdout.log": {
+      "sha256": "8afcc6415eae9505770a70039abc495610dd0523dee371ff43e16d0f0d117725",
+      "bytes": 1101
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/focused.stdout.log": {
+      "sha256": "452fada82e1df58d7f89fa99128aea691c519ad7daf4915a4bece62bd06ecbdf",
+      "bytes": 98
+    }
+  }
+}

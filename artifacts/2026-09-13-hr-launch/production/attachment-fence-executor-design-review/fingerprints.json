@@ -1,0 +1,6 @@
+{
+  "artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34",
+  "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py": "295fbc85c6d7179577971adf082bebec1140fcdca7149be8c1f4fcc3e4d96573",
+  "artifacts/2026-09-13-hr-launch/production/api_canary.py": "13fcb02d28132afbe84268b0b5576946f2bc32dbaea8f1c2f74abaf702e0abd5",
+  "artifacts/2026-09-13-hr-launch/production/attachment-fence-release-plan-review/review.md": "58edfbd80a2e7a95f74d98cac7b7eb8537b09ff689cd74c9b8a4b40f2f36535c"
+}

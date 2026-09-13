@@ -1,0 +1,16 @@
+{
+  "old_sha256": "945b0285bff7b8b1c712d272e03c6b2098562e56e1640a6db2bb224ab42fe7a5",
+  "new_sha256": "ee3bc3724c8bde40d1cf7bd4780b7ae13659e1ba55a419cbde0b161eb02fa623",
+  "fields": [
+    "id",
+    "image",
+    "running",
+    "started_at",
+    "restart_policy"
+  ],
+  "added": [],
+  "removed": [],
+  "changed": {},
+  "compared_count": 24,
+  "boundary": "Two actual read-only observations; these fields identical does not claim requests or service health were continuously observed"
+}

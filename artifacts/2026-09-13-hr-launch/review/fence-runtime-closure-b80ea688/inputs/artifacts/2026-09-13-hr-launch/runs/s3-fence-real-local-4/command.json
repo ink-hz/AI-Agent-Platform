@@ -1,0 +1,16 @@
+{
+  "head": "b80ea68890d8a16bb959cb171e2709cc2bd61cbc",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-4/run.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T05:43:32.505256+00:00",
+  "source_patch_sha256": "194429f71a71509155f105f8351571160fd05be52244dbdf12597b964b99bb41",
+  "untracked_source_snapshots": {
+    "backend/tests/test_owner_preflight.py": "b836d67c97af4cea83720794a74067723f26f9e1abcb200df0f70de928edc477"
+  },
+  "boundary": "Actual owned local MinIO final strict omitted-null-only fence source42c230ff;all7groups rerun because runtime checksum changed. Prior run3 remains correct for prior source. No production/DB. Exact owned process/socket/threads cleanup.",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T05:43:36.849836+00:00"
+}

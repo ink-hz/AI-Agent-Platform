@@ -1,0 +1,16 @@
+{
+  "head": "b80ea68890d8a16bb959cb171e2709cc2bd61cbc",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-3/run.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T05:39:19.567920+00:00",
+  "source_patch_sha256": "9ff634b83b7da79cfe90daa3c8d41e6f9a316b29c9bd10dd7bd70e0186656710",
+  "untracked_source_snapshots": {
+    "backend/tests/test_owner_preflight.py": "b836d67c97af4cea83720794a74067723f26f9e1abcb200df0f70de928edc477"
+  },
+  "boundary": "Actual owned local MinIO7ced9663 with final stream fix and explicit-null HEAD compatibility;three modes,1001 old versions,dual erasers,partial signed conditional PUT;no DB/production. Null echo omission accepted only exact explicit-null/listed fence, current null only Suspended. Prior failures retained.",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T05:39:23.899989+00:00"
+}

@@ -1,0 +1,97 @@
+DISK_BEFORE root_used=63526207488 root_available=37247397888 root_percent=64 data_used=31436619776 data_available=68266143744 data_percent=32 projected_root_bytes=5566902728
+CLOUD_DEPLOY_INPUT_OK action=acquire
+CLOUD_DEPLOY_INPUT_OK action=validate
+CLOUD_DEPLOY_INPUT_OK action=validate
+Sending build context to Docker daemon  109.6MB
+Step 1/28 : FROM node:24.7.0-alpine3.22 AS web-builder
+24.7.0-alpine3.22: Pulling from library/node
+Digest: sha256:be4d5e92ac68483ec71440bf5934865b4b7fcb93588f17a24d411d15f0204e4f
+Status: Image is up to date for node:24.7.0-alpine3.22
+ ---> be4d5e92ac68
+Step 2/28 : WORKDIR /src/webui
+ ---> Using cache
+ ---> b3d5628549a2
+Step 3/28 : COPY webui/package.json webui/package-lock.json ./
+ ---> Using cache
+ ---> fe2e9e0ee71e
+Step 4/28 : RUN npm ci --ignore-scripts
+ ---> Using cache
+ ---> ea60913cc052
+Step 5/28 : COPY webui/ ./
+ ---> Using cache
+ ---> 79514fe6bc41
+Step 6/28 : COPY backend/tests/fixtures/hr_intelligence_company/companies.json      backend/tests/fixtures/hr_intelligence_company/company-insta360.json      backend/tests/fixtures/hr_intelligence_company/company-scantech-missing-metrics.json      backend/tests/fixtures/hr_intelligence_company/company-insta360-jobs-page.json      /src/backend/tests/fixtures/hr_intelligence_company/
+ ---> Using cache
+ ---> 377e9e7f61a9
+Step 7/28 : RUN npm run build
+ ---> Using cache
+ ---> bda6c9a9745c
+Step 8/28 : FROM python:3.11.13-slim-bookworm AS runtime
+3.11.13-slim-bookworm: Pulling from library/python
+Digest: sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1
+Status: Image is up to date for python:3.11.13-slim-bookworm
+ ---> 86adf8dbadc3
+Step 9/28 : ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_DISABLE_PIP_VERSION_CHECK=1     PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ ---> Using cache
+ ---> 4fe8d5641491
+Step 10/28 : WORKDIR /app/backend
+ ---> Using cache
+ ---> 43ed14351038
+Step 11/28 : COPY backend/requirements.cloud.txt ./requirements.cloud.txt
+ ---> Using cache
+ ---> bcec99180195
+Step 12/28 : RUN sed -i       -e 's|http://deb.debian.org|https://mirrors.aliyun.com|g'       -e 's|https://deb.debian.org|https://mirrors.aliyun.com|g'       /etc/apt/sources.list.d/debian.sources     && apt-get update     && apt-get install --yes --no-install-recommends       bubblewrap       libmagic1       poppler-utils     && rm -rf /var/lib/apt/lists/*
+ ---> Using cache
+ ---> ea7bfcaca25a
+Step 13/28 : RUN pip install --no-cache-dir --requirement requirements.cloud.txt     && groupadd --gid 10001 platform     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin platform
+ ---> Using cache
+ ---> 280e39e1f05e
+Step 14/28 : ARG RELEASE_SHA
+ ---> Using cache
+ ---> daebed58732c
+Step 15/28 : ENV PLATFORM_RELEASE_SHA=${RELEASE_SHA}
+ ---> Running in d1210dfb6aae
+ ---> Removed intermediate container d1210dfb6aae
+ ---> 0fa4973cc5d3
+Step 16/28 : COPY --chown=10001:10001 backend/app ./app
+ ---> 0f9ae96fea5b
+Step 17/28 : COPY --chown=10001:10001 backend/migrations ./migrations
+ ---> 8a9f37d82380
+Step 18/28 : COPY --chown=10001:10001 backend/control_migrations ./control_migrations
+ ---> e2a28007e1da
+Step 19/28 : COPY --chown=10001:10001 backend/tools/hr_agent/inventory.py backend/tools/hr_agent/preflight.py ./tools/hr_agent/
+ ---> 061ef8100282
+Step 20/28 : COPY --chown=10001:10001 deploy/cloud/registry.yaml /app/registry.yaml
+ ---> 6c88d6867ed0
+Step 21/28 : COPY --chown=10001:10001 deploy/cloud/metabot.runtime-contract.json /app/metabot.runtime-contract.json
+ ---> 61b6d49c5d4c
+Step 22/28 : COPY --chown=10001:10001 deploy/cloud/brain-model.release.json /app/brain-model.release.json
+ ---> a9415241e7b8
+Step 23/28 : COPY --from=web-builder --chown=10001:10001 /src/webui/dist ./app/static
+ ---> 7c2da671670b
+Step 24/28 : RUN install -d -o 10001 -g 10001 -m 700 /run/office-recipient     && install -o 10001 -g 10001 -m 600 /dev/null /run/office-recipient/platform-office-recipient-bearer
+ ---> Running in 773682c1a074
+ ---> Removed intermediate container 773682c1a074
+ ---> f8fd3de0bcd9
+Step 25/28 : USER platform:platform
+ ---> Running in 58b966a399cc
+ ---> Removed intermediate container 58b966a399cc
+ ---> 8ea490b5e90d
+Step 26/28 : EXPOSE 8080
+ ---> Running in 3b658690c1a7
+ ---> Removed intermediate container 3b658690c1a7
+ ---> d8df1e1d3b65
+Step 27/28 : HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=4   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=2).read()"]
+ ---> Running in 3e1f4864e072
+ ---> Removed intermediate container 3e1f4864e072
+ ---> 8cac0fc74f5c
+Step 28/28 : CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers", "--no-access-log"]
+ ---> Running in bf38c870bad4
+ ---> Removed intermediate container bf38c870bad4
+ ---> cbe282151ff6
+Successfully built cbe282151ff6
+Successfully tagged orbbec-agent-platform:394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76
+CLOUD_DEPLOY_INPUT_OK action=validate
+BUILD_COMPLETE release=394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76 image_id=sha256:cbe282151ff678b9e0573102267b71ba1c32888603b4d818fa07be22ccc50442 services_changed=no
+CLOUD_DEPLOY_INPUT_OK action=validate
+CLOUD_DEPLOY_INPUT_OK action=release

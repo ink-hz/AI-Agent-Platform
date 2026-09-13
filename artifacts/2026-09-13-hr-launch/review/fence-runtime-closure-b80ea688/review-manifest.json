@@ -1,0 +1,11 @@
+{
+  "closure.patch": "a7b4ae03656d2fb2d97c38be8152e2e87bb329c04a94bc5e9ecf126400ee553d",
+  "fingerprints.json": "6b5b7ec234ef04e109d10edefa9a1f2f45bb70725a28ae460a145e1be0151da1",
+  "inputs/artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-4/receipt.json": "9b71c7f53645766d1e201bf165c8898cb3bd0c82a3d0dd867512364db681be0d",
+  "inputs/artifacts/2026-09-13-hr-launch/runs/s3-fence-real-local-4/command.json": "62d45bbfaceab7247756f84c23b001aa607c8f506f5205c071f3a8e870a746d5",
+  "inputs/artifacts/2026-09-13-hr-launch/runs/s3-fence-real-local-4/output.log": "9db32cdcf17b29dbe430a4994a0185d5bb6e0774ff88e51ad988dc5942d3c74c",
+  "inputs/backend/app/attachments/object_writer.py": "3ac26ca1d99d27a08426018a58c5a68e2171f84161ccd9ee0425fe65fc073564",
+  "inputs/backend/app/attachments/s3_erasure.py": "42c230ff413fd53402176dd988ff78b511a79a28489130890808d7331cc44933",
+  "inputs/backend/tests/test_attachment_s3_version_erasure.py": "9fb0cc410a3555823e2324e0ecd1288635ec6e0114e1cc21826801a8a81f9e51",
+  "review.md": "ca123b0d53b93e465d977cea3d5df0f510f48c4e3e144bebf18df7685b9167c1"
+}

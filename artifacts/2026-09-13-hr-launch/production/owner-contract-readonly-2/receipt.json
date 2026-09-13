@@ -1,0 +1,22 @@
+{
+  "started_at": 1789278630.442084,
+  "finished_at": 1789278631.056155,
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/docker exec 3347e61ede7d3ab0bd96c0cdc25cff1d6808c89ab2b8a31f24953bebccd4fcf7 python -c 'from pathlib import Path;import sys,hashlib,json;paths=['\"'\"'app/attachments/conversation_routes.py'\"'\"','\"'\"'app/control_plane/middleware.py'\"'\"'];roots=[Path(p) for p in sys.path];selected={p:next(r/p for r in roots if (r/p).is_file()) for p in paths};print(json.dumps({p:{'\"'\"'path'\"'\"':str(v.resolve()),'\"'\"'sha256'\"'\"':hashlib.sha256(v.read_bytes()).hexdigest()} for p,v in selected.items()}))'"
+  ],
+  "exit_code": 0,
+  "stdout_sha256": "a129cb84c823b75e7586e272741082e6135310ddcbe992214c46e47da64c7a73",
+  "boundary": "Read-only source hashes resolved along Python sys.path in exact existing API. Prior fixed-path FileNotFoundError retained. No app imports/session/cookie/business data/HTTP or service changes"
+}

@@ -1,0 +1,1 @@
+{"case_id": "H03", "status": "completed", "executed_turns": 4, "generation_calls": 17, "driver_sha256": "6e5ad2fb0155e8b39de15687661de6161fcb38d288716fe035db974b9d513ceb", "source_commit": "7a7d7d8be945eb8b518108cf972167fba3a8447f", "professional_acceptance": "pending independent output review", "production_test": false}

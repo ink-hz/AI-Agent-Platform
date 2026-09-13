@@ -1,0 +1,7 @@
+{"operation": "PutObject", "parsed": {"VersionId": "0d55c9a1-47ea-4b3f-b49f-98022dd51791"}, "http_status": 200}
+{"operation": "PutBucketVersioning", "parsed": {}, "http_status": 200}
+{"operation": "PutObject", "parsed": {}, "http_status": 200}
+{"operation": "GetBucketVersioning", "parsed": {"Status": "Suspended"}, "http_status": 200}
+{"operation": "PutObject", "parsed": {}, "http_status": 200}
+{"operation": "ListObjectVersions", "parsed": {"Versions": [{"Key": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "VersionId": "null", "IsLatest": true}, {"Key": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "VersionId": "0d55c9a1-47ea-4b3f-b49f-98022dd51791", "IsLatest": false}]}, "http_status": 200}
+{"operation": "HeadObject", "parsed": {"ContentLength": 0, "Metadata": {"platform-erasure-fence": "v1"}}, "http_status": 200}

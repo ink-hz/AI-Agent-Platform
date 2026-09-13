@@ -1,0 +1,16 @@
+{
+  "head": "b80ea68890d8a16bb959cb171e2709cc2bd61cbc",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-diagnostic-3/run.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T05:35:09.373706+00:00",
+  "source_patch_sha256": "85b6a3012c9c070767740f2278b4378d3a0abae677cbaa5d68d25357910a4fdc",
+  "untracked_source_snapshots": {
+    "backend/tests/test_owner_preflight.py": "c105b5cb0b32f9fb682cd5a88c376aa8a9ac8b4ca997c8b0737345dc65c88dcb"
+  },
+  "boundary": "Actual owned local MinIO with bounded Suspended response-shape diagnosis. Earlier diagnostic2 failed serializing datetime after storage error; preserved, not replayed as evidence. This trace whitelists primitive metadata fields and persists each call. No production/DB.",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T05:35:13.480195+00:00"
+}

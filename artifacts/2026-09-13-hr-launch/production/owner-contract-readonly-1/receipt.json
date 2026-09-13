@@ -1,0 +1,22 @@
+{
+  "started_at": 1789278602.388897,
+  "finished_at": 1789278602.8975518,
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/docker exec 3347e61ede7d3ab0bd96c0cdc25cff1d6808c89ab2b8a31f24953bebccd4fcf7 python -c 'from pathlib import Path;import hashlib,json;print(json.dumps({p:hashlib.sha256(Path('\"'\"'/app/'\"'\"'+p).read_bytes()).hexdigest() for p in ['\"'\"'app/attachments/conversation_routes.py'\"'\"','\"'\"'app/control_plane/middleware.py'\"'\"']}))'"
+  ],
+  "exit_code": 1,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "boundary": "Read-only hashes of two static Python source files in exact existing production API; no session/cookie read, no HTTP requests, no business data/service changes"
+}

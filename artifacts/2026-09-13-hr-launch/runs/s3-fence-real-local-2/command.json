@@ -1,0 +1,14 @@
+{
+  "head": "b80ea68890d8a16bb959cb171e2709cc2bd61cbc",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-2/run.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T05:33:39.873692+00:00",
+  "source_patch_sha256": "85b6a3012c9c070767740f2278b4378d3a0abae677cbaa5d68d25357910a4fdc",
+  "untracked_source_snapshots": {},
+  "boundary": "Actual owned loopback MinIO, real boto3 signed requests against b80ea688 stream/fence runtime;1001 old versions, dual erasers and client partial conditional PUT;no DB/production. Prior first PUT failure retained. Thread event does not prove server partial acceptance.",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T05:33:44.070383+00:00"
+}

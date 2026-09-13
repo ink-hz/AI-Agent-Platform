@@ -1,0 +1,12 @@
+{
+  "receipt-contract-addendum.md": "01627341fb557e83fbc014bc5fceedcc699ba454e24ae4b35246854039b7d7a6",
+  "review-fingerprints.json": "bf068eb4a8ade64a6783eec6039ea8d9cda3f40978ebf695560ab08dba29d99c",
+  "fingerprints.json": "df7274a8fba19a2063078f86d6ca8e2111af27331a88de2c75ecac5598ee202d",
+  "design.md": "1883b93971b2d74451321b1cfb96a912c791a69925de5c5f39c86ec8bd281de2",
+  "observer-fingerprint.json": "ed9f585a06562c964eb9f6c19a4a6d46ac4d9291b2dec91c63782e7854e030c9",
+  "source/attachment_erasure_canary.py": "295fbc85c6d7179577971adf082bebec1140fcdca7149be8c1f4fcc3e4d96573",
+  "source/attachment_erasure_observe.py": "4321f952e7db4f28464f545f46a164b159f24e80a83fa21ea30097ead181bc38",
+  "source/attachment_hotfix.py": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34",
+  "source/api_canary.py": "13fcb02d28132afbe84268b0b5576946f2bc32dbaea8f1c2f74abaf702e0abd5",
+  "source/review.md": "58edfbd80a2e7a95f74d98cac7b7eb8537b09ff689cd74c9b8a4b40f2f36535c"
+}

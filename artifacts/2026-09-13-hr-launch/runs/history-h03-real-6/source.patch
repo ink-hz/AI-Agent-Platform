@@ -1,0 +1,386 @@
+diff --git a/backend/app/attachments/object_writer.py b/backend/app/attachments/object_writer.py
+index eaf48ba0..ee434a59 100644
+--- a/backend/app/attachments/object_writer.py
++++ b/backend/app/attachments/object_writer.py
+@@ -3,11 +3,10 @@ from __future__ import annotations
+ import hashlib
+ import os
+ import stat
++import tempfile
+ from pathlib import Path
+ from typing import BinaryIO
+ 
+-from botocore.exceptions import BotoCoreError, ClientError
+-
+ from app.config import Config
+ from app.local_secrets import SecretFileUnavailable, read_secret_file
+ 
+@@ -25,38 +24,31 @@ class AttachmentObjectWriterSizeMismatch(AttachmentObjectWriterError):
+     pass
+ 
+ 
+-class _DigestingReader:
+-    def __init__(self, body: BinaryIO, expected_size: int) -> None:
+-        self._body = body
+-        self._expected_size = expected_size
+-        self._size = 0
+-        self._digest = hashlib.sha256()
+-
+-    def read(self, size: int = -1) -> bytes:
+-        remaining = self._expected_size - self._size
+-        if remaining <= 0:
+-            return b""
+-        requested = min(
+-            remaining,
+-            _READ_CHUNK_BYTES if size is None or size < 0 else size,
+-            _READ_CHUNK_BYTES,
+-        )
+-        chunk = self._body.read(requested)
++def _stage_stream(body: BinaryIO, staged: BinaryIO, expected_size: int) -> ObjectReceipt:
++    size = 0
++    digest = hashlib.sha256()
++    while size < expected_size:
++        chunk = body.read(min(_READ_CHUNK_BYTES, expected_size - size))
+         if not isinstance(chunk, bytes):
+             raise TypeError("attachment stream must return bytes")
+-        self._size += len(chunk)
+-        self._digest.update(chunk)
+-        return chunk
+-
+-    def receipt(self) -> ObjectReceipt:
+-        extra = self._body.read(1)
+-        if not isinstance(extra, bytes):
+-            raise TypeError("attachment stream must return bytes")
+-        if self._size != self._expected_size or extra:
++        if not chunk:
++            break
++        size += len(chunk)
++        if size > expected_size:
+             raise AttachmentObjectWriterSizeMismatch(
+                 "attachment object size mismatch"
+             )
+-        return ObjectReceipt(self._size, self._digest.digest())
++        staged.write(chunk)
++        digest.update(chunk)
++    extra = body.read(1)
++    if not isinstance(extra, bytes):
++        raise TypeError("attachment stream must return bytes")
++    if size != expected_size or extra:
++        raise AttachmentObjectWriterSizeMismatch(
++            "attachment object size mismatch"
++        )
++    staged.seek(0)
++    return ObjectReceipt(size, digest.digest())
+ 
+ 
+ def _credential(path_value: str) -> str:
+@@ -124,27 +116,6 @@ class AttachmentObjectWriter:
+             max_file_bytes=config.attachment_max_file_bytes,
+         )
+ 
+-    def _best_effort_delete(self, object_ref: str, put_response) -> None:
+-        if not isinstance(put_response, dict):
+-            return
+-        if "VersionId" in put_response:
+-            version_id = put_response["VersionId"]
+-            if not isinstance(version_id, str) or not version_id:
+-                return
+-            try:
+-                self._client.delete_object(
+-                    Bucket=self._bucket,
+-                    Key=object_ref,
+-                    VersionId=version_id,
+-                )
+-            except (BotoCoreError, ClientError, OSError, RuntimeError):
+-                pass
+-            return
+-        try:
+-            erase_s3_object(self._client, self._bucket, object_ref)
+-        except Exception:  # noqa: BLE001, S110 - retry ledger retains the key
+-            pass
+-
+     def put_stream(
+         self, object_ref: str, body: BinaryIO, expected_size: int
+     ) -> ObjectReceipt:
+@@ -159,25 +130,34 @@ class AttachmentObjectWriter:
+             raise AttachmentObjectWriterSizeMismatch(
+                 "attachment object size mismatch"
+             )
+-        reader = _DigestingReader(body, expected_size)
+-        put_response = None
+-        try:
+-            put_response = self._client.put_object(
+-                Bucket=self._bucket,
+-                Key=object_ref,
+-                Body=reader,
+-                ContentLength=expected_size,
+-                IfNoneMatch="*",
+-            )
+-            return reader.receipt()
+-        except AttachmentObjectWriterSizeMismatch:
+-            self._best_effort_delete(object_ref, put_response)
+-            raise
+-        except Exception:  # noqa: BLE001 - sanitize arbitrary stream/client errors
+-            self._best_effort_delete(object_ref, put_response)
+-            raise AttachmentObjectWriterError(
+-                "attachment object write failed"
+-            ) from None
++        with tempfile.SpooledTemporaryFile(max_size=_READ_CHUNK_BYTES) as staged:
++            try:
++                receipt = _stage_stream(body, staged, expected_size)
++            except AttachmentObjectWriterSizeMismatch:
++                raise
++            except Exception:  # noqa: BLE001 - sanitize arbitrary stream errors
++                raise AttachmentObjectWriterError(
++                    "attachment object write failed"
++                ) from None
++            try:
++                response = self._client.put_object(
++                    Bucket=self._bucket,
++                    Key=object_ref,
++                    Body=staged,
++                    ContentLength=expected_size,
++                    IfNoneMatch="*",
++                )
++                if not isinstance(response, dict):
++                    raise AttachmentObjectWriterError(
++                        "attachment object write failed"
++                    )
++            except AttachmentObjectWriterError:
++                raise
++            except Exception:  # noqa: BLE001 - sanitize arbitrary client errors
++                raise AttachmentObjectWriterError(
++                    "attachment object write failed"
++                ) from None
++            return receipt
+ 
+     def delete(self, object_ref: str) -> None:
+         if not isinstance(object_ref, str) or not object_ref:
+diff --git a/backend/tests/test_attachment_s3_version_erasure.py b/backend/tests/test_attachment_s3_version_erasure.py
+index 7766b8ad..455e4038 100644
+--- a/backend/tests/test_attachment_s3_version_erasure.py
++++ b/backend/tests/test_attachment_s3_version_erasure.py
+@@ -377,12 +377,14 @@ def test_orphan_cleanup_does_not_acknowledge_failed_version_inventory():
+     assert repository.acknowledged == []
+ 
+ 
+-def test_successful_versioned_put_cleanup_deletes_only_returned_version():
++def test_size_mismatch_is_rejected_before_any_versioned_put_or_delete():
+     class Client:
+         def __init__(self):
++            self.puts = []
+             self.calls = []
+ 
+-        def put_object(self, **_kwargs):
++        def put_object(self, **kwargs):
++            self.puts.append(kwargs)
+             return {"VersionId": "this-write"}
+ 
+         def delete_object(self, **kwargs):
+@@ -394,9 +396,8 @@ def test_successful_versioned_put_cleanup_deletes_only_returned_version():
+             "owned", io.BytesIO(b"extra"), 4
+         )
+ 
+-    assert client.calls == [
+-        {"Bucket": "private-bucket", "Key": "owned", "VersionId": "this-write"}
+-    ]
++    assert client.puts == []
++    assert client.calls == []
+ 
+ 
+ def test_ambiguous_failed_put_does_not_issue_destructive_key_delete():
+diff --git a/backend/tests/test_attachment_upload_service.py b/backend/tests/test_attachment_upload_service.py
+index e5a5a5af..228e510d 100644
+--- a/backend/tests/test_attachment_upload_service.py
++++ b/backend/tests/test_attachment_upload_service.py
+@@ -128,7 +128,31 @@ def test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write() -> N
+         writer.put_stream("objects/random", io.BytesIO(b"abcd"), 3)
+ 
+     assert s3.deletes == []
+-    assert s3.fences == [("private-attachments", "objects/random")]
++    assert s3.fences == []
++    assert s3.puts == []
++
++
++def test_suspended_null_fence_is_untouched_when_size_validation_fails() -> None:
++    class SuspendedFence:
++        def __init__(self):
++            self.puts = []
++            self.deletes = []
++
++        def put_object(self, **kwargs):
++            self.puts.append(kwargs)
++            return {"VersionId": "null"}
++
++        def delete_object(self, **kwargs):
++            self.deletes.append(kwargs)
++
++    s3 = SuspendedFence()
++    writer = AttachmentObjectWriter(s3, "private-attachments")
++
++    with pytest.raises(AttachmentObjectWriterSizeMismatch):
++        writer.put_stream("objects/fenced", io.BytesIO(b"abcd"), 3)
++
++    assert s3.puts == []
++    assert s3.deletes == []
+ 
+ 
+ def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup() -> None:
+diff --git a/backend/tests/test_control_plane_migration.py b/backend/tests/test_control_plane_migration.py
+index c1fa67df..baffc01e 100644
+--- a/backend/tests/test_control_plane_migration.py
++++ b/backend/tests/test_control_plane_migration.py
+@@ -201,6 +201,8 @@ TABLES = {
+     "voc_workbench_grants",
+     "access_page_catalog",
+     "user_access_events",
++    "hr_execution_cutover",
++    "hr_execution_cutover_operations",
+ }
+ 
+ IMMUTABLE_MIGRATION_SHA256 = {
+@@ -236,11 +238,20 @@ PUBLISHED_MIGRATION_SHA256 = {
+ 
+ 
+ def test_control_migration_versions_are_unique_and_contiguous() -> None:
+-    versions = [int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")]
+-
+-    assert len(versions) == len(set(versions))
+-    assert sorted(versions) == list(range(1, max(versions) + 1))
+-    assert max(versions) == 88
++    # HR migrations have independent deployment scopes; root must not absorb them.
++    expected_by_scope = {
++        MIGRATIONS: [*range(1, 89), 100, *range(102, 107)],
++        MIGRATIONS / "hr_web": list(range(89, 96)),
++        MIGRATIONS / "hr_agent": [*range(96, 100), 101],
++    }
++    all_versions = []
++    for directory, expected in expected_by_scope.items():
++        versions = [int(path.name.split("_", 1)[0]) for path in directory.glob("*.sql")]
++        assert sorted(versions) == expected, directory
++        all_versions.extend(versions)
++
++    assert len(all_versions) == len(set(all_versions))
++    assert sorted(all_versions) == list(range(1, 107))
+ 
+ 
+ def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 924e113e..1bd357c1 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -223,6 +223,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "103_hr_execution_drain_occupancy.sql",
+             "104_hr_execution_drain_terminal_contract.sql",
+             "105_hr_cloud_resume.sql",
++            "106_attachment_erasure_write_fence.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+diff --git a/backend/tests/test_hr_root_migration_deployment.py b/backend/tests/test_hr_root_migration_deployment.py
+index a31bfd02..9d581561 100644
+--- a/backend/tests/test_hr_root_migration_deployment.py
++++ b/backend/tests/test_hr_root_migration_deployment.py
+@@ -60,18 +60,18 @@ def invoke(case):
+     return subprocess.run(case[-1], env=case[-2], capture_output=True, text=True, timeout=30, check=False)
+ 
+ 
+-@pytest.mark.parametrize("root_deployment", [95, 105], indirect=True)
++@pytest.mark.parametrize("root_deployment", [95, 106], indirect=True)
+ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_deployment):
+     db, release, tmp, _, _ = root_deployment
+-    (release / 'backend/control_migrations/106_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
++    (release / 'backend/control_migrations/107_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
+     # This HR migration must never execute in root mode.
+-    (release / 'backend/control_migrations/hr_agent/107_invalid.sql').write_text('invalid SQL must not run;')
++    (release / 'backend/control_migrations/hr_agent/108_invalid.sql').write_text('invalid SQL must not run;')
+     for _ in range(2):
+         result = invoke(root_deployment)
+         assert result.returncode == 0, result.stderr
+     with db.admin_connection() as connection:
+         assert connection.execute("select to_regclass('platform_control.root_scope_probe') is not null").fetchone()[0]
+-        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,107)').fetchone()[0] == 0
++        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,108)').fetchone()[0] == 0
+     calls = (tmp / 'calls').read_text()
+     assert calls.count('create ') == 2 and 'preview' not in calls
+     statements = [json.loads(line) for line in (tmp / 'sql.log').read_text().splitlines()]
+@@ -183,3 +183,22 @@ def test_root_requires_complete_105_target_from_95_baseline(root_deployment):
+     result = invoke(root_deployment)
+     assert result.returncode != 0
+     assert not (tmp / 'calls').exists()
++
++
++def test_root_checksum_inventory_rejects_missing_attachment_106(tmp_path):
++    import importlib.util
++    from types import SimpleNamespace
++
++    release = tmp_path / "release"
++    shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
++    for path in (release / "backend/control_migrations").glob("106_*.sql"):
++        path.unlink()
++    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    supervisor = module.Supervisor(SimpleNamespace(
++        release=str(release), private=str(tmp_path / "private"),
++        migration_set="root", environment="production",
++    ))
++    with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
++        supervisor.root_checksums()
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 7c37ad44..d366fc58 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -199,6 +199,7 @@ class Supervisor:
+             (103, "103_hr_execution_drain_occupancy.sql"),
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
+             (105, "105_hr_cloud_resume.sql"),
++            (106, "106_attachment_erasure_write_fence.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+@@ -233,7 +234,7 @@ class Supervisor:
+                         or (baseline_only and not 89 <= version <= 95)):
+                     raise DeploymentFailure("root_ledger_invalid")
+                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
+-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105}).issubset(expected):
++        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106}).issubset(expected):
+             raise DeploymentFailure("root_baseline_invalid")
+         return expected
+ 
+diff --git a/docs/reviews/2026-09-13-hr-launch-handoff.md b/docs/reviews/2026-09-13-hr-launch-handoff.md
+index 4501608b..46f5e414 100644
+--- a/docs/reviews/2026-09-13-hr-launch-handoff.md
++++ b/docs/reviews/2026-09-13-hr-launch-handoff.md
+@@ -7,17 +7,17 @@
+ | 项目 | 已有实际证据 | 尚未证明 |
+ | --- | --- | --- |
+ | 镜像 | ce6 源在生产构建成功；镜像 `sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59` | 该镜像的生产服务切换与业务接单 |
+-| 附件版本擦除 | 生产 GetBucketVersioning HTTP 200 / Enabled；源码裸 delete 未指定版本 | 全版本实际删除、失败保留可重试引用、修复镜像与生产擦除闭环 |
+-| 数据库 | 生产 001–095 每项 SHA 匹配；job kind 基线预检通过 | 100/102–105 及独立 HR 迁移实际执行；104 准确计数现场耗时 |
++| 附件版本擦除 | 生产 Enabled；本地真实 MinIO 已验证1002旧数据版本清理；永久零字节占位/条件写修复有315项附件工程通过 | 新占位方案的真实并发 MinIO 验证、兼容镜像同窗口切换及生产擦除闭环 |
++| 数据库 | 生产 001–095 每项 SHA 匹配；job kind 基线预检通过 | 100/102–106 及独立 HR 迁移实际执行；104 准确计数现场耗时 |
+ | 备份 | 291124812 字节 custom dump、schema/ledger/globals 私有备份；归档目录可读，备份会话归零、两锁释放 | 恢复演练；未 dump 或修改 preview |
+ | 配置/知识 | 9 个宿主私有文件、12 个 HR 卷文件；94 个知识资源；API/Worker 指纹一致；旧知识原字节保留 | 网络、数据库、实际进程及模型运行验收；当前 preflight 的唯一 blocker 是 database_not_checked |
+ | 旧链 | 本地 HR legacy 13 completed/3 interrupted、outbox 0；3 条平台 v5 command 有终态/退出/停止并精确匹配终态上传 | 切换窗口中的再核验、云端旧网页 Worker 持久关闭及实际派发拒绝 |
+-| 历史模型 | 63 会话/242 条用户消息只读提取，22 个合成适配场景；一轮选定四例实际执行六轮、23 次模型调用 | 22 例完整回放；H03 补跑尚在进行；专业质量整体通过 |
++| 历史模型 | 63 会话/242 条用户消息只读提取，22 个合成适配场景；一轮选定四例实际执行六轮、23 次模型调用 | 22 例完整回放；H03 real5 四轮执行完成但专业仍未过；22例和专业质量整体通过尚无证据 |
+ | D 模型 | 三轮真实提供方工程试验及独立输出审读，第三轮 1 passed/590.16 秒 | 专业整体通过；仍有单因排除和归因偏移 |
+ | 页面 | 合并保留岗位/成果能力并修复路由；定向组件/style 工程回归留证 | 本次未做浏览器验收，按用户指令不作为上线前置 |
+ | 生产接口 | 受认证 canary 脚本及真实本地 HTTP/PG 工程测试；慢流墙钟中断补验 | 有效生产 owner Cookie/CSRF、生产真实擦除、受理/续作/成果及自有进程重启验收 |
+ 
+-实际操作入口为[发布计划](../../artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md)和[当前实施计划](../superpowers/plans/2026-09-13-hr-launch.md)。本次使用提交 `404862b93c57e6782016182f089b67766ab569ff` 的 production-only 监督迁移工具，不能替换为通用 bootstrap 或同时处理 preview。须先停止准确旧附件 Worker、应用 100、启动修复镜像并完成真实物理擦除，再进入 HR 迁移与切换。
++实际操作入口为[发布计划](../../artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md)和[当前实施计划](../superpowers/plans/2026-09-13-hr-launch.md)。`404862b93c57e6782016182f089b67766ab569ff` 的 production-only 监督迁移工具为前一版受审基线；当前新增106源文件前置，需重新测试并冻结准确字节，不能替换为通用 bootstrap 或同时处理 preview。原仅停附件 Worker 的 ce6 方案不适用条件写修复：共享 API 和附件 Worker 都是写入方，须在同窗口停止旧写入方、隔断准确 MinIO 旧请求代际，再启用与106兼容的服务组合并通过真实擦除验收。新监督执行器尚未完成，不执行旧输入。
+ 
+ 独立飞书 MetaBot 不纳入本次停机。平台同一工作仍须由新云端链唯一执行；共享 Relay 和其他 Bot 保留。实际 PM2 加载版本与磁盘 ecosystem 不同，应以[本地平台在途核对](../../artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/)为准。三条 `reconciliation_required=true` 原样保留；实际加载代码拒绝已完成任务重放，不等于全部外部效果已对账，不得清标志造零。
+ 
+@@ -28,3 +28,9 @@
+ 证据封存分别见 `model-evidence-seal.json`、`engineering-evidence-seal.json` 和 `production/build-and-provision-seal.json`。两个已披露的操作文书/权限问题：旧指纹表的 companion SHA 少一字符，实际发布计划按准确 Git blob 修正，旧表保留；provision 外层曾把两个日志创建为 0644（父目录 0700），已按准确 SHA 定点改 0600，原脚本与补救回执分开保留。旧缺失日志仍缺失，不补写历史“通过”。
+ 
+ 新增物理擦除证据见 `production/s3-versioning-readonly-1/`。只读检查不含任何对象删除；数据库 job completed 会清除引用，所以新 canary 需要在删除前私有加密封存准确对象版本清单，再验证真实 job 状态与版本不存在，不能仅以接口 404 为通过。历史 `production/deployment-plan-review.md` 中 ce6 的执行步骤暂时失效，修复后的新方案另行绑定准确源码与镜像。
++
++截至新增 S3 修复：`4864abf` 的版本删除有 386 项附件工程回归；`production/s3-real-local-2` 实际本地 MinIO 验证跨两页 1002 个旧数据版本 HEAD 不存在、前缀兄弟保留、Suspended/null 与无版本桶删除通过，不能证明 late PUT 已阻止。后续零字节占位与条件写方案、106 逻辑删除关门和 API/附件同窗口切换正在实施，见 `attachment-write-fence-design-review-2` 与 `attachment-fence-release-plan-review`。原 ce6 运维输入不得执行。
++
++H03 real3 第四轮并非仅预算设置问题：反复以 role_calibration 更新 jd 被拒，另写调试占位，累计20次/1161589估算token后 waiting_budget，无最终答复。`b425b08` 增加授权后的类型字段诊断及禁止占位指导，16项真实PG测试通过且独立审读通过；H03 real5 已以固定 b425 源完成四轮，20次调用/1094115估算token/905.47活跃秒；错误kind反馈后沿原jd保存第四修订，无占位，但 save_note 被拒且如实披露。独立审读仍不接受专业内容：将用户明确指定职责降成待确认、仅补职责却新增相似工艺经历门槛、管理者经历和签核权仍有不当硬化。见[本轮输出审读](../../artifacts/2026-09-13-hr-launch/history-h03-real-review-5/review.md)。真实模型工程与专业判据继续分别登记，旧失败及前一轮内容问题不覆盖。
++
++当前新增物理边界预检 `production/minio-fence-window-readonly-1/` 实际只读确认唯一所见 Docker MinIO 数据挂载、无生命周期/复制/通知配置；未停止该服务，也不证明不存在任意宿主写入方。新增附件集合315项通过；完整控制平面迁移集合有2项静态清单失败，尚未关闭，不将该集合称为全绿。

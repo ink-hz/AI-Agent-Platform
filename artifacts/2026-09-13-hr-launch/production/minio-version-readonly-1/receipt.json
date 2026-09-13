@@ -1,0 +1,27 @@
+{
+  "started_at": 1789277854.900137,
+  "finished_at": 1789277855.7023711,
+  "exit_code": 0,
+  "command": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/docker",
+    "exec",
+    "de10f2bd60988f07a77c685b55919cfb98ebed8e6792d41aa7c5e2a9a0b34238",
+    "minio",
+    "--version"
+  ],
+  "source_sha256": "ba017bd31783d54c8cb4d13de91ffda1c1f52c66f5a76f1f9eaeab2e529f1a8b",
+  "stdout_sha256": "6793e100e0107bbcd2ac531f2e13f22c7fb6774023336adb1b1377591b47f1c7",
+  "boundary": "Read-only minio --version in exact existing production container; no S3 calls/data changes/service restart"
+}

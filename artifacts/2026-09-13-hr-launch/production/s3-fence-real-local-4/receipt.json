@@ -1,0 +1,49 @@
+{
+  "started_at": 1789278212.687022,
+  "boundary": "local disposable real MinIO, real boto3 signed requests; no production or database access",
+  "checks": [
+    {
+      "real_pagination_and_fence": "passed",
+      "old_data_versions": 1001,
+      "old_pages": 2,
+      "fences": 1
+    },
+    "duplicate original PUT preserves canonical; later PUT cannot cross erasure fence",
+    "derivative identical retry keeps one payload; later derivative rejected by fence",
+    {
+      "two_real_erasers": "passed",
+      "retained_fences": 2
+    },
+    {
+      "real_inflight_signed_put": 200,
+      "fence_finished_before_body_tail": false,
+      "post_fence_put": 412
+    },
+    "suspended bucket retains verified null fence and deletes old payload",
+    "unversioned fence blocks future conditional payload"
+  ],
+  "minio_binary_sha256": "f9707f74c17b2d291e99e71eebeb6e7095a11a6a4617f751c4254ef45c469e4d",
+  "minio_source_commit": "7ced9663e6a791fef9dc6be798ff24cda9c730ac",
+  "partial_put_transmission": {
+    "client_prefix_bytes_sent": 26,
+    "declared_content_length": 27,
+    "client_tail_bytes_sent": 1,
+    "server_partial_acceptance_observed": false,
+    "boundary": "send completed in the client; thread start and local socket send do not prove server handler acceptance",
+    "eraser_client_thread_started": true
+  },
+  "status": "passed",
+  "owned_raw_connections_closed": true,
+  "owned_process_reaped": true,
+  "owned_thread_count": 3,
+  "owned_threads_alive": 0,
+  "owned_futures_done": true,
+  "server_log_sha256": "af852f4181d634385bdc11ddb093026e2d44197d648646a441b047601f717ad4",
+  "finished_at": 1789278216.802454,
+  "driver_sha256": "62ad4d5145c4fbd997a8fdca1ba4407cf3f955e47808f706d3ad81d8ac9afaeb",
+  "adapter_sha256": {
+    "backend/app/attachments/worker_runtime.py": "ced56a5661cc0717785eb47b8b5f9d2dadd55c5cf35ff1c8224f4b2d762bfd37",
+    "backend/app/attachments/object_writer.py": "3ac26ca1d99d27a08426018a58c5a68e2171f84161ccd9ee0425fe65fc073564",
+    "backend/app/attachments/s3_erasure.py": "42c230ff413fd53402176dd988ff78b511a79a28489130890808d7331cc44933"
+  }
+}

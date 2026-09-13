@@ -1,0 +1,20 @@
+{
+  "model": "claude-opus-5",
+  "protocol": "anthropic_messages_sse",
+  "profile_sha256": "303001ff40572037e0b8ec9cbf888b27500c9bf1a919b3e285d897fb8aef21b4",
+  "max_generation_calls_shared": 96,
+  "max_output_tokens": 16384,
+  "max_call_seconds": 300,
+  "per_work_local_experiment": {
+    "model_calls": 32,
+    "total_tokens": 1200000,
+    "active_seconds": 1800
+  },
+  "production_default_not_verified": {
+    "model_calls": 32,
+    "total_tokens": 600000,
+    "active_seconds": 900
+  },
+  "automatic_budget_extension": false,
+  "boundary": "synthetic historical-intent adaptations; no candidate intake authority"
+}
