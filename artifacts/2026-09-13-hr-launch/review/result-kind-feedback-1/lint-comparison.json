@@ -1,0 +1,24 @@
+[
+  {
+    "file": "backend/app/hr_agent/repository.py",
+    "baseline": [
+      [
+        "I001",
+        "Import block is un-sorted or un-formatted"
+      ]
+    ],
+    "current": [
+      [
+        "I001",
+        "Import block is un-sorted or un-formatted"
+      ]
+    ],
+    "same_findings": true
+  },
+  {
+    "file": "backend/tests/test_hr_agent_repository.py",
+    "baseline": [],
+    "current": [],
+    "same_findings": true
+  }
+]

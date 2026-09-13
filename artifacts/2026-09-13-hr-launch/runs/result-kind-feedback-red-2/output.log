@@ -1,0 +1,52 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_result_kind_error_identifies_field_without_replacing_saved_result ____
+
+repo = <app.hr_agent.repository.HrAgentRepository object at 0x105ed8790>
+database = HrTestDatabase()
+
+    def test_result_kind_error_identifies_field_without_replacing_saved_result(repo, database):
+        """A saved JD can be repaired after a wrong-kind update, without probe writes."""
+        from app.hr_agent.types import ToolCall
+    
+        owner = uuid4()
+        work = repo.submit(owner, request(), uuid4())
+        fence = repo.claim("result-kind-feedback", 60)
+        payload = {
+            "result_id": None, "expected_revision": None, "kind": "jd",
+            "title": "虚构岗位", "body": "完整职责与任职要求", "objects": [],
+            "source_refs": [], "preceding_refs": [], "base_standard_ref": None,
+            "changes": [], "basis": [{"kind": "user_temporary", "input_revision": 1, "ref": None}],
+        }
+    
+        def save(args):
+            attempt = repo.prepare_model(fence, model_context())
+            repo.mark_model_sending(fence, attempt.attempt_id)
+            operations = repo.commit_model(
+                fence, attempt.attempt_id,
+                reply("", [ToolCall(str(uuid4()), "save_result", args)]),
+            )
+            receipt = repo.execute_local_tool(fence, operations[0])
+            assert repo.execute_local_tool(fence, operations[0]) == receipt
+            return receipt
+    
+        first = save(payload)
+        assert first["status"] == "ok", first
+        original = first["data"]["ref"]
+        wrong = {**payload, "result_id": original["id"],
+                 "expected_revision": original["revision"], "kind": "role_calibration",
+                 "body": "补充真实用户给定的产品范围"}
+        rejected = save(wrong)
+        assert rejected["status"] == "invalid"
+        assert rejected["error"]["code"] == "invalid_input"
+>       assert rejected["error"]["details"] == {"field": "kind", "expected_kind": "jd"}
+E       AssertionError: assert {} == {'field': 'ki...d_kind': 'jd'}
+E         
+E         Right contains 2 more items:
+E         {'expected_kind': 'jd', 'field': 'kind'}
+E         Use -v to get more diff
+
+backend/tests/test_hr_agent_repository.py:462: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_repository.py::test_result_kind_error_identifies_field_without_replacing_saved_result
+1 failed in 1.15s

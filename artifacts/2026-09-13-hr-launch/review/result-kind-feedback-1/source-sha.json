@@ -1,0 +1,7 @@
+{
+  "backend/app/hr_agent/repository.py": "b689a48ca6f7fa5028ed0c9bd69385c40d5ae56372329840d29c30b08631ecad",
+  "backend/hr_agent_knowledge/role.md": "a1e8e7c73194b503d6c9a8b5efe356cd97aba43d5d997f631278574e465da290",
+  "backend/tests/test_hr_agent_repository.py": "5d673796ef90462c14c4b55ba5c7276302c829b9974f2658aaa046f989ffab8e",
+  "HR\u603b\u4f53\u67b6\u6784\u8bbe\u8ba1.md": "5845c7e71841f839670578fd21f7fb89ff3f0e51cd760c236b27801005c422bf",
+  "HR_Agent\u5de5\u4f5c\u6d41.md": "1d9fa731d80a5e47acfbfd128b1f99d309b4aad4fd1222d583b687b65d188386"
+}

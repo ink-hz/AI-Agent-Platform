@@ -1,0 +1,20 @@
+{
+  "head": "9f31cc2d45c3cdac89924c5c3168de3cc306dbe4",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_agent_repository.py::test_result_kind_error_identifies_field_without_replacing_saved_result",
+    "-q"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T04:42:15.981197+00:00",
+  "source_patch_sha256": "dfd9a09a88f5e558730eb54ac22b78e62d49fdf3080c971a77286a5e028c63aa",
+  "untracked_source_snapshots": {
+    "backend/app/attachments/s3_erasure.py": "a2f9e5eb7a7c6740ab10c7cd1e02fc040ebbc438d0f59a6bbb78c7c97307bd3b",
+    "backend/tests/test_attachment_s3_version_erasure.py": "9a076c5af8192ee71fa80ead54a15b8f616b065c7cd292ca2f7cf33879df47e3"
+  },
+  "boundary": "Local actual PostgreSQL repository; identity scope/provider replaced; verifies actionable kind rejection and same-result retry without extra saved result; no model or production",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T04:42:17.227973+00:00"
+}

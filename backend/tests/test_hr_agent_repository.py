@@ -423,3 +423,63 @@ def test_object_only_note_revocation_hides_checkpoint_text(repo):
     repo.execute_local_tool(fence, op)
     revoked = True
     assert repo.get_work(owner, work["work_id"])["checkpoint"]["open_questions"] == []
+
+
+def test_result_kind_error_identifies_field_without_replacing_saved_result(repo, database):
+    """A saved JD can be repaired after a wrong-kind update, without probe writes."""
+    from app.hr_agent.types import ToolCall
+
+    owner = uuid4()
+    work = repo.submit(owner, request(), uuid4())
+    fence = repo.claim("result-kind-feedback", 60)
+    payload = {
+        "result_id": None, "expected_revision": None, "kind": "jd",
+        "title": "虚构岗位", "body": "完整职责与任职要求", "objects": [],
+        "source_refs": [], "preceding_refs": [], "base_standard_ref": None,
+        "changes": [], "basis": [{"kind": "user_temporary", "input_revision": 1, "ref": None}],
+    }
+
+    def save(args):
+        attempt = repo.prepare_model(fence, model_context())
+        repo.mark_model_sending(fence, attempt.attempt_id)
+        operations = repo.commit_model(
+            fence, attempt.attempt_id,
+            reply("", [ToolCall(str(uuid4()), "save_result", args)]),
+        )
+        receipt = repo.execute_local_tool(fence, operations[0])
+        assert repo.execute_local_tool(fence, operations[0]) == receipt
+        return receipt
+
+    first = save(payload)
+    assert first["status"] == "ok", first
+    original = first["data"]["ref"]
+    wrong = {**payload, "result_id": original["id"],
+             "expected_revision": original["revision"], "kind": "role_calibration",
+             "body": "补充真实用户给定的产品范围"}
+    rejected = save(wrong)
+    assert rejected["status"] == "invalid"
+    assert rejected["error"]["code"] == "invalid_input"
+    assert rejected["error"]["details"] == {"field": "kind", "expected_kind": "jd"}
+    assert "keep" in rejected["error"]["message"]
+    assert repo.get_work(owner, work["work_id"])["result_refs"] == [original]
+    repaired = save({**wrong, "kind": "jd"})
+    assert repaired["status"] == "ok"
+    assert repaired["data"]["ref"]["id"] == original["id"]
+    assert repaired["data"]["ref"]["revision"] != original["revision"]
+    assert repaired["data"]["body"] == wrong["body"]
+    with database.admin_connection() as connection:
+        assert connection.execute(
+            "select count(*) from platform_hr_agent.results where owner_id=%s", (owner,)
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "select count(*) from platform_hr_agent.result_revisions where result_id=%s",
+            (original["id"],),
+        ).fetchone()[0] == 2
+
+    for other_owner, code in ((owner, "scope_denied"), (uuid4(), "not_found")):
+        other_work = repo.submit(other_owner, request(), uuid4())
+        fence = repo.claim("result-kind-other-work", 60)
+        denied = save({**wrong, "expected_revision": repaired["data"]["ref"]["revision"]})
+        assert denied["error"]["code"] == code
+        assert denied["error"]["details"] == {}
+        assert repo.get_work(other_owner, other_work["work_id"])["result_refs"] == []

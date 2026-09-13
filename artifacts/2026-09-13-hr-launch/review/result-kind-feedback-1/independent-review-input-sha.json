@@ -1,0 +1,20 @@
+{
+  "review": "read-only independent review; no tests rerun",
+  "observed_head": "4864abfbe6bd71c5392f15af29b43ec3e6166617",
+  "sha256": {
+    "artifacts/2026-09-13-hr-launch/review/result-kind-feedback-1/implementation.md": "bd97c0540809e2a59629dd7abf5fe34cb5b216751eabd18da5aa901c63aa0434",
+    "artifacts/2026-09-13-hr-launch/review/result-kind-feedback-1/change.patch": "634bfa84e9e956b47641a8c1677c56ca75f57e17b8871cf2eacb31e3543b2dc6",
+    "artifacts/2026-09-13-hr-launch/review/result-kind-feedback-1/source-sha.json": "5139eeccbd3795c6641ded50cbdc383fca83bf1162b42181be2d57bf859aad6d",
+    "artifacts/2026-09-13-hr-launch/review/result-kind-feedback-1/lint-comparison.json": "2e6909c0816fefcacc883dca2d49ed71d8342437d00253bf116566c50782037b",
+    "artifacts/2026-09-13-hr-launch/runs/result-kind-feedback-green-2/command.json": "50c8dfbdc320293b847362f7693f07f1e383350e4ae2e0eab24385e750c47239",
+    "artifacts/2026-09-13-hr-launch/runs/result-kind-feedback-green-2/output.log": "90f3740621fecc6a321af9e6825204fb669fce4c31a18b4602e7b67aed2a3d03",
+    "artifacts/2026-09-13-hr-launch/runs/result-kind-feedback-green-2/source.patch": "634bfa84e9e956b47641a8c1677c56ca75f57e17b8871cf2eacb31e3543b2dc6",
+    "backend/app/hr_agent/repository.py": "b689a48ca6f7fa5028ed0c9bd69385c40d5ae56372329840d29c30b08631ecad",
+    "backend/hr_agent_knowledge/role.md": "a1e8e7c73194b503d6c9a8b5efe356cd97aba43d5d997f631278574e465da290",
+    "backend/tests/test_hr_agent_repository.py": "5d673796ef90462c14c4b55ba5c7276302c829b9974f2658aaa046f989ffab8e",
+    "HR\u603b\u4f53\u67b6\u6784\u8bbe\u8ba1.md": "5845c7e71841f839670578fd21f7fb89ff3f0e51cd760c236b27801005c422bf",
+    "HR_Agent\u5de5\u4f5c\u6d41.md": "1d9fa731d80a5e47acfbfd128b1f99d309b4aad4fd1222d583b687b65d188386"
+  },
+  "source_manifest_all_match": true,
+  "green_source_patch_matches_command": true
+}

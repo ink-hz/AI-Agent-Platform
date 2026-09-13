@@ -1687,7 +1687,12 @@ class HrAgentRepository(RepositoryViewsMixin):
             if previous["origin_work_id"] != work["work_id"]:
                 raise problem("scope_denied", http_status=403)
             if previous["kind"] != args["kind"]:
-                raise problem("invalid_input")
+                raise problem(
+                    "invalid_input",
+                    "Existing result kind cannot change; keep the saved kind when "
+                    "revising this result.",
+                    details={"field": "kind", "expected_kind": previous["kind"]},
+                )
         else:
             identity = uuid4()
         revision = uuid4()

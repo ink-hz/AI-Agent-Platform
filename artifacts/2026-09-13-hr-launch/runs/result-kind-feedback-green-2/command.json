@@ -1,0 +1,17 @@
+{
+  "head": "4864abfbe6bd71c5392f15af29b43ec3e6166617",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_agent_repository.py",
+    "-q"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T04:48:41.176373+00:00",
+  "source_patch_sha256": "634bfa84e9e956b47641a8c1677c56ca75f57e17b8871cf2eacb31e3543b2dc6",
+  "untracked_source_snapshots": {},
+  "boundary": "Local real PostgreSQL; wrong-kind repair and other-work/foreign-owner no-leak cases; scope/provider test doubles; no model or production",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T04:48:43.026346+00:00"
+}
