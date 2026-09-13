@@ -1,0 +1,16 @@
+{
+  "head": "7cebdb22a68b94b8591894b4218c524105fe7aad",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/history/replay_h03_real_v4.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T04:55:19.417067+00:00",
+  "source_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "untracked_source_snapshots": {
+    "backend/tests/test_attachment_write_fence.py": "cae346d74569dc4deac9a0895e7ef31e04d160a0364e99e79292d9610b6b56f4"
+  },
+  "boundary": "One H03 four-turn synthetic historical-intent replay, actual configured provider; exact detached b425 source (kind feedback plus role correction), real local HTTP/PG with external login and storage substitutes;32 calls/1.2M tokens/1800 sec per work,96 shared hard cap; no production or candidate data; old failed runs retained",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T04:55:19.881870+00:00"
+}
