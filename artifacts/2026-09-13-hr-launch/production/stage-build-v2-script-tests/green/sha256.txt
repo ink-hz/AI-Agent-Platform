@@ -1,0 +1,2 @@
+958d6ad9d0d1f0982b614bcf345b3f502a6994035168d804c81edca8700ea9d9  artifacts/2026-09-13-hr-launch/production/stage_build_v2.py
+619b217cbad17d5be3ed5f2eaaab9b9f03465bcce9f366eac25115c7f0956e40  artifacts/2026-09-13-hr-launch/production/test_stage_build_v2.py

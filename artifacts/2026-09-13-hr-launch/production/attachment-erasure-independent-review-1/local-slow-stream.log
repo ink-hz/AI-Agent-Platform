@@ -1,0 +1,9 @@
+{
+  "boundary": "local loopback slow-stream; synthetic headers; config loader intentionally bypassed to avoid TLS fixture; real httpx timeout mechanics",
+  "remaining_seconds": 0.1,
+  "elapsed_seconds": 1.0822841245681047,
+  "returned_after_deadline": true,
+  "result": {
+    "status": "synthetic-slow-stream"
+  }
+}

@@ -1,0 +1,52 @@
+EEEF
+======================================================================
+ERROR: test_archive_is_exact_fixed_git_object_plus_manifest (artifacts.2026-09-13-hr-launch.production.test_stage_build.StageBuildContractTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/test_stage_build.py", line 25, in test_archive_is_exact_fixed_git_object_plus_manifest
+    module = load_module()
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/test_stage_build.py", line 19, in load_module
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 846, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 982, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1039, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/stage_build.py'
+
+======================================================================
+ERROR: test_member_validator_rejects_links_and_traversal (artifacts.2026-09-13-hr-launch.production.test_stage_build.StageBuildContractTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/test_stage_build.py", line 54, in test_member_validator_rejects_links_and_traversal
+    module = load_module()
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/test_stage_build.py", line 19, in load_module
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 846, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 982, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1039, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/stage_build.py'
+
+======================================================================
+ERROR: test_remote_job_is_build_only_and_uses_fixed_private_input (artifacts.2026-09-13-hr-launch.production.test_stage_build.StageBuildContractTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/test_stage_build.py", line 79, in test_remote_job_is_build_only_and_uses_fixed_private_input
+    module = load_module()
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/test_stage_build.py", line 19, in load_module
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 846, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 982, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1039, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/stage_build.py'
+
+======================================================================
+FAIL: test_start_requires_explicit_execute_flag (artifacts.2026-09-13-hr-launch.production.test_stage_build.StageBuildContractTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/test_stage_build.py", line 118, in test_start_requires_explicit_execute_flag
+    self.assertIn("--execute", result.stderr)
+AssertionError: '--execute' not found in "/Library/Developer/CommandLineTools/usr/bin/python3: can't open file '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/stage_build.py': [Errno 2] No such file or directory\n"
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.017s
+
+FAILED (failures=1, errors=3)

@@ -1,0 +1,7 @@
+CLOUD_DEPLOY_INPUT_OK action=acquire
+CLOUD_DEPLOY_INPUT_OK action=validate
+CLOUD_DEPLOY_INPUT_OK action=validate
+CLOUD_DEPLOY_INPUT_OK action=validate
+HR_PROVISION_OK release=ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7 image=sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59 services_changed=false migrations_run=false
+CLOUD_DEPLOY_INPUT_OK action=validate
+CLOUD_DEPLOY_INPUT_OK action=release

@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-09-13T03:35:40.044297+00:00",
+  "baseline95_exact_match": true,
+  "baseline_sha256": "9dd31d327ec8140a443823a43fb698d8a7e0d9ace43168f715da758c35526e5b",
+  "script_sha256": "88644e92079949a49e695474ab0c5d15e77cc238d13116e76db880f14d2e3b2e",
+  "job_kind_exit_code": 0,
+  "boundary": "Actual production read-only PostgreSQL schema ledger and job-kind/lineage checks; no mutation or model",
+  "command": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/bin/bash -s -- 12ef0c782a5e458b9e52dbe40ffaa3aa877e07269ddea52051e93d258ebdbb0e agent_platform_control --baseline95"
+  ],
+  "limitation": "This does not run the 104 cutover occupancy function or prove full HR readiness"
+}

@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-09-13T03:41:26.153344+00:00",
+  "script_sha256": "7e9662e6ec37e75c28baec414a020bc7e2244d4bb3c360e0ecb797409be0329f",
+  "test_sha256": "3aa754bc75b36ca9c1d2bf0db920b04578fda78cc7b501d0abed084229a0630b",
+  "review": "Root read complete script, identity/PG fixture and key negative-case assertions; approved for exact synthetic own-work HTTP canary after production preflight and valid existing owner credentials",
+  "runtime_boundary": "No browser, session issuance, service restart, automatic budget increase, deletion or cancellation",
+  "limitations": [
+    "Uploading begin lacks server idempotency; response loss stops unknown and is never retried",
+    "Actual worker restart needs separate operator receipt; running observation alone is not recovery acceptance",
+    "Timeout leaves possibly running bounded own work; no automatic cancellation",
+    "This HR canary cannot verify standalone attachment erasure before HR schema install"
+  ]
+}

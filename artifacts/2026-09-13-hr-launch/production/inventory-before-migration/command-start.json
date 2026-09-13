@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-09-13T03:24:11.315464+00:00",
+  "command": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "docker exec -i 3347e61ede7d3ab0bd96c0cdc25cff1d6808c89ab2b8a31f24953bebccd4fcf7 python - --dsn-file /run/secrets/control-database-url"
+  ],
+  "source_sha256": "559bb50521529b0fec858574f366a880b956dbef681f54453f979dd221c7c96d",
+  "boundary": "Production aggregate-only read-only transaction, rollback; current app DSN; no model, mutation, row content or identity export"
+}

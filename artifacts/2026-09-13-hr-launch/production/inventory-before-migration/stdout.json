@@ -1,0 +1,456 @@
+{
+  "schema_version": 1,
+  "transaction": "read_only_rolled_back",
+  "transaction_read_only": true,
+  "assets": [
+    {
+      "name": "old_positions",
+      "relation": "platform_hr.positions",
+      "status": "ok",
+      "scope": "complete",
+      "total": 1332,
+      "groups": [
+        {
+          "state": {
+            "source_kind": "official_site",
+            "internal_status": "active",
+            "official_status": "active"
+          },
+          "count": 702
+        },
+        {
+          "state": {
+            "source_kind": "official_site",
+            "internal_status": "active",
+            "official_status": "inactive"
+          },
+          "count": 234
+        },
+        {
+          "state": {
+            "source_kind": "official_site",
+            "internal_status": "active",
+            "official_status": "stale"
+          },
+          "count": 324
+        },
+        {
+          "state": {
+            "source_kind": "official_site",
+            "internal_status": "active",
+            "official_status": "suspected_inactive"
+          },
+          "count": 72
+        }
+      ]
+    },
+    {
+      "name": "old_candidates",
+      "relation": "platform_hr.candidates",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0
+    },
+    {
+      "name": "old_candidate_relations",
+      "relation": "platform_hr.position_candidates",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0
+    },
+    {
+      "name": "old_candidate_documents",
+      "relation": "platform_hr.candidate_documents",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0
+    },
+    {
+      "name": "old_candidate_drafts",
+      "relation": "platform_hr.candidate_drafts",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0,
+      "groups": []
+    },
+    {
+      "name": "old_parse_attempts",
+      "relation": "platform_hr.candidate_draft_processing_attempts",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0,
+      "groups": []
+    },
+    {
+      "name": "new_candidates",
+      "relation": "platform_hr_agent.candidates",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_candidate_relations",
+      "relation": "platform_hr_agent.candidate_positions",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_candidate_documents",
+      "relation": "platform_hr_agent.candidate_documents",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_candidate_intake",
+      "relation": "platform_hr_agent.candidate_intake_items",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_material_parses",
+      "relation": "platform_hr_agent.material_parses",
+      "status": "missing_table"
+    },
+    {
+      "name": "attachments",
+      "relation": "platform_attachments.attachments",
+      "status": "ok",
+      "scope": "complete",
+      "total": 2,
+      "groups": [
+        {
+          "state": {
+            "state": "uploading",
+            "source_kind": "user_input"
+          },
+          "count": 2
+        }
+      ]
+    },
+    {
+      "name": "old_position_artifacts",
+      "relation": "platform_hr.position_artifacts",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0
+    },
+    {
+      "name": "old_artifact_versions",
+      "relation": "platform_attachments.artifact_versions",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0,
+      "groups": []
+    },
+    {
+      "name": "old_candidate_analyses",
+      "relation": "platform_hr.candidate_analysis_versions",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0
+    },
+    {
+      "name": "old_context_versions",
+      "relation": "platform_hr.position_context_versions",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0,
+      "groups": []
+    },
+    {
+      "name": "old_result_projections",
+      "relation": "platform_hr.hr_task_result_projections",
+      "status": "unreadable"
+    },
+    {
+      "name": "old_result_intents",
+      "relation": "platform_control.result_artifact_intents",
+      "status": "ok",
+      "scope": "complete",
+      "total": 0,
+      "groups": []
+    },
+    {
+      "name": "new_results",
+      "relation": "platform_hr_agent.results",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_result_revisions",
+      "relation": "platform_hr_agent.result_revisions",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_standards",
+      "relation": "platform_hr_agent.standards",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_standard_revisions",
+      "relation": "platform_hr_agent.standard_revisions",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_works",
+      "relation": "platform_hr_agent.works",
+      "status": "missing_table"
+    },
+    {
+      "name": "old_execution_jobs",
+      "relation": "platform_control.execution_jobs",
+      "status": "ok",
+      "scope": "complete",
+      "total": 49,
+      "groups": [
+        {
+          "state": {
+            "scope": "hr",
+            "status": "cancelled"
+          },
+          "count": 2
+        },
+        {
+          "state": {
+            "scope": "hr",
+            "status": "completed"
+          },
+          "count": 13
+        },
+        {
+          "state": {
+            "scope": "hr",
+            "status": "interrupted"
+          },
+          "count": 28
+        },
+        {
+          "state": {
+            "scope": "hr",
+            "status": "queued"
+          },
+          "count": 3
+        },
+        {
+          "state": {
+            "scope": "other",
+            "status": "completed"
+          },
+          "count": 3
+        }
+      ]
+    },
+    {
+      "name": "old_hr_job_references",
+      "relation": "platform_control.execution_jobs",
+      "status": "ok",
+      "scope": "complete",
+      "total": 46,
+      "groups": [
+        {
+          "state": {
+            "job_kind": "direct_agent",
+            "status": "completed",
+            "has_direct_binding": false,
+            "has_mission_run": false,
+            "has_turn_reference": false,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": true
+          },
+          "count": 2
+        },
+        {
+          "state": {
+            "job_kind": "legacy_brain",
+            "status": "cancelled",
+            "has_direct_binding": false,
+            "has_mission_run": false,
+            "has_turn_reference": false,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": true
+          },
+          "count": 1
+        },
+        {
+          "state": {
+            "job_kind": "legacy_brain",
+            "status": "interrupted",
+            "has_direct_binding": false,
+            "has_mission_run": false,
+            "has_turn_reference": false,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": true
+          },
+          "count": 3
+        },
+        {
+          "state": {
+            "job_kind": "metabot_local",
+            "status": "cancelled",
+            "has_direct_binding": false,
+            "has_mission_run": false,
+            "has_turn_reference": false,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": true
+          },
+          "count": 1
+        },
+        {
+          "state": {
+            "job_kind": "metabot_local",
+            "status": "completed",
+            "has_direct_binding": false,
+            "has_mission_run": false,
+            "has_turn_reference": false,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": true
+          },
+          "count": 2
+        },
+        {
+          "state": {
+            "job_kind": "metabot_local",
+            "status": "interrupted",
+            "has_direct_binding": false,
+            "has_mission_run": false,
+            "has_turn_reference": false,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": true
+          },
+          "count": 15
+        },
+        {
+          "state": {
+            "job_kind": "direct_agent",
+            "status": "completed",
+            "has_direct_binding": false,
+            "has_mission_run": true,
+            "has_turn_reference": true,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": true
+          },
+          "count": 9
+        },
+        {
+          "state": {
+            "job_kind": "direct_agent",
+            "status": "interrupted",
+            "has_direct_binding": false,
+            "has_mission_run": true,
+            "has_turn_reference": true,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": true
+          },
+          "count": 10
+        },
+        {
+          "state": {
+            "job_kind": "worker_direct_v5",
+            "status": "queued",
+            "has_direct_binding": true,
+            "has_mission_run": true,
+            "has_turn_reference": true,
+            "has_nonterminal_turn": false,
+            "has_nonterminal_attempt": false,
+            "pending_stop": false,
+            "terminal_recorded": false
+          },
+          "count": 3
+        }
+      ]
+    },
+    {
+      "name": "old_hr_queued_age",
+      "relation": "platform_control.execution_jobs",
+      "status": "ok",
+      "scope": "complete",
+      "total": 3,
+      "groups": [
+        {
+          "state": {
+            "age": "24h_plus",
+            "cancel_requested": false
+          },
+          "count": 3
+        }
+      ]
+    },
+    {
+      "name": "active_hr_workers",
+      "relation": "platform_control.execution_workers",
+      "status": "ok",
+      "scope": "complete",
+      "total": 1,
+      "groups": [
+        {
+          "state": {
+            "last_seen_age": "under_15m"
+          },
+          "count": 1
+        }
+      ]
+    },
+    {
+      "name": "old_hr_turn_attempts",
+      "relation": "platform_control.turn_attempts",
+      "status": "ok",
+      "scope": "complete",
+      "total": 3,
+      "groups": [
+        {
+          "state": {
+            "status": "completed",
+            "executor_kind": "worker_direct"
+          },
+          "count": 3
+        }
+      ]
+    },
+    {
+      "name": "new_candidate_position_refs",
+      "relation": "platform_hr_agent.candidate_positions",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_result_link_refs",
+      "relation": "platform_hr_agent.result_links",
+      "status": "missing_table"
+    },
+    {
+      "name": "new_reference_edges",
+      "relation": "platform_hr_agent.reference_edges",
+      "status": "missing_table"
+    },
+    {
+      "name": "intelligence_bundles",
+      "relation": "platform_hr.intelligence_bundles",
+      "status": "unreadable"
+    },
+    {
+      "name": "intelligence_jobs",
+      "relation": "platform_hr.intelligence_bundle_jobs",
+      "status": "unreadable"
+    },
+    {
+      "name": "intelligence_current",
+      "relation": "platform_hr.intelligence_current_publication",
+      "status": "unreadable"
+    }
+  ],
+  "diagnostics": {
+    "missing_table": 13,
+    "missing_column": 0,
+    "unreadable": 4,
+    "query_error": 0
+  }
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "path": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/HR\u603b\u4f53\u67b6\u6784\u8bbe\u8ba1.md",
+    "sha256": "c4e0215430237bcdbea5417439a371e3d66f7a8a4940ce32b3fd1a6b3598e9e7"
+  },
+  {
+    "path": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/HR_Agent\u5de5\u4f5c\u6d41.md",
+    "sha256": "455cf5eea5031e86f655f32ebe4945c35415a405baa2e69c63b0e7f24ac10fc3"
+  },
+  {
+    "path": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/control_migrations/102_hr_execution_cutover.sql",
+    "sha256": "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6"
+  },
+  {
+    "path": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/control_migrations/104_hr_execution_drain_terminal_contract.sql",
+    "sha256": "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d"
+  },
+  {
+    "path": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/hr_agent/cutover.py",
+    "sha256": "1d933bfcc5069597d3f44174b24a46f3386987e4522bdbe5dd6af977d2389684"
+  },
+  {
+    "path": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/agent_brain/direct_command_binding.py",
+    "sha256": "e3e130268f4fd3fb3ee13e6c9d04b513fc64486686cae930b155f7d78bd89aa0"
+  },
+  {
+    "path": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/execution_relay/repository.py",
+    "sha256": "6934c15af3c02bb4f3c835d166216d0bda844a13ccdd7fbe2a4e5b9e6eea25e6"
+  },
+  {
+    "path": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/app/execution_relay/recovery_v5.py",
+    "sha256": "1276eea3f36957b0aa1e2f7c631bdd61d051241e068abfaac408ff72338cbb96"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/metabot/src/index.ts",
+    "sha256": "e90d921c445d0b82395d4861d23073a52d1a7182228954c801d79bb2bb5be04c",
+    "boundary": "read only disk bytes; not proof of loaded process identity"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/metabot/src/api/http-server.ts",
+    "sha256": "bc6d1341f381baae664c6330716c8107404ca92d30024691833feac328af60a2",
+    "boundary": "read only disk bytes; not proof of loaded process identity"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/metabot/src/api/routes/core-chat-routes.ts",
+    "sha256": "647e678bf8a7e467c767e3edb6423cc7542e6071c6220704bc4d84212440ebc2",
+    "boundary": "read only disk bytes; not proof of loaded process identity"
+  },
+  {
+    "path": "/Users/agentops/AgentRuntime/metabot/ecosystem.config.cjs",
+    "sha256": "f1f0148d436376c9d766c66d20862b895a765ca0482a33ae6ef1a19a0d2b11ab",
+    "boundary": "read only disk bytes; not proof of loaded process identity"
+  },
+  {
+    "path": "/Users/neo/Developer/work/Orbbec-Agent-Team/scripts/reliability/runtime-contract.mjs",
+    "sha256": "2f3fb0eb836697fc41a398442fa95ac450deb532b8733a388a85e2f5073f8400"
+  },
+  {
+    "path": "/Users/neo/Developer/work/Orbbec-Agent-Team/scripts/reliability/generate-ecosystem.mjs",
+    "sha256": "fd0647d8abe1cc34e2ea1775500fe0967f476ce6b319a05bd46d7362e392c131"
+  },
+  {
+    "path": "/Users/neo/Developer/work/Orbbec-Agent-Team/scripts/reliability/generate-instance-configs.mjs",
+    "sha256": "beb7966d4d1ee40ebe72921037970b26867a50ed77ae3ba6bb232e9000958f08"
+  }
+]

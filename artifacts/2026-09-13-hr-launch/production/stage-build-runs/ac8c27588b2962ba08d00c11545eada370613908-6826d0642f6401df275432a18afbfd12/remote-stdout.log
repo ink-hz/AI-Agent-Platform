@@ -1,0 +1,36 @@
+DISK_BEFORE root_used=63015837696 root_available=37757767680 root_percent=63 data_used=31141658624 data_available=68561104896 data_percent=32 projected_root_bytes=5460254040
+CLOUD_DEPLOY_INPUT_OK action=acquire
+CLOUD_DEPLOY_INPUT_OK action=validate
+CLOUD_DEPLOY_INPUT_OK action=validate
+Sending build context to Docker daemon   51.3MB
+Step 1/27 : FROM node:24.7.0-alpine3.22 AS web-builder
+24.7.0-alpine3.22: Pulling from library/node
+Digest: sha256:be4d5e92ac68483ec71440bf5934865b4b7fcb93588f17a24d411d15f0204e4f
+Status: Image is up to date for node:24.7.0-alpine3.22
+ ---> be4d5e92ac68
+Step 2/27 : WORKDIR /src/webui
+ ---> Using cache
+ ---> b3d5628549a2
+Step 3/27 : COPY webui/package.json webui/package-lock.json ./
+ ---> Using cache
+ ---> fe2e9e0ee71e
+Step 4/27 : RUN npm ci --ignore-scripts
+ ---> Using cache
+ ---> ea60913cc052
+Step 5/27 : COPY webui/ ./
+ ---> 79b0c4d8a656
+Step 6/27 : RUN npm run build
+ ---> Running in 4ad9735bb07a
+
+> orbbec-agent-platform-webui@0.1.0 build
+> tsc -b && vite build
+
+src/hrCompanyIntelligenceApi.test.ts(9,30): error TS2307: Cannot find module '../../backend/tests/fixtures/hr_intelligence_company/companies.json' or its corresponding type declarations.
+src/hrCompanyIntelligenceApi.test.ts(10,27): error TS2307: Cannot find module '../../backend/tests/fixtures/hr_intelligence_company/company-insta360.json' or its corresponding type declarations.
+src/hrCompanyIntelligenceApi.test.ts(11,35): error TS2307: Cannot find module '../../backend/tests/fixtures/hr_intelligence_company/company-scantech-missing-metrics.json' or its corresponding type declarations.
+src/hrCompanyIntelligenceApi.test.ts(12,25): error TS2307: Cannot find module '../../backend/tests/fixtures/hr_intelligence_company/company-insta360-jobs-page.json' or its corresponding type declarations.
+src/hrTopicIntelligenceApi.test.ts(8,28): error TS2307: Cannot find module '../../backend/tests/fixtures/hr_intelligence_company/company-insta360.json' or its corresponding type declarations.
+src/workspaces/hr/HrPanorama.acceptance.test.tsx(5,23): error TS2307: Cannot find module '../../../../backend/tests/fixtures/hr_intelligence_company/companies.json' or its corresponding type declarations.
+src/workspaces/hr/HrPanorama.acceptance.test.tsx(6,20): error TS2307: Cannot find module '../../../../backend/tests/fixtures/hr_intelligence_company/company-insta360.json' or its corresponding type declarations.
+CLOUD_DEPLOY_INPUT_OK action=validate
+CLOUD_DEPLOY_INPUT_OK action=release

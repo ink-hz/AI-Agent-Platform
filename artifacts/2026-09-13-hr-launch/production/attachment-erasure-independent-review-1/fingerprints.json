@@ -1,0 +1,40 @@
+{
+  "commit": "961bac7502e3f66ed7278ffd208a342591a2c832",
+  "files": [
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py",
+      "sha256": "1fedda28a1d9e5dca8fbcd525341c03598555f9eb0e907eac84723eb65ff42b2",
+      "bytes": 10834
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/api_canary.py",
+      "sha256": "7e9662e6ec37e75c28baec414a020bc7e2244d4bb3c360e0ecb797409be0329f",
+      "bytes": 22570
+    },
+    {
+      "path": "backend/tests/test_attachment_erasure_production_canary.py",
+      "sha256": "91c358b7d50626f401f81514d3ccb5a63696b5184f00a998abf8487b2f9d25ca",
+      "bytes": 12554
+    },
+    {
+      "path": "backend/tests/hr_agent_support.py",
+      "sha256": "9ed9458af30ef76134546adffb92fd9db6202a61a0c600642d65c9838a6b8a53",
+      "bytes": 5641
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment-erasure-engineering/README.md",
+      "sha256": "141fa37ef5fcfc8ab48ea723f5815e7af98176180df461c682c0b7f4c07eb090",
+      "bytes": 6171
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment-erasure-engineering/green-final-1/command.json",
+      "sha256": "4deef7441a39a7c9391ca98fcbeb9c6d3af1096dfaed7562731ffb0f06641a4d",
+      "bytes": 1352
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment-erasure-engineering/green-final-1/output.log",
+      "sha256": "ba2755dc1335bbbfc9b93f36b1fdb4804b751649965ead110a63a1e93634555f",
+      "bytes": 1102
+    }
+  ]
+}

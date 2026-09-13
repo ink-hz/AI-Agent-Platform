@@ -1,0 +1,24 @@
+{
+  "action_token": "01833697-d83d-4d02-a99a-ee54db362fb9",
+  "config_sha256": {
+    "hr-budget-profile.json": "fe68be1fbba168e6451c094a4ff1f07df4dcb5dea07a8e30359276c0c7bfd82f",
+    "hr-content-keyring.json": "4748b1bbacf7a7aa1bdc529edb4905a455896c3a642655c999dac622c7790c52",
+    "hr-diagnostic-profile.json": "7187d1e8e2a4d61b1dc5dfedb22d703a462df21470e0c145365b20fb3ed467c3",
+    "hr-provider-profile.json": "c3dacdfd3044ce549500c80d87d0ef594da5dfd6f412aa12f826c73e7290e24f",
+    "hr-release-policy.json": "681b6754b16447205e0224945e058653b55661f75b9c5e14d9760c460ac1af49"
+  },
+  "deployment_id": "4cd463bbaf897639b891b04555bd0c78",
+  "exit_code": 0,
+  "image_id": "sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59",
+  "knowledge_sha256": "1156e8e5b75eabd8d342636b3dfac401758f06cfb5c0311bb448a11cde256652",
+  "release_sha": "ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7",
+  "remote": "root@47.106.112.69",
+  "remote_job_sha256": "25adebf89c421300e111a62c4a4e82d0dc77d80298d56efd0dafe48e09fa3478",
+  "remote_paths": {
+    "input_root": "/opt/orbbec-agent-platform/private/hr-provision-inputs/ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7-4cd463bbaf897639b891b04555bd0c78",
+    "metadata_root": "/data/orbbec-agent-platform/release-metadata/ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7/hr-provision-4cd463bbaf897639b891b04555bd0c78",
+    "remote_job": "/opt/orbbec-agent-platform/private/hr-provision-inputs/ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7-4cd463bbaf897639b891b04555bd0c78/remote-job.sh"
+  },
+  "schema_version": 1,
+  "status": "complete"
+}

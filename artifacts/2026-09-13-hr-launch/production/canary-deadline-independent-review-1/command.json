@@ -1,0 +1,15 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-c",
+    "/dev/null",
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/canary-deadline-independent-review-1/snapshot/backend/tests/test_production_canary_deadline.py::test_slow_stream_is_cut_off_and_ambiguous_upload_never_repeats[attachment]",
+    "-q",
+    "-s"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 0,
+  "boundary": "exact commit snapshot; only owned loopback socket, no PG/model/production"
+}

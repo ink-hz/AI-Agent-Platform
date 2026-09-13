@@ -1,0 +1,12 @@
+{
+  "backend/app/hr/source_library.py": {
+    "production_commit": "65e7fbd14a3cbe99883b0b31e31b5705d183d1f9",
+    "matches_before_fix": true,
+    "sha256": "a2abddde119157c8dfd162b0b5c5a538cae40ed305f095439fc757557db5af6e"
+  },
+  "backend/tests/test_hr_source_library.py": {
+    "production_commit": "65e7fbd14a3cbe99883b0b31e31b5705d183d1f9",
+    "matches_before_fix": true,
+    "sha256": "80bfbdc44827b4978ce3cb3afc6fc641b4dacef61ce7653a20fcefdf91bc3aff"
+  }
+}

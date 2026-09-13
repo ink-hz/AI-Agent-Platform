@@ -1,0 +1,16 @@
+......F
+======================================================================
+FAIL: test_wrong_action_token_cannot_move_or_delete_lock (artifacts.2026-09-13-hr-launch.production.test_stage_build.StageBuildContractTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/test_stage_build.py", line 167, in test_wrong_action_token_cannot_move_or_delete_lock
+    self.assertEqual("", result.stderr)
+AssertionError: '' != '/usr/bin/stat: illegal option -- c\nusage[68 chars].]\n'
++ /usr/bin/stat: illegal option -- c
++ usage: stat [-FLnq] [-f format | -l | -r | -s | -x] [-t timefmt] [file ...]
+
+
+----------------------------------------------------------------------
+Ran 7 tests in 1.854s
+
+FAILED (failures=1)

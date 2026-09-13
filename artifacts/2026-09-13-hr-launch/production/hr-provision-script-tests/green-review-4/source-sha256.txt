@@ -1,0 +1,3 @@
+b649b93987c7333d49e9927aa721321b60b28012561c40917cfd48ec8e87afcf  artifacts/2026-09-13-hr-launch/production/provision_hr_release.py
+37a130afb51abe4ffec132b78b4339d99df42fb13d16e578e4fc9b2f33d72c13  artifacts/2026-09-13-hr-launch/production/test_provision_hr_release.py
+2f392531e390a2cddded6b978dfb8ef02bc806754535173b6d871aff9f3ae076  artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md

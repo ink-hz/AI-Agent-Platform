@@ -1,0 +1,11 @@
+{
+  "deployment_id": "6826d0642f6401df275432a18afbfd12",
+  "exit_code": 1,
+  "local_archive_sha256": "0e6e6f88e2dd8059962d499da511aceb5144fb9cec1cd0d97a21a4e8febfa6a0",
+  "local_manifest_sha256": "0cf4fc20044c13e0f3f912fa09c525d557de53bb331222b93d79eeaed5d390ee",
+  "release_sha": "ac8c27588b2962ba08d00c11545eada370613908",
+  "remote_result": null,
+  "schema_version": 1,
+  "stderr_sha256": "7b72ed7ccfdeec80644a8dca5ed3ebc1df3ec124de285c2b8e18087a3ae8a2ec",
+  "stdout_sha256": "5904e3f09a35f15f96bb90833e740bc49da42943286265738b34cc019c0a9f01"
+}

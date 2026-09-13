@@ -1,0 +1,29 @@
+{
+  "commit": "1dfbd40624db8aeac69879b07dc672c6a3996ef0",
+  "files": [
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/api_canary.py",
+      "sha256": "13fcb02d28132afbe84268b0b5576946f2bc32dbaea8f1c2f74abaf702e0abd5"
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py",
+      "sha256": "295fbc85c6d7179577971adf082bebec1140fcdca7149be8c1f4fcc3e4d96573"
+    },
+    {
+      "path": "backend/tests/test_production_canary_deadline.py",
+      "sha256": "abd2660f3b1e4cc9de59735c7450dc2aa430ec0acc3c66f08a68eb48f6cabfa8"
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/canary-deadline-fix/README.md",
+      "sha256": "5de7f05f7279c230879b97971d5415fe93fd2858cc8719cfc57ce24113739f92"
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/canary-deadline-fix/green-final-1/command.json",
+      "sha256": "05a11e99ad7dd8c825b659d7464b3b5bf2d42e24534d35ed05f2adebcd7fb4aa"
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/canary-deadline-fix/green-final-1/output.log",
+      "sha256": "2cee07673d476c504c84d7200f51edfee1cc88f70c9a245eb0f5da0c7aa1a72d"
+    }
+  ]
+}

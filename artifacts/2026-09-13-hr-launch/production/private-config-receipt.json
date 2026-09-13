@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-09-13T03:22:34.240076+00:00",
+  "configuration_revision": "58697a41d705ad332764f81a57011930e78e1b57462293f6cea036c78e4f3280",
+  "profile_sha256": {
+    "hr-provider-profile.json": "c3dacdfd3044ce549500c80d87d0ef594da5dfd6f412aa12f826c73e7290e24f",
+    "hr-budget-profile.json": "fe68be1fbba168e6451c094a4ff1f07df4dcb5dea07a8e30359276c0c7bfd82f",
+    "hr-diagnostic-profile.json": "7187d1e8e2a4d61b1dc5dfedb22d703a462df21470e0c145365b20fb3ed467c3",
+    "hr-release-policy.json": "681b6754b16447205e0224945e058653b55661f75b9c5e14d9760c460ac1af49"
+  },
+  "hr_content_keyring_sha256": "4748b1bbacf7a7aa1bdc529edb4905a455896c3a642655c999dac622c7790c52",
+  "credential_present_protected": true,
+  "credential_fingerprint_excluded": true,
+  "scope": "public-only",
+  "limits": {
+    "active_seconds": 900,
+    "model_calls": 32,
+    "total_tokens": 600000
+  },
+  "service_limits": {
+    "active_seconds": 1800,
+    "model_calls": 64,
+    "total_tokens": 1200000
+  },
+  "reserve": {
+    "active_seconds": 60,
+    "model_calls": 2,
+    "total_tokens": 32768
+  },
+  "max_output_tokens": 16384,
+  "knowledge_release": "hr-intelligence-57d25a1702f4718737fb7779",
+  "limitations": [
+    "Local protected bytes prepared; container loader preflight pending",
+    "Policy review does not classify arbitrary text as public or authorize real candidate data",
+    "Provider model name is self reported; token accounting conservative, not invoice"
+  ]
+}

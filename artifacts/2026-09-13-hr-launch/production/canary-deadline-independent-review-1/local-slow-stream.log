@@ -1,0 +1,9 @@
+{'kind': 'attachment', 'budget_seconds': 0.15, 'elapsed_seconds': 0.1688816249370575}
+.
+=============================== warnings summary ===============================
+../../backend/.venv/lib/python3.11/site-packages/_pytest/cacheprovider.py:469
+  /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/_pytest/cacheprovider.py:469: PytestCacheWarning: could not create cache path /dev/.pytest_cache/v/cache/nodeids: [Errno 1] Operation not permitted: '/dev/pytest-cache-files-zxpir2rm'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1 passed, 1 warning in 0.56s

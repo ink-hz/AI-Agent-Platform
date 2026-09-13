@@ -1,0 +1,12 @@
+/opt/orbbec-agent-platform/private/agent-brain-action.lock|absent
+/opt/orbbec-agent-platform/private/deploy-input.lock|absent
+/opt/orbbec-agent-platform/private/hr-agent|absent
+/data/orbbec-agent-platform/hr-work|absent
+/data/orbbec-agent-platform/hr-knowledge/current.json|absent
+/data/orbbec-agent-platform/hr-knowledge/releases/hr-intelligence-57d25a1702f4718737fb7779|absent
+/data/orbbec-agent-platform/provision-staging|absent
+
+hr_volume|absent
+image|sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59
+api|3347e61ede7d3ab0bd96c0cdc25cff1d6808c89ab2b8a31f24953bebccd4fcf7|true
+manifest|38544645eb7d2604af3dbe2214949099cbf6f6d85df7756203b4c5db27a04d2e

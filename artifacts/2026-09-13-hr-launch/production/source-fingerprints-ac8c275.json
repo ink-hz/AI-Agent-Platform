@@ -1,0 +1,49 @@
+{
+  "files": {
+    "backend/app/attachments/erasure.py": {
+      "bytes": 5993,
+      "sha256": "e4862777c8e256fc3a37c6fe73cb8ad401329b660cbf69c05194768f60bd93be"
+    },
+    "backend/control_migrations/100_attachment_erasure_worker_access.sql": {
+      "bytes": 887,
+      "sha256": "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177"
+    },
+    "backend/tools/hr_agent/build_intelligence_release.py": {
+      "bytes": 7746,
+      "sha256": "38dc08cf2610222cb018d3e3dc6559c372e34fdc8dfb22d3fe7bd3fb7f219178"
+    },
+    "deploy/cloud/Dockerfile": {
+      "bytes": 2240,
+      "sha256": "360511e6311b248d7f147cfade2499db20114128de000675a577f839884b8fde"
+    },
+    "deploy/cloud/bootstrap-control-db.sh": {
+      "bytes": 24538,
+      "sha256": "3c8873d850a716b1cd87007ef2aa26d6391263daa17d5c27b714e9cbf637f9f1"
+    },
+    "deploy/cloud/compose.hr-agent.yaml": {
+      "bytes": 1079,
+      "sha256": "d61a471c9d3a971df22d489ac8b7c1ea45ec5a15937f0001154c2226143b9e40"
+    },
+    "deploy/cloud/compose.yaml": {
+      "bytes": 21360,
+      "sha256": "3a87066354ef2f9b17121af974756d657dc4fe3f2c3103d770e683d92a6ee86c"
+    },
+    "deploy/cloud/hr_agent_migrate.py": {
+      "bytes": 16124,
+      "sha256": "cb7a8efc6711394378aab848db292079be63501bfdf960e32df511b1b73dce27"
+    },
+    "deploy/cloud/migrate-hr-agent.sh": {
+      "bytes": 144,
+      "sha256": "c1083d5c65132ecf2ebf8b9ea72099add56a66619491b8900c80c681dd4e65cf"
+    },
+    "docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md": {
+      "bytes": 40398,
+      "sha256": "4bba157d64b5cfedfac2a264aeffee54277bf284a4f5466abebe61bebe120e0d"
+    }
+  },
+  "release_sha": "ac8c27588b2962ba08d00c11545eada370613908",
+  "source_tree": "0023f22ce779bd0ff11d455fc229a71da67a11d9",
+  "trees": {
+    "backend/hr_agent_knowledge": "def47832e05d880426f73d971f9339af2847deb8"
+  }
+}

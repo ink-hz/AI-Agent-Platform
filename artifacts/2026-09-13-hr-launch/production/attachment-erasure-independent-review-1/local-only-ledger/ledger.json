@@ -1,0 +1,18 @@
+{
+  "run_id": "fd29b54e-2cb8-4858-ad49-f94215bd3f63",
+  "owner_id": "00000000-0000-0000-0000-000000000001",
+  "public_origin": "http://127.0.0.1:58233",
+  "deadline": 1789271454.093004,
+  "operations": {},
+  "http": [
+    {
+      "request_id": "52cd8491-310e-4b53-b40d-0d2d9d08a8ca",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    }
+  ],
+  "turns": [],
+  "status": "created",
+  "kind": "attachment_erasure"
+}

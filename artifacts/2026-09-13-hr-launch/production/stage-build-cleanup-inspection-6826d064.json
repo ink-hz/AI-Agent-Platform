@@ -1,0 +1,16 @@
+{
+  "deployment_id": "6826d0642f6401df275432a18afbfd12",
+  "release_sha": "ac8c27588b2962ba08d00c11545eada370613908",
+  "remote_exit_code": 1,
+  "deploy_input_lock_absent": true,
+  "agent_brain_action_lock_absent": true,
+  "private_input_absent": true,
+  "staging_absent": true,
+  "release_absent": true,
+  "image_tag_absent": true,
+  "running_services_with_target_image": 0,
+  "completed_deploy_receipt_present": true,
+  "remote_metadata_present": true,
+  "inspection_scope": "read-only path, image and running-container state",
+  "services_changed_by_inspection": false
+}

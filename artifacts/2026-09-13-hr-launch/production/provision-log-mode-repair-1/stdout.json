@@ -1,0 +1,16 @@
+{
+  "files": {
+    "stdout.log": {
+      "before": "0o644",
+      "sha256": "345e531bdc1720966bdadcba4bc1ee19deca04410b86c531735ba2438362cec5",
+      "after": "0o600"
+    },
+    "stderr.log": {
+      "before": "0o644",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "0o600"
+    }
+  },
+  "content_changed": false,
+  "scope": "two fixed provisioning metadata logs"
+}

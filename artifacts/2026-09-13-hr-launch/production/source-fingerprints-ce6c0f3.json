@@ -1,0 +1,31 @@
+{
+  "build_manifest_sha256": "38544645eb7d2604af3dbe2214949099cbf6f6d85df7756203b4c5db27a04d2e",
+  "file_sha256": {
+    "backend/app/attachments/erasure.py": "e4862777c8e256fc3a37c6fe73cb8ad401329b660cbf69c05194768f60bd93be",
+    "backend/app/hr_agent/config.py": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2",
+    "backend/control_migrations/100_attachment_erasure_worker_access.sql": "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177",
+    "backend/control_migrations/102_hr_execution_cutover.sql": "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
+    "backend/control_migrations/103_hr_execution_drain_occupancy.sql": "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+    "backend/control_migrations/104_hr_execution_drain_terminal_contract.sql": "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
+    "backend/control_migrations/105_hr_cloud_resume.sql": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+    "backend/tools/hr_agent/preflight.py": "a94a63867caf57c3465cfd9ea341794684c4253b89910bbb719b0acdeda62985",
+    "deploy/cloud/Dockerfile": "66eabc27880c5edff8d02412a80ee7346cc2cfbd8da198cbf1aa9a1e9e452c4e",
+    "deploy/cloud/compose.hr-agent.yaml": "d61a471c9d3a971df22d489ac8b7c1ea45ec5a15937f0001154c2226143b9e40",
+    "deploy/cloud/compose.yaml": "3a87066354ef2f9b17121af974756d657dc4fe3f2c3103d770e683d92a6ee86c",
+    "deploy/cloud/deploy-input-lock.py": "45c2d3fce8a5ef2e3dd6306eaa15b7cdbfc85072bed164033684f84b425a4eb4",
+    "deploy/cloud/hr_agent_migrate.py": "cb7a8efc6711394378aab848db292079be63501bfdf960e32df511b1b73dce27",
+    "deploy/cloud/preflight-execution-job-kind.sh": "dfa4292d73037d2714e9d6b623a89c676ec7190af6cbaeb2d2323129e5ac4b3d"
+  },
+  "image_id": "sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59",
+  "migration_supervisor": {
+    "commit": "404862b93c57e6782016182f089b67766ab569ff",
+    "hr_agent_migrate.py": "381dbfbcf89bdc286dc1544982705f656ba9b1a0f2ba4442769f7498a56455b2",
+    "packaged_in_application_image": false,
+    "preflight-execution-job-kind.sh": "88644e92079949a49e695474ab0c5d15e77cc238d13116e76db880f14d2e3b2"
+  },
+  "release_sha": "ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7",
+  "schema_version": 1,
+  "source_archive_sha256": "2e45827d62a31ddc61bb1d234a6e6d45e0a57334b8056af62454f8bcf57827e6",
+  "source_tree": "a7489e2a43d09ee8727748488abdcbf64f45b9e9",
+  "tracked_symlink_count": 0
+}

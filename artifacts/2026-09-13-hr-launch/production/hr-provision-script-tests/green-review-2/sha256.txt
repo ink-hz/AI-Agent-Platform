@@ -1,0 +1,3 @@
+aeaca951dc889ffd8d55a0cbd1bfc7b76502f6c91abed9ab41d9c0a02e5e4c6f  artifacts/2026-09-13-hr-launch/production/provision_hr_release.py
+918508c85b0c985de30efcdc5c4a20330ee86d0f320d6ee9e599b41611926049  artifacts/2026-09-13-hr-launch/production/test_provision_hr_release.py
+958d6ad9d0d1f0982b614bcf345b3f502a6994035168d804c81edca8700ea9d9  artifacts/2026-09-13-hr-launch/production/stage_build_v2.py

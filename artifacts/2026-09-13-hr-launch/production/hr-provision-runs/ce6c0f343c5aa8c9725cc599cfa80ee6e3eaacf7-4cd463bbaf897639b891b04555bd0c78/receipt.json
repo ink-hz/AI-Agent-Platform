@@ -1,0 +1,26 @@
+{
+  "credential_fingerprint_logged": false,
+  "deployment_id": "4cd463bbaf897639b891b04555bd0c78",
+  "exit_code": 0,
+  "image_id": "sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59",
+  "release_sha": "ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7",
+  "remote_result": {
+    "configuration_revision": "58697a41d705ad332764f81a57011930e78e1b57462293f6cea036c78e4f3280",
+    "credential_fingerprint_logged": false,
+    "image_id": "sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59",
+    "knowledge_preserved": true,
+    "knowledge_release": "hr-intelligence-57d25a1702f4718737fb7779",
+    "migrations_run": false,
+    "preflight_blockers": [
+      "database_not_checked"
+    ],
+    "release_sha": "ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7",
+    "schema_version": 1,
+    "secret_values_logged": false,
+    "services_changed": false,
+    "status": "completed"
+  },
+  "schema_version": 1,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_sha256": "345e531bdc1720966bdadcba4bc1ee19deca04410b86c531735ba2438362cec5"
+}

@@ -1,0 +1,18 @@
+{
+  "reviewed_at": "2026-09-13T03:57:40.788026+00:00",
+  "script_sha256": "b649b93987c7333d49e9927aa721321b60b28012561c40917cfd48ec8e87afcf",
+  "independent_test_result": "14 passed; green-review-4",
+  "decision": "execute configuration and knowledge provisioning only",
+  "review": [
+    "complete script read, fixed release/image/config/knowledge",
+    "preflight real schema verified against current tool source; only database_not_checked accepted",
+    "both owned locks, manifest content checks, four signals, clean remote environment",
+    "exact 12 HR volume files, old knowledge bytes and directory metadata preserved",
+    "actual preflight JSON retained; exit code plus separate residue verification required"
+  ],
+  "limits": [
+    "no migration or service restart",
+    "no model/network call in runtime preflight",
+    "hard termination or uncertain transport still needs independent process/resource reconciliation"
+  ]
+}
