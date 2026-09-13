@@ -1,0 +1,11 @@
+{
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "backend/tests/test_hr_agent_history_replay.py::test_h03_one_combined_jd_jr_result_is_retrievable_and_revised_in_place",
+    "backend/tests/test_hr_agent_history_replay.py::test_h13_complete_conversation_answer_needs_no_saved_result"
+  ],
+  "scope": "real local HTTP/PG; ScriptModel only; no production/browser/real model"
+}

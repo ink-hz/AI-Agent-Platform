@@ -1,0 +1,75 @@
+{
+  "boundaries": {
+    "attachments": "real local upload/processing/material read path",
+    "authentication": "real test DingTalk session, CSRF and Origin middleware",
+    "browser_called": false,
+    "database": "real local PostgreSQL fixture",
+    "http": "real local FastAPI TestClient routes",
+    "model": "ScriptModel substitute only",
+    "production_called": false,
+    "real_model_called": false
+  },
+  "commands": [
+    {
+      "argv": [
+        "backend/.venv/bin/python",
+        "-m",
+        "py_compile",
+        "backend/tests/helpers/hr_history_replay.py",
+        "backend/tests/test_hr_agent_history_replay.py"
+      ],
+      "exit_code": 0,
+      "stderr": "pycompile.stderr.log",
+      "stdout": "pycompile.stdout.log"
+    },
+    {
+      "argv": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "backend/tests/test_hr_agent_history_replay.py"
+      ],
+      "exit_code_file": "history.exit_code",
+      "observed_result": "14 passed, 1 skipped in 54.53s",
+      "stderr": "history.stderr.log",
+      "stdout": "history.stdout.log"
+    },
+    {
+      "argv": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "backend/tests/test_hr_agent_runtime.py::test_normal_answer_is_persisted_without_fixed_steps",
+        "backend/tests/test_hr_agent_runtime.py::test_empty_response_retries_same_logical_step_then_succeeds"
+      ],
+      "exit_code_file": "runtime-answer.exit_code",
+      "observed_result": "2 passed in 1.19s",
+      "stderr": "runtime-answer.stderr.log",
+      "stdout": "runtime-answer.stdout.log"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "--",
+        "backend/tests/helpers/hr_history_replay.py",
+        "backend/tests/test_hr_agent_history_replay.py"
+      ],
+      "exit_code": 0,
+      "stderr": "diff-check.stderr.log",
+      "stdout": "diff-check.stdout.log"
+    }
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "recorded_after_execution": true,
+  "schema_version": 1,
+  "source": {
+    "backend/tests/helpers/hr_history_replay.py": "ebc1562fe491b5e1e0064c03e101927e7c19ce5a27b50e07f594587c5a992b38",
+    "backend/tests/test_hr_agent_history_replay.py": "d12d6369b3ccc3d5c86e8d2b422b300e5514114e51d12cdb47dbe029316b81de",
+    "source.patch": "50c22cfdbf9a7ee3503960cc7ac91bcd045409bf9825565c6f376c88741e0c51"
+  },
+  "timing_note": "No wall-clock start/end timestamps were captured; pytest-reported durations are preserved in stdout logs."
+}

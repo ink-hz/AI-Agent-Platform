@@ -532,12 +532,12 @@ def replay_case(
                         if not (case_id == "H01" and turn["number"] < 3):
                             kinds = (
                                 ("jd", "requirements")
-                                if case_id in {"H01", "H03"}
-                                else (
-                                    "candidate_assessment"
-                                    if case_id == "H06"
-                                    else "research",
-                                )
+                                if case_id == "H01"
+                                else ("jd",)
+                                if case_id == "H03"
+                                else ("candidate_assessment",)
+                                if case_id == "H06"
+                                else ()
                             )
                             old_results = (
                                 report["turns"][-2]
@@ -558,7 +558,11 @@ def replay_case(
                                 args = {
                                     "kind": kind,
                                     "title": "工程回放合成成果 " + kind,
-                                    "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+                                    "body": (
+                                        "## JD\n合成岗位职责。\n\n## JR\n合成任职要求。"
+                                        if case_id == "H03"
+                                        else "仅验证真实保存与精确引用，不表示专业质量合格。"
+                                    ),
                                     "objects": [],
                                     "source_refs": refs,
                                     "preceding_refs": prior_refs,
@@ -581,7 +585,12 @@ def replay_case(
                             answer(
                                 "工程回放已接收本轮材料。"
                                 if case_id == "H01" and turn["number"] < 3
-                                else "工程回放保存完成。"
+                                else (
+                                    "数据事实：仅复述材料。解释假设：保持为待验证解释。"
+                                    "需补证：列出缺失口径与相关证据。"
+                                    if case_id == "H13"
+                                    else "工程回放保存完成。"
+                                )
                             )
                         )
                         model = ScriptModel(scripts)
@@ -628,17 +637,33 @@ def replay_case(
                         {"completed", "waiting_user"} if receiving else {"completed"}
                     ):
                         raise ValueError("replayed work did not complete")
-                    if not receiving and not work["result_refs"]:
-                        raise ValueError("required saved result absent")
+                    complete_answer = work["answer_state"] == "ended" and any(
+                        item["kind"] == "assistant"
+                        and item["visibility"] == "available"
+                        and isinstance(item["body"], str)
+                        and item["body"].strip()
+                        for item in record["persisted"]["messages"]["items"]
+                    )
                     if (
-                        case_id in {"H01", "H03"}
+                        not receiving
+                        and not work["result_refs"]
+                        and not (case_id == "H13" and complete_answer)
+                    ):
+                        raise ValueError("required saved result absent")
+                    persisted_kinds = {
+                        item["kind"] for item in record["persisted"]["results"]
+                    }
+                    if (
+                        case_id == "H01"
                         and not receiving
-                        and not {
-                            item["kind"] for item in record["persisted"]["results"]
-                        }
-                        >= {"jd", "requirements"}
+                        and not persisted_kinds >= {"jd", "requirements"}
                     ):
                         raise ValueError("required JD/JR saved result kinds absent")
+                    if (
+                        case_id == "H03"
+                        and not persisted_kinds.intersection({"jd", "requirements"})
+                    ):
+                        raise ValueError("required JD/JR saved result absent")
                     if case_id == "H03" and previous:
                         current_by_id = {ref["id"]: ref for ref in work["result_refs"]}
                         if any(

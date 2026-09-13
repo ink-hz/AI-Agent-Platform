@@ -1,0 +1,207 @@
+diff --git a/backend/tests/helpers/hr_history_replay.py b/backend/tests/helpers/hr_history_replay.py
+index 20de087..eae3138 100644
+--- a/backend/tests/helpers/hr_history_replay.py
++++ b/backend/tests/helpers/hr_history_replay.py
+@@ -532,12 +532,12 @@ def replay_case(
+                         if not (case_id == "H01" and turn["number"] < 3):
+                             kinds = (
+                                 ("jd", "requirements")
+-                                if case_id in {"H01", "H03"}
+-                                else (
+-                                    "candidate_assessment"
+-                                    if case_id == "H06"
+-                                    else "research",
+-                                )
++                                if case_id == "H01"
++                                else ("jd",)
++                                if case_id == "H03"
++                                else ("candidate_assessment",)
++                                if case_id == "H06"
++                                else ()
+                             )
+                             old_results = (
+                                 report["turns"][-2]
+@@ -558,7 +558,11 @@ def replay_case(
+                                 args = {
+                                     "kind": kind,
+                                     "title": "工程回放合成成果 " + kind,
+-                                    "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
++                                    "body": (
++                                        "## JD\n合成岗位职责。\n\n## JR\n合成任职要求。"
++                                        if case_id == "H03"
++                                        else "仅验证真实保存与精确引用，不表示专业质量合格。"
++                                    ),
+                                     "objects": [],
+                                     "source_refs": refs,
+                                     "preceding_refs": prior_refs,
+@@ -581,7 +585,12 @@ def replay_case(
+                             answer(
+                                 "工程回放已接收本轮材料。"
+                                 if case_id == "H01" and turn["number"] < 3
+-                                else "工程回放保存完成。"
++                                else (
++                                    "数据事实：仅复述材料。解释假设：保持为待验证解释。"
++                                    "需补证：列出缺失口径与相关证据。"
++                                    if case_id == "H13"
++                                    else "工程回放保存完成。"
++                                )
+                             )
+                         )
+                         model = ScriptModel(scripts)
+@@ -628,17 +637,33 @@ def replay_case(
+                         {"completed", "waiting_user"} if receiving else {"completed"}
+                     ):
+                         raise ValueError("replayed work did not complete")
+-                    if not receiving and not work["result_refs"]:
++                    complete_answer = work["answer_state"] == "ended" and any(
++                        item["kind"] == "assistant"
++                        and item["visibility"] == "available"
++                        and isinstance(item["body"], str)
++                        and item["body"].strip()
++                        for item in record["persisted"]["messages"]["items"]
++                    )
++                    if (
++                        not receiving
++                        and not work["result_refs"]
++                        and not (case_id == "H13" and complete_answer)
++                    ):
+                         raise ValueError("required saved result absent")
++                    persisted_kinds = {
++                        item["kind"] for item in record["persisted"]["results"]
++                    }
+                     if (
+-                        case_id in {"H01", "H03"}
++                        case_id == "H01"
+                         and not receiving
+-                        and not {
+-                            item["kind"] for item in record["persisted"]["results"]
+-                        }
+-                        >= {"jd", "requirements"}
++                        and not persisted_kinds >= {"jd", "requirements"}
+                     ):
+                         raise ValueError("required JD/JR saved result kinds absent")
++                    if (
++                        case_id == "H03"
++                        and not persisted_kinds.intersection({"jd", "requirements"})
++                    ):
++                        raise ValueError("required JD/JR saved result absent")
+                     if case_id == "H03" and previous:
+                         current_by_id = {ref["id"]: ref for ref in work["result_refs"]}
+                         if any(
+diff --git a/backend/tests/test_hr_agent_history_replay.py b/backend/tests/test_hr_agent_history_replay.py
+index fabd0ad..059b103 100644
+--- a/backend/tests/test_hr_agent_history_replay.py
++++ b/backend/tests/test_hr_agent_history_replay.py
+@@ -86,6 +86,15 @@ def test_scripted_replay_retains_http_identity_material_and_result_boundaries(
+             "jd",
+             "requirements",
+         }
++    elif case_id == "H13":
++        assert not turns[0]["persisted"]["work"]["result_refs"]
++        assert any(
++            item["kind"] == "assistant"
++            and item["visibility"] == "available"
++            and isinstance(item["body"], str)
++            and item["body"].strip()
++            for item in turns[0]["persisted"]["messages"]["items"]
++        )
+     else:
+         assert all(turn["persisted"]["work"]["result_refs"] for turn in turns)
+     for previous, turn in pairwise(turns):
+@@ -107,6 +116,96 @@ def test_scripted_replay_retains_http_identity_material_and_result_boundaries(
+     assert (evidence / "report.json").is_file()
+ 
+ 
++@pytest.mark.postgres
++def test_h03_one_combined_jd_jr_result_is_retrievable_and_revised_in_place(tmp_path):
++    report = harness().replay_case(
++        CORPUS, "H03", tmp_path / "runtime", tmp_path / "evidence"
++    )
++    assert report["status"] == "completed", report
++    turns = report["turns"]
++    assert len(turns) == 4
++    assert report["security"] == {
++        "anonymous": 401,
++        "csrf": 403,
++        "origin": 403,
++        "wrong_owner": 404,
++    }
++    assert all(
++        turn["http"] == {
++            "submit": 201 if index == 0 else 202,
++            "replay": 200 if index == 0 else 202,
++            "work": 200,
++        }
++        for index, turn in enumerate(turns)
++    )
++    assert len({turn["persisted"]["work"]["work_id"] for turn in turns}) == 1
++    assert [turn["persisted"]["work"]["input_revision"] for turn in turns] == [
++        1,
++        2,
++        3,
++        4,
++    ]
++    results = [turn["persisted"]["results"] for turn in turns]
++    assert all(len(items) == 1 and items[0]["kind"] == "jd" for items in results)
++    assert all("JD" in items[0]["body"] and "JR" in items[0]["body"] for items in results)
++    refs = [turn["persisted"]["work"]["result_refs"][0] for turn in turns]
++    assert len({ref["id"] for ref in refs}) == 1
++    assert len({ref["revision"] for ref in refs}) == 4
++    assert len({ref["sha256"] for ref in refs}) == 4
++    for previous, turn in pairwise(turns):
++        assert previous["persisted"]["work"]["result_refs"][0] in turn["request"][
++            "references"
++        ]
++    material_ref = turns[0]["materials"][0]["ref"]
++    assert any(
++        call["namespace"] == "tool:read_resource"
++        and call["status"] == "committed"
++        and call["receipt"]["data"]["ref"] == material_ref
++        and call["receipt"]["data"]["coverage_complete"] is True
++        for call in turns[0]["persisted"]["tools"]
++    )
++    assert all(material_ref in items[0]["source_refs"] for items in results)
++
++
++@pytest.mark.postgres
++def test_h13_complete_conversation_answer_needs_no_saved_result(tmp_path):
++    report = harness().replay_case(
++        CORPUS, "H13", tmp_path / "runtime", tmp_path / "evidence"
++    )
++    assert report["status"] == "completed", report
++    assert report["security"] == {
++        "anonymous": 401,
++        "csrf": 403,
++        "origin": 403,
++        "wrong_owner": 404,
++    }
++    turn = report["turns"][0]
++    assert turn["http"] == {"submit": 201, "replay": 200, "work": 200}
++    assert turn["persisted"]["work"]["state"] == "completed"
++    assert turn["persisted"]["work"]["answer_state"] == "ended"
++    assert turn["persisted"]["work"]["result_refs"] == []
++    assert turn["persisted"]["results"] == []
++    answers = [
++        item
++        for item in turn["persisted"]["messages"]["items"]
++        if item["kind"] == "assistant" and item["visibility"] == "available"
++    ]
++    assert len(answers) == 1
++    assert all(marker in answers[0]["body"] for marker in ("数据事实", "解释假设", "需补证"))
++    material_ref = turn["materials"][0]["ref"]
++    assert any(
++        call["namespace"] == "tool:read_resource"
++        and call["status"] == "committed"
++        and call["receipt"]["data"]["ref"] == material_ref
++        and call["receipt"]["data"]["coverage_complete"] is True
++        for call in turn["persisted"]["tools"]
++    )
++    assert not any(
++        call["namespace"] == "tool:save_result"
++        for call in turn["persisted"]["tools"]
++    )
++
++
+ def test_shared_real_port_budget_denies_the_97th_call():
+     h = harness()
+     from types import SimpleNamespace

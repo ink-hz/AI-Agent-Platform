@@ -1,0 +1,72 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____ test_h03_one_combined_jd_jr_result_is_retrievable_and_revised_in_place ____
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9584/test_h03_one_combined_jd_jr_re0')
+
+    @pytest.mark.postgres
+    def test_h03_one_combined_jd_jr_result_is_retrievable_and_revised_in_place(tmp_path):
+        report = harness().replay_case(
+            CORPUS, "H03", tmp_path / "runtime", tmp_path / "evidence"
+        )
+        assert report["status"] == "completed", report
+        turns = report["turns"]
+        assert len(turns) == 4
+        assert report["security"] == {
+            "anonymous": 401,
+            "csrf": 403,
+            "origin": 403,
+            "wrong_owner": 404,
+        }
+        assert all(
+            turn["http"] == {
+                "submit": 201 if index == 0 else 202,
+                "replay": 200 if index == 0 else 202,
+                "work": 200,
+            }
+            for index, turn in enumerate(turns)
+        )
+        assert len({turn["persisted"]["work"]["work_id"] for turn in turns}) == 1
+        assert [turn["persisted"]["work"]["input_revision"] for turn in turns] == [
+            1,
+            2,
+            3,
+            4,
+        ]
+        results = [turn["persisted"]["results"] for turn in turns]
+>       assert all(len(items) == 1 and items[0]["kind"] == "jd" for items in results)
+E       assert False
+E        +  where False = all(<generator object test_h03_one_combined_jd_jr_result_is_retrievable_and_revised_in_place.<locals>.<genexpr> at 0x10a770ba0>)
+
+backend/tests/test_hr_agent_history_replay.py:140: AssertionError
+_________ test_h13_complete_conversation_answer_needs_no_saved_result __________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9584/test_h13_complete_conversation0')
+
+    @pytest.mark.postgres
+    def test_h13_complete_conversation_answer_needs_no_saved_result(tmp_path):
+        report = harness().replay_case(
+            CORPUS, "H13", tmp_path / "runtime", tmp_path / "evidence"
+        )
+        assert report["status"] == "completed", report
+        assert report["security"] == {
+            "anonymous": 401,
+            "csrf": 403,
+            "origin": 403,
+            "wrong_owner": 404,
+        }
+        turn = report["turns"][0]
+        assert turn["http"] == {"submit": 201, "replay": 200, "work": 200}
+        assert turn["persisted"]["work"]["state"] == "completed"
+        assert turn["persisted"]["work"]["answer_state"] == "ended"
+>       assert turn["persisted"]["work"]["result_refs"] == []
+E       AssertionError: assert [{'kind': 're...9d3283e70de'}] == []
+E         
+E         Left contains one more item: {'kind': 'result', 'id': 'b48c244c-225c-44c9-ad13-54d7124043cf', 'revision': '97f92ca2-8b39-41f1-9465-dab4cabafe77', 'sha256': '5fae8008b201390bdc011db982ab6df200b4d3bac4bebd504e4cc9d3283e70de'}
+E         Use -v to get more diff
+
+backend/tests/test_hr_agent_history_replay.py:177: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_history_replay.py::test_h03_one_combined_jd_jr_result_is_retrievable_and_revised_in_place
+FAILED backend/tests/test_hr_agent_history_replay.py::test_h13_complete_conversation_answer_needs_no_saved_result
+2 failed in 59.27s
