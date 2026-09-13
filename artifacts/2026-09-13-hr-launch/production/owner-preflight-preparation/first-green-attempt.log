@@ -1,0 +1,30 @@
+F...                                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_real_owner_csrf_rejected_before_validated_empty_body ___________
+
+api = {'db': HrTestDatabase(), 'owner': UUID('3d48c258-424a-4892-8ad7-3723837aac78'), 'config': {'owner_id': '3d48c258-424a-...', ...}, 'client': <tests.test_attachment_erasure_production_canary.api.<locals>.Scheduled object at 0x10a89c6d0>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9634/test_real_owner_csrf_rejected_0')
+
+    def test_real_owner_csrf_rejected_before_validated_empty_body(api, tmp_path):
+        mod = module()
+        before = counts(api)
+        result = mod.preflight(config_file(tmp_path, api['config']), tmp_path / 'receipt.json',
+                               run_id='6dc1b038-5c2b-4109-973c-2a45f230e4bc', client=api['client'])
+>       assert result['status'] == 'verified'
+E       AssertionError: assert 'failed' == 'verified'
+E         
+E         - verified
+E         + failed
+
+tests/test_owner_preflight.py:41: AssertionError
+=============================== warnings summary ===============================
+tests/test_owner_preflight.py::test_real_owner_csrf_rejected_before_validated_empty_body
+tests/test_owner_preflight.py::test_wrong_csrf_never_passes
+tests/test_owner_preflight.py::test_wrong_owner_stops_before_post
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_owner_preflight.py::test_real_owner_csrf_rejected_before_validated_empty_body
+1 failed, 3 passed, 3 warnings in 3.17s

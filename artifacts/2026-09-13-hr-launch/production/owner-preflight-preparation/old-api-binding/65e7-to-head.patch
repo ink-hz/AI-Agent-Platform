@@ -1,0 +1,21 @@
+diff --git a/backend/app/control_plane/middleware.py b/backend/app/control_plane/middleware.py
+index e0658c3f..593b1cdd 100644
+--- a/backend/app/control_plane/middleware.py
++++ b/backend/app/control_plane/middleware.py
+@@ -35,6 +35,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
+         "/api/v1/internal/session/subject",
+         "/api/v1/auth/logout",
+         "/api/v1/manage/system-health",
++        "/api/v1/manage/hr-readiness",
+     }
+ )
+ _WORKER_RUN_ROUTE = re.compile(
+@@ -62,7 +63,7 @@ _DIRECT_AGENT_CONVERSATION_RESPONSE = re.compile(
+     r"/api/v1/agents/[^/]+/conversations\Z"
+ )
+ _PUBLIC_HR_WORKSPACE_SHELL = re.compile(
+-    r"/hr(?:/?|/chat|/conversations/[A-Za-z0-9:._-]+"
++    r"/hr(?:/?|/chat|/agent|/conversations/[A-Za-z0-9:._-]+"
+     r"|/positions/[0-9a-fA-F-]{36}"
+     r"(?:/conversations/[A-Za-z0-9:._-]+)?)\Z"
+ )

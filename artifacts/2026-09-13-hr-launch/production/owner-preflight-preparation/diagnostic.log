@@ -1,0 +1,13 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________________ test_existing_invalid_body_shape _______________________
+tests/test_owner_preflight.py:86: in test_existing_invalid_body_shape
+    assert response.json() == {'detail': [{'loc': ['body', key], 'type': 'missing'} for key in sorted(module().MISSING)]}
+E   AssertionError: assert {'detail': 'a...uest invalid'} == {'detail': [{...: 'missing'}]}
+E     
+E     Differing items:
+E     {'detail': 'attachment request invalid'} != {'detail': [{'loc': ['body', 'declared_mime'], 'type': 'missing'}, {'loc': ['body', 'declared_size'], 'type': 'missing'}, {'loc': ['body', 'original_name'], 'type': 'missing'}]}
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED tests/test_owner_preflight.py::test_existing_invalid_body_shape - Asse...
+1 failed in 1.17s
