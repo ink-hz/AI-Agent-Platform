@@ -1,0 +1,13 @@
+{
+  "observed_head": "57137ba1c78cdbb4b885fe7d6181d8306305c57d",
+  "sha256": {
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py": "a73032911c4149aa1985758970269886440eaee24cc41d8e758635f94fb55260",
+    "backend/tests/test_attachment_erasure_observer.py": "1c3d26b945de55ea32fa0477832eb639562578f90dac9ac699064c555027b69a",
+    "artifacts/2026-09-13-hr-launch/production/api_canary.py": "13fcb02d28132afbe84268b0b5576946f2bc32dbaea8f1c2f74abaf702e0abd5",
+    "backend/app/attachments/worker_runtime.py": "2ecf40460e97ca4c521b99072a55b31d001a8cc57e69c03fc30380a4805ab29b",
+    "backend/app/attachments/conversation_repository.py": "ab00115aa04a85a5408d54ec949179b072bce8734f33fc334ab0f1db42426622",
+    "backend/app/execution_relay/content_crypto.py": "afa071419987464870d5277a1e51b2472c41e247e6a339afa70cf81c3db46c68",
+    "backend/control_migrations/064_conversation_attachments.sql": "1f9f083e76c3fc14e14a2ccfc403fcfb83716b4f1602cd5c41882e9ffb04c3aa",
+    "backend/control_migrations/100_attachment_erasure_worker_access.sql": "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177"
+  }
+}

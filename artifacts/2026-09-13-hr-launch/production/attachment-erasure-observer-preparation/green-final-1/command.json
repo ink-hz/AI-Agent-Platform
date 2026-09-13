@@ -1,0 +1,24 @@
+{
+  "argv": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_attachment_erasure_observer.py",
+    "-q",
+    "-s"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "environment_overrides": {
+    "PYTHONPATH": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend"
+  },
+  "exit_code": 0,
+  "before_sha256": {
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py": "a73032911c4149aa1985758970269886440eaee24cc41d8e758635f94fb55260",
+    "backend/tests/test_attachment_erasure_observer.py": "1c3d26b945de55ea32fa0477832eb639562578f90dac9ac699064c555027b69a"
+  },
+  "after_sha256": {
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py": "a73032911c4149aa1985758970269886440eaee24cc41d8e758635f94fb55260",
+    "backend/tests/test_attachment_erasure_observer.py": "1c3d26b945de55ea32fa0477832eb639562578f90dac9ac699064c555027b69a"
+  },
+  "source_unchanged": true
+}

@@ -1,0 +1,160 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+__________________ test_deleted_key_does_not_hide_old_version __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x103226090>
+
+    def test_deleted_key_does_not_hide_old_version(monkeypatch):
+>       observer = module(monkeypatch)
+                   ^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_observer.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_observer.py:16: in module
+    spec.loader.exec_module(value)
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x10226f710>
+path = '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+<frozen importlib._bootstrap_external>:1130: FileNotFoundError
+________________________ test_head_forbidden_is_unknown ________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10322e050>
+
+    def test_head_forbidden_is_unknown(monkeypatch):
+>       observer = module(monkeypatch)
+                   ^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_observer.py:47: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_observer.py:16: in module
+    spec.loader.exec_module(value)
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x103224a90>
+path = '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+<frozen importlib._bootstrap_external>:1130: FileNotFoundError
+______________ test_complete_enumeration_and_exact_version_absent ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x103101290>
+
+    def test_complete_enumeration_and_exact_version_absent(monkeypatch):
+>       observer = module(monkeypatch)
+                   ^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_observer.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_observer.py:16: in module
+    spec.loader.exec_module(value)
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x103227310>
+path = '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+<frozen importlib._bootstrap_external>:1130: FileNotFoundError
+_______________ test_pagination_must_finish_and_filter_exact_key _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10321a210>
+
+    def test_pagination_must_finish_and_filter_exact_key(monkeypatch):
+>       observer = module(monkeypatch)
+                   ^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_observer.py:60: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_observer.py:16: in module
+    spec.loader.exec_module(value)
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x10321b0d0>
+path = '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+<frozen importlib._bootstrap_external>:1130: FileNotFoundError
+____________________ test_missing_pagination_cursor_unknown ____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x103242fd0>
+
+    def test_missing_pagination_cursor_unknown(monkeypatch):
+>       observer = module(monkeypatch)
+                   ^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_observer.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_observer.py:16: in module
+    spec.loader.exec_module(value)
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x103242b50>
+path = '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+<frozen importlib._bootstrap_external>:1130: FileNotFoundError
+______________________ test_missing_reference_set_unknown ______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10328a550>
+
+    def test_missing_reference_set_unknown(monkeypatch):
+>       observer = module(monkeypatch)
+                   ^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_observer.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_observer.py:16: in module
+    spec.loader.exec_module(value)
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x103288190>
+path = '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py'
+
+<frozen importlib._bootstrap_external>:1130: FileNotFoundError
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_observer.py::test_deleted_key_does_not_hide_old_version
+FAILED backend/tests/test_attachment_erasure_observer.py::test_head_forbidden_is_unknown
+FAILED backend/tests/test_attachment_erasure_observer.py::test_complete_enumeration_and_exact_version_absent
+FAILED backend/tests/test_attachment_erasure_observer.py::test_pagination_must_finish_and_filter_exact_key
+FAILED backend/tests/test_attachment_erasure_observer.py::test_missing_pagination_cursor_unknown
+FAILED backend/tests/test_attachment_erasure_observer.py::test_missing_reference_set_unknown
+6 failed in 0.04s

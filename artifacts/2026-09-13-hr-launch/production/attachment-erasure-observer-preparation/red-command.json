@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_attachment_erasure_observer.py",
+    "-q"
+  ],
+  "exit_code": 1,
+  "test_sha256": "9ef9c81f3db6e49e0c8716061b7c2c6aecb9daa5dcec4e24b19ed7f767429a85",
+  "source_exists": false,
+  "result": "6 failed missing implementation"
+}

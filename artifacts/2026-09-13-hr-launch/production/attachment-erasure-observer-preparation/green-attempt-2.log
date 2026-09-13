@@ -1,0 +1,72 @@
+......[{'job_kind': 'validate', 'state': 'completed', 'state_reason': None, 'available_at': datetime.datetime(2026, 9, 13, 12, 36, 0, 484434, tzinfo=zoneinfo.ZoneInfo(key='Asia/Shanghai'))}, {'job_kind': 'scan', 'state': 'completed', 'state_reason': None, 'available_at': datetime.datetime(2026, 9, 13, 12, 36, 0, 498906, tzinfo=zoneinfo.ZoneInfo(key='Asia/Shanghai'))}, {'job_kind': 'derive', 'state': 'queued', 'state_reason': 'derivative_unavailable', 'available_at': datetime.datetime(2026, 9, 13, 12, 36, 1, 510473, tzinfo=zoneinfo.ZoneInfo(key='Asia/Shanghai'))}]
+F
+=================================== FAILURES ===================================
+____________ test_real_owner_pg_readonly_snapshot_and_terminal_gate ____________
+
+api = {'db': HrTestDatabase(), 'owner': UUID('19dbe069-04d1-47e3-a76a-3cd29f531a5f'), 'config': {'owner_id': '19dbe069-04d1-...', ...}, 'client': <tests.test_attachment_erasure_production_canary.api.<locals>.Scheduled object at 0x108b908d0>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9596/test_real_owner_pg_readonly_sn0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108b2a290>
+
+    def test_real_owner_pg_readonly_snapshot_and_terminal_gate(api, tmp_path, monkeypatch):
+        import psycopg
+        from uuid import uuid4
+        from tests.test_attachment_erasure_production_canary import harness
+    
+        observer = module(monkeypatch)
+        canary_module = harness(monkeypatch)
+        canary = canary_module.AttachmentCanary(api['config'], tmp_path / 'canary', api['client'])
+        canary.prepare()
+        repository = observer.Repository(api['db'].dsn)
+        ledger = canary.ledger
+        aid, uid = ledger['attachment_id'], ledger['upload_id']
+        with repository.connection() as connection:
+            assert connection.execute('show transaction_read_only').fetchone()['transaction_read_only'] == 'on'
+            assert connection.execute('select current_user').fetchone()['current_user'] == 'platform_control_app'
+            with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+                connection.execute('delete from platform_attachments.attachments where attachment_id=%s', (aid,))
+        with pytest.raises(observer.Unknown, match='owner_attachment_unproven'):
+            repository.read(str(uuid4()), aid, uid)
+        with repository.connection() as c:
+            print(c.execute('select job_kind,state,state_reason,available_at from platform_attachments.processing_jobs where attachment_id=%s', (aid,)).fetchall())
+>       graph = repository.read(str(api['owner']), aid, uid)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_observer.py:115: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <observer.Repository object at 0x108c03290>
+owner = '19dbe069-04d1-47e3-a76a-3cd29f531a5f'
+aid = '1d4a71a1-5bd9-421e-80e0-9a790dd41ada'
+uid = 'fb4bdf36-a50d-43ce-9510-6236b1f7b6be'
+
+    def read(self, owner, aid, uid):
+        with self.connection() as connection:
+            connection.execute('set transaction isolation level repeatable read read only')
+            base = connection.execute('select attachment_id,owner_internal_user_id,object_ref_ciphertext,object_ref_key_version,immutable_locator,size_bytes,sha256,state from platform_attachments.attachments where attachment_id=%s and owner_internal_user_id=%s', (aid, owner)).fetchone()
+            if base is None:
+                raise Unknown('owner_attachment_unproven')
+            uploads = connection.execute('select upload_id,write_attempt_id,object_ref_ciphertext,object_ref_key_version,immutable_locator from platform_attachments.uploads where attachment_id=%s and owner_internal_user_id=%s', (aid, owner)).fetchall()
+            if len(uploads) != 1 or str(uploads[0]['upload_id']) != uid:
+                raise Unknown('upload_binding_unproven')
+            attempts = connection.execute('select attempt_id,object_ref_ciphertext,object_ref_key_version from platform_attachments.upload_write_attempts where attachment_id=%s and owner_internal_user_id=%s', (aid, owner)).fetchall()
+            # Attachment owner was proven in this same repeatable-read snapshot.
+            derivatives = connection.execute('select derivative_id,object_ref_ciphertext,object_ref_key_version from platform_attachments.derivatives where attachment_id=%s', (aid,)).fetchall()
+            artifacts = connection.execute('select artifact_version_id from platform_attachments.artifact_versions where attachment_id=%s', (aid,)).fetchall()
+            active = connection.execute("select count(*) as count from platform_attachments.processing_jobs where attachment_id=%s and state in ('queued','running')", (aid,)).fetchone()['count']
+            jobs = connection.execute('select erasure_job_id,requested_by_internal_user_id,state,completed_at from platform_attachments.erasure_jobs where attachment_id=%s', (aid,)).fetchall()
+        if artifacts:
+            raise Unknown('upload_only_scope_artifact_present')
+        if active:
+>           raise Unknown('processing_active')
+E           observer.Unknown: processing_active
+
+artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py:126: Unknown
+=============================== warnings summary ===============================
+tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+1 failed, 6 passed, 1 warning in 1.25s

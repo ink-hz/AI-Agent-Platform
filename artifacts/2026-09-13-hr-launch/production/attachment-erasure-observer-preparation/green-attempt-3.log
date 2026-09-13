@@ -1,0 +1,73 @@
+......F                                                                  [100%]
+=================================== FAILURES ===================================
+____________ test_real_owner_pg_readonly_snapshot_and_terminal_gate ____________
+
+api = {'db': HrTestDatabase(), 'owner': UUID('c7a882bb-cd22-412a-9b69-7def5d09102e'), 'config': {'owner_id': 'c7a882bb-cd22-...', ...}, 'client': <tests.test_attachment_erasure_production_canary.api.<locals>.Scheduled object at 0x10695c950>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9597/test_real_owner_pg_readonly_sn0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10691f890>
+
+    def test_real_owner_pg_readonly_snapshot_and_terminal_gate(api, tmp_path, monkeypatch):
+        import psycopg
+        from uuid import uuid4
+        from tests.test_attachment_erasure_production_canary import harness
+    
+        observer = module(monkeypatch)
+        canary_module = harness(monkeypatch)
+        canary = canary_module.AttachmentCanary(api['config'], tmp_path / 'canary', api['client'])
+        from app.attachments.worker import StoredDerivative
+        import hashlib
+    
+        def put_derivative(data, *, object_key):
+            api['store'].objects[object_key] = data
+            return StoredDerivative(object_key, len(data), hashlib.sha256(data).digest())
+    
+        api['store'].put_derivative = put_derivative
+        canary.prepare()
+        repository = observer.Repository(api['db'].dsn)
+        ledger = canary.ledger
+        aid, uid = ledger['attachment_id'], ledger['upload_id']
+        with repository.connection() as connection:
+            assert connection.execute('show transaction_read_only').fetchone()['transaction_read_only'] == 'on'
+            assert connection.execute('select current_user').fetchone()['current_user'] == 'platform_control_app'
+            with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+                connection.execute('delete from platform_attachments.attachments where attachment_id=%s', (aid,))
+        with pytest.raises(observer.Unknown, match='owner_attachment_unproven'):
+            repository.read(str(uuid4()), aid, uid)
+        graph = repository.read(str(api['owner']), aid, uid)
+>       refs = observer.references(api['codec'], graph, aid)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_observer.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+codec = ContentCodec(keyring=<redacted>)
+graph = {'base': {'attachment_id': UUID('634df382-1aa6-435f-82ce-bb216384130a'), 'owner_internal_user_id': UUID('c7a882bb-cd22...d3\xf7\xc0Q\x19\xc7E+v\x8d\xe8T}J\x1a\xf0<<\xf7\x96?\xb9\\\xbai\x1c<\xa2\xdd4\xfe", 'object_ref_key_version': 1}], ...}
+aid = '634df382-1aa6-435f-82ce-bb216384130a'
+
+    def references(codec, graph, aid):
+        rows = [(attachment_object_subject(UUID(aid), graph['uploads'][0]['write_attempt_id']), graph['base'])]
+        rows += [(attachment_object_subject(UUID(aid), row['write_attempt_id']), row) for row in graph['uploads']]
+        rows += [(attachment_object_subject(UUID(aid), row['attempt_id']), row) for row in graph['attempts']]
+        rows += [(f"attachment:{aid}:derivative:{row['derivative_id']}:object-ref", row) for row in graph['derivatives']]
+        result = {}
+        for subject, row in rows:
+            value = codec.unseal_json(subject, SealedContent(bytes(row['object_ref_ciphertext']), row['object_ref_key_version']))
+            if set(value) != {'object_ref'} or not isinstance(value['object_ref'], str) or not value['object_ref']:
+                raise Unknown('reference_invalid')
+            result.setdefault(value['object_ref'], set())
+            locator = row.get('immutable_locator')
+            if locator:
+                if not locator.startswith('version:'):
+>                   raise Unknown('version_locator_required')
+E                   observer.Unknown: version_locator_required
+
+artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py:147: Unknown
+=============================== warnings summary ===============================
+tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+1 failed, 6 passed, 1 warning in 1.41s
