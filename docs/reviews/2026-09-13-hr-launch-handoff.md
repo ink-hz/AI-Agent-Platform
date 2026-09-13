@@ -17,7 +17,7 @@
 | 页面 | 合并保留岗位/成果能力并修复路由；定向组件/style 工程回归留证 | 本次未做浏览器验收，按用户指令不作为上线前置 |
 | 生产接口 | 受认证 canary 脚本及真实本地 HTTP/PG 工程测试；慢流墙钟中断补验 | 有效生产 owner Cookie/CSRF、生产真实擦除、受理/续作/成果及自有进程重启验收 |
 
-实际操作入口为[发布计划](../../artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md)和[当前实施计划](../superpowers/plans/2026-09-13-hr-launch.md)。`404862b93c57e6782016182f089b67766ab569ff` 的 production-only 监督迁移工具为前一版受审基线；当前新增106源文件前置，需重新测试并冻结准确字节，不能替换为通用 bootstrap 或同时处理 preview。原仅停附件 Worker 的 ce6 方案不适用条件写修复：共享 API 和附件 Worker 都是写入方，须在同窗口停止旧写入方、隔断准确 MinIO 旧请求代际，再启用与106兼容的服务组合并通过真实擦除验收。新监督执行器尚未完成，不执行旧输入。
+当前任务入口为[上线实施计划](../superpowers/plans/2026-09-13-hr-launch.md)，联合窗口设计见[三目标执行器设计](../../artifacts/2026-09-13-hr-launch/production/attachment-fence-executor-design-review/design.md)。[旧发布计划](../../artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md)仅为历史ce6准备，不能作为当前可执行步骤。`404862b93c57e6782016182f089b67766ab569ff` 是 production-only 监督迁移工具的前一版受审基线；106源文件前置已在 `e8032bc1` 完成39项定向回归与独立审读，实际根迁移仍未执行，不能替换为通用 bootstrap 或同时处理 preview。原仅停附件 Worker 的 ce6 方案不适用条件写修复：共享 API 和附件 Worker 都是写入方，须在同窗口停止旧写入方、隔断准确 MinIO 旧请求代际，再启用与106兼容的服务组合并通过真实擦除验收。新监督执行器尚未完成，不执行旧输入。
 
 独立飞书 MetaBot 不纳入本次停机。平台同一工作仍须由新云端链唯一执行；共享 Relay 和其他 Bot 保留。实际 PM2 加载版本与磁盘 ecosystem 不同，应以[本地平台在途核对](../../artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/)为准。三条 `reconciliation_required=true` 原样保留；实际加载代码拒绝已完成任务重放，不等于全部外部效果已对账，不得清标志造零。
 
