@@ -1,0 +1,27 @@
+diff --git a/backend/tests/test_hr_root_migration_deployment.py b/backend/tests/test_hr_root_migration_deployment.py
+index a31bfd0..138d449 100644
+--- a/backend/tests/test_hr_root_migration_deployment.py
++++ b/backend/tests/test_hr_root_migration_deployment.py
+@@ -183,3 +183,22 @@ def test_root_requires_complete_105_target_from_95_baseline(root_deployment):
+     result = invoke(root_deployment)
+     assert result.returncode != 0
+     assert not (tmp / 'calls').exists()
++
++
++def test_new_attachment_release_requires_106_before_database_or_container_io(tmp_path):
++    import importlib.util
++    from types import SimpleNamespace
++
++    release = tmp_path / "release"
++    shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
++    for path in (release / "backend/control_migrations").glob("106_*.sql"):
++        path.unlink()
++    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    supervisor = module.Supervisor(SimpleNamespace(
++        release=str(release), private=str(tmp_path / "private"),
++        migration_set="root", environment="production",
++    ))
++    with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
++        supervisor.root_checksums()

@@ -1,0 +1,25 @@
+{
+  "head": "5ef983922cf9edbbd9e54d88603e046ac4f22e27",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_root_migration_deployment.py",
+    "backend/tests/test_hr_agent_migration_deployment.py",
+    "-q"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T05:19:28.316555+00:00",
+  "source_patch_sha256": "c639e9f270e38449742da9f69cc36b915d9a7a232d51d1ce5bb169feb09c8607",
+  "untracked_source_snapshots": {
+    "backend/app/attachments/fence_capability.py": "97d2e8e046ef5fce184bb8ae3f74a164dd50fbc5b256873d10a6d6a1818a9a55",
+    "backend/app/attachments/object_keys.py": "d99ca37d9a3cd06fda85a99b9b9c5effc625d0bb17714259846d00427658fc70",
+    "backend/control_migrations/106_attachment_erasure_write_fence.sql": "7c4ae854dccb96292d33ed66af2070d8f555fcdf5539150fd7a592fedcd0cabb",
+    "backend/tests/test_attachment_fence_capability.py": "c0ff6c0c672db0f86f30aea3649fbfa4673ca558cf6db3e526ca10a5737100c8",
+    "backend/tests/test_attachment_write_fence.py": "c1c06b381bb49d0397ac9b1a9a04bc098a5870aba487b61ba2730b3fca8f072f",
+    "backend/tests/test_attachment_write_fence_database.py": "3a131c71f3b9b01b85fa5a3c65b170c29e15067fd31ebbaf4755a6f4c160a3ab"
+  },
+  "boundary": "Local synthetic fixtures; each test documents substituted boundaries; no production or model call",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T05:20:47.117795+00:00"
+}

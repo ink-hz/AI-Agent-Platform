@@ -1,0 +1,20 @@
+{
+  "head": "2942290a8d0b6dd72ca69fab8f0b142427952c4a",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_root_migration_deployment.py::test_new_attachment_release_requires_106_before_database_or_container_io",
+    "-q"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T04:58:30.075558+00:00",
+  "source_patch_sha256": "539a5ee18527ac8727ccf31c096a8e441bccb64f14c828b1d599ab88878fdf32",
+  "untracked_source_snapshots": {
+    "backend/tests/test_attachment_write_fence.py": "cae346d74569dc4deac9a0895e7ef31e04d160a0364e99e79292d9610b6b56f4",
+    "backend/tests/test_attachment_write_fence_database.py": "c5eb27d838fd9100bb676f0b378cc1a00f687da283a2fcb925c37536a4a3550f"
+  },
+  "boundary": "Host migration source-floor negative only; no DB/container/production invocation",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T04:58:30.310151+00:00"
+}

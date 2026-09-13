@@ -1,0 +1,70 @@
+{
+  "runtime_commit": "a608970bb2d1283e16d3f787101fe3555d674fda",
+  "runtime": {
+    "backend/app/attachments/erasure.py": {
+      "blob": "b7c852b9fd0e929d6a17a8f6639ac138a95e3f5b",
+      "sha256": "adc37008e7c76fa0637e9c7922a41ad959eabbfac21a28e61b4e2a5b0efab7e1"
+    },
+    "backend/app/attachments/fence_capability.py": {
+      "blob": "a9e28d4f9d03d9e6cabd1e3760bad20e83546db0",
+      "sha256": "97d2e8e046ef5fce184bb8ae3f74a164dd50fbc5b256873d10a6d6a1818a9a55"
+    },
+    "backend/app/attachments/object_keys.py": {
+      "blob": "37465527304da7529c4462232431f92618878619",
+      "sha256": "d99ca37d9a3cd06fda85a99b9b9c5effc625d0bb17714259846d00427658fc70"
+    },
+    "backend/app/attachments/object_writer.py": {
+      "blob": "eaf48ba0d967f9602ab58dd2dc98bf2d96d00abb",
+      "sha256": "dd974dafafa38146b71c56a221c300bbe9773bbeaae8e074027b8bbfcfe1a1d3"
+    },
+    "backend/app/attachments/s3_erasure.py": {
+      "blob": "6bd97db9a7eaaf4e6ee2f755df26820d86392b5e",
+      "sha256": "06bece78e4711df636e7e92e424c7eb9cd1e2e39054ac9b4a2b4eb79e9f694ba"
+    },
+    "backend/app/attachments/worker.py": {
+      "blob": "06fb2b2f84236f4cb083c3efbff1b471db73d7bd",
+      "sha256": "2fd97664c91683212acc1a366262af7137380b7b76bf1af5ade445762c23122b"
+    },
+    "backend/app/attachments/worker_runtime.py": {
+      "blob": "dcfaaed8f72bff7f4812bb7c42990a5c4c1bdef2",
+      "sha256": "ced56a5661cc0717785eb47b8b5f9d2dadd55c5cf35ff1c8224f4b2d762bfd37"
+    },
+    "backend/app/main.py": {
+      "blob": "c9f5873f66f19b27717eac957316c0ffe23d33b0",
+      "sha256": "7403f6b0bb4a29fff4c895f23bb11f184986c5fb98b69fd895ff4b19262ed943"
+    },
+    "backend/control_migrations/106_attachment_erasure_write_fence.sql": {
+      "blob": "d3966760aa1e692fa383f2143cacc17bfb4da672",
+      "sha256": "7c4ae854dccb96292d33ed66af2070d8f555fcdf5539150fd7a592fedcd0cabb"
+    },
+    "backend/tests/test_attachment_write_fence.py": {
+      "blob": "f5459555a75a6942689c085bfb6b3a8a0e94c18e",
+      "sha256": "c1c06b381bb49d0397ac9b1a9a04bc098a5870aba487b61ba2730b3fca8f072f"
+    },
+    "backend/tests/test_attachment_write_fence_database.py": {
+      "blob": "31da2e59496a06c2d67aca1343e4557da0736f96",
+      "sha256": "cfd7fc9a281f0eb12b4c689070973c281b4544561ae2f005132794caf805d227"
+    },
+    "backend/tests/test_attachment_fence_capability.py": {
+      "blob": "8184f58979b12195030de5fce19226dddfc82316",
+      "sha256": "c0ff6c0c672db0f86f30aea3649fbfa4673ca558cf6db3e526ca10a5737100c8"
+    }
+  },
+  "runtime_patch_sha256": "be5da7164d2021bf39b2f6d9d87dbbb03241303c600a060e9082b9d25db9c4aa",
+  "host_worktree_sha256": {
+    "deploy/cloud/hr_agent_migrate.py": "b347e699d80d06f7b311c60a72d41abbf4983d43679797eed7a6c5b8524f1c60",
+    "backend/tests/test_hr_root_migration_deployment.py": "428f5e28dab86b68ed457ce89696716752e3ce2e3fdfa87197368ddab54bb72b",
+    "backend/tests/test_hr_agent_migration_deployment.py": "d16a9f235ff7a6b605acaf1c5b9d9a60e6dc7a313118c8ab1ac39ca559fb7587",
+    "backend/tests/test_control_plane_migration.py": "26a864f290ae303876c9d447d48beb7c7462193718d9399fcd17a563a09cd17f"
+  },
+  "host_patch_sha256": "2a6381b26bf08702bbf5c2530bd1b6a7fe8877fdb7a770585be19fcf0e3fae46",
+  "host_run_evidence_sha256": {
+    "artifacts/2026-09-13-hr-launch/runs/migration-106-focused-1/command.json": "adaaed7e4427a1365f05eee2767ead0a7b0883af13238c2bf6889c629c05e3dc",
+    "artifacts/2026-09-13-hr-launch/runs/migration-106-focused-1/output.log": "38a80bae4c574b2ebbd2e132e09cfba7853daabbe22804c8d66c7cb9dd3b515d",
+    "artifacts/2026-09-13-hr-launch/runs/control-migration-manifest-green-1/command.json": "351787ca086867e1b038120cb81f332b400d3013a1a5e3dae030bf50374068c5",
+    "artifacts/2026-09-13-hr-launch/runs/control-migration-manifest-green-1/output.log": "c1eb63e3268020514b5ffff8a686fb31c48d2e2ceb18d2d23059ba985cdd8ce6",
+    "artifacts/2026-09-13-hr-launch/runs/migration-106-name-scope-1/command.json": "36b0c81ce922f4c4ad13be9eea7433451aa3d7fbbd2b85f77a5fd8768b7fe99f",
+    "artifacts/2026-09-13-hr-launch/runs/migration-106-name-scope-1/output.log": "99a24796443a1d07f66a424f8116a06a2079063af758e7d3c87801c191ad2ecd"
+  },
+  "execution": "read-only; no tests or MinIO/model reruns"
+}

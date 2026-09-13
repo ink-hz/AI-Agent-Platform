@@ -1,0 +1,122 @@
+diff --git a/backend/tests/test_control_plane_migration.py b/backend/tests/test_control_plane_migration.py
+index c1fa67df..baffc01e 100644
+--- a/backend/tests/test_control_plane_migration.py
++++ b/backend/tests/test_control_plane_migration.py
+@@ -201,6 +201,8 @@ TABLES = {
+     "voc_workbench_grants",
+     "access_page_catalog",
+     "user_access_events",
++    "hr_execution_cutover",
++    "hr_execution_cutover_operations",
+ }
+ 
+ IMMUTABLE_MIGRATION_SHA256 = {
+@@ -236,11 +238,20 @@ PUBLISHED_MIGRATION_SHA256 = {
+ 
+ 
+ def test_control_migration_versions_are_unique_and_contiguous() -> None:
+-    versions = [int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")]
+-
+-    assert len(versions) == len(set(versions))
+-    assert sorted(versions) == list(range(1, max(versions) + 1))
+-    assert max(versions) == 88
++    # HR migrations have independent deployment scopes; root must not absorb them.
++    expected_by_scope = {
++        MIGRATIONS: [*range(1, 89), 100, *range(102, 107)],
++        MIGRATIONS / "hr_web": list(range(89, 96)),
++        MIGRATIONS / "hr_agent": [*range(96, 100), 101],
++    }
++    all_versions = []
++    for directory, expected in expected_by_scope.items():
++        versions = [int(path.name.split("_", 1)[0]) for path in directory.glob("*.sql")]
++        assert sorted(versions) == expected, directory
++        all_versions.extend(versions)
++
++    assert len(all_versions) == len(set(all_versions))
++    assert sorted(all_versions) == list(range(1, 107))
+ 
+ 
+ def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 924e113e..1bd357c1 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -223,6 +223,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "103_hr_execution_drain_occupancy.sql",
+             "104_hr_execution_drain_terminal_contract.sql",
+             "105_hr_cloud_resume.sql",
++            "106_attachment_erasure_write_fence.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+diff --git a/backend/tests/test_hr_root_migration_deployment.py b/backend/tests/test_hr_root_migration_deployment.py
+index a31bfd02..9d581561 100644
+--- a/backend/tests/test_hr_root_migration_deployment.py
++++ b/backend/tests/test_hr_root_migration_deployment.py
+@@ -60,18 +60,18 @@ def invoke(case):
+     return subprocess.run(case[-1], env=case[-2], capture_output=True, text=True, timeout=30, check=False)
+ 
+ 
+-@pytest.mark.parametrize("root_deployment", [95, 105], indirect=True)
++@pytest.mark.parametrize("root_deployment", [95, 106], indirect=True)
+ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_deployment):
+     db, release, tmp, _, _ = root_deployment
+-    (release / 'backend/control_migrations/106_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
++    (release / 'backend/control_migrations/107_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
+     # This HR migration must never execute in root mode.
+-    (release / 'backend/control_migrations/hr_agent/107_invalid.sql').write_text('invalid SQL must not run;')
++    (release / 'backend/control_migrations/hr_agent/108_invalid.sql').write_text('invalid SQL must not run;')
+     for _ in range(2):
+         result = invoke(root_deployment)
+         assert result.returncode == 0, result.stderr
+     with db.admin_connection() as connection:
+         assert connection.execute("select to_regclass('platform_control.root_scope_probe') is not null").fetchone()[0]
+-        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,107)').fetchone()[0] == 0
++        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,108)').fetchone()[0] == 0
+     calls = (tmp / 'calls').read_text()
+     assert calls.count('create ') == 2 and 'preview' not in calls
+     statements = [json.loads(line) for line in (tmp / 'sql.log').read_text().splitlines()]
+@@ -183,3 +183,22 @@ def test_root_requires_complete_105_target_from_95_baseline(root_deployment):
+     result = invoke(root_deployment)
+     assert result.returncode != 0
+     assert not (tmp / 'calls').exists()
++
++
++def test_root_checksum_inventory_rejects_missing_attachment_106(tmp_path):
++    import importlib.util
++    from types import SimpleNamespace
++
++    release = tmp_path / "release"
++    shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
++    for path in (release / "backend/control_migrations").glob("106_*.sql"):
++        path.unlink()
++    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    supervisor = module.Supervisor(SimpleNamespace(
++        release=str(release), private=str(tmp_path / "private"),
++        migration_set="root", environment="production",
++    ))
++    with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
++        supervisor.root_checksums()
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 7c37ad44..d366fc58 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -199,6 +199,7 @@ class Supervisor:
+             (103, "103_hr_execution_drain_occupancy.sql"),
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
+             (105, "105_hr_cloud_resume.sql"),
++            (106, "106_attachment_erasure_write_fence.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+@@ -233,7 +234,7 @@ class Supervisor:
+                         or (baseline_only and not 89 <= version <= 95)):
+                     raise DeploymentFailure("root_ledger_invalid")
+                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
+-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105}).issubset(expected):
++        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106}).issubset(expected):
+             raise DeploymentFailure("root_baseline_invalid")
+         return expected
+ 

@@ -1,0 +1,28 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_new_attachment_release_requires_106_before_database_or_container_io ___
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9611/test_new_attachment_release_re0')
+
+    def test_new_attachment_release_requires_106_before_database_or_container_io(tmp_path):
+        import importlib.util
+        from types import SimpleNamespace
+    
+        release = tmp_path / "release"
+        shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
+        for path in (release / "backend/control_migrations").glob("106_*.sql"):
+            path.unlink()
+        spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        supervisor = module.Supervisor(SimpleNamespace(
+            release=str(release), private=str(tmp_path / "private"),
+            migration_set="root", environment="production",
+        ))
+>       with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
+E       Failed: DID NOT RAISE DeploymentFailure
+
+backend/tests/test_hr_root_migration_deployment.py:203: Failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_new_attachment_release_requires_106_before_database_or_container_io
+1 failed in 0.09s

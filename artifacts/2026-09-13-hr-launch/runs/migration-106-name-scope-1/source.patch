@@ -1,0 +1,259 @@
+diff --git "a/HR_Agent\345\267\245\344\275\234\346\265\201.md" "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+index bfa04194..046ca3f3 100644
+--- "a/HR_Agent\345\267\245\344\275\234\346\265\201.md"
++++ "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+@@ -113,6 +113,8 @@ Agent 把材料中不同任务、要求、责任声明和反例联系起来，
+ 
+ 正式已确认要求、官网原文、用户提供/口述的临时要求分别标明。只有口述时可以继续讨论，不能造一个“已确认版本”来满足保存契约。
+ 
++当前草稿的修改授权与来源真实性分别判断：用户已明确的本次职责或范围按指令写入，标明相对旧材料的变化，不因旧文未记载而重复索要同一确认；这不把用户要求说成历史事实，也不自动确认长期标准。仅修改职责、范围或表达不自动增设筛选门槛；新增要求须说明岗位风险、能力与可接受替代证据，并经用户明确采纳，长期标准仍走正式提案与确认。管理层次、既往经历和最终签核权限不直接等同能力要求，不能一处允许替代证据、另一处又无依据排除。该角色与方法修订是行为约束，真实模型业务质量仍须独立审读。
++
+ 官网健康降级、陈旧、疑似下线、确认下线分别表达。使用前核验按获准新鲜度策略执行；来源不可用但存在最后有效材料时标明时间与限制。官网变化不覆盖内部共识，内部建议也不自动改官网。
+ 
+ ### 5.3 公司/专题研究
+diff --git "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md" "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+index fb766569..63405d2e 100644
+--- "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
++++ "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+@@ -178,6 +178,8 @@ FAE 的直接工具循环、模型适配及来源结果形态可参考；产品
+ 
+ 已有七份方法是内容资产：岗位情境、要求校准、胜任力画像、能力迁移、循证判断、甄选工作样本、比较反馈。场景到方法由模型根据问题和证据缺口推理；不固定路由，也不要求使用满七份。读取记录只用于复盘与展示。
+ 
++当前草稿的修改授权与来源真实性分别判断：用户已明确的本次职责或范围按指令写入，标明相对旧材料的变化，不因旧文未记载而重复索要同一确认；这不把用户要求说成历史事实，也不自动确认长期标准。仅修改职责、范围或表达不自动增设筛选门槛；新增要求须说明岗位风险、能力与可接受替代证据，并经用户明确采纳，长期标准仍走正式提案与确认。管理层次、既往经历和最终签核权限不直接等同能力要求，不能一处允许替代证据、另一处又无依据排除。该角色与方法修订是行为约束，真实模型业务质量仍须独立审读。
++
+ ### 7.1 最新目录与准确引用
+ 
+ 公司/专题入口显示当前已发布资料集及观察时间；打开并选中某份内容后，引用绑定当时的资料集与正文身份。发布新包可以改变目录，不改变已经选中的材料。旧包保留期间可按身份读取；旧包已清除或无权读取时明确返回不可用，不能用 current 替换。这是两种访问语义，不要求目录为每家公司维持跨包“最新拼接”。
+diff --git a/backend/hr_agent_knowledge/methods/requirement-calibration.md b/backend/hr_agent_knowledge/methods/requirement-calibration.md
+index b3369b64..4d33fcc5 100644
+--- a/backend/hr_agent_knowledge/methods/requirement-calibration.md
++++ b/backend/hr_agent_knowledge/methods/requirement-calibration.md
+@@ -1,7 +1,7 @@
+ ---
+ id: requirement-calibration
+ title: 要求校准与 AMO
+-revision: 2
++revision: 3
+ domains: [recruiting, performance]
+ knowledge_forms: [thinking-model, methodology]
+ ---
+@@ -28,6 +28,8 @@ AMO 从能力、动机和机会三个方向拓宽诊断：一个人是否会做
+ 
+ 能力与任务相关，不等于已经证明它必须在入职前具备；原文明确给出的优先、可培养或替代经历也不能被自动升级成硬门槛。理解条件时，同时看它支撑什么交付、原文要求达到何种独立程度，以及用户是否已经确认适用条件。不要把一段宽技术清单读成每一项都要精通。
+ 
++区分未来承担的职责、需要证明的能力、取得能力的既往经历和组织授予的权限。带领多层团队不自动要求曾任同样管理层级，作出技术判断也不等于拥有最终签核权；应先说明缺少哪项能力会造成什么风险，以及相邻经历、工作样本或其他证据能否支持判断。经历次数、近期年限和类似产品背景若没有经论证并由用户采纳，只能是待讨论的建议，不能以职位层级或产品范围为由自动升为门槛。逐项核对替代路线与必需项：不能一处允许以能力证据补足，另一处又仅因缺少同类经历排除。
++
+ 若同一能力在同一条广告中既列为任职要求又列为加分，当前文本没有稳定说明缺少该经历是否仍可评估。可以继续分析任务相关性和候选材料，但不能默默选择更严或更松的一段作结论。只有当歧义影响当前判断时，才向岗位方澄清，例如这项经历是入职即须独立交付，还是允许在相邻经验基础上学习。
+ 
+ 相邻岗位若将任职要求与加分分开表达，可以帮助定位当前记录的局部问题，不代表它们的门槛可直接移植。岗位跨度、经验入口或用工形式不同，也可能合理地产生不同要求；不能把差异一律判为矛盾。
+diff --git a/backend/hr_agent_knowledge/provenance.json b/backend/hr_agent_knowledge/provenance.json
+index 7098b987..9392f0c8 100644
+--- a/backend/hr_agent_knowledge/provenance.json
++++ b/backend/hr_agent_knowledge/provenance.json
+@@ -32,7 +32,7 @@
+     {
+       "path": "methods/requirement-calibration.md",
+       "source_path": "bots/hr/knowledge/recruiting/requirement-calibration.md",
+-      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
++      "sha256": "cc530e1de12b78c23d3fc288df32a37255837a77fc99b7d362b912ca464d3eaa"
+     },
+     {
+       "path": "methods/selection-and-work-samples.md",
+@@ -61,5 +61,17 @@
+       "review": "docs/reviews/2026-09-11-hr-c3-run4-semantic-review.md",
+       "scope": "本地角色适配：要求逻辑、招聘职责与组织现状、合作与外包、市场供给推断边界；不改上游方法正文，不编排固定方法或业务判断规则。"
+     }
++  ],
++  "local_adaptations": [
++    {
++      "date": "2026-09-13",
++      "review": "artifacts/2026-09-13-hr-launch/history-h03-role-calibration-design-review/design.md",
++      "files": [
++        "role.md",
++        "methods/requirement-calibration.md"
++      ],
++      "requirement_calibration_previous_sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac",
++      "scope": "本地适配：区分当前草稿授权、来源真实性与长期标准确认；职责修改不自动增设筛选门槛，能力、既往经历与组织权限分别论证并保留替代证据。上游来源身份保持，不称上游原文新增规则。"
++    }
+   ]
+ }
+diff --git a/backend/hr_agent_knowledge/role.md b/backend/hr_agent_knowledge/role.md
+index bc078cc7..089175e8 100644
+--- a/backend/hr_agent_knowledge/role.md
++++ b/backend/hr_agent_knowledge/role.md
+@@ -4,7 +4,7 @@
+ 
+ ## 理解当前工作
+ 
+-以用户的当前目标、显式对象和准确材料为工作范围。没有岗位也能开始理解 JD；不要猜测岗位归属。正式标准、用户本次临时要求与公开广告原文分别标明。公开静态归档只说明观察时点，不声称官网目前仍有效。不把集团入口中的不同子公司、业务部拼成同一个团队。
++以用户的当前目标、显式对象和准确材料为工作范围。没有岗位也能开始理解 JD；不要猜测岗位归属。正式标准、用户本次临时要求与公开广告原文分别标明。来源真实性与本次草稿的授权分别判断：用户明确指定的本次修改可直接用于当前草稿，标明其相对旧材料的变化；旧材料未记载不使该指令失效，也不必再确认已经明确的范围。这样写入不表示历史事实已被验证或长期标准已经确认，其他未知仍保持未知。公开静态归档只说明观察时点，不声称官网目前仍有效。不把集团入口中的不同子公司、业务部拼成同一个团队。
+ 
+ 通读职责与要求，理解岗位要解决什么、交付什么、任务与能力有什么关系。字段名、头衔、名企经历和计数不能替代分析。要求与加分重复、职责与标题错位时说明对本次判断的影响；只澄清会改变当前工作的缺口，其他可答部分继续。保留反证、替代解释及材料边界，不凭空补组织关系、薪资单位或人员能力。
+ 
+@@ -12,6 +12,8 @@
+ 
+ 解释培养条件时，先确定它修饰的是哪项任务或能力，不能把某一项允许协助延伸成所有必需项都可延后。用户已明确的要求沿用原意；建议调整可以另外提出，但不能先制造歧义再替用户改成优先项。证据或过程可被复核，不代表最终问题已经解决；评价记录质量时，允许如实保留尚未验证的假设和结果，不额外要求已有确定结论。
+ 
++用户仅要求修改职责、范围或表达时，完成该修改，不随之增设筛选门槛。若发现确需调整要求，另列建议，说明岗位风险、所需能力、可接受的替代证据以及仍待用户决定的取舍；未获用户明确采纳前，不把建议混入现行必需项。用户已经明确的门槛也不擅自降级；长期标准仍走正式确认。
++
+ 搜寻建议应明确材料支持的能力线索，以及仍需用人方或市场证据核实的假设。仅凭要求组合不能判断市场人才稀缺程度，也不能据此替用户放宽门槛；实习或协助任务不自动变成有独立交付经验的硬要求。
+ 
+ ## 自主选取知识和证据
+diff --git a/backend/tests/test_control_plane_migration.py b/backend/tests/test_control_plane_migration.py
+index c1fa67df..baffc01e 100644
+--- a/backend/tests/test_control_plane_migration.py
++++ b/backend/tests/test_control_plane_migration.py
+@@ -201,6 +201,8 @@ TABLES = {
+     "voc_workbench_grants",
+     "access_page_catalog",
+     "user_access_events",
++    "hr_execution_cutover",
++    "hr_execution_cutover_operations",
+ }
+ 
+ IMMUTABLE_MIGRATION_SHA256 = {
+@@ -236,11 +238,20 @@ PUBLISHED_MIGRATION_SHA256 = {
+ 
+ 
+ def test_control_migration_versions_are_unique_and_contiguous() -> None:
+-    versions = [int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")]
+-
+-    assert len(versions) == len(set(versions))
+-    assert sorted(versions) == list(range(1, max(versions) + 1))
+-    assert max(versions) == 88
++    # HR migrations have independent deployment scopes; root must not absorb them.
++    expected_by_scope = {
++        MIGRATIONS: [*range(1, 89), 100, *range(102, 107)],
++        MIGRATIONS / "hr_web": list(range(89, 96)),
++        MIGRATIONS / "hr_agent": [*range(96, 100), 101],
++    }
++    all_versions = []
++    for directory, expected in expected_by_scope.items():
++        versions = [int(path.name.split("_", 1)[0]) for path in directory.glob("*.sql")]
++        assert sorted(versions) == expected, directory
++        all_versions.extend(versions)
++
++    assert len(all_versions) == len(set(all_versions))
++    assert sorted(all_versions) == list(range(1, 107))
+ 
+ 
+ def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 924e113e..1bd357c1 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -223,6 +223,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "103_hr_execution_drain_occupancy.sql",
+             "104_hr_execution_drain_terminal_contract.sql",
+             "105_hr_cloud_resume.sql",
++            "106_attachment_erasure_write_fence.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+diff --git a/backend/tests/test_hr_root_migration_deployment.py b/backend/tests/test_hr_root_migration_deployment.py
+index a31bfd02..9d581561 100644
+--- a/backend/tests/test_hr_root_migration_deployment.py
++++ b/backend/tests/test_hr_root_migration_deployment.py
+@@ -60,18 +60,18 @@ def invoke(case):
+     return subprocess.run(case[-1], env=case[-2], capture_output=True, text=True, timeout=30, check=False)
+ 
+ 
+-@pytest.mark.parametrize("root_deployment", [95, 105], indirect=True)
++@pytest.mark.parametrize("root_deployment", [95, 106], indirect=True)
+ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_deployment):
+     db, release, tmp, _, _ = root_deployment
+-    (release / 'backend/control_migrations/106_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
++    (release / 'backend/control_migrations/107_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
+     # This HR migration must never execute in root mode.
+-    (release / 'backend/control_migrations/hr_agent/107_invalid.sql').write_text('invalid SQL must not run;')
++    (release / 'backend/control_migrations/hr_agent/108_invalid.sql').write_text('invalid SQL must not run;')
+     for _ in range(2):
+         result = invoke(root_deployment)
+         assert result.returncode == 0, result.stderr
+     with db.admin_connection() as connection:
+         assert connection.execute("select to_regclass('platform_control.root_scope_probe') is not null").fetchone()[0]
+-        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,107)').fetchone()[0] == 0
++        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,108)').fetchone()[0] == 0
+     calls = (tmp / 'calls').read_text()
+     assert calls.count('create ') == 2 and 'preview' not in calls
+     statements = [json.loads(line) for line in (tmp / 'sql.log').read_text().splitlines()]
+@@ -183,3 +183,22 @@ def test_root_requires_complete_105_target_from_95_baseline(root_deployment):
+     result = invoke(root_deployment)
+     assert result.returncode != 0
+     assert not (tmp / 'calls').exists()
++
++
++def test_root_checksum_inventory_rejects_missing_attachment_106(tmp_path):
++    import importlib.util
++    from types import SimpleNamespace
++
++    release = tmp_path / "release"
++    shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
++    for path in (release / "backend/control_migrations").glob("106_*.sql"):
++        path.unlink()
++    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    supervisor = module.Supervisor(SimpleNamespace(
++        release=str(release), private=str(tmp_path / "private"),
++        migration_set="root", environment="production",
++    ))
++    with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
++        supervisor.root_checksums()
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 7c37ad44..d366fc58 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -199,6 +199,7 @@ class Supervisor:
+             (103, "103_hr_execution_drain_occupancy.sql"),
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
+             (105, "105_hr_cloud_resume.sql"),
++            (106, "106_attachment_erasure_write_fence.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+@@ -233,7 +234,7 @@ class Supervisor:
+                         or (baseline_only and not 89 <= version <= 95)):
+                     raise DeploymentFailure("root_ledger_invalid")
+                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
+-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105}).issubset(expected):
++        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106}).issubset(expected):
+             raise DeploymentFailure("root_baseline_invalid")
+         return expected
+ 
+diff --git a/docs/reviews/2026-09-13-hr-launch-handoff.md b/docs/reviews/2026-09-13-hr-launch-handoff.md
+index 4501608b..46f5e414 100644
+--- a/docs/reviews/2026-09-13-hr-launch-handoff.md
++++ b/docs/reviews/2026-09-13-hr-launch-handoff.md
+@@ -7,17 +7,17 @@
+ | 项目 | 已有实际证据 | 尚未证明 |
+ | --- | --- | --- |
+ | 镜像 | ce6 源在生产构建成功；镜像 `sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59` | 该镜像的生产服务切换与业务接单 |
+-| 附件版本擦除 | 生产 GetBucketVersioning HTTP 200 / Enabled；源码裸 delete 未指定版本 | 全版本实际删除、失败保留可重试引用、修复镜像与生产擦除闭环 |
+-| 数据库 | 生产 001–095 每项 SHA 匹配；job kind 基线预检通过 | 100/102–105 及独立 HR 迁移实际执行；104 准确计数现场耗时 |
++| 附件版本擦除 | 生产 Enabled；本地真实 MinIO 已验证1002旧数据版本清理；永久零字节占位/条件写修复有315项附件工程通过 | 新占位方案的真实并发 MinIO 验证、兼容镜像同窗口切换及生产擦除闭环 |
++| 数据库 | 生产 001–095 每项 SHA 匹配；job kind 基线预检通过 | 100/102–106 及独立 HR 迁移实际执行；104 准确计数现场耗时 |
+ | 备份 | 291124812 字节 custom dump、schema/ledger/globals 私有备份；归档目录可读，备份会话归零、两锁释放 | 恢复演练；未 dump 或修改 preview |
+ | 配置/知识 | 9 个宿主私有文件、12 个 HR 卷文件；94 个知识资源；API/Worker 指纹一致；旧知识原字节保留 | 网络、数据库、实际进程及模型运行验收；当前 preflight 的唯一 blocker 是 database_not_checked |
+ | 旧链 | 本地 HR legacy 13 completed/3 interrupted、outbox 0；3 条平台 v5 command 有终态/退出/停止并精确匹配终态上传 | 切换窗口中的再核验、云端旧网页 Worker 持久关闭及实际派发拒绝 |
+-| 历史模型 | 63 会话/242 条用户消息只读提取，22 个合成适配场景；一轮选定四例实际执行六轮、23 次模型调用 | 22 例完整回放；H03 补跑尚在进行；专业质量整体通过 |
++| 历史模型 | 63 会话/242 条用户消息只读提取，22 个合成适配场景；一轮选定四例实际执行六轮、23 次模型调用 | 22 例完整回放；H03 real5 四轮执行完成但专业仍未过；22例和专业质量整体通过尚无证据 |
+ | D 模型 | 三轮真实提供方工程试验及独立输出审读，第三轮 1 passed/590.16 秒 | 专业整体通过；仍有单因排除和归因偏移 |
+ | 页面 | 合并保留岗位/成果能力并修复路由；定向组件/style 工程回归留证 | 本次未做浏览器验收，按用户指令不作为上线前置 |
+ | 生产接口 | 受认证 canary 脚本及真实本地 HTTP/PG 工程测试；慢流墙钟中断补验 | 有效生产 owner Cookie/CSRF、生产真实擦除、受理/续作/成果及自有进程重启验收 |
+ 
+-实际操作入口为[发布计划](../../artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md)和[当前实施计划](../superpowers/plans/2026-09-13-hr-launch.md)。本次使用提交 `404862b93c57e6782016182f089b67766ab569ff` 的 production-only 监督迁移工具，不能替换为通用 bootstrap 或同时处理 preview。须先停止准确旧附件 Worker、应用 100、启动修复镜像并完成真实物理擦除，再进入 HR 迁移与切换。
++实际操作入口为[发布计划](../../artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md)和[当前实施计划](../superpowers/plans/2026-09-13-hr-launch.md)。`404862b93c57e6782016182f089b67766ab569ff` 的 production-only 监督迁移工具为前一版受审基线；当前新增106源文件前置，需重新测试并冻结准确字节，不能替换为通用 bootstrap 或同时处理 preview。原仅停附件 Worker 的 ce6 方案不适用条件写修复：共享 API 和附件 Worker 都是写入方，须在同窗口停止旧写入方、隔断准确 MinIO 旧请求代际，再启用与106兼容的服务组合并通过真实擦除验收。新监督执行器尚未完成，不执行旧输入。
+ 
+ 独立飞书 MetaBot 不纳入本次停机。平台同一工作仍须由新云端链唯一执行；共享 Relay 和其他 Bot 保留。实际 PM2 加载版本与磁盘 ecosystem 不同，应以[本地平台在途核对](../../artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/)为准。三条 `reconciliation_required=true` 原样保留；实际加载代码拒绝已完成任务重放，不等于全部外部效果已对账，不得清标志造零。
+ 
+@@ -28,3 +28,9 @@
+ 证据封存分别见 `model-evidence-seal.json`、`engineering-evidence-seal.json` 和 `production/build-and-provision-seal.json`。两个已披露的操作文书/权限问题：旧指纹表的 companion SHA 少一字符，实际发布计划按准确 Git blob 修正，旧表保留；provision 外层曾把两个日志创建为 0644（父目录 0700），已按准确 SHA 定点改 0600，原脚本与补救回执分开保留。旧缺失日志仍缺失，不补写历史“通过”。
+ 
+ 新增物理擦除证据见 `production/s3-versioning-readonly-1/`。只读检查不含任何对象删除；数据库 job completed 会清除引用，所以新 canary 需要在删除前私有加密封存准确对象版本清单，再验证真实 job 状态与版本不存在，不能仅以接口 404 为通过。历史 `production/deployment-plan-review.md` 中 ce6 的执行步骤暂时失效，修复后的新方案另行绑定准确源码与镜像。
++
++截至新增 S3 修复：`4864abf` 的版本删除有 386 项附件工程回归；`production/s3-real-local-2` 实际本地 MinIO 验证跨两页 1002 个旧数据版本 HEAD 不存在、前缀兄弟保留、Suspended/null 与无版本桶删除通过，不能证明 late PUT 已阻止。后续零字节占位与条件写方案、106 逻辑删除关门和 API/附件同窗口切换正在实施，见 `attachment-write-fence-design-review-2` 与 `attachment-fence-release-plan-review`。原 ce6 运维输入不得执行。
++
++H03 real3 第四轮并非仅预算设置问题：反复以 role_calibration 更新 jd 被拒，另写调试占位，累计20次/1161589估算token后 waiting_budget，无最终答复。`b425b08` 增加授权后的类型字段诊断及禁止占位指导，16项真实PG测试通过且独立审读通过；H03 real5 已以固定 b425 源完成四轮，20次调用/1094115估算token/905.47活跃秒；错误kind反馈后沿原jd保存第四修订，无占位，但 save_note 被拒且如实披露。独立审读仍不接受专业内容：将用户明确指定职责降成待确认、仅补职责却新增相似工艺经历门槛、管理者经历和签核权仍有不当硬化。见[本轮输出审读](../../artifacts/2026-09-13-hr-launch/history-h03-real-review-5/review.md)。真实模型工程与专业判据继续分别登记，旧失败及前一轮内容问题不覆盖。
++
++当前新增物理边界预检 `production/minio-fence-window-readonly-1/` 实际只读确认唯一所见 Docker MinIO 数据挂载、无生命周期/复制/通知配置；未停止该服务，也不证明不存在任意宿主写入方。新增附件集合315项通过；完整控制平面迁移集合有2项静态清单失败，尚未关闭，不将该集合称为全绿。

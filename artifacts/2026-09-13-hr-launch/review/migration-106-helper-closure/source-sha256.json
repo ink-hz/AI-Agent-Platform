@@ -1,0 +1,6 @@
+{
+  "deploy/cloud/hr_agent_migrate.py": "b347e699d80d06f7b311c60a72d41abbf4983d43679797eed7a6c5b8524f1c60",
+  "backend/tests/test_hr_root_migration_deployment.py": "428f5e28dab86b68ed457ce89696716752e3ce2e3fdfa87197368ddab54bb72b",
+  "backend/tests/test_hr_agent_migration_deployment.py": "d16a9f235ff7a6b605acaf1c5b9d9a60e6dc7a313118c8ab1ac39ca559fb7587",
+  "backend/tests/test_control_plane_migration.py": "26a864f290ae303876c9d447d48beb7c7462193718d9399fcd17a563a09cd17f"
+}
