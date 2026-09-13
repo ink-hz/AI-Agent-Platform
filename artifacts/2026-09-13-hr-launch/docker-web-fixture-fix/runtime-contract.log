@@ -1,0 +1,18 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_image_is_multistage_nonroot_and_contains_only_runtime_assets _______
+backend/tests/test_cloud_deployment.py:268: in test_image_is_multistage_nonroot_and_contains_only_runtime_assets
+    assert forbidden not in dockerfile
+E   assert 'copy backend/tests' not in 'from node:2...cess-log"]\n'
+E     
+E     'copy backend/tests' is contained here:
+E       fixtures.
+E       copy backend/tests/fixtures/hr_intelligence_company/companies.json \
+E     ? ++++++++++++++++++
+E            backend/tests/fixtures/hr_intelligence_company/company-insta360.json \
+E            backend/tests/fixtures/hr_intelligence_company/company-scantech-missing-metrics.json \...
+E     
+E     ...Full output truncated (41 lines hidden), use '-vv' to show
+=========================== short test summary info ============================
+FAILED backend/tests/test_cloud_deployment.py::test_image_is_multistage_nonroot_and_contains_only_runtime_assets
+1 failed in 0.05s

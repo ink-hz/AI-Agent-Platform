@@ -261,27 +261,11 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
     assert "\n      clamav \\\n" not in dockerfile
     for forbidden in (
         "copy .git",
+        "copy backend/tests",
         "sensitive-dictionary",
         "identity-hmac",
     ):
         assert forbidden not in dockerfile
-
-    builder, runtime = dockerfile.split("\nfrom python:", 1)
-    # Compile-time JSON imports stay exact and confined to the builder.
-    # Runtime images must never copy tests, nor may the builder copy all backend.
-    assert "backend/tests" not in runtime
-    backend_sources = [part for part in builder.split() if part.startswith("backend/")]
-    assert sorted(backend_sources) == sorted(
-        "backend/tests/fixtures/hr_intelligence_company/" + name
-        for name in (
-            "companies.json",
-            "company-insta360.json",
-            "company-scantech-missing-metrics.json",
-            "company-insta360-jobs-page.json",
-        )
-    )
-    assert "/src/backend/tests/fixtures/hr_intelligence_company/" in builder
-    assert builder.index("backend/tests/fixtures/") < builder.index("run npm run build")
 
 
 def test_release_scripts_enforce_data_disk_and_bounded_retention() -> None:

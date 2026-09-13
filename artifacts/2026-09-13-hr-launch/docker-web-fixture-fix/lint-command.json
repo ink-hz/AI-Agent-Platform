@@ -1,0 +1,9 @@
+{
+  "command": [
+    "backend/.venv/bin/ruff",
+    "check",
+    "backend/tests/test_cloud_deployment.py"
+  ],
+  "exit_code": 0,
+  "source_sha256": "b2f809f38236eae450ffa2edaca8a5d8c241a65064cc47dec07faa54e9a9a6a8"
+}

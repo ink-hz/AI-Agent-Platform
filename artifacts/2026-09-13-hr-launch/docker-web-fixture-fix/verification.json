@@ -1,0 +1,12 @@
+{
+  "head": "fc339d8288ba99fec4fb702045c8409f837c007d",
+  "dockerfile_sha256": "66eabc27880c5edff8d02412a80ee7346cc2cfbd8da198cbf1aa9a1e9e452c4e",
+  "patch_sha256": "088955b845c728f0467a38ab6af750212650018b50a24f6c3e486a0ed5d16d75",
+  "same_seven_cloud_and_local_TS2307": true,
+  "webui_inputs_identical_between_red_green": true,
+  "unchanged_runtime_stage": true,
+  "exact_fixture_copy_count": 4,
+  "remote_log_sha256": "5904e3f09a35f15f96bb90833e740bc49da42943286265738b34cc019c0a9f01",
+  "node": "v26.5.0",
+  "npm": "11.17.0"
+}

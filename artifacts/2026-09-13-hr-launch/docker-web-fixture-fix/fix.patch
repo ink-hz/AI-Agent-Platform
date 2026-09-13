@@ -1,0 +1,51 @@
+diff --git a/backend/tests/test_cloud_deployment.py b/backend/tests/test_cloud_deployment.py
+index d5cf0ec121d31e296f90262a0da5cab50bb180b7..79557761013089341907b2c689c23fe92705eca2 100644
+--- a/backend/tests/test_cloud_deployment.py
++++ b/backend/tests/test_cloud_deployment.py
+@@ -261,12 +261,28 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
+     assert "\n      clamav \\\n" not in dockerfile
+     for forbidden in (
+         "copy .git",
+-        "copy backend/tests",
+         "sensitive-dictionary",
+         "identity-hmac",
+     ):
+         assert forbidden not in dockerfile
+ 
++    builder, runtime = dockerfile.split("\nfrom python:", 1)
++    # Compile-time JSON imports stay exact and confined to the builder.
++    # Runtime images must never copy tests, nor may the builder copy all backend.
++    assert "backend/tests" not in runtime
++    backend_sources = [part for part in builder.split() if part.startswith("backend/")]
++    assert sorted(backend_sources) == sorted(
++        "backend/tests/fixtures/hr_intelligence_company/" + name
++        for name in (
++            "companies.json",
++            "company-insta360.json",
++            "company-scantech-missing-metrics.json",
++            "company-insta360-jobs-page.json",
++        )
++    )
++    assert "/src/backend/tests/fixtures/hr_intelligence_company/" in builder
++    assert builder.index("backend/tests/fixtures/") < builder.index("run npm run build")
++
+ 
+ def test_release_scripts_enforce_data_disk_and_bounded_retention() -> None:
+     deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
+diff --git a/deploy/cloud/Dockerfile b/deploy/cloud/Dockerfile
+index 1788332eff447fd99f86d4282c5406f8181cf46c..4d516035a4383736f0e83a147f5278403e092b54 100644
+--- a/deploy/cloud/Dockerfile
++++ b/deploy/cloud/Dockerfile
+@@ -3,6 +3,12 @@ WORKDIR /src/webui
+ COPY webui/package.json webui/package-lock.json ./
+ RUN npm ci --ignore-scripts
+ COPY webui/ ./
++# Type-check the web tests with their shared public JSON fixtures.
++COPY backend/tests/fixtures/hr_intelligence_company/companies.json \
++     backend/tests/fixtures/hr_intelligence_company/company-insta360.json \
++     backend/tests/fixtures/hr_intelligence_company/company-scantech-missing-metrics.json \
++     backend/tests/fixtures/hr_intelligence_company/company-insta360-jobs-page.json \
++     /src/backend/tests/fixtures/hr_intelligence_company/
+ RUN npm run build
+ 
+ FROM python:3.11.13-slim-bookworm AS runtime

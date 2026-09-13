@@ -3,12 +3,6 @@ WORKDIR /src/webui
 COPY webui/package.json webui/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY webui/ ./
-# Type-check the web tests with their shared public JSON fixtures.
-COPY backend/tests/fixtures/hr_intelligence_company/companies.json \
-     backend/tests/fixtures/hr_intelligence_company/company-insta360.json \
-     backend/tests/fixtures/hr_intelligence_company/company-scantech-missing-metrics.json \
-     backend/tests/fixtures/hr_intelligence_company/company-insta360-jobs-page.json \
-     /src/backend/tests/fixtures/hr_intelligence_company/
 RUN npm run build
 
 FROM python:3.11.13-slim-bookworm AS runtime

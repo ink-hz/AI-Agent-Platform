@@ -1,0 +1,15 @@
+{
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_cloud_deployment.py::test_image_is_multistage_nonroot_and_contains_only_runtime_assets",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 1,
+  "started_at": "2026-09-13T03:12:20.923960+00:00",
+  "finished_at": "2026-09-13T03:12:21.183001+00:00",
+  "dockerfile_sha256": "66eabc27880c5edff8d02412a80ee7346cc2cfbd8da198cbf1aa9a1e9e452c4e"
+}
