@@ -1,0 +1,69 @@
+{
+  "scope": "Reviewed and staged hotfix tool inputs only; no maintenance supervisor invocation",
+  "files": {
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/command.json": {
+      "sha256": "d3dc2e55305bf6ab5beb0a35fa537ecef1fc7c3cbec4344afeabf5a8d50692b6",
+      "bytes": 714
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/fingerprints.json": {
+      "sha256": "2829c98b9065381a19b2683f7abca49b813515987f998a1a16a473572e331517",
+      "bytes": 1495
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/review.md": {
+      "sha256": "6a16965a84dcb1866d8b7ae7af9d5350670d2add22c1198c8eac7bad8a78f297",
+      "bytes": 5930
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/focused.log": {
+      "sha256": "35d86279d96ed65491ba8ff0748e1c8e7891711531404dc5d4b9cd6ae33de3ec",
+      "bytes": 98
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py": {
+      "sha256": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34",
+      "bytes": 30358
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/artifacts/2026-09-13-hr-launch/production/attachment-hotfix-preparation/expected-inputs.json": {
+      "sha256": "a1740c60f8d10890ad56f84cb8d5760cfa82a678c8bf4d7d2c8459a41eccac93",
+      "bytes": 9050
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/artifacts/2026-09-13-hr-launch/production/attachment-hotfix-preparation/green-final-1/output.log": {
+      "sha256": "0704d589d3e78a7bf4f79e7dc856f77bbea29f432207b24632fff71b14a0ac5d",
+      "bytes": 99
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/artifacts/2026-09-13-hr-launch/production/attachment-hotfix-preparation/green-final-1/command.json": {
+      "sha256": "709f45b3c24d384f021abfbd0fd0a910f7d649b31fda0bd8a839f9a719002215",
+      "bytes": 1081
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/deploy/cloud/preflight-execution-job-kind.sh": {
+      "sha256": "88644e92079949a49e695474ab0c5d15e77cc238d13116e76db880f14d2e3b2e",
+      "bytes": 5350
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/deploy/cloud/hr_agent_migrate.py": {
+      "sha256": "381dbfbcf89bdc286dc1544982705f656ba9b1a0f2ba4442769f7498a56455b2",
+      "bytes": 21080
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/deploy/cloud/deploy-input-lock.py": {
+      "sha256": "45c2d3fce8a5ef2e3dd6306eaa15b7cdbfc85072bed164033684f84b425a4eb4",
+      "bytes": 12209
+    },
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/backend/tests/test_attachment_hotfix_supervisor.py": {
+      "sha256": "c864f2ade756a55999d864a64447794edab10578ee04175981c0b651c9e392a4",
+      "bytes": 9274
+    },
+    "artifacts/2026-09-13-hr-launch/production/hotfix-bundle-install-1/stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/hotfix-bundle-install-1/command.json": {
+      "sha256": "59e8be6e0f8d1e0ad8fff19c4aec9e4747b708021dd5ad3d4bc4248f084fdfa4",
+      "bytes": 658
+    },
+    "artifacts/2026-09-13-hr-launch/production/hotfix-bundle-install-1/install.py": {
+      "sha256": "92d9cae811f65113de9526dee8a3bf35334d96f84e8db68c15ac6055022de035",
+      "bytes": 90578
+    },
+    "artifacts/2026-09-13-hr-launch/production/hotfix-bundle-install-1/stdout.json": {
+      "sha256": "fd71c4b00d3f20a09acedc4e6c7642e2f6c73c550c3e3cfc64194a6d396fff0f",
+      "bytes": 1120
+    }
+  }
+}

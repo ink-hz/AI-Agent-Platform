@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-c",
+    "/dev/null",
+    "-p",
+    "no:cacheprovider",
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment-hotfix-independent-review-1/snapshot/backend/tests/test_attachment_hotfix_supervisor.py::test_daemon_failure_does_not_skip_revocation_of_proven_own_grant",
+    "-q"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 0,
+  "boundary": "exact source snapshot; injected Docker/SQL; no production or model"
+}

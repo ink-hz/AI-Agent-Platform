@@ -1,0 +1,37 @@
+{
+  "commit": "4f08431d6717702dad78c3b965b56b497c1ca4ba",
+  "files": [
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py",
+      "sha256": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34"
+    },
+    {
+      "path": "backend/tests/test_attachment_hotfix_supervisor.py",
+      "sha256": "c864f2ade756a55999d864a64447794edab10578ee04175981c0b651c9e392a4"
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-preparation/green-final-1/command.json",
+      "sha256": "709f45b3c24d384f021abfbd0fd0a910f7d649b31fda0bd8a839f9a719002215"
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-preparation/green-final-1/output.log",
+      "sha256": "0704d589d3e78a7bf4f79e7dc856f77bbea29f432207b24632fff71b14a0ac5d"
+    },
+    {
+      "path": "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-preparation/expected-inputs.json",
+      "sha256": "a1740c60f8d10890ad56f84cb8d5760cfa82a678c8bf4d7d2c8459a41eccac93"
+    },
+    {
+      "path": "deploy/cloud/hr_agent_migrate.py",
+      "sha256": "381dbfbcf89bdc286dc1544982705f656ba9b1a0f2ba4442769f7498a56455b2"
+    },
+    {
+      "path": "deploy/cloud/preflight-execution-job-kind.sh",
+      "sha256": "88644e92079949a49e695474ab0c5d15e77cc238d13116e76db880f14d2e3b2e"
+    },
+    {
+      "path": "deploy/cloud/deploy-input-lock.py",
+      "sha256": "45c2d3fce8a5ef2e3dd6306eaa15b7cdbfc85072bed164033684f84b425a4eb4"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "source_commit": "4f08431d6717702dad78c3b965b56b497c1ca4ba",
+  "manifest_sha256": "4887e1a1ba0324bcb5c7feabd7ac294f3dea430b0782c21de0261ccbc7494ce2",
+  "installer_sha256": "92d9cae811f65113de9526dee8a3bf35334d96f84e8db68c15ac6055022de035",
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/python3 -I -"
+  ],
+  "started_at": "2026-09-13T04:21:07.449007+00:00",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T04:21:08.047221+00:00"
+}
