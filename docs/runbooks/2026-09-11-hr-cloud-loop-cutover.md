@@ -1,6 +1,6 @@
 # HR 云端 Loop 部署与切换手册（E1c）
 
-本文提供可审阅的操作路径，不授予执行权限。当前发布窗口、真实候选人模型服务及隐私决定、D7 延迟/成本取舍、独立 HR 飞书去向均未知；浏览器验收也未完成。在这些事项分别取得明确决定和证据前，只能做本地或隔离的公开/虚构材料验证，不能切换真实 HR 受理或发送真实个人材料。
+本文提供可审阅的操作路径，执行权限来自当前任务。2026-09-13 用户明确要求“直接做到上线”、排除飞书，并授权从 HR 历史 session 提取问题做真实场景验证；该授权覆盖必要的 HR 与附件维护暂停。执行时仍须记录具体时间、准确镜像/配置、原执行器身份及共享 API 影响。真实候选人模型服务及保留/训练处理规则尚未完整确认，当前可装配的发布策略仅允许公开/已审阅合成场景，真实个人材料授权回调保持关闭。D7 采用单独受保护的发布评审文件绑定当前 provider/budget/diagnostic 内容，不能靠修改 profile 自称获准。浏览器、生产和真实场景验收分别记录实际结果；此处不预先宣布上线通过。
 
 ## 1. 不可合并的两个发布
 
@@ -152,7 +152,7 @@ preflight 从待发布镜像内运行；镜像必须包含 `backend/tools/hr_age
   --worker-env-file /run/hr-agent-secrets/worker-runtime.env
 ```
 
-已获相应数据库只读检查授权时，增加 app 身份 DSN 文件。工具为连接设置只读事务，调用现有 `load_hr_agent_settings`、`KnowledgeReleases` 和 `check_schema_ready`，并读取 096–104 回执及 public 102 cutover gate（103修订排空函数，104移除不可达条件并保持实际保护）：
+已获相应数据库只读检查授权时，增加 app 身份 DSN 文件。工具为连接设置只读事务，调用现有 `load_hr_agent_settings`、`KnowledgeReleases` 和 `check_schema_ready`，并读取 096–105 回执及 public 102 cutover gate（103修订排空函数，104移除不可达条件并保持实际保护）：
 
 ```bash
 /usr/bin/docker run --cap-drop ALL --security-opt no-new-privileges:true --rm --read-only --user 10001:10001 \
@@ -171,11 +171,11 @@ preflight 从待发布镜像内运行；镜像必须包含 `backend/tools/hr_age
 
 输出仅含稳定配置/知识/profile/attachment 指纹、迁移身份、cutover 状态、blockers 和 limitations；不输出 endpoint、路径、DSN、credential 或原始异常。相同的自报指纹只能证明两份输入一致，不能证明生产容器确实加载它们。容器存在/运行也不能证明认领、续租、知识、附件、provider 或业务功能正常，仍需后续 API 与进程 canary。
 
-`--scope public-only` 不把个人材料策略混入公开材料配置结论，但仍不授权真实个人材料。`--scope full-candidate` 会保留 `personal_processing_authorizer_absent`；当前生产装配没有该 authorizer，profile 声称“approved”不能解除阻断。D7 尚无产品确认，两种 scope 都保留 `d7_product_approval_absent`。不得通过命令行布尔值伪造二者通过。
+`--scope public-only` 不把个人材料策略混入公开材料配置结论，但仍不授权真实个人材料。`--scope full-candidate` 会保留 `personal_processing_authorizer_absent`；当前生产装配没有该 authorizer，profile 声称“approved”不能解除阻断。D7 只从配置绑定的受保护 `PLATFORM_HR_AGENT_RELEASE_POLICY_FILE` 读取评审依据；文件缺失或两进程配置不一致时保留 `d7_product_approval_absent`。文件仅接受 public-only，不赋予个人处理权限。不得通过命令行布尔值伪造二者通过。
 
 ## 4. 控制库迁移（需单独执行授权）
 
-以下是获准窗口内的具体命令形态。根迁移由现有 `bootstrap-control-db.sh` 的短时 owner membership 生命周期负责；它必须已经应用并验证 102、103、104。根目录中的 100 必须更早由第 1 节独立附件热修复完成，不能在旧附件 Worker 仍可恢复时首次应用。HR opt-in 096–099/101 只由 `migrate-hr-agent.sh` 应用；它不会运行根迁移目录。
+以下是获准窗口内的具体命令形态。根迁移由现有 `bootstrap-control-db.sh` 的短时 owner membership 生命周期负责；它必须已经应用并验证 102、103、104、105。根目录中的 100 必须更早由第 1 节独立附件热修复完成，不能在旧附件 Worker 仍可恢复时首次应用。HR opt-in 096–099/101 只由 `migrate-hr-agent.sh` 应用；它不会运行根迁移目录。
 
 Production：
 
@@ -187,7 +187,7 @@ Production：
   PLATFORM_POSTGRES_CONTAINER_ID
 ```
 
-`PLATFORM_IMAGE_SHA` 和 `PLATFORM_POSTGRES_CONTAINER_ID` 必须替换为已核验的准确值，镜像不能使用浮动 tag。provisioning须确认两个 migrator DSN 为root-owned mode-0600文件；助手实际检查普通文件和0600，未检查owner UID，这一项仍是外部前置。助手先验证：owner membership at rest 为0且没有migrator会话；production/preview 的根迁移100、102、103、104 checksum与当前release一致。任一条件不满足时，在授予权限前失败，不补跑根迁移。
+`PLATFORM_IMAGE_SHA` 和 `PLATFORM_POSTGRES_CONTAINER_ID` 必须替换为已核验的准确值，镜像不能使用浮动 tag。provisioning须确认两个 migrator DSN 为root-owned mode-0600文件；助手实际检查普通文件和0600，未检查owner UID，这一项仍是外部前置。助手先验证：owner membership at rest 为0且没有migrator会话；production/preview 的根迁移100、102、103、104、105 checksum与当前release一致。任一条件不满足时，在授予权限前失败，不补跑根迁移。
 
 助手由 `hr_agent_migrate.py` 监督实际具名迁移容器。授予的是**整个控制库 owner 的角色成员身份**，不是 HR 表级权限，也不是会话级权限。production 清理并核实后才授予 preview；不跨两个迁移同时持权。同部署主机的文件锁阻止本助手并发；其他部署工具仍须遵守独占维护窗口。开始前必须核实两个 owner 的所有 membership 为 0、两个 migrator 的数据库会话为 0。
 
@@ -288,20 +288,20 @@ PY
 
 上一轮operations-final-1属于历史中间运行，仅覆盖当时的30秒命令和旧恢复假设；不能套用到本版3秒持锁上限与恢复延期路线。新的运维回执必须绑定本版准确runbook SHA，并分别列出已执行和未覆盖的fenced块。
 
-迁移后再次运行带数据库的 preflight。096–104 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
+迁移后再次运行带数据库的 preflight。096–105 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
 
 ## 5. 隔离启动与验证
 
 迁移和 provisioning 完成后，可先启动 production 服务但保持 102 gate 为 `legacy`，因此云端新 root admission 会被拒绝：
 
 ```bash
-"${hr_compose[@]}" up -d --force-recreate platform-api platform-hr-agent-worker
+"${hr_compose[@]}" up -d --no-deps --force-recreate platform-api platform-hr-agent-worker
 "${hr_compose[@]}" ps platform-api platform-hr-agent-worker
 ```
 
 预激活阶段只执行不创建工作的检查：
 
-1. 先以真实platform owner身份读取并留存 `GET /api/v1/manage/system-health` 的 `dependencies.services.hr_agent`：api_ready须为true，worker_checked仍为false。api_ready仅是API启动装配快照，不是实时数据库、Worker或业务探针；随后仍须执行带数据库preflight。再用真实认证且有HR权限的用户读取 `GET /api/hr/agent/configuration` 和 `GET /api/hr/agent/knowledge?kind=method`，核对身份、HR权限和实际知识读取。自动compose HR探针本轮延期，共享平台 `/api/health` 只表示公共liveness，不能代替以上前置，也不能声称发布或HR已可用。
+1. 先以真实 platform owner 身份读取并留存 `GET /api/v1/manage/hr-readiness`：HTTP 200、ready 为 true，检查实时数据库迁移/权限、知识与已装配配置的身份；此时 phase=legacy，new_admission_enabled 为 false。该接口受 owner 授权和审计保护，不使用公共 health 代替。随后执行准确 Worker 容器内 `python -m app.hr_agent.worker healthcheck`，要求私有 Unix socket 返回常驻进程的 PID/start/nonce、实时依赖及持续工作进度；compose healthcheck 使用同一命令。API 与 Worker 的 release_sha、configuration_sha256、knowledge 身份必须匹配，另外按 preflight 比对附件装配。再由真实认证且有 HR 权限的用户读取 `GET /api/hr/agent/configuration` 和知识目录，验证实际身份边界。共享 `/api/health` 仍仅表示公共 liveness。
 2. 检查 API/Worker 容器使用预期 image、配置/knowledge 指纹，且 Worker 在没有 cloud-lane continuation 时保持空闲。进程存在只证明 supervisor 状态。
 3. 不提交 public canary work：`legacy` gate 正确拒绝 cloud root admission。在 production gate 仍为 `legacy` 时强行创建 canary 会绕过切换契约。
 
@@ -318,7 +318,7 @@ PY
 
 ## 6. 切换、排空与回滚
 
-切换前需产品负责人确认具体窗口、用户影响、执行责任人、独立 HR 飞书去向，以及真实候选人模型/保留/日志和 D7 取舍。未确认时 public 102 保持 `legacy`，旧链接单，新链仅隔离测试。
+本轮执行授权与范围见本文开头。实际切换时记录窗口时间和执行者，按当前公开/合成范围运行，飞书不作前置；真实候选人处理在规则未配置时仍关闭。发布评审文件须与实际 API/Worker 配置一致，不能用 public-only 预检证明完整候选人工作可用。
 
 获准后按 102 状态机执行：
 
@@ -331,7 +331,7 @@ PY
 
 1. `cloud -> draining_cloud`，立即关闭云端新 root admission；云端 Worker 继续领取/恢复该 lane 已 accepted/queued 的 work 及派生 parse/candidate work。
 2. 按 owner/work/source 身份让新链 continuation 完成或明确取消，直到非终态计数为 0；保留已保存成果、确认标准和材料。不得笼统停止认领而把 accepted 工作滞留在队列。
-3. 当前承诺的唯一恢复终点是保持 `draining_cloud` 修复新链。旧链恢复按§6.2延期，本文不提供可执行恢复或回切路线。数据库四边状态机不代表能随时撤销；不得先切legacy再用draining_legacy伪装为可逆回滚。
+3. 在 `draining_cloud` 修复新链并验证配置、知识、实时依赖及已有 work 归属后，使用上节相同的 3 秒事务切换命令，以新 request UUID 指定 `cloud`。新增 105 只增加 `draining_cloud -> cloud` 同链恢复，允许原云端工作仍在执行，继续要求旧链占用为零；不改 work、租约或历史成果。并发同 UUID 只产生一份回执，其他目标重放拒绝。102/103/104 原字节保留；旧执行器恢复仍按§6.2延期，不得先切legacy再用draining_legacy伪装为可逆回滚。
 4. 附件热修复后的旧附件 Worker始终保持停止。HR 回滚绝不能恢复它，即使当前 release 或通用 deploy 失败。
 
 所有状态切换使用唯一 transition request id，记录前后 epoch/row_version 和只读计数；不得直接 UPDATE 102 表或伪造“零在途”。
@@ -434,22 +434,24 @@ PY
 
 Relay 注册仍通常共用于多个 Bot，现有 register_worker CLI 固定非验收 Worker 的完整 agent 列表，不能假设支持只移除 hr-bot。保留共享 Relay 及其他 Bot，依赖活 handoff gate 拒绝其 HR 派发；禁止整体 revoke 来冒充 HR 退出。若实际存在 HR 专用 Worker，维护者才可按已确认 worker_id 使用 `python -m app.execution_relay.register_worker revoke-worker <worker_id> <change_reference>` 注销，并保留维护回执。
 
-活的 `/v5/handoff` 已在每次 offer 前取共享闸门锁；cloud/draining_cloud 不再发 HR 命令，legacy/draining_legacy 允许准确已受理工作的续作。已接受工作回调保留原身份/租约校验，避免因切换丢掉完成回执。确认门控代码已在实际 API 镜像生效；本地签名 HTTP 测试不能替代这一步。Feishu HR 的用户入口、存量会话去向与 HR Bot 停用必须由产品/服务负责人一起确认，仍未知时不能进入 cloud。
+活的 `/v5/handoff` 已在每次 offer 前取共享闸门锁；cloud/draining_cloud 不再发 HR 命令，legacy/draining_legacy 允许准确已受理工作的续作。已接受工作回调保留原身份/租约校验，避免因切换丢掉完成回执。确认门控代码已在实际 API 镜像生效；本地签名 HTTP 测试不能替代这一步。本轮用户明确排除飞书，飞书去向不作为 cloud 切换条件；共享 Relay 及其他 Bot 仍必须保留。
 
 ### 6.2 旧HR执行器恢复延期
 
-本轮只承诺保持draining_cloud修复新链，不提供恢复PM2、启用旧Worker、重启共享API或切回legacy的执行步骤。四边状态机没有draining_legacy直接撤销入口；旧链恢复后再次失败时原路线会落入不能原地撤销的阶段，因此不能把它称为安全恢复。
+本轮按§6在draining_cloud修复后经105恢复同一cloud链，不提供恢复PM2、启用旧Worker或切回legacy的执行步骤。状态机仍没有draining_legacy直接撤销入口；旧链恢复后再次失败时原路线会落入不能原地撤销的阶段，因此不能把它称为安全恢复。
 
 旧链恢复必须另行设计并验证：读取§6.1持久保存的退出前主机、wrapper、ecosystem和实例状态，核验批准镜像、配置、实际readiness、飞书去向及唯一执行归属；明确恢复中途失败和恢复后canary失败的可达处理终点。缺失任何退出前记录不得猜测或创建原本不存在的PM2实例。仅批准启动旧进程不足以批准状态机回切，不以读取不到的hr-before文件作为恢复依据。
 
 后续方案若需重建platform-api，必须单独批准共享API短时中断及其他Bot影响，并验证非HR受理连续性；现行draining_cloud修复路线没有为恢复旧Worker重启共享API的步骤。§5初次部署platform-api的force-recreate同样可能短时影响所有共享API用户，须纳入原发布窗口影响确认。
 
-## 7. 当前明确未完成
+## 7. 上线记录状态
 
-- 发布窗口、停服授权和执行责任人未知。
-- 真实候选人模型服务、传输、保留、训练与日志策略未获确认；生产 personal-processing authorizer 不存在。
-- D7 的 300 秒/16384 输出候选配置尚未由产品确认延迟和成本，计量校准也未完成。
-- 100/102/103/104的发布回执、104生效后的实际排空计数、完整v5关联条件及handoff镜像未在生产验收。
-- 已做受限只读聚合盘点，并读取本机仓库中metabot-hr单实例退出脚本；实际主机部署身份、持久停止/恢复证据、共享Worker不受影响及独立HR飞书去向仍待验。
-- 最新只读观察生产为 fe10fae；发布分支已在96f412f承接该生产代码；发布窗口仍须复查最新生产HEAD，不能覆盖随后上线的能力。
-- 浏览器验收、真实模型专业审读和生产验收均未完成。
+2026-09-13 实施中；以下未完成项不得由本地测试数量代替。
+
+- 当前任务已明确授权上线及必要维护暂停，飞书排除。执行时间、操作者、部署独占锁及共享 API 短时重建影响须保存在实际回执。
+- 真实候选人模型服务及保留/训练处理规则尚未完整确认；生产 personal-processing authorizer 仍关闭。当前发布策略只允许公开/已审阅合成范围。
+- D7 采用 300 秒/16384 输出和有限预算；评审文件必须绑定实际装载配置。token 仍保守估算，校准及实际账单不能由该文件证明。
+- 100/102/103/104/105 的发布回执、实际准确排空计数、原执行器持久停止及 handoff 镜像尚待本次生产操作留证。
+- 已只读核实本机 agentops 的 metabot-hr 在线及实际状态目录；停止动作尚未执行。共享 Worker 不受影响须另取真实快照。
+- 本轮已承接生产 65e7fbd 和 origin/master，准确合并及路由修复审读见 2026-09-13 artifacts。发布前仍复查生产当前镜像，不能覆盖并行部署。
+- 历史意图语料已审读，运行材料与故障前提正在补齐；浏览器、真实模型专业审读和生产验收以各自新运行回执为准。
