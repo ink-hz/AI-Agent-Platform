@@ -164,6 +164,7 @@ _HR_POSITION_ROUTES = frozenset({
 
     ("GET", "/api/hr/knowledge"),
     ("GET", "/api/v1/hr/results/{result_id}"),
+    ("GET", "/api/v1/hr/positions/{position_id}/results"),
     ("GET", "/api/v1/hr/conversations/{conversation_id}/results"),
     ("GET", "/api/hr/knowledge/{source_commit}/{resource_id}"),
     ("GET", "/api/hr/positions"),
@@ -219,6 +220,9 @@ _HR_POSITION_ROUTES = frozenset({
     ("GET", "/api/hr/panorama/topics"),
     ("GET", "/api/hr/panorama/research"),
     ("GET", "/api/hr/panorama/research/{document_id}"),
+    ("GET", "/api/hr/panorama/sources"),
+    ("GET", "/api/hr/panorama/sources/{company_key}"),
+    ("GET", "/api/hr/panorama/sources/{company_key}/jobs/{job_id}"),
     ("GET", "/api/hr/panorama/topics/{topic_id}"),
     ("GET", "/api/hr/panorama/companies"),
     ("GET", "/api/hr/panorama/companies/{company_key}"),

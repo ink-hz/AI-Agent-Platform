@@ -50,3 +50,13 @@ it('turns an internal evidence link into edition-preserving navigation', async (
   await act(async () => link.click());
   expect(open).toHaveBeenCalledWith('next');
 });
+it('opens a uniquely resolved source link at its original source edition', async () => {
+  const linked = { ...document, markdown: '[原岗位](https://example.com/job)', source_reference: {edition:'source-1',source_bundle_id:'original',links:{'https://example.com/job':{company_key:'insta360',job_id:'job-1'}}} };
+  await act(async () => root.render(<ResearchMarkdown document={linked} onOpen={vi.fn()} />));
+  const link = container.querySelector('a') as HTMLAnchorElement;
+  expect(link.href).toContain('source_edition=source-1');
+  expect(link.href).toContain('source_job=job-1');
+  await act(async () => link.click());
+  expect(location.search).toContain('layer=sources');
+  expect(location.search).toContain('research_company=insta360');
+});

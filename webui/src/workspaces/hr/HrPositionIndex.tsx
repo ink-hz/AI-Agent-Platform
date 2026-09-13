@@ -7,6 +7,7 @@ import { createHrApi, type HrApi } from "../../hrApi";
 import type { HrPosition, HrPositionDraft } from "../../hrTypes";
 import { navigate } from "../../router";
 import { completeMutationRequest, retainMutationRequest } from "./hrMutationRequest";
+import "./hrPositionWorkflow.css";
 
 
 type DraftStarter = (request: {
@@ -38,7 +39,8 @@ async function loadEveryPosition(api: HrApi, signal: AbortSignal): Promise<HrPos
       cursor ? { limit: 100, cursor } : { limit: 100 }, signal,
     );
     for (const item of page.items) found.set(item.positionId, item);
-    if (!page.nextCursor || seenCursors.has(page.nextCursor)) break;
+    if (!page.nextCursor) break;
+    if (seenCursors.has(page.nextCursor)) throw new Error("repeated position cursor");
     seenCursors.add(page.nextCursor);
     cursor = page.nextCursor;
   } while (!signal.aborted);
@@ -66,6 +68,7 @@ export function HrPositionIndex({
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<"all" | HrPosition["internalStatus"]>("all");
   const [newOpen, setNewOpen] = useState(false);
   const [newRequest, setNewRequest] = useState("");
   const [working, setWorking] = useState<string | null>(null);
@@ -85,6 +88,7 @@ export function HrPositionIndex({
       loadEveryPosition(api, controller.signal),
       api.listDrafts("proposed", controller.signal),
     ]).then(([loadedPositions, pending]) => {
+      if (controller.signal.aborted) return;
       setPositions(loadedPositions); setDrafts(pending); setState("ready");
     }).catch(() => {
       if (!controller.signal.aborted) setState("error");
@@ -94,11 +98,13 @@ export function HrPositionIndex({
 
   const visible = useMemo(() => {
     const selected = query.trim().toLocaleLowerCase();
-    if (!selected) return positions;
-    return positions.filter((position) => [
-      position.title, position.officialJobId, position.department, ...position.locations,
-    ].some((value) => value?.toLocaleLowerCase().includes(selected)));
-  }, [positions, query]);
+    return positions.filter((position) =>
+      (status === "all" || position.internalStatus === status)
+      && (!selected || [
+        position.title, position.officialJobId, position.department, ...position.locations,
+      ].some((value) => value?.toLocaleLowerCase().includes(selected))),
+    );
+  }, [positions, query, status]);
   const official = visible.filter((position) => position.sourceKind === "official_site");
   const internal = visible.filter((position) => position.sourceKind === "manual");
 
@@ -188,6 +194,9 @@ export function HrPositionIndex({
 
     <div className="hr-position-toolbar">
       <label><span>搜索岗位</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="岗位名称、J 编号、部门或地点" /></label>
+      <label><span>岗位状态</span><select aria-label="岗位状态" value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
+        <option value="all">全部岗位</option><option value="active">进行中</option><option value="draft">草案</option><option value="archived">已归档</option>
+      </select></label>
       <PlatformLink href="/hr/">返回对话</PlatformLink>
     </div>
     {account.hard_stale_read_only && <p className="hr-position-notice" role="status">账号目录信息已过期，岗位数据暂时只读。</p>}
@@ -230,10 +239,12 @@ function PositionSection({ title, caption, positions, onSelect }: { title: strin
     <div className="hr-position-section-heading"><div><h2>{title}</h2><p>{caption}</p></div><span>{positions.length}</span></div>
     {positions.length === 0 ? <div className="hr-position-empty">没有匹配的岗位。</div>
       : <div className="hr-position-grid">{positions.map((position) => <article className="hr-position-card" key={position.positionId}>
-        <div><span className={`hr-position-chip hr-position-chip--${position.sourceKind}`}>{sourceLabel(position)}</span>{position.officialStatus && <span className={`hr-position-status hr-position-status--${position.officialStatus}`}>{officialStatus(position.officialStatus)}</span>}</div>
+        <div><span className={`hr-position-chip hr-position-chip--${position.sourceKind}`}>{sourceLabel(position)}</span><span className="hr-position-chip">{position.internalStatus === "archived" ? "已归档" : position.internalStatus === "draft" ? "草案" : "进行中"}</span>{position.officialStatus && <span className={`hr-position-status hr-position-status--${position.officialStatus}`}>{officialStatus(position.officialStatus)}</span>}</div>
         <h3><PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>{position.title}</PlatformLink></h3><p>{[position.department, ...position.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
         <footer><span>{position.officialJobId ?? "内部岗位"}</span><span>{position.sourceVersion ? `官网版本 ${position.sourceVersion}` : "内部上下文"}</span></footer>
+      <div className="hr-pw-card-flow" aria-label="岗位工作流阶段"><span>JD / JR</span><span>候选人</span><span>面试</span><span>复盘</span></div>
       <div className="hr-position-card-actions">
+        <PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>查看岗位工作流</PlatformLink>
         {onSelect && <button type="button" disabled={position.internalStatus !== "active"} onClick={() => onSelect(position)}>在主对话中继续</button>}
         <PlatformLink href={`/hr/agent?position=${encodeURIComponent(position.positionId)}`}>与 Hannah 讨论岗位</PlatformLink>
       </div>

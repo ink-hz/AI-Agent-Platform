@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from .panorama_repository import PanoramaNotFound, PanoramaUnavailable
+from .source_library import SourceLibrary
 
 
 class ResearchLibrary:
@@ -59,4 +60,9 @@ class ResearchLibrary:
             resolved = posixpath.normpath(posixpath.join(posixpath.dirname(entry['path']), unquote(parsed.path)))
             if resolved in paths:
                 links[href] = paths[resolved]
-        return {**entry, 'edition': edition, 'markdown': text, 'links': links}
+        try:
+            source_reference = SourceLibrary().resolve_references(text, value['source_archive_id'])
+        except (PanoramaNotFound, PanoramaUnavailable):
+            source_reference = None
+        return {**entry, 'edition': edition, 'markdown': text, 'links': links,
+                'source_reference': source_reference}

@@ -3,7 +3,7 @@ import json
 from uuid import UUID
 
 import psycopg
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException, Query
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 from app.execution_relay.contracts_v6 import parse_v6_tool_request, V6ContractError
@@ -80,6 +80,17 @@ def attach_hr_tool_routes(router, authenticated, service):
 
 def build_hr_result_router(service, require_hr_access):
     router = APIRouter()
+
+    @router.get('/api/v1/hr/positions/{position_id}/results')
+    def position_results(position_id: UUID, owner_id: UUID = Depends(require_hr_access),
+                         offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100)):
+        try:
+            return JSONResponse(service.position_results(owner_id, position_id, offset=offset, limit=limit),
+                                headers={'Cache-Control': 'private, no-store'})
+        except HrToolError:
+            raise HTTPException(404, 'HR position unavailable') from None
+        except (psycopg.Error, ContentCryptoError):
+            raise HTTPException(503, 'HR results temporarily unavailable') from None
 
     @router.get('/api/v1/hr/conversations/{conversation_id}/results')
     def conversation_results(conversation_id: UUID,owner_id: UUID=Depends(require_hr_access)):

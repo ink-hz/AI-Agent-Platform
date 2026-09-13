@@ -173,10 +173,10 @@ function LegacyAnalysisCard({ analysis, candidateNames }: { analysis: Extract<Hr
   </article>;
 }
 
-export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContextVersionId, onDraft, uploadClient, readOnly = false }: {
+export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContextVersionId, onDraft, onCandidatesChange, uploadClient, readOnly = false }: {
   api: CandidateApi; positionId: string; csrfToken: string;
   currentContextVersionId: string | null; onDraft?:(text:string,ids:string[],attachments:string[])=>void;
-  uploadClient?: AttachmentUploadClient; readOnly?: boolean;
+  uploadClient?: AttachmentUploadClient; readOnly?: boolean; onCandidatesChange?:(relations:HrPositionCandidate[])=>void;
 }) {
   const [drafts, setDrafts] = useState<HrCandidateDraft[]>([]);
   const [relations, setRelations] = useState<NamedRelation[]>([]);
@@ -197,7 +197,7 @@ export function HrCandidateWorkspace({ api, positionId, csrfToken, currentContex
   async function load(signal?: AbortSignal) {
     const [nextDrafts, nextRelations] = await Promise.all([api.candidateDrafts(positionId, signal), api.positionCandidates(positionId, signal)]);
     const named = await Promise.all(nextRelations.map(async (relation) => ({ relation, candidate: await api.candidate(relation.candidateId, signal) })));
-    if (!signal?.aborted) { setDrafts(nextDrafts); setRelations(named); setLoadState("ready"); }
+    if (!signal?.aborted) { setDrafts(nextDrafts); setRelations(named); onCandidatesChange?.(nextRelations); setLoadState("ready"); }
   }
   useEffect(() => {
     draftPollAttempt.current = 0;

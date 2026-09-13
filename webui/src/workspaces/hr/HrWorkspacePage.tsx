@@ -1,7 +1,7 @@
 import { formatHrIntelligenceReferences, type HrIntelligenceReference } from './hrIntelligenceReference';
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Account } from "../../auth";
-import { PlatformLink } from "../../components/PlatformLink";
+import { HrPositionWorkflow } from "./HrPositionWorkflow";
 import type { HrComposerDraft, HrKnowledgeSelection, HrInputResultRef } from "../../conversationTypes";
 import { createHrApi } from "../../hrApi";
 import { createHrR12Api } from "../../hrR12Api";
@@ -94,8 +94,8 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
       selectedKnowledgeResources={knowledge} onKnowledgeResourcesSubmitted={()=>setKnowledge([])} onRemoveKnowledgeResource={id=>setKnowledge(items=>items.filter(item=>item.id!==id))}
       renderTurnContext={turnId=><HrTurnResults turnId={turnId} data={results} readOnly={props.account.hard_stale_read_only} onDraft={(value,id)=>void fill(value,id)}/>}
     /></WorkspaceErrorBoundary></div>
-    {props.positionId?<main className="hr-position-state"><h1>岗位工作页已合并到主对话</h1><p>在输入框旁搜索岗位即可继续，已有消息与材料保留。</p><PlatformLink href={props.conversationId?chatPath(props.conversationId):chatHref}>返回对话</PlatformLink></main>
-      :props.positions?<HrPositionIndex account={props.account} onSelect={value=>{choose(value);navigate(chatHref);}}/>:null}
+    {props.positionId?<HrPositionWorkflow key={props.positionId} account={props.account} positionId={props.positionId} section={props.section} draftError={draftError} api={api} r12={r12} onDraft={(value,id)=>void fill(value,id)}/>
+      :props.positions?<HrPositionIndex account={props.account} api={api}/>:null}
     {panoramaVisited.current&&<div className="hr-workspace-panorama-panel" hidden={!panoramaActive} aria-hidden={!panoramaActive?"true":undefined}><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligence}/>{intelligenceError&&<p role="alert">{intelligenceError}</p>}</WorkspaceErrorBoundary></div>}
     {selectedPosition&&<HrPositionDetailsDrawer key={selectedPosition.positionId} api={r12} csrfToken={props.account.csrf_token} detail={position.detail??selectedPosition} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}

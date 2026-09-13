@@ -1,0 +1,98 @@
+/** @vitest-environment jsdom */
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { HrPanoramaWorkspace } from './HrPanoramaWorkspace';
+import type { Account } from '../../auth';
+const account = { internal_user_id: 'reader', csrf_token: 'token' } as Account;
+const company = {company_key:'insta360',name:'影石',aliases:['Insta360'],job_count:1,coverage_state:'partial',document_state:'succeeded',observed_at:'2026-09-06'};
+const catalog={edition:'source-1',source_bundle_id:'bundle-1',observed_at:'2026-09-06',job_count:1,companies:[company]};
+const summary={job_id:'job-1',title:'嵌入式工程师',location:'深圳',status:'open',channel:'社招',source_url:'https://example.com/job',observed_at:'2026-09-06'};
+const page={edition:'source-1',company,documents:[{title:'官网资料',text:'真实官网正文',source_url:'https://example.com',observed_at:'2026-09-06',evidence_sha256:'abc'}],channels:[{channel:'社招',source_url:'https://example.com/jobs',state:'succeeded',observed_at:'2026-09-06',job_count:1,error_code:null}],limitations:['另一个渠道采集失败'],locations:['深圳'],channel_options:['社招'],items:[summary],total:1,offset:0,limit:25};
+const detail={...summary,edition:'source-1',company_key:'insta360',duty:'1. 开发设备\n2. 测试交付',requirement:'熟悉 C++',fields:[{label:'学历',value:'本科'}],evidence_sha256:'abc',public_job_key:'source-job-1',source_kind:'job',content_note:null};
+let container:HTMLDivElement; let root:Root;
+function mockFetch(){return vi.fn(async (url:string) => new Response(JSON.stringify(url.endsWith('/sources')?catalog:url.includes('/jobs/')?detail:url.includes('/sources/')?page:{edition:'r1',observed_at:'2026-09-06',analyzed_at:'2026-09-09',covered_job_identities:1,companies:[{id:'insta360',name:'影石'}],questions:[],articles:[]}),{status:200}));}
+function click(text:string){const button=[...container.querySelectorAll('button')].find(b=>b.textContent?.trim()===text);expect(button).toBeDefined();return act(async()=>button!.click());}
+function deferred<T>() { let resolve!: (value:T)=>void; const promise=new Promise<T>(done=>{resolve=done;}); return {promise,resolve}; }
+beforeEach(()=>{(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;history.replaceState({},'','/hr/panorama');container=document.createElement('div');document.body.append(container);root=createRoot(container);});
+afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.unstubAllGlobals();});
+it('defaults to sources and preserves company and selected job between layers',async()=>{
+ const fetcher=mockFetch();vi.stubGlobal('fetch',fetcher);
+ await act(async()=>root.render(<HrPanoramaWorkspace account={account}/>));
+ expect(container.querySelector('[data-layer="sources"]')?.hasAttribute('hidden')).toBe(false);
+ await act(async()=> (container.querySelector('[data-source-company="insta360"]') as HTMLButtonElement).click());
+ expect(container.textContent).toContain('另一个渠道采集失败');expect(container.textContent).toContain('真实官网正文');
+ await act(async()=> (container.querySelector('[data-source-job="job-1"]') as HTMLButtonElement).click());
+ expect(container.textContent).toContain('1. 开发设备');expect(container.textContent).toContain('熟悉 C++');
+ expect(fetcher.mock.calls.some(([u])=>u.includes('/jobs/job-1?edition=source-1'))).toBe(true);
+ await click('AI 分析报告');expect(location.search).toContain('research_company=insta360');
+ await click('原始资料');expect(location.search).toContain('source_job=job-1');
+ await click('返回岗位列表');expect(location.search).not.toContain('source_job=');expect(container.querySelector('[data-source-job="job-1"]')).not.toBeNull();
+});
+it.each([401,403])('removes source content on denied detail (%s)',async status=>{
+ const fetcher=mockFetch();vi.stubGlobal('fetch',fetcher);history.replaceState({},'','/hr/panorama?research_company=insta360');
+ await act(async()=>root.render(<HrPanoramaWorkspace account={account}/>));fetcher.mockImplementation(async()=>new Response('{}',{status}));
+ await act(async()=> (container.querySelector('[data-source-job="job-1"]') as HTMLButtonElement).click());
+ expect(container.textContent).not.toContain('真实官网正文');expect(container.textContent).toContain(status===401?'登录状态已失效':'没有 HR 情报权限');
+});
+it('keeps old research deep links on the report layer',async()=>{
+ vi.stubGlobal('fetch',mockFetch());history.replaceState({},'','/hr/panorama?research=missing&edition=r1');
+ await act(async()=>root.render(<HrPanoramaWorkspace account={account}/>));
+ expect(container.querySelector('[data-layer="research"]')?.hasAttribute('hidden')).toBe(false);
+ expect(container.querySelector('[data-layer="sources"]')?.hasAttribute('hidden')).toBe(true);
+});
+it('does not announce a revisited layer as ready until its refetch finishes',async()=>{
+ let pendingResearch:ReturnType<typeof deferred<Response>>|null=null;
+ let pendingSources:ReturnType<typeof deferred<Response>>|null=null;
+ const fetcher=vi.fn((url:string)=>{
+   if(url.endsWith('/sources')&&pendingSources)return pendingSources.promise;
+   if(url.endsWith('/research')&&pendingResearch)return pendingResearch.promise;
+   return Promise.resolve(new Response(JSON.stringify(url.endsWith('/sources')?catalog:{edition:'r1',observed_at:'2026-09-06',analyzed_at:'2026-09-09',covered_job_identities:1,companies:[{id:'insta360',name:'影石'}],questions:[],articles:[]}),{status:200}));
+ });
+ vi.stubGlobal('fetch',fetcher);
+ const dispatch=vi.spyOn(window,'dispatchEvent');
+ const readyCount=()=>dispatch.mock.calls.filter(([event])=>event.type==='hr:intelligence-ready').length;
+ await act(async()=>root.render(<HrPanoramaWorkspace account={account}/>));
+ await click('AI 分析报告');
+ await click('原始资料');
+
+ pendingResearch=deferred<Response>();
+ const beforeResearch=readyCount();
+ await click('AI 分析报告');
+ expect(readyCount()).toBe(beforeResearch);
+ await act(async()=>pendingResearch!.resolve(new Response(JSON.stringify({edition:'r1',observed_at:'2026-09-06',analyzed_at:'2026-09-09',covered_job_identities:1,companies:[{id:'insta360',name:'影石'}],questions:[],articles:[]}),{status:200})));
+ expect(readyCount()).toBe(beforeResearch+1);
+
+ pendingSources=deferred<Response>();
+ const beforeSources=readyCount();
+ await click('原始资料');
+ expect(readyCount()).toBe(beforeSources);
+ await act(async()=>pendingSources!.resolve(new Response(JSON.stringify(catalog),{status:200})));
+ expect(readyCount()).toBe(beforeSources+1);
+});
+it('captures a direct report transition and restores the source scroll position on return',async()=>{
+ vi.stubGlobal('fetch',mockFetch());
+ vi.spyOn(window,'requestAnimationFrame').mockImplementation(callback=>{callback(0);return 1;});
+ history.replaceState({},'','/hr/panorama?research_company=insta360');
+ container.style.overflowY='auto';
+ await act(async()=>root.render(<HrPanoramaWorkspace account={account}/>));
+ container.scrollTop=240;
+ await click('查看 AI 分析');
+ container.scrollTop=80;
+ await click('原始资料');
+ expect(container.scrollTop).toBe(240);
+});
+it('puts aggregation before a collapsed job list and expands details explicitly',async()=>{
+ const base=mockFetch();vi.stubGlobal('fetch',vi.fn(async (url:string)=>{
+  if(url.includes('/sources/')&&!url.includes('/jobs/'))return new Response(JSON.stringify({...page,overview:{edition:'aggregation-1',source_edition:'source-1',source_bundle_id:'bundle-1',rules_schema_version:3,metrics:{job_count:1,job_families:{research_development:1},directions:{硬件:1},secondary_directions:{},locations:{深圳:1},tracks:{social:1},seniority:{mid:1},skills:{Python:1}}}}));
+  return base(url);
+ }));
+ history.replaceState({},'','/hr/panorama?research_company=insta360');
+ await act(async()=>root.render(<HrPanoramaWorkspace account={account}/>));
+ expect(container.textContent).toContain('招聘资料聚合');expect(container.textContent).toContain('Python');
+ const jobs=container.querySelector<HTMLDetailsElement>('.hr-source-job-records');
+ expect(jobs).not.toBeNull();expect(jobs!.open).toBe(false);
+ await act(async()=>jobs!.querySelector('summary')!.click());expect(jobs!.open).toBe(true);
+ await act(async()=> (container.querySelector('[data-source-job="job-1"]') as HTMLButtonElement).click());
+ await click('返回岗位列表');expect(container.querySelector<HTMLDetailsElement>('.hr-source-job-records')!.open).toBe(true);
+});
