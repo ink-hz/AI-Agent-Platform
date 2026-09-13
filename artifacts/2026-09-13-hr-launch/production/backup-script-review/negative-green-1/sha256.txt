@@ -1,0 +1,2 @@
+47a26f1c313dc869d6c3a3501023c30c8ff9729f034281fb358ec79ba492941c  artifacts/2026-09-13-hr-launch/production/backup_control.py
+c3b8201df7325290a8863c6d2364e96a996793183f3228a9e38d4f1b6c38b4ec  artifacts/2026-09-13-hr-launch/production/test_backup_control.py

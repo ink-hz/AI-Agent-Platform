@@ -1,0 +1,62 @@
+{
+  "scope": "backup implementation, independent negative tests and actual production backup; no restore rehearsal",
+  "files": {
+    "artifacts/2026-09-13-hr-launch/production/backup_control.py": {
+      "sha256": "47a26f1c313dc869d6c3a3501023c30c8ff9729f034281fb358ec79ba492941c",
+      "bytes": 9530
+    },
+    "artifacts/2026-09-13-hr-launch/production/test_backup_control.py": {
+      "sha256": "c3b8201df7325290a8863c6d2364e96a996793183f3228a9e38d4f1b6c38b4ec",
+      "bytes": 8057
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-script-review/initial-source.py": {
+      "sha256": "29f3fd64554456230993eea69dbbec1828a48a064fca02f3616ab4bea6b689f0",
+      "bytes": 6199
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-script-review/negative-green-1/stderr.log": {
+      "sha256": "24759018e26ca4869a717d1cfca1705830d88f6e5a7f92214b9e6d23bea30216",
+      "bytes": 102
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-script-review/negative-green-1/sha256.txt": {
+      "sha256": "3f7b342987ae9dfa21415dedac61fb03ae6eadb694276711cb889592e5a7cdde",
+      "bytes": 257
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-script-review/negative-green-1/pycompile.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-script-review/negative-green-1/pycompile.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-script-review/negative-green-1/pycompile.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-script-review/negative-green-1/stdout.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-script-review/negative-green-1/exit_code": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-production-1/stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-production-1/stdout.json": {
+      "sha256": "541a7767d5f5a49863e2150616c9105bdb5077a400d97c7f91bc8eb06af54f4e",
+      "bytes": 1324
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-production-1/source.py": {
+      "sha256": "47a26f1c313dc869d6c3a3501023c30c8ff9729f034281fb358ec79ba492941c",
+      "bytes": 9530
+    },
+    "artifacts/2026-09-13-hr-launch/production/backup-production-1/execution.json": {
+      "sha256": "e520705afbd82af257485c5c153690e27df5465bc89e7ac67f2fbb95e06fd157",
+      "bytes": 563
+    }
+  },
+  "exact_provider_credential_found": false
+}

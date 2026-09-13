@@ -1,0 +1,22 @@
+{
+  "started_at": "2026-09-13T03:48:44.826354+00:00",
+  "source_sha256": "47a26f1c313dc869d6c3a3501023c30c8ff9729f034281fb358ec79ba492941c",
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/python3 -I -"
+  ],
+  "scope": "private production backup; no database writes",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T03:49:13.328122+00:00"
+}
