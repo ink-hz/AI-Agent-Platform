@@ -1,0 +1,133 @@
+{
+  "materials": {
+    "临时岗位要求": {
+      "text": "示例公司要招聘嵌入式现场诊断工程师。任务是复现客户现场的间歇断连，区分通信、供电、固件时序与硬件因素，并把复现条件和证据交给对应负责人。前三个月可以由导师协助定位，但必须独立写出可复核的诊断记录。熟悉 C 和示波器是基础；有机器人量产经验是加分项，可由工业传感器、医疗设备等相邻经历提供工作样本。没有正式确认的长期岗位标准。",
+      "ref": {
+        "kind": "material",
+        "id": "90c49f9d-20b6-4374-8758-89f8e30af2c4:text",
+        "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+        "sha256": "59d464d9d1dc18559e85e2c23a3abc93cb9b858318d6408ca98442d1b68368e3"
+      }
+    },
+    "虚构简历": {
+      "text": "姓名：示例候选人青禾（虚构）。在示例传感器项目中维护 C 固件，用逻辑分析仪排查过通信重试。简历称“负责解决现场断连”，但没有说明自己提出诊断假设还是按资深工程师方案执行。没有机器人经历。曾记录过温升与重启的关系，但材料没给出控制变量和最终根因。",
+      "ref": {
+        "kind": "material",
+        "id": "530712b5-2888-4fe0-8b3f-8df922b81c95:text",
+        "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+        "sha256": "af41f1da12e3d9dab4e9943a56c77c70c77b8128ca253677a4671ae8964f4372"
+      }
+    },
+    "用户追加的虚构招聘过程记录": {
+      "text": "本次只提供上述一位候选人的材料，尚未保存完整搜寻名单、发送记录、渠道转化、录用结果或多名面试官反馈。用人经理允许导师协助培养，但坚持诊断记录必须可以复核。",
+      "ref": {
+        "kind": "material",
+        "id": "6a152433-e402-4735-91bd-5cb3974eaa7a:text",
+        "revision": "3228e46d58d12a3c7d1cffe5ab639e827f494627e881e0888137c825ff5345c0:utf8-v1",
+        "sha256": "4ccd7898f4d426fce42a9fa1061f2e9e87f361a513aadce79db85f3304fdd1f6"
+      }
+    }
+  },
+  "original_record": {
+    "record_id": "cbb44b7a-4674-4d97-8937-508cf00bc45c",
+    "candidate_id": "5563c043-83b6-58c1-9176-427c4beba865",
+    "material_ref": {
+      "id": "6154d31b-0230-4b29-9c45-1c98635c70ab:text",
+      "kind": "material",
+      "sha256": "694aea7be6e7046eb45d2c5148644b687fed4f76b11060140c4de9d63e4018fa",
+      "revision": "ac655041a1e84b483994116f62c711e8bda4d4abb37d0ad56a572c8f3592498a:utf8-v1"
+    },
+    "title": "用户提供的虚构面试记录",
+    "occurred_at": null,
+    "position_id": "832c9885-c0cc-4168-a2c6-d88524de0c87",
+    "interview_plan_ref": {
+      "id": "4426f632-18db-4e95-9e18-d0f546e87b8b",
+      "kind": "result",
+      "sha256": "4d1d722632a8f0037573f0bab1eebfeb7dd256bc25125eb0f0b4ee5a4cd9fced",
+      "revision": "ed55a819-e963-48f4-a8f2-12e908eb41ab"
+    },
+    "authorship": "user_supplied",
+    "created_at": "2026-09-13T11:08:14.140180+08:00",
+    "text": "面试官问现场断连案例。候选人说：“抓日志和重放是我做的；把供电纹波列为优先假设的是资深同事。我按他的方案换电源、降负载测试。那次复现条件是我整理的，但最后改电路不是我负责。”\n\n面试官问是否独立设计过对照实验。候选人回答：“有想法，但没有独立完成过一整套。”\n\n记录在此结束。没有询问示波器操作，没有实际工作样本演示，没有谈薪资、到岗时间或录用决定。另一位面试官的意见尚未提供。"
+  },
+  "stages": [
+    {
+      "name": "sourcing-assessment",
+      "prompt": "所有材料均为虚构验证。请根据临时岗位要求，形成搜寻策略和这位候选人的岗位评估，分别保存 sourcing 与 candidate_assessment。材料未知处可以保留，不必等待补充，不作录用决定。按问题自主选用方法。",
+      "selected_refs": [
+        {
+          "kind": "material",
+          "id": "90c49f9d-20b6-4374-8758-89f8e30af2c4:text",
+          "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+          "sha256": "59d464d9d1dc18559e85e2c23a3abc93cb9b858318d6408ca98442d1b68368e3"
+        },
+        {
+          "kind": "material",
+          "id": "530712b5-2888-4fe0-8b3f-8df922b81c95:text",
+          "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+          "sha256": "af41f1da12e3d9dab4e9943a56c77c70c77b8128ca253677a4671ae8964f4372"
+        }
+      ]
+    },
+    {
+      "name": "interview-plan",
+      "prompt": "继续已选候选人的准确评估。请准备针对本人经历的面试方案，解释需要验证什么，保存 interview_plan。这是未来方案，尚未发生面试。",
+      "selected_refs": [
+        {
+          "kind": "result",
+          "id": "4158efda-fcba-48d1-bd84-72ca0a138e7e",
+          "revision": "f8e6da97-8044-4589-8f24-e7a7becdc569",
+          "sha256": "0d3a54e3ef6e63160f4c2c62d5afc7dbf7b2381df48f6e3ff954ec072ed6265a"
+        },
+        {
+          "kind": "material",
+          "id": "90c49f9d-20b6-4374-8758-89f8e30af2c4:text",
+          "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+          "sha256": "59d464d9d1dc18559e85e2c23a3abc93cb9b858318d6408ca98442d1b68368e3"
+        },
+        {
+          "kind": "material",
+          "id": "530712b5-2888-4fe0-8b3f-8df922b81c95:text",
+          "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+          "sha256": "af41f1da12e3d9dab4e9943a56c77c70c77b8128ca253677a4671ae8964f4372"
+        }
+      ]
+    },
+    {
+      "name": "record-retrospective",
+      "prompt": "用户已提供实际的虚构面试原始记录。请对照已选方案，整理实际记录并做本次招聘复盘，分别保存 interview_record 和 retrospective。只基于提供的过程材料，分清观察、推断与未知；长期标准变更仍待用户确认。",
+      "selected_refs": [
+        {
+          "kind": "material",
+          "id": "6154d31b-0230-4b29-9c45-1c98635c70ab:text",
+          "revision": "ac655041a1e84b483994116f62c711e8bda4d4abb37d0ad56a572c8f3592498a:utf8-v1",
+          "sha256": "694aea7be6e7046eb45d2c5148644b687fed4f76b11060140c4de9d63e4018fa"
+        },
+        {
+          "kind": "result",
+          "id": "4426f632-18db-4e95-9e18-d0f546e87b8b",
+          "revision": "ed55a819-e963-48f4-a8f2-12e908eb41ab",
+          "sha256": "4d1d722632a8f0037573f0bab1eebfeb7dd256bc25125eb0f0b4ee5a4cd9fced"
+        },
+        {
+          "kind": "result",
+          "id": "4158efda-fcba-48d1-bd84-72ca0a138e7e",
+          "revision": "f8e6da97-8044-4589-8f24-e7a7becdc569",
+          "sha256": "0d3a54e3ef6e63160f4c2c62d5afc7dbf7b2381df48f6e3ff954ec072ed6265a"
+        },
+        {
+          "kind": "material",
+          "id": "90c49f9d-20b6-4374-8758-89f8e30af2c4:text",
+          "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+          "sha256": "59d464d9d1dc18559e85e2c23a3abc93cb9b858318d6408ca98442d1b68368e3"
+        },
+        {
+          "kind": "material",
+          "id": "6a152433-e402-4735-91bd-5cb3974eaa7a:text",
+          "revision": "3228e46d58d12a3c7d1cffe5ab639e827f494627e881e0888137c825ff5345c0:utf8-v1",
+          "sha256": "4ccd7898f4d426fce42a9fa1061f2e9e87f361a513aadce79db85f3304fdd1f6"
+        }
+      ]
+    }
+  ]
+}

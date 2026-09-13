@@ -1,0 +1,655 @@
+{
+  "schema_version": 1,
+  "assets": [
+    {
+      "path": "fixtures/H01/context-v1.txt",
+      "sha256": "54124b37340ea470768f81bb429e29300e6db29a8566d282f0db5e3f1558601a",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H01/turn-01-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H01/turn-02-context.txt",
+      "sha256": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H01/turn-03-context.txt",
+      "sha256": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H02/context-v1.txt",
+      "sha256": "9b51a11d7f405141017bc73018c439c78a079e4da0ce593a261ba2a841faef9b",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H02/web/quality.html",
+      "sha256": "0732dadaacf8f2da7d0efdd73c19bafef2a418cb7bafa66161e104add52ebc7e",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H02/turn-01-context.txt",
+      "sha256": "627cfa3656ccebc2f7f145a5e2b9fdfb932f647859878af3718ea5bff1e9b8e6",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H02/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H03/context-v1.txt",
+      "sha256": "9f2ae8dcd6716bf8c5e5e5f64b529903186f392fab301ec9f9e711b6f1ae4d92",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H03/turn-01-context.txt",
+      "sha256": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H03/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H03/turn-03-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H03/turn-04-context.txt",
+      "sha256": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H04/context-v1.txt",
+      "sha256": "96686315a3e58ec7986ed023e742b48d154176b8b119e491661516179dfb111c",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H04/web/talent.html",
+      "sha256": "98d0fa8c9266c976e386e6022b9cd01674f495dabe0289c2b7e9a27cde178eb2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H04/turn-01-context.txt",
+      "sha256": "f7a2fc9b2a34fdc6b2977a234b2000ee2db690c2d9dfcb4c07136bf7daef9724",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H04/turn-02-context.txt",
+      "sha256": "4243253a9fef4e34c82d2bc5e7ac2c273aa5a3d8b3fc97fef0b7bccf319c5f8a",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H04/turn-03-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H04/turn-04-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H04/turn-05-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H04/turn-06-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H05/context-v1.txt",
+      "sha256": "8d064f612e33be512a285e79bdf11798eb79d8f245f505f18b6267bda176da78",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H05/turn-01-context.txt",
+      "sha256": "71a0cc61922c6ea01e4dcab1b2e4215213407e895d2d30d5679a95740c0f0dad",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H05/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H06/context-v1.txt",
+      "sha256": "bbb99816cfc79359b6b594787f7b64aa741a357d4fb93d50d614a62bd288117a",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H06/turn-01-context.txt",
+      "sha256": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H07/context-v1.txt",
+      "sha256": "0adf8303aa6c1ee47314dd443954f0e631dfd294b966acdead95c532f2d9934f",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H07/turn-01-context.txt",
+      "sha256": "0148f27bf84c51d85d40c56faa7a4bc4a72b35ae3ac8110fe5146346bbaf2fd0",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H07/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H07/turn-03-context.txt",
+      "sha256": "3246441785bf5f9d4e56ccf6a1ba471d60e96fe8d22f615add7e70391ed24c26",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H08/context-v1.txt",
+      "sha256": "cf4bf8d3a12ec15d25a9cf6cbbad3f8ad59738c273f413c655b6f5e2db05dcde",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H08/turn-01-context.txt",
+      "sha256": "ce1cdb3e55ae64bfc4f15f2adcd0ba90fc2d85a473eb93f862695a60c629d314",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H08/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H08/turn-03-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H08/turn-04-context.txt",
+      "sha256": "e882be4b6a1da91f50fa2f21ad7a648d8248921dc5d5a5def344269671bd1ecf",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H09/context-v1.txt",
+      "sha256": "e6f2655198023c92bc9f8e0396ee2931ba85068020bdb65e193d05d0cdfb81ba",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H09/turn-01-context.txt",
+      "sha256": "ffc0f4805183d6f06afb1850318d34a8c39b644687c5962c5d9bb9b8aed21313",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H09/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H10/context-v1.txt",
+      "sha256": "55ba269a98c5c57d5355835e7177a978d9ca21797fdbf5920fe56c5d26ffc324",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H10/web/root.html",
+      "sha256": "32675b02968ef9e901dc4dfcdd13cd2ff4cf90b3795d197c79665f0d817998b3",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H10/web/social.html",
+      "sha256": "6aa4d1d916b13327889933ffcd72ccc71a8e28c8459c6b84f398f272c124d641",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H10/web/campus.html",
+      "sha256": "77fe4547d467417b99ae0db355a0c96a76d45dca3df1f5a2a46baf23eed621f5",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H10/turn-01-context.txt",
+      "sha256": "f7a17688a1e1d317ab6d39ca207eecb95bde45e3f361cdb14c3dda9c297a271f",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H11/context-v1.txt",
+      "sha256": "cdaa5df2a54542e47242c83ae72afcbd1aaf15f24ac66fec08c072ab03b4d165",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H11/web/peer.html",
+      "sha256": "b9f4816e918764ef817c05a095838ac23f002e61c4fabe06fcb5f363f331ef4b",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H11/turn-01-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H11/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H11/turn-03-context.txt",
+      "sha256": "643651ef2f6e5680e7ef6c0232175b22e1ca50e1d7bf5f92496f982fd61420d7",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H12/context-v1.txt",
+      "sha256": "5942bc6000b15216d57ee0468dcea65e347d534ffea5095e2e95bb088d798ad2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H12/turn-01-context.txt",
+      "sha256": "11623a3b7a8350dede8bab7993d56df92e5c8822b9c185edcb807026927ac546",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H12/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H12/turn-03-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H13/context-v1.txt",
+      "sha256": "fadefa510ea28bbc58efd33d077695278dd3e854699cfdfa172a8aff6b2d257f",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H13/turn-01-context.txt",
+      "sha256": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H14/context-v1.txt",
+      "sha256": "d774be08636fb87e92fe37c589acef92f10770f347806cc0df440cde5c8743c8",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H14/turn-01-context.txt",
+      "sha256": "04c957258a10089373b41d06dae6fd4d238c0274f482e913849c3a50da78cd4b",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H15/context-v1.txt",
+      "sha256": "ef1f558e55bc0f554820f72e34277315d2eb8a386c613d9ef360e108aedeb863",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H15/turn-01-context.txt",
+      "sha256": "637acf481997d9a7ef4c9454177122e137f1e1448925f2703ef5fa0bf02ef716",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H16/context-v1.txt",
+      "sha256": "43171f62066f8eb43e77497b3e5626c4af490104ce269380e11ce6af65c7067f",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H16/turn-01-context.txt",
+      "sha256": "24a2187eee010d0319cbe2a29beeab93c1cf74a4d3da38fca610c197c19922d3",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H16/turn-02-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H16/turn-03-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/context-v1.txt",
+      "sha256": "056142eda478601f859842448964e858a3e1ad86f7df25d49dbc475f25dd1d9c",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-01.png",
+      "sha256": "fe31ba25a9225f9929298066c2e383f751ae3d21f3f63684db5465fd93b0e04b",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 1,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-01.review-only.txt",
+      "sha256": "84f92c068bcac9da31c86ace915d086901b4d48d528895754bc997d9f82d3322",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-02.png",
+      "sha256": "6ccee6417f9cfa1212ca250c39c832832d355c3af57efaf81072543c55dc9131",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 2,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-02.review-only.txt",
+      "sha256": "410392a4f99b6ea62bca41433465c9e058d18aa87021bcc9bef881a18674a17b",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-03.png",
+      "sha256": "af5639c87c6c5e0aaa249916d7b68873bcc622efbb803568df7b5dbcbfe0fe63",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 3,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-03.review-only.txt",
+      "sha256": "ea4e471bfc8b96d8ae365fad96415e3afdc443e9ddf2c9cde82b85f696af8140",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-04.png",
+      "sha256": "fc39d26490c33db129e8b17b61b11d672acf7a27fb5e8d82fff455c007dc09ee",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 4,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-04.review-only.txt",
+      "sha256": "52522fb989e5411653b1d46ac50f2e9cfb4ac9bc391bc6bb628eca52b4c8493e",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-05.png",
+      "sha256": "6cdd8099d32acf6d7cbe4307a839b236025483670ce6f9b6275b68c673e62331",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 5,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-05.review-only.txt",
+      "sha256": "b242673fb5923a69ccaebfd799f4ae15587417f521e85bcca3b24bd5625e1b56",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-06.png",
+      "sha256": "2b24c8fa1e173d94130d1fa7b574ed2a247983dcd4ad5d89ff2832e4f3adf9b7",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 6,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-06.review-only.txt",
+      "sha256": "ec257b57761df81f9edd9bea9331ea9e543ef50da0d0439c4b1e98580411b2a4",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-07.png",
+      "sha256": "5b8d0efebc8cb46c89991508e98ad87c2460c261830a23f238a2d45134baf92a",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 7,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-07.review-only.txt",
+      "sha256": "c3c5c0ba74010dc5afe23c2feaa987049d03ff07f3cde5e33c0311d1a7f55c93",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-08.png",
+      "sha256": "f527aa205b00bf65fcb774720555a7531f24bd203e198f4951de9d04ffc3e238",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 8,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-08.review-only.txt",
+      "sha256": "62ad9cf8d3bd9fb84ab128d120e6c4a30eb5cd1d19e867174186be03219ecb0d",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/image-09.png",
+      "sha256": "5a5971fa0f54e15c3a14c0e8fb32b99a72ff8e02f16fc803164d1bc9403b6d26",
+      "version": "synthetic-v2.1",
+      "provenance": "newly rendered synthetic screenshot",
+      "ordinal": 9,
+      "role": "model_image_input"
+    },
+    {
+      "path": "fixtures/H17/image-09.review-only.txt",
+      "sha256": "a7b6e42dae295ce0b5a072c7a8f2af46acf61c196d6588298395a6009768424d",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/turn-01-context.txt",
+      "sha256": "dc1f631ac3a2566fa4724a075f93862feeda5aac190382cf30e0a1070d356bcb",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/turn-02-context.txt",
+      "sha256": "2a1bc040da0329a4c60017cd56c5c35f7221db05ab3c6fa1b168bcb7d196bc5a",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/turn-03-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H17/turn-04-context.txt",
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H18/context-v1.txt",
+      "sha256": "7e657a01bc9eeb027804bd7ddb6cb3ac1812728fb3b87c91d94ea6a7d892c336",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H18/web/channels.html",
+      "sha256": "6d3b3fe4a97578d29b23aa810c71ba9a355c797f9e3160d9f163b1d9b6bad745",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H18/turn-01-context.txt",
+      "sha256": "f5659b7af0510c007c09f95b0e7320fec3d188e1e9b545341669f724d268de8a",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H19/context-v1.txt",
+      "sha256": "09cc1442a1aaabffe0f8ee37c7ace7f70a8e2ba3123d18eafdbae99bc66a5cf9",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H19/turn-01-context.txt",
+      "sha256": "2ed7270983a1d13174ce00ed37d2489b961edd6391ed47f8a50bf21b4d03634a",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H19/turn-02-context.txt",
+      "sha256": "7a0363e251b58d29e1bb36aed00bf4cebe2ec3f21da850bb9f15ba3833349c95",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H20/context-v1.txt",
+      "sha256": "6fd4cb2fc20d45f562b205687c987ac9ca42163d614d34577316552ad4b50600",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H20/web/cases.html",
+      "sha256": "2d6c609102c3c467f06021ee6ac5285221704e267236681cbb27116eca3a6489",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H20/turn-01-context.txt",
+      "sha256": "5ec0259667141f5dcbf5e8dfd16da0a74fe4f33d25647fea4b7cf59d4ce1aeb9",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H20/turn-02-context.txt",
+      "sha256": "3d3700b9d49b7428b7d0afceecc3c152aef0f75c9cfde9c2100d6d22c1985aeb",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H20/turn-03-context.txt",
+      "sha256": "c261dfe80d3ba0c7f4b5d41cb89c99f438b0c45d627318702d1c696c268fb5b4",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H21/context-v1.txt",
+      "sha256": "b75a25f73e3d56cdbcce4e3de6635942e5ddcf0d1079de331b2de3dbc51fb238",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H21/turn-01-context.txt",
+      "sha256": "6126bb7c6a2eba04e1eca40f448d047eaeeffaab1782a1875cc84ec4151650e5",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H22/context-v1.txt",
+      "sha256": "1518262b1ffc56d927993fbd4ce866adb2e29edeab5fbd69ad9b7ffc36b24a8e",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H22/web/root.html",
+      "sha256": "5553531928639ae4dc9097e1c3c0eaf7ff46f37e022a713849bbc84b395a9d72",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H22/web/social.html",
+      "sha256": "69dfa2ea85bbeb52bf21b1dbe0cfa3c75893c2ee2f79d3dc1915d2d0b64c4429",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H22/web/campus.html",
+      "sha256": "d18a97b6a053da91d3f73737ad605545dac0bb4f3721fcfbcbe0a16cd5e5fd43",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H22/web/intern.html",
+      "sha256": "74862b7b057631a127cc86d48e65c80e4f2ee1eef36f044b8631dbbc79c33de1",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    },
+    {
+      "path": "fixtures/H22/turn-01-context.txt",
+      "sha256": "158cf85309d9216c74193e27db7f92e74e6a46115d57499a751ccda8aabd581f",
+      "version": "synthetic-v2.1",
+      "provenance": "newly authored synthetic fixture; not historical original"
+    }
+  ],
+  "corpus_sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+  "builder_sha256": "fad86bee2ad2f92dfb33698c9fb17907bf1b2e421912b93d9d06fa1bfbeda8e6",
+  "frozen_v1": {
+    "scenarios.json": "65501ce9f73744f9a3f59a70a758dda72647759713f13b2396b62ff5963d17c2",
+    "analysis.md": "db1a8e31f2d5b8b5612f484dfdb1dc868ba11cb81dcf962c8bc1462ee7095dc7",
+    "independent-corpus-review.md": "41b28af4cf17f128b5da7eb9c9efe5a8b8e437a480cc326f70cc4a7c4b15efb1",
+    "independent-corpus-review-fingerprints.json": "01c5f364948dd3735faf5b35c35924fd9e5010ee83387a3ee59e5bcc1f8a1d4d"
+  }
+}

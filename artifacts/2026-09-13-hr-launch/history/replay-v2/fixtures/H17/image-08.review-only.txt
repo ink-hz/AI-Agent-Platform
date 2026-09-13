@@ -1,0 +1,7 @@
+SYNTHETIC TEST FIXTURE - NOT REAL JOBS
+Company B
+Image 08 / 09 | Revision synthetic-v2.1
+Job code: SW-08
+Embedded Engineer
+Firmware timing and hardware interfaces
+No other requirements supplied.

@@ -1,0 +1,373 @@
+{
+  "files_sha256": {
+    "artifacts/2026-09-13-hr-launch/d-real-run-1/fixture.json": "2de04fbc1fa5fa0a6fc0c7133c192ccd9ed8f6cbdded77e10be325cbf0b037d6",
+    "artifacts/2026-09-13-hr-launch/d-real-run-1/evidence.json": "b9fc0760dc5f887fd7f47e7148eb5327e3ed2c7a652ae4a0ae9539ce47e7fc17",
+    "artifacts/2026-09-13-hr-launch/d-real-run-1/stage-3-retrospective.md": "8bf7f53cb32b945df654bc8c0bc2986410d2bec18f189fead5ea8a52a0d5fe03",
+    "artifacts/2026-09-13-hr-launch/d-real-run-1/stage-1-candidate_assessment.md": "a192a551d28872df995a0e0184d4278548d14b37cbc08deed31a1983f00c12bd",
+    "artifacts/2026-09-13-hr-launch/d-real-run-1/stage-1-sourcing.md": "98b81e8634c85f050ad09516f1c0b1e7c689101aaa57afcb07bc854138115733",
+    "artifacts/2026-09-13-hr-launch/d-real-run-1/stage-2-interview_plan.md": "d85ae471cc277f774895caf8ac168f88e4ae9e1bed3dbb4175b1f92d88cd1c34",
+    "artifacts/2026-09-13-hr-launch/d-real-run-1/stage-3-interview_record.md": "bcaea1b8b7d777a5ee5bb1be850308709f8837f55818d7ac9443c750310a7cb5",
+    "backend/tests/fixtures/hr_agent_d/scenario.md": "06028c4f245f2355818c010500eb663c9547ea2163ea426c62c5fde45ce2fc2c"
+  },
+  "fixture_hash_matches": true,
+  "role_at_ac8c275_sha256": "bc3b5c30c9cb0ed6ad5310904af32dad44be0877db59becba89eb13459fb0911",
+  "role_matches_run_release": true,
+  "runner_source_as_recorded": {
+    "git_revision": "19f2714a1fb72e9748582d3e896e182da954973b",
+    "file_sha256": "e726796807e1c70779dcc73e1fee15da648f6606feae73c670875bde5d7682c8",
+    "captured_before_first_D_model_request": true
+  },
+  "results": [
+    {
+      "kind": "sourcing",
+      "ref": {
+        "kind": "result",
+        "id": "7a06f723-9d76-4188-ae52-d97cc55318c5",
+        "revision": "99e44866-decc-46a7-bafd-f8fdb1f55a10",
+        "sha256": "1674d353add4ff1431486194a83142373f3c889b8e77e7c1f3f7bcb89fa06d75"
+      },
+      "markdown_sha256": "98b81e8634c85f050ad09516f1c0b1e7c689101aaa57afcb07bc854138115733",
+      "markdown_equals_saved_body": true
+    },
+    {
+      "kind": "candidate_assessment",
+      "ref": {
+        "kind": "result",
+        "id": "21483953-5cd2-49ad-9e9e-becd7bf3ba41",
+        "revision": "4aa4f76f-d257-487d-9be9-04436c7fb180",
+        "sha256": "fd3bf37f66ebc0ef5655be3ff79e39fff989b3203af7f0bf80271c1abcca3caa"
+      },
+      "markdown_sha256": "a192a551d28872df995a0e0184d4278548d14b37cbc08deed31a1983f00c12bd",
+      "markdown_equals_saved_body": true
+    },
+    {
+      "kind": "interview_plan",
+      "ref": {
+        "kind": "result",
+        "id": "dc6311fe-dd20-4d98-b059-9e944e0a78f6",
+        "revision": "6fcbccca-695b-4a9a-b215-c0add31f7d03",
+        "sha256": "54a2a14fed879dcd00bb5c680543aed959bd1a2fbab203b281cf48178decc2bb"
+      },
+      "markdown_sha256": "d85ae471cc277f774895caf8ac168f88e4ae9e1bed3dbb4175b1f92d88cd1c34",
+      "markdown_equals_saved_body": true
+    },
+    {
+      "kind": "interview_record",
+      "ref": {
+        "kind": "result",
+        "id": "f721e5d9-d902-4a20-9b12-88f7afeacff4",
+        "revision": "d93c24dd-fb16-4d81-b037-1b73559cd156",
+        "sha256": "a2878011856ca4ac853caa4e2db0cc47ee013c875d33ea63da84098db2c1c134"
+      },
+      "markdown_sha256": "bcaea1b8b7d777a5ee5bb1be850308709f8837f55818d7ac9443c750310a7cb5",
+      "markdown_equals_saved_body": true
+    },
+    {
+      "kind": "retrospective",
+      "ref": {
+        "kind": "result",
+        "id": "1d52fc3f-e1e9-456d-a7db-13f2e6e960f4",
+        "revision": "61b07495-a31a-46e7-8947-d45972ee066e",
+        "sha256": "dfa2745c5a87180d3898174a8224a09e5a24aabf2ccc449e670726f94c162d68"
+      },
+      "markdown_sha256": "8bf7f53cb32b945df654bc8c0bc2986410d2bec18f189fead5ea8a52a0d5fe03",
+      "markdown_equals_saved_body": true
+    }
+  ],
+  "source_read_checks": [
+    {
+      "stage": "sourcing-assessment",
+      "kind": "sourcing",
+      "refs": [
+        {
+          "ref": {
+            "id": "783d5d9b-b12e-4870-9e66-4329267d6acd:text",
+            "kind": "material",
+            "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+            "sha256": "379458fccdb1d731c544a22cf048e6d7d0fc256cc4cdda21945bbceb45420c18"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "sourcing-and-transfer",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "job-and-context",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "requirement-calibration",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+          },
+          "matching_complete_read": true
+        }
+      ]
+    },
+    {
+      "stage": "sourcing-assessment",
+      "kind": "candidate_assessment",
+      "refs": [
+        {
+          "ref": {
+            "id": "783d5d9b-b12e-4870-9e66-4329267d6acd:text",
+            "kind": "material",
+            "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+            "sha256": "379458fccdb1d731c544a22cf048e6d7d0fc256cc4cdda21945bbceb45420c18"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "4c50c0d3-70b7-4d08-8929-7aca7fdab5fc:text",
+            "kind": "material",
+            "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+            "sha256": "b1ade75a0c478a3ed8235cd92ed95d2cbd64bfeb6257db63d3d8e71fa3fbb8cf"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "evidence-informed-judgment",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "selection-and-work-samples",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "requirement-calibration",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+          },
+          "matching_complete_read": true
+        }
+      ]
+    },
+    {
+      "stage": "interview-plan",
+      "kind": "interview_plan",
+      "refs": [
+        {
+          "ref": {
+            "id": "783d5d9b-b12e-4870-9e66-4329267d6acd:text",
+            "kind": "material",
+            "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+            "sha256": "379458fccdb1d731c544a22cf048e6d7d0fc256cc4cdda21945bbceb45420c18"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "4c50c0d3-70b7-4d08-8929-7aca7fdab5fc:text",
+            "kind": "material",
+            "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+            "sha256": "b1ade75a0c478a3ed8235cd92ed95d2cbd64bfeb6257db63d3d8e71fa3fbb8cf"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "selection-and-work-samples",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "evidence-informed-judgment",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "competency-and-profile",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "21483953-5cd2-49ad-9e9e-becd7bf3ba41",
+            "kind": "result",
+            "revision": "4aa4f76f-d257-487d-9be9-04436c7fb180",
+            "sha256": "fd3bf37f66ebc0ef5655be3ff79e39fff989b3203af7f0bf80271c1abcca3caa"
+          },
+          "matching_complete_read": true
+        }
+      ]
+    },
+    {
+      "stage": "record-retrospective",
+      "kind": "interview_record",
+      "refs": [
+        {
+          "ref": {
+            "id": "042f0761-f5a4-4578-9403-6267d3d17018:text",
+            "kind": "material",
+            "revision": "ac655041a1e84b483994116f62c711e8bda4d4abb37d0ad56a572c8f3592498a:utf8-v1",
+            "sha256": "87c940e9663941ac8edacfc6116e5a77ca8f54fec9d84333bc8184d31c659351"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "783d5d9b-b12e-4870-9e66-4329267d6acd:text",
+            "kind": "material",
+            "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+            "sha256": "379458fccdb1d731c544a22cf048e6d7d0fc256cc4cdda21945bbceb45420c18"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "5757714a-39df-43f7-843a-6eddf219bb51:text",
+            "kind": "material",
+            "revision": "3228e46d58d12a3c7d1cffe5ab639e827f494627e881e0888137c825ff5345c0:utf8-v1",
+            "sha256": "7d64cb4ceba1a85788d658931048b2088672ee0d1dbb861d6e16ef33b3716da7"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "dc6311fe-dd20-4d98-b059-9e944e0a78f6",
+            "kind": "result",
+            "revision": "6fcbccca-695b-4a9a-b215-c0add31f7d03",
+            "sha256": "54a2a14fed879dcd00bb5c680543aed959bd1a2fbab203b281cf48178decc2bb"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "21483953-5cd2-49ad-9e9e-becd7bf3ba41",
+            "kind": "result",
+            "revision": "4aa4f76f-d257-487d-9be9-04436c7fb180",
+            "sha256": "fd3bf37f66ebc0ef5655be3ff79e39fff989b3203af7f0bf80271c1abcca3caa"
+          },
+          "matching_complete_read": true
+        }
+      ]
+    },
+    {
+      "stage": "record-retrospective",
+      "kind": "retrospective",
+      "refs": [
+        {
+          "ref": {
+            "id": "042f0761-f5a4-4578-9403-6267d3d17018:text",
+            "kind": "material",
+            "revision": "ac655041a1e84b483994116f62c711e8bda4d4abb37d0ad56a572c8f3592498a:utf8-v1",
+            "sha256": "87c940e9663941ac8edacfc6116e5a77ca8f54fec9d84333bc8184d31c659351"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "783d5d9b-b12e-4870-9e66-4329267d6acd:text",
+            "kind": "material",
+            "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+            "sha256": "379458fccdb1d731c544a22cf048e6d7d0fc256cc4cdda21945bbceb45420c18"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "5757714a-39df-43f7-843a-6eddf219bb51:text",
+            "kind": "material",
+            "revision": "3228e46d58d12a3c7d1cffe5ab639e827f494627e881e0888137c825ff5345c0:utf8-v1",
+            "sha256": "7d64cb4ceba1a85788d658931048b2088672ee0d1dbb861d6e16ef33b3716da7"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "comparison-and-learning",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "selection-and-work-samples",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "evidence-informed-judgment",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "dc6311fe-dd20-4d98-b059-9e944e0a78f6",
+            "kind": "result",
+            "revision": "6fcbccca-695b-4a9a-b215-c0add31f7d03",
+            "sha256": "54a2a14fed879dcd00bb5c680543aed959bd1a2fbab203b281cf48178decc2bb"
+          },
+          "matching_complete_read": true
+        },
+        {
+          "ref": {
+            "id": "21483953-5cd2-49ad-9e9e-becd7bf3ba41",
+            "kind": "result",
+            "revision": "4aa4f76f-d257-487d-9be9-04436c7fb180",
+            "sha256": "fd3bf37f66ebc0ef5655be3ff79e39fff989b3203af7f0bf80271c1abcca3caa"
+          },
+          "matching_complete_read": true
+        }
+      ]
+    }
+  ],
+  "input_text_sha256": {
+    "临时岗位要求": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5",
+    "虚构简历": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61",
+    "用户追加的虚构招聘过程记录": "3228e46d58d12a3c7d1cffe5ab639e827f494627e881e0888137c825ff5345c0"
+  },
+  "interview_original_text_sha256": "ac655041a1e84b483994116f62c711e8bda4d4abb37d0ad56a572c8f3592498a",
+  "prompts_sha256": {
+    "sourcing-assessment": "5ed5f926ce00e28069aa7d858dda7b8786490916b01f60eb6d2903915408170d",
+    "interview-plan": "d17d9be67711b70ef4c3371cd622ca4c2bb425f244348431149f381a3b4fd85f",
+    "record-retrospective": "ef5332e798f53ce73c76233aa9f41def70d6b825de1b68498c7ed352d205c57c"
+  },
+  "note": "ResultRef.sha256 is service exact-revision identity, distinct from raw Markdown SHA. No claim that all process code equaled ac8c275."
+}

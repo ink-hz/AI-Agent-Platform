@@ -1,0 +1,28 @@
+diff --git a/docs/superpowers/plans/2026-09-13-hr-launch.md b/docs/superpowers/plans/2026-09-13-hr-launch.md
+index 5c30d17..6959379 100644
+--- a/docs/superpowers/plans/2026-09-13-hr-launch.md
++++ b/docs/superpowers/plans/2026-09-13-hr-launch.md
+@@ -17,12 +17,12 @@
+ 
+ ## 执行清单
+ 
+-- [ ] 承接生产`65e7fbd`及origin/master的新增能力；冲突保留现行云端总体设计及生产的岗位/成果读取能力。核查`backend/app/hr/tool_service.py`、`tool_routes.py`、`control_plane/authorization.py`和HR前端，运行对应v7 HTTP/岗位组件回归。
+-- [ ] 私有只读提取历史HR会话与用户问题，登记总量/覆盖/排除原因；形成去标识场景集和来源映射。区分独立问题、跨轮纠正、材料依赖、成果阅读/修改及失败恢复，不按旧回答复制预期。
++- [x] 承接生产`65e7fbd`及origin/master的新增能力；冲突保留现行云端总体设计及生产的岗位/成果读取能力。核查`backend/app/hr/tool_service.py`、`tool_routes.py`、`control_plane/authorization.py`和HR前端，运行对应v7 HTTP/岗位组件回归。
++- [x] 私有只读提取历史HR会话与用户问题，登记总量/覆盖/排除原因；形成去标识场景集和来源映射。区分独立问题、跨轮纠正、材料依赖、成果阅读/修改及失败恢复，不按旧回答复制预期。
+ - [ ] 修订`backend/hr_agent_knowledge/role.md`的通用证据状态一致性要求；用`test_hr_agent_d_journey.py::test_fictional_d_real_model_evidence`及历史场景进行有限真实模型验证，原始成果与独立专业审读分离保存。
+-- [ ] 补齐HR动态readiness与发布闸门：数据库迁移/权限、配置/知识身份、Worker实际存活分别验证；缺104/错误配置不得以公共health绿色上线。相关文件`config.py`、`worker.py`、`resources.py`、`tools/hr_agent/preflight.py`、`deploy/cloud/compose*.yaml`及新的定向测试。
++- [x] 补齐HR动态readiness与发布闸门：数据库迁移/权限、配置/知识身份、Worker实际存活分别验证；缺104/错误配置不得以公共health绿色上线。相关文件`config.py`、`worker.py`、`resources.py`、`tools/hr_agent/preflight.py`、`deploy/cloud/compose*.yaml`及新的定向测试。
+ - [ ] 将已确认的材料处理范围装入`personal_processing.py`与`CandidateIntakeService`同一策略；服务端缺配置拒绝，正文/派生成果/附件边界不能由客户端字段自行批准。定向API/数据库验证允许与拒绝路径。
+-- [ ] 设计并验证云端失败后的可达恢复入口，保留102/103/104原字节、必要时追加迁移；验证状态白名单、幂等回执、同锁顺序、其他Bot追加与原归属continuation。同步两份根HR文档及当前发布手册。
++- [x] 设计并验证云端失败后的可达恢复入口，保留102/103/104原字节、必要时追加迁移；验证状态白名单、幂等回执、同锁顺序、其他Bot追加与原归属continuation。同步两份根HR文档及当前发布手册。
+ - [ ] 构建与预检准确发布镜像、知识包和私有配置；核对磁盘、备份、部署锁、当前线上HEAD与进程身份。先停旧附件Worker并inspect，再应用100、启动修复镜像，使用一次性自有附件验证真实擦除。
+ - [ ] 应用HR迁移及最小权限；部署独立云端Worker，验证API/Worker配置指纹、数据库计数实际耗时、非HR接口连续性。以真实owner登录执行受认证的HR读取。
+ - [ ] 进入draining_legacy，按准确清单完成/取消旧工作；ready/failed草稿保留并登记处置，不能伪造零在途。确认旧HR执行停止与持久配置后进入cloud；保留每步回执。
+@@ -30,3 +30,6 @@
+ - [ ] 最终关联回归、独立代码/证据/专业审读、清洁发布提交及部署验收回执。报告准确区分已上线功能、仍关闭的材料范围、真实模型/替身、浏览器/生产结果与已知限制。
+ 
+ 每项在执行前补充准确命令与接口断言，并在唯一运行目录保存命令/源码/退出码/原始日志；涉及凭据的命令只传私有文件路径，日志不输出秘密或个人原文。
++
++
++执行记录更新：生产能力合并及路由修复绑定 19f2714；动态 readiness 绑定 9c85cf4；105 同云端恢复与 public-only 发布评审绑定 3637a18，均有独立代码审读。35 项现行 runbook/文档/Compose 验证的准确回执位于 operations-confirmed-1。历史 v2 的4例独立审读要求修正 continuation recipe，harness 正在实施。D 真实模型第一轮工程通过但专业未通过，问题及原成果保留，30dcd35 的角色修订正进行第二轮。以上均不代表已生产切换，真实个人处理授权与登录验收仍待用户输入。

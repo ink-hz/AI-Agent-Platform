@@ -1,0 +1,7 @@
+SYNTHETIC TEST FIXTURE - NOT REAL JOBS
+Company B
+Image 09 / 09 | Revision synthetic-v2.1
+Job code: MFG-09
+Quality Engineer
+Change validation and corrective actions
+No other requirements supplied.

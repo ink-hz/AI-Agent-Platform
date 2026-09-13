@@ -1,0 +1,3 @@
+{"status": "offline_self_check_pass", "cases": 22, "turns": 52, "assets": 104, "model_calls": 0, "http_business_replays": 0, "independent_review": "pending"}
+PASS: mutated fixture rejected
+{"static_http_status_sequence": [503, 200, 200, 403, 200, 403], "scope": "fixture server only; no HR API/model/worker acceptance"}

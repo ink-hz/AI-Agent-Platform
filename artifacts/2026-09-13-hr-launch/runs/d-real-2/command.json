@@ -1,0 +1,21 @@
+{
+  "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_agent_d_journey.py::test_fictional_d_real_model_evidence",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T02:46:49.734686+00:00",
+  "source_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "untracked_source_snapshots": {
+    "backend/tests/helpers/hr_history_replay.py": "cff2362235e715e4b8d2c182a83fb422ccaebfd6fc7e5b6b90f20a00438be596",
+    "backend/tests/test_hr_agent_history_replay.py": "ae2802e7f3eee9c1a72e3b7037a4a159bd28cf56c783d03781aedfc27680f56e"
+  },
+  "boundary": "Local HTTP/PG; synthetic candidate fixtures; configured real model for D generation; scripted candidate intake and test identity; no production mutation",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T02:57:04.928035+00:00"
+}

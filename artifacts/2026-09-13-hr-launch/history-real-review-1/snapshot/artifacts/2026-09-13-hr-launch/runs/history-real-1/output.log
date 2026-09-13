@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________________ test_opt_in_real_history_replay ________________________
+backend/tests/test_hr_agent_history_replay.py:166: in test_opt_in_real_history_replay
+    assert not failures, failures
+E   AssertionError: ['H03', 'H13']
+E   assert not ['H03', 'H13']
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_history_replay.py::test_opt_in_real_history_replay
+1 failed in 620.12s (0:10:20)

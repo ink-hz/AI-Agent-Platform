@@ -1,0 +1,1818 @@
+{
+  "case_id": "H03",
+  "status": "failed",
+  "model_boundary": "real_configured",
+  "turns": [
+    {
+      "number": 1,
+      "http": {
+        "submit": 201,
+        "replay": 200,
+        "work": 200
+      },
+      "materials": [
+        {
+          "path": "fixtures/H03/turn-01-context.txt",
+          "sha256": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9",
+          "version": "synthetic-v2.1",
+          "attachment_id": "bf7021e1-3948-44e9-b40b-031d030db91a",
+          "ref": {
+            "kind": "material",
+            "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+            "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+            "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+          },
+          "http": 200
+        }
+      ],
+      "status": "failed",
+      "endpoint": "/api/hr/agent/works",
+      "request": {
+        "thread_id": null,
+        "text": "为虚构公司写“研发工程总监”JD/JR：专家型管理岗，统筹NPI、工装夹具和工程软件，管理约30人。参考材料中的候选画像只作能力线索。",
+        "objects": [],
+        "references": [
+          {
+            "kind": "material",
+            "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+            "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+            "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+          }
+        ],
+        "budget_profile": "test"
+      },
+      "idempotency_key": "6d641b65-9c4d-4fff-ac04-93dea51f13f1",
+      "persisted": {
+        "work": {
+          "work_id": "181e29ab-905a-4534-83b5-d30b33639ff5",
+          "thread_id": "865c299f-b43e-413a-8621-38290e27774a",
+          "input_revision": 1,
+          "state": "completed",
+          "phase": "research",
+          "answer_state": "ended",
+          "result_refs": [
+            {
+              "kind": "result",
+              "id": "a0803eca-55e2-4d36-b119-47d2d3566eba",
+              "revision": "9c0733d7-1c7f-49eb-b6dd-d79787513a52",
+              "sha256": "483110999c2e63018f745f66a68acd18d3c33328eb50bcb3a13f5017681f170c"
+            }
+          ],
+          "pending_question_id": null,
+          "block_reason": null,
+          "budget": {
+            "active_seconds": 150.744714,
+            "charged_calls": 5,
+            "charged_tokens": 191490,
+            "limits": {
+              "active_seconds": 1800,
+              "model_calls": 32,
+              "total_tokens": 1200000
+            },
+            "reserve": {
+              "active_seconds": 30,
+              "model_calls": 2,
+              "total_tokens": 32768
+            },
+            "revision": 1,
+            "usage_quality": "estimated"
+          },
+          "checkpoint": {
+            "catalog_refs": [],
+            "discovery_state": "open",
+            "input_revision": 1,
+            "last_note_entry_id": null,
+            "open_questions": [],
+            "pending_operation_ids": [],
+            "readings": [
+              {
+                "ref": {
+                  "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+                  "kind": "material",
+                  "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+                  "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+                },
+                "remaining_ranges": [],
+                "state": "returned",
+                "total_characters": 94
+              },
+              {
+                "ref": {
+                  "id": "job-and-context",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                },
+                "remaining_ranges": [],
+                "state": "returned",
+                "total_characters": 1889
+              },
+              {
+                "ref": {
+                  "id": "competency-and-profile",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                },
+                "remaining_ranges": [],
+                "state": "returned",
+                "total_characters": 1113
+              },
+              {
+                "ref": {
+                  "id": "requirement-calibration",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                },
+                "remaining_ranges": [],
+                "state": "returned",
+                "total_characters": 1787
+              }
+            ],
+            "revision": 13
+          },
+          "last_event_seq": 15
+        },
+        "messages": {
+          "items": [
+            {
+              "entry_id": "2b15d96d-ded8-465b-b3ba-623734985ca8",
+              "seq": 1,
+              "input_revision": 1,
+              "kind": "user",
+              "body": "为虚构公司写“研发工程总监”JD/JR：专家型管理岗，统筹NPI、工装夹具和工程软件，管理约30人。参考材料中的候选画像只作能力线索。",
+              "options": [],
+              "question_id": null,
+              "visibility": "available"
+            },
+            {
+              "entry_id": "0709b894-e57f-43fe-b5bb-348785b88855",
+              "seq": 8,
+              "input_revision": 1,
+              "kind": "assistant",
+              "body": "JD/JR 草案已保存（result `a0803eca-55e2-4d36-b119-47d2d3566eba`，rev `9c0733d7`）。\n\n**这份稿子是怎么搭的**\n\n材料里能算事实的只有三句：专家型研发工程总监、统筹 NPI／工装夹具／工程软件、约 30 人团队。所以我把稿子写成\"任务在前、要求在后\"的结构：先假设岗位要交付什么结果（NPI 节点与转产质量、工装交付质量与周期、工程软件的实际采用、团队能力），再从任务反推能力，每条必需项都附了\"缺这项会出什么岗位风险\"。凡是材料没说的（汇报关系、团队结构、内外协比例、授权范围、产品形态）都标了 [待确认]，没有用常识补成事实。\n\n**几个刻意的判断**\n\n- **\"专家型\"落在哪里**：我把它落成\"能评审而非只能审批\"——对工装的定位基准、公差链、量测能力能自己作取舍并说明依据。这是\"专家型\"和\"纯管理岗\"在筛选口径上真正的分界。\n- **要求分了四层**，不是全部写成硬门槛：必需 5 条（其中第 3 条管理经历给了明确的替代证据路径）、优先 4 条、可在岗培养 3 条、以及明确**不设**为门槛的项（品牌经历、学历层级、固定年限——材料没有任何证据支持它们与本岗任务的关系）。\n- **工程软件那条我没敢定死**。它可能是工具选型落地、自研工程工具、或设备端软件开发，三种对应的人完全不同。所以我暂列为\"优先\"，并把它列为第一个澄清问题——用人经理回答后，这条可能要升为必需并改写表述。\n- **画像 R 只用来设计验证方式**。材料只记了工装设计和带团队复盘两条线索，我用它们指导了面试取证设计，没有把 R 的经历反向写成门槛。R 在 NPI 主责、工程软件、30 人规模管理上是**未知，不是缺失**——如果 R 后续进流程，不能拿本稿的必需项直接淘汰。\n\n**要推进定稿，最需要你从用人经理那里拿到两件事**：一是\"工程软件\"具体指哪类；二是 30 人团队现有结构（是否已有下一层主管、三方向人数分布）——后者决定管理经历那条的替代证据成立与否。其余三个澄清问题在稿子第六节。\n\n需要我基于这份 JD 出一版**面试方案**（把第五节的工作样本展开成评分锚点），或者先做一版**搜寻策略**（哪些相邻岗位可能承接这三块职能）？",
+              "options": [],
+              "question_id": null,
+              "visibility": "available"
+            }
+          ],
+          "next_after": 8
+        },
+        "results": [
+          {
+            "base_standard_ref": null,
+            "basis": [
+              {
+                "input_revision": 1,
+                "kind": "user_temporary",
+                "ref": null
+              }
+            ],
+            "body": "说明：本稿为虚构公司岗位草案。除\"统筹 NPI／工装夹具／工程软件、约 30 人团队、专家型管理岗\"来自用户本次需求材料外，业务情境、汇报关系、团队结构、职级薪酬均为待用人方确认的占位或假设，已在文中标注 [待确认]。参考画像 R 仅作为能力线索使用，未写入任职要求。\n\n一、岗位定位（需用人方确认后定稿）\n研发工程总监向 [待确认：研发副总裁／制造与运营负责人] 汇报，是研发与制造之间的工程主责人：把设计方案变成可稳定、可复制、可量产的实现方式。岗位为专家型管理岗，既需要对工程方案本身作技术判断（能评审而不仅是审批），也需要带约 30 人的多子职能团队。\n\n二、期望产出的业务结果（每条需用人方给出当前基线与目标值）\n1. 新产品导入（NPI）按里程碑交付：设计验证到小批试产到量产转移的节点达成率与转产后早期质量表现。\n2. 工装夹具与工程装备的交付质量与周期：一次通过率、返工与设计变更导致的返工比例、关键工装的交付前置期。\n3. 工程软件／数字化工具的实际采用与效果：工程数据、变更、测试与工装台账等环节的可用工具落地情况与使用率。\n4. 团队与能力：关键岗位后备、跨子职能协同效率、工程问题的复盘与知识沉淀。\n[待确认] 以上四类指标目前是否已有度量口径；若尚未度量，\"建立度量\"本身就是首年任务之一。注意：把某项列为职责，不等于断言公司目前完全缺少该能力，需与用人方核对现状。\n\n三、关键任务（岗位实际要做的事）\nA. NPI 统筹\n- 主持从设计冻结前介入到量产转移的工程节奏：DFM/DFA 评审、试产计划、问题清单与关闭机制、转产判定。\n- 与研发（结构/硬件/软件）、供应链、品质、生产就工艺可行性与成本/周期取舍作结论，并让风险显性化。\n- 对跨部门分歧作出工程判断并说明依据，不把决策全部上推。\nB. 工装夹具\n- 对工装、夹具、检测与组装工装的方案作技术评审：定位与基准、公差与量测能力、寿命与维护、成本与交期取舍。\n- 管理内部设计与外部供应商两条实现路径 [待确认：目前内部自制与外协的比例与产能]；外协不等于职能外包，内部仍需具备方案定义与验收能力。\n- 建立工装的版本、台账、变更与验收标准。\nC. 工程软件／工程数字化\n- 明确本团队\"工程软件\"的范围 [待确认：属于以下哪几类，直接影响任职要求写法]：\n  (a) 工具与系统的选型、集成与落地（PLM/MES/测试数据平台等）；\n  (b) 自研工程工具与自动化脚本（测试台、数据采集、工装参数化设计）；\n  (c) 设备/测试端嵌入式或上位机软件开发。\n- 承担该方向的资源分配、技术路线与交付质量把关；本人不必逐行写代码，但需能判断方案与工作量。\nD. 团队与流程\n- 管理约 30 人跨三个子方向的团队 [待确认：现有结构与人数分布、是否有下一层主管、是否含外部驻场人员]。\n- 建立工程评审、复盘与知识沉淀机制；培养子方向负责人。\n- 预算与外部资源管理 [待确认：是否含设备/工装资本性支出决策权]。\n\n四、任职要求（分层表达，避免把全部条件写成硬门槛）\n必需（每条给出缺失风险，用于面试设计与筛选口径）\n1. 完整主责过 NPI 从工程验证到量产转移的项目，至少一个从头到尾由本人负责收口。缺失风险：无法判断转产时机与遗留风险，易把问题推到量产阶段。\n2. 对工装夹具具备可评审级的技术判断：能就定位基准、公差链、量测能力、寿命与成本作出取舍并说明依据。缺失风险：只能依赖下属或供应商结论，专家型定位落空。\n3. 管理过多子职能工程团队，或管理过规模相近团队且有跨子职能协同的实际负责经历。缺失风险：30 人跨三方向的资源分配与优先级冲突无法处理。\n   —— 可接受的替代证据：管理规模较小但结构相同（含 2 个以上专业方向、且带过下一层主管）的经历，用工作样本与情境问答补证。\n4. 在无正式权力的跨部门场景中推进过工程决定（与研发、供应链、品质、工厂）。缺失风险：NPI 卡点长期悬置。\n5. 具备工程问题的结构化分析与复盘能力：能就一次失败说明当时的假设、取舍、后续机制变化。\n\n优先（不作筛除条件）\n6. 有工程软件／数字化工具从选型或自研到规模化使用的落地经历（对应上文 C 项确认后的具体类型）。\n7. 有本公司产品形态相近的量产经验 [待确认：产品形态与工艺特征]。\n8. 有跨地域或跨工厂协同、以及与外部工装供应商体系化合作的经历。\n9. 有从零建立工程度量或评审机制的经历。\n\n可在岗培养（明确修饰对象，不延伸到必需项）\n10. 公司特有的 PLM/MES 配置、内部流程与文档体系。\n11. 特定产品线的工艺细节与供应商网络。\n12. 若第 6 项为选型型（非自研型）软件工作，工具链的具体产品知识可在岗补足；但\"能判断工程软件方案与工作量\"属必需第 2、5 项的延伸，不属可培养项。\n\n不列为门槛的项（避免用标签替代能力）\n- 特定公司或品牌经历、固定学历层级、固定年限区间：材料未提供任何证据说明这些与本岗任务的关系。若用人方坚持设定年限，请说明它对应哪项任务复杂度，再转写成行为要求。\n\n五、面试与工作样本建议（供后续制订面试方案）\n- 工装判断：给一份含定位基准争议的工装方案（或其近期真实案例），请其指出风险、提出修改与验收方式。\n- NPI 收口：请其复述一次转产判定，包括当时未关闭的问题、判定依据、结果与事后机制变化。\n- 团队与优先级：三方向资源冲突的情境题，观察其取舍依据与向上/横向沟通方式。\n- 工程软件：让其判断一个工具落地失败案例的原因（采用率问题往往不在技术）。\n- 注意：一次回答只支持\"该情境下的行为\"，不足以认定稳定能力；同一能力建议跨两个情境取证。\n\n六、需用人方澄清的问题（只列会改变本稿写法的）\n1. \"工程软件\"属第 C 项中的哪几类？这直接决定第 6 项是优先还是必需。\n2. 30 人团队当前结构、是否已有下一层主管、三方向人数分布？决定第 3 项管理经历的写法与替代证据是否成立。\n3. 本岗对工装是\"方案定义+验收\"还是\"含内部制造产能管理\"？决定是否需要制造/机加管理经验。\n4. 汇报关系与授权范围（预算、设备投资、人员编制）？决定\"统筹\"的实际含义与吸引力表述。\n5. 首年最关键的一件事是什么（例如某个新产品导入、某条产线转移、某项工程数字化）？用于把上述结果指标排序。\n\n七、关于参考画像 R 的使用边界\n材料记载 R 仅有\"工装设计\"与\"带团队复盘\"两条线索。它们被用于设计上文第 2、5 项的验证方式，未被写成门槛。材料未记载 R 的 NPI 主责、工程软件与 30 人规模管理证据，属未知而非缺失；若 R 进入评估流程，应按第五节取证后再判断，不得以本稿的\"必需项\"直接得出淘汰结论。\n",
+            "changes": [],
+            "kind": "jd",
+            "objects": [],
+            "preceding_refs": [],
+            "source_refs": [
+              {
+                "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+                "kind": "material",
+                "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+                "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+              },
+              {
+                "id": "job-and-context",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+              },
+              {
+                "id": "competency-and-profile",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+              },
+              {
+                "id": "requirement-calibration",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+              }
+            ],
+            "title": "研发工程总监（专家型管理岗，统筹 NPI／工装夹具／工程软件，约30人）JD/JR 草案 · 虚构公司",
+            "ref": {
+              "kind": "result",
+              "id": "a0803eca-55e2-4d36-b119-47d2d3566eba",
+              "revision": "9c0733d7-1c7f-49eb-b6dd-d79787513a52",
+              "sha256": "483110999c2e63018f745f66a68acd18d3c33328eb50bcb3a13f5017681f170c"
+            },
+            "access_state": "available"
+          }
+        ],
+        "attempts": [
+          {
+            "attempt_id": "d691b57c-c508-4e1f-8635-15c546b75633",
+            "ordinal": 1,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 36732,
+            "charged_tokens": 20348,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "tool_use",
+              "text": "I'll start by reading the selected material and checking what else is available.",
+              "tool_calls": [
+                {
+                  "arguments": {
+                    "limit": 20000,
+                    "ref": {
+                      "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+                      "kind": "material",
+                      "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+                      "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+                    }
+                  },
+                  "name": "read_resource",
+                  "provider_call_id": "toolu_bdrk_01GtgkDdrsnQS5HboZzsJKbj"
+                },
+                {
+                  "arguments": {
+                    "kinds": [
+                      "material",
+                      "method",
+                      "result",
+                      "intelligence",
+                      "standard"
+                    ]
+                  },
+                  "name": "list_resources",
+                  "provider_call_id": "toolu_bdrk_01WZfK5pzSNe1Gqq1X2FBkCD"
+                }
+              ],
+              "usage": {
+                "input_total": 9206,
+                "output_total": 292,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 9206,
+                  "output_tokens": 292,
+                  "output_tokens_details": {
+                    "thinking_tokens": 0
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          },
+          {
+            "attempt_id": "4e83dffa-af5b-4260-9538-a733532b1c69",
+            "ordinal": 2,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 44580,
+            "charged_tokens": 28196,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "tool_use",
+              "text": "",
+              "tool_calls": [
+                {
+                  "arguments": {
+                    "limit": 20000,
+                    "ref": {
+                      "id": "job-and-context",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                    }
+                  },
+                  "name": "read_resource",
+                  "provider_call_id": "toolu_bdrk_01NPSNxxqq8atjF3KKNLqSzA"
+                },
+                {
+                  "arguments": {
+                    "limit": 20000,
+                    "ref": {
+                      "id": "competency-and-profile",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                    }
+                  },
+                  "name": "read_resource",
+                  "provider_call_id": "toolu_bdrk_017uDWcRS6qoQvLEwbeJJfwY"
+                }
+              ],
+              "usage": {
+                "input_total": 12299,
+                "output_total": 324,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 12299,
+                  "output_tokens": 324,
+                  "output_tokens_details": {
+                    "thinking_tokens": 47
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          },
+          {
+            "attempt_id": "cd82dc0a-1e4c-4052-b0ef-82ad1f514699",
+            "ordinal": 3,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 54119,
+            "charged_tokens": 37735,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "tool_use",
+              "text": "",
+              "tool_calls": [
+                {
+                  "arguments": {
+                    "limit": 20000,
+                    "ref": {
+                      "id": "requirement-calibration",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                    }
+                  },
+                  "name": "read_resource",
+                  "provider_call_id": "toolu_bdrk_01NTi96rQUBdmwA4XrYwDgKj"
+                }
+              ],
+              "usage": {
+                "input_total": 15899,
+                "output_total": 343,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 15899,
+                  "output_tokens": 343,
+                  "output_tokens_details": {
+                    "thinking_tokens": 192
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          },
+          {
+            "attempt_id": "c2ed5274-188e-4f4c-80e0-2eff41e49657",
+            "ordinal": 4,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 59789,
+            "charged_tokens": 43405,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "tool_use",
+              "text": "我已通读你指定的材料（94 字的合成需求说明），并结合\"岗位与业务情境\"\"胜任力与人才画像\"\"要求校准与 AMO\"三个方法视角起草。先说清材料边界，再给正文。\n\n**材料能支撑什么、不能支撑什么**\n\n- 材料只给出：专家型研发工程总监，统筹 NPI、工装夹具、工程软件，约 30 人团队；虚构参考画像 R 仅有\"工装设计\"与\"带团队复盘\"两条线索，其余能力待核验。\n- 因此 JD 中的业务情境（产品形态、量产节奏、工厂关系）、汇报关系、30 人的内部结构、职级与薪酬，材料均未记载，我按虚构公司写成**显式占位/假设**，不当既有事实。\n- 画像 R 只作能力线索：它提示\"工装设计\"和\"团队复盘\"这两类行为在本岗位值得设计验证问题；材料未记载 R 的其他能力，**不代表 R 不具备**，也不把 R 的个人经历写进岗位门槛。\n\n下面是草案，已保存。",
+              "tool_calls": [
+                {
+                  "arguments": {
+                    "base_standard_ref": null,
+                    "basis": [
+                      {
+                        "input_revision": 1,
+                        "kind": "user_temporary",
+                        "ref": null
+                      }
+                    ],
+                    "body": "说明：本稿为虚构公司岗位草案。除\"统筹 NPI／工装夹具／工程软件、约 30 人团队、专家型管理岗\"来自用户本次需求材料外，业务情境、汇报关系、团队结构、职级薪酬均为待用人方确认的占位或假设，已在文中标注 [待确认]。参考画像 R 仅作为能力线索使用，未写入任职要求。\n\n一、岗位定位（需用人方确认后定稿）\n研发工程总监向 [待确认：研发副总裁／制造与运营负责人] 汇报，是研发与制造之间的工程主责人：把设计方案变成可稳定、可复制、可量产的实现方式。岗位为专家型管理岗，既需要对工程方案本身作技术判断（能评审而不仅是审批），也需要带约 30 人的多子职能团队。\n\n二、期望产出的业务结果（每条需用人方给出当前基线与目标值）\n1. 新产品导入（NPI）按里程碑交付：设计验证到小批试产到量产转移的节点达成率与转产后早期质量表现。\n2. 工装夹具与工程装备的交付质量与周期：一次通过率、返工与设计变更导致的返工比例、关键工装的交付前置期。\n3. 工程软件／数字化工具的实际采用与效果：工程数据、变更、测试与工装台账等环节的可用工具落地情况与使用率。\n4. 团队与能力：关键岗位后备、跨子职能协同效率、工程问题的复盘与知识沉淀。\n[待确认] 以上四类指标目前是否已有度量口径；若尚未度量，\"建立度量\"本身就是首年任务之一。注意：把某项列为职责，不等于断言公司目前完全缺少该能力，需与用人方核对现状。\n\n三、关键任务（岗位实际要做的事）\nA. NPI 统筹\n- 主持从设计冻结前介入到量产转移的工程节奏：DFM/DFA 评审、试产计划、问题清单与关闭机制、转产判定。\n- 与研发（结构/硬件/软件）、供应链、品质、生产就工艺可行性与成本/周期取舍作结论，并让风险显性化。\n- 对跨部门分歧作出工程判断并说明依据，不把决策全部上推。\nB. 工装夹具\n- 对工装、夹具、检测与组装工装的方案作技术评审：定位与基准、公差与量测能力、寿命与维护、成本与交期取舍。\n- 管理内部设计与外部供应商两条实现路径 [待确认：目前内部自制与外协的比例与产能]；外协不等于职能外包，内部仍需具备方案定义与验收能力。\n- 建立工装的版本、台账、变更与验收标准。\nC. 工程软件／工程数字化\n- 明确本团队\"工程软件\"的范围 [待确认：属于以下哪几类，直接影响任职要求写法]：\n  (a) 工具与系统的选型、集成与落地（PLM/MES/测试数据平台等）；\n  (b) 自研工程工具与自动化脚本（测试台、数据采集、工装参数化设计）；\n  (c) 设备/测试端嵌入式或上位机软件开发。\n- 承担该方向的资源分配、技术路线与交付质量把关；本人不必逐行写代码，但需能判断方案与工作量。\nD. 团队与流程\n- 管理约 30 人跨三个子方向的团队 [待确认：现有结构与人数分布、是否有下一层主管、是否含外部驻场人员]。\n- 建立工程评审、复盘与知识沉淀机制；培养子方向负责人。\n- 预算与外部资源管理 [待确认：是否含设备/工装资本性支出决策权]。\n\n四、任职要求（分层表达，避免把全部条件写成硬门槛）\n必需（每条给出缺失风险，用于面试设计与筛选口径）\n1. 完整主责过 NPI 从工程验证到量产转移的项目，至少一个从头到尾由本人负责收口。缺失风险：无法判断转产时机与遗留风险，易把问题推到量产阶段。\n2. 对工装夹具具备可评审级的技术判断：能就定位基准、公差链、量测能力、寿命与成本作出取舍并说明依据。缺失风险：只能依赖下属或供应商结论，专家型定位落空。\n3. 管理过多子职能工程团队，或管理过规模相近团队且有跨子职能协同的实际负责经历。缺失风险：30 人跨三方向的资源分配与优先级冲突无法处理。\n   —— 可接受的替代证据：管理规模较小但结构相同（含 2 个以上专业方向、且带过下一层主管）的经历，用工作样本与情境问答补证。\n4. 在无正式权力的跨部门场景中推进过工程决定（与研发、供应链、品质、工厂）。缺失风险：NPI 卡点长期悬置。\n5. 具备工程问题的结构化分析与复盘能力：能就一次失败说明当时的假设、取舍、后续机制变化。\n\n优先（不作筛除条件）\n6. 有工程软件／数字化工具从选型或自研到规模化使用的落地经历（对应上文 C 项确认后的具体类型）。\n7. 有本公司产品形态相近的量产经验 [待确认：产品形态与工艺特征]。\n8. 有跨地域或跨工厂协同、以及与外部工装供应商体系化合作的经历。\n9. 有从零建立工程度量或评审机制的经历。\n\n可在岗培养（明确修饰对象，不延伸到必需项）\n10. 公司特有的 PLM/MES 配置、内部流程与文档体系。\n11. 特定产品线的工艺细节与供应商网络。\n12. 若第 6 项为选型型（非自研型）软件工作，工具链的具体产品知识可在岗补足；但\"能判断工程软件方案与工作量\"属必需第 2、5 项的延伸，不属可培养项。\n\n不列为门槛的项（避免用标签替代能力）\n- 特定公司或品牌经历、固定学历层级、固定年限区间：材料未提供任何证据说明这些与本岗任务的关系。若用人方坚持设定年限，请说明它对应哪项任务复杂度，再转写成行为要求。\n\n五、面试与工作样本建议（供后续制订面试方案）\n- 工装判断：给一份含定位基准争议的工装方案（或其近期真实案例），请其指出风险、提出修改与验收方式。\n- NPI 收口：请其复述一次转产判定，包括当时未关闭的问题、判定依据、结果与事后机制变化。\n- 团队与优先级：三方向资源冲突的情境题，观察其取舍依据与向上/横向沟通方式。\n- 工程软件：让其判断一个工具落地失败案例的原因（采用率问题往往不在技术）。\n- 注意：一次回答只支持\"该情境下的行为\"，不足以认定稳定能力；同一能力建议跨两个情境取证。\n\n六、需用人方澄清的问题（只列会改变本稿写法的）\n1. \"工程软件\"属第 C 项中的哪几类？这直接决定第 6 项是优先还是必需。\n2. 30 人团队当前结构、是否已有下一层主管、三方向人数分布？决定第 3 项管理经历的写法与替代证据是否成立。\n3. 本岗对工装是\"方案定义+验收\"还是\"含内部制造产能管理\"？决定是否需要制造/机加管理经验。\n4. 汇报关系与授权范围（预算、设备投资、人员编制）？决定\"统筹\"的实际含义与吸引力表述。\n5. 首年最关键的一件事是什么（例如某个新产品导入、某条产线转移、某项工程数字化）？用于把上述结果指标排序。\n\n七、关于参考画像 R 的使用边界\n材料记载 R 仅有\"工装设计\"与\"带团队复盘\"两条线索。它们被用于设计上文第 2、5 项的验证方式，未被写成门槛。材料未记载 R 的 NPI 主责、工程软件与 30 人规模管理证据，属未知而非缺失；若 R 进入评估流程，应按第五节取证后再判断，不得以本稿的\"必需项\"直接得出淘汰结论。\n",
+                    "changes": [],
+                    "expected_revision": null,
+                    "kind": "jd",
+                    "objects": [],
+                    "preceding_refs": [],
+                    "result_id": null,
+                    "source_refs": [
+                      {
+                        "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+                        "kind": "material",
+                        "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+                        "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+                      },
+                      {
+                        "id": "job-and-context",
+                        "kind": "method",
+                        "revision": "2",
+                        "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                      },
+                      {
+                        "id": "competency-and-profile",
+                        "kind": "method",
+                        "revision": "1",
+                        "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                      },
+                      {
+                        "id": "requirement-calibration",
+                        "kind": "method",
+                        "revision": "2",
+                        "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                      }
+                    ],
+                    "title": "研发工程总监（专家型管理岗，统筹 NPI／工装夹具／工程软件，约30人）JD/JR 草案 · 虚构公司"
+                  },
+                  "name": "save_result",
+                  "provider_call_id": "toolu_bdrk_011qzYi2frbu7eiMDpHwDWb9"
+                }
+              ],
+              "usage": {
+                "input_total": 18088,
+                "output_total": 5021,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 18088,
+                  "output_tokens": 5021,
+                  "output_tokens_details": {
+                    "thinking_tokens": 1039
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          },
+          {
+            "attempt_id": "c21a36b1-9e48-48b0-82ce-baa02156c625",
+            "ordinal": 5,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 78190,
+            "charged_tokens": 61806,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "end_turn",
+              "text": "JD/JR 草案已保存（result `a0803eca-55e2-4d36-b119-47d2d3566eba`，rev `9c0733d7`）。\n\n**这份稿子是怎么搭的**\n\n材料里能算事实的只有三句：专家型研发工程总监、统筹 NPI／工装夹具／工程软件、约 30 人团队。所以我把稿子写成\"任务在前、要求在后\"的结构：先假设岗位要交付什么结果（NPI 节点与转产质量、工装交付质量与周期、工程软件的实际采用、团队能力），再从任务反推能力，每条必需项都附了\"缺这项会出什么岗位风险\"。凡是材料没说的（汇报关系、团队结构、内外协比例、授权范围、产品形态）都标了 [待确认]，没有用常识补成事实。\n\n**几个刻意的判断**\n\n- **\"专家型\"落在哪里**：我把它落成\"能评审而非只能审批\"——对工装的定位基准、公差链、量测能力能自己作取舍并说明依据。这是\"专家型\"和\"纯管理岗\"在筛选口径上真正的分界。\n- **要求分了四层**，不是全部写成硬门槛：必需 5 条（其中第 3 条管理经历给了明确的替代证据路径）、优先 4 条、可在岗培养 3 条、以及明确**不设**为门槛的项（品牌经历、学历层级、固定年限——材料没有任何证据支持它们与本岗任务的关系）。\n- **工程软件那条我没敢定死**。它可能是工具选型落地、自研工程工具、或设备端软件开发，三种对应的人完全不同。所以我暂列为\"优先\"，并把它列为第一个澄清问题——用人经理回答后，这条可能要升为必需并改写表述。\n- **画像 R 只用来设计验证方式**。材料只记了工装设计和带团队复盘两条线索，我用它们指导了面试取证设计，没有把 R 的经历反向写成门槛。R 在 NPI 主责、工程软件、30 人规模管理上是**未知，不是缺失**——如果 R 后续进流程，不能拿本稿的必需项直接淘汰。\n\n**要推进定稿，最需要你从用人经理那里拿到两件事**：一是\"工程软件\"具体指哪类；二是 30 人团队现有结构（是否已有下一层主管、三方向人数分布）——后者决定管理经历那条的替代证据成立与否。其余三个澄清问题在稿子第六节。\n\n需要我基于这份 JD 出一版**面试方案**（把第五节的工作样本展开成评分锚点），或者先做一版**搜寻策略**（哪些相邻岗位可能承接这三块职能）？",
+              "tool_calls": [],
+              "usage": {
+                "input_total": 25303,
+                "output_total": 940,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 25303,
+                  "output_tokens": 940,
+                  "output_tokens_details": {
+                    "thinking_tokens": 0
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          }
+        ],
+        "tools": [
+          {
+            "operation_id": "c41d29a3-e829-43d6-8d16-63a3e5e7d28e",
+            "attempt_id": "d691b57c-c508-4e1f-8635-15c546b75633",
+            "namespace": "tool:read_resource",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "coverage_complete": true,
+                "coverage_notes": [],
+                "end": 94,
+                "next_offset": null,
+                "offset": 0,
+                "read_id": "5a343ca0-983b-44ee-897b-6ef3e81baf0f",
+                "ref": {
+                  "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+                  "kind": "material",
+                  "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+                  "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+                },
+                "text": "SYNTHETIC synthetic-v2.1\n岗位需求：专家型研发工程总监，统筹NPI、工装夹具和工程软件，约30人团队。虚构参考画像R仅有工装设计与带团队复盘线索，其他能力待核验。\n",
+                "total_characters": 94
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "d27048d5-08ea-4555-a430-885a67143e5b",
+            "attempt_id": "d691b57c-c508-4e1f-8635-15c546b75633",
+            "namespace": "tool:list_resources",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "items": [
+                  {
+                    "description": "来源核验与适配边界",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "2026-09-08-hr-methodology-sources",
+                      "kind": "method",
+                      "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                      "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "公开 JD 阅读案例与证据边界",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "2026-09-09-jd-reading-cases",
+                      "kind": "method",
+                      "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                      "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "岗位原文理解：已复核案例来源",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "用户为本次工作指定的材料正文",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": {
+                      "id": "bf7021e1-3948-44e9-b40b-031d030db91a:original",
+                      "kind": "material",
+                      "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9",
+                      "sha256": "69ce51367d594a4df9adc27c636de5e7ca9e4f2fd71d6625978c47e051d8edc8"
+                    },
+                    "ref": {
+                      "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+                      "kind": "material",
+                      "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+                      "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+                    },
+                    "representation": "parsed_text",
+                    "state": "available",
+                    "title": "已选材料",
+                    "visibility": {
+                      "kind": "private",
+                      "subject_id": "e0e5da1a-bd32-4ac1-a549-85a1dbbca1c9"
+                    }
+                  },
+                  {
+                    "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "comparison-and-learning",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "候选人比较与反馈",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "competency-and-profile",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "胜任力与人才画像",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "evidence-informed-judgment",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "循证判断",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "job-and-context",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "岗位与业务情境",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "requirement-calibration",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "要求校准与 AMO",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "selection-and-work-samples",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "甄选与工作样本",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "sourcing-and-transfer",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "人才来源与能力迁移",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  }
+                ],
+                "next_cursor": null
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "4c0b9414-050d-4307-bbdc-e12e85e7ee8b",
+            "attempt_id": "4e83dffa-af5b-4260-9538-a733532b1c69",
+            "namespace": "tool:read_resource",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "coverage_complete": true,
+                "coverage_notes": [],
+                "end": 1889,
+                "next_offset": null,
+                "offset": 0,
+                "read_id": "edf65d2e-5e8c-4c90-948a-a2cfab14dc61",
+                "ref": {
+                  "id": "job-and-context",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                },
+                "text": "---\nid: job-and-context\ntitle: 岗位与业务情境\nrevision: 2\ndomains: [recruiting, organization-design]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 岗位与业务情境：从结果、任务到能力\n\n## 帮助理解什么\n\n当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。\n\n## 核心关系\n\n岗位分析的基本链条是“业务结果—关键任务—工作情境—所需能力—可用证据”。OPM 将岗位分析描述为考察岗位任务、完成任务所需胜任力，以及任务与胜任力之间的联系。O*NET 则把任务、工作活动、知识、技能、能力、经验要求和工作情境分开表达。这提醒我们不要把学历、年限、公司品牌或性格形容词直接当成能力。\n\n战略与情境匹配提供更高一层的问题：同一任务在创业期和成熟期、强授权与弱授权、已有团队与从零组建中可能要求不同。岗位要求是关于未来工作的假设，而非对现任优秀员工特征的完整复制。\n\n## 如何结合证据思考\n\n可以先寻找业务负责人、上下游和现任岗位对实际工作的一致与分歧描述，再用历史成果、失败事件、流程材料和真实工作样本交叉检查。每项能力都应能解释它支撑什么任务；每项硬门槛都应能解释缺少它会带来什么岗位风险。信息不足时，应把未知写出来，而不是用常识补成事实。\n\n## 从文字重建任务，并保留结论的对象\n\n职位名和字段名是材料的组织方式，不保证含义正确。一段写在 requirement 中的工作交付可能仍是职责；空的 requirement 也可能只是要求已写在 description 内。先读完整材料，理解语句作用与相互关系，再说明哪些任务和条件有依据。不能因字段为空补默认门槛，也不能因标题含某技术就补出正文没有的工作。\n\n同样的要求文字被多个岗位复用时，要回到各自的交付物：一个岗位需要定义数据产品，另一个需要训练模型，共用编程要求并不解释两者的真实责任。它值得核实，但不证明复制方向或误贴。改写 JD 时，应围绕用户确认的任务与条件组织表达，区分既有要求和新增建议，不照搬另一岗位的筛选口径。\n\n作用域也是证据的一部分。集团招聘入口可能汇集子公司、业务部和归属未明的岗位；某个团队的研究任务不能自动推广到本部或全集团。比较时保留原文对象，确认候选人本人做了什么，而不是以任职公司代替经历。没有子公司标记不代表归属本部，相邻岗位也不证明实际汇报或项目交接关系。\n\n本节来自已复核招聘归档的工作台适配，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不称为 OPM 或 O*NET 原文规则。\n\n## 适用与局限\n\n适合新岗位、职责变化、多人描述不一致、画像缺少任务依据等情况。若用户只是希望润色已经确认的 JD，它可以作为背景而不必重新做完整分析。岗位分析会过时，O*NET 的美国职业数据也不能代替本组织访谈；业务负责人意见是重要证据，但仍可能含有偏好和既有做法偏差。\n\n## 可结合的视角\n\n可与“胜任力与人才画像”连接行为表达，与“要求校准与 AMO”检查环境约束，也可与“甄选与工作样本”思考什么证据更贴近实际任务。这些是建议关系，不是固定流程。\n\n## 案例\n\n一家企业把新客户成功岗描述为“沟通好、抗压强、懂客户”。进一步理解后，目标是提高上线采用率并提前发现续约风险；关键任务包括诊断使用障碍、与产品团队协调、向客户管理层解释取舍。原来的标签因此可以被重新理解为问题诊断、跨团队推进和面向不同受众沟通，并需要在复杂度、独立程度和结果上进一步求证。\n\n## 来源\n\n- U.S. OPM, *Job Analysis*，官方主页面正文。\n- O*NET Resource Center, *The O*NET Content Model*，Worker Requirements、Occupational Requirements、Occupation-Specific Information。\n- Armstrong, *Handbook of Human Resource Management Practice*, 13th ed.，仅使用本地文件可见范围内的战略匹配相关节选；未引用缺失章节。\n",
+                "total_characters": 1889
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "9384bda5-abc7-4108-8338-1bc24d87eca7",
+            "attempt_id": "4e83dffa-af5b-4260-9538-a733532b1c69",
+            "namespace": "tool:read_resource",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "coverage_complete": true,
+                "coverage_notes": [],
+                "end": 1113,
+                "next_offset": null,
+                "offset": 0,
+                "read_id": "986ebd46-98ae-481a-909c-f3401b31eb61",
+                "ref": {
+                  "id": "competency-and-profile",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                },
+                "text": "---\nid: competency-and-profile\ntitle: 胜任力与人才画像\nrevision: 1\ndomains: [recruiting, talent-development]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 胜任力与人才画像：从标签转向可观察行为\n\n## 帮助理解什么\n\n本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。\n\n## 核心关系\n\n能力只有连接到岗位任务才有选择意义。可观察行为可以从情境难度、采取的行动、独立程度、判断质量和产生的结果来描述。不同水平不只是工作年限不同，而可能体现在能处理多大不确定性、需要多少指导、能否识别取舍并复盘。\n\nOPM 的结构化面试指南用不同熟练度的行为例子帮助评估者形成共同参照。它支持“用具体行为解释层级”的原则，但组织仍需让岗位专家结合自己的任务设计例子。行为例子是参照，不是所有合格行为的穷尽清单。\n\n## 如何结合证据思考\n\n先问抽象标签在一个近期关键任务里会让人做出什么不同动作。再检查这些动作是否能被候选人经历、工作样本、结构化问答或其他岗位相关材料观察。既要寻找支持证据，也要注意替代解释：结果可能来自团队、资源或运气，而一次行为也未必代表稳定能力。\n\n## 适用与局限\n\n适合画像条件多、评价者理解不一致、面试反馈停留在“感觉好”等情况。行为锚点可能偏向既有文化和现任者，且观察者仍会产生偏差；因此需要试用、讨论分歧并保留修订可能。\n\n## 可结合的视角\n\n可与“岗位与业务情境”保证能力有任务依据，与“甄选与工作样本”探索观察方式，与“循证判断”控制从一次回答到稳定能力的推断强度。\n\n## 案例\n\n团队把“跨团队影响力”列为画像核心。与其定义为“善于沟通”，可以探索候选人在目标不一致、没有正式权力时，如何识别各方约束、提出共同目标、调整方案并让风险显性化。较高水平可能表现为在复杂冲突中形成可持续机制，但这仍需多个情境的证据支持。\n\n## 来源\n\n- U.S. OPM, *Job Analysis*，任务与胜任力的岗位相关联系。\n- U.S. OPM, *Structured Interviews: A Practical Guide*，行为锚定与熟练度例子 pp.8–12。\n- O*NET Resource Center, *The O*NET Content Model*，Skills、Abilities、Work Activities。\n",
+                "total_characters": 1113
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "21488131-eb08-43f2-a38c-d97520420768",
+            "attempt_id": "cd82dc0a-1e4c-4052-b0ef-82ad1f514699",
+            "namespace": "tool:read_resource",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "coverage_complete": true,
+                "coverage_notes": [],
+                "end": 1787,
+                "next_offset": null,
+                "offset": 0,
+                "read_id": "85cab2fb-402a-428a-aafa-56bcc4a76adc",
+                "ref": {
+                  "id": "requirement-calibration",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                },
+                "text": "---\nid: requirement-calibration\ntitle: 要求校准与 AMO\nrevision: 2\ndomains: [recruiting, performance]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 要求校准与 AMO：不要把所有问题都变成人才缺陷\n\n## 帮助理解什么\n\n当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。\n\n## 核心关系\n\n长期招不到人至少可能涉及四类解释：需求定义是否真实且清楚；目标人才供给是否存在；薪酬、地点、工作方式、发展机会和雇主信息是否有吸引力；甄选流程是否因门槛、速度或评价偏差误杀。四类因素可能同时发生，招聘时长本身不能证明“市场没人”。\n\nAMO 从能力、动机和机会三个方向拓宽诊断：一个人是否会做、是否愿意投入、环境是否允许他做出结果。它适合提出问题，不适合把候选人压缩成 A×M×O 总分或宣称单一因素造成绩效。\n\n## 如何结合证据思考\n\n查看漏斗各阶段的数量、等待时间、退出原因和评价分歧，并把组织数据与招聘人员、用人经理及候选人的观点并置。对每项要求追问业务理由、对应任务、失败风险和可接受的替代证据。把“必须”“有帮助”“可以培养”和“只是惯例”看作待论证判断，而非固定字段。\n\n如果建议调整，可以优先提出可逆、可观察的试验，例如重新表达岗位价值、抽样复核被筛掉材料、允许相邻行业以工作样本补证。结果只能支持或削弱当前假设，不能自动改写已确认画像。\n\n## 区分任务需要与文案写出的要求强度\n\n能力与任务相关，不等于已经证明它必须在入职前具备；原文明确给出的优先、可培养或替代经历也不能被自动升级成硬门槛。理解条件时，同时看它支撑什么交付、原文要求达到何种独立程度，以及用户是否已经确认适用条件。不要把一段宽技术清单读成每一项都要精通。\n\n若同一能力在同一条广告中既列为任职要求又列为加分，当前文本没有稳定说明缺少该经历是否仍可评估。可以继续分析任务相关性和候选材料，但不能默默选择更严或更松的一段作结论。只有当歧义影响当前判断时，才向岗位方澄清，例如这项经历是入职即须独立交付，还是允许在相邻经验基础上学习。\n\n相邻岗位若将任职要求与加分分开表达，可以帮助定位当前记录的局部问题，不代表它们的门槛可直接移植。岗位跨度、经验入口或用工形式不同，也可能合理地产生不同要求；不能把差异一律判为矛盾。\n\n用户说明目标岗位的实际条件后，应按该澄清继续当前工作，保留它相对原文改变了什么；分析建议本身不修改长期标准。切换岗位或业务团队时重新判断适用性，不能沿用上一岗位的硬门槛。\n\n本节依据真实文案冲突归纳，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)。这是思考材料，不是按“必需”“优先”等关键词执行的筛选程序。\n\n## 适用与局限\n\n适合长期空缺、漏斗异常、条件互相矛盾、用人经理反复加码等情境。漏斗数据可能受季节、渠道和岗位变化影响；候选人退出原因也常不完整。AMO 各因素相互作用，不能当精确因果模型。\n\n## 可结合的视角\n\n可与“岗位与业务情境”核查要求依据，与“人才来源与能力迁移”扩展供给假设，与“循证判断”评价漏斗解释。不存在必须依次采用的顺序。\n\n## 案例\n\n一个数据产品经理岗位空缺三个月。简历数量并不少，但业务初筛淘汰率很高；“同业五年”无法对应某项独有任务，而薪酬与地点的退出反馈也明显。较好的理解是：供给、要求和吸引力都有待验证。允许相邻行业候选人用复杂 B2B 发现与落地证据补充，只是一个可审阅假设，最终效果仍需观察录用和入职表现。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，pp.1–4。\n- CIPD, *People performance: An evidence review*，AMO 讨论 pp.14–17。\n- CIPD, *Fair selection: An evidence review*，公平框架与实践建议 pp.5–16。\n",
+                "total_characters": 1787
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "1b310ecc-fcdf-4bf1-b8bb-311e9f9e81ac",
+            "attempt_id": "c2ed5274-188e-4f4c-80e0-2eff41e49657",
+            "namespace": "tool:save_result",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "access_state": "available",
+                "base_standard_ref": null,
+                "basis": [
+                  {
+                    "input_revision": 1,
+                    "kind": "user_temporary",
+                    "ref": null
+                  }
+                ],
+                "body": "说明：本稿为虚构公司岗位草案。除\"统筹 NPI／工装夹具／工程软件、约 30 人团队、专家型管理岗\"来自用户本次需求材料外，业务情境、汇报关系、团队结构、职级薪酬均为待用人方确认的占位或假设，已在文中标注 [待确认]。参考画像 R 仅作为能力线索使用，未写入任职要求。\n\n一、岗位定位（需用人方确认后定稿）\n研发工程总监向 [待确认：研发副总裁／制造与运营负责人] 汇报，是研发与制造之间的工程主责人：把设计方案变成可稳定、可复制、可量产的实现方式。岗位为专家型管理岗，既需要对工程方案本身作技术判断（能评审而不仅是审批），也需要带约 30 人的多子职能团队。\n\n二、期望产出的业务结果（每条需用人方给出当前基线与目标值）\n1. 新产品导入（NPI）按里程碑交付：设计验证到小批试产到量产转移的节点达成率与转产后早期质量表现。\n2. 工装夹具与工程装备的交付质量与周期：一次通过率、返工与设计变更导致的返工比例、关键工装的交付前置期。\n3. 工程软件／数字化工具的实际采用与效果：工程数据、变更、测试与工装台账等环节的可用工具落地情况与使用率。\n4. 团队与能力：关键岗位后备、跨子职能协同效率、工程问题的复盘与知识沉淀。\n[待确认] 以上四类指标目前是否已有度量口径；若尚未度量，\"建立度量\"本身就是首年任务之一。注意：把某项列为职责，不等于断言公司目前完全缺少该能力，需与用人方核对现状。\n\n三、关键任务（岗位实际要做的事）\nA. NPI 统筹\n- 主持从设计冻结前介入到量产转移的工程节奏：DFM/DFA 评审、试产计划、问题清单与关闭机制、转产判定。\n- 与研发（结构/硬件/软件）、供应链、品质、生产就工艺可行性与成本/周期取舍作结论，并让风险显性化。\n- 对跨部门分歧作出工程判断并说明依据，不把决策全部上推。\nB. 工装夹具\n- 对工装、夹具、检测与组装工装的方案作技术评审：定位与基准、公差与量测能力、寿命与维护、成本与交期取舍。\n- 管理内部设计与外部供应商两条实现路径 [待确认：目前内部自制与外协的比例与产能]；外协不等于职能外包，内部仍需具备方案定义与验收能力。\n- 建立工装的版本、台账、变更与验收标准。\nC. 工程软件／工程数字化\n- 明确本团队\"工程软件\"的范围 [待确认：属于以下哪几类，直接影响任职要求写法]：\n  (a) 工具与系统的选型、集成与落地（PLM/MES/测试数据平台等）；\n  (b) 自研工程工具与自动化脚本（测试台、数据采集、工装参数化设计）；\n  (c) 设备/测试端嵌入式或上位机软件开发。\n- 承担该方向的资源分配、技术路线与交付质量把关；本人不必逐行写代码，但需能判断方案与工作量。\nD. 团队与流程\n- 管理约 30 人跨三个子方向的团队 [待确认：现有结构与人数分布、是否有下一层主管、是否含外部驻场人员]。\n- 建立工程评审、复盘与知识沉淀机制；培养子方向负责人。\n- 预算与外部资源管理 [待确认：是否含设备/工装资本性支出决策权]。\n\n四、任职要求（分层表达，避免把全部条件写成硬门槛）\n必需（每条给出缺失风险，用于面试设计与筛选口径）\n1. 完整主责过 NPI 从工程验证到量产转移的项目，至少一个从头到尾由本人负责收口。缺失风险：无法判断转产时机与遗留风险，易把问题推到量产阶段。\n2. 对工装夹具具备可评审级的技术判断：能就定位基准、公差链、量测能力、寿命与成本作出取舍并说明依据。缺失风险：只能依赖下属或供应商结论，专家型定位落空。\n3. 管理过多子职能工程团队，或管理过规模相近团队且有跨子职能协同的实际负责经历。缺失风险：30 人跨三方向的资源分配与优先级冲突无法处理。\n   —— 可接受的替代证据：管理规模较小但结构相同（含 2 个以上专业方向、且带过下一层主管）的经历，用工作样本与情境问答补证。\n4. 在无正式权力的跨部门场景中推进过工程决定（与研发、供应链、品质、工厂）。缺失风险：NPI 卡点长期悬置。\n5. 具备工程问题的结构化分析与复盘能力：能就一次失败说明当时的假设、取舍、后续机制变化。\n\n优先（不作筛除条件）\n6. 有工程软件／数字化工具从选型或自研到规模化使用的落地经历（对应上文 C 项确认后的具体类型）。\n7. 有本公司产品形态相近的量产经验 [待确认：产品形态与工艺特征]。\n8. 有跨地域或跨工厂协同、以及与外部工装供应商体系化合作的经历。\n9. 有从零建立工程度量或评审机制的经历。\n\n可在岗培养（明确修饰对象，不延伸到必需项）\n10. 公司特有的 PLM/MES 配置、内部流程与文档体系。\n11. 特定产品线的工艺细节与供应商网络。\n12. 若第 6 项为选型型（非自研型）软件工作，工具链的具体产品知识可在岗补足；但\"能判断工程软件方案与工作量\"属必需第 2、5 项的延伸，不属可培养项。\n\n不列为门槛的项（避免用标签替代能力）\n- 特定公司或品牌经历、固定学历层级、固定年限区间：材料未提供任何证据说明这些与本岗任务的关系。若用人方坚持设定年限，请说明它对应哪项任务复杂度，再转写成行为要求。\n\n五、面试与工作样本建议（供后续制订面试方案）\n- 工装判断：给一份含定位基准争议的工装方案（或其近期真实案例），请其指出风险、提出修改与验收方式。\n- NPI 收口：请其复述一次转产判定，包括当时未关闭的问题、判定依据、结果与事后机制变化。\n- 团队与优先级：三方向资源冲突的情境题，观察其取舍依据与向上/横向沟通方式。\n- 工程软件：让其判断一个工具落地失败案例的原因（采用率问题往往不在技术）。\n- 注意：一次回答只支持\"该情境下的行为\"，不足以认定稳定能力；同一能力建议跨两个情境取证。\n\n六、需用人方澄清的问题（只列会改变本稿写法的）\n1. \"工程软件\"属第 C 项中的哪几类？这直接决定第 6 项是优先还是必需。\n2. 30 人团队当前结构、是否已有下一层主管、三方向人数分布？决定第 3 项管理经历的写法与替代证据是否成立。\n3. 本岗对工装是\"方案定义+验收\"还是\"含内部制造产能管理\"？决定是否需要制造/机加管理经验。\n4. 汇报关系与授权范围（预算、设备投资、人员编制）？决定\"统筹\"的实际含义与吸引力表述。\n5. 首年最关键的一件事是什么（例如某个新产品导入、某条产线转移、某项工程数字化）？用于把上述结果指标排序。\n\n七、关于参考画像 R 的使用边界\n材料记载 R 仅有\"工装设计\"与\"带团队复盘\"两条线索。它们被用于设计上文第 2、5 项的验证方式，未被写成门槛。材料未记载 R 的 NPI 主责、工程软件与 30 人规模管理证据，属未知而非缺失；若 R 进入评估流程，应按第五节取证后再判断，不得以本稿的\"必需项\"直接得出淘汰结论。\n",
+                "changes": [],
+                "kind": "jd",
+                "objects": [],
+                "preceding_refs": [],
+                "ref": {
+                  "id": "a0803eca-55e2-4d36-b119-47d2d3566eba",
+                  "kind": "result",
+                  "revision": "9c0733d7-1c7f-49eb-b6dd-d79787513a52",
+                  "sha256": "483110999c2e63018f745f66a68acd18d3c33328eb50bcb3a13f5017681f170c"
+                },
+                "source_refs": [
+                  {
+                    "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+                    "kind": "material",
+                    "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+                    "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+                  },
+                  {
+                    "id": "job-and-context",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                  },
+                  {
+                    "id": "competency-and-profile",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                  },
+                  {
+                    "id": "requirement-calibration",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                  }
+                ],
+                "title": "研发工程总监（专家型管理岗，统筹 NPI／工装夹具／工程软件，约30人）JD/JR 草案 · 虚构公司"
+              },
+              "error": null,
+              "status": "ok"
+            }
+          }
+        ]
+      },
+      "failure_type": "ValueError",
+      "failure_code": "required JD/JR saved result kinds absent",
+      "http_trace": [
+        {
+          "method": "POST",
+          "path": "/api/v1/attachments/uploads",
+          "status": 201
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/attachments/uploads/5a38619b-d432-4a36-9c4f-8681f536f4d7/content",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/attachments/uploads/5a38619b-d432-4a36-9c4f-8681f536f4d7/complete",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/materials/bf7021e1-3948-44e9-b40b-031d030db91a",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "status": 403
+        },
+        {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "status": 403
+        },
+        {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/works/181e29ab-905a-4534-83b5-d30b33639ff5",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/works/181e29ab-905a-4534-83b5-d30b33639ff5",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/works/181e29ab-905a-4534-83b5-d30b33639ff5/messages",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/results/a0803eca-55e2-4d36-b119-47d2d3566eba/revisions/9c0733d7-1c7f-49eb-b6dd-d79787513a52",
+          "status": 200
+        }
+      ],
+      "model_observations": [
+        {
+          "attempt_id": "f2b35a41-02b3-4d16-bb11-c80967fe1f49",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 8985,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 8985,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 155,
+                "output_tokens_details": {
+                  "thinking_tokens": 70
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 4.864715124480426
+        },
+        {
+          "attempt_id": "68678257-2f7d-4320-a569-ae132b13112d",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 11126,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 2,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 11126,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 872,
+                "output_tokens_details": {
+                  "thinking_tokens": 173
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 20.267907083034515
+        },
+        {
+          "attempt_id": "dc9b5ba7-5cea-431b-825e-16d6171fb328",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12102,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12102,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 429,
+                "output_tokens_details": {
+                  "thinking_tokens": 221
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 11.120997374877334
+        },
+        {
+          "attempt_id": "7fac0505-a7c7-4fd3-9e58-f7daba4e9bc0",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12688,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12688,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1505,
+                "output_tokens_details": {
+                  "thinking_tokens": 496
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 24.987243334762752
+        },
+        {
+          "attempt_id": "67d8d3fe-ccdb-444b-b8f9-2d7986b21c38",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15482,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15482,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 863,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 15.94830625038594
+        },
+        {
+          "attempt_id": "09657d22-4224-4f77-a407-93da9808d916",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 16573,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 16573,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 645,
+                "output_tokens_details": {
+                  "thinking_tokens": 413
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 13.947094624862075
+        },
+        {
+          "attempt_id": "e423efcc-f785-424e-82bc-5e6b2344e6e9",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 17220,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 5,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 17220,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1737,
+                "output_tokens_details": {
+                  "thinking_tokens": 1449
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 31.567890958860517
+        },
+        {
+          "attempt_id": "79e67d93-1e6a-4074-80e1-0d9c409e2026",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 21580,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 21580,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 6209,
+                "output_tokens_details": {
+                  "thinking_tokens": 1921
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 101.92652979213744
+        },
+        {
+          "attempt_id": "175ae982-0897-47b5-88b8-ff2bad341bc5",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 30202,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 30202,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1175,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 21.93137183226645
+        },
+        {
+          "attempt_id": "d691b57c-c508-4e1f-8635-15c546b75633",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 9206,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 9206,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 292,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 5.00703320838511
+        },
+        {
+          "attempt_id": "4e83dffa-af5b-4260-9538-a733532b1c69",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12299,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12299,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 324,
+                "output_tokens_details": {
+                  "thinking_tokens": 47
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 6.762260750867426
+        },
+        {
+          "attempt_id": "cd82dc0a-1e4c-4052-b0ef-82ad1f514699",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15899,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15899,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 343,
+                "output_tokens_details": {
+                  "thinking_tokens": 192
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 9.125303291715682
+        },
+        {
+          "attempt_id": "c2ed5274-188e-4f4c-80e0-2eff41e49657",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 18088,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 18088,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 5021,
+                "output_tokens_details": {
+                  "thinking_tokens": 1039
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 105.42524562496692
+        },
+        {
+          "attempt_id": "c21a36b1-9e48-48b0-82ce-baa02156c625",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 25303,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 25303,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 940,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 21.484395457431674
+        }
+      ]
+    }
+  ],
+  "corpus_sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+  "manifest_sha256": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739",
+  "source": {
+    "head": "fc339d8288ba99fec4fb702045c8409f837c007d",
+    "files": {
+      "backend/app/hr_agent/__init__.py": "415fabafe27bb316a957b1a23e5c2162f65c2e02a2c9b93b248cf6e283c17031",
+      "backend/app/hr_agent/access.py": "238641d76c1234f03d4b4c997cd78ef4e1359e42dcc23780a826641d843de9f7",
+      "backend/app/hr_agent/candidates.py": "369de3b5c8b63712ef82dd131de96c512d7a52688c6aee3411c2673fe70943e0",
+      "backend/app/hr_agent/config.py": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2",
+      "backend/app/hr_agent/context.py": "3a15226b049d045379c90e50fdbbbf4f07e5516c977c86559ae46ed8913af012",
+      "backend/app/hr_agent/cutover.py": "1d933bfcc5069597d3f44174b24a46f3386987e4522bdbe5dd6af977d2389684",
+      "backend/app/hr_agent/diagnostics.py": "31c9f916869129f13038391118f1e19cf704a6842f3e47d649d35ce9f9e1d062",
+      "backend/app/hr_agent/interview_records.py": "756dbd243eee9b45b77866d2c3dac7064421f38f658ccde22a3d4d1476fc009c",
+      "backend/app/hr_agent/knowledge.py": "49600fe594cacaf255c316cb00ca89ffee7f4a29086b7f1b4e55826e53cb6b35",
+      "backend/app/hr_agent/material_authority.py": "18e66b8bf51e6f9e2bdbef56302a6e91b3b62bc971a0290f9564cff15f99becc",
+      "backend/app/hr_agent/material_parsing.py": "834f90fbcec0b21913f27d4c7aeab142daa0acff8692fcda26027543b4f18f3b",
+      "backend/app/hr_agent/materials.py": "09b544528109bd03b92469eb9a17cd8e2ff878f3b49a481a870b570e45254d26",
+      "backend/app/hr_agent/model.py": "0366ab25deb8069cc3cfe23eb7af7323ee3a86f7b31f82df21ff2a9bda309b58",
+      "backend/app/hr_agent/observability.py": "c18737c06bd0155f3bb6f79210624db651128d028b7aadc1811d920d3905f7ad",
+      "backend/app/hr_agent/personal_processing.py": "4f0d91ac3badfc1349cc1fda706c8334cc23193d131cf5ee522c2913fb4fe099",
+      "backend/app/hr_agent/proposals.py": "6234d27074e2d46dc3cbc7cff0d3cc88dc08469d7fa2efd745ca007b05234f1a",
+      "backend/app/hr_agent/readiness.py": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+      "backend/app/hr_agent/repository.py": "87febf7d6947813a27aeb6a4fe571e3ea85cbeb389a3af36b1c542040654a488",
+      "backend/app/hr_agent/repository_views.py": "80548f33d860671e7305245bb3dadad245d963dde17896306cd043eb5afaccec",
+      "backend/app/hr_agent/resources.py": "d797b3667de05bc9ee9babc7aa21beb96c7e781dba87473f2cc86da082bb5323",
+      "backend/app/hr_agent/results.py": "833d4040b199054a6fc486146c08e98d7381818116fa5e385b1a366de0c60ced",
+      "backend/app/hr_agent/routes.py": "d2f9fbb1ff67d92cfc42138d042df90c6e693014661d2cfb8bc08fa544b647ad",
+      "backend/app/hr_agent/runtime.py": "fcdefd831e26b33b818a2c375764496f4c5a19a6a18e21ebcb06b93f9f4d7d9f",
+      "backend/app/hr_agent/service.py": "9bb437b6d6e394ce2225e0a0262bb1ed61825bd29e5602d1b6839ffbf149d874",
+      "backend/app/hr_agent/standards.py": "2454012993fe24f477e468f2a7be755d02bd4626b21b7fee3b992f1749d0adda",
+      "backend/app/hr_agent/tools.py": "9961c6fa28da1e0578e7d486ad7dbfa939512ed9a9ddde41ce2d3404303d2e20",
+      "backend/app/hr_agent/types.py": "57fb60f0ec6eb38e57d86dbe1f03d2359d23ba81fc30395f821c33651a536abd",
+      "backend/app/hr_agent/work_files.py": "1540db61a58900aff6acb43c09adbd960a5be6b2b24532c8829870c50c1a95c7",
+      "backend/app/hr_agent/worker.py": "b10c582fd377cb18fa723d7db457e1f5d201463dc79f0506b2eb36f863da1d01",
+      "backend/app/hr_agent/worker_health.py": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3"
+    }
+  },
+  "runner_source_sha256": {
+    "backend/tests/helpers/hr_history_replay.py": "4c610bd4ff630010d23eb28f218dbbcb118ec5fc68a09d173be73645da13fb1a",
+    "backend/tests/test_hr_agent_history_replay.py": "199aca5205ceead8c39cc71a91ec1237e261837c81a42e5e860597cc1893ac47",
+    "backend/tools/hr_agent/build_knowledge_release.py": "bb8538e1f0366dca0e013d13831db651b0275d6979fd53b49490cfe29ea4c686"
+  },
+  "limitations": [
+    "synthetic adaptation, not verbatim history",
+    "no quality claim from ScriptModel",
+    "external login exchange and object store substituted"
+  ],
+  "knowledge": {
+    "role_release": "hr-07ae50d49fbca7c8e78cdd2b",
+    "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b",
+    "role_manifest_sha": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe"
+  },
+  "budget": {
+    "id": "test",
+    "service_limits": {
+      "model_calls": 64,
+      "total_tokens": 1200000,
+      "active_seconds": 1800
+    },
+    "limits": {
+      "model_calls": 32,
+      "total_tokens": 1200000,
+      "active_seconds": 1800
+    },
+    "reserve": {
+      "model_calls": 2,
+      "total_tokens": 32768,
+      "active_seconds": 30
+    },
+    "max_output_tokens": 16384,
+    "input_target_tokens": 50000,
+    "input_trigger_tokens": 70000,
+    "work_retention_seconds": 3600
+  },
+  "effective_configuration_revision": "8e6a863733cf3943b7828f9c718cd9c39665377e5d7c3480ca7d1dbbcc86433c",
+  "configuration_http": {
+    "status": 200,
+    "body": {
+      "budget_profile": "test",
+      "budget_limits": {
+        "model_calls": 32,
+        "total_tokens": 1200000,
+        "active_seconds": 1800
+      }
+    }
+  },
+  "security": {
+    "anonymous": 401,
+    "csrf": 403,
+    "origin": 403,
+    "wrong_owner": 404
+  },
+  "failure_type": "ValueError",
+  "source_final": {
+    "backend/app/hr_agent/__init__.py": "415fabafe27bb316a957b1a23e5c2162f65c2e02a2c9b93b248cf6e283c17031",
+    "backend/app/hr_agent/access.py": "238641d76c1234f03d4b4c997cd78ef4e1359e42dcc23780a826641d843de9f7",
+    "backend/app/hr_agent/candidates.py": "369de3b5c8b63712ef82dd131de96c512d7a52688c6aee3411c2673fe70943e0",
+    "backend/app/hr_agent/config.py": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2",
+    "backend/app/hr_agent/context.py": "3a15226b049d045379c90e50fdbbbf4f07e5516c977c86559ae46ed8913af012",
+    "backend/app/hr_agent/cutover.py": "1d933bfcc5069597d3f44174b24a46f3386987e4522bdbe5dd6af977d2389684",
+    "backend/app/hr_agent/diagnostics.py": "31c9f916869129f13038391118f1e19cf704a6842f3e47d649d35ce9f9e1d062",
+    "backend/app/hr_agent/interview_records.py": "756dbd243eee9b45b77866d2c3dac7064421f38f658ccde22a3d4d1476fc009c",
+    "backend/app/hr_agent/knowledge.py": "49600fe594cacaf255c316cb00ca89ffee7f4a29086b7f1b4e55826e53cb6b35",
+    "backend/app/hr_agent/material_authority.py": "18e66b8bf51e6f9e2bdbef56302a6e91b3b62bc971a0290f9564cff15f99becc",
+    "backend/app/hr_agent/material_parsing.py": "834f90fbcec0b21913f27d4c7aeab142daa0acff8692fcda26027543b4f18f3b",
+    "backend/app/hr_agent/materials.py": "09b544528109bd03b92469eb9a17cd8e2ff878f3b49a481a870b570e45254d26",
+    "backend/app/hr_agent/model.py": "0366ab25deb8069cc3cfe23eb7af7323ee3a86f7b31f82df21ff2a9bda309b58",
+    "backend/app/hr_agent/observability.py": "c18737c06bd0155f3bb6f79210624db651128d028b7aadc1811d920d3905f7ad",
+    "backend/app/hr_agent/personal_processing.py": "4f0d91ac3badfc1349cc1fda706c8334cc23193d131cf5ee522c2913fb4fe099",
+    "backend/app/hr_agent/proposals.py": "6234d27074e2d46dc3cbc7cff0d3cc88dc08469d7fa2efd745ca007b05234f1a",
+    "backend/app/hr_agent/readiness.py": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+    "backend/app/hr_agent/repository.py": "87febf7d6947813a27aeb6a4fe571e3ea85cbeb389a3af36b1c542040654a488",
+    "backend/app/hr_agent/repository_views.py": "80548f33d860671e7305245bb3dadad245d963dde17896306cd043eb5afaccec",
+    "backend/app/hr_agent/resources.py": "d797b3667de05bc9ee9babc7aa21beb96c7e781dba87473f2cc86da082bb5323",
+    "backend/app/hr_agent/results.py": "833d4040b199054a6fc486146c08e98d7381818116fa5e385b1a366de0c60ced",
+    "backend/app/hr_agent/routes.py": "d2f9fbb1ff67d92cfc42138d042df90c6e693014661d2cfb8bc08fa544b647ad",
+    "backend/app/hr_agent/runtime.py": "fcdefd831e26b33b818a2c375764496f4c5a19a6a18e21ebcb06b93f9f4d7d9f",
+    "backend/app/hr_agent/service.py": "9bb437b6d6e394ce2225e0a0262bb1ed61825bd29e5602d1b6839ffbf149d874",
+    "backend/app/hr_agent/standards.py": "2454012993fe24f477e468f2a7be755d02bd4626b21b7fee3b992f1749d0adda",
+    "backend/app/hr_agent/tools.py": "9961c6fa28da1e0578e7d486ad7dbfa939512ed9a9ddde41ce2d3404303d2e20",
+    "backend/app/hr_agent/types.py": "57fb60f0ec6eb38e57d86dbe1f03d2359d23ba81fc30395f821c33651a536abd",
+    "backend/app/hr_agent/work_files.py": "1540db61a58900aff6acb43c09adbd960a5be6b2b24532c8829870c50c1a95c7",
+    "backend/app/hr_agent/worker.py": "b10c582fd377cb18fa723d7db457e1f5d201463dc79f0506b2eb36f863da1d01",
+    "backend/app/hr_agent/worker_health.py": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3"
+  },
+  "source_changed_during_case": false
+}

@@ -1,0 +1,7 @@
+SYNTHETIC TEST FIXTURE - NOT REAL JOBS
+Company B
+Image 01 / 09 | Revision synthetic-v2.1
+Job code: OPT-01
+Optical Engineer
+Lens alignment and optical tolerance
+No other requirements supplied.

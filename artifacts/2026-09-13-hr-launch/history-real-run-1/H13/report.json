@@ -1,0 +1,2065 @@
+{
+  "case_id": "H13",
+  "status": "failed",
+  "model_boundary": "real_configured",
+  "turns": [
+    {
+      "number": 1,
+      "http": {
+        "submit": 201,
+        "replay": 200,
+        "work": 200
+      },
+      "materials": [
+        {
+          "path": "fixtures/H13/turn-01-context.txt",
+          "sha256": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a",
+          "version": "synthetic-v2.1",
+          "attachment_id": "2affce52-7096-473c-af88-be39d7e70736",
+          "ref": {
+            "kind": "material",
+            "id": "2affce52-7096-473c-af88-be39d7e70736:text",
+            "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+            "sha256": "e929fda25184d655906043e5d0c8c9a299738750d68acf154e1dce5a6611d6e2"
+          },
+          "http": 200
+        }
+      ],
+      "status": "failed",
+      "endpoint": "/api/hr/agent/works",
+      "request": {
+        "thread_id": null,
+        "text": "【本轮合成文字材料：虚构离职分析】包含分组统计、开放文本和缺失字段。请提出改进措施，区分数据事实、解释假设与需补证事项。",
+        "objects": [],
+        "references": [
+          {
+            "kind": "material",
+            "id": "2affce52-7096-473c-af88-be39d7e70736:text",
+            "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+            "sha256": "e929fda25184d655906043e5d0c8c9a299738750d68acf154e1dce5a6611d6e2"
+          }
+        ],
+        "budget_profile": "test"
+      },
+      "idempotency_key": "d56f053a-e4f4-431a-ac2d-81d50abd0fb5",
+      "persisted": {
+        "work": {
+          "work_id": "0b7ee1e0-e1d7-4c4e-b4aa-00427af13183",
+          "thread_id": "d0975c4c-65aa-468b-8ea6-d66a43668916",
+          "input_revision": 1,
+          "state": "completed",
+          "phase": "research",
+          "answer_state": "ended",
+          "result_refs": [],
+          "pending_question_id": null,
+          "block_reason": null,
+          "budget": {
+            "active_seconds": 108.005001,
+            "charged_calls": 5,
+            "charged_tokens": 167161,
+            "limits": {
+              "active_seconds": 1800,
+              "model_calls": 32,
+              "total_tokens": 1200000
+            },
+            "reserve": {
+              "active_seconds": 30,
+              "model_calls": 2,
+              "total_tokens": 32768
+            },
+            "revision": 1,
+            "usage_quality": "estimated"
+          },
+          "checkpoint": {
+            "catalog_refs": [],
+            "discovery_state": "open",
+            "input_revision": 1,
+            "last_note_entry_id": null,
+            "open_questions": [],
+            "pending_operation_ids": [],
+            "readings": [
+              {
+                "ref": {
+                  "id": "2affce52-7096-473c-af88-be39d7e70736:text",
+                  "kind": "material",
+                  "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+                  "sha256": "e929fda25184d655906043e5d0c8c9a299738750d68acf154e1dce5a6611d6e2"
+                },
+                "remaining_ranges": [],
+                "state": "returned",
+                "total_characters": 187
+              },
+              {
+                "ref": {
+                  "id": "evidence-informed-judgment",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                },
+                "remaining_ranges": [],
+                "state": "returned",
+                "total_characters": 1562
+              },
+              {
+                "ref": {
+                  "id": "2026-09-08-hr-methodology-sources",
+                  "kind": "method",
+                  "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                  "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                },
+                "remaining_ranges": [],
+                "state": "returned",
+                "total_characters": 3413
+              },
+              {
+                "ref": {
+                  "id": "requirement-calibration",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                },
+                "remaining_ranges": [],
+                "state": "returned",
+                "total_characters": 1787
+              }
+            ],
+            "revision": 12
+          },
+          "last_event_seq": 13
+        },
+        "messages": {
+          "items": [
+            {
+              "entry_id": "bb345835-e657-4d72-bd31-d88ff6d9216e",
+              "seq": 1,
+              "input_revision": 1,
+              "kind": "user",
+              "body": "【本轮合成文字材料：虚构离职分析】包含分组统计、开放文本和缺失字段。请提出改进措施，区分数据事实、解释假设与需补证事项。",
+              "options": [],
+              "question_id": null,
+              "visibility": "available"
+            },
+            {
+              "entry_id": "5b399eb0-c56a-4068-a6f6-a9ef0d00c18d",
+              "seq": 7,
+              "input_revision": 1,
+              "kind": "assistant",
+              "body": "已通读该合成材料全文（187 字，完整返回），并结合目录中的「循证判断」「要求校准与 AMO」两篇方法（含来源核验台账，确认其为工作台适配而非文献原文）。下面按你要求的三层区分给出改进措施。\n\n## 一、数据事实（材料明确记载的）\n\n1. 材料自带 `SYNTHETIC synthetic-v2.1` 标记，自述为「完全合成离职分析 v1」，窗口为「合成季度 Q1」——因此以下所有内容只针对**分析设计与口径**，不构成对任何真实部门的结论。\n2. 两个部门\"样本数\"为 12 和 8；主动离职记录分别 3 和 2；分母为窗口起始人数。\n3. 材料自己已声明：未提供期内入职数，**不能据此声称完整离职率**。这一自我约束是材料的优点，不是缺陷。\n4. 问卷回收 4 份，选项计数为发展 2、管理 1、通勤 1；材料明确说明**原始表仅允许选一项**，而现实可为多因素。\n5. 开放评论两条：期待反馈更及时；希望任务边界清楚。\n6. 材料明确说明：部门与评论**没有个体关联键**，且不提供个人明细。\n\n## 二、解释性假设（读者容易加上、但材料不支持）\n\n- **\"两部门风险相当\"**：3/12 与 2/8 数值上都是 25%，但分母不完整（缺期内入职）、样本极小——单人变动即造成 8.3–12.5 个百分点摆动。数值相等不等于风险相等，也不等于差异不存在。\n- **\"发展是首要离职动因\"**：这是「单选题 + 4 份回收」共同产生的测量结果，只能说明 4 位填答者在被迫单选时勾了什么，不能作为动因排序或权重。\n- **\"管理问题与'反馈不及时'是同一件事\"**：材料无关联键，评论与选项不能互相解释；也不能确定两条评论是否来自那 4 位填答者。\n- **\"回收率 80%\"（4/5）**：材料未说明问卷发放对象与发放份数，也未说明主动离职之外是否有其他离职；分母不成立。\n- **\"12 和 8 就是部门全员\"**：原文用词是\"样本数\"，抽样方式未说明；若为抽样，分母是样本而非部门。\n\n## 三、改进措施（按可执行性排列）\n\n**A. 口径与分母**\n1. 固定五个字段一起记录：窗口起始人数、期内入职、期内离职（分主动/被动/其他）、窗口末人数；离职率用平均在册人数或人日为分母，并同时公布原始计数。\n2. 明确\"样本数\"含义：是部门全员还是抽样；若抽样，写明抽样框与方法。\n3. 统一\"主动离职\"判定规则（以谁的记录为准、协商离职如何归类）。\n\n**B. 测量工具**\n4. 问卷改为「多选 + 指定一个主因 + 开放补充」，这样多因素信息不再被单选截断；保留旧单选数据时标注版本，不与新数据混算。\n5. 记录发放数、回收数、部分作答数与未回收数，使回收率可计算；对未回收保留为独立类别，不按已回收分布外推。\n\n**C. 缺失字段的编码**\n6. 区分四种\"空\"：真值为 0 / 未采集 / 采集但不披露 / 填答者跳过，各用独立代码。本材料的\"未提供期内入职数\"属于第二类，应在表头即可见。\n\n**D. 分析与呈现**\n7. 在保护个体的前提下增加**分析级分组键**（如\"部门×窗口\"标签），使评论可归组；同时设最小单元规则（如单元 <5 不单独披露），因为 n=2、3 的格子加上开放文本极易重识别。这是一个取舍，需与合规方共同定。\n8. 小样本下改用滚动 4 个季度或合并部门看趋势，并预先声明要比较什么，避免事后挑差异。\n9. 报告模板固定三栏：数据事实 / 解释假设 / 待补证据，并写明\"本期不能得出什么结论\"。\n\n**E. 补充证据源（用于检验那两条评论主题）**\n10. 针对\"反馈及时性\"和\"任务边界\"，用在职端证据交叉检验：在职脉搏调研同题项、留任访谈、一对一频次记录、职责与目标文档的实际存在情况；离职者陈述与在职者数据一致才提升结论强度。\n11. 补齐结构性字段：司龄、层级、岗位族、入职渠道、直线经理跨度——用于判断离职集中在哪个结构位置，而不是只看部门总数。\n\n**F. 使用边界（与招聘工作直接相关）**\n12. 本材料**不足以**支持修改岗位画像或招聘门槛。\"希望任务边界清楚\"更可能指向 AMO 中的\"机会/环境\"侧，把它反向写成候选人要求（如\"抗模糊能力强\"）属于把组织问题转成人才缺陷；即使未来数据更完整，离职者原话也不应被改写进通用岗位标准。\n13. 若后续用于招聘决策，需先说明该数据与具体岗位任务的关系；小样本相关性不能作因果。\n\n## 四、需补证事项（建议向谁核实）\n\n| 待补 | 可提供方 |\n|---|---|\n| 期内入职数、窗口末人数 | HRIS / HR 运营 |\n| \"样本数\"是全员还是抽样及抽样方法 | 分析编制方 |\n| 问卷发放对象与发放份数 | 离职流程负责人 |\n| 期内是否存在非主动离职 | HR 运营 |\n| 两条开放评论的来源渠道及是否来自那 4 位填答者 | 分析编制方 |\n| 合成 Q1 是否对应有季节性的真实窗口（如奖金后） | 需求方 |\n| 可接受的最小披露单元与关联键方案 | 合规 / 数据治理 |\n\n需要我把这份改进措施保存为可复用成果（research）吗？我也可以按上面 D-9 的三栏模板出一版空白报告模板，供下期离职分析直接套用。",
+              "options": [],
+              "question_id": null,
+              "visibility": "available"
+            }
+          ],
+          "next_after": 7
+        },
+        "results": [],
+        "attempts": [
+          {
+            "attempt_id": "a75dfb19-8001-4c32-aab2-eff8d827719a",
+            "ordinal": 1,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 36730,
+            "charged_tokens": 20346,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "tool_use",
+              "text": "I'll start by reading the material.",
+              "tool_calls": [
+                {
+                  "arguments": {
+                    "limit": 20000,
+                    "ref": {
+                      "id": "2affce52-7096-473c-af88-be39d7e70736:text",
+                      "kind": "material",
+                      "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+                      "sha256": "e929fda25184d655906043e5d0c8c9a299738750d68acf154e1dce5a6611d6e2"
+                    }
+                  },
+                  "name": "read_resource",
+                  "provider_call_id": "toolu_bdrk_016xB8K7xhhKRDSMJx5b8M8K"
+                },
+                {
+                  "arguments": {
+                    "kinds": [
+                      "method",
+                      "standard",
+                      "result",
+                      "intelligence"
+                    ]
+                  },
+                  "name": "list_resources",
+                  "provider_call_id": "toolu_bdrk_01AdgmRBBjmSCJuqPCVx7sjQ"
+                }
+              ],
+              "usage": {
+                "input_total": 9180,
+                "output_total": 275,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 9180,
+                  "output_tokens": 275,
+                  "output_tokens_details": {
+                    "thinking_tokens": 0
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          },
+          {
+            "attempt_id": "94068cc0-4756-4fac-a75c-8a202ce9c408",
+            "ordinal": 2,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 44035,
+            "charged_tokens": 27651,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "tool_use",
+              "text": "",
+              "tool_calls": [
+                {
+                  "arguments": {
+                    "limit": 20000,
+                    "ref": {
+                      "id": "evidence-informed-judgment",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                    }
+                  },
+                  "name": "read_resource",
+                  "provider_call_id": "toolu_bdrk_01DXKRHuwcXWdMs7KvSRMxF8"
+                }
+              ],
+              "usage": {
+                "input_total": 11957,
+                "output_total": 174,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 11957,
+                  "output_tokens": 174,
+                  "output_tokens_details": {
+                    "thinking_tokens": 22
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          },
+          {
+            "attempt_id": "51150f2a-eb84-454a-9d39-a37e6f94199a",
+            "ordinal": 3,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 49097,
+            "charged_tokens": 32713,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "tool_use",
+              "text": "",
+              "tool_calls": [
+                {
+                  "arguments": {
+                    "limit": 20000,
+                    "ref": {
+                      "id": "2026-09-08-hr-methodology-sources",
+                      "kind": "method",
+                      "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                      "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                    }
+                  },
+                  "name": "read_resource",
+                  "provider_call_id": "toolu_bdrk_0141aurJrwmsxjtTmea5ntJQ"
+                }
+              ],
+              "usage": {
+                "input_total": 13896,
+                "output_total": 309,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 13896,
+                  "output_tokens": 309,
+                  "output_tokens_details": {
+                    "thinking_tokens": 131
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          },
+          {
+            "attempt_id": "d5a0f7df-b897-4fe8-86e8-1776948d04b5",
+            "ordinal": 4,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 56774,
+            "charged_tokens": 40390,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "tool_use",
+              "text": "",
+              "tool_calls": [
+                {
+                  "arguments": {
+                    "limit": 20000,
+                    "ref": {
+                      "id": "requirement-calibration",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                    }
+                  },
+                  "name": "read_resource",
+                  "provider_call_id": "toolu_bdrk_016GaidFvKrfFH4APUXBc3db"
+                }
+              ],
+              "usage": {
+                "input_total": 17110,
+                "output_total": 287,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 17110,
+                  "output_tokens": 287,
+                  "output_tokens_details": {
+                    "thinking_tokens": 136
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          },
+          {
+            "attempt_id": "db78cef1-289c-4812-b9b0-ee4730eb227c",
+            "ordinal": 5,
+            "status": "committed",
+            "purpose": "work",
+            "usage_quality": "estimated",
+            "reserved_tokens": 62445,
+            "charged_tokens": 46061,
+            "response_model": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "status": "reported",
+              "identity_assurance": "provider_self_report_only"
+            },
+            "reply": {
+              "stop_reason": "end_turn",
+              "text": "已通读该合成材料全文（187 字，完整返回），并结合目录中的「循证判断」「要求校准与 AMO」两篇方法（含来源核验台账，确认其为工作台适配而非文献原文）。下面按你要求的三层区分给出改进措施。\n\n## 一、数据事实（材料明确记载的）\n\n1. 材料自带 `SYNTHETIC synthetic-v2.1` 标记，自述为「完全合成离职分析 v1」，窗口为「合成季度 Q1」——因此以下所有内容只针对**分析设计与口径**，不构成对任何真实部门的结论。\n2. 两个部门\"样本数\"为 12 和 8；主动离职记录分别 3 和 2；分母为窗口起始人数。\n3. 材料自己已声明：未提供期内入职数，**不能据此声称完整离职率**。这一自我约束是材料的优点，不是缺陷。\n4. 问卷回收 4 份，选项计数为发展 2、管理 1、通勤 1；材料明确说明**原始表仅允许选一项**，而现实可为多因素。\n5. 开放评论两条：期待反馈更及时；希望任务边界清楚。\n6. 材料明确说明：部门与评论**没有个体关联键**，且不提供个人明细。\n\n## 二、解释性假设（读者容易加上、但材料不支持）\n\n- **\"两部门风险相当\"**：3/12 与 2/8 数值上都是 25%，但分母不完整（缺期内入职）、样本极小——单人变动即造成 8.3–12.5 个百分点摆动。数值相等不等于风险相等，也不等于差异不存在。\n- **\"发展是首要离职动因\"**：这是「单选题 + 4 份回收」共同产生的测量结果，只能说明 4 位填答者在被迫单选时勾了什么，不能作为动因排序或权重。\n- **\"管理问题与'反馈不及时'是同一件事\"**：材料无关联键，评论与选项不能互相解释；也不能确定两条评论是否来自那 4 位填答者。\n- **\"回收率 80%\"（4/5）**：材料未说明问卷发放对象与发放份数，也未说明主动离职之外是否有其他离职；分母不成立。\n- **\"12 和 8 就是部门全员\"**：原文用词是\"样本数\"，抽样方式未说明；若为抽样，分母是样本而非部门。\n\n## 三、改进措施（按可执行性排列）\n\n**A. 口径与分母**\n1. 固定五个字段一起记录：窗口起始人数、期内入职、期内离职（分主动/被动/其他）、窗口末人数；离职率用平均在册人数或人日为分母，并同时公布原始计数。\n2. 明确\"样本数\"含义：是部门全员还是抽样；若抽样，写明抽样框与方法。\n3. 统一\"主动离职\"判定规则（以谁的记录为准、协商离职如何归类）。\n\n**B. 测量工具**\n4. 问卷改为「多选 + 指定一个主因 + 开放补充」，这样多因素信息不再被单选截断；保留旧单选数据时标注版本，不与新数据混算。\n5. 记录发放数、回收数、部分作答数与未回收数，使回收率可计算；对未回收保留为独立类别，不按已回收分布外推。\n\n**C. 缺失字段的编码**\n6. 区分四种\"空\"：真值为 0 / 未采集 / 采集但不披露 / 填答者跳过，各用独立代码。本材料的\"未提供期内入职数\"属于第二类，应在表头即可见。\n\n**D. 分析与呈现**\n7. 在保护个体的前提下增加**分析级分组键**（如\"部门×窗口\"标签），使评论可归组；同时设最小单元规则（如单元 <5 不单独披露），因为 n=2、3 的格子加上开放文本极易重识别。这是一个取舍，需与合规方共同定。\n8. 小样本下改用滚动 4 个季度或合并部门看趋势，并预先声明要比较什么，避免事后挑差异。\n9. 报告模板固定三栏：数据事实 / 解释假设 / 待补证据，并写明\"本期不能得出什么结论\"。\n\n**E. 补充证据源（用于检验那两条评论主题）**\n10. 针对\"反馈及时性\"和\"任务边界\"，用在职端证据交叉检验：在职脉搏调研同题项、留任访谈、一对一频次记录、职责与目标文档的实际存在情况；离职者陈述与在职者数据一致才提升结论强度。\n11. 补齐结构性字段：司龄、层级、岗位族、入职渠道、直线经理跨度——用于判断离职集中在哪个结构位置，而不是只看部门总数。\n\n**F. 使用边界（与招聘工作直接相关）**\n12. 本材料**不足以**支持修改岗位画像或招聘门槛。\"希望任务边界清楚\"更可能指向 AMO 中的\"机会/环境\"侧，把它反向写成候选人要求（如\"抗模糊能力强\"）属于把组织问题转成人才缺陷；即使未来数据更完整，离职者原话也不应被改写进通用岗位标准。\n13. 若后续用于招聘决策，需先说明该数据与具体岗位任务的关系；小样本相关性不能作因果。\n\n## 四、需补证事项（建议向谁核实）\n\n| 待补 | 可提供方 |\n|---|---|\n| 期内入职数、窗口末人数 | HRIS / HR 运营 |\n| \"样本数\"是全员还是抽样及抽样方法 | 分析编制方 |\n| 问卷发放对象与发放份数 | 离职流程负责人 |\n| 期内是否存在非主动离职 | HR 运营 |\n| 两条开放评论的来源渠道及是否来自那 4 位填答者 | 分析编制方 |\n| 合成 Q1 是否对应有季节性的真实窗口（如奖金后） | 需求方 |\n| 可接受的最小披露单元与关联键方案 | 合规 / 数据治理 |\n\n需要我把这份改进措施保存为可复用成果（research）吗？我也可以按上面 D-9 的三栏模板出一版空白报告模板，供下期离职分析直接套用。",
+              "tool_calls": [],
+              "usage": {
+                "input_total": 19300,
+                "output_total": 4654,
+                "quality": "reported",
+                "raw": {
+                  "_response_metadata": {
+                    "identity_assurance": "provider_self_report_only",
+                    "reported_models": [
+                      "claude-opus-5"
+                    ]
+                  },
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 0
+                  },
+                  "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 0,
+                  "input_tokens": 19300,
+                  "output_tokens": 4654,
+                  "output_tokens_details": {
+                    "thinking_tokens": 2497
+                  },
+                  "service_tier": "standard"
+                }
+              }
+            }
+          }
+        ],
+        "tools": [
+          {
+            "operation_id": "2bdcc080-4fba-4e66-9900-ea48b93be3a7",
+            "attempt_id": "a75dfb19-8001-4c32-aab2-eff8d827719a",
+            "namespace": "tool:read_resource",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "coverage_complete": true,
+                "coverage_notes": [],
+                "end": 187,
+                "next_offset": null,
+                "offset": 0,
+                "read_id": "7d453934-9ffe-4333-9a1e-a480ee78f94e",
+                "ref": {
+                  "id": "2affce52-7096-473c-af88-be39d7e70736:text",
+                  "kind": "material",
+                  "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+                  "sha256": "e929fda25184d655906043e5d0c8c9a299738750d68acf154e1dce5a6611d6e2"
+                },
+                "text": "SYNTHETIC synthetic-v2.1\n完全合成离职分析 v1：观察窗口为合成季度Q1，两个部门样本数为12和8；主动离职记录分别3和2，分母为窗口起始人数，未提供期内入职数，不能据此声称完整离职率。离职原因问卷回收4份：发展2、管理1、通勤1；可多因素但原始表仅允许选一项。开放评论：期待反馈更及时；希望任务边界清楚。部门与评论没有个体关联键；不提供个人明细。\n",
+                "total_characters": 187
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "a1442f1b-8663-4adb-862c-194d3975a22a",
+            "attempt_id": "a75dfb19-8001-4c32-aab2-eff8d827719a",
+            "namespace": "tool:list_resources",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "items": [
+                  {
+                    "description": "来源核验与适配边界",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "2026-09-08-hr-methodology-sources",
+                      "kind": "method",
+                      "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                      "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "公开 JD 阅读案例与证据边界",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "2026-09-09-jd-reading-cases",
+                      "kind": "method",
+                      "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                      "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "岗位原文理解：已复核案例来源",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "comparison-and-learning",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "候选人比较与反馈",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "competency-and-profile",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "胜任力与人才画像",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "evidence-informed-judgment",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "循证判断",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "job-and-context",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "岗位与业务情境",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "requirement-calibration",
+                      "kind": "method",
+                      "revision": "2",
+                      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "要求校准与 AMO",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "selection-and-work-samples",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "甄选与工作样本",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  },
+                  {
+                    "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                    "objects": [],
+                    "observed_at": null,
+                    "original_ref": null,
+                    "ref": {
+                      "id": "sourcing-and-transfer",
+                      "kind": "method",
+                      "revision": "1",
+                      "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                    },
+                    "representation": "authored_text",
+                    "state": "available",
+                    "title": "人才来源与能力迁移",
+                    "visibility": {
+                      "kind": "public",
+                      "subject_id": null
+                    }
+                  }
+                ],
+                "next_cursor": null
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "550c3384-5f08-4687-8a89-aa1e44d7be6a",
+            "attempt_id": "94068cc0-4756-4fac-a75c-8a202ce9c408",
+            "namespace": "tool:read_resource",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "coverage_complete": true,
+                "coverage_notes": [],
+                "end": 1562,
+                "next_offset": null,
+                "offset": 0,
+                "read_id": "d0df0f44-a069-49e1-aca8-764ceaacc52c",
+                "ref": {
+                  "id": "evidence-informed-judgment",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                },
+                "text": "---\nid: evidence-informed-judgment\ntitle: 循证判断\nrevision: 2\ndomains: [recruiting, hr-analytics]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 循证判断：让结论强度不超过证据\n\n## 帮助理解什么\n\n本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。\n\n## 核心关系\n\nCEBMa 将循证实践概括为审慎、明确、合理地使用最佳可得证据，并强调可靠性和对当前情境的相关性。它提出 Ask、Acquire、Appraise、Aggregate、Apply、Assess 六个活动。对招聘而言，这不是机械流程，而是提醒：先形成可回答的问题，寻找多类证据，评价质量，整合一致与冲突，再作条件化判断并观察结果。\n\n证据可来自候选人陈述、可核材料、评估观察、组织数据、科学研究、专业经验及相关人员观点。不同来源能互相支持、质疑或澄清。数量多不代表质量高，缺少反证也不等于证实。\n\n## 如何结合证据思考\n\n对每项主张询问来源、与岗位任务的关系、时效、独立性和替代解释。团队成果需要和个人行动、决策权及外部条件分开。表达结论时可以使用“支持”“存在相关线索”“与另一证据冲突”“尚无法判断”等与证据强度相称的语言。\n\n## 让反证、冗余支持和材料缺陷各自发挥作用\n\n多个岗位可能独立支持同一判断，也可能只是复用一段招聘文案。重复文本不能按出现次数累加为更强事实；不同任务提供的支持则可能相互补充。删除一个引用后仍有其他依据支持结论，属于证据冗余，不是分析不依赖证据。要反问的是：承重证据整体失去支持后，结论是否仍被无依据地保留。\n\n主动寻找能收窄结论的材料。某个研究岗说数据生产由专门团队负责，同批却有算法岗同时参与采集与训练，说明前者是局部职责安排；不能推广成所有算法岗都不做数据。存在独立数采岗位可以与自述相互支持，但缺少共同团队或项目标识，仍不能确认它就是所指的支撑团队。\n\n记录缺陷与业务事实要分别解释。正文放错字段但文字完整时，可以恢复对任务的理解并指出原始位置；只有占位符或缺文时，需要补材料。公开岗位没有写某项职责不能证明组织没有该能力，简历没有写某段经历也不能直接认定候选人不具备；同时，未知也不能被包装成已证明匹配。说明当前能判断什么、还缺哪类相关证据。\n\n本节是招聘归档分析的适配总结，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不将这些具体案例归于文献作者。\n\n## 适用与局限\n\n适合候选人证据分析、人才来源假设、画像校准和多人比较。现实中常无法获得理想证据，评价本身也需要判断；循证不会消除价值取舍，也不能把小样本相关性变成因果结论。\n\n## 可结合的视角\n\n几乎可与所有资源结合。它尤其能约束“能力迁移”的乐观推断、“结构化甄选”的分数幻觉，以及比较时将未知当作不满足的倾向。\n\n## 案例\n\n候选人称“主导项目使营收增长 30%”。可确认的只有团队营收和候选人在项目中的任职时间。合理结论不是“已证明商业能力”，而是有相关线索；还需理解基线、个人决策、其他团队贡献、市场变化及候选人能提供的具体产物。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，完整 7 页，重点 pp.1–4。\n- CIPD, *Fair selection: An evidence review*，甄选程序与候选人体验 pp.5–16。\n",
+                "total_characters": 1562
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "b9eb527d-14e7-463f-97c8-e49ffa7eef55",
+            "attempt_id": "51150f2a-eb84-454a-9d39-a37e6f94199a",
+            "namespace": "tool:read_resource",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "coverage_complete": true,
+                "coverage_notes": [],
+                "end": 3413,
+                "next_offset": null,
+                "offset": 0,
+                "read_id": "cf4a3dc7-bbaf-4415-875f-cf0f4642e11d",
+                "ref": {
+                  "id": "2026-09-08-hr-methodology-sources",
+                  "kind": "method",
+                  "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                  "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                },
+                "text": "# HR 场景方法论来源核验台账（2026-09-08）\n\n本台账记录首批内容包实际读取范围。内容是面向工作台的中文提炼和组合，不把工作台流程冒充为来源机构或 Armstrong 的原有完整方法。访问日期均为 2026-09-08。\n\n## 核验结果\n\n| 来源 | 实际核验范围 | 用于支持 | 边界 |\n| --- | --- | --- | --- |\n| U.S. OPM, *Job Analysis* | 完整读取官方主页面正文，包括任务、胜任力、二者联系及用途；确认页面指向 six-step checklist 和 DEOH Appendix D，但本次没有把未逐页核对的 Appendix D 写成步骤出处 | 岗位分析应建立任务、能力及其岗位相关联系 | 资源中的分析组织方式是工作台适配，不称为 OPM 原文步骤 |\n| U.S. OPM, *Structured Interviews: A Practical Guide* (2008) | 完整核对 36 个 PDF 页：导论 pp.3–4，开发流程 pp.5–14，实施 pp.15–20，附录 pp.21–36 | 共同问题与量表、能力选择、行为/情境题、锚点、追问、试测、面试官培训、独立记录与评分误差 | 美国联邦语境的法律表述不移植为中国企业规则；示例均为自写 |\n| CEBMa, Briner, *The Basics of Evidence-Based Practice* v2 | 完整核对 7 个 PDF 页；重点为 pp.1–3 的可靠性、相关性与多来源证据，pp.3–4 的 Ask、Acquire、Appraise、Aggregate、Apply、Assess | 证据评价、冲突与未知、条件化决策及反馈复盘 | 招聘证据卡和比较矩阵是工作台适配，不是 CEBMa 发布的招聘模板 |\n| O*NET Resource Center, *The O*NET Content Model* | 完整核对网页的信息层级和定义：Worker Characteristics、Worker Requirements、Experience Requirements、Occupational Requirements、Occupation-Specific Information | 区分任务、工作活动、知识、技能、能力、工作情境；构造任务—能力和迁移提问 | O*NET 是美国职业信息框架，不能替代组织内部岗位事实或直接设门槛 |\n| U.S. OPM, *Work Samples and Simulations* | 完整核对页面的 Overview、Assessment Method Considerations 与 Work Samples 内容 | 工作样本复制实际岗位任务并观察行为/成果；考察入职时应具备能力；注意开发和实施负担 | 目录中的样本必须试用；不得称为已验证测评工具或索取可用于公司的免费劳动 |\n| CIPD, *Fair selection: An evidence review* (2023) | 完整核对 20 个 PDF 页：导论 pp.2–4，公平框架与研究 pp.5–12，实践建议 pp.13–16，方法 pp.17–18，参考文献 pp.19–20 | 岗位相关性、共同程序、信息透明、表达机会、解释与评估者培训；候选人公平感与后续行为有关 | 综述中的地区制度不写成中国法律要求；不将小效应写成确定因果 |\n| CIPD, *People performance: An evidence review* (2022) | 完整核对 27 个 PDF 页：绩效定义 pp.5–7，测量 pp.8–13，AMO pp.14–17，结论与建议 pp.18–22，方法和参考文献 pp.23–27 | 任务绩效会随岗位演化；测量适配后需验证；AMO 用于能力、动机、机会三向诊断 | AMO 不作为候选人录用总分或精确因果公式 |\n| Armstrong, *Handbook of Human Resource Management Practice*, 13th ed. | 检查本地 `/Users/neo/Developer/work/Armstrongs Handbook of Human Resource Management Practice_1.pdf`：共 440 个 PDF 页，正文止于印刷页 406；核对版权页、目录及可用范围内战略匹配、AMO、胜任力相关节选 | 仅作术语和整体框架背景 | 文件缺失正文 406 页之后内容；未读取第 50、51 章等缺失章节，未据此归因本目录七份工作台资源 |\n\n## 主张到来源的定位\n\n- 岗位分析连接任务、胜任力及二者关系：OPM *Job Analysis* 主页面正文；O*NET Content Model 的 Occupation-Specific Information 与 Worker Requirements。\n- 结构化面试让候选人接受相同核心问题并用共同量表评价：OPM 指南 pp.3–4；开发步骤、锚点与追问见 pp.5–14；实施和评分见 pp.15–20。\n- 行为锚点应描述不同熟练水平的具体行为：OPM 指南 pp.8–12；目录中的中文锚点为适配内容。\n- 循证实践需评价证据可靠性和情境相关性，并整合多个来源：CEBMa pp.1–4；六步骤见 pp.3–4。\n- 工作样本应尽量模拟实际岗位任务、观察行为或成果，并测入职时已应具备的能力：OPM *Work Samples and Simulations* 页面相关小节。\n- 甄选公平涉及岗位相关性、一致实施、透明信息、表达机会和评估者行为：CIPD *Fair selection* pp.5–16。\n- AMO 可提示能力、动机和机会问题，但各因素及绩效关系复杂：CIPD *People performance* pp.14–17。目录只将其用于诊断提问。\n\n## 适配声明与资源 ID\n\n以下七个 ID 与资源文件名、frontmatter 和索引一致。七份内容均经过中文提炼、情境组合和工作台适配，不声称是来源机构发布的同名完整方法。首批示例为虚构业务情境，不含真实候选人隐私。2026-09-09 新增的岗位原文理解适配来自已复核招聘归档，另见[案例来源](2026-09-09-jd-reading-cases.md)；不归为上述文献原文。\n\n| 资源 ID | 主要来源与适配范围 |\n| --- | --- |\n| `job-and-context` | OPM Job Analysis、O*NET、Armstrong 可见节选；组织岗位目的、任务和情境的分析视角 |\n| `requirement-calibration` | CEBMa、CIPD People performance、Fair selection；组合需求、供给、吸引力和甄选诊断，AMO 只作提问视角 |\n| `competency-and-profile` | OPM Job Analysis、O*NET、OPM 结构化面试指南；把岗位要求关联到可观察行为和证据 |\n| `sourcing-and-transfer` | O*NET、CEBMa；组合相邻任务、能力迁移与补证分析 |\n| `evidence-informed-judgment` | CEBMa、CIPD Fair selection；组织事实、陈述、推断和冲突证据的分析 |\n| `selection-and-work-samples` | OPM 结构化面试指南、Work Samples、CIPD Fair selection；中文场景与样本设计思路 |\n| `comparison-and-learning` | CEBMa、OPM 结构化面试指南、CIPD People performance；组合候选人证据比较与反馈学习 |\n\n具体主张仍以各篇正文的来源及上表实际核验范围为准，不能因为资源引用了某份文献，就把整篇适配内容归为该文献原文。\n",
+                "total_characters": 3413
+              },
+              "error": null,
+              "status": "ok"
+            }
+          },
+          {
+            "operation_id": "c0edaab2-a5e6-4d12-9792-733b4d652278",
+            "attempt_id": "d5a0f7df-b897-4fe8-86e8-1776948d04b5",
+            "namespace": "tool:read_resource",
+            "status": "committed",
+            "receipt": {
+              "data": {
+                "coverage_complete": true,
+                "coverage_notes": [],
+                "end": 1787,
+                "next_offset": null,
+                "offset": 0,
+                "read_id": "f3e2bab4-a8c8-48e1-b73e-710d8847721c",
+                "ref": {
+                  "id": "requirement-calibration",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                },
+                "text": "---\nid: requirement-calibration\ntitle: 要求校准与 AMO\nrevision: 2\ndomains: [recruiting, performance]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 要求校准与 AMO：不要把所有问题都变成人才缺陷\n\n## 帮助理解什么\n\n当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。\n\n## 核心关系\n\n长期招不到人至少可能涉及四类解释：需求定义是否真实且清楚；目标人才供给是否存在；薪酬、地点、工作方式、发展机会和雇主信息是否有吸引力；甄选流程是否因门槛、速度或评价偏差误杀。四类因素可能同时发生，招聘时长本身不能证明“市场没人”。\n\nAMO 从能力、动机和机会三个方向拓宽诊断：一个人是否会做、是否愿意投入、环境是否允许他做出结果。它适合提出问题，不适合把候选人压缩成 A×M×O 总分或宣称单一因素造成绩效。\n\n## 如何结合证据思考\n\n查看漏斗各阶段的数量、等待时间、退出原因和评价分歧，并把组织数据与招聘人员、用人经理及候选人的观点并置。对每项要求追问业务理由、对应任务、失败风险和可接受的替代证据。把“必须”“有帮助”“可以培养”和“只是惯例”看作待论证判断，而非固定字段。\n\n如果建议调整，可以优先提出可逆、可观察的试验，例如重新表达岗位价值、抽样复核被筛掉材料、允许相邻行业以工作样本补证。结果只能支持或削弱当前假设，不能自动改写已确认画像。\n\n## 区分任务需要与文案写出的要求强度\n\n能力与任务相关，不等于已经证明它必须在入职前具备；原文明确给出的优先、可培养或替代经历也不能被自动升级成硬门槛。理解条件时，同时看它支撑什么交付、原文要求达到何种独立程度，以及用户是否已经确认适用条件。不要把一段宽技术清单读成每一项都要精通。\n\n若同一能力在同一条广告中既列为任职要求又列为加分，当前文本没有稳定说明缺少该经历是否仍可评估。可以继续分析任务相关性和候选材料，但不能默默选择更严或更松的一段作结论。只有当歧义影响当前判断时，才向岗位方澄清，例如这项经历是入职即须独立交付，还是允许在相邻经验基础上学习。\n\n相邻岗位若将任职要求与加分分开表达，可以帮助定位当前记录的局部问题，不代表它们的门槛可直接移植。岗位跨度、经验入口或用工形式不同，也可能合理地产生不同要求；不能把差异一律判为矛盾。\n\n用户说明目标岗位的实际条件后，应按该澄清继续当前工作，保留它相对原文改变了什么；分析建议本身不修改长期标准。切换岗位或业务团队时重新判断适用性，不能沿用上一岗位的硬门槛。\n\n本节依据真实文案冲突归纳，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)。这是思考材料，不是按“必需”“优先”等关键词执行的筛选程序。\n\n## 适用与局限\n\n适合长期空缺、漏斗异常、条件互相矛盾、用人经理反复加码等情境。漏斗数据可能受季节、渠道和岗位变化影响；候选人退出原因也常不完整。AMO 各因素相互作用，不能当精确因果模型。\n\n## 可结合的视角\n\n可与“岗位与业务情境”核查要求依据，与“人才来源与能力迁移”扩展供给假设，与“循证判断”评价漏斗解释。不存在必须依次采用的顺序。\n\n## 案例\n\n一个数据产品经理岗位空缺三个月。简历数量并不少，但业务初筛淘汰率很高；“同业五年”无法对应某项独有任务，而薪酬与地点的退出反馈也明显。较好的理解是：供给、要求和吸引力都有待验证。允许相邻行业候选人用复杂 B2B 发现与落地证据补充，只是一个可审阅假设，最终效果仍需观察录用和入职表现。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，pp.1–4。\n- CIPD, *People performance: An evidence review*，AMO 讨论 pp.14–17。\n- CIPD, *Fair selection: An evidence review*，公平框架与实践建议 pp.5–16。\n",
+                "total_characters": 1787
+              },
+              "error": null,
+              "status": "ok"
+            }
+          }
+        ]
+      },
+      "failure_type": "ValueError",
+      "failure_code": "required saved result absent",
+      "http_trace": [
+        {
+          "method": "POST",
+          "path": "/api/v1/attachments/uploads",
+          "status": 201
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/attachments/uploads/ec3bfae4-4766-4354-83c1-b529eab373fa/content",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/attachments/uploads/ec3bfae4-4766-4354-83c1-b529eab373fa/complete",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/materials/2affce52-7096-473c-af88-be39d7e70736",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "status": 403
+        },
+        {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "status": 403
+        },
+        {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/works/0b7ee1e0-e1d7-4c4e-b4aa-00427af13183",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/works/0b7ee1e0-e1d7-4c4e-b4aa-00427af13183",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/hr/agent/works/0b7ee1e0-e1d7-4c4e-b4aa-00427af13183/messages",
+          "status": 200
+        }
+      ],
+      "model_observations": [
+        {
+          "attempt_id": "f2b35a41-02b3-4d16-bb11-c80967fe1f49",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 8985,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 8985,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 155,
+                "output_tokens_details": {
+                  "thinking_tokens": 70
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 4.864715124480426
+        },
+        {
+          "attempt_id": "68678257-2f7d-4320-a569-ae132b13112d",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 11126,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 2,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 11126,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 872,
+                "output_tokens_details": {
+                  "thinking_tokens": 173
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 20.267907083034515
+        },
+        {
+          "attempt_id": "dc9b5ba7-5cea-431b-825e-16d6171fb328",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12102,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12102,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 429,
+                "output_tokens_details": {
+                  "thinking_tokens": 221
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 11.120997374877334
+        },
+        {
+          "attempt_id": "7fac0505-a7c7-4fd3-9e58-f7daba4e9bc0",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12688,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12688,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1505,
+                "output_tokens_details": {
+                  "thinking_tokens": 496
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 24.987243334762752
+        },
+        {
+          "attempt_id": "67d8d3fe-ccdb-444b-b8f9-2d7986b21c38",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15482,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15482,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 863,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 15.94830625038594
+        },
+        {
+          "attempt_id": "09657d22-4224-4f77-a407-93da9808d916",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 16573,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 16573,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 645,
+                "output_tokens_details": {
+                  "thinking_tokens": 413
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 13.947094624862075
+        },
+        {
+          "attempt_id": "e423efcc-f785-424e-82bc-5e6b2344e6e9",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 17220,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 5,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 17220,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1737,
+                "output_tokens_details": {
+                  "thinking_tokens": 1449
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 31.567890958860517
+        },
+        {
+          "attempt_id": "79e67d93-1e6a-4074-80e1-0d9c409e2026",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 21580,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 21580,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 6209,
+                "output_tokens_details": {
+                  "thinking_tokens": 1921
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 101.92652979213744
+        },
+        {
+          "attempt_id": "175ae982-0897-47b5-88b8-ff2bad341bc5",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 30202,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 30202,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1175,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 21.93137183226645
+        },
+        {
+          "attempt_id": "d691b57c-c508-4e1f-8635-15c546b75633",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 9206,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 9206,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 292,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 5.00703320838511
+        },
+        {
+          "attempt_id": "4e83dffa-af5b-4260-9538-a733532b1c69",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12299,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12299,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 324,
+                "output_tokens_details": {
+                  "thinking_tokens": 47
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 6.762260750867426
+        },
+        {
+          "attempt_id": "cd82dc0a-1e4c-4052-b0ef-82ad1f514699",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15899,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15899,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 343,
+                "output_tokens_details": {
+                  "thinking_tokens": 192
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 9.125303291715682
+        },
+        {
+          "attempt_id": "c2ed5274-188e-4f4c-80e0-2eff41e49657",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 18088,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 18088,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 5021,
+                "output_tokens_details": {
+                  "thinking_tokens": 1039
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 105.42524562496692
+        },
+        {
+          "attempt_id": "c21a36b1-9e48-48b0-82ce-baa02156c625",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 25303,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 25303,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 940,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 21.484395457431674
+        },
+        {
+          "attempt_id": "4dc3f4cf-d83f-4e1c-b6e3-d80831880793",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 9216,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 9216,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 287,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 4.44343616720289
+        },
+        {
+          "attempt_id": "c9647ac6-20de-432b-bf47-8095a132e064",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12442,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 12442,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 333,
+                "output_tokens_details": {
+                  "thinking_tokens": 36
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 4.972264832817018
+        },
+        {
+          "attempt_id": "e9e2ceb6-97b8-4ed3-9226-d196bdce69df",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15882,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 6,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 15882,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 3851,
+                "output_tokens_details": {
+                  "thinking_tokens": 758
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 75.4434249587357
+        },
+        {
+          "attempt_id": "529023dd-8779-4583-a1a8-e521108dbf51",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 22016,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 22016,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 725,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 16.78062041569501
+        },
+        {
+          "attempt_id": "a75dfb19-8001-4c32-aab2-eff8d827719a",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 9180,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 1,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 9180,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 275,
+                "output_tokens_details": {
+                  "thinking_tokens": 0
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 4.211686166934669
+        },
+        {
+          "attempt_id": "94068cc0-4756-4fac-a75c-8a202ce9c408",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 11957,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 11957,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 174,
+                "output_tokens_details": {
+                  "thinking_tokens": 22
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 3.5620010001584888
+        },
+        {
+          "attempt_id": "51150f2a-eb84-454a-9d39-a37e6f94199a",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 13896,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 13896,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 309,
+                "output_tokens_details": {
+                  "thinking_tokens": 131
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 7.722019082866609
+        },
+        {
+          "attempt_id": "d5a0f7df-b897-4fe8-86e8-1776948d04b5",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 17110,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 3,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 17110,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 287,
+                "output_tokens_details": {
+                  "thinking_tokens": 136
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "tool_use"
+            }
+          ],
+          "complete": true,
+          "seconds": 7.000671291723847
+        },
+        {
+          "attempt_id": "db78cef1-289c-4812-b9b0-ee4730eb227c",
+          "usage": [
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "_response_metadata": {
+                  "reported_models": [
+                    "claude-opus-5"
+                  ],
+                  "identity_assurance": "provider_self_report_only"
+                }
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 19300,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 0
+                },
+                "output_tokens": 4,
+                "service_tier": "standard"
+              }
+            },
+            {
+              "provider_protocol": "anthropic_messages_sse",
+              "raw": {
+                "input_tokens": 19300,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 4654,
+                "output_tokens_details": {
+                  "thinking_tokens": 2497
+                }
+              }
+            }
+          ],
+          "stops": [
+            {
+              "reason": "end_turn"
+            }
+          ],
+          "complete": true,
+          "seconds": 82.94046645890921
+        }
+      ]
+    }
+  ],
+  "corpus_sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+  "manifest_sha256": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739",
+  "source": {
+    "head": "ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7",
+    "files": {
+      "backend/app/hr_agent/__init__.py": "415fabafe27bb316a957b1a23e5c2162f65c2e02a2c9b93b248cf6e283c17031",
+      "backend/app/hr_agent/access.py": "238641d76c1234f03d4b4c997cd78ef4e1359e42dcc23780a826641d843de9f7",
+      "backend/app/hr_agent/candidates.py": "369de3b5c8b63712ef82dd131de96c512d7a52688c6aee3411c2673fe70943e0",
+      "backend/app/hr_agent/config.py": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2",
+      "backend/app/hr_agent/context.py": "3a15226b049d045379c90e50fdbbbf4f07e5516c977c86559ae46ed8913af012",
+      "backend/app/hr_agent/cutover.py": "1d933bfcc5069597d3f44174b24a46f3386987e4522bdbe5dd6af977d2389684",
+      "backend/app/hr_agent/diagnostics.py": "31c9f916869129f13038391118f1e19cf704a6842f3e47d649d35ce9f9e1d062",
+      "backend/app/hr_agent/interview_records.py": "756dbd243eee9b45b77866d2c3dac7064421f38f658ccde22a3d4d1476fc009c",
+      "backend/app/hr_agent/knowledge.py": "49600fe594cacaf255c316cb00ca89ffee7f4a29086b7f1b4e55826e53cb6b35",
+      "backend/app/hr_agent/material_authority.py": "18e66b8bf51e6f9e2bdbef56302a6e91b3b62bc971a0290f9564cff15f99becc",
+      "backend/app/hr_agent/material_parsing.py": "834f90fbcec0b21913f27d4c7aeab142daa0acff8692fcda26027543b4f18f3b",
+      "backend/app/hr_agent/materials.py": "09b544528109bd03b92469eb9a17cd8e2ff878f3b49a481a870b570e45254d26",
+      "backend/app/hr_agent/model.py": "0366ab25deb8069cc3cfe23eb7af7323ee3a86f7b31f82df21ff2a9bda309b58",
+      "backend/app/hr_agent/observability.py": "c18737c06bd0155f3bb6f79210624db651128d028b7aadc1811d920d3905f7ad",
+      "backend/app/hr_agent/personal_processing.py": "4f0d91ac3badfc1349cc1fda706c8334cc23193d131cf5ee522c2913fb4fe099",
+      "backend/app/hr_agent/proposals.py": "6234d27074e2d46dc3cbc7cff0d3cc88dc08469d7fa2efd745ca007b05234f1a",
+      "backend/app/hr_agent/readiness.py": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+      "backend/app/hr_agent/repository.py": "87febf7d6947813a27aeb6a4fe571e3ea85cbeb389a3af36b1c542040654a488",
+      "backend/app/hr_agent/repository_views.py": "80548f33d860671e7305245bb3dadad245d963dde17896306cd043eb5afaccec",
+      "backend/app/hr_agent/resources.py": "d797b3667de05bc9ee9babc7aa21beb96c7e781dba87473f2cc86da082bb5323",
+      "backend/app/hr_agent/results.py": "833d4040b199054a6fc486146c08e98d7381818116fa5e385b1a366de0c60ced",
+      "backend/app/hr_agent/routes.py": "d2f9fbb1ff67d92cfc42138d042df90c6e693014661d2cfb8bc08fa544b647ad",
+      "backend/app/hr_agent/runtime.py": "fcdefd831e26b33b818a2c375764496f4c5a19a6a18e21ebcb06b93f9f4d7d9f",
+      "backend/app/hr_agent/service.py": "9bb437b6d6e394ce2225e0a0262bb1ed61825bd29e5602d1b6839ffbf149d874",
+      "backend/app/hr_agent/standards.py": "2454012993fe24f477e468f2a7be755d02bd4626b21b7fee3b992f1749d0adda",
+      "backend/app/hr_agent/tools.py": "9961c6fa28da1e0578e7d486ad7dbfa939512ed9a9ddde41ce2d3404303d2e20",
+      "backend/app/hr_agent/types.py": "57fb60f0ec6eb38e57d86dbe1f03d2359d23ba81fc30395f821c33651a536abd",
+      "backend/app/hr_agent/work_files.py": "1540db61a58900aff6acb43c09adbd960a5be6b2b24532c8829870c50c1a95c7",
+      "backend/app/hr_agent/worker.py": "b10c582fd377cb18fa723d7db457e1f5d201463dc79f0506b2eb36f863da1d01",
+      "backend/app/hr_agent/worker_health.py": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3"
+    }
+  },
+  "runner_source_sha256": {
+    "backend/tests/helpers/hr_history_replay.py": "4c610bd4ff630010d23eb28f218dbbcb118ec5fc68a09d173be73645da13fb1a",
+    "backend/tests/test_hr_agent_history_replay.py": "199aca5205ceead8c39cc71a91ec1237e261837c81a42e5e860597cc1893ac47",
+    "backend/tools/hr_agent/build_knowledge_release.py": "bb8538e1f0366dca0e013d13831db651b0275d6979fd53b49490cfe29ea4c686"
+  },
+  "limitations": [
+    "synthetic adaptation, not verbatim history",
+    "no quality claim from ScriptModel",
+    "external login exchange and object store substituted"
+  ],
+  "knowledge": {
+    "role_release": "hr-07ae50d49fbca7c8e78cdd2b",
+    "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b",
+    "role_manifest_sha": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe"
+  },
+  "budget": {
+    "id": "test",
+    "service_limits": {
+      "model_calls": 64,
+      "total_tokens": 1200000,
+      "active_seconds": 1800
+    },
+    "limits": {
+      "model_calls": 32,
+      "total_tokens": 1200000,
+      "active_seconds": 1800
+    },
+    "reserve": {
+      "model_calls": 2,
+      "total_tokens": 32768,
+      "active_seconds": 30
+    },
+    "max_output_tokens": 16384,
+    "input_target_tokens": 50000,
+    "input_trigger_tokens": 70000,
+    "work_retention_seconds": 3600
+  },
+  "effective_configuration_revision": "8e6a863733cf3943b7828f9c718cd9c39665377e5d7c3480ca7d1dbbcc86433c",
+  "configuration_http": {
+    "status": 200,
+    "body": {
+      "budget_profile": "test",
+      "budget_limits": {
+        "model_calls": 32,
+        "total_tokens": 1200000,
+        "active_seconds": 1800
+      }
+    }
+  },
+  "security": {
+    "anonymous": 401,
+    "csrf": 403,
+    "origin": 403,
+    "wrong_owner": 404
+  },
+  "failure_type": "ValueError",
+  "source_final": {
+    "backend/app/hr_agent/__init__.py": "415fabafe27bb316a957b1a23e5c2162f65c2e02a2c9b93b248cf6e283c17031",
+    "backend/app/hr_agent/access.py": "238641d76c1234f03d4b4c997cd78ef4e1359e42dcc23780a826641d843de9f7",
+    "backend/app/hr_agent/candidates.py": "369de3b5c8b63712ef82dd131de96c512d7a52688c6aee3411c2673fe70943e0",
+    "backend/app/hr_agent/config.py": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2",
+    "backend/app/hr_agent/context.py": "3a15226b049d045379c90e50fdbbbf4f07e5516c977c86559ae46ed8913af012",
+    "backend/app/hr_agent/cutover.py": "1d933bfcc5069597d3f44174b24a46f3386987e4522bdbe5dd6af977d2389684",
+    "backend/app/hr_agent/diagnostics.py": "31c9f916869129f13038391118f1e19cf704a6842f3e47d649d35ce9f9e1d062",
+    "backend/app/hr_agent/interview_records.py": "756dbd243eee9b45b77866d2c3dac7064421f38f658ccde22a3d4d1476fc009c",
+    "backend/app/hr_agent/knowledge.py": "49600fe594cacaf255c316cb00ca89ffee7f4a29086b7f1b4e55826e53cb6b35",
+    "backend/app/hr_agent/material_authority.py": "18e66b8bf51e6f9e2bdbef56302a6e91b3b62bc971a0290f9564cff15f99becc",
+    "backend/app/hr_agent/material_parsing.py": "834f90fbcec0b21913f27d4c7aeab142daa0acff8692fcda26027543b4f18f3b",
+    "backend/app/hr_agent/materials.py": "09b544528109bd03b92469eb9a17cd8e2ff878f3b49a481a870b570e45254d26",
+    "backend/app/hr_agent/model.py": "0366ab25deb8069cc3cfe23eb7af7323ee3a86f7b31f82df21ff2a9bda309b58",
+    "backend/app/hr_agent/observability.py": "c18737c06bd0155f3bb6f79210624db651128d028b7aadc1811d920d3905f7ad",
+    "backend/app/hr_agent/personal_processing.py": "4f0d91ac3badfc1349cc1fda706c8334cc23193d131cf5ee522c2913fb4fe099",
+    "backend/app/hr_agent/proposals.py": "6234d27074e2d46dc3cbc7cff0d3cc88dc08469d7fa2efd745ca007b05234f1a",
+    "backend/app/hr_agent/readiness.py": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+    "backend/app/hr_agent/repository.py": "87febf7d6947813a27aeb6a4fe571e3ea85cbeb389a3af36b1c542040654a488",
+    "backend/app/hr_agent/repository_views.py": "80548f33d860671e7305245bb3dadad245d963dde17896306cd043eb5afaccec",
+    "backend/app/hr_agent/resources.py": "d797b3667de05bc9ee9babc7aa21beb96c7e781dba87473f2cc86da082bb5323",
+    "backend/app/hr_agent/results.py": "833d4040b199054a6fc486146c08e98d7381818116fa5e385b1a366de0c60ced",
+    "backend/app/hr_agent/routes.py": "d2f9fbb1ff67d92cfc42138d042df90c6e693014661d2cfb8bc08fa544b647ad",
+    "backend/app/hr_agent/runtime.py": "fcdefd831e26b33b818a2c375764496f4c5a19a6a18e21ebcb06b93f9f4d7d9f",
+    "backend/app/hr_agent/service.py": "9bb437b6d6e394ce2225e0a0262bb1ed61825bd29e5602d1b6839ffbf149d874",
+    "backend/app/hr_agent/standards.py": "2454012993fe24f477e468f2a7be755d02bd4626b21b7fee3b992f1749d0adda",
+    "backend/app/hr_agent/tools.py": "9961c6fa28da1e0578e7d486ad7dbfa939512ed9a9ddde41ce2d3404303d2e20",
+    "backend/app/hr_agent/types.py": "57fb60f0ec6eb38e57d86dbe1f03d2359d23ba81fc30395f821c33651a536abd",
+    "backend/app/hr_agent/work_files.py": "1540db61a58900aff6acb43c09adbd960a5be6b2b24532c8829870c50c1a95c7",
+    "backend/app/hr_agent/worker.py": "b10c582fd377cb18fa723d7db457e1f5d201463dc79f0506b2eb36f863da1d01",
+    "backend/app/hr_agent/worker_health.py": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3"
+  },
+  "source_changed_during_case": false
+}

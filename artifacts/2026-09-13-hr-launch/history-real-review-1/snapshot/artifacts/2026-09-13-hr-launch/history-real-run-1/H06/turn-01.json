@@ -1,0 +1,1746 @@
+{
+  "number": 1,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [
+    {
+      "path": "fixtures/H06/turn-01-context.txt",
+      "sha256": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d",
+      "version": "synthetic-v2.1",
+      "attachment_id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737",
+      "ref": {
+        "kind": "material",
+        "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+        "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+        "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+      },
+      "http": 200
+    }
+  ],
+  "status": "completed",
+  "endpoint": "/api/hr/agent/works",
+  "request": {
+    "thread_id": null,
+    "text": "【本轮合成文字材料：明确虚构的候选人Q通话记录】记录包含本人项目动作、团队成果、未知归因和职业偏好。请形成供招聘负责人审阅的人才报告。",
+    "objects": [],
+    "references": [
+      {
+        "kind": "material",
+        "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+        "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+        "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+      }
+    ],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "9c66c0fe-b312-414c-bf7e-1d6f2f240700",
+  "persisted": {
+    "work": {
+      "work_id": "5279bc15-d556-42d2-bbd6-b00f95b6e008",
+      "thread_id": "4cdcdafd-b257-46cc-b55c-eeea4ece7c24",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "85d2bbc7-e467-4adf-a6a2-b55af876f3f7",
+          "revision": "21de1414-3152-4efa-877d-c450e0842ada",
+          "sha256": "4365f1695ce6a126dc0d46dfb39e719a82df03133b3d580a306e4a7c3c1c8484"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 103.924516,
+        "charged_calls": 4,
+        "charged_tokens": 139248,
+        "limits": {
+          "active_seconds": 1800,
+          "model_calls": 32,
+          "total_tokens": 1200000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+              "kind": "material",
+              "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+              "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 213
+          },
+          {
+            "ref": {
+              "id": "evidence-informed-judgment",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 1562
+          },
+          {
+            "ref": {
+              "id": "selection-and-work-samples",
+              "kind": "method",
+              "revision": "1",
+              "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 1133
+          }
+        ],
+        "revision": 11
+      },
+      "last_event_seq": 13
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "c8e1924e-d779-4f6d-b8f1-34409d0566e5",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "【本轮合成文字材料：明确虚构的候选人Q通话记录】记录包含本人项目动作、团队成果、未知归因和职业偏好。请形成供招聘负责人审阅的人才报告。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "f46615d7-0142-47b9-90c1-e35f50b517c6",
+          "seq": 7,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "报告已保存为 candidate_assessment（标题：候选人 Q 通话记录人才报告（合成材料，无岗位基准））。要点如下：\n\n**材料状况**：仅一份 213 字的明确虚构通话逐字稿，已读完；材料自述无其他录音或简历。本次未指定岗位，也没有可用的岗位正式标准，因此报告不做匹配/达标结论、不给分、不排名。\n\n**记录中分层可确认的内容**\n- Q 自述本人动作：写传感器回放脚本、写异常分类说明、参与对齐日志（\"参与\"，非自述独立负责）。\n- 团队成果：间歇丢帧后来被团队修复。\n- 明确未知：Q 自己的脚本在该修复中占多少贡献——他明说不知道，且统计结果尚未给他。\n- 明确由他人做：硬件复测由同事完成。\n- 偏好：想做更深入的系统诊断；带人意愿\"暂时没想好\"（既非拒绝也非有意愿）。\n\n**两处容易读错、报告中特意收窄的地方**\n- \"同事做硬件复测\"只限定该动作，不能推成\"根因验证由同事主导\"或\"Q 在根因分析上无作用\"。\n- \"统计结果还没给我\"只说明数据未回到 Q 手上，既不证明脚本有效，也不证明无效；丢帧被修复与 Q 脚本的因果贡献是两件事。\n\n**线索而非结论**：Q 主动区分团队成果与个人贡献，是一条归因谨慎的线索，可继续观察；但不足以认定其诚实或可信度已被证实。\n\n**核验建议**（说明了为何适合本次缺口，且不写成唯一途径）：可脱敏产物+讲解、同岗位统一的工作样本、若干条不预设\"没做\"的中性行为追问、经同意的背景印证；带人问题应先讲清岗位期待再谈。\n\n如果你能提供目标岗位及其关键任务，我可以在此基础上写出与该岗位能力对应的面试方案；也可以先按这些追问点整理成一页访谈提纲。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 7
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [],
+        "body": "## 0. 材料与适用边界\n\n- 唯一材料：一份标注为 SYNTHETIC / 完全虚构的通话逐字稿（213 字），已读完全文，无未读区间。材料自述\"无真实个人来源；没有其他录音或简历可用\"。\n- 因此本报告是对该文本内容的阅读与提问设计，不构成对任何真实个人的就业判断；不给总分、不排名。\n- 本次未指定岗位对象，也未读到任何岗位正式标准。以下不做\"是否匹配 / 是否达标\"的结论，只区分：记录中明确的自述、明确的他人动作、明确的未知，以及记录未涉及的部分。\n- 逐字稿是 Q 本人在通话中的说法。\"记录里写了某句话\"与\"该句话已被独立证实\"是两种证据；本次没有任何可核产物、同事说明或数据支持任一条自述。\n\n## 1. 记录中可确认的内容（限于这次通话）\n\n按\"访谈者问—Q 答\"的原文逻辑分层：\n\n| 事项 | 记录中的状态 | 陈述者 |\n|---|---|---|\n| 编写传感器回放脚本、编写异常分类说明 | Q 自述本人完成，无产物或第三方佐证 | Q |\n| 间歇丢帧被修复 | 记录明确\"团队后来修复了\"，属团队成果 | Q |\n| Q 的脚本对该修复的贡献占比 | 明确未知：Q 自述\"不知道自己的脚本贡献占多少\"，且\"统计结果还没有给我\" | Q（承认未知） |\n| 根因验证中的硬件复测 | 记录明确由同事做 | Q |\n| 日志对齐 | Q 自述本人参与（参与，非自述独立负责） | Q |\n| 下一步职业方向 | 想做更深入的系统诊断 | Q |\n| 是否希望带人 | 明确未决定：\"暂时没想好\"（不是拒绝，也不是有意愿） | Q |\n\n两点措辞上的准确性：\n- 记录只说同事做硬件复测、Q 参与对齐日志，没有说谁主导整个根因验证过程；不能把\"Q 不做硬件复测\"读成\"根因验证由同事主导\"或\"Q 在根因分析上没有作用\"。\n- \"统计结果还没有给我\"说明的是数据尚未回到 Q 手上，不能读成脚本无效果，也不能读成有效果。丢帧确实被修复这一点，与 Q 脚本的因果贡献是两件事。\n\n## 2. 记录未涉及、因此保持未知的部分\n\n以下均为\"材料未记载\"，不等于\"Q 没做过\"，追问时不应预设缺失：\n1. 回放脚本的技术栈、规模、输入数据形式、是谁提出要做、Q 是否独立设计与实现。\n2. 异常分类说明的用途、分类维度依据、是否被团队采纳或用于后续排查。\n3. \"参与对齐日志\"具体做了什么（时间戳对齐、跨源比对、判读结论等）以及与硬件复测结论如何互相印证。\n4. Q 是否曾独立完成过一次端到端的问题定位与验证闭环——记录既没有说做过，也没有说没做过。\n5. 项目背景：产品阶段、团队规模、Q 的角色定位、时间跨度、有无导师或评审机制。\n6. 除此项目外的其他经历（无简历，完全未知）。\n\n## 3. 值得注意的两个线索（均待核验）\n\n- Q 在被问效果时主动区分了\"团队修复了问题\"与\"我不知道自己贡献占多少\"，并说明数据尚未拿到。这是一条**归因谨慎的线索**，适合在后续访谈中继续观察；但仅凭这一句不能认定 Q 诚实、不夸大或可信度已被证实。\n- Q 表达的方向（更深入的系统诊断）与记录中的动作（回放脚本、异常分类、日志对齐）方向一致；这只说明兴趣与近期工作内容不矛盾，不说明深入诊断能力已具备。管理意愿处于未定状态，若岗位对带人有要求，这属于需要在了解岗位后再谈的开放项，而非当下的减分项。\n\n## 4. 建议的核验方式（供招聘负责人取舍）\n\n缺口集中在\"自述动作缺少可核产物\"与\"个人贡献与团队成果混合\"两处，因此优先采用能直接观察工作过程的手段，但这不是唯一可行方式：\n\n1. **产物+讲解**：请 Q 带一份可脱敏的回放脚本或异常分类说明（或在无法带出时口头重述其结构与取舍），围绕\"为什么这样分类\"\"脚本处理了哪些边界情况\"追问。可观察设计思路与技术深度，比让其自评贡献更可靠。\n2. **同岗位统一的工作样本**：给所有候选人同一份含间歇性异常的模拟日志/回放数据与同样时限，请其说明排查顺序、假设与验证方式。用共同评价维度记录行为，控制任务量，不索取可直接使用的成果。样本只覆盖有限任务，仍需与经历叙述共同理解。\n3. **中性行为追问（不预设未做）**，例如：\n   - \"这个回放脚本是怎么立项的？从提出到可用，你负责了哪些部分，哪些部分是别人做的？\"\n   - \"异常分类说明后来被怎么使用了？你知道的使用情况是什么？\"\n   - \"对齐日志时你具体看哪些字段、如何判断某段是异常？你的判读和同事的硬件复测结论是怎么互相印证的？\"\n   - \"有没有哪次问题定位是你从现象一直跟到结论的？请讲一次；如果没有，最接近的一次到了哪一步？\"\n   - 关于统计结果：可请 Q 说明当时是通过什么方式判断修复有效、他期望看到哪些指标（问其判断依据，而非追究为何没拿到数据）。\n4. **背景印证（如流程允许且获候选人同意）**：向该项目的同事/主管核实脚本归属与作用，是解决贡献归因未知最直接的途径。\n5. 岗位若涉及带人：先说明岗位对带人的实际期待，再听 Q 的想法，避免把\"暂时没想好\"当成结论记录下来。\n\n## 5. 当前结论强度\n\n- 可以说：记录呈现了传感器数据回放、异常分类与日志对齐方向的自述动作，以及一次团队层面的丢帧修复；Q 对自身贡献占比明确表示未知。\n- 不能说：Q 具备（或不具备）独立系统诊断能力；Q 的脚本是丢帧修复的原因；Q 的可信度已被证实；Q 适合或不适合某岗位。\n- 下一步取决于招聘负责人是否给出目标岗位与其关键任务；在没有岗位基准前，本报告只能作为访谈线索与核验设计，不能作为录用或淘汰依据。",
+        "changes": [],
+        "kind": "candidate_assessment",
+        "objects": [],
+        "preceding_refs": [],
+        "source_refs": [
+          {
+            "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+            "kind": "material",
+            "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+            "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+          },
+          {
+            "id": "evidence-informed-judgment",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+          },
+          {
+            "id": "selection-and-work-samples",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+          }
+        ],
+        "title": "候选人 Q 通话记录人才报告（合成材料，无岗位基准）",
+        "ref": {
+          "kind": "result",
+          "id": "85d2bbc7-e467-4adf-a6a2-b55af876f3f7",
+          "revision": "21de1414-3152-4efa-877d-c450e0842ada",
+          "sha256": "4365f1695ce6a126dc0d46dfb39e719a82df03133b3d580a306e4a7c3c1c8484"
+        },
+        "access_state": "available"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt_id": "4dc3f4cf-d83f-4e1c-b6e3-d80831880793",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36768,
+        "charged_tokens": 20384,
+        "response_model": {
+          "reported_models": [
+            "claude-opus-5"
+          ],
+          "status": "reported",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_use",
+          "text": "I'll start by reading the call record material.",
+          "tool_calls": [
+            {
+              "arguments": {
+                "limit": 20000,
+                "ref": {
+                  "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+                  "kind": "material",
+                  "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+                  "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "toolu_bdrk_01YFQh7AYQCgNHygSH51KMs2"
+            },
+            {
+              "arguments": {
+                "kinds": [
+                  "material",
+                  "method",
+                  "result",
+                  "intelligence",
+                  "standard"
+                ]
+              },
+              "name": "list_resources",
+              "provider_call_id": "toolu_bdrk_01KjRLjdcrsaeMzQgttVDhPU"
+            }
+          ],
+          "usage": {
+            "input_total": 9216,
+            "output_total": 287,
+            "quality": "reported",
+            "raw": {
+              "_response_metadata": {
+                "identity_assurance": "provider_self_report_only",
+                "reported_models": [
+                  "claude-opus-5"
+                ]
+              },
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 0
+              },
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0,
+              "input_tokens": 9216,
+              "output_tokens": 287,
+              "output_tokens_details": {
+                "thinking_tokens": 0
+              },
+              "service_tier": "standard"
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "c9647ac6-20de-432b-bf47-8095a132e064",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 44974,
+        "charged_tokens": 28590,
+        "response_model": {
+          "reported_models": [
+            "claude-opus-5"
+          ],
+          "status": "reported",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_use",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "limit": 20000,
+                "ref": {
+                  "id": "evidence-informed-judgment",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "toolu_bdrk_01EJoA9LEqt69BwvBe78siib"
+            },
+            {
+              "arguments": {
+                "limit": 20000,
+                "ref": {
+                  "id": "selection-and-work-samples",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "toolu_bdrk_017ujJSXB2tHKPCaZa8R4bjX"
+            }
+          ],
+          "usage": {
+            "input_total": 12442,
+            "output_total": 333,
+            "quality": "reported",
+            "raw": {
+              "_response_metadata": {
+                "identity_assurance": "provider_self_report_only",
+                "reported_models": [
+                  "claude-opus-5"
+                ]
+              },
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 0
+              },
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0,
+              "input_tokens": 12442,
+              "output_tokens": 333,
+              "output_tokens_details": {
+                "thinking_tokens": 36
+              },
+              "service_tier": "standard"
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "e9e2ceb6-97b8-4ed3-9226-d196bdce69df",
+        "ordinal": 3,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 53959,
+        "charged_tokens": 37575,
+        "response_model": {
+          "reported_models": [
+            "claude-opus-5"
+          ],
+          "status": "reported",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_use",
+          "text": "已读完材料全文（213 字，虚构合成逐字稿，无其他录音或简历），并按证据边界整理成报告草稿保存。",
+          "tool_calls": [
+            {
+              "arguments": {
+                "base_standard_ref": null,
+                "basis": [],
+                "body": "## 0. 材料与适用边界\n\n- 唯一材料：一份标注为 SYNTHETIC / 完全虚构的通话逐字稿（213 字），已读完全文，无未读区间。材料自述\"无真实个人来源；没有其他录音或简历可用\"。\n- 因此本报告是对该文本内容的阅读与提问设计，不构成对任何真实个人的就业判断；不给总分、不排名。\n- 本次未指定岗位对象，也未读到任何岗位正式标准。以下不做\"是否匹配 / 是否达标\"的结论，只区分：记录中明确的自述、明确的他人动作、明确的未知，以及记录未涉及的部分。\n- 逐字稿是 Q 本人在通话中的说法。\"记录里写了某句话\"与\"该句话已被独立证实\"是两种证据；本次没有任何可核产物、同事说明或数据支持任一条自述。\n\n## 1. 记录中可确认的内容（限于这次通话）\n\n按\"访谈者问—Q 答\"的原文逻辑分层：\n\n| 事项 | 记录中的状态 | 陈述者 |\n|---|---|---|\n| 编写传感器回放脚本、编写异常分类说明 | Q 自述本人完成，无产物或第三方佐证 | Q |\n| 间歇丢帧被修复 | 记录明确\"团队后来修复了\"，属团队成果 | Q |\n| Q 的脚本对该修复的贡献占比 | 明确未知：Q 自述\"不知道自己的脚本贡献占多少\"，且\"统计结果还没有给我\" | Q（承认未知） |\n| 根因验证中的硬件复测 | 记录明确由同事做 | Q |\n| 日志对齐 | Q 自述本人参与（参与，非自述独立负责） | Q |\n| 下一步职业方向 | 想做更深入的系统诊断 | Q |\n| 是否希望带人 | 明确未决定：\"暂时没想好\"（不是拒绝，也不是有意愿） | Q |\n\n两点措辞上的准确性：\n- 记录只说同事做硬件复测、Q 参与对齐日志，没有说谁主导整个根因验证过程；不能把\"Q 不做硬件复测\"读成\"根因验证由同事主导\"或\"Q 在根因分析上没有作用\"。\n- \"统计结果还没有给我\"说明的是数据尚未回到 Q 手上，不能读成脚本无效果，也不能读成有效果。丢帧确实被修复这一点，与 Q 脚本的因果贡献是两件事。\n\n## 2. 记录未涉及、因此保持未知的部分\n\n以下均为\"材料未记载\"，不等于\"Q 没做过\"，追问时不应预设缺失：\n1. 回放脚本的技术栈、规模、输入数据形式、是谁提出要做、Q 是否独立设计与实现。\n2. 异常分类说明的用途、分类维度依据、是否被团队采纳或用于后续排查。\n3. \"参与对齐日志\"具体做了什么（时间戳对齐、跨源比对、判读结论等）以及与硬件复测结论如何互相印证。\n4. Q 是否曾独立完成过一次端到端的问题定位与验证闭环——记录既没有说做过，也没有说没做过。\n5. 项目背景：产品阶段、团队规模、Q 的角色定位、时间跨度、有无导师或评审机制。\n6. 除此项目外的其他经历（无简历，完全未知）。\n\n## 3. 值得注意的两个线索（均待核验）\n\n- Q 在被问效果时主动区分了\"团队修复了问题\"与\"我不知道自己贡献占多少\"，并说明数据尚未拿到。这是一条**归因谨慎的线索**，适合在后续访谈中继续观察；但仅凭这一句不能认定 Q 诚实、不夸大或可信度已被证实。\n- Q 表达的方向（更深入的系统诊断）与记录中的动作（回放脚本、异常分类、日志对齐）方向一致；这只说明兴趣与近期工作内容不矛盾，不说明深入诊断能力已具备。管理意愿处于未定状态，若岗位对带人有要求，这属于需要在了解岗位后再谈的开放项，而非当下的减分项。\n\n## 4. 建议的核验方式（供招聘负责人取舍）\n\n缺口集中在\"自述动作缺少可核产物\"与\"个人贡献与团队成果混合\"两处，因此优先采用能直接观察工作过程的手段，但这不是唯一可行方式：\n\n1. **产物+讲解**：请 Q 带一份可脱敏的回放脚本或异常分类说明（或在无法带出时口头重述其结构与取舍），围绕\"为什么这样分类\"\"脚本处理了哪些边界情况\"追问。可观察设计思路与技术深度，比让其自评贡献更可靠。\n2. **同岗位统一的工作样本**：给所有候选人同一份含间歇性异常的模拟日志/回放数据与同样时限，请其说明排查顺序、假设与验证方式。用共同评价维度记录行为，控制任务量，不索取可直接使用的成果。样本只覆盖有限任务，仍需与经历叙述共同理解。\n3. **中性行为追问（不预设未做）**，例如：\n   - \"这个回放脚本是怎么立项的？从提出到可用，你负责了哪些部分，哪些部分是别人做的？\"\n   - \"异常分类说明后来被怎么使用了？你知道的使用情况是什么？\"\n   - \"对齐日志时你具体看哪些字段、如何判断某段是异常？你的判读和同事的硬件复测结论是怎么互相印证的？\"\n   - \"有没有哪次问题定位是你从现象一直跟到结论的？请讲一次；如果没有，最接近的一次到了哪一步？\"\n   - 关于统计结果：可请 Q 说明当时是通过什么方式判断修复有效、他期望看到哪些指标（问其判断依据，而非追究为何没拿到数据）。\n4. **背景印证（如流程允许且获候选人同意）**：向该项目的同事/主管核实脚本归属与作用，是解决贡献归因未知最直接的途径。\n5. 岗位若涉及带人：先说明岗位对带人的实际期待，再听 Q 的想法，避免把\"暂时没想好\"当成结论记录下来。\n\n## 5. 当前结论强度\n\n- 可以说：记录呈现了传感器数据回放、异常分类与日志对齐方向的自述动作，以及一次团队层面的丢帧修复；Q 对自身贡献占比明确表示未知。\n- 不能说：Q 具备（或不具备）独立系统诊断能力；Q 的脚本是丢帧修复的原因；Q 的可信度已被证实；Q 适合或不适合某岗位。\n- 下一步取决于招聘负责人是否给出目标岗位与其关键任务；在没有岗位基准前，本报告只能作为访谈线索与核验设计，不能作为录用或淘汰依据。",
+                "changes": [],
+                "expected_revision": null,
+                "kind": "candidate_assessment",
+                "objects": [],
+                "preceding_refs": [],
+                "result_id": null,
+                "source_refs": [
+                  {
+                    "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+                    "kind": "material",
+                    "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+                    "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+                  },
+                  {
+                    "id": "evidence-informed-judgment",
+                    "kind": "method",
+                    "revision": "2",
+                    "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                  },
+                  {
+                    "id": "selection-and-work-samples",
+                    "kind": "method",
+                    "revision": "1",
+                    "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                  }
+                ],
+                "title": "候选人 Q 通话记录人才报告（合成材料，无岗位基准）"
+              },
+              "name": "save_result",
+              "provider_call_id": "toolu_bdrk_01Mf1r9MFUrppjmCfVfoeFBp"
+            }
+          ],
+          "usage": {
+            "input_total": 15882,
+            "output_total": 3851,
+            "quality": "reported",
+            "raw": {
+              "_response_metadata": {
+                "identity_assurance": "provider_self_report_only",
+                "reported_models": [
+                  "claude-opus-5"
+                ]
+              },
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 0
+              },
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0,
+              "input_tokens": 15882,
+              "output_tokens": 3851,
+              "output_tokens_details": {
+                "thinking_tokens": 758
+              },
+              "service_tier": "standard"
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "529023dd-8779-4583-a1a8-e521108dbf51",
+        "ordinal": 4,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 69083,
+        "charged_tokens": 52699,
+        "response_model": {
+          "reported_models": [
+            "claude-opus-5"
+          ],
+          "status": "reported",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "end_turn",
+          "text": "报告已保存为 candidate_assessment（标题：候选人 Q 通话记录人才报告（合成材料，无岗位基准））。要点如下：\n\n**材料状况**：仅一份 213 字的明确虚构通话逐字稿，已读完；材料自述无其他录音或简历。本次未指定岗位，也没有可用的岗位正式标准，因此报告不做匹配/达标结论、不给分、不排名。\n\n**记录中分层可确认的内容**\n- Q 自述本人动作：写传感器回放脚本、写异常分类说明、参与对齐日志（\"参与\"，非自述独立负责）。\n- 团队成果：间歇丢帧后来被团队修复。\n- 明确未知：Q 自己的脚本在该修复中占多少贡献——他明说不知道，且统计结果尚未给他。\n- 明确由他人做：硬件复测由同事完成。\n- 偏好：想做更深入的系统诊断；带人意愿\"暂时没想好\"（既非拒绝也非有意愿）。\n\n**两处容易读错、报告中特意收窄的地方**\n- \"同事做硬件复测\"只限定该动作，不能推成\"根因验证由同事主导\"或\"Q 在根因分析上无作用\"。\n- \"统计结果还没给我\"只说明数据未回到 Q 手上，既不证明脚本有效，也不证明无效；丢帧被修复与 Q 脚本的因果贡献是两件事。\n\n**线索而非结论**：Q 主动区分团队成果与个人贡献，是一条归因谨慎的线索，可继续观察；但不足以认定其诚实或可信度已被证实。\n\n**核验建议**（说明了为何适合本次缺口，且不写成唯一途径）：可脱敏产物+讲解、同岗位统一的工作样本、若干条不预设\"没做\"的中性行为追问、经同意的背景印证；带人问题应先讲清岗位期待再谈。\n\n如果你能提供目标岗位及其关键任务，我可以在此基础上写出与该岗位能力对应的面试方案；也可以先按这些追问点整理成一页访谈提纲。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 22016,
+            "output_total": 725,
+            "quality": "reported",
+            "raw": {
+              "_response_metadata": {
+                "identity_assurance": "provider_self_report_only",
+                "reported_models": [
+                  "claude-opus-5"
+                ]
+              },
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 0
+              },
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0,
+              "input_tokens": 22016,
+              "output_tokens": 725,
+              "output_tokens_details": {
+                "thinking_tokens": 0
+              },
+              "service_tier": "standard"
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "b153b2bd-3e24-4165-9bc8-e8bb0917b0e5",
+        "attempt_id": "4dc3f4cf-d83f-4e1c-b6e3-d80831880793",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 213,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "d29e2a80-7743-4eb5-8202-56e46b320a3d",
+            "ref": {
+              "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+              "kind": "material",
+              "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+              "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+            },
+            "text": "SYNTHETIC synthetic-v2.1\n完全虚构通话逐字稿 v1：访谈者：你具体做了什么？Q：我写了传感器回放脚本和异常分类说明。访谈者：效果呢？Q：团队后来修复了间歇丢帧，但我不知道自己的脚本贡献占多少；统计结果还没有给我。访谈者：谁做根因验证？Q：同事做硬件复测，我参与对齐日志。访谈者：希望下一份工作怎样？Q：想做更深入的系统诊断，能否带人暂时没想好。以上为新编材料，无真实个人来源；没有其他录音或简历可用。\n",
+            "total_characters": 213
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "edd2bf1a-66d3-48c8-9080-3cd3faec8680",
+        "attempt_id": "4dc3f4cf-d83f-4e1c-b6e3-d80831880793",
+        "namespace": "tool:list_resources",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "items": [
+              {
+                "description": "来源核验与适配边界",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "2026-09-08-hr-methodology-sources",
+                  "kind": "method",
+                  "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                  "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "公开 JD 阅读案例与证据边界",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "2026-09-09-jd-reading-cases",
+                  "kind": "method",
+                  "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                  "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "岗位原文理解：已复核案例来源",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "comparison-and-learning",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "候选人比较与反馈",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "competency-and-profile",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "胜任力与人才画像",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "evidence-informed-judgment",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "循证判断",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "用户为本次工作指定的材料正文",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": {
+                  "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:original",
+                  "kind": "material",
+                  "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d",
+                  "sha256": "a2248c692020cbdac6245e051009da1ede62bb9b1a695c777b3395c209206ad7"
+                },
+                "ref": {
+                  "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+                  "kind": "material",
+                  "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+                  "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+                },
+                "representation": "parsed_text",
+                "state": "available",
+                "title": "已选材料",
+                "visibility": {
+                  "kind": "private",
+                  "subject_id": "f0a6c3fe-e92f-497b-b504-1485bf66f41e"
+                }
+              },
+              {
+                "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "job-and-context",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "岗位与业务情境",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "requirement-calibration",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "要求校准与 AMO",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "selection-and-work-samples",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "甄选与工作样本",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "sourcing-and-transfer",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "人才来源与能力迁移",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              }
+            ],
+            "next_cursor": null
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "34f9b125-d0f5-432a-969a-7f82ed34ecf2",
+        "attempt_id": "c9647ac6-20de-432b-bf47-8095a132e064",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 1562,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "754417e3-02f9-4f7e-a79a-817409d3309b",
+            "ref": {
+              "id": "evidence-informed-judgment",
+              "kind": "method",
+              "revision": "2",
+              "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+            },
+            "text": "---\nid: evidence-informed-judgment\ntitle: 循证判断\nrevision: 2\ndomains: [recruiting, hr-analytics]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 循证判断：让结论强度不超过证据\n\n## 帮助理解什么\n\n本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。\n\n## 核心关系\n\nCEBMa 将循证实践概括为审慎、明确、合理地使用最佳可得证据，并强调可靠性和对当前情境的相关性。它提出 Ask、Acquire、Appraise、Aggregate、Apply、Assess 六个活动。对招聘而言，这不是机械流程，而是提醒：先形成可回答的问题，寻找多类证据，评价质量，整合一致与冲突，再作条件化判断并观察结果。\n\n证据可来自候选人陈述、可核材料、评估观察、组织数据、科学研究、专业经验及相关人员观点。不同来源能互相支持、质疑或澄清。数量多不代表质量高，缺少反证也不等于证实。\n\n## 如何结合证据思考\n\n对每项主张询问来源、与岗位任务的关系、时效、独立性和替代解释。团队成果需要和个人行动、决策权及外部条件分开。表达结论时可以使用“支持”“存在相关线索”“与另一证据冲突”“尚无法判断”等与证据强度相称的语言。\n\n## 让反证、冗余支持和材料缺陷各自发挥作用\n\n多个岗位可能独立支持同一判断，也可能只是复用一段招聘文案。重复文本不能按出现次数累加为更强事实；不同任务提供的支持则可能相互补充。删除一个引用后仍有其他依据支持结论，属于证据冗余，不是分析不依赖证据。要反问的是：承重证据整体失去支持后，结论是否仍被无依据地保留。\n\n主动寻找能收窄结论的材料。某个研究岗说数据生产由专门团队负责，同批却有算法岗同时参与采集与训练，说明前者是局部职责安排；不能推广成所有算法岗都不做数据。存在独立数采岗位可以与自述相互支持，但缺少共同团队或项目标识，仍不能确认它就是所指的支撑团队。\n\n记录缺陷与业务事实要分别解释。正文放错字段但文字完整时，可以恢复对任务的理解并指出原始位置；只有占位符或缺文时，需要补材料。公开岗位没有写某项职责不能证明组织没有该能力，简历没有写某段经历也不能直接认定候选人不具备；同时，未知也不能被包装成已证明匹配。说明当前能判断什么、还缺哪类相关证据。\n\n本节是招聘归档分析的适配总结，见[案例来源](../sources/2026-09-09-jd-reading-cases.md)，不将这些具体案例归于文献作者。\n\n## 适用与局限\n\n适合候选人证据分析、人才来源假设、画像校准和多人比较。现实中常无法获得理想证据，评价本身也需要判断；循证不会消除价值取舍，也不能把小样本相关性变成因果结论。\n\n## 可结合的视角\n\n几乎可与所有资源结合。它尤其能约束“能力迁移”的乐观推断、“结构化甄选”的分数幻觉，以及比较时将未知当作不满足的倾向。\n\n## 案例\n\n候选人称“主导项目使营收增长 30%”。可确认的只有团队营收和候选人在项目中的任职时间。合理结论不是“已证明商业能力”，而是有相关线索；还需理解基线、个人决策、其他团队贡献、市场变化及候选人能提供的具体产物。\n\n## 来源\n\n- CEBMa, Briner, *The Basics of Evidence-Based Practice* v2，完整 7 页，重点 pp.1–4。\n- CIPD, *Fair selection: An evidence review*，甄选程序与候选人体验 pp.5–16。\n",
+            "total_characters": 1562
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "38a91831-dded-428a-9195-4b712e69a44f",
+        "attempt_id": "c9647ac6-20de-432b-bf47-8095a132e064",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 1133,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "d26e65d5-78c2-49ef-8f0d-2698f865d316",
+            "ref": {
+              "id": "selection-and-work-samples",
+              "kind": "method",
+              "revision": "1",
+              "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+            },
+            "text": "---\nid: selection-and-work-samples\ntitle: 甄选与工作样本\nrevision: 1\ndomains: [recruiting]\nknowledge_forms: [thinking-model, methodology]\n---\n\n# 甄选与工作样本：相关性、一致性和表达机会\n\n## 帮助理解什么\n\n本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。\n\n## 核心关系\n\nOPM 的结构化面试指南强调从岗位分析和待评能力出发，让候选人回答共同核心问题，并用共同量表评价。行为题探索过去做法，情境题探索面对假设情境的处理；两者都需要岗位专家形成与能力水平相关的行为参照。结构化的价值在于更一致、可解释的观察，而非让分数天然客观。\n\n工作样本把候选人置于接近实际岗位的任务中，观察其行为或成果。它适合考察入职时就应具备的能力。任务、材料、时间和评价视角需要可比，也要控制候选人负担，不应索取可直接用于公司的免费劳动。\n\nCIPD 的公平甄选综述提醒关注岗位相关性、信息透明、候选人表达机会、解释和评估者培训。共同核心保持一致，并不排斥围绕个人证据缺口进行中性追问；但难度不同的个性化问题不能被直接相加比较。\n\n## 如何结合证据思考\n\n先理解哪项能力更适合口头叙述、现场行为、作品或其他方式。评估者应记录具体回答或行为，先形成各自判断，再讨论理由和分歧。题目和行为参照需要试用，以发现歧义、时长、文化熟悉度和无障碍问题。\n\n## 适用与局限\n\n适合关键能力需要多位评估者判断、闲聊式面试差异大、经历证据不足等情境。面试叙述可能受记忆和表达影响；工作样本只能覆盖有限任务；结构化不能消除所有偏差。未经试用的自制工具不应称为已验证测评。\n\n## 可结合的视角\n\n可与“胜任力与人才画像”理解行为层级，与“循证判断”控制推断，与“候选人比较与反馈”理解哪些证据真正可比。\n\n## 案例\n\n为了解产品经理的需求取舍，可以给所有候选人同一组匿名客户反馈、资源限制和目标，请其说明优先级与理由。可观察信息整合、权衡和风险意识，而非文档是否精美。这个样本仍不能证明长期执行力，需与经历和其他观察共同理解。\n\n## 来源\n\n- U.S. OPM, *Structured Interviews: A Practical Guide*，完整 36 页。\n- U.S. OPM, *Work Samples and Simulations*，官方页面相关小节。\n- CIPD, *Fair selection: An evidence review*，完整 20 页。\n",
+            "total_characters": 1133
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "15aa9f97-ab22-448b-9514-2f9467fd16fe",
+        "attempt_id": "e9e2ceb6-97b8-4ed3-9226-d196bdce69df",
+        "namespace": "tool:save_result",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "access_state": "available",
+            "base_standard_ref": null,
+            "basis": [],
+            "body": "## 0. 材料与适用边界\n\n- 唯一材料：一份标注为 SYNTHETIC / 完全虚构的通话逐字稿（213 字），已读完全文，无未读区间。材料自述\"无真实个人来源；没有其他录音或简历可用\"。\n- 因此本报告是对该文本内容的阅读与提问设计，不构成对任何真实个人的就业判断；不给总分、不排名。\n- 本次未指定岗位对象，也未读到任何岗位正式标准。以下不做\"是否匹配 / 是否达标\"的结论，只区分：记录中明确的自述、明确的他人动作、明确的未知，以及记录未涉及的部分。\n- 逐字稿是 Q 本人在通话中的说法。\"记录里写了某句话\"与\"该句话已被独立证实\"是两种证据；本次没有任何可核产物、同事说明或数据支持任一条自述。\n\n## 1. 记录中可确认的内容（限于这次通话）\n\n按\"访谈者问—Q 答\"的原文逻辑分层：\n\n| 事项 | 记录中的状态 | 陈述者 |\n|---|---|---|\n| 编写传感器回放脚本、编写异常分类说明 | Q 自述本人完成，无产物或第三方佐证 | Q |\n| 间歇丢帧被修复 | 记录明确\"团队后来修复了\"，属团队成果 | Q |\n| Q 的脚本对该修复的贡献占比 | 明确未知：Q 自述\"不知道自己的脚本贡献占多少\"，且\"统计结果还没有给我\" | Q（承认未知） |\n| 根因验证中的硬件复测 | 记录明确由同事做 | Q |\n| 日志对齐 | Q 自述本人参与（参与，非自述独立负责） | Q |\n| 下一步职业方向 | 想做更深入的系统诊断 | Q |\n| 是否希望带人 | 明确未决定：\"暂时没想好\"（不是拒绝，也不是有意愿） | Q |\n\n两点措辞上的准确性：\n- 记录只说同事做硬件复测、Q 参与对齐日志，没有说谁主导整个根因验证过程；不能把\"Q 不做硬件复测\"读成\"根因验证由同事主导\"或\"Q 在根因分析上没有作用\"。\n- \"统计结果还没有给我\"说明的是数据尚未回到 Q 手上，不能读成脚本无效果，也不能读成有效果。丢帧确实被修复这一点，与 Q 脚本的因果贡献是两件事。\n\n## 2. 记录未涉及、因此保持未知的部分\n\n以下均为\"材料未记载\"，不等于\"Q 没做过\"，追问时不应预设缺失：\n1. 回放脚本的技术栈、规模、输入数据形式、是谁提出要做、Q 是否独立设计与实现。\n2. 异常分类说明的用途、分类维度依据、是否被团队采纳或用于后续排查。\n3. \"参与对齐日志\"具体做了什么（时间戳对齐、跨源比对、判读结论等）以及与硬件复测结论如何互相印证。\n4. Q 是否曾独立完成过一次端到端的问题定位与验证闭环——记录既没有说做过，也没有说没做过。\n5. 项目背景：产品阶段、团队规模、Q 的角色定位、时间跨度、有无导师或评审机制。\n6. 除此项目外的其他经历（无简历，完全未知）。\n\n## 3. 值得注意的两个线索（均待核验）\n\n- Q 在被问效果时主动区分了\"团队修复了问题\"与\"我不知道自己贡献占多少\"，并说明数据尚未拿到。这是一条**归因谨慎的线索**，适合在后续访谈中继续观察；但仅凭这一句不能认定 Q 诚实、不夸大或可信度已被证实。\n- Q 表达的方向（更深入的系统诊断）与记录中的动作（回放脚本、异常分类、日志对齐）方向一致；这只说明兴趣与近期工作内容不矛盾，不说明深入诊断能力已具备。管理意愿处于未定状态，若岗位对带人有要求，这属于需要在了解岗位后再谈的开放项，而非当下的减分项。\n\n## 4. 建议的核验方式（供招聘负责人取舍）\n\n缺口集中在\"自述动作缺少可核产物\"与\"个人贡献与团队成果混合\"两处，因此优先采用能直接观察工作过程的手段，但这不是唯一可行方式：\n\n1. **产物+讲解**：请 Q 带一份可脱敏的回放脚本或异常分类说明（或在无法带出时口头重述其结构与取舍），围绕\"为什么这样分类\"\"脚本处理了哪些边界情况\"追问。可观察设计思路与技术深度，比让其自评贡献更可靠。\n2. **同岗位统一的工作样本**：给所有候选人同一份含间歇性异常的模拟日志/回放数据与同样时限，请其说明排查顺序、假设与验证方式。用共同评价维度记录行为，控制任务量，不索取可直接使用的成果。样本只覆盖有限任务，仍需与经历叙述共同理解。\n3. **中性行为追问（不预设未做）**，例如：\n   - \"这个回放脚本是怎么立项的？从提出到可用，你负责了哪些部分，哪些部分是别人做的？\"\n   - \"异常分类说明后来被怎么使用了？你知道的使用情况是什么？\"\n   - \"对齐日志时你具体看哪些字段、如何判断某段是异常？你的判读和同事的硬件复测结论是怎么互相印证的？\"\n   - \"有没有哪次问题定位是你从现象一直跟到结论的？请讲一次；如果没有，最接近的一次到了哪一步？\"\n   - 关于统计结果：可请 Q 说明当时是通过什么方式判断修复有效、他期望看到哪些指标（问其判断依据，而非追究为何没拿到数据）。\n4. **背景印证（如流程允许且获候选人同意）**：向该项目的同事/主管核实脚本归属与作用，是解决贡献归因未知最直接的途径。\n5. 岗位若涉及带人：先说明岗位对带人的实际期待，再听 Q 的想法，避免把\"暂时没想好\"当成结论记录下来。\n\n## 5. 当前结论强度\n\n- 可以说：记录呈现了传感器数据回放、异常分类与日志对齐方向的自述动作，以及一次团队层面的丢帧修复；Q 对自身贡献占比明确表示未知。\n- 不能说：Q 具备（或不具备）独立系统诊断能力；Q 的脚本是丢帧修复的原因；Q 的可信度已被证实；Q 适合或不适合某岗位。\n- 下一步取决于招聘负责人是否给出目标岗位与其关键任务；在没有岗位基准前，本报告只能作为访谈线索与核验设计，不能作为录用或淘汰依据。",
+            "changes": [],
+            "kind": "candidate_assessment",
+            "objects": [],
+            "preceding_refs": [],
+            "ref": {
+              "id": "85d2bbc7-e467-4adf-a6a2-b55af876f3f7",
+              "kind": "result",
+              "revision": "21de1414-3152-4efa-877d-c450e0842ada",
+              "sha256": "4365f1695ce6a126dc0d46dfb39e719a82df03133b3d580a306e4a7c3c1c8484"
+            },
+            "source_refs": [
+              {
+                "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+                "kind": "material",
+                "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+                "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+              },
+              {
+                "id": "evidence-informed-judgment",
+                "kind": "method",
+                "revision": "2",
+                "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+              },
+              {
+                "id": "selection-and-work-samples",
+                "kind": "method",
+                "revision": "1",
+                "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+              }
+            ],
+            "title": "候选人 Q 通话记录人才报告（合成材料，无岗位基准）"
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  },
+  "http_trace": [
+    {
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/attachments/uploads/2560a6de-5c09-4c27-83bf-15bd4b74a3ed/content",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads/2560a6de-5c09-4c27-83bf-15bd4b74a3ed/complete",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/materials/f7b9e7d9-2dfa-4e22-b760-0d19f0a79737",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/5279bc15-d556-42d2-bbd6-b00f95b6e008",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/5279bc15-d556-42d2-bbd6-b00f95b6e008",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/5279bc15-d556-42d2-bbd6-b00f95b6e008/messages",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/results/85d2bbc7-e467-4adf-a6a2-b55af876f3f7/revisions/21de1414-3152-4efa-877d-c450e0842ada",
+      "status": 200
+    }
+  ],
+  "model_observations": [
+    {
+      "attempt_id": "f2b35a41-02b3-4d16-bb11-c80967fe1f49",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 8985,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 4,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 8985,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 155,
+            "output_tokens_details": {
+              "thinking_tokens": 70
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 4.864715124480426
+    },
+    {
+      "attempt_id": "68678257-2f7d-4320-a569-ae132b13112d",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 11126,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 2,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 11126,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 872,
+            "output_tokens_details": {
+              "thinking_tokens": 173
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 20.267907083034515
+    },
+    {
+      "attempt_id": "dc9b5ba7-5cea-431b-825e-16d6171fb328",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12102,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 4,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12102,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 429,
+            "output_tokens_details": {
+              "thinking_tokens": 221
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 11.120997374877334
+    },
+    {
+      "attempt_id": "7fac0505-a7c7-4fd3-9e58-f7daba4e9bc0",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12688,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12688,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1505,
+            "output_tokens_details": {
+              "thinking_tokens": 496
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 24.987243334762752
+    },
+    {
+      "attempt_id": "67d8d3fe-ccdb-444b-b8f9-2d7986b21c38",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 15482,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 15482,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 863,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 15.94830625038594
+    },
+    {
+      "attempt_id": "09657d22-4224-4f77-a407-93da9808d916",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 16573,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 4,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 16573,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 645,
+            "output_tokens_details": {
+              "thinking_tokens": 413
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 13.947094624862075
+    },
+    {
+      "attempt_id": "e423efcc-f785-424e-82bc-5e6b2344e6e9",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 17220,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 5,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 17220,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1737,
+            "output_tokens_details": {
+              "thinking_tokens": 1449
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 31.567890958860517
+    },
+    {
+      "attempt_id": "79e67d93-1e6a-4074-80e1-0d9c409e2026",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 21580,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 4,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 21580,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 6209,
+            "output_tokens_details": {
+              "thinking_tokens": 1921
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 101.92652979213744
+    },
+    {
+      "attempt_id": "175ae982-0897-47b5-88b8-ff2bad341bc5",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 30202,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 30202,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1175,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 21.93137183226645
+    },
+    {
+      "attempt_id": "d691b57c-c508-4e1f-8635-15c546b75633",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 9206,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 9206,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 292,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 5.00703320838511
+    },
+    {
+      "attempt_id": "4e83dffa-af5b-4260-9538-a733532b1c69",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12299,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12299,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 324,
+            "output_tokens_details": {
+              "thinking_tokens": 47
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 6.762260750867426
+    },
+    {
+      "attempt_id": "cd82dc0a-1e4c-4052-b0ef-82ad1f514699",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 15899,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 15899,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 343,
+            "output_tokens_details": {
+              "thinking_tokens": 192
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 9.125303291715682
+    },
+    {
+      "attempt_id": "c2ed5274-188e-4f4c-80e0-2eff41e49657",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 18088,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 18088,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 5021,
+            "output_tokens_details": {
+              "thinking_tokens": 1039
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 105.42524562496692
+    },
+    {
+      "attempt_id": "c21a36b1-9e48-48b0-82ce-baa02156c625",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 25303,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 25303,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 940,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 21.484395457431674
+    },
+    {
+      "attempt_id": "4dc3f4cf-d83f-4e1c-b6e3-d80831880793",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 9216,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 9216,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 287,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 4.44343616720289
+    },
+    {
+      "attempt_id": "c9647ac6-20de-432b-bf47-8095a132e064",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12442,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12442,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 333,
+            "output_tokens_details": {
+              "thinking_tokens": 36
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 4.972264832817018
+    },
+    {
+      "attempt_id": "e9e2ceb6-97b8-4ed3-9226-d196bdce69df",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 15882,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 6,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 15882,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 3851,
+            "output_tokens_details": {
+              "thinking_tokens": 758
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 75.4434249587357
+    },
+    {
+      "attempt_id": "529023dd-8779-4583-a1a8-e521108dbf51",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 22016,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 22016,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 725,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 16.78062041569501
+    }
+  ]
+}

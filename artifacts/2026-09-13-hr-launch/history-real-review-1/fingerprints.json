@@ -1,0 +1,177 @@
+[
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/summary.json",
+    "sha256": "e9589cc0c08742d041c501998c59c902a0d4aa3d2ef5fac0fc41545a93e01237",
+    "bytes": 30863
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/configuration.json",
+    "sha256": "597634706bcd877743d8275395917e67e549e99ac221c9f06755d8b0e43953e0",
+    "bytes": 618
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H03/turn-01.json",
+    "sha256": "b9ecc345c3ff8b6090aa70c6cd4cad3bfd3f64f31e6243629ed0f705b87393f9",
+    "bytes": 95167
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H03/report.json",
+    "sha256": "01ff52455d3159715d683b68fa32fe19e8a726f9dde874b4b464fb384677c84f",
+    "bytes": 110739
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H13/turn-01.json",
+    "sha256": "681518c83da4c4cd61379c1ea2c19ab1768cdff875754297c0b0b4e1094eb125",
+    "bytes": 85020
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H13/report.json",
+    "sha256": "e0629f7b2c30f8c3965dc3a5f390f9719d06aae65e77f08ef622b54cfc1ee5a5",
+    "bytes": 101580
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H01/turn-01.json",
+    "sha256": "d3518d57c443ffa198cbff8c2e1b6c7438c5381c14b2b6033eadccbba5c354bf",
+    "bytes": 21713
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H01/report.json",
+    "sha256": "3c5d518c06133a50667899f626d583ff1ad496f4f7074134836ec9cbbec02df1",
+    "bytes": 192856
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H01/turn-02.json",
+    "sha256": "a03aef8171f79e8d612d40a857edf652808150548083ef55b90d29f46567cb00",
+    "bytes": 41873
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H01/turn-03.json",
+    "sha256": "77efd91c454fe1d42c9b79fb2bce15fe601e730dc42879e2c022d47a1a432f34",
+    "bytes": 107278
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H06/turn-01.json",
+    "sha256": "c83973c6c507aaa9b04178a68d0db4d8d295e5890577e9e128e2f3c6161b9937",
+    "bytes": 85026
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history-real-run-1/H06/report.json",
+    "sha256": "0f60b6475cb65584075f61bee3792e5330aa8756e64489de4d1f44b711d6c8e5",
+    "bytes": 101040
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/runs/history-real-1/source.patch",
+    "sha256": "dbc7a1adb6efe84d13d1c6601020e81c2dfdd991de16eccffb3f68b773b9a169",
+    "bytes": 4781
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/runs/history-real-1/output.log",
+    "sha256": "b0a7155dcf97a20e00f93bd3b7ff77867eafbd6dee53f41dfffd70f4da63fe39",
+    "bytes": 624
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/runs/history-real-1/command.json",
+    "sha256": "f8d55640161f20f9e3783ccc14c2a096f9170a3dd64087133f5ce91e77f910c9",
+    "bytes": 947
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/corpus.json",
+    "sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+    "bytes": 173319
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/manifest.json",
+    "sha256": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739",
+    "bytes": 28005
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H01/turn-01-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "bytes": 119
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H01/turn-02-context.txt",
+    "sha256": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7",
+    "bytes": 302
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H01/context-v1.txt",
+    "sha256": "54124b37340ea470768f81bb429e29300e6db29a8566d282f0db5e3f1558601a",
+    "bytes": 716
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H01/turn-03-context.txt",
+    "sha256": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f",
+    "bytes": 380
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-01-context.txt",
+    "sha256": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9",
+    "bytes": 218
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-04-context.txt",
+    "sha256": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099",
+    "bytes": 140
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-02-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "bytes": 119
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/context-v1.txt",
+    "sha256": "9f2ae8dcd6716bf8c5e5e5f64b529903186f392fab301ec9f9e711b6f1ae4d92",
+    "bytes": 602
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-03-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "bytes": 119
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H06/turn-01-context.txt",
+    "sha256": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d",
+    "bytes": 573
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H06/context-v1.txt",
+    "sha256": "bbb99816cfc79359b6b594787f7b64aa741a357d4fb93d50d614a62bd288117a",
+    "bytes": 632
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H13/turn-01-context.txt",
+    "sha256": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a",
+    "bytes": 481
+  },
+  {
+    "path": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H13/context-v1.txt",
+    "sha256": "fadefa510ea28bbc58efd33d077695278dd3e854699cfdfa172a8aff6b2d257f",
+    "bytes": 540
+  },
+  {
+    "path": "baseline-fc339d8/backend/tests/helpers/hr_history_replay.py",
+    "sha256": "4c610bd4ff630010d23eb28f218dbbcb118ec5fc68a09d173be73645da13fb1a",
+    "bytes": 30681
+  },
+  {
+    "path": "baseline-fc339d8/backend/tests/test_hr_agent_history_replay.py",
+    "sha256": "199aca5205ceead8c39cc71a91ec1237e261837c81a42e5e860597cc1893ac47",
+    "bytes": 9129
+  },
+  {
+    "path": "baseline-fc339d8/backend/hr_agent_knowledge/role.md",
+    "sha256": "404c2666db41c667379b5d482ee0867af9a796cd46d0582da6a6b3e4542db42b",
+    "bytes": 8619
+  },
+  {
+    "path": "baseline-fc339d8/HR_Agent工作流.md",
+    "sha256": "284f07115976307aa5d94b2a893d44ad3b800414b4928eb68a9defe59d74ebdc",
+    "bytes": 36512
+  },
+  {
+    "path": "baseline-fc339d8/HR总体架构设计.md",
+    "sha256": "d6935ee10707431804b24e239baebc16f0b3baa2e533ae38ddef4cd7a22f0bfa",
+    "bytes": 52263
+  }
+]

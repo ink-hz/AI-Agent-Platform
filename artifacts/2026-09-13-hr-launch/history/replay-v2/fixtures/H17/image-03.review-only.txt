@@ -1,0 +1,7 @@
+SYNTHETIC TEST FIXTURE - NOT REAL JOBS
+Company B
+Image 03 / 09 | Revision synthetic-v2.1
+Job code: ME-03
+Mechanical Engineer
+Tolerance stack and structural verification
+No other requirements supplied.

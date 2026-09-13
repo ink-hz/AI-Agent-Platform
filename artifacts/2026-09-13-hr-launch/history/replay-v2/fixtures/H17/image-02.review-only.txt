@@ -1,0 +1,7 @@
+SYNTHETIC TEST FIXTURE - NOT REAL JOBS
+Company B
+Image 02 / 09 | Revision synthetic-v2.1
+Job code: HW-02
+Hardware Engineer
+Board bring-up and power integrity
+No other requirements supplied.

@@ -1,0 +1,2 @@
+SYNTHETIC synthetic-v2.1
+新增研究范围：低批量、多品种。

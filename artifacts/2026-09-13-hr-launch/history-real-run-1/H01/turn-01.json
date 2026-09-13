@@ -1,0 +1,524 @@
+{
+  "number": 1,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [],
+  "status": "completed",
+  "inline_material": {
+    "path": "fixtures/H01/turn-01-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "version": "synthetic-v2.1"
+  },
+  "endpoint": "/api/hr/agent/works",
+  "request": {
+    "thread_id": null,
+    "text": "我会分两次提供虚构公司的旧版岗位说明与用人经理访谈记录，请先接收。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+    "objects": [],
+    "references": [],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "98148ded-e5a7-49f5-be58-6655659c5f64",
+  "persisted": {
+    "work": {
+      "work_id": "7381748c-ddaf-475e-b289-1637937de8d1",
+      "thread_id": "2d7556ca-940b-4565-b3e5-0a0e10b266fa",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 25.604791,
+        "charged_calls": 2,
+        "charged_tokens": 45716,
+        "limits": {
+          "active_seconds": 1800,
+          "model_calls": 32,
+          "total_tokens": 1200000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [],
+        "revision": 5
+      },
+      "last_event_seq": 6
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "fe9c9315-abb0-4f6e-82da-cc0b23339cb6",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "我会分两次提供虚构公司的旧版岗位说明与用人经理访谈记录，请先接收。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "e1a200d5-e0d1-4738-9a2e-f183e0c0c070",
+          "seq": 3,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "已收到你的说明。当前状态如我这边所见：\n\n- 本轮**没有任何新增材料**入库。我列出可用资源时，只看到 9 条公开方法论条目（岗位与业务情境、要求校准与 AMO、循证判断、甄选与工作样本、人才来源与能力迁移、胜任力与人才画像、候选人比较与反馈，以及两份来源核验台账），没有旧版岗位说明，也没有用人经理访谈记录。\n- 也没有本次工作范围内的岗位对象、正式标准或前轮成果可以引用，所以现在还不具备开始阅读或校准的条件。\n\n请按你的计划分两次上传：\n\n1. 第一批：虚构公司的**旧版岗位说明**（原文全文，含职责、任职要求、加分项等原始分段）；\n2. 第二批：**用人经理访谈记录**（尽量是原始记录/逐字或近逐字，而非已加工的结论摘要）。\n\n两批都到位后，我会先分别通读，再做以下工作（具体产出按你届时的目标决定，不会强行走完全部环节）：\n- 从旧版 JD 原文理解岗位要解决什么问题、交付什么，保留其中\"可替代背景 / 并列必需项 / 优先项 / 可培养项\"的原有逻辑关系，不把描述性语句自动升格为硬门槛；\n- 用访谈记录与 JD 交叉核对，标出两者一致处、冲突处，以及仅由访谈者主观陈述支撑、仍待核实的部分；\n- 明确材料未覆盖的缺口，只在会改变本次判断时向你澄清。\n\n上传时如果能顺带告知这两份材料的**时点**（旧版 JD 是哪一版/哪年，访谈是何时、访谈对象是什么角色）会更有帮助——这决定我能把访谈里的说法归属给谁、以及旧版要求中哪些可能已经过期。同时也请告知本轮要不要绑定具体岗位对象，我不会自行推测归属。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 3
+    },
+    "results": [],
+    "attempts": [
+      {
+        "attempt_id": "f2b35a41-02b3-4d16-bb11-c80967fe1f49",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36362,
+        "charged_tokens": 19978,
+        "response_model": {
+          "reported_models": [
+            "claude-opus-5"
+          ],
+          "status": "reported",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_use",
+          "text": "我先确认一下本轮可读的范围，再回复。",
+          "tool_calls": [
+            {
+              "arguments": {
+                "kinds": [
+                  "material",
+                  "method",
+                  "result",
+                  "intelligence",
+                  "standard"
+                ]
+              },
+              "name": "list_resources",
+              "provider_call_id": "toolu_bdrk_01J1KPW8f9jDV66gTAvDzYDe"
+            }
+          ],
+          "usage": {
+            "input_total": 8985,
+            "output_total": 155,
+            "quality": "reported",
+            "raw": {
+              "_response_metadata": {
+                "identity_assurance": "provider_self_report_only",
+                "reported_models": [
+                  "claude-opus-5"
+                ]
+              },
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 0
+              },
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0,
+              "input_tokens": 8985,
+              "output_tokens": 155,
+              "output_tokens_details": {
+                "thinking_tokens": 70
+              },
+              "service_tier": "standard"
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "68678257-2f7d-4320-a569-ae132b13112d",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 42122,
+        "charged_tokens": 25738,
+        "response_model": {
+          "reported_models": [
+            "claude-opus-5"
+          ],
+          "status": "reported",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "end_turn",
+          "text": "已收到你的说明。当前状态如我这边所见：\n\n- 本轮**没有任何新增材料**入库。我列出可用资源时，只看到 9 条公开方法论条目（岗位与业务情境、要求校准与 AMO、循证判断、甄选与工作样本、人才来源与能力迁移、胜任力与人才画像、候选人比较与反馈，以及两份来源核验台账），没有旧版岗位说明，也没有用人经理访谈记录。\n- 也没有本次工作范围内的岗位对象、正式标准或前轮成果可以引用，所以现在还不具备开始阅读或校准的条件。\n\n请按你的计划分两次上传：\n\n1. 第一批：虚构公司的**旧版岗位说明**（原文全文，含职责、任职要求、加分项等原始分段）；\n2. 第二批：**用人经理访谈记录**（尽量是原始记录/逐字或近逐字，而非已加工的结论摘要）。\n\n两批都到位后，我会先分别通读，再做以下工作（具体产出按你届时的目标决定，不会强行走完全部环节）：\n- 从旧版 JD 原文理解岗位要解决什么问题、交付什么，保留其中\"可替代背景 / 并列必需项 / 优先项 / 可培养项\"的原有逻辑关系，不把描述性语句自动升格为硬门槛；\n- 用访谈记录与 JD 交叉核对，标出两者一致处、冲突处，以及仅由访谈者主观陈述支撑、仍待核实的部分；\n- 明确材料未覆盖的缺口，只在会改变本次判断时向你澄清。\n\n上传时如果能顺带告知这两份材料的**时点**（旧版 JD 是哪一版/哪年，访谈是何时、访谈对象是什么角色）会更有帮助——这决定我能把访谈里的说法归属给谁、以及旧版要求中哪些可能已经过期。同时也请告知本轮要不要绑定具体岗位对象，我不会自行推测归属。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 11126,
+            "output_total": 872,
+            "quality": "reported",
+            "raw": {
+              "_response_metadata": {
+                "identity_assurance": "provider_self_report_only",
+                "reported_models": [
+                  "claude-opus-5"
+                ]
+              },
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 0
+              },
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0,
+              "input_tokens": 11126,
+              "output_tokens": 872,
+              "output_tokens_details": {
+                "thinking_tokens": 173
+              },
+              "service_tier": "standard"
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "f6521930-79bd-4889-97e1-8082fb1b8252",
+        "attempt_id": "f2b35a41-02b3-4d16-bb11-c80967fe1f49",
+        "namespace": "tool:list_resources",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "items": [
+              {
+                "description": "来源核验与适配边界",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "2026-09-08-hr-methodology-sources",
+                  "kind": "method",
+                  "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                  "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "HR 场景方法论来源核验台账（2026-09-08）",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "公开 JD 阅读案例与证据边界",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "2026-09-09-jd-reading-cases",
+                  "kind": "method",
+                  "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+                  "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "岗位原文理解：已复核案例来源",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "comparison-and-learning",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "候选人比较与反馈",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "competency-and-profile",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "胜任力与人才画像",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "evidence-informed-judgment",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "循证判断",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "job-and-context",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "岗位与业务情境",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "requirement-calibration",
+                  "kind": "method",
+                  "revision": "2",
+                  "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "要求校准与 AMO",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "selection-and-work-samples",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "甄选与工作样本",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              },
+              {
+                "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+                "objects": [],
+                "observed_at": null,
+                "original_ref": null,
+                "ref": {
+                  "id": "sourcing-and-transfer",
+                  "kind": "method",
+                  "revision": "1",
+                  "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+                },
+                "representation": "authored_text",
+                "state": "available",
+                "title": "人才来源与能力迁移",
+                "visibility": {
+                  "kind": "public",
+                  "subject_id": null
+                }
+              }
+            ],
+            "next_cursor": null
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  },
+  "http_trace": [
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/7381748c-ddaf-475e-b289-1637937de8d1",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/7381748c-ddaf-475e-b289-1637937de8d1",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/7381748c-ddaf-475e-b289-1637937de8d1/messages",
+      "status": 200
+    }
+  ],
+  "model_observations": [
+    {
+      "attempt_id": "f2b35a41-02b3-4d16-bb11-c80967fe1f49",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 8985,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 4,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 8985,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 155,
+            "output_tokens_details": {
+              "thinking_tokens": 70
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 4.864715124480426
+    },
+    {
+      "attempt_id": "68678257-2f7d-4320-a569-ae132b13112d",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 11126,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 2,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 11126,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 872,
+            "output_tokens_details": {
+              "thinking_tokens": 173
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 20.267907083034515
+    }
+  ]
+}

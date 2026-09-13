@@ -1,0 +1,18 @@
+{
+  "head": "fc339d8288ba99fec4fb702045c8409f837c007d",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_agent_history_replay.py::test_opt_in_real_history_replay",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T03:08:35.247873+00:00",
+  "source_patch_sha256": "dbc7a1adb6efe84d13d1c6601020e81c2dfdd991de16eccffb3f68b773b9a169",
+  "untracked_source_snapshots": {},
+  "boundary": "Four newly synthetic historical-intent scenarios H01/H03/H06/H13; actual configured external model; real local HTTP/PG session authorization CSRF and persistence; external login exchange and object storage substituted; 96 calls shared cap; local long-conversation 1.2M-token budget, not production default validation; no real candidate data",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T03:18:55.553221+00:00"
+}

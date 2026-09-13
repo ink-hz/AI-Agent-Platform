@@ -1,0 +1,207 @@
+{
+  "fixture_sha256": "06028c4f245f2355818c010500eb663c9547ea2163ea426c62c5fde45ce2fc2c",
+  "materials": {
+    "临时岗位要求": {
+      "text": "示例公司要招聘嵌入式现场诊断工程师。任务是复现客户现场的间歇断连，区分通信、供电、固件时序与硬件因素，并把复现条件和证据交给对应负责人。前三个月可以由导师协助定位，但必须独立写出可复核的诊断记录。熟悉 C 和示波器是基础；有机器人量产经验是加分项，可由工业传感器、医疗设备等相邻经历提供工作样本。没有正式确认的长期岗位标准。",
+      "ref": {
+        "kind": "material",
+        "id": "783d5d9b-b12e-4870-9e66-4329267d6acd:text",
+        "revision": "aa3c1043e2efe8b243ee441f2604f2b2be47f296d26f88717a4584983b668ac5:utf8-v1",
+        "sha256": "379458fccdb1d731c544a22cf048e6d7d0fc256cc4cdda21945bbceb45420c18"
+      }
+    },
+    "虚构简历": {
+      "text": "姓名：示例候选人青禾（虚构）。在示例传感器项目中维护 C 固件，用逻辑分析仪排查过通信重试。简历称“负责解决现场断连”，但没有说明自己提出诊断假设还是按资深工程师方案执行。没有机器人经历。曾记录过温升与重启的关系，但材料没给出控制变量和最终根因。",
+      "ref": {
+        "kind": "material",
+        "id": "4c50c0d3-70b7-4d08-8929-7aca7fdab5fc:text",
+        "revision": "110da6ccc003638a94400f516c09a27135908a0b25403e98dd83ad3bad03ab61:utf8-v1",
+        "sha256": "b1ade75a0c478a3ed8235cd92ed95d2cbd64bfeb6257db63d3d8e71fa3fbb8cf"
+      }
+    },
+    "用户追加的虚构招聘过程记录": {
+      "text": "本次只提供上述一位候选人的材料，尚未保存完整搜寻名单、发送记录、渠道转化、录用结果或多名面试官反馈。用人经理允许导师协助培养，但坚持诊断记录必须可以复核。",
+      "ref": {
+        "kind": "material",
+        "id": "5757714a-39df-43f7-843a-6eddf219bb51:text",
+        "revision": "3228e46d58d12a3c7d1cffe5ab639e827f494627e881e0888137c825ff5345c0:utf8-v1",
+        "sha256": "7d64cb4ceba1a85788d658931048b2088672ee0d1dbb861d6e16ef33b3716da7"
+      }
+    }
+  },
+  "knowledge_release": {
+    "release_id": "hr-28a4b8f57bf3c57472593b6e",
+    "role": {
+      "path": "role.md",
+      "sha256": "bc3b5c30c9cb0ed6ad5310904af32dad44be0877db59becba89eb13459fb0911"
+    },
+    "resources": [
+      {
+        "ref": {
+          "kind": "method",
+          "id": "2026-09-08-hr-methodology-sources",
+          "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+          "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+        },
+        "path": "sources/2026-09-08-hr-methodology-sources.md",
+        "title": "HR 场景方法论来源核验台账（2026-09-08）",
+        "description": "来源核验与适配边界",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "2026-09-09-jd-reading-cases",
+          "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+          "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+        },
+        "path": "sources/2026-09-09-jd-reading-cases.md",
+        "title": "岗位原文理解：已复核案例来源",
+        "description": "公开 JD 阅读案例与证据边界",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "comparison-and-learning",
+          "revision": "1",
+          "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+        },
+        "path": "methods/comparison-and-learning.md",
+        "title": "候选人比较与反馈",
+        "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "competency-and-profile",
+          "revision": "1",
+          "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+        },
+        "path": "methods/competency-and-profile.md",
+        "title": "胜任力与人才画像",
+        "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "evidence-informed-judgment",
+          "revision": "2",
+          "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+        },
+        "path": "methods/evidence-informed-judgment.md",
+        "title": "循证判断",
+        "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "job-and-context",
+          "revision": "2",
+          "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+        },
+        "path": "methods/job-and-context.md",
+        "title": "岗位与业务情境",
+        "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "requirement-calibration",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        },
+        "path": "methods/requirement-calibration.md",
+        "title": "要求校准与 AMO",
+        "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "selection-and-work-samples",
+          "revision": "1",
+          "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+        },
+        "path": "methods/selection-and-work-samples.md",
+        "title": "甄选与工作样本",
+        "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+        "objects": []
+      },
+      {
+        "ref": {
+          "kind": "method",
+          "id": "sourcing-and-transfer",
+          "revision": "1",
+          "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+        },
+        "path": "methods/sourcing-and-transfer.md",
+        "title": "人才来源与能力迁移",
+        "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+        "objects": []
+      }
+    ]
+  },
+  "candidate_id": "13fffd06-67fa-598b-9155-44e64c84e9e2",
+  "objects": [
+    {
+      "kind": "position",
+      "id": "68707984-91dc-4211-aa6b-e65435164d67"
+    },
+    {
+      "kind": "candidate",
+      "id": "13fffd06-67fa-598b-9155-44e64c84e9e2"
+    }
+  ],
+  "candidate_initialization": "scripted_model_real_user_HTTP_confirmation",
+  "model_boundary": "real_configured_opus5",
+  "scenario": "full_journey",
+  "stages": [],
+  "provider": {
+    "model": "claude-opus-5",
+    "protocol": "anthropic_messages_sse",
+    "profile_revision": "hr-opus5-20260911",
+    "profile": {
+      "id": "hr-cloud-loop",
+      "revision": "hr-opus5-20260911",
+      "protocol": "anthropic_messages_sse",
+      "model": "claude-opus-5",
+      "tokenizer": "conservative_utf8",
+      "context_window_tokens": 131072,
+      "timeout_seconds": 300,
+      "auth_scheme": "bearer"
+    },
+    "profile_fingerprint": "9f96f33cff4fda4a1424f4b2e06e2861ae9c9ab44fd40247c850dea10e92084f",
+    "fingerprint_scope": "allowlisted_nonsecret_profile_fields; endpoint_and_credentials_excluded",
+    "identity_assurance": "provider_self_report_only",
+    "source_configuration": {
+      "status": "read_from_explicit_local_profile",
+      "profile_file_sha256": "303001ff40572037e0b8ec9cbf888b27500c9bf1a919b3e285d897fb8aef21b4"
+    }
+  },
+  "validation_limits": {
+    "generation_calls": 24,
+    "per_call_output": 16384,
+    "per_call_seconds": 300,
+    "per_work": {
+      "model_calls": 32,
+      "total_tokens": 600000,
+      "active_seconds": 900
+    },
+    "reserve": {
+      "model_calls": 2,
+      "total_tokens": 32768,
+      "active_seconds": 30
+    },
+    "configuration_scope": "explicit_local_validation_only"
+  },
+  "runner_source": {
+    "git_revision": "19f2714a1fb72e9748582d3e896e182da954973b",
+    "file_sha256": "e726796807e1c70779dcc73e1fee15da648f6606feae73c670875bde5d7682c8",
+    "captured_before_first_D_model_request": true
+  }
+}

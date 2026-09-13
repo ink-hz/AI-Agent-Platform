@@ -1,0 +1,2 @@
+SYNTHETIC synthetic-v2.1
+新增范围：机加工与整机OEM/ODM的能力迁移。

@@ -1,0 +1,27 @@
+{
+  "scope": [
+    "H01",
+    "H03",
+    "H06",
+    "H13"
+  ],
+  "files": {
+    "corpus.json": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+    "manifest.json": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739",
+    "README.md": "39f24d1598f3c52edbb0f5b1fb4770e8248d925f56396c6cc1e592e50914ba22",
+    "author-report.md": "d08c187a8891e3bf829ba3ee2ea814e65a50d59e57fdd3559c7a2e93efcbade4",
+    "fixtures/H01/context-v1.txt": "54124b37340ea470768f81bb429e29300e6db29a8566d282f0db5e3f1558601a",
+    "fixtures/H01/turn-01-context.txt": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "fixtures/H01/turn-02-context.txt": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7",
+    "fixtures/H01/turn-03-context.txt": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f",
+    "fixtures/H03/context-v1.txt": "9f2ae8dcd6716bf8c5e5e5f64b529903186f392fab301ec9f9e711b6f1ae4d92",
+    "fixtures/H03/turn-01-context.txt": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9",
+    "fixtures/H03/turn-02-context.txt": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "fixtures/H03/turn-03-context.txt": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "fixtures/H03/turn-04-context.txt": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099",
+    "fixtures/H06/context-v1.txt": "bbb99816cfc79359b6b594787f7b64aa741a357d4fb93d50d614a62bd288117a",
+    "fixtures/H06/turn-01-context.txt": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d",
+    "fixtures/H13/context-v1.txt": "fadefa510ea28bbc58efd33d077695278dd3e854699cfdfa172a8aff6b2d257f",
+    "fixtures/H13/turn-01-context.txt": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a"
+  }
+}

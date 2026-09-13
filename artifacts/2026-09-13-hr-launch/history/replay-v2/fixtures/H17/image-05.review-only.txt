@@ -1,0 +1,7 @@
+SYNTHETIC TEST FIXTURE - NOT REAL JOBS
+Company B
+Image 05 / 09 | Revision synthetic-v2.1
+Job code: ALG-05
+Algorithm Engineer
+Vision model evaluation and deployment
+No other requirements supplied.

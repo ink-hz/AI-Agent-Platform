@@ -1,0 +1,7 @@
+SYNTHETIC TEST FIXTURE - NOT REAL JOBS
+Company B
+Image 04 / 09 | Revision synthetic-v2.1
+Job code: SW-04
+Software Engineer
+Device services and failure diagnostics
+No other requirements supplied.

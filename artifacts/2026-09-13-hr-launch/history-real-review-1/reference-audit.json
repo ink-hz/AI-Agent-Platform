@@ -1,0 +1,268 @@
+[
+  {
+    "case": "H01",
+    "turn": 1,
+    "reads": [],
+    "result_sources_all_read": true,
+    "results": []
+  },
+  {
+    "case": "H01",
+    "turn": 2,
+    "reads": [
+      {
+        "ref": {
+          "id": "2cab1255-141b-4da5-acad-ed0842f81b59:text",
+          "kind": "material",
+          "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+          "sha256": "a21204d25e3a664445b94982a7ba8b4c4d06915aef16b3427f9aafd56df07e4a"
+        },
+        "coverage_complete": true,
+        "characters": 126,
+        "text_sha256": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7"
+      }
+    ],
+    "result_sources_all_read": true,
+    "results": []
+  },
+  {
+    "case": "H01",
+    "turn": 3,
+    "reads": [
+      {
+        "ref": {
+          "id": "2cab1255-141b-4da5-acad-ed0842f81b59:text",
+          "kind": "material",
+          "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+          "sha256": "a21204d25e3a664445b94982a7ba8b4c4d06915aef16b3427f9aafd56df07e4a"
+        },
+        "coverage_complete": true,
+        "characters": 126,
+        "text_sha256": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7"
+      },
+      {
+        "ref": {
+          "id": "d0675ab0-0745-4309-9486-8c499e5bdc5b:text",
+          "kind": "material",
+          "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+          "sha256": "b533e6e5993caab8ab3aa7522e69e0c05dde38f481e7cfde7dfa7bb558c0f6a2"
+        },
+        "coverage_complete": true,
+        "characters": 146,
+        "text_sha256": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f"
+      },
+      {
+        "ref": {
+          "id": "job-and-context",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+        },
+        "coverage_complete": true,
+        "characters": 1889,
+        "text_sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+      },
+      {
+        "ref": {
+          "id": "requirement-calibration",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        },
+        "coverage_complete": true,
+        "characters": 1787,
+        "text_sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+      }
+    ],
+    "result_sources_all_read": true,
+    "results": [
+      {
+        "ref": {
+          "kind": "result",
+          "id": "8d1d47e7-c6cc-41c3-9b41-81eebc7eba0b",
+          "revision": "cd101c8a-9ec1-461e-8487-40ba5cd8fb40",
+          "sha256": "bffd7532eba3c4e1e5ae08c28f90cd66430b5e579b7bdc6fadfca71e29ca9c9c"
+        },
+        "kind": "jd",
+        "body_utf8_sha256": "95f50f390001700b306ac18164111789e5a20f9a5a0b14e92f1a458044ae47ce"
+      },
+      {
+        "ref": {
+          "kind": "result",
+          "id": "b53e9599-9aec-4213-afa6-71cafbc4152c",
+          "revision": "e13acc60-0fa5-461e-851c-efc08051b0cd",
+          "sha256": "bbf6f381bb5642eef2e59b525038b079961d482799ac7adf4e4725ab15ad8458"
+        },
+        "kind": "requirements",
+        "body_utf8_sha256": "64c51bba0c1586309c2cc01dd13d2208b21e17f99db3e8b1253ae37e8ff369ef"
+      }
+    ]
+  },
+  {
+    "case": "H03",
+    "turn": 1,
+    "reads": [
+      {
+        "ref": {
+          "id": "bf7021e1-3948-44e9-b40b-031d030db91a:text",
+          "kind": "material",
+          "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+          "sha256": "8242dbd6660d714ba903c9c715b21099f2a02953fc03bc13a316536775111f29"
+        },
+        "coverage_complete": true,
+        "characters": 94,
+        "text_sha256": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9"
+      },
+      {
+        "ref": {
+          "id": "job-and-context",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+        },
+        "coverage_complete": true,
+        "characters": 1889,
+        "text_sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+      },
+      {
+        "ref": {
+          "id": "competency-and-profile",
+          "kind": "method",
+          "revision": "1",
+          "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+        },
+        "coverage_complete": true,
+        "characters": 1113,
+        "text_sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+      },
+      {
+        "ref": {
+          "id": "requirement-calibration",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        },
+        "coverage_complete": true,
+        "characters": 1787,
+        "text_sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+      }
+    ],
+    "result_sources_all_read": true,
+    "results": [
+      {
+        "ref": {
+          "kind": "result",
+          "id": "a0803eca-55e2-4d36-b119-47d2d3566eba",
+          "revision": "9c0733d7-1c7f-49eb-b6dd-d79787513a52",
+          "sha256": "483110999c2e63018f745f66a68acd18d3c33328eb50bcb3a13f5017681f170c"
+        },
+        "kind": "jd",
+        "body_utf8_sha256": "14e09a872ebef98ca4ff5da357aac791ff880dc20e887ec8040f24c9a105b010"
+      }
+    ]
+  },
+  {
+    "case": "H06",
+    "turn": 1,
+    "reads": [
+      {
+        "ref": {
+          "id": "f7b9e7d9-2dfa-4e22-b760-0d19f0a79737:text",
+          "kind": "material",
+          "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+          "sha256": "a21e20fbdee6b387704c6aff06518bb9b88742315ffbc01a2a652516f1f5898e"
+        },
+        "coverage_complete": true,
+        "characters": 213,
+        "text_sha256": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d"
+      },
+      {
+        "ref": {
+          "id": "evidence-informed-judgment",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+        },
+        "coverage_complete": true,
+        "characters": 1562,
+        "text_sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+      },
+      {
+        "ref": {
+          "id": "selection-and-work-samples",
+          "kind": "method",
+          "revision": "1",
+          "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+        },
+        "coverage_complete": true,
+        "characters": 1133,
+        "text_sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+      }
+    ],
+    "result_sources_all_read": true,
+    "results": [
+      {
+        "ref": {
+          "kind": "result",
+          "id": "85d2bbc7-e467-4adf-a6a2-b55af876f3f7",
+          "revision": "21de1414-3152-4efa-877d-c450e0842ada",
+          "sha256": "4365f1695ce6a126dc0d46dfb39e719a82df03133b3d580a306e4a7c3c1c8484"
+        },
+        "kind": "candidate_assessment",
+        "body_utf8_sha256": "60f91c0dd112b97094402bc3ab8b8395b1e9565da4e9814e0f53e92c8b58f06f"
+      }
+    ]
+  },
+  {
+    "case": "H13",
+    "turn": 1,
+    "reads": [
+      {
+        "ref": {
+          "id": "2affce52-7096-473c-af88-be39d7e70736:text",
+          "kind": "material",
+          "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+          "sha256": "e929fda25184d655906043e5d0c8c9a299738750d68acf154e1dce5a6611d6e2"
+        },
+        "coverage_complete": true,
+        "characters": 187,
+        "text_sha256": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a"
+      },
+      {
+        "ref": {
+          "id": "evidence-informed-judgment",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+        },
+        "coverage_complete": true,
+        "characters": 1562,
+        "text_sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+      },
+      {
+        "ref": {
+          "id": "2026-09-08-hr-methodology-sources",
+          "kind": "method",
+          "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+          "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+        },
+        "coverage_complete": true,
+        "characters": 3413,
+        "text_sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+      },
+      {
+        "ref": {
+          "id": "requirement-calibration",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        },
+        "coverage_complete": true,
+        "characters": 1787,
+        "text_sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+      }
+    ],
+    "result_sources_all_read": true,
+    "results": []
+  }
+]

@@ -1,0 +1,7 @@
+SYNTHETIC TEST FIXTURE - NOT REAL JOBS
+Company B
+Image 06 / 09 | Revision synthetic-v2.1
+Job code: MFG-06
+Manufacturing Engineer
+Process validation and defect isolation
+No other requirements supplied.

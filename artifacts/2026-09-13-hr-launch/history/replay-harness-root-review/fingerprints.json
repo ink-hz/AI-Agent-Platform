@@ -1,0 +1,12 @@
+{
+  "review_recorded_at": "2026-09-13T03:11:06.413901+00:00",
+  "reviewed_head": "fc339d8288ba99fec4fb702045c8409f837c007d",
+  "files": {
+    "backend/tests/helpers/hr_history_replay.py": "4c610bd4ff630010d23eb28f218dbbcb118ec5fc68a09d173be73645da13fb1a",
+    "backend/tests/test_hr_agent_history_replay.py": "199aca5205ceead8c39cc71a91ec1237e261837c81a42e5e860597cc1893ac47",
+    "backend/hr_agent_knowledge/role.md": "404c2666db41c667379b5d482ee0867af9a796cd46d0582da6a6b3e4542db42b",
+    "artifacts/2026-09-13-hr-launch/history/replay-v2/corpus.json": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+    "artifacts/2026-09-13-hr-launch/history/replay-v2/manifest.json": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739"
+  },
+  "execution": "history-real-1 already started after full helper/test review and exact corpus/manifest hash assertions; this written review is recorded afterward, not a pre-run timestamp"
+}

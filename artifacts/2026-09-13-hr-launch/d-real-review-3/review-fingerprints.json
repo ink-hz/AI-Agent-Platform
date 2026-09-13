@@ -1,0 +1,19 @@
+{
+  "check_sources.py": "5369013a4490abc73e028be4698ffcd70713b9c42acee697464098ece10ceb18",
+  "fingerprints-and-source-checks.json": "efb5ae36666f789637f68ed93dedd3122dcafe0c998433ad05caa6dfc97ee180",
+  "source-check-1.log": "6fd7497eacb6fd24af6ffffdee7469b17937b46096819876d2d67aa0073a336f",
+  "review.md": "366bbcea7f481efdc67ee82fc2e63570ec20d140ec7bebfec58046c0dde5a8c9",
+  "frozen/fixture.json": "fa223472c9f9f2b000eeb4e30a308ac53b9d4ff531b6028f1513fe3cf29578fa",
+  "frozen/evidence.json": "041b3dfd47ed741b5bc92e5f8420f04795d35a797718de5c4b1f5ba0d95a0027",
+  "frozen/scenario.md": "06028c4f245f2355818c010500eb663c9547ea2163ea426c62c5fde45ce2fc2c",
+  "frozen/stage-3-retrospective.md": "776273f4e4679d451605037d58f26fb2bf8792d0d733350d3e804c24c4d6040d",
+  "frozen/stage-1-candidate_assessment.md": "cfd912ea2393098f765f8cd3158989162f6abf581dea48ad4f62adabee76e890",
+  "frozen/stage-1-sourcing.md": "792ee8c7f41a6ab237f40999ed21d32720a203dc13444400fd9418461928d419",
+  "frozen/run-output.log": "9768bd58829811bd04d0e2bf347b7f326bb3f45a6b315816783f27940920a144",
+  "frozen/role-fc339d8.md": "404c2666db41c667379b5d482ee0867af9a796cd46d0582da6a6b3e4542db42b",
+  "frozen/run-command.json": "0c4efa9d4692b008741cd8366d4cc3fd4a66124029e5af03a230dc1d3d72a4b8",
+  "frozen/inputs.json": "5f3036d7f2d6481e84f163114a3303f879b040326e046c691b8b64156a8ebb5a",
+  "frozen/stage-2-interview_plan.md": "c4a7aa6403c9ba75727370fbdd08989b2d87385bbff0f219c29422b5658191e0",
+  "frozen/run-source.patch": "dbc7a1adb6efe84d13d1c6601020e81c2dfdd991de16eccffb3f68b773b9a169",
+  "frozen/stage-3-interview_record.md": "dd7bfd60779847afdd6fff8b287ac057265039211818691e0143b2ed01835329"
+}
