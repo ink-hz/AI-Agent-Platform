@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "git",
+    "diff",
+    "--check",
+    "--",
+    "backend/hr_agent_knowledge/role.md",
+    "backend/hr_agent_knowledge/methods/requirement-calibration.md",
+    "backend/hr_agent_knowledge/provenance.json",
+    "HR\u603b\u4f53\u67b6\u6784\u8bbe\u8ba1.md",
+    "HR_Agent\u5de5\u4f5c\u6d41.md"
+  ],
+  "exit": 0
+}

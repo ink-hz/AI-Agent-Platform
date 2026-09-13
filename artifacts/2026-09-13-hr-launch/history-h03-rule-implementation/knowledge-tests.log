@@ -1,0 +1,39 @@
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_reviewed_content_build_is_reproducible_and_immutable ___________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9627/test_reviewed_content_build_is0')
+
+    def test_reviewed_content_build_is_reproducible_and_immutable(tmp_path):
+        from app.hr_agent.knowledge import KnowledgeReleases
+        from tools.hr_agent.build_knowledge_release import build
+    
+        source = Path(__file__).parents[1] / "hr_agent_knowledge"
+>       manifest = build(source, tmp_path)
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_hr_agent_knowledge_releases.py:91: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+source = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/hr_agent_knowledge')
+output = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9627/test_reviewed_content_build_is0')
+
+    def build(source, output):
+        source, output = Path(source), Path(output)
+        provenance = json.loads((source / "provenance.json").read_text())
+        files = {}
+        resources = []
+        for item in provenance["files"]:
+            path = Path(item["path"])
+            if path.is_absolute() or ".." in path.parts or (source / path).is_symlink():
+                raise ValueError("invalid content path")
+            raw = (source / path).read_bytes()
+            digest = hashlib.sha256(raw).hexdigest()
+            if digest != item["sha256"]:
+>               raise ValueError("source digest mismatch")
+E               ValueError: source digest mismatch
+
+tools/hr_agent/build_knowledge_release.py:25: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_hr_agent_knowledge_releases.py::test_reviewed_content_build_is_reproducible_and_immutable
+1 failed, 3 passed in 1.34s

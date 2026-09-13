@@ -1,0 +1,117 @@
+{
+  "release_id": "hr-4d13f741dad2c1eeddf3e79e",
+  "role": {
+    "path": "role.md",
+    "sha256": "819f680b8a3906dec156734dcfd55177c52c3321e7249853e6e52e5b94c4523f"
+  },
+  "resources": [
+    {
+      "ref": {
+        "kind": "method",
+        "id": "2026-09-08-hr-methodology-sources",
+        "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+        "sha256": "8699670c3215cc254a57a4dbc4b3813845ca9d464296d4c1a609e14550974f93"
+      },
+      "path": "sources/2026-09-08-hr-methodology-sources.md",
+      "title": "HR 场景方法论来源核验台账（2026-09-08）",
+      "description": "来源核验与适配边界",
+      "objects": []
+    },
+    {
+      "ref": {
+        "kind": "method",
+        "id": "2026-09-09-jd-reading-cases",
+        "revision": "7757ca4a2ce380206ff5019917b39de8bef10814",
+        "sha256": "ba18f2d579fc49ab1b7b0de92e2f4708356db1bdf2b6b3fd3e7939a0a85243c6"
+      },
+      "path": "sources/2026-09-09-jd-reading-cases.md",
+      "title": "岗位原文理解：已复核案例来源",
+      "description": "公开 JD 阅读案例与证据边界",
+      "objects": []
+    },
+    {
+      "ref": {
+        "kind": "method",
+        "id": "comparison-and-learning",
+        "revision": "1",
+        "sha256": "8026c6a2166e050ca1432547fdba7f05eec3b2cfeac3a034ad27e3d0d39685bf"
+      },
+      "path": "methods/comparison-and-learning.md",
+      "title": "候选人比较与反馈",
+      "description": "当多人各有优劣、证据形式不同或评估者意见分散时，本视角帮助 Agent理解可比性的前提，并让招聘结果成为可审阅的学习来源。",
+      "objects": []
+    },
+    {
+      "ref": {
+        "kind": "method",
+        "id": "competency-and-profile",
+        "revision": "1",
+        "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+      },
+      "path": "methods/competency-and-profile.md",
+      "title": "胜任力与人才画像",
+      "description": "本视角帮助 Agent 理解“战略思维强”“有主人翁意识”“高潜”等抽象要求，探索它们在具体岗位任务中可能对应什么行为、复杂度和结果，以及怎样避免画像膨胀。",
+      "objects": []
+    },
+    {
+      "ref": {
+        "kind": "method",
+        "id": "evidence-informed-judgment",
+        "revision": "2",
+        "sha256": "a62102e51a0d28b0f37db32bffb6eacdb1457183240e7b74122c06ebb5a1c330"
+      },
+      "path": "methods/evidence-informed-judgment.md",
+      "title": "循证判断",
+      "description": "本视角用于简历证据、面试说法、组织数据、研究和专业判断相互支持或冲突时。它帮助 Agent 区分“看到了什么”和“据此推断什么”，并承认未知。",
+      "objects": []
+    },
+    {
+      "ref": {
+        "kind": "method",
+        "id": "job-and-context",
+        "revision": "2",
+        "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+      },
+      "path": "methods/job-and-context.md",
+      "title": "岗位与业务情境",
+      "description": "当用户说“想找一个厉害的人”“照着某个标杆招”或给出一份陈旧 JD 时，真正的问题通常还没有被定义。本视角帮助 Agent 追问：岗位要在什么业务情境中产生什么结果，人要完成哪些关键任务，任务又要求什么知识、技能和能力。",
+      "objects": []
+    },
+    {
+      "ref": {
+        "kind": "method",
+        "id": "requirement-calibration",
+        "revision": "3",
+        "sha256": "cc530e1de12b78c23d3fc288df32a37255837a77fc99b7d362b912ca464d3eaa"
+      },
+      "path": "methods/requirement-calibration.md",
+      "title": "要求校准与 AMO",
+      "description": "当画像条件很多、利益相关方都说自己的条件不能少，或岗位长期招不到人时，本视角帮助 Agent 先诊断问题结构，而不是立即删条件、扩渠道或降低标准。",
+      "objects": []
+    },
+    {
+      "ref": {
+        "kind": "method",
+        "id": "selection-and-work-samples",
+        "revision": "1",
+        "sha256": "019b0fde9977078ca33a91dd8eff065a35ce9b5a7a39ae100a513747432b7517"
+      },
+      "path": "methods/selection-and-work-samples.md",
+      "title": "甄选与工作样本",
+      "description": "本视角帮助 Agent 思考怎样通过面试或模拟任务了解岗位能力，同时减少随意聊天、整体印象和不同候选人评价条件不一致造成的问题。",
+      "objects": []
+    },
+    {
+      "ref": {
+        "kind": "method",
+        "id": "sourcing-and-transfer",
+        "revision": "1",
+        "sha256": "1ff47ad9ef71b272011e94ba3bb8817b99c6dce035d2592ed6340cb6759ba79b"
+      },
+      "path": "methods/sourcing-and-transfer.md",
+      "title": "人才来源与能力迁移",
+      "description": "本视角帮助 Agent 思考合适的人可能来自哪里，以及跨行业候选人、相邻岗位人才和应届生应如何被理解。它避免把竞品公司、头衔或行业年限本身当作能力证明。",
+      "objects": []
+    }
+  ]
+}

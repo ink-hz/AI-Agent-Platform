@@ -32,7 +32,7 @@
     {
       "path": "methods/requirement-calibration.md",
       "source_path": "bots/hr/knowledge/recruiting/requirement-calibration.md",
-      "sha256": "cc530e1de12b78c23d3fc288df32a37255837a77fc99b7d362b912ca464d3eaa"
+      "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
     },
     {
       "path": "methods/selection-and-work-samples.md",
@@ -60,18 +60,6 @@
       "date": "2026-09-11",
       "review": "docs/reviews/2026-09-11-hr-c3-run4-semantic-review.md",
       "scope": "本地角色适配：要求逻辑、招聘职责与组织现状、合作与外包、市场供给推断边界；不改上游方法正文，不编排固定方法或业务判断规则。"
-    }
-  ],
-  "local_adaptations": [
-    {
-      "date": "2026-09-13",
-      "review": "artifacts/2026-09-13-hr-launch/history-h03-role-calibration-design-review/design.md",
-      "files": [
-        "role.md",
-        "methods/requirement-calibration.md"
-      ],
-      "requirement_calibration_previous_sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac",
-      "scope": "本地适配：区分当前草稿授权、来源真实性与长期标准确认；职责修改不自动增设筛选门槛，能力、既往经历与组织权限分别论证并保留替代证据。上游来源身份保持，不称上游原文新增规则。"
     }
   ]
 }
