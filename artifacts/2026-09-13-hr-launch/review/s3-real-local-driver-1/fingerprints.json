@@ -1,0 +1,6 @@
+{
+  "review_type": "read-only source review; driver not executed by reviewer",
+  "observed_head": "4abb8d3b1f2b5d005b55bf6a4c3f997e5bc8d08e",
+  "path": "artifacts/2026-09-13-hr-launch/production/s3-real-local-1/run.py",
+  "sha256": "ae3364ec3aa52e615af3166b875846c0b52e60328784d9269e7d5fbc8cfcd523"
+}
