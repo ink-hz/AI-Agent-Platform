@@ -1,0 +1,18 @@
+{
+  "kind": "real-disposable-postgresql-not-production",
+  "runbookSha256": "a21d08491c0b2e0a1b996510ae39d9c9f536bd65daf4353088e7c2e62707534b",
+  "action": "transition",
+  "target": "cloud",
+  "statementTimeout": "3s",
+  "exclusiveLockObserved": true,
+  "nonHrSharedLockWaitObserved": true,
+  "appendElapsedSeconds": 2.9957253327593207,
+  "exception": "QueryCanceled",
+  "phaseEpochRowVersionUnchanged": [
+    "draining_legacy",
+    2,
+    2
+  ],
+  "operationReceiptsAdded": 0,
+  "latencyInstrumentation": "original count executed then pg_sleep(6) inside disposable wrapper"
+}

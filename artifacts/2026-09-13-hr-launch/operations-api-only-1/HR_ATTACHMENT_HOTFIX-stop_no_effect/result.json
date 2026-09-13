@@ -1,0 +1,90 @@
+{
+  "kind": "external-command-mock-not-production",
+  "block": "HR_ATTACHMENT_HOTFIX",
+  "scenario": "stop_no_effect",
+  "runbookSha256": "a21d08491c0b2e0a1b996510ae39d9c9f536bd65daf4353088e7c2e62707534b",
+  "sourceBlockSha256": "e82fa1364f22227cd11063ed64ae3b7987a4db4fa24a585a6f6b953c5284369f",
+  "executedScriptSha256": "c762d7087a4aa6e15651290f35c5c9f5bb1a3ef8a67bee13e71b0fb722f93464",
+  "exit": 1,
+  "stdout": "",
+  "stderr": "",
+  "state": {
+    "hr": "online",
+    "saved": false,
+    "old_running": true,
+    "new_running": false,
+    "new_created": false,
+    "migrated": false,
+    "calls": [
+      [
+        "mock-docker",
+        "image",
+        "inspect",
+        "--format",
+        "{{.Id}}",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      [
+        "mock-docker",
+        "compose",
+        "--env-file",
+        "/opt/orbbec-agent-platform/private/platform.env",
+        "-f",
+        "/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9554/test_attachment_sequence_fails4/release/deploy/cloud/compose.yaml",
+        "config",
+        "--format",
+        "json"
+      ],
+      [
+        "mock-docker",
+        "run",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--rm",
+        "--read-only",
+        "--user",
+        "10001:10001",
+        "--network",
+        "none",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "python",
+        "-c",
+        "import hashlib,pathlib; print(hashlib.sha256(pathlib.Path(\"/app/backend/app/attachments/erasure.py\").read_bytes()).hexdigest())"
+      ],
+      [
+        "mock-docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "inspect",
+        "--format",
+        "{{.State.Running}}",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "update",
+        "--restart=no",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "stop",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "inspect",
+        "--format",
+        "{{.State.Running}}",
+        "old"
+      ]
+    ]
+  }
+}

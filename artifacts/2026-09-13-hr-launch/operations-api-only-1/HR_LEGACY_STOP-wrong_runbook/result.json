@@ -1,0 +1,20 @@
+{
+  "kind": "external-command-mock-not-production",
+  "block": "HR_LEGACY_STOP",
+  "scenario": "wrong_runbook",
+  "runbookSha256": "a21d08491c0b2e0a1b996510ae39d9c9f536bd65daf4353088e7c2e62707534b",
+  "sourceBlockSha256": "bf2054ceaeda34b7dcd1d538e102a96af368afc31cb0ef10eddcc280e1ef2950",
+  "executedScriptSha256": "665fe3ec78780a20e403a8871dba7548775297dd878fb83935e9e90a2342d290",
+  "exit": 1,
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 11, in <module>\nAssertionError\n",
+  "state": {
+    "hr": "online",
+    "saved": false,
+    "old_running": true,
+    "new_running": false,
+    "new_created": false,
+    "migrated": false,
+    "calls": []
+  }
+}

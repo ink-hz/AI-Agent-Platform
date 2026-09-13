@@ -1,0 +1,46 @@
+{
+  "kind": "external-command-mock-not-production",
+  "block": "HR_LEGACY_STOP",
+  "scenario": "peers_changed",
+  "runbookSha256": "a21d08491c0b2e0a1b996510ae39d9c9f536bd65daf4353088e7c2e62707534b",
+  "sourceBlockSha256": "bf2054ceaeda34b7dcd1d538e102a96af368afc31cb0ef10eddcc280e1ef2950",
+  "executedScriptSha256": "be44afbfdeda0921e2c2a74d2c94e3c9697ded1356059b7da0656a607d80c45b",
+  "exit": 1,
+  "stdout": "/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9554/test_pm2_exit_is_causal_and_sa9/others-before.json /private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9554/test_pm2_exit_is_causal_and_sa9/others-after.json differ: char 1, line 1\n",
+  "stderr": "",
+  "state": {
+    "hr": "absent",
+    "saved": false,
+    "old_running": true,
+    "new_running": false,
+    "new_created": false,
+    "migrated": false,
+    "calls": [
+      [
+        "mock-pm2",
+        "state-one",
+        "metabot-hr"
+      ],
+      [
+        "mock-pm2",
+        "snapshot-except",
+        "metabot-hr"
+      ],
+      [
+        "mock-pm2",
+        "delete-one",
+        "metabot-hr"
+      ],
+      [
+        "mock-pm2",
+        "state-one",
+        "metabot-hr"
+      ],
+      [
+        "mock-pm2",
+        "snapshot-except",
+        "metabot-hr"
+      ]
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "head": "ccba447e618d10642e8097f5bc4f8b5d05e79aaa",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_cutover_runbook.py",
+    "backend/tests/test_hr_cutover_operations.py",
+    "backend/tests/test_hr_cloud_loop_docs_selfcheck.py",
+    "backend/tests/test_hr_agent_worker_process.py::test_compose_api_opt_in_uses_same_hr_configuration_paths",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T03:15:22.700066+00:00",
+  "source_patch_sha256": "c4b82b67d33b22c8bbeeac207e6a2588849d82f7f8af9338df2cfc1ba0941595",
+  "untracked_source_snapshots": {},
+  "boundary": "Local real PostgreSQL locks/transactions and causal Docker/PM2 mocks; current API-only acceptance and actual platform.env path; no production or model calls",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T03:15:42.578628+00:00"
+}

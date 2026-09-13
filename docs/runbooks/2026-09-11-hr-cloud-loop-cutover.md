@@ -1,6 +1,6 @@
 # HR 云端 Loop 部署与切换手册（E1c）
 
-本文提供可审阅的操作路径，执行权限来自当前任务。2026-09-13 用户明确要求“直接做到上线”、排除飞书，并授权从 HR 历史 session 提取问题做真实场景验证；该授权覆盖必要的 HR 与附件维护暂停。执行时仍须记录具体时间、准确镜像/配置、原执行器身份及共享 API 影响。真实候选人模型服务及保留/训练处理规则尚未完整确认，当前可装配的发布策略仅允许公开/已审阅合成场景，真实个人材料授权回调保持关闭。D7 采用单独受保护的发布评审文件绑定当前 provider/budget/diagnostic 内容，不能靠修改 profile 自称获准。浏览器、生产和真实场景验收分别记录实际结果；此处不预先宣布上线通过。
+本文提供可审阅的操作路径，执行权限来自当前任务。2026-09-13 用户明确要求“直接做到上线”、排除飞书，并授权从 HR 历史 session 提取问题做真实场景验证；该授权覆盖必要的 HR 与附件维护暂停。执行时仍须记录具体时间、准确镜像/配置、原执行器身份及共享 API 影响。真实候选人模型服务及保留/训练处理规则尚未完整确认，当前可装配的发布策略仅允许公开/已审阅合成场景，真实个人材料授权回调保持关闭。D7 采用单独受保护的发布评审文件绑定当前 provider/budget/diagnostic 内容，不能靠修改 profile 自称获准。用户随后明确允许绕过前端直接走接口：本次生产验收走真实HTTP，保留身份认证、授权、CSRF、幂等与持久化路径；浏览器不作为上线前置，页面效果仍未验。生产和真实场景验收分别记录实际结果；此处不预先宣布上线通过。
 
 ## 1. 不可合并的两个发布
 
@@ -35,7 +35,7 @@ export attachment_runbook_sha=APPROVED_RUNBOOK_SHA256
 attachment_postgres=APPROVED_POSTGRES_CONTAINER_ID
 test -d "$attachment_evidence"
 export PLATFORM_IMAGE="$attachment_image"
-attachment_compose=(/usr/bin/docker compose --env-file "$attachment_private/runtime.env" -f "$attachment_release/deploy/cloud/compose.yaml")
+attachment_compose=(/usr/bin/docker compose --env-file "$attachment_private/platform.env" -f "$attachment_release/deploy/cloud/compose.yaml")
 # Verify the exact approved text and release inputs before stopping anything.
 python3 - <<'PY'
 import hashlib, os, pathlib, re
