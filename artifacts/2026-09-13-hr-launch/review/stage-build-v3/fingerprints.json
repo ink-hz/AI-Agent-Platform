@@ -1,0 +1,25 @@
+{
+  "actual_commit_tree": "fee0cd931c7e66cb1e681c16c3c7345821939a67",
+  "fixed_commit": "394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76",
+  "fixed_source_sha256": {
+    "artifacts/2026-09-13-hr-launch/production/attachment-suspended-null-fix/green/attachment-suite-final.stdout.log": "d7a1eb155f96d7e6ac4932d5d43fdc4861e8e16b582f28109e99180210c1bbb8",
+    "backend/app/attachments/object_writer.py": "3ac26ca1d99d27a08426018a58c5a68e2171f84161ccd9ee0425fe65fc073564",
+    "backend/app/attachments/s3_erasure.py": "42c230ff413fd53402176dd988ff78b511a79a28489130890808d7331cc44933",
+    "backend/app/attachments/worker_runtime.py": "ced56a5661cc0717785eb47b8b5f9d2dadd55c5cf35ff1c8224f4b2d762bfd37",
+    "backend/tests/test_attachment_s3_version_erasure.py": "a981e2d38f4642dfb09719719d921f22600f6df2b5cefdbd4d3343f916cb1b5e"
+  },
+  "fixed_tree": "fee0cd931c7e66cb1e681c16c3c7345821939a67",
+  "review_boundary": "local read-only comparison; no SSH, build, service, migration, or test execution",
+  "schema_version": 1,
+  "stage_script_equal_after_declared_substitutions": true,
+  "test_script_equal_after_declared_substitutions": true,
+  "tracked_symlink_count": 0,
+  "v2_files_sha256": {
+    "artifacts/2026-09-13-hr-launch/production/stage_build_v2.py": "958d6ad9d0d1f0982b614bcf345b3f502a6994035168d804c81edca8700ea9d9",
+    "artifacts/2026-09-13-hr-launch/production/test_stage_build_v2.py": "619b217cbad17d5be3ed5f2eaaab9b9f03465bcce9f366eac25115c7f0956e40"
+  },
+  "v3_files_sha256": {
+    "artifacts/2026-09-13-hr-launch/production/stage_build_v3.py": "54ca7b74f807b5a48110b89fd47f1384222a392856b89af04b9509a7ca0b7111",
+    "artifacts/2026-09-13-hr-launch/production/test_stage_build_v3.py": "58bb03111e87eee314834c1388f2ea254adb7e2a28a7eef0c49372a2cf4cf9ac"
+  }
+}
