@@ -52,6 +52,7 @@ CUTOVER_MIGRATION_SHA256 = {
     102: "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
     103: "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
     104: "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
+    105: "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
 }
 
 TABLES = (
@@ -95,6 +96,8 @@ class HrAgentSettings:
     lease_seconds: int = 60
     heartbeat_seconds: int = 15
     configuration_revision: str = ""
+    release_policy_file: Path | None = field(default=None, repr=False)
+    release_policy: dict = field(default_factory=dict, repr=False)
 
     def create_codec(self) -> ContentCodec:
         if not self.enabled or self.content_keyring_file is None:
@@ -257,6 +260,26 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
             raise ValueError()
         if integer(budget.get("work_retention_seconds", 0)) <= 0:
             raise ValueError()
+        identity = {"provider": provider, "budget": budget, "diagnostic": diagnostic}
+        policy_path, policy = None, {}
+        if environment.get(prefix + "RELEASE_POLICY_FILE"):
+            policy_path = path("RELEASE_POLICY_FILE")
+            if not policy_path.is_file() or stat.S_IMODE(policy_path.stat().st_mode) != 0o600:
+                raise ValueError()
+            policy = document("RELEASE_POLICY_FILE")
+            # This review grants public/synthetic work only. Real candidate
+            # authority remains a separate unconfigured boundary.
+            if (
+                set(policy) != {"version", "scope", "authorization_ref", "configuration_sha256", "usage_accounting"}
+                or type(policy["version"]) is not int or policy["version"] != 1
+                or policy["scope"] != "public-only"
+                or not isinstance(policy["authorization_ref"], str)
+                or not 1 <= len(policy["authorization_ref"].strip()) <= 256
+                or policy["configuration_sha256"] != hashlib.sha256(canonical_json(identity).encode()).hexdigest()
+                or policy["usage_accounting"] != "conservative_estimate_not_invoice"
+            ):
+                raise ValueError()
+            identity["release_policy"] = policy
         settings = HrAgentSettings(
             True,
             provider,
@@ -269,9 +292,11 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
             heartbeat,
             hashlib.sha256(
                 canonical_json(
-                    {"provider": provider, "budget": budget, "diagnostic": diagnostic}
+                    identity
                 ).encode()
             ).hexdigest(),
+            policy_path,
+            policy,
         )
         settings.create_codec()
         return settings

@@ -194,7 +194,7 @@ def test_config_reserves_full_unicode_read_capacity_before_start(tmp_path, input
         loaded = make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
         assert loaded.provider_profile['context_window_tokens'] == input_capacity + 4096
 
-@pytest.mark.parametrize("version", [102, 103, 104])
+@pytest.mark.parametrize("version", [102, 103, 104, 105])
 @pytest.mark.parametrize("receipt", [None, "0" * 64])
 def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
     from app.hr_agent.config import check_schema_ready

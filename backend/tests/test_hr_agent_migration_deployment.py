@@ -222,6 +222,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
             "102_hr_execution_cutover.sql",
             "103_hr_execution_drain_occupancy.sql",
             "104_hr_execution_drain_terminal_contract.sql",
+            "105_hr_cloud_resume.sql",
         ):
             target = broken_release / "backend/control_migrations" / name
             target.write_bytes(
@@ -505,15 +506,16 @@ def test_dirty_at_rest_receipt_is_never_cleanup_verified(tmp_path):
         assert receipt["failure_code"] == "at_rest_not_clean"
         assert receipt["cleanup_verified"] is False
 
+@pytest.mark.parametrize("version", [104, 105])
 @pytest.mark.parametrize("receipt", [None, "0" * 64])
-def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
+def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt, version):
     with hr_agent_database(migrate_hr=False) as database:
         preview_dsn = _prepare_preview_and_revoke(database)
         with database.admin_connection() as c:
             if receipt is None:
-                c.execute("delete from platform_control.schema_migrations where version=104")
+                c.execute("delete from platform_control.schema_migrations where version=%s", (version,))
             else:
-                c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
+                c.execute("update platform_control.schema_migrations set sha256=%s where version=%s", (receipt, version))
         private = tmp_path / "private"
         private.mkdir()
         (private / "control-migrator-database-url").write_text(database.migrator_dsn)

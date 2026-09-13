@@ -261,6 +261,7 @@ def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
         102,
         103,
         104,
+        105,
     ]
     assert all(item["match"] for item in report["database"]["migrations"])
     assert report["database"]["permissions_complete"] is True
@@ -309,7 +310,7 @@ def test_cli_stdout_is_json_and_scrubs_raw_exceptions(tmp_path, capsys):
     assert str(tmp_path) not in output
 
 
-@pytest.mark.parametrize("version", [103, 104])
+@pytest.mark.parametrize("version", [103, 104, 105])
 @pytest.mark.parametrize("receipt", [None, "0" * 64])
 def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt, version):
     knowledge = _knowledge(tmp_path / "knowledge")
@@ -331,6 +332,7 @@ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, r
     (102, "CUTOVER_MIGRATION"),
     (103, "DRAIN_OCCUPANCY_MIGRATION"),
     (104, "DRAIN_TERMINAL_MIGRATION"),
+    (105, "CLOUD_RESUME_MIGRATION"),
 ])
 @pytest.mark.parametrize("replace_ledger", [False, True])
 def test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image(

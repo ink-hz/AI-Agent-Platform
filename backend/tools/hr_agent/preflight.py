@@ -41,6 +41,8 @@ DRAIN_TERMINAL_MIGRATION = (
     Path(__file__).parents[2] / "control_migrations" / "104_hr_execution_drain_terminal_contract.sql"
 )
 
+CLOUD_RESUME_MIGRATION = Path(__file__).parents[2] / "control_migrations" / "105_hr_cloud_resume.sql"
+
 ATTACHMENT_KEYS = (
     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
     "PLATFORM_ATTACHMENT_S3_BUCKET",
@@ -161,7 +163,10 @@ def _runtime_report(environment: dict[str, str]) -> tuple[dict | None, str | Non
             ("diagnostic", "PLATFORM_HR_AGENT_DIAGNOSTIC_PROFILE_FILE"),
         ):
             profiles[label] = _file_fingerprint(environment[key])
+        if settings.release_policy_file is not None:
+            profiles["release_policy"] = _file_fingerprint(str(settings.release_policy_file))
         report = {
+            "d7_product_approved": bool(settings.release_policy),
             "configuration_fingerprint": settings.configuration_revision,
             "hr_content_keyring_fingerprint": _file_fingerprint(
                 environment["PLATFORM_HR_AGENT_CONTENT_KEYRING_FILE"]
@@ -210,7 +215,7 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
         expected_migrations.update(CUTOVER_MIGRATION_SHA256)
         image_digests = {}
         for version, path in ((102, CUTOVER_MIGRATION), (103, DRAIN_OCCUPANCY_MIGRATION),
-                              (104, DRAIN_TERMINAL_MIGRATION)):
+                              (104, DRAIN_TERMINAL_MIGRATION), (105, CLOUD_RESUME_MIGRATION)):
             try:
                 image_digests[version] = _fingerprint(path.read_bytes())
             except OSError:
@@ -407,11 +412,13 @@ def build_report(
         database, database_blockers = _database_report(connection_factory)
         blockers.extend(database_blockers)
 
-    # No production assembly currently supplies these authorities. Metadata in a
-    # profile or caller-provided booleans cannot manufacture either approval.
+    # A protected, configuration-bound operator review grants public work.
+    # A caller boolean or arbitrary provider metadata never grants authority.
     if launch_scope == "full-candidate":
         blockers.append("personal_processing_authorizer_absent")
-    blockers.append("d7_product_approval_absent")
+    d7_approved = bool(api and worker and runtime_match and api["d7_product_approved"] and worker["d7_product_approved"])
+    if not d7_approved:
+        blockers.append("d7_product_approval_absent")
     blockers = list(dict.fromkeys(blockers))
     return {
         "schema_version": 1,
@@ -430,7 +437,7 @@ def build_report(
             "process_functionality_verified": False,
             "model_or_network_called": False,
             "personal_processing_authorizer_present": False,
-            "d7_product_approved": False,
+            "d7_product_approved": d7_approved,
             "browser_acceptance_completed": False,
             "release_window_known": False,
         },
