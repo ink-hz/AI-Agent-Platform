@@ -1,0 +1,5 @@
+{
+  "path": "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-1/run.py",
+  "sha256": "cdc659bf15b8b20e7df9deae004deff0cf3f2b8d800c215497ec5ab251fcba23",
+  "boundary": "read-only source capture; no execution"
+}

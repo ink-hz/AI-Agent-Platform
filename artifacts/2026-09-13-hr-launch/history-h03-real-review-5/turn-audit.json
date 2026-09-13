@@ -1,0 +1,367 @@
+[
+  {
+    "turn": 1,
+    "status": "completed",
+    "request": {
+      "thread_id": null,
+      "text": "为虚构公司写“研发工程总监”JD/JR：专家型管理岗，统筹NPI、工装夹具和工程软件，管理约30人。参考材料中的候选画像只作能力线索。",
+      "objects": [],
+      "references": [
+        {
+          "kind": "material",
+          "id": "693dea96-24af-48db-bda0-aaafc65fe9d3:text",
+          "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+          "sha256": "ac9f1738c2836fd9ce37d8318834df0b6cd8561ae00f4dd1dbd77b1b02287717"
+        }
+      ],
+      "budget_profile": "test"
+    },
+    "results": [
+      {
+        "ref": {
+          "kind": "result",
+          "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+          "revision": "ff8a1c65-abd4-404f-bb99-127338b24adf",
+          "sha256": "3e7544494eda10916c328fe4b7bb30236aa319c6ef1ac7a2aea84299a0163e8e"
+        },
+        "kind": "jd",
+        "basis": [
+          {
+            "input_revision": 1,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "693dea96-24af-48db-bda0-aaafc65fe9d3:text",
+            "kind": "material",
+            "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+            "sha256": "ac9f1738c2836fd9ce37d8318834df0b6cd8561ae00f4dd1dbd77b1b02287717"
+          },
+          {
+            "id": "job-and-context",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+          },
+          {
+            "id": "competency-and-profile",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+          },
+          {
+            "id": "requirement-calibration",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+          }
+        ],
+        "preceding_refs": [],
+        "body_chars": 2449,
+        "body_sha256": "9926837c5567bf6182dc1ad328344d25b1375d44cda9d9720db6c13b3964161d"
+      }
+    ]
+  },
+  {
+    "turn": 2,
+    "status": "completed",
+    "request": {
+      "expected_input_revision": 1,
+      "question_id": null,
+      "text": "当前版本放到一线员工也不违和。请体现带团队达成目标，同时本人不能只做管理。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+      "objects": [],
+      "references": [
+        {
+          "id": "693dea96-24af-48db-bda0-aaafc65fe9d3:text",
+          "kind": "material",
+          "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+          "sha256": "ac9f1738c2836fd9ce37d8318834df0b6cd8561ae00f4dd1dbd77b1b02287717"
+        },
+        {
+          "id": "job-and-context",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+        },
+        {
+          "id": "competency-and-profile",
+          "kind": "method",
+          "revision": "1",
+          "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+        },
+        {
+          "id": "requirement-calibration",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        },
+        {
+          "kind": "result",
+          "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+          "revision": "ff8a1c65-abd4-404f-bb99-127338b24adf",
+          "sha256": "3e7544494eda10916c328fe4b7bb30236aa319c6ef1ac7a2aea84299a0163e8e"
+        }
+      ]
+    },
+    "results": [
+      {
+        "ref": {
+          "kind": "result",
+          "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+          "revision": "217424a3-b619-43d4-a42a-65250934c7fd",
+          "sha256": "883ab64a4488ae2b5b29b3a61012bced9cd29a6a829a7ef238d657a6cf8bdc19"
+        },
+        "kind": "jd",
+        "basis": [
+          {
+            "input_revision": 2,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "693dea96-24af-48db-bda0-aaafc65fe9d3:text",
+            "kind": "material",
+            "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+            "sha256": "ac9f1738c2836fd9ce37d8318834df0b6cd8561ae00f4dd1dbd77b1b02287717"
+          },
+          {
+            "id": "job-and-context",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+          },
+          {
+            "id": "competency-and-profile",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+          },
+          {
+            "id": "requirement-calibration",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+          }
+        ],
+        "preceding_refs": [
+          {
+            "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+            "kind": "result",
+            "revision": "ff8a1c65-abd4-404f-bb99-127338b24adf",
+            "sha256": "3e7544494eda10916c328fe4b7bb30236aa319c6ef1ac7a2aea84299a0163e8e"
+          }
+        ],
+        "body_chars": 4507,
+        "body_sha256": "c0843eb1d87e364f2541bbd4fa3c51e839840cc0ea7d9da7e146d26771946dd9"
+      }
+    ]
+  },
+  {
+    "turn": 3,
+    "status": "completed",
+    "request": {
+      "expected_input_revision": 2,
+      "question_id": null,
+      "text": "调性正确，但请减少冗余。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+      "objects": [],
+      "references": [
+        {
+          "id": "693dea96-24af-48db-bda0-aaafc65fe9d3:text",
+          "kind": "material",
+          "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+          "sha256": "ac9f1738c2836fd9ce37d8318834df0b6cd8561ae00f4dd1dbd77b1b02287717"
+        },
+        {
+          "id": "job-and-context",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+        },
+        {
+          "id": "competency-and-profile",
+          "kind": "method",
+          "revision": "1",
+          "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+        },
+        {
+          "id": "requirement-calibration",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        },
+        {
+          "kind": "result",
+          "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+          "revision": "217424a3-b619-43d4-a42a-65250934c7fd",
+          "sha256": "883ab64a4488ae2b5b29b3a61012bced9cd29a6a829a7ef238d657a6cf8bdc19"
+        }
+      ]
+    },
+    "results": [
+      {
+        "ref": {
+          "kind": "result",
+          "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+          "revision": "cbe1ced9-093a-4368-9ce3-6cccacc55aac",
+          "sha256": "c3b3ff969815f41486b7fc1016c9e4af3b50812af09a61c16c8375636e41b9b7"
+        },
+        "kind": "jd",
+        "basis": [
+          {
+            "input_revision": 3,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "693dea96-24af-48db-bda0-aaafc65fe9d3:text",
+            "kind": "material",
+            "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+            "sha256": "ac9f1738c2836fd9ce37d8318834df0b6cd8561ae00f4dd1dbd77b1b02287717"
+          },
+          {
+            "id": "job-and-context",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+          },
+          {
+            "id": "competency-and-profile",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+          },
+          {
+            "id": "requirement-calibration",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+          }
+        ],
+        "preceding_refs": [
+          {
+            "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+            "kind": "result",
+            "revision": "217424a3-b619-43d4-a42a-65250934c7fd",
+            "sha256": "883ab64a4488ae2b5b29b3a61012bced9cd29a6a829a7ef238d657a6cf8bdc19"
+          }
+        ],
+        "body_chars": 3857,
+        "body_sha256": "766e28c1ad709d8d8aa5464def272b6c65485137bdc23edf265aa07e43b8fa7e"
+      }
+    ]
+  },
+  {
+    "turn": 4,
+    "status": "completed",
+    "request": {
+      "expected_input_revision": 3,
+      "question_id": null,
+      "text": "把虚构产品范围补入可制造性职责：视觉模组、扫描设备、增材制造设备、工业与具身机器人、协作臂和采集设备。",
+      "objects": [],
+      "references": [
+        {
+          "id": "693dea96-24af-48db-bda0-aaafc65fe9d3:text",
+          "kind": "material",
+          "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+          "sha256": "ac9f1738c2836fd9ce37d8318834df0b6cd8561ae00f4dd1dbd77b1b02287717"
+        },
+        {
+          "id": "job-and-context",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+        },
+        {
+          "id": "competency-and-profile",
+          "kind": "method",
+          "revision": "1",
+          "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+        },
+        {
+          "id": "requirement-calibration",
+          "kind": "method",
+          "revision": "2",
+          "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+        },
+        {
+          "kind": "result",
+          "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+          "revision": "cbe1ced9-093a-4368-9ce3-6cccacc55aac",
+          "sha256": "c3b3ff969815f41486b7fc1016c9e4af3b50812af09a61c16c8375636e41b9b7"
+        },
+        {
+          "kind": "material",
+          "id": "6195c33e-8750-4704-bf0f-e395ec3015c1:text",
+          "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+          "sha256": "cd36fe6e5b33a1508542b21cbaf1b039a90b7f1c94011e19dafa8e05f26f2628"
+        }
+      ]
+    },
+    "results": [
+      {
+        "ref": {
+          "kind": "result",
+          "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+          "revision": "53ca84ed-568f-4796-892c-823ca59c14cf",
+          "sha256": "765bf8d9abcdbcdde35c40cc8598277be64d77dc0cf421c3d25e475a341c2676"
+        },
+        "kind": "jd",
+        "basis": [
+          {
+            "input_revision": 4,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "693dea96-24af-48db-bda0-aaafc65fe9d3:text",
+            "kind": "material",
+            "revision": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9:utf8-v1",
+            "sha256": "ac9f1738c2836fd9ce37d8318834df0b6cd8561ae00f4dd1dbd77b1b02287717"
+          },
+          {
+            "id": "6195c33e-8750-4704-bf0f-e395ec3015c1:text",
+            "kind": "material",
+            "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+            "sha256": "cd36fe6e5b33a1508542b21cbaf1b039a90b7f1c94011e19dafa8e05f26f2628"
+          }
+        ],
+        "preceding_refs": [
+          {
+            "id": "3675365f-6806-49d2-93af-58f16b2bed01",
+            "kind": "result",
+            "revision": "cbe1ced9-093a-4368-9ce3-6cccacc55aac",
+            "sha256": "c3b3ff969815f41486b7fc1016c9e4af3b50812af09a61c16c8375636e41b9b7"
+          },
+          {
+            "id": "job-and-context",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "c39736d3108657309237b12aac9c4211da27da1571c049c433368dab33e6c4ff"
+          },
+          {
+            "id": "requirement-calibration",
+            "kind": "method",
+            "revision": "2",
+            "sha256": "ce853e374073ef1b03a63514a7b5901019242da1c11b1ca7ae3a4ac072a0a4ac"
+          },
+          {
+            "id": "competency-and-profile",
+            "kind": "method",
+            "revision": "1",
+            "sha256": "fa242935802e9b84a71e6feed87dce690f198c4b47879159379181985f854763"
+          }
+        ],
+        "body_chars": 5660,
+        "body_sha256": "d2b2f9f078ddc3ac044d26400c326c6ce32fbafe51ffd58891233a71246496fb"
+      }
+    ]
+  }
+]

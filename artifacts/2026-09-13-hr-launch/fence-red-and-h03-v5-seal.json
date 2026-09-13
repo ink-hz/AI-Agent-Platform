@@ -1,0 +1,409 @@
+{
+  "boundary": "Exact local run bytes. H03 v5 completed but professional review not accepted. Real fence run1/diagnostic fail at streaming writer; concurrent erasers/partial PUT not reached. Prior baseline RED only checks missing fence. Production read-only configuration check only; no service or data changes.",
+  "files": {
+    "history-h03-real-run-5/H03/report.json": {
+      "bytes": 768754,
+      "sha256": "b2afcc3fc20742bb107c083edee9b794b2d612b496a9d71f3d9a73dfefe8ce25"
+    },
+    "history-h03-real-run-5/H03/turn-01.json": {
+      "bytes": 78473,
+      "sha256": "5b355ab2006babbe336657d529326998163e3c60ed2db97fed26a29245453a0f"
+    },
+    "history-h03-real-run-5/H03/turn-02.json": {
+      "bytes": 136702,
+      "sha256": "c529cd726b9743fda2a2415299d217c674d167cc73515b8aa1dbe5ebb545bd9c"
+    },
+    "history-h03-real-run-5/H03/turn-03.json": {
+      "bytes": 197269,
+      "sha256": "cf6f3d8d4213d8372c922ec6752352616a62db3e636e4953965d7207bcd8b403"
+    },
+    "history-h03-real-run-5/H03/turn-04.json": {
+      "bytes": 311669,
+      "sha256": "44fd5361f45253097f73a27bd80f6869a032d3206d01bde01f49a635076cd499"
+    },
+    "history-h03-real-run-5/configuration.json": {
+      "bytes": 618,
+      "sha256": "597634706bcd877743d8275395917e67e549e99ac221c9f06755d8b0e43953e0"
+    },
+    "history-h03-real-run-5/summary.json": {
+      "bytes": 27140,
+      "sha256": "e98583c8b9e6d9920625a2925b48e7f86ca4e0de6c3d4a2fa3d431136443d86b"
+    },
+    "history-h03-real-review-5/fingerprints.json": {
+      "bytes": 13725,
+      "sha256": "e562ddda1eaf0d14acbe4cbebcf111c75213495d088dc9ed6cb34de8bb1981dd"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/corpus.json": {
+      "bytes": 173319,
+      "sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/context-v1.txt": {
+      "bytes": 602,
+      "sha256": "9f2ae8dcd6716bf8c5e5e5f64b529903186f392fab301ec9f9e711b6f1ae4d92"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-01-context.txt": {
+      "bytes": 218,
+      "sha256": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-02-context.txt": {
+      "bytes": 119,
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-03-context.txt": {
+      "bytes": 119,
+      "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-04-context.txt": {
+      "bytes": 140,
+      "sha256": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/manifest.json": {
+      "bytes": 28005,
+      "sha256": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/report.json": {
+      "bytes": 768754,
+      "sha256": "b2afcc3fc20742bb107c083edee9b794b2d612b496a9d71f3d9a73dfefe8ce25"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-01.json": {
+      "bytes": 78473,
+      "sha256": "5b355ab2006babbe336657d529326998163e3c60ed2db97fed26a29245453a0f"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-02.json": {
+      "bytes": 136702,
+      "sha256": "c529cd726b9743fda2a2415299d217c674d167cc73515b8aa1dbe5ebb545bd9c"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-03.json": {
+      "bytes": 197269,
+      "sha256": "cf6f3d8d4213d8372c922ec6752352616a62db3e636e4953965d7207bcd8b403"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-04.json": {
+      "bytes": 311669,
+      "sha256": "44fd5361f45253097f73a27bd80f6869a032d3206d01bde01f49a635076cd499"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/configuration.json": {
+      "bytes": 618,
+      "sha256": "597634706bcd877743d8275395917e67e549e99ac221c9f06755d8b0e43953e0"
+    },
+    "history-h03-real-review-5/frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/summary.json": {
+      "bytes": 27140,
+      "sha256": "e98583c8b9e6d9920625a2925b48e7f86ca4e0de6c3d4a2fa3d431136443d86b"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/artifacts/2026-09-13-hr-launch/history-real-review-1/baseline-fc339d8/backend/hr_agent_knowledge/role.md": {
+      "bytes": 8619,
+      "sha256": "404c2666db41c667379b5d482ee0867af9a796cd46d0582da6a6b3e4542db42b"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/__init__.py": {
+      "bytes": 73,
+      "sha256": "415fabafe27bb316a957b1a23e5c2162f65c2e02a2c9b93b248cf6e283c17031"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/access.py": {
+      "bytes": 2215,
+      "sha256": "238641d76c1234f03d4b4c997cd78ef4e1359e42dcc23780a826641d843de9f7"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/candidates.py": {
+      "bytes": 32119,
+      "sha256": "369de3b5c8b63712ef82dd131de96c512d7a52688c6aee3411c2673fe70943e0"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/config.py": {
+      "bytes": 16333,
+      "sha256": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/context.py": {
+      "bytes": 13419,
+      "sha256": "3a15226b049d045379c90e50fdbbbf4f07e5516c977c86559ae46ed8913af012"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/cutover.py": {
+      "bytes": 2937,
+      "sha256": "1d933bfcc5069597d3f44174b24a46f3386987e4522bdbe5dd6af977d2389684"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/diagnostics.py": {
+      "bytes": 8149,
+      "sha256": "31c9f916869129f13038391118f1e19cf704a6842f3e47d649d35ce9f9e1d062"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/interview_records.py": {
+      "bytes": 9917,
+      "sha256": "756dbd243eee9b45b77866d2c3dac7064421f38f658ccde22a3d4d1476fc009c"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/knowledge.py": {
+      "bytes": 3243,
+      "sha256": "49600fe594cacaf255c316cb00ca89ffee7f4a29086b7f1b4e55826e53cb6b35"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/material_authority.py": {
+      "bytes": 5172,
+      "sha256": "18e66b8bf51e6f9e2bdbef56302a6e91b3b62bc971a0290f9564cff15f99becc"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/material_parsing.py": {
+      "bytes": 18468,
+      "sha256": "834f90fbcec0b21913f27d4c7aeab142daa0acff8692fcda26027543b4f18f3b"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/materials.py": {
+      "bytes": 13136,
+      "sha256": "09b544528109bd03b92469eb9a17cd8e2ff878f3b49a481a870b570e45254d26"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/model.py": {
+      "bytes": 29233,
+      "sha256": "0366ab25deb8069cc3cfe23eb7af7323ee3a86f7b31f82df21ff2a9bda309b58"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/observability.py": {
+      "bytes": 665,
+      "sha256": "c18737c06bd0155f3bb6f79210624db651128d028b7aadc1811d920d3905f7ad"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/personal_processing.py": {
+      "bytes": 1819,
+      "sha256": "4f0d91ac3badfc1349cc1fda706c8334cc23193d131cf5ee522c2913fb4fe099"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/proposals.py": {
+      "bytes": 6770,
+      "sha256": "6234d27074e2d46dc3cbc7cff0d3cc88dc08469d7fa2efd745ca007b05234f1a"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/readiness.py": {
+      "bytes": 6231,
+      "sha256": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/repository.py": {
+      "bytes": 95045,
+      "sha256": "b689a48ca6f7fa5028ed0c9bd69385c40d5ae56372329840d29c30b08631ecad"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/repository_views.py": {
+      "bytes": 14879,
+      "sha256": "80548f33d860671e7305245bb3dadad245d963dde17896306cd043eb5afaccec"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/resources.py": {
+      "bytes": 20823,
+      "sha256": "d797b3667de05bc9ee9babc7aa21beb96c7e781dba87473f2cc86da082bb5323"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/results.py": {
+      "bytes": 1690,
+      "sha256": "833d4040b199054a6fc486146c08e98d7381818116fa5e385b1a366de0c60ced"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/routes.py": {
+      "bytes": 11088,
+      "sha256": "d2f9fbb1ff67d92cfc42138d042df90c6e693014661d2cfb8bc08fa544b647ad"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/runtime.py": {
+      "bytes": 5802,
+      "sha256": "fcdefd831e26b33b818a2c375764496f4c5a19a6a18e21ebcb06b93f9f4d7d9f"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/service.py": {
+      "bytes": 7207,
+      "sha256": "9bb437b6d6e394ce2225e0a0262bb1ed61825bd29e5602d1b6839ffbf149d874"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/standards.py": {
+      "bytes": 10930,
+      "sha256": "2454012993fe24f477e468f2a7be755d02bd4626b21b7fee3b992f1749d0adda"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/tools.py": {
+      "bytes": 2559,
+      "sha256": "9961c6fa28da1e0578e7d486ad7dbfa939512ed9a9ddde41ce2d3404303d2e20"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/types.py": {
+      "bytes": 9202,
+      "sha256": "57fb60f0ec6eb38e57d86dbe1f03d2359d23ba81fc30395f821c33651a536abd"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/work_files.py": {
+      "bytes": 5871,
+      "sha256": "1540db61a58900aff6acb43c09adbd960a5be6b2b24532c8829870c50c1a95c7"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/worker.py": {
+      "bytes": 5353,
+      "sha256": "b10c582fd377cb18fa723d7db457e1f5d201463dc79f0506b2eb36f863da1d01"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/app/hr_agent/worker_health.py": {
+      "bytes": 5824,
+      "sha256": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/hr_agent_knowledge/role.md": {
+      "bytes": 9026,
+      "sha256": "a1e8e7c73194b503d6c9a8b5efe356cd97aba43d5d997f631278574e465da290"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/tests/helpers/hr_history_replay.py": {
+      "bytes": 32073,
+      "sha256": "ebc1562fe491b5e1e0064c03e101927e7c19ce5a27b50e07f594587c5a992b38"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/tests/test_hr_agent_history_replay.py": {
+      "bytes": 12921,
+      "sha256": "d12d6369b3ccc3d5c86e8d2b422b300e5514114e51d12cdb47dbe029316b81de"
+    },
+    "history-h03-real-review-5/frozen/detached-runtime/backend/tools/hr_agent/build_knowledge_release.py": {
+      "bytes": 4840,
+      "sha256": "bb8538e1f0366dca0e013d13831db651b0275d6979fd53b49490cfe29ea4c686"
+    },
+    "history-h03-real-review-5/review-fingerprints.json": {
+      "bytes": 7122,
+      "sha256": "cfb0394313042e49eca4c8dbd6e695cde486dff575f321ca24151870bc781946"
+    },
+    "history-h03-real-review-5/review.md": {
+      "bytes": 11139,
+      "sha256": "02374f04c562aab40d33b6ebb9e8b5cae62c358f161d10942f2315f624da26f9"
+    },
+    "history-h03-real-review-5/turn-audit.json": {
+      "bytes": 13301,
+      "sha256": "0ea27da89e59dddf85d2799150c9115af7f8e8d7141099921ba05aa99e09bbbf"
+    },
+    "runs/history-h03-real-5/command.json": {
+      "bytes": 1106,
+      "sha256": "b690dfd6218676e41d038f9c81db3943cdd91fda9fc800f1c1b4f101942438b4"
+    },
+    "runs/history-h03-real-5/output.log": {
+      "bytes": 323,
+      "sha256": "94919c8ebbfdb70118bb416c21eef634d21a3aa7a067e77c3c20b926178fe409"
+    },
+    "runs/history-h03-real-5/source.patch": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runs/history-h03-real-5/untracked/backend/tests/test_attachment_write_fence.py": {
+      "bytes": 12083,
+      "sha256": "cae346d74569dc4deac9a0895e7ef31e04d160a0364e99e79292d9610b6b56f4"
+    },
+    "runs/history-h03-real-5/untracked/backend/tests/test_attachment_write_fence_database.py": {
+      "bytes": 8188,
+      "sha256": "c5eb27d838fd9100bb676f0b378cc1a00f687da283a2fcb925c37536a4a3550f"
+    },
+    "production/minio-fence-window-readonly-1/command.json": {
+      "bytes": 630,
+      "sha256": "1f471b73303bce6fa962082ba4e4ef57999b7ec9e46da8e32907b41ecf97512a"
+    },
+    "production/minio-fence-window-readonly-1/read.py": {
+      "bytes": 2869,
+      "sha256": "953529c64e36122edeb5aeaafa2edd1909c02f86cd83b45aae6dcee0c511a7eb"
+    },
+    "production/minio-fence-window-readonly-1/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production/minio-fence-window-readonly-1/stdout.json": {
+      "bytes": 2445,
+      "sha256": "a18e62bcc6b3b466fb01c29b0c6bb157fdcec86fb0c21bf44ae280226da95bc8"
+    },
+    "production/s3-fence-real-local-1/receipt.json": {
+      "bytes": 1320,
+      "sha256": "3f3d2cd5860c669f85c272a707a7780adff795c7b980c270369d411bdd6d868b"
+    },
+    "production/s3-fence-real-local-1/run.py": {
+      "bytes": 18430,
+      "sha256": "e3eb3df9aa1f572b68435c929204dbf767dacf7bf707aadfbd04fd32510cabf1"
+    },
+    "production/s3-fence-real-local-1/server.log": {
+      "bytes": 439,
+      "sha256": "57bc0e4c60613cafb777073ff08ad1d3b7ce1078a91f058175316fbb6ab65ff9"
+    },
+    "production/s3-fence-real-local-red-1/receipt.json": {
+      "bytes": 1044,
+      "sha256": "0a9da10dd88ba35054378de73ed52e692134e54fb39a214c994ffde939a9a34b"
+    },
+    "production/s3-fence-real-local-red-1/run.py": {
+      "bytes": 14845,
+      "sha256": "b87d27e70391eba679e919834871f7aad508a785c0b2bda8a45b647b81475d0e"
+    },
+    "production/s3-fence-real-local-red-1/server.log": {
+      "bytes": 439,
+      "sha256": "f32d4938f7fd401038a4ab0d3b2eae997137dab64086e9e8a914ff332519148d"
+    },
+    "production/s3-fence-real-local-diagnostic-1/receipt.json": {
+      "bytes": 3439,
+      "sha256": "b1ac65401d40e250481553c7c9a571140d21337e9b703090e0280c96b0f7dfb1"
+    },
+    "production/s3-fence-real-local-diagnostic-1/run.py": {
+      "bytes": 19108,
+      "sha256": "d09ac0b534d0742ca438017b8273d74a6a8b5be2b98e0823f2c45cc9a01a0448"
+    },
+    "production/s3-fence-real-local-diagnostic-1/server.log": {
+      "bytes": 439,
+      "sha256": "6e03c4de5e6e39226d2c76841f787409bf9c7217d81e017374f9acc6f3bbac20"
+    },
+    "runs/s3-fence-real-local-1/command.json": {
+      "bytes": 1586,
+      "sha256": "cb52e6761f6e241f6c1f4f7b601eb06a4ec440b1cdfcc5786be707d9ba55f6db"
+    },
+    "runs/s3-fence-real-local-1/output.log": {
+      "bytes": 1230,
+      "sha256": "2210801cd3720acb0989ca9e72a34f10aa5d0e8f4a786ffa48abf687af2c8427"
+    },
+    "runs/s3-fence-real-local-1/source.patch": {
+      "bytes": 56765,
+      "sha256": "f1b3e4aa4923e50613c02065a2aad77c2bf927640e5a3793d86f42da55c4c9e8"
+    },
+    "runs/s3-fence-real-local-1/untracked/backend/app/attachments/fence_capability.py": {
+      "bytes": 2812,
+      "sha256": "97d2e8e046ef5fce184bb8ae3f74a164dd50fbc5b256873d10a6d6a1818a9a55"
+    },
+    "runs/s3-fence-real-local-1/untracked/backend/app/attachments/object_keys.py": {
+      "bytes": 688,
+      "sha256": "d99ca37d9a3cd06fda85a99b9b9c5effc625d0bb17714259846d00427658fc70"
+    },
+    "runs/s3-fence-real-local-1/untracked/backend/control_migrations/106_attachment_erasure_write_fence.sql": {
+      "bytes": 3111,
+      "sha256": "7c4ae854dccb96292d33ed66af2070d8f555fcdf5539150fd7a592fedcd0cabb"
+    },
+    "runs/s3-fence-real-local-1/untracked/backend/tests/test_attachment_fence_capability.py": {
+      "bytes": 5213,
+      "sha256": "c0ff6c0c672db0f86f30aea3649fbfa4673ca558cf6db3e526ca10a5737100c8"
+    },
+    "runs/s3-fence-real-local-1/untracked/backend/tests/test_attachment_write_fence.py": {
+      "bytes": 13938,
+      "sha256": "c1c06b381bb49d0397ac9b1a9a04bc098a5870aba487b61ba2730b3fca8f072f"
+    },
+    "runs/s3-fence-real-local-1/untracked/backend/tests/test_attachment_write_fence_database.py": {
+      "bytes": 12669,
+      "sha256": "3a131c71f3b9b01b85fa5a3c65b170c29e15067fd31ebbaf4755a6f4c160a3ab"
+    },
+    "runs/s3-fence-real-local-red-1/command.json": {
+      "bytes": 1306,
+      "sha256": "30163f47f0d90c7714dbabdcc97e7932c91fa34c668be5f3d5db8b5735eae906"
+    },
+    "runs/s3-fence-real-local-red-1/output.log": {
+      "bytes": 1000,
+      "sha256": "1722082a6e57e77582c35303c631bdf629506442d21edf54fe23b44f70207606"
+    },
+    "runs/s3-fence-real-local-red-1/source.patch": {
+      "bytes": 24321,
+      "sha256": "82e055c82502e3b5d88c3b742da5934446d1e29482af1046154614e78e99ec51"
+    },
+    "runs/s3-fence-real-local-red-1/untracked/backend/app/attachments/object_keys.py": {
+      "bytes": 689,
+      "sha256": "7f540f099b2827ad7b4b463cb43c7cc5d0a855fa2461cd0986b291ab9d2c65ad"
+    },
+    "runs/s3-fence-real-local-red-1/untracked/backend/control_migrations/106_attachment_erasure_write_fence.sql": {
+      "bytes": 2527,
+      "sha256": "5685cf524f221abf939df0403337572a3cbd8e09bd5160e430541eb97f3a5c5c"
+    },
+    "runs/s3-fence-real-local-red-1/untracked/backend/tests/test_attachment_fence_capability.py": {
+      "bytes": 5117,
+      "sha256": "316cb9688de2c6a8ba613daab1527589d4728c09e076ca123c8c0a48a27eaa7c"
+    },
+    "runs/s3-fence-real-local-red-1/untracked/backend/tests/test_attachment_write_fence.py": {
+      "bytes": 12083,
+      "sha256": "cae346d74569dc4deac9a0895e7ef31e04d160a0364e99e79292d9610b6b56f4"
+    },
+    "runs/s3-fence-real-local-red-1/untracked/backend/tests/test_attachment_write_fence_database.py": {
+      "bytes": 8188,
+      "sha256": "c5eb27d838fd9100bb676f0b378cc1a00f687da283a2fcb925c37536a4a3550f"
+    },
+    "runs/s3-fence-real-local-diagnostic-1/command.json": {
+      "bytes": 745,
+      "sha256": "b33c000974ce136de8084b4293fc4eaea417c56924817dcb59de352ba3c18225"
+    },
+    "runs/s3-fence-real-local-diagnostic-1/output.log": {
+      "bytes": 3331,
+      "sha256": "bdafd9d0832c875d8548b3c92c77c994717fbe9d1e71ede64a7872486ceb92f5"
+    },
+    "runs/s3-fence-real-local-diagnostic-1/source.patch": {
+      "bytes": 97780,
+      "sha256": "076cf6776018c9e9e863d99a8c695465f456a4ebe661209d81a18d45f81a5045"
+    },
+    "review/s3-fence-real-local-driver-1/review.md": {
+      "bytes": 4939,
+      "sha256": "9731c0d01744f2992359501893a2fb10315b46c759716a142b9c4fe9156879a4"
+    },
+    "review/s3-fence-real-local-driver-1/snapshot-1-sha.json": {
+      "bytes": 223,
+      "sha256": "5f56bfb504a47a93eaa6831dcabf5c4ef2b6d11fef1095bc89f4614a27b947af"
+    },
+    "review/s3-fence-real-local-driver-1/snapshot-1.py": {
+      "bytes": 14845,
+      "sha256": "cdc659bf15b8b20e7df9deae004deff0cf3f2b8d800c215497ec5ab251fcba23"
+    }
+  }
+}

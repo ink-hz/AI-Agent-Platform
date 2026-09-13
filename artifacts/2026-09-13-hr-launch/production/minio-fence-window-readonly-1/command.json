@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/python3 -"
+  ],
+  "source_sha256": "953529c64e36122edeb5aeaafa2edd1909c02f86cd83b45aae6dcee0c511a7eb",
+  "started_at": "2026-09-13T05:06:45.756764+00:00",
+  "boundary": "readonly Docker inspect/top and S3 bucket lifecycle/replication/notification metadata; no env values or mutation",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T05:06:47.366434+00:00"
+}

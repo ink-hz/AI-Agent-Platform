@@ -1,0 +1,560 @@
+diff --git a/backend/app/attachments/erasure.py b/backend/app/attachments/erasure.py
+index be134bb6..fa475768 100644
+--- a/backend/app/attachments/erasure.py
++++ b/backend/app/attachments/erasure.py
+@@ -13,6 +13,7 @@ from app.control_plane.dsn import validate_control_dsn
+ from app.execution_relay.content_crypto import ContentCodec, SealedContent
+ 
+ from .conversation_repository import attachment_object_subject
++from .object_keys import derivative_object_key
+ 
+ 
+ class AttachmentErasureError(RuntimeError):
+@@ -85,6 +86,12 @@ class AttachmentErasureRepository:
+                     "platform_attachments.derivatives where attachment_id=%s",
+                     (job["attachment_id"],),
+                 ).fetchall()
++                derive_jobs = connection.execute(
++                    "select processing_job_id,derivative_kind from "
++                    "platform_attachments.processing_jobs where attachment_id=%s "
++                    "and job_kind='derive' order by processing_job_id",
++                    (job["attachment_id"],),
++                ).fetchall()
+             if base is None:
+                 raise AttachmentErasureError()
+             refs = [self._object_ref(
+@@ -99,6 +106,10 @@ class AttachmentErasureRepository:
+                 f"attachment:{job['attachment_id']}:derivative:{row['derivative_id']}:object-ref",
+                 row["object_ref_ciphertext"], row["object_ref_key_version"],
+             ) for row in derivatives)
++            refs.extend(
++                derivative_object_key(row["processing_job_id"], row["derivative_kind"])
++                for row in derive_jobs
++            )
+             return ErasureJob(
+                 job["erasure_job_id"], job["attachment_id"], tuple(dict.fromkeys(refs))
+             )
+diff --git a/backend/app/attachments/object_writer.py b/backend/app/attachments/object_writer.py
+index 089b1297..74864bcb 100644
+--- a/backend/app/attachments/object_writer.py
++++ b/backend/app/attachments/object_writer.py
+@@ -127,15 +127,22 @@ class AttachmentObjectWriter:
+     def _best_effort_delete(self, object_ref: str, put_response) -> None:
+         if not isinstance(put_response, dict):
+             return
+-        request = {"Bucket": self._bucket, "Key": object_ref}
+         if "VersionId" in put_response:
+             version_id = put_response["VersionId"]
+             if not isinstance(version_id, str) or not version_id:
+                 return
+-            request["VersionId"] = version_id
++            try:
++                self._client.delete_object(
++                    Bucket=self._bucket,
++                    Key=object_ref,
++                    VersionId=version_id,
++                )
++            except (BotoCoreError, ClientError, OSError, RuntimeError):
++                pass
++            return
+         try:
+-            self._client.delete_object(**request)
+-        except (BotoCoreError, ClientError, OSError, RuntimeError):
++            erase_s3_object(self._client, self._bucket, object_ref)
++        except Exception:  # noqa: BLE001 - orphan reconciliation retains the key
+             pass
+ 
+     def put_stream(
+@@ -160,6 +167,7 @@ class AttachmentObjectWriter:
+                 Key=object_ref,
+                 Body=reader,
+                 ContentLength=expected_size,
++                IfNoneMatch="*",
+             )
+             return reader.receipt()
+         except AttachmentObjectWriterSizeMismatch:
+diff --git a/backend/app/attachments/s3_erasure.py b/backend/app/attachments/s3_erasure.py
+index ea8f2718..f2fdc149 100644
+--- a/backend/app/attachments/s3_erasure.py
++++ b/backend/app/attachments/s3_erasure.py
+@@ -2,6 +2,9 @@ from __future__ import annotations
+ 
+ from typing import Any
+ 
++from botocore.exceptions import ClientError
++
++_ERASURE_FENCE_METADATA = {"platform-erasure-fence": "v1"}
+ _MAX_VERSION_PURGE_SWEEPS = 8
+ _VERSION_PAGE_SIZE = 1000
+ 
+@@ -20,16 +23,16 @@ def _versioning_status(client: Any, bucket: str) -> str | None:
+     return status
+ 
+ 
+-def _exact_version_identifiers(
++def _exact_versions(
+     client: Any, bucket: str, object_ref: str
+-) -> tuple[str, ...]:
++) -> tuple[tuple[str, str], ...]:
+     request: dict[str, Any] = {
+         "Bucket": bucket,
+         "Prefix": object_ref,
+         "MaxKeys": _VERSION_PAGE_SIZE,
+     }
+-    identifiers: list[str] = []
+-    seen_identifiers: set[str] = set()
++    entries: list[tuple[str, str]] = []
++    seen_entries: set[tuple[str, str]] = set()
+     seen_cursors: set[tuple[str, str]] = set()
+     while True:
+         response = client.list_object_versions(**request)
+@@ -37,7 +40,7 @@ def _exact_version_identifiers(
+             response.get("IsTruncated"), bool
+         ):
+             raise S3ObjectErasureError()
+-        for field in ("Versions", "DeleteMarkers"):
++        for field, kind in (("Versions", "version"), ("DeleteMarkers", "marker")):
+             values = response.get(field, [])
+             if not isinstance(values, list):
+                 raise S3ObjectErasureError()
+@@ -49,14 +52,12 @@ def _exact_version_identifiers(
+                     or not value["VersionId"]
+                 ):
+                     raise S3ObjectErasureError()
+-                if (
+-                    value["Key"] == object_ref
+-                    and value["VersionId"] not in seen_identifiers
+-                ):
+-                    seen_identifiers.add(value["VersionId"])
+-                    identifiers.append(value["VersionId"])
++                entry = (kind, value["VersionId"])
++                if value["Key"] == object_ref and entry not in seen_entries:
++                    seen_entries.add(entry)
++                    entries.append(entry)
+         if not response["IsTruncated"]:
+-            return tuple(identifiers)
++            return tuple(entries)
+         key_marker = response.get("NextKeyMarker")
+         version_marker = response.get("NextVersionIdMarker")
+         if (
+@@ -74,27 +75,96 @@ def _exact_version_identifiers(
+         request["VersionIdMarker"] = version_marker
+ 
+ 
++def _is_missing_version(error: BaseException) -> bool:
++    if not isinstance(error, ClientError):
++        return False
++    response = error.response
++    if not isinstance(response, dict):
++        return False
++    metadata = response.get("ResponseMetadata")
++    detail = response.get("Error")
++    return (
++        isinstance(metadata, dict)
++        and metadata.get("HTTPStatusCode") == 404
++        and isinstance(detail, dict)
++        and detail.get("Code") in {"404", "NoSuchKey", "NoSuchVersion", "NotFound"}
++    )
++
++
++def _is_fence(client: Any, bucket: str, object_ref: str, version_id=None) -> bool:
++    request = {"Bucket": bucket, "Key": object_ref}
++    if version_id is not None:
++        request["VersionId"] = version_id
++    response = client.head_object(**request)
++    if not isinstance(response, dict):
++        raise S3ObjectErasureError()
++    length = response.get("ContentLength")
++    metadata = response.get("Metadata")
++    return (
++        type(length) is int
++        and length == 0
++        and isinstance(metadata, dict)
++        and metadata == _ERASURE_FENCE_METADATA
++    )
++
++
++def _delete_version(client: Any, bucket: str, object_ref: str, version_id: str) -> None:
++    try:
++        client.delete_object(Bucket=bucket, Key=object_ref, VersionId=version_id)
++    except Exception as error:  # noqa: BLE001 - only exact 404 is idempotent
++        if not _is_missing_version(error):
++            raise
++
++
+ def erase_s3_object(client: Any, bucket: str, object_ref: str) -> None:
+     if not isinstance(bucket, str) or not bucket.strip():
+         raise S3ObjectErasureError()
+     if not isinstance(object_ref, str) or not object_ref:
+         raise S3ObjectErasureError()
+     try:
+-        if _versioning_status(client, bucket) is None:
+-            client.delete_object(Bucket=bucket, Key=object_ref)
++        initial_status = _versioning_status(client, bucket)
++        response = client.put_object(
++            Bucket=bucket,
++            Key=object_ref,
++            Body=b"",
++            ContentLength=0,
++            Metadata=dict(_ERASURE_FENCE_METADATA),
++        )
++        if not isinstance(response, dict):
++            raise S3ObjectErasureError()
++        if initial_status is None:
++            if not _is_fence(client, bucket, object_ref):
++                raise S3ObjectErasureError()
++            if _versioning_status(client, bucket) is not None:
++                raise S3ObjectErasureError()
+             return
++
+         for _sweep in range(_MAX_VERSION_PURGE_SWEEPS):
+-            identifiers = _exact_version_identifiers(client, bucket, object_ref)
+-            if not identifiers:
+-                return
+-            for version_id in identifiers:
+-                client.delete_object(
+-                    Bucket=bucket,
+-                    Key=object_ref,
+-                    VersionId=version_id,
+-                )
+-        if _exact_version_identifiers(client, bucket, object_ref):
+-            raise S3ObjectErasureError()
++            changed = False
++            for kind, version_id in _exact_versions(client, bucket, object_ref):
++                if kind == "marker":
++                    _delete_version(client, bucket, object_ref, version_id)
++                    changed = True
++                    continue
++                try:
++                    fence = _is_fence(
++                        client, bucket, object_ref, version_id=version_id
++                    )
++                except Exception as error:  # noqa: BLE001 - exact 404 is concurrent erase
++                    if _is_missing_version(error):
++                        continue
++                    raise
++                if not fence:
++                    _delete_version(client, bucket, object_ref, version_id)
++                    changed = True
++            if changed:
++                continue
++            if not _is_fence(client, bucket, object_ref):
++                raise S3ObjectErasureError()
++            if _versioning_status(client, bucket) != initial_status:
++                raise S3ObjectErasureError()
++            return
++        raise S3ObjectErasureError()
+     except S3ObjectErasureError:
+         raise
+     except Exception:  # noqa: BLE001 - injected storage errors are sanitized
+diff --git a/backend/app/attachments/worker.py b/backend/app/attachments/worker.py
+index 2c3b8dcd..8787cdfb 100644
+--- a/backend/app/attachments/worker.py
++++ b/backend/app/attachments/worker.py
+@@ -1,6 +1,5 @@
+ from __future__ import annotations
+ 
+-import hashlib
+ import tempfile
+ from contextlib import suppress
+ from dataclasses import dataclass, field
+@@ -9,6 +8,7 @@ from typing import Protocol
+ from uuid import UUID
+ 
+ from .derivatives import Derivative, DerivativeBuilder, DerivativeError
++from .object_keys import derivative_object_key
+ from .scanner import MalwareScanner, ScanDisposition, ScannerUnavailable
+ from .validation import (
+     AttachmentValidationError,
+@@ -285,11 +285,7 @@ class AttachmentProcessor:
+             derivative = derivatives[0]
+             if job.derivative_kind != derivative.kind:
+                 raise DerivativeError()
+-            object_key = hashlib.sha256(
+-                b"attachment-derivative-v1\0"
+-                + job.processing_job_id.bytes
+-                + derivative.kind.encode("ascii")
+-            ).hexdigest()
++            object_key = derivative_object_key(job.processing_job_id, derivative.kind)
+             stored = self._object_store.put_derivative(
+                 derivative.data, object_key=object_key
+             )
+diff --git a/backend/app/attachments/worker_runtime.py b/backend/app/attachments/worker_runtime.py
+index 5ec1c0f6..6aa519f7 100644
+--- a/backend/app/attachments/worker_runtime.py
++++ b/backend/app/attachments/worker_runtime.py
+@@ -7,12 +7,14 @@ import os
+ import secrets
+ import sys
+ from collections.abc import Callable
++from contextlib import suppress
+ from datetime import UTC, datetime
+ from pathlib import Path
+ from typing import Any
+ from uuid import NAMESPACE_URL, UUID, uuid5
+ 
+ import psycopg
++from botocore.exceptions import ClientError
+ from psycopg.rows import dict_row
+ 
+ from app.control_plane.crypto import IdentityKeyring
+@@ -394,10 +396,84 @@ class S3ProcessingObjectStore:
+                 Body=data,
+                 ContentLength=len(data),
+                 ContentType="application/octet-stream",
++                IfNoneMatch="*",
+             )
+             return StoredDerivative(object_ref, len(data), digest)
+-        except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
++        except Exception as error:  # noqa: BLE001 - storage adapter errors are sanitized
++            if self._precondition_failed(error):
++                return self._existing_derivative(data, object_ref, digest)
++            raise AttachmentWorkerRuntimeError() from None
++
++    @staticmethod
++    def _precondition_failed(error: BaseException) -> bool:
++        if not isinstance(error, ClientError):
++            return False
++        response = error.response
++        if not isinstance(response, dict):
++            return False
++        detail = response.get("Error")
++        metadata = response.get("ResponseMetadata")
++        return (
++            isinstance(detail, dict)
++            and detail.get("Code") in {"412", "PreconditionFailed"}
++            and isinstance(metadata, dict)
++            and metadata.get("HTTPStatusCode") == 412
++        )
++
++    def _existing_derivative(
++        self, data: bytes, object_ref: str, digest: bytes
++    ) -> StoredDerivative:
++        body = None
++        try:
++            head = self._client.head_object(Bucket=self._bucket, Key=object_ref)
++            if (
++                not isinstance(head, dict)
++                or type(head.get("ContentLength")) is not int
++                or head["ContentLength"] != len(data)
++                or head.get("Metadata", {}) != {}
++            ):
++                raise AttachmentWorkerRuntimeError()
++            request = {"Bucket": self._bucket, "Key": object_ref}
++            version_id = head.get("VersionId")
++            etag = head.get("ETag")
++            if isinstance(version_id, str) and version_id and version_id != "null":
++                request["VersionId"] = version_id
++            elif isinstance(etag, str) and etag:
++                request["IfMatch"] = etag
++            else:
++                raise AttachmentWorkerRuntimeError()
++            response = self._client.get_object(**request)
++            if (
++                not isinstance(response, dict)
++                or type(response.get("ContentLength")) is not int
++                or response["ContentLength"] != len(data)
++                or response.get("Metadata", {}) != {}
++            ):
++                raise AttachmentWorkerRuntimeError()
++            body = response.get("Body")
++            if body is None or not callable(getattr(body, "read", None)):
++                raise AttachmentWorkerRuntimeError()
++            chunks = []
++            remaining = len(data) + 1
++            while remaining:
++                chunk = body.read(remaining)
++                if not isinstance(chunk, bytes):
++                    raise AttachmentWorkerRuntimeError()
++                if not chunk:
++                    break
++                chunks.append(chunk)
++                remaining -= len(chunk)
++            if b"".join(chunks) != data:
++                raise AttachmentWorkerRuntimeError()
++            return StoredDerivative(object_ref, len(data), digest)
++        except AttachmentWorkerRuntimeError:
++            raise
++        except Exception:
+             raise AttachmentWorkerRuntimeError() from None
++        finally:
++            if body is not None:
++                with suppress(Exception):
++                    body.close()
+ 
+     def delete(self, object_ref: str) -> None:
+         try:
+diff --git a/backend/tests/test_attachment_erasure_observer.py b/backend/tests/test_attachment_erasure_observer.py
+index 8901d4c1..b5b4f39c 100644
+--- a/backend/tests/test_attachment_erasure_observer.py
++++ b/backend/tests/test_attachment_erasure_observer.py
+@@ -436,3 +436,86 @@ def test_pagination_limit_is_unknown(monkeypatch):
+     with pytest.raises(observer.Unknown, match="version_page_limit"):
+         observer.inventory(client, "bucket", "owned")
+     assert count == observer.MAX_PAGES
++
++
++class FenceS3(S3):
++    def __init__(self, metadata=None, size=0, marker=False, payload=False):
++        super().__init__(["f1", "f2"] + (["payload"] if payload else []))
++        self.metadata = (
++            {"platform-erasure-fence": "v1"} if metadata is None else metadata
++        )
++        self.size, self.marker = size, marker
++
++    def list_object_versions(self, **kwargs):
++        page = super().list_object_versions(**kwargs)
++        if self.marker:
++            page["DeleteMarkers"] = [{"Key": "owned", "VersionId": "marker"}]
++        return page
++
++    def head_object(self, **kwargs):
++        self.calls.append(kwargs)
++        version = kwargs.get("VersionId")
++        if version is None:
++            if self.marker:
++                raise ClientError(
++                    {
++                        "Error": {"Code": "404"},
++                        "ResponseMetadata": {"HTTPStatusCode": 404},
++                    },
++                    "HeadObject",
++                )
++            version = "f2"
++        if version in ("f1", "f2"):
++            return {
++                "VersionId": version,
++                "ContentLength": self.size,
++                "Metadata": self.metadata,
++            }
++        if version == "payload" and version in self.versions:
++            return {"VersionId": version, "ContentLength": 3, "Metadata": {}}
++        raise ClientError(
++            {"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}},
++            "HeadObject",
++        )
++
++
++def test_multiple_exact_fences_and_current_head_required(monkeypatch):
++    observer = module(monkeypatch)
++    client = FenceS3()
++    result = observer.verify_absence(client, "bucket", {"owned": ["old"]})
++    assert result["status"] == "absent"
++    assert result["verified_fence_versions"] == 2
++    assert any(
++        call.get("Key") == "owned" and "VersionId" not in call for call in client.calls
++    )
++    assert {"f1", "f2", "old"} <= {call.get("VersionId") for call in client.calls}
++
++
++@pytest.mark.parametrize(
++    "metadata,size",
++    [
++        ({}, 0),
++        ({"platform-erasure-fence": "v1", "extra": "x"}, 0),
++        ({"platform-erasure-fence": "v1"}, 1),
++    ],
++)
++def test_unmarked_zero_or_nonempty_marker_is_payload(monkeypatch, metadata, size):
++    observer = module(monkeypatch)
++    result = observer.verify_absence(
++        FenceS3(metadata, size), "bucket", {"owned": ["old"]}
++    )
++    assert result["status"] == "remaining"
++
++
++def test_current_delete_marker_is_not_write_fence(monkeypatch):
++    observer = module(monkeypatch)
++    result = observer.verify_absence(FenceS3(marker=True), "bucket", {"owned": ["old"]})
++    assert result["status"] == "unprotected"
++
++
++def test_new_payload_among_fences_fails(monkeypatch):
++    observer = module(monkeypatch)
++    result = observer.verify_absence(
++        FenceS3(payload=True), "bucket", {"owned": ["old"]}
++    )
++    assert result["status"] == "remaining"
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 924e113e..1bd357c1 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -223,6 +223,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "103_hr_execution_drain_occupancy.sql",
+             "104_hr_execution_drain_terminal_contract.sql",
+             "105_hr_cloud_resume.sql",
++            "106_attachment_erasure_write_fence.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+diff --git a/backend/tests/test_hr_root_migration_deployment.py b/backend/tests/test_hr_root_migration_deployment.py
+index a31bfd02..54c1e209 100644
+--- a/backend/tests/test_hr_root_migration_deployment.py
++++ b/backend/tests/test_hr_root_migration_deployment.py
+@@ -60,18 +60,18 @@ def invoke(case):
+     return subprocess.run(case[-1], env=case[-2], capture_output=True, text=True, timeout=30, check=False)
+ 
+ 
+-@pytest.mark.parametrize("root_deployment", [95, 105], indirect=True)
++@pytest.mark.parametrize("root_deployment", [95, 106], indirect=True)
+ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_deployment):
+     db, release, tmp, _, _ = root_deployment
+-    (release / 'backend/control_migrations/106_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
++    (release / 'backend/control_migrations/107_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
+     # This HR migration must never execute in root mode.
+-    (release / 'backend/control_migrations/hr_agent/107_invalid.sql').write_text('invalid SQL must not run;')
++    (release / 'backend/control_migrations/hr_agent/108_invalid.sql').write_text('invalid SQL must not run;')
+     for _ in range(2):
+         result = invoke(root_deployment)
+         assert result.returncode == 0, result.stderr
+     with db.admin_connection() as connection:
+         assert connection.execute("select to_regclass('platform_control.root_scope_probe') is not null").fetchone()[0]
+-        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,107)').fetchone()[0] == 0
++        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,108)').fetchone()[0] == 0
+     calls = (tmp / 'calls').read_text()
+     assert calls.count('create ') == 2 and 'preview' not in calls
+     statements = [json.loads(line) for line in (tmp / 'sql.log').read_text().splitlines()]
+@@ -183,3 +183,22 @@ def test_root_requires_complete_105_target_from_95_baseline(root_deployment):
+     result = invoke(root_deployment)
+     assert result.returncode != 0
+     assert not (tmp / 'calls').exists()
++
++
++def test_new_attachment_release_requires_106_before_database_or_container_io(tmp_path):
++    import importlib.util
++    from types import SimpleNamespace
++
++    release = tmp_path / "release"
++    shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
++    for path in (release / "backend/control_migrations").glob("106_*.sql"):
++        path.unlink()
++    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    supervisor = module.Supervisor(SimpleNamespace(
++        release=str(release), private=str(tmp_path / "private"),
++        migration_set="root", environment="production",
++    ))
++    with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
++        supervisor.root_checksums()
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 7c37ad44..d366fc58 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -199,6 +199,7 @@ class Supervisor:
+             (103, "103_hr_execution_drain_occupancy.sql"),
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
+             (105, "105_hr_cloud_resume.sql"),
++            (106, "106_attachment_erasure_write_fence.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+@@ -233,7 +234,7 @@ class Supervisor:
+                         or (baseline_only and not 89 <= version <= 95)):
+                     raise DeploymentFailure("root_ledger_invalid")
+                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
+-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105}).issubset(expected):
++        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106}).issubset(expected):
+             raise DeploymentFailure("root_baseline_invalid")
+         return expected
+ 

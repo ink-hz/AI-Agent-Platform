@@ -1,0 +1,296 @@
+[
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-5/summary.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/summary.json",
+    "sha256": "e98583c8b9e6d9920625a2925b48e7f86ca4e0de6c3d4a2fa3d431136443d86b",
+    "bytes": 27140
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-5/configuration.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/configuration.json",
+    "sha256": "597634706bcd877743d8275395917e67e549e99ac221c9f06755d8b0e43953e0",
+    "bytes": 618
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-01.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-01.json",
+    "sha256": "5b355ab2006babbe336657d529326998163e3c60ed2db97fed26a29245453a0f",
+    "bytes": 78473
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/report.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/report.json",
+    "sha256": "b2afcc3fc20742bb107c083edee9b794b2d612b496a9d71f3d9a73dfefe8ce25",
+    "bytes": 768754
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-04.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-04.json",
+    "sha256": "44fd5361f45253097f73a27bd80f6869a032d3206d01bde01f49a635076cd499",
+    "bytes": 311669
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-02.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-02.json",
+    "sha256": "c529cd726b9743fda2a2415299d217c674d167cc73515b8aa1dbe5ebb545bd9c",
+    "bytes": 136702
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-03.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-5/H03/turn-03.json",
+    "sha256": "cf6f3d8d4213d8372c922ec6752352616a62db3e636e4953965d7207bcd8b403",
+    "bytes": 197269
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-01-context.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-01-context.txt",
+    "sha256": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9",
+    "bytes": 218
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-04-context.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-04-context.txt",
+    "sha256": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099",
+    "bytes": 140
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-02-context.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-02-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "bytes": 119
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/context-v1.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/context-v1.txt",
+    "sha256": "9f2ae8dcd6716bf8c5e5e5f64b529903186f392fab301ec9f9e711b6f1ae4d92",
+    "bytes": 602
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-03-context.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-03-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "bytes": 119
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/corpus.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/corpus.json",
+    "sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+    "bytes": 173319
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/manifest.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/manifest.json",
+    "sha256": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739",
+    "bytes": 28005
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/__init__.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/__init__.py",
+    "sha256": "415fabafe27bb316a957b1a23e5c2162f65c2e02a2c9b93b248cf6e283c17031",
+    "bytes": 73
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/access.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/access.py",
+    "sha256": "238641d76c1234f03d4b4c997cd78ef4e1359e42dcc23780a826641d843de9f7",
+    "bytes": 2215
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/candidates.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/candidates.py",
+    "sha256": "369de3b5c8b63712ef82dd131de96c512d7a52688c6aee3411c2673fe70943e0",
+    "bytes": 32119
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/config.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/config.py",
+    "sha256": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2",
+    "bytes": 16333
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/context.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/context.py",
+    "sha256": "3a15226b049d045379c90e50fdbbbf4f07e5516c977c86559ae46ed8913af012",
+    "bytes": 13419
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/cutover.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/cutover.py",
+    "sha256": "1d933bfcc5069597d3f44174b24a46f3386987e4522bdbe5dd6af977d2389684",
+    "bytes": 2937
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/diagnostics.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/diagnostics.py",
+    "sha256": "31c9f916869129f13038391118f1e19cf704a6842f3e47d649d35ce9f9e1d062",
+    "bytes": 8149
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/interview_records.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/interview_records.py",
+    "sha256": "756dbd243eee9b45b77866d2c3dac7064421f38f658ccde22a3d4d1476fc009c",
+    "bytes": 9917
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/knowledge.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/knowledge.py",
+    "sha256": "49600fe594cacaf255c316cb00ca89ffee7f4a29086b7f1b4e55826e53cb6b35",
+    "bytes": 3243
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/material_authority.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/material_authority.py",
+    "sha256": "18e66b8bf51e6f9e2bdbef56302a6e91b3b62bc971a0290f9564cff15f99becc",
+    "bytes": 5172
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/material_parsing.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/material_parsing.py",
+    "sha256": "834f90fbcec0b21913f27d4c7aeab142daa0acff8692fcda26027543b4f18f3b",
+    "bytes": 18468
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/materials.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/materials.py",
+    "sha256": "09b544528109bd03b92469eb9a17cd8e2ff878f3b49a481a870b570e45254d26",
+    "bytes": 13136
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/model.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/model.py",
+    "sha256": "0366ab25deb8069cc3cfe23eb7af7323ee3a86f7b31f82df21ff2a9bda309b58",
+    "bytes": 29233
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/observability.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/observability.py",
+    "sha256": "c18737c06bd0155f3bb6f79210624db651128d028b7aadc1811d920d3905f7ad",
+    "bytes": 665
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/personal_processing.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/personal_processing.py",
+    "sha256": "4f0d91ac3badfc1349cc1fda706c8334cc23193d131cf5ee522c2913fb4fe099",
+    "bytes": 1819
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/proposals.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/proposals.py",
+    "sha256": "6234d27074e2d46dc3cbc7cff0d3cc88dc08469d7fa2efd745ca007b05234f1a",
+    "bytes": 6770
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/readiness.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/readiness.py",
+    "sha256": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+    "bytes": 6231
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/repository.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/repository.py",
+    "sha256": "b689a48ca6f7fa5028ed0c9bd69385c40d5ae56372329840d29c30b08631ecad",
+    "bytes": 95045
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/repository_views.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/repository_views.py",
+    "sha256": "80548f33d860671e7305245bb3dadad245d963dde17896306cd043eb5afaccec",
+    "bytes": 14879
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/resources.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/resources.py",
+    "sha256": "d797b3667de05bc9ee9babc7aa21beb96c7e781dba87473f2cc86da082bb5323",
+    "bytes": 20823
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/results.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/results.py",
+    "sha256": "833d4040b199054a6fc486146c08e98d7381818116fa5e385b1a366de0c60ced",
+    "bytes": 1690
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/routes.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/routes.py",
+    "sha256": "d2f9fbb1ff67d92cfc42138d042df90c6e693014661d2cfb8bc08fa544b647ad",
+    "bytes": 11088
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/runtime.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/runtime.py",
+    "sha256": "fcdefd831e26b33b818a2c375764496f4c5a19a6a18e21ebcb06b93f9f4d7d9f",
+    "bytes": 5802
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/service.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/service.py",
+    "sha256": "9bb437b6d6e394ce2225e0a0262bb1ed61825bd29e5602d1b6839ffbf149d874",
+    "bytes": 7207
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/standards.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/standards.py",
+    "sha256": "2454012993fe24f477e468f2a7be755d02bd4626b21b7fee3b992f1749d0adda",
+    "bytes": 10930
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/tools.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/tools.py",
+    "sha256": "9961c6fa28da1e0578e7d486ad7dbfa939512ed9a9ddde41ce2d3404303d2e20",
+    "bytes": 2559
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/types.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/types.py",
+    "sha256": "57fb60f0ec6eb38e57d86dbe1f03d2359d23ba81fc30395f821c33651a536abd",
+    "bytes": 9202
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/work_files.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/work_files.py",
+    "sha256": "1540db61a58900aff6acb43c09adbd960a5be6b2b24532c8829870c50c1a95c7",
+    "bytes": 5871
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/worker.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/worker.py",
+    "sha256": "b10c582fd377cb18fa723d7db457e1f5d201463dc79f0506b2eb36f863da1d01",
+    "bytes": 5353
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/app/hr_agent/worker_health.py",
+    "snapshot": "frozen/detached-runtime/backend/app/hr_agent/worker_health.py",
+    "sha256": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3",
+    "bytes": 5824
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/tests/helpers/hr_history_replay.py",
+    "snapshot": "frozen/detached-runtime/backend/tests/helpers/hr_history_replay.py",
+    "sha256": "ebc1562fe491b5e1e0064c03e101927e7c19ce5a27b50e07f594587c5a992b38",
+    "bytes": 32073
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/tests/test_hr_agent_history_replay.py",
+    "snapshot": "frozen/detached-runtime/backend/tests/test_hr_agent_history_replay.py",
+    "sha256": "d12d6369b3ccc3d5c86e8d2b422b300e5514114e51d12cdb47dbe029316b81de",
+    "bytes": 12921
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/tools/hr_agent/build_knowledge_release.py",
+    "snapshot": "frozen/detached-runtime/backend/tools/hr_agent/build_knowledge_release.py",
+    "sha256": "bb8538e1f0366dca0e013d13831db651b0275d6979fd53b49490cfe29ea4c686",
+    "bytes": 4840
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/artifacts/2026-09-13-hr-launch/history-real-review-1/baseline-fc339d8/backend/hr_agent_knowledge/role.md",
+    "snapshot": "frozen/detached-runtime/artifacts/2026-09-13-hr-launch/history-real-review-1/baseline-fc339d8/backend/hr_agent_knowledge/role.md",
+    "sha256": "404c2666db41c667379b5d482ee0867af9a796cd46d0582da6a6b3e4542db42b",
+    "bytes": 8619
+  },
+  {
+    "source": "/private/tmp/hr-h03-b425b08/backend/hr_agent_knowledge/role.md",
+    "snapshot": "frozen/detached-runtime/backend/hr_agent_knowledge/role.md",
+    "sha256": "a1e8e7c73194b503d6c9a8b5efe356cd97aba43d5d997f631278574e465da290",
+    "bytes": 9026
+  }
+]

@@ -1,0 +1,30 @@
+{
+  "started_at": 1789276904.835596,
+  "boundary": "local disposable real MinIO, real boto3 signed requests; no production or database access",
+  "checks": [
+    {
+      "real_pagination_and_fence": "passed",
+      "old_data_versions": 1001,
+      "old_pages": 2,
+      "fences": 1
+    }
+  ],
+  "minio_binary_sha256": "f9707f74c17b2d291e99e71eebeb6e7095a11a6a4617f751c4254ef45c469e4d",
+  "minio_source_commit": "7ced9663e6a791fef9dc6be798ff24cda9c730ac",
+  "status": "failed",
+  "error_type": "AttachmentObjectWriterError",
+  "error_message": "attachment object write failed",
+  "owned_raw_connections_closed": true,
+  "owned_process_reaped": true,
+  "owned_thread_count": 0,
+  "owned_threads_alive": 0,
+  "owned_futures_done": true,
+  "server_log_sha256": "57bc0e4c60613cafb777073ff08ad1d3b7ce1078a91f058175316fbb6ab65ff9",
+  "finished_at": 1789276908.40003,
+  "driver_sha256": "e3eb3df9aa1f572b68435c929204dbf767dacf7bf707aadfbd04fd32510cabf1",
+  "adapter_sha256": {
+    "backend/app/attachments/worker_runtime.py": "ced56a5661cc0717785eb47b8b5f9d2dadd55c5cf35ff1c8224f4b2d762bfd37",
+    "backend/app/attachments/object_writer.py": "dd974dafafa38146b71c56a221c300bbe9773bbeaae8e074027b8bbfcfe1a1d3",
+    "backend/app/attachments/s3_erasure.py": "06bece78e4711df636e7e92e424c7eb9cd1e2e39054ac9b4a2b4eb79e9f694ba"
+  }
+}

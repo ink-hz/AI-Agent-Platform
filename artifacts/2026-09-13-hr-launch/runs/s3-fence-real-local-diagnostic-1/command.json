@@ -1,0 +1,14 @@
+{
+  "head": "5ef983922cf9edbbd9e54d88603e046ac4f22e27",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-diagnostic-1/run.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T05:22:43.494065+00:00",
+  "source_patch_sha256": "076cf6776018c9e9e863d99a8c695465f456a4ebe661209d81a18d45f81a5045",
+  "untracked_source_snapshots": {},
+  "boundary": "Diagnostic actual owned loopback MinIO; real boto3 streaming original PUT exception traceback for synthetic body only, no production or DB; same final fence assertions and bounded cleanup",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T05:22:47.250116+00:00"
+}

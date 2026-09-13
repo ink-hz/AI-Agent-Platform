@@ -1,0 +1,992 @@
+{
+  "case_id": "H03",
+  "status": "completed",
+  "executed_turns": 4,
+  "generation_calls": 20,
+  "observations": [
+    {
+      "attempt_id": "a6dbb637-99aa-4c73-a6f3-c7049d646a61",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 9365,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 9365,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 301,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 5.0695905005559325
+    },
+    {
+      "attempt_id": "693ec669-b210-4c96-b68d-1bdfc331db27",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12485,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12485,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 324,
+            "output_tokens_details": {
+              "thinking_tokens": 47
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 6.1221847496926785
+    },
+    {
+      "attempt_id": "ef735005-def1-4802-b57d-c1ab5469684b",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 16087,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 16087,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 493,
+            "output_tokens_details": {
+              "thinking_tokens": 342
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 11.181568374857306
+    },
+    {
+      "attempt_id": "abaa7786-c7ec-4cab-a7e8-5aee2a67e9f3",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 18278,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 18278,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 4787,
+            "output_tokens_details": {
+              "thinking_tokens": 1568
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 96.64955283328891
+    },
+    {
+      "attempt_id": "b4738441-3ba8-4861-9f3e-9beefb667b3a",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 24710,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 24710,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 937,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 20.82824124954641
+    },
+    {
+      "attempt_id": "a0a9eab7-872b-4810-b88e-375f5e0ac965",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 25828,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 4,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 25828,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1979,
+            "output_tokens_details": {
+              "thinking_tokens": 1789
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 37.160851958207786
+    },
+    {
+      "attempt_id": "e7e776d0-879a-425f-9e53-594cff407eb5",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 29277,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 2,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 29277,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 6335,
+            "output_tokens_details": {
+              "thinking_tokens": 844
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 116.42870658356696
+    },
+    {
+      "attempt_id": "a1507350-c432-4fc1-a782-2e42f6bf71c9",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 40295,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 40295,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1024,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 23.548428582958877
+    },
+    {
+      "attempt_id": "7142e727-0ade-407e-9fb9-5a99e35664bf",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 35884,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 35884,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1318,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 25.383118165656924
+    },
+    {
+      "attempt_id": "6f45d707-cdf5-4e31-8b39-20d9f8745c45",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 11590,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 2,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 11590,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 288,
+            "output_tokens_details": {
+              "thinking_tokens": 101
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 6.475067583844066
+    },
+    {
+      "attempt_id": "e71573d8-f0f6-488d-8a7e-f6d1d375a6e2",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 16932,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 2,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 16932,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 792,
+            "output_tokens_details": {
+              "thinking_tokens": 709
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 16.938828125596046
+    },
+    {
+      "attempt_id": "2653b865-5b5a-47d8-b04e-9d15836a0d23",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 17051,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 2,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 17051,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 5361,
+            "output_tokens_details": {
+              "thinking_tokens": 509
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 81.88764962553978
+    },
+    {
+      "attempt_id": "69572503-2b86-4ebd-8f94-2e5508945263",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 26722,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 1,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 26722,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 720,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 17.716111042536795
+    },
+    {
+      "attempt_id": "c8e9cc7b-3aa9-4f38-b9a3-60b94fdf357a",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 19872,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 2,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 19872,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1866,
+            "output_tokens_details": {
+              "thinking_tokens": 258
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 30.899482083506882
+    },
+    {
+      "attempt_id": "a4a0b77c-d284-4094-b14a-7a8521d4fb3a",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12277,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 3,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 12277,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 453,
+            "output_tokens_details": {
+              "thinking_tokens": 100
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 7.899873750284314
+    },
+    {
+      "attempt_id": "011aad87-9817-43a2-b9a0-113f2e60852b",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 17394,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 5,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 17394,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1362,
+            "output_tokens_details": {
+              "thinking_tokens": 1308
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 24.667695749551058
+    },
+    {
+      "attempt_id": "6f1574c4-bdea-4909-ab18-270cd73b4e65",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 17775,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 4,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 17775,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 10061,
+            "output_tokens_details": {
+              "thinking_tokens": 3116
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 168.20006600022316
+    },
+    {
+      "attempt_id": "5a37d958-306b-4102-9e04-0f924e8bbd08",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 24728,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 2,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 24728,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 6903,
+            "output_tokens_details": {
+              "thinking_tokens": 40
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 114.51838791649789
+    },
+    {
+      "attempt_id": "ab94a7d3-407d-4e93-8860-8844d1c0e1c0",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 38432,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 17,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 38432,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1507,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "tool_use"
+        }
+      ],
+      "complete": true,
+      "seconds": 25.406701917760074
+    },
+    {
+      "attempt_id": "a19228e5-a331-4e7f-a830-4ec710522ecb",
+      "usage": [
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "_response_metadata": {
+              "reported_models": [
+                "claude-opus-5"
+              ],
+              "identity_assurance": "provider_self_report_only"
+            }
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 40751,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 5,
+            "service_tier": "standard"
+          }
+        },
+        {
+          "provider_protocol": "anthropic_messages_sse",
+          "raw": {
+            "input_tokens": 40751,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1393,
+            "output_tokens_details": {
+              "thinking_tokens": 35
+            }
+          }
+        }
+      ],
+      "stops": [
+        {
+          "reason": "end_turn"
+        }
+      ],
+      "complete": true,
+      "seconds": 27.36052191630006
+    }
+  ],
+  "driver_sha256": "4de0cbb5c961332659479d648e3d966b892e0046e5b1b553d056d0136e6eb375",
+  "source_commit": "b425b08b5bf42ae669bb0930d73bd74419f34f09",
+  "professional_acceptance": "pending independent output review",
+  "production_test": false
+}

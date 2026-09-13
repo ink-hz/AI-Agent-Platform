@@ -1,0 +1,1018 @@
+diff --git "a/HR_Agent\345\267\245\344\275\234\346\265\201.md" "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+index 412c11c1..bfa04194 100644
+--- "a/HR_Agent\345\267\245\344\275\234\346\265\201.md"
++++ "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+@@ -231,9 +231,9 @@ C评审后发现未消费工具批次的硬窗口死锁，进入D前按[修订
+ 
+ 研究成功只在显式300秒配置下发生；120秒默认配置目前无C3成功记录。7岗样例需要16384输出，费用核算不得把约2倍实报的保守扣记当账单。工作用量标签按实际扣记来源汇总，全估算不写mixed。平台附件擦除缺陷独立登记为架构D5，旧Worker停止、迁移100、修复镜像启动必须按该顺序处置；本地测试不代表生产已经恢复。
+ 
+-附件维护的“删除成功”以对象存储实际版本边界判定：对已启用或暂停版本控制的桶，准确 key 的普通版本和 delete marker 都须分页列全、逐版本删除并再次确认为空；同前缀其他 key 不得受影响。版本状态、列举、分页或删除遇到权限/网络错误时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。未启用版本控制时执行单 key 删除。上传失败的清理只删除成功响应能证明属于本次写入的准确版本；响应不确定时由保留对象引用的孤儿/擦除流程后续处理，不能盲删整个 key。
++附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传失败的清理只删除成功响应证明属于本次写入的准确版本；响应不确定时保留引用，不能盲删整个 key。
+ 
+-上述复查会捕获擦除进行期间到达的版本，并对持续写入有界失败；它不能阻止空复查之后才完成的在途 `put`。064 仍存在取消上传与外部写跨系统的时间窗，数据库/写入完成栅栏闭合前，生产验收必须把晚到写列为独立风险，不能只凭一次或多次空列表宣称强并发擦除已经完成。
++106 在擦除领取事务中先锁附件并写 `deleted/erasure_pending`，保留上传尝试与其他对象引用，再读取全部 derive job，并按 Worker 共用的确定性 key 算法补齐尚未登记的衍生对象。先完成扫描的一侧会先登记 derive job；擦除先领取的一侧会使晚到处理结果因 deleted 检查失败，而其在途条件 PUT 只能在 fence 前成功并被本次枚举删除，或在 fence 后收到 412。API、附件处理 Worker 与维护 Worker 必须同批使用该协议并排除旧无条件写者；附件 API 构建、两类 Worker 构建和 healthcheck 在任何 payload PUT 或擦除 claim 前只读核实准确角色、106 固定校验和与维护角色四列权限。运行中撤权仍按实际数据库错误保持引用，不能由启动检查宣称永久安全。当前 running 领取没有自动 lease/reaper，进程领取后崩溃需由发布监督器明确发现并处置。
+ 
+ 
+ C再次评审的单条读取保护与准入判断见[本轮收尾](docs/reviews/2026-09-11-hr-c-followup.md)：read_resource成功回执提交前，用实际完整条目和更新后的checkpoint逐条检查同批读取能否进入摘要；超窗整笔回滚，本次正文过大指引缩小limit，新来源令旧读取失配则指引先处理已有内容，失败范围不算已读，不要求用户新建任务。旧不可拆历史与用户固定超大输入仍保留原blocked边界。平台附件独立状态普查发现2条uploading、无deleted标记，100未发布；研究计数探针标准路径404，配置与计量前置未因此关闭。
+diff --git "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md" "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+index 69347096..fb766569 100644
+--- "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
++++ "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+@@ -236,9 +236,9 @@ D候选入口、原始记录、准确来源续作及评估/面试/复盘的当
+ | A3 | 内部岗位/候选人/成果/在途实际量未知 | 本次未访问生产业务库；空 fixture 不证明没有数据 | 切换前进行批准范围内的只读计数，见 §10 |
+ | A4 | 生产开关、供应商与材料承诺未验证 | compose 默认开关值不能证明部署状态；本地运行不证明数据不出网 | 真实流量切换前逐项核对 |
+ 
+-附件对象擦除还必须覆盖对象存储的版本语义。生产只读证据确认附件桶已启用版本控制；不带 `VersionId` 的删除只产生 delete marker，不能作为物理擦除完成。维护擦除与孤儿写清理对每个准确对象 key 先核对桶版本状态；版本已启用或暂停时完整分页枚举该 key 的所有 versions 与 delete markers，逐版本删除并复查，权限、网络、分页或持续并发变化不确定时保持失败/可重试，不能抹除数据库引用或确认孤儿已清理。未启用版本控制的桶保留单 key 删除兼容。上传请求结果不确定时不得为清理而删除整个 key；只有成功响应返回的准确 `VersionId`，或已由数据库判定整 key 可清理，才扩大相应删除范围。
++附件对象擦除还必须覆盖对象存储的版本语义。生产只读证据确认附件桶已启用版本控制；不带 `VersionId` 的删除只产生 delete marker，不能作为物理擦除完成。106 将合法写入与擦除闭合为同一协议：所有业务 payload 使用 `If-None-Match: *`；擦除对每个准确 key 先无条件写入零字节普通对象，并只接受准确元数据 `platform-erasure-fence=v1` 的 fence。版本已启用或暂停时，维护端有界分页枚举该 key 的所有普通版本与 delete marker，以版本级 HEAD 核实 fence 身份，只保留 fence 并删除 payload/marker；未启用版本控制时也保留零字节 fence，不再裸删 key。权限、网络、分页、版本身份或最终当前对象不确定时保持失败/可重试，不能抹除数据库引用或确认孤儿已清理。上传请求结果不确定时不得删除整个 key；成功响应返回准确 `VersionId` 时只能清理本次版本。
+ 
+-对象存储复查只能覆盖调用期间已经可见的版本，不能阻止最后一次空列表之后才完成的外部写。当前 064 取消上传会将写尝试改为 abandoned 并清除当前尝试，但不能中止已在 S3 进行的 `put`；擦除完成又会抹除尝试中的对象引用。因此强并发擦除仍需要写入端与数据库的独立完成栅栏，在该栅栏闭合前不得把多轮空列表表述为对晚到写的永久保证。
++106 的领取事务先锁附件并将其置为 `deleted/erasure_pending`、保留全部引用，再读取所有状态的 derive job，用与 Worker 相同的确定性算法补齐尚未登记的衍生 key。处理结果函数原有的 job→attachment 锁顺序与 deleted 检查会拒绝晚到的衍生登记；已经在外部存储进行的上传或衍生写仍只能命中已建立的 fence 并收到 412，不得删除既有 canonical 或 fence。该保证要求 API 与附件 Worker 同批切换，排除旧无条件写者；两个 payload 运行端及维护 healthcheck 在首次 PUT/claim 前只读核实准确数据库身份、106 固定校验和及维护角色四列权限。启动检查不等于权限永久不变，运行时数据库错误仍须保持 partial/引用。现行领取只选择 queued/partial，进程在领取后崩溃会留下无法自动重领的 running job；发布监督器必须显式发现并处置，不能把它伪装成普通 partial 重试。
+ 
+ 旧 `tool_operations_v6` 的敏感 payload 已有加密存储及服务端归属校验；新实现必须满足 §5–6 的同等目标，不能因更换结构移除保护。通用“dangerously-skip-permissions”姿态不进入新工具环境。
+ 
+diff --git a/backend/app/attachments/erasure.py b/backend/app/attachments/erasure.py
+index be134bb6..b7c852b9 100644
+--- a/backend/app/attachments/erasure.py
++++ b/backend/app/attachments/erasure.py
+@@ -13,6 +13,7 @@ from app.control_plane.dsn import validate_control_dsn
+ from app.execution_relay.content_crypto import ContentCodec, SealedContent
+ 
+ from .conversation_repository import attachment_object_subject
++from .object_keys import derivative_object_key
+ 
+ 
+ class AttachmentErasureError(RuntimeError):
+@@ -85,23 +86,41 @@ class AttachmentErasureRepository:
+                     "platform_attachments.derivatives where attachment_id=%s",
+                     (job["attachment_id"],),
+                 ).fetchall()
+-            if base is None:
+-                raise AttachmentErasureError()
+-            refs = [self._object_ref(
+-                attachment_object_subject(job["attachment_id"], base["write_attempt_id"]),
+-                base["object_ref_ciphertext"], base["object_ref_key_version"],
+-            )]
+-            refs.extend(self._object_ref(
+-                attachment_object_subject(job["attachment_id"], row["attempt_id"]),
+-                row["object_ref_ciphertext"], row["object_ref_key_version"],
+-            ) for row in attempts)
+-            refs.extend(self._object_ref(
+-                f"attachment:{job['attachment_id']}:derivative:{row['derivative_id']}:object-ref",
+-                row["object_ref_ciphertext"], row["object_ref_key_version"],
+-            ) for row in derivatives)
+-            return ErasureJob(
+-                job["erasure_job_id"], job["attachment_id"], tuple(dict.fromkeys(refs))
+-            )
++                derive_jobs = connection.execute(
++                    "select processing_job_id,derivative_kind from "
++                    "platform_attachments.processing_jobs where attachment_id=%s "
++                    "and job_kind='derive' order by processing_job_id",
++                    (job["attachment_id"],),
++                ).fetchall()
++                if base is None:
++                    raise AttachmentErasureError()
++                refs = [self._object_ref(
++                    attachment_object_subject(
++                        job["attachment_id"], base["write_attempt_id"]
++                    ),
++                    base["object_ref_ciphertext"], base["object_ref_key_version"],
++                )]
++                refs.extend(self._object_ref(
++                    attachment_object_subject(
++                        job["attachment_id"], row["attempt_id"]
++                    ),
++                    row["object_ref_ciphertext"], row["object_ref_key_version"],
++                ) for row in attempts)
++                refs.extend(self._object_ref(
++                    f"attachment:{job['attachment_id']}:derivative:"
++                    f"{row['derivative_id']}:object-ref",
++                    row["object_ref_ciphertext"], row["object_ref_key_version"],
++                ) for row in derivatives)
++                refs.extend(
++                    derivative_object_key(
++                        row["processing_job_id"], row["derivative_kind"]
++                    )
++                    for row in derive_jobs
++                )
++                return ErasureJob(
++                    job["erasure_job_id"], job["attachment_id"],
++                    tuple(dict.fromkeys(refs)),
++                )
+         except AttachmentErasureError:
+             raise
+         except Exception as error:
+diff --git a/backend/app/attachments/object_writer.py b/backend/app/attachments/object_writer.py
+index 089b1297..eaf48ba0 100644
+--- a/backend/app/attachments/object_writer.py
++++ b/backend/app/attachments/object_writer.py
+@@ -127,15 +127,22 @@ class AttachmentObjectWriter:
+     def _best_effort_delete(self, object_ref: str, put_response) -> None:
+         if not isinstance(put_response, dict):
+             return
+-        request = {"Bucket": self._bucket, "Key": object_ref}
+         if "VersionId" in put_response:
+             version_id = put_response["VersionId"]
+             if not isinstance(version_id, str) or not version_id:
+                 return
+-            request["VersionId"] = version_id
++            try:
++                self._client.delete_object(
++                    Bucket=self._bucket,
++                    Key=object_ref,
++                    VersionId=version_id,
++                )
++            except (BotoCoreError, ClientError, OSError, RuntimeError):
++                pass
++            return
+         try:
+-            self._client.delete_object(**request)
+-        except (BotoCoreError, ClientError, OSError, RuntimeError):
++            erase_s3_object(self._client, self._bucket, object_ref)
++        except Exception:  # noqa: BLE001, S110 - retry ledger retains the key
+             pass
+ 
+     def put_stream(
+@@ -160,6 +167,7 @@ class AttachmentObjectWriter:
+                 Key=object_ref,
+                 Body=reader,
+                 ContentLength=expected_size,
++                IfNoneMatch="*",
+             )
+             return reader.receipt()
+         except AttachmentObjectWriterSizeMismatch:
+diff --git a/backend/app/attachments/s3_erasure.py b/backend/app/attachments/s3_erasure.py
+index ea8f2718..6bd97db9 100644
+--- a/backend/app/attachments/s3_erasure.py
++++ b/backend/app/attachments/s3_erasure.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import time
+ from typing import Any
+ 
++from botocore.exceptions import ClientError
++
++_ERASURE_FENCE_METADATA = {"platform-erasure-fence": "v1"}
+ _MAX_VERSION_PURGE_SWEEPS = 8
++_MAX_VERSION_PAGES = 128
++_MAX_VERSION_ENTRIES = 100_000
++_VERSION_ENUMERATION_SECONDS = 30.0
+ _VERSION_PAGE_SIZE = 1000
+ 
+ 
+@@ -20,24 +27,31 @@ def _versioning_status(client: Any, bucket: str) -> str | None:
+     return status
+ 
+ 
+-def _exact_version_identifiers(
++def _exact_versions(
+     client: Any, bucket: str, object_ref: str
+-) -> tuple[str, ...]:
++) -> tuple[tuple[str, str], ...]:
+     request: dict[str, Any] = {
+         "Bucket": bucket,
+         "Prefix": object_ref,
+         "MaxKeys": _VERSION_PAGE_SIZE,
+     }
+-    identifiers: list[str] = []
+-    seen_identifiers: set[str] = set()
++    entries: list[tuple[str, str]] = []
++    seen_entries: set[tuple[str, str]] = set()
+     seen_cursors: set[tuple[str, str]] = set()
++    pages = 0
++    deadline = time.monotonic() + _VERSION_ENUMERATION_SECONDS
+     while True:
++        if pages >= _MAX_VERSION_PAGES or time.monotonic() >= deadline:
++            raise S3ObjectErasureError()
+         response = client.list_object_versions(**request)
++        pages += 1
++        if time.monotonic() >= deadline:
++            raise S3ObjectErasureError()
+         if not isinstance(response, dict) or not isinstance(
+             response.get("IsTruncated"), bool
+         ):
+             raise S3ObjectErasureError()
+-        for field in ("Versions", "DeleteMarkers"):
++        for field, kind in (("Versions", "version"), ("DeleteMarkers", "marker")):
+             values = response.get(field, [])
+             if not isinstance(values, list):
+                 raise S3ObjectErasureError()
+@@ -49,14 +63,14 @@ def _exact_version_identifiers(
+                     or not value["VersionId"]
+                 ):
+                     raise S3ObjectErasureError()
+-                if (
+-                    value["Key"] == object_ref
+-                    and value["VersionId"] not in seen_identifiers
+-                ):
+-                    seen_identifiers.add(value["VersionId"])
+-                    identifiers.append(value["VersionId"])
++                entry = (kind, value["VersionId"])
++                if value["Key"] == object_ref and entry not in seen_entries:
++                    seen_entries.add(entry)
++                    entries.append(entry)
++                    if len(entries) > _MAX_VERSION_ENTRIES:
++                        raise S3ObjectErasureError()
+         if not response["IsTruncated"]:
+-            return tuple(identifiers)
++            return tuple(entries)
+         key_marker = response.get("NextKeyMarker")
+         version_marker = response.get("NextVersionIdMarker")
+         if (
+@@ -74,27 +88,102 @@ def _exact_version_identifiers(
+         request["VersionIdMarker"] = version_marker
+ 
+ 
++def _is_missing_version(error: BaseException) -> bool:
++    if not isinstance(error, ClientError):
++        return False
++    response = error.response
++    if not isinstance(response, dict):
++        return False
++    metadata = response.get("ResponseMetadata")
++    detail = response.get("Error")
++    return (
++        isinstance(metadata, dict)
++        and metadata.get("HTTPStatusCode") == 404
++        and isinstance(detail, dict)
++        and detail.get("Code") in {"404", "NoSuchKey", "NoSuchVersion", "NotFound"}
++    )
++
++
++def _is_fence(client: Any, bucket: str, object_ref: str, version_id=None) -> bool:
++    request = {"Bucket": bucket, "Key": object_ref}
++    if version_id is not None:
++        request["VersionId"] = version_id
++    response = client.head_object(**request)
++    if not isinstance(response, dict):
++        raise S3ObjectErasureError()
++    length = response.get("ContentLength")
++    metadata = response.get("Metadata")
++    if version_id is not None and response.get("VersionId") != version_id:
++        raise S3ObjectErasureError()
++    return (
++        type(length) is int
++        and length == 0
++        and isinstance(metadata, dict)
++        and metadata == _ERASURE_FENCE_METADATA
++    )
++
++
++def _delete_version(client: Any, bucket: str, object_ref: str, version_id: str) -> None:
++    try:
++        response = client.delete_object(
++            Bucket=bucket, Key=object_ref, VersionId=version_id
++        )
++        if not isinstance(response, dict) or response.get("VersionId") != version_id:
++            raise S3ObjectErasureError()
++    except Exception as error:
++        if not _is_missing_version(error):
++            raise
++
++
+ def erase_s3_object(client: Any, bucket: str, object_ref: str) -> None:
+     if not isinstance(bucket, str) or not bucket.strip():
+         raise S3ObjectErasureError()
+     if not isinstance(object_ref, str) or not object_ref:
+         raise S3ObjectErasureError()
+     try:
+-        if _versioning_status(client, bucket) is None:
+-            client.delete_object(Bucket=bucket, Key=object_ref)
++        initial_status = _versioning_status(client, bucket)
++        response = client.put_object(
++            Bucket=bucket,
++            Key=object_ref,
++            Body=b"",
++            ContentLength=0,
++            Metadata=dict(_ERASURE_FENCE_METADATA),
++        )
++        if not isinstance(response, dict):
++            raise S3ObjectErasureError()
++        if initial_status is None:
++            if not _is_fence(client, bucket, object_ref):
++                raise S3ObjectErasureError()
++            if _versioning_status(client, bucket) is not None:
++                raise S3ObjectErasureError()
+             return
++
+         for _sweep in range(_MAX_VERSION_PURGE_SWEEPS):
+-            identifiers = _exact_version_identifiers(client, bucket, object_ref)
+-            if not identifiers:
+-                return
+-            for version_id in identifiers:
+-                client.delete_object(
+-                    Bucket=bucket,
+-                    Key=object_ref,
+-                    VersionId=version_id,
+-                )
+-        if _exact_version_identifiers(client, bucket, object_ref):
+-            raise S3ObjectErasureError()
++            changed = False
++            for kind, version_id in _exact_versions(client, bucket, object_ref):
++                if kind == "marker":
++                    _delete_version(client, bucket, object_ref, version_id)
++                    changed = True
++                    continue
++                try:
++                    fence = _is_fence(
++                        client, bucket, object_ref, version_id=version_id
++                    )
++                except Exception as error:
++                    if _is_missing_version(error):
++                        continue
++                    raise
++                if not fence:
++                    _delete_version(client, bucket, object_ref, version_id)
++                    changed = True
++            if changed:
++                continue
++            if not _is_fence(client, bucket, object_ref):
++                raise S3ObjectErasureError()
++            if _versioning_status(client, bucket) != initial_status:
++                raise S3ObjectErasureError()
++            return
++        raise S3ObjectErasureError()
+     except S3ObjectErasureError:
+         raise
+     except Exception:  # noqa: BLE001 - injected storage errors are sanitized
+diff --git a/backend/app/attachments/worker.py b/backend/app/attachments/worker.py
+index 2c3b8dcd..06fb2b2f 100644
+--- a/backend/app/attachments/worker.py
++++ b/backend/app/attachments/worker.py
+@@ -9,6 +9,7 @@ from typing import Protocol
+ from uuid import UUID
+ 
+ from .derivatives import Derivative, DerivativeBuilder, DerivativeError
++from .object_keys import derivative_object_key
+ from .scanner import MalwareScanner, ScanDisposition, ScannerUnavailable
+ from .validation import (
+     AttachmentValidationError,
+@@ -285,11 +286,7 @@ class AttachmentProcessor:
+             derivative = derivatives[0]
+             if job.derivative_kind != derivative.kind:
+                 raise DerivativeError()
+-            object_key = hashlib.sha256(
+-                b"attachment-derivative-v1\0"
+-                + job.processing_job_id.bytes
+-                + derivative.kind.encode("ascii")
+-            ).hexdigest()
++            object_key = derivative_object_key(job.processing_job_id, derivative.kind)
+             stored = self._object_store.put_derivative(
+                 derivative.data, object_key=object_key
+             )
+diff --git a/backend/app/attachments/worker_runtime.py b/backend/app/attachments/worker_runtime.py
+index 5ec1c0f6..dcfaaed8 100644
+--- a/backend/app/attachments/worker_runtime.py
++++ b/backend/app/attachments/worker_runtime.py
+@@ -7,12 +7,14 @@ import os
+ import secrets
+ import sys
+ from collections.abc import Callable
++from contextlib import suppress
+ from datetime import UTC, datetime
+ from pathlib import Path
+ from typing import Any
+ from uuid import NAMESPACE_URL, UUID, uuid5
+ 
+ import psycopg
++from botocore.exceptions import ClientError
+ from psycopg.rows import dict_row
+ 
+ from app.control_plane.crypto import IdentityKeyring
+@@ -23,6 +25,7 @@ from app.local_secrets import read_secret_file
+ from .conversation_repository import attachment_object_subject
+ from .derivatives import BubblewrapPdfSandbox, Derivative, DerivativeBuilder
+ from .erasure import AttachmentErasureRepository, AttachmentErasureService
++from .fence_capability import require_attachment_fence_capability
+ from .object_writer import _credential
+ from .retention import AttachmentRetentionRepository, AttachmentRetentionService
+ from .s3_erasure import erase_s3_object
+@@ -394,10 +397,84 @@ class S3ProcessingObjectStore:
+                 Body=data,
+                 ContentLength=len(data),
+                 ContentType="application/octet-stream",
++                IfNoneMatch="*",
+             )
+             return StoredDerivative(object_ref, len(data), digest)
+-        except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
++        except Exception as error:  # noqa: BLE001 - storage adapter errors are sanitized
++            if self._precondition_failed(error):
++                return self._existing_derivative(data, object_ref, digest)
++            raise AttachmentWorkerRuntimeError() from None
++
++    @staticmethod
++    def _precondition_failed(error: BaseException) -> bool:
++        if not isinstance(error, ClientError):
++            return False
++        response = error.response
++        if not isinstance(response, dict):
++            return False
++        detail = response.get("Error")
++        metadata = response.get("ResponseMetadata")
++        return (
++            isinstance(detail, dict)
++            and detail.get("Code") in {"412", "PreconditionFailed"}
++            and isinstance(metadata, dict)
++            and metadata.get("HTTPStatusCode") == 412
++        )
++
++    def _existing_derivative(
++        self, data: bytes, object_ref: str, digest: bytes
++    ) -> StoredDerivative:
++        body = None
++        try:
++            head = self._client.head_object(Bucket=self._bucket, Key=object_ref)
++            if (
++                not isinstance(head, dict)
++                or type(head.get("ContentLength")) is not int
++                or head["ContentLength"] != len(data)
++                or head.get("Metadata", {}) != {}
++            ):
++                raise AttachmentWorkerRuntimeError()
++            request = {"Bucket": self._bucket, "Key": object_ref}
++            version_id = head.get("VersionId")
++            etag = head.get("ETag")
++            if isinstance(version_id, str) and version_id and version_id != "null":
++                request["VersionId"] = version_id
++            elif isinstance(etag, str) and etag:
++                request["IfMatch"] = etag
++            else:
++                raise AttachmentWorkerRuntimeError()
++            response = self._client.get_object(**request)
++            if (
++                not isinstance(response, dict)
++                or type(response.get("ContentLength")) is not int
++                or response["ContentLength"] != len(data)
++                or response.get("Metadata", {}) != {}
++            ):
++                raise AttachmentWorkerRuntimeError()
++            body = response.get("Body")
++            if body is None or not callable(getattr(body, "read", None)):
++                raise AttachmentWorkerRuntimeError()
++            chunks = []
++            remaining = len(data) + 1
++            while remaining:
++                chunk = body.read(remaining)
++                if not isinstance(chunk, bytes):
++                    raise AttachmentWorkerRuntimeError()
++                if not chunk:
++                    break
++                chunks.append(chunk)
++                remaining -= len(chunk)
++            if b"".join(chunks) != data:
++                raise AttachmentWorkerRuntimeError()
++            return StoredDerivative(object_ref, len(data), digest)
++        except AttachmentWorkerRuntimeError:
++            raise
++        except Exception:  # noqa: BLE001 - storage clients are an opaque boundary
+             raise AttachmentWorkerRuntimeError() from None
++        finally:
++            if body is not None:
++                with suppress(Exception):
++                    body.close()
+ 
+     def delete(self, object_ref: str) -> None:
+         try:
+@@ -464,6 +541,7 @@ def build_processor(
+         "PLATFORM_ATTACHMENT_WORKER_DATABASE_URL_FILE"
+     )
+     database_url = read_secret_file(str(database_file))
++    require_attachment_fence_capability(database_url, purpose="brain")
+     codec = content_codec or _build_content_codec()
+     client = client or _build_s3_client()
+     worker_id = os.getenv(
+@@ -495,6 +573,7 @@ def build_maintenance_services(*, content_codec: ContentCodec, object_store):
+         "PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE"
+     )
+     database_url = read_secret_file(str(database_file))
++    require_attachment_fence_capability(database_url, purpose="maintenance")
+     return (
+         AttachmentRetentionService(
+             AttachmentRetentionRepository(database_url, content_codec=content_codec),
+@@ -582,13 +661,7 @@ def healthcheck() -> int:
+             ("PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE", "maintenance"),
+         ):
+             database_url = read_secret_file(str(_required_absolute_path(name)))
+-            validate_control_dsn(database_url, purpose=purpose)
+-            with psycopg.connect(
+-                database_url,
+-                connect_timeout=3,
+-                options="-c statement_timeout=3000 -c timezone=UTC",
+-            ) as connection:
+-                connection.execute("select 1").fetchone()
++            require_attachment_fence_capability(database_url, purpose=purpose)
+         client = _build_s3_client()
+         client.head_bucket(
+             Bucket=os.getenv(
+diff --git a/backend/app/main.py b/backend/app/main.py
+index b8aac8fd..c9f5873f 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -51,6 +51,7 @@ from .attachments.download_service import (
+     ConversationAttachmentDownloadService,
+     S3ImmutableAttachmentStore,
+ )
++from .attachments.fence_capability import require_attachment_fence_capability
+ from .attachments.grant_service import AttachmentGrantService, TaskGrantRepository
+ from .attachments.logging import install_attachment_ticket_redaction
+ from .attachments.object_writer import AttachmentObjectWriter
+@@ -498,13 +499,14 @@ def build_attachment_service(config: Config) -> AttachmentService:
+ 
+ 
+ def build_conversation_attachment_services(config: Config):
++    database_url = read_secret_file(config.attachment_control_database_url_file)
++    require_attachment_fence_capability(database_url, purpose="app")
+     keyring = IdentityKeyring.from_file(
+         config.content_encryption_keyring_file,
+         expected_purpose="platform-content-encryption",
+         expected_key_length=32,
+     )
+     codec = ContentCodec(keyring)
+-    database_url = read_secret_file(config.attachment_control_database_url_file)
+     repository = ConversationAttachmentRepository.from_config(
+         config, content_codec=codec
+     )
+diff --git a/backend/tests/test_attachment_erasure_hotfix_database.py b/backend/tests/test_attachment_erasure_hotfix_database.py
+index ceb08889..4e92b8c0 100644
+--- a/backend/tests/test_attachment_erasure_hotfix_database.py
++++ b/backend/tests/test_attachment_erasure_hotfix_database.py
+@@ -130,6 +130,7 @@ class _ObjectClient:
+     def __init__(self, refs):
+         self.refs = set(refs)
+         self.deleted = []
++        self.fenced = []
+ 
+     def delete_object(self, *, Bucket, Key):
+         assert Bucket == "attachment-regression"
+@@ -141,6 +142,22 @@ class _ObjectClient:
+         assert Bucket == "attachment-regression"
+         return {}
+ 
++    def put_object(self, *, Bucket, Key, Body, ContentLength, Metadata):
++        assert Bucket == "attachment-regression"
++        assert Body == b"" and ContentLength == 0
++        assert Metadata == {"platform-erasure-fence": "v1"}
++        self.refs.discard(Key)
++        self.fenced.append(Key)
++        return {}
++
++    def head_object(self, *, Bucket, Key):
++        assert Bucket == "attachment-regression"
++        assert Key in self.fenced
++        return {
++            "ContentLength": 0,
++            "Metadata": {"platform-erasure-fence": "v1"},
++        }
++
+ 
+ @pytest.mark.postgres
+ def test_legacy_composite_single_claim_loses_attachment_id(control_database):
+@@ -210,7 +227,8 @@ def test_fixed_worker_claims_one_job_and_deletes_every_object(control_database):
+     )
+ 
+     assert service.process_next("fixed-worker") is True
+-    assert set(client.deleted) == refs
++    assert set(client.fenced) == refs
++    assert client.deleted == []
+     assert client.refs == set()
+     with psycopg.connect(environment["admin"]) as admin:
+         assert admin.execute(
+diff --git a/backend/tests/test_attachment_s3_version_erasure.py b/backend/tests/test_attachment_s3_version_erasure.py
+index 384698f2..7766b8ad 100644
+--- a/backend/tests/test_attachment_s3_version_erasure.py
++++ b/backend/tests/test_attachment_s3_version_erasure.py
+@@ -4,6 +4,7 @@ import io
+ from types import SimpleNamespace
+ 
+ import pytest
++from botocore.exceptions import ClientError
+ 
+ from app.attachments.erasure import AttachmentErasureService, ErasureJob
+ from app.attachments.object_writer import (
+@@ -38,6 +39,10 @@ class VersionedS3:
+         self.calls = []
+         self.next_version = 0
+ 
++    @staticmethod
++    def _payload(entry):
++        return entry.get("Body", b"payload"), entry.get("Metadata", {})
++
+     def _call(self, operation, kwargs):
+         self.calls.append((operation, dict(kwargs)))
+         if self.fail_at == operation:
+@@ -88,20 +93,76 @@ class VersionedS3:
+             for entry in self.entries
+             if not (entry["Key"] == key and entry["VersionId"] == version_id)
+         ]
+-        if not any(entry["Key"] == key for entry in self.entries) and (
++        if not any(
++            entry["Key"] == key
++            and entry["Kind"] == "version"
++            and entry.get("Metadata") != {"platform-erasure-fence": "v1"}
++            for entry in self.entries
++        ) and (
+             self.keep_adding or (self.add_after_empty and not self.added)
+         ):
+             self.added = True
+             self.next_version += 1
+-            self.entries.append(
++            self.entries.insert(
++                0,
+                 {
+                     "Kind": "version",
+                     "Key": key,
+                     "VersionId": f"concurrent-{self.next_version}",
+-                }
++                    "Body": b"late payload",
++                    "Metadata": {},
++                },
+             )
+         return {"VersionId": version_id}
+ 
++    def put_object(self, **kwargs):
++        self._call("put_object", kwargs)
++        key = kwargs["Key"]
++        if kwargs.get("IfNoneMatch") == "*" and self.exact(key):
++            raise ClientError(
++                {
++                    "Error": {"Code": "PreconditionFailed"},
++                    "ResponseMetadata": {"HTTPStatusCode": 412},
++                },
++                "PutObject",
++            )
++        body = kwargs["Body"]
++        if hasattr(body, "read"):
++            body = body.read()
++        entry = {
++            "Kind": "version",
++            "Key": key,
++            "VersionId": "null" if self.status is None else f"put-{len(self.calls)}",
++            "Body": body,
++            "Metadata": dict(kwargs.get("Metadata", {})),
++        }
++        if self.status is None:
++            self.entries = [item for item in self.entries if item["Key"] != key]
++        self.entries.insert(0, entry)
++        return {} if self.status is None else {"VersionId": entry["VersionId"]}
++
++    def head_object(self, **kwargs):
++        self._call("head_object", kwargs)
++        selected = [entry for entry in self.entries if entry["Key"] == kwargs["Key"]]
++        version_id = kwargs.get("VersionId")
++        if version_id is not None:
++            selected = [entry for entry in selected if entry["VersionId"] == version_id]
++        selected = [entry for entry in selected if entry["Kind"] == "version"]
++        if not selected:
++            raise ClientError(
++                {
++                    "Error": {"Code": "NoSuchVersion"},
++                    "ResponseMetadata": {"HTTPStatusCode": 404},
++                },
++                "HeadObject",
++            )
++        body, metadata = self._payload(selected[0])
++        return {
++            "ContentLength": len(body),
++            "Metadata": metadata,
++            "VersionId": selected[0]["VersionId"],
++        }
++
+     def exact(self, key):
+         return [entry for entry in self.entries if entry["Key"] == key]
+ 
+@@ -121,7 +182,9 @@ def test_processing_delete_purges_every_exact_version_and_marker_across_pages(st
+ 
+     S3ProcessingObjectStore(client, "private-bucket").delete("owned")
+ 
+-    assert client.exact("owned") == []
++    assert [entry.get("Metadata") for entry in client.exact("owned")] == [
++        {"platform-erasure-fence": "v1"}
++    ]
+     assert client.exact("owned-other") == [
+         {"Kind": "version", "Key": "owned-other", "VersionId": "sibling"}
+     ]
+@@ -140,7 +203,7 @@ def test_processing_delete_purges_every_exact_version_and_marker_across_pages(st
+     assert all(call["Key"] == "owned" for call in deleted)
+ 
+ 
+-def test_unversioned_delete_keeps_single_exact_delete_compatibility():
++def test_unversioned_delete_replaces_payload_with_erasure_fence():
+     client = VersionedS3(
+         ({"Kind": "version", "Key": "owned", "VersionId": "unversioned"},),
+         status=None,
+@@ -148,12 +211,15 @@ def test_unversioned_delete_keeps_single_exact_delete_compatibility():
+ 
+     AttachmentObjectWriter(client, "private-bucket").delete("owned")
+ 
+-    assert client.exact("owned") == []
++    assert [entry.get("Metadata") for entry in client.exact("owned")] == [
++        {"platform-erasure-fence": "v1"}
++    ]
+     assert [operation for operation, _kwargs in client.calls] == [
+         "get_bucket_versioning",
+-        "delete_object",
++        "put_object",
++        "head_object",
++        "get_bucket_versioning",
+     ]
+-    assert "VersionId" not in client.calls[-1][1]
+ 
+ 
+ def test_object_writer_delete_uses_the_same_version_purge():
+@@ -166,7 +232,9 @@ def test_object_writer_delete_uses_the_same_version_purge():
+ 
+     AttachmentObjectWriter(client, "private-bucket").delete("owned")
+ 
+-    assert client.exact("owned") == []
++    assert [entry.get("Metadata") for entry in client.exact("owned")] == [
++        {"platform-erasure-fence": "v1"}
++    ]
+     assert {
+         kwargs["VersionId"]
+         for operation, kwargs in client.calls
+@@ -225,7 +293,9 @@ def test_version_arriving_during_purge_is_removed_by_followup_sweep():
+     S3ProcessingObjectStore(client, "private-bucket").delete("owned")
+ 
+     assert client.added is True
+-    assert client.exact("owned") == []
++    assert [entry.get("Metadata") for entry in client.exact("owned")] == [
++        {"platform-erasure-fence": "v1"}
++    ]
+     deleted = [
+         kwargs["VersionId"]
+         for operation, kwargs in client.calls
+diff --git a/backend/tests/test_attachment_upload_service.py b/backend/tests/test_attachment_upload_service.py
+index 69c70425..e5a5a5af 100644
+--- a/backend/tests/test_attachment_upload_service.py
++++ b/backend/tests/test_attachment_upload_service.py
+@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
+ from uuid import uuid4
+ 
+ import pytest
+-from botocore.exceptions import EndpointConnectionError
++from botocore.exceptions import ClientError, EndpointConnectionError
+ 
+ from app.attachments.conversation_models import (
+     MAX_FILE_BYTES,
+@@ -49,15 +49,45 @@ class StreamingS3:
+         self.fail_once = fail_once
+         self.puts: list[tuple[str, str, int]] = []
+         self.deletes: list[tuple[str, str]] = []
+-
+-    def put_object(self, *, Bucket, Key, Body, ContentLength):
++        self.fences: list[tuple[str, str]] = []
++        self.objects = {}
++
++    def put_object(
++        self,
++        *,
++        Bucket,
++        Key,
++        Body,
++        ContentLength,
++        IfNoneMatch=None,
++        Metadata=None,
++    ):
++        if IfNoneMatch == "*" and Key in self.objects:
++            raise ClientError(
++                {
++                    "Error": {"Code": "PreconditionFailed"},
++                    "ResponseMetadata": {"HTTPStatusCode": 412},
++                },
++                "PutObject",
++            )
+         total = 0
+-        while chunk := Body.read(1024 * 1024):
+-            total += len(chunk)
+-            if self.fail_once:
+-                self.fail_once = False
+-                raise OSError("partial transport failure")
+-        self.puts.append((Bucket, Key, total))
++        if isinstance(Body, bytes):
++            payload = Body
++            total = len(payload)
++        else:
++            chunks = []
++            while chunk := Body.read(1024 * 1024):
++                chunks.append(chunk)
++                total += len(chunk)
++                if self.fail_once:
++                    self.fail_once = False
++                    raise OSError("partial transport failure")
++            payload = b"".join(chunks)
++        self.objects[Key] = (payload, dict(Metadata or {}))
++        if Metadata == {"platform-erasure-fence": "v1"}:
++            self.fences.append((Bucket, Key))
++        else:
++            self.puts.append((Bucket, Key, total))
+         return {"ETag": "opaque"}
+ 
+     def get_bucket_versioning(self, *, Bucket):
+@@ -67,6 +97,11 @@ class StreamingS3:
+     def delete_object(self, *, Bucket, Key):
+         self.deletes.append((Bucket, Key))
+ 
++    def head_object(self, *, Bucket, Key):
++        assert Bucket == "private-attachments"
++        payload, metadata = self.objects[Key]
++        return {"ContentLength": len(payload), "Metadata": metadata}
++
+ 
+ def test_object_writer_streams_fifty_mb_and_calculates_sha256() -> None:
+     s3 = StreamingS3()
+@@ -85,14 +120,15 @@ def test_object_writer_streams_fifty_mb_and_calculates_sha256() -> None:
+     assert s3.puts == [("private-attachments", "objects/random", MAX_FILE_BYTES)]
+ 
+ 
+-def test_object_writer_rejects_extra_bytes_and_deletes_written_object() -> None:
++def test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write() -> None:
+     s3 = StreamingS3()
+     writer = AttachmentObjectWriter(s3, "private-attachments")
+ 
+     with pytest.raises(AttachmentObjectWriterSizeMismatch):
+         writer.put_stream("objects/random", io.BytesIO(b"abcd"), 3)
+ 
+-    assert s3.deletes == [("private-attachments", "objects/random")]
++    assert s3.deletes == []
++    assert s3.fences == [("private-attachments", "objects/random")]
+ 
+ 
+ def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup() -> None:
+@@ -103,7 +139,8 @@ def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup()
+         writer.put_stream("objects/random", io.BytesIO(b"payload"), 7)
+     writer.delete("objects/random")
+ 
+-    assert s3.deletes == [("private-attachments", "objects/random")]
++    assert s3.deletes == []
++    assert s3.fences == [("private-attachments", "objects/random")]
+ 
+ 
+ def test_storage_error_redacts_endpoint_object_key_and_cause() -> None:
+@@ -315,7 +352,8 @@ def test_authoritatively_superseded_finalize_failure_deletes_only_its_object() -
+             io.BytesIO(b"payload"),
+             7,
+         )
+-    assert s3.deletes == [("private-attachments", "objects/random-0")]
++    assert s3.deletes == []
++    assert s3.fences == [("private-attachments", "objects/random-0")]
+     assert repository.abandon_calls == 0
+ 
+ 
+diff --git a/backend/tests/test_control_plane_migration.py b/backend/tests/test_control_plane_migration.py
+index c1fa67df..baffc01e 100644
+--- a/backend/tests/test_control_plane_migration.py
++++ b/backend/tests/test_control_plane_migration.py
+@@ -201,6 +201,8 @@ TABLES = {
+     "voc_workbench_grants",
+     "access_page_catalog",
+     "user_access_events",
++    "hr_execution_cutover",
++    "hr_execution_cutover_operations",
+ }
+ 
+ IMMUTABLE_MIGRATION_SHA256 = {
+@@ -236,11 +238,20 @@ PUBLISHED_MIGRATION_SHA256 = {
+ 
+ 
+ def test_control_migration_versions_are_unique_and_contiguous() -> None:
+-    versions = [int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")]
+-
+-    assert len(versions) == len(set(versions))
+-    assert sorted(versions) == list(range(1, max(versions) + 1))
+-    assert max(versions) == 88
++    # HR migrations have independent deployment scopes; root must not absorb them.
++    expected_by_scope = {
++        MIGRATIONS: [*range(1, 89), 100, *range(102, 107)],
++        MIGRATIONS / "hr_web": list(range(89, 96)),
++        MIGRATIONS / "hr_agent": [*range(96, 100), 101],
++    }
++    all_versions = []
++    for directory, expected in expected_by_scope.items():
++        versions = [int(path.name.split("_", 1)[0]) for path in directory.glob("*.sql")]
++        assert sorted(versions) == expected, directory
++        all_versions.extend(versions)
++
++    assert len(all_versions) == len(set(all_versions))
++    assert sorted(all_versions) == list(range(1, 107))
+ 
+ 
+ def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 924e113e..1bd357c1 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -223,6 +223,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "103_hr_execution_drain_occupancy.sql",
+             "104_hr_execution_drain_terminal_contract.sql",
+             "105_hr_cloud_resume.sql",
++            "106_attachment_erasure_write_fence.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+diff --git a/backend/tests/test_hr_root_migration_deployment.py b/backend/tests/test_hr_root_migration_deployment.py
+index a31bfd02..54c1e209 100644
+--- a/backend/tests/test_hr_root_migration_deployment.py
++++ b/backend/tests/test_hr_root_migration_deployment.py
+@@ -60,18 +60,18 @@ def invoke(case):
+     return subprocess.run(case[-1], env=case[-2], capture_output=True, text=True, timeout=30, check=False)
+ 
+ 
+-@pytest.mark.parametrize("root_deployment", [95, 105], indirect=True)
++@pytest.mark.parametrize("root_deployment", [95, 106], indirect=True)
+ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_deployment):
+     db, release, tmp, _, _ = root_deployment
+-    (release / 'backend/control_migrations/106_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
++    (release / 'backend/control_migrations/107_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
+     # This HR migration must never execute in root mode.
+-    (release / 'backend/control_migrations/hr_agent/107_invalid.sql').write_text('invalid SQL must not run;')
++    (release / 'backend/control_migrations/hr_agent/108_invalid.sql').write_text('invalid SQL must not run;')
+     for _ in range(2):
+         result = invoke(root_deployment)
+         assert result.returncode == 0, result.stderr
+     with db.admin_connection() as connection:
+         assert connection.execute("select to_regclass('platform_control.root_scope_probe') is not null").fetchone()[0]
+-        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,107)').fetchone()[0] == 0
++        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,108)').fetchone()[0] == 0
+     calls = (tmp / 'calls').read_text()
+     assert calls.count('create ') == 2 and 'preview' not in calls
+     statements = [json.loads(line) for line in (tmp / 'sql.log').read_text().splitlines()]
+@@ -183,3 +183,22 @@ def test_root_requires_complete_105_target_from_95_baseline(root_deployment):
+     result = invoke(root_deployment)
+     assert result.returncode != 0
+     assert not (tmp / 'calls').exists()
++
++
++def test_new_attachment_release_requires_106_before_database_or_container_io(tmp_path):
++    import importlib.util
++    from types import SimpleNamespace
++
++    release = tmp_path / "release"
++    shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
++    for path in (release / "backend/control_migrations").glob("106_*.sql"):
++        path.unlink()
++    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    supervisor = module.Supervisor(SimpleNamespace(
++        release=str(release), private=str(tmp_path / "private"),
++        migration_set="root", environment="production",
++    ))
++    with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
++        supervisor.root_checksums()
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 7c37ad44..d366fc58 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -199,6 +199,7 @@ class Supervisor:
+             (103, "103_hr_execution_drain_occupancy.sql"),
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
+             (105, "105_hr_cloud_resume.sql"),
++            (106, "106_attachment_erasure_write_fence.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+@@ -233,7 +234,7 @@ class Supervisor:
+                         or (baseline_only and not 89 <= version <= 95)):
+                     raise DeploymentFailure("root_ledger_invalid")
+                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
+-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105}).issubset(expected):
++        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106}).issubset(expected):
+             raise DeploymentFailure("root_baseline_invalid")
+         return expected
+ 
+diff --git a/docs/reviews/2026-09-13-hr-launch-handoff.md b/docs/reviews/2026-09-13-hr-launch-handoff.md
+index 4501608b..46f5e414 100644
+--- a/docs/reviews/2026-09-13-hr-launch-handoff.md
++++ b/docs/reviews/2026-09-13-hr-launch-handoff.md
+@@ -7,17 +7,17 @@
+ | 项目 | 已有实际证据 | 尚未证明 |
+ | --- | --- | --- |
+ | 镜像 | ce6 源在生产构建成功；镜像 `sha256:2631b6a5090d49a51d187b88c6c38acc0da867ebc985c44cf79bd2db338d2e59` | 该镜像的生产服务切换与业务接单 |
+-| 附件版本擦除 | 生产 GetBucketVersioning HTTP 200 / Enabled；源码裸 delete 未指定版本 | 全版本实际删除、失败保留可重试引用、修复镜像与生产擦除闭环 |
+-| 数据库 | 生产 001–095 每项 SHA 匹配；job kind 基线预检通过 | 100/102–105 及独立 HR 迁移实际执行；104 准确计数现场耗时 |
++| 附件版本擦除 | 生产 Enabled；本地真实 MinIO 已验证1002旧数据版本清理；永久零字节占位/条件写修复有315项附件工程通过 | 新占位方案的真实并发 MinIO 验证、兼容镜像同窗口切换及生产擦除闭环 |
++| 数据库 | 生产 001–095 每项 SHA 匹配；job kind 基线预检通过 | 100/102–106 及独立 HR 迁移实际执行；104 准确计数现场耗时 |
+ | 备份 | 291124812 字节 custom dump、schema/ledger/globals 私有备份；归档目录可读，备份会话归零、两锁释放 | 恢复演练；未 dump 或修改 preview |
+ | 配置/知识 | 9 个宿主私有文件、12 个 HR 卷文件；94 个知识资源；API/Worker 指纹一致；旧知识原字节保留 | 网络、数据库、实际进程及模型运行验收；当前 preflight 的唯一 blocker 是 database_not_checked |
+ | 旧链 | 本地 HR legacy 13 completed/3 interrupted、outbox 0；3 条平台 v5 command 有终态/退出/停止并精确匹配终态上传 | 切换窗口中的再核验、云端旧网页 Worker 持久关闭及实际派发拒绝 |
+-| 历史模型 | 63 会话/242 条用户消息只读提取，22 个合成适配场景；一轮选定四例实际执行六轮、23 次模型调用 | 22 例完整回放；H03 补跑尚在进行；专业质量整体通过 |
++| 历史模型 | 63 会话/242 条用户消息只读提取，22 个合成适配场景；一轮选定四例实际执行六轮、23 次模型调用 | 22 例完整回放；H03 real5 四轮执行完成但专业仍未过；22例和专业质量整体通过尚无证据 |
+ | D 模型 | 三轮真实提供方工程试验及独立输出审读，第三轮 1 passed/590.16 秒 | 专业整体通过；仍有单因排除和归因偏移 |
+ | 页面 | 合并保留岗位/成果能力并修复路由；定向组件/style 工程回归留证 | 本次未做浏览器验收，按用户指令不作为上线前置 |
+ | 生产接口 | 受认证 canary 脚本及真实本地 HTTP/PG 工程测试；慢流墙钟中断补验 | 有效生产 owner Cookie/CSRF、生产真实擦除、受理/续作/成果及自有进程重启验收 |
+ 
+-实际操作入口为[发布计划](../../artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md)和[当前实施计划](../superpowers/plans/2026-09-13-hr-launch.md)。本次使用提交 `404862b93c57e6782016182f089b67766ab569ff` 的 production-only 监督迁移工具，不能替换为通用 bootstrap 或同时处理 preview。须先停止准确旧附件 Worker、应用 100、启动修复镜像并完成真实物理擦除，再进入 HR 迁移与切换。
++实际操作入口为[发布计划](../../artifacts/2026-09-13-hr-launch/production/deployment-plan-review.md)和[当前实施计划](../superpowers/plans/2026-09-13-hr-launch.md)。`404862b93c57e6782016182f089b67766ab569ff` 的 production-only 监督迁移工具为前一版受审基线；当前新增106源文件前置，需重新测试并冻结准确字节，不能替换为通用 bootstrap 或同时处理 preview。原仅停附件 Worker 的 ce6 方案不适用条件写修复：共享 API 和附件 Worker 都是写入方，须在同窗口停止旧写入方、隔断准确 MinIO 旧请求代际，再启用与106兼容的服务组合并通过真实擦除验收。新监督执行器尚未完成，不执行旧输入。
+ 
+ 独立飞书 MetaBot 不纳入本次停机。平台同一工作仍须由新云端链唯一执行；共享 Relay 和其他 Bot 保留。实际 PM2 加载版本与磁盘 ecosystem 不同，应以[本地平台在途核对](../../artifacts/2026-09-13-hr-launch/production/local-platform-inflight-review/)为准。三条 `reconciliation_required=true` 原样保留；实际加载代码拒绝已完成任务重放，不等于全部外部效果已对账，不得清标志造零。
+ 
+@@ -28,3 +28,9 @@
+ 证据封存分别见 `model-evidence-seal.json`、`engineering-evidence-seal.json` 和 `production/build-and-provision-seal.json`。两个已披露的操作文书/权限问题：旧指纹表的 companion SHA 少一字符，实际发布计划按准确 Git blob 修正，旧表保留；provision 外层曾把两个日志创建为 0644（父目录 0700），已按准确 SHA 定点改 0600，原脚本与补救回执分开保留。旧缺失日志仍缺失，不补写历史“通过”。
+ 
+ 新增物理擦除证据见 `production/s3-versioning-readonly-1/`。只读检查不含任何对象删除；数据库 job completed 会清除引用，所以新 canary 需要在删除前私有加密封存准确对象版本清单，再验证真实 job 状态与版本不存在，不能仅以接口 404 为通过。历史 `production/deployment-plan-review.md` 中 ce6 的执行步骤暂时失效，修复后的新方案另行绑定准确源码与镜像。
++
++截至新增 S3 修复：`4864abf` 的版本删除有 386 项附件工程回归；`production/s3-real-local-2` 实际本地 MinIO 验证跨两页 1002 个旧数据版本 HEAD 不存在、前缀兄弟保留、Suspended/null 与无版本桶删除通过，不能证明 late PUT 已阻止。后续零字节占位与条件写方案、106 逻辑删除关门和 API/附件同窗口切换正在实施，见 `attachment-write-fence-design-review-2` 与 `attachment-fence-release-plan-review`。原 ce6 运维输入不得执行。
++
++H03 real3 第四轮并非仅预算设置问题：反复以 role_calibration 更新 jd 被拒，另写调试占位，累计20次/1161589估算token后 waiting_budget，无最终答复。`b425b08` 增加授权后的类型字段诊断及禁止占位指导，16项真实PG测试通过且独立审读通过；H03 real5 已以固定 b425 源完成四轮，20次调用/1094115估算token/905.47活跃秒；错误kind反馈后沿原jd保存第四修订，无占位，但 save_note 被拒且如实披露。独立审读仍不接受专业内容：将用户明确指定职责降成待确认、仅补职责却新增相似工艺经历门槛、管理者经历和签核权仍有不当硬化。见[本轮输出审读](../../artifacts/2026-09-13-hr-launch/history-h03-real-review-5/review.md)。真实模型工程与专业判据继续分别登记，旧失败及前一轮内容问题不覆盖。
++
++当前新增物理边界预检 `production/minio-fence-window-readonly-1/` 实际只读确认唯一所见 Docker MinIO 数据挂载、无生命周期/复制/通知配置；未停止该服务，也不证明不存在任意宿主写入方。新增附件集合315项通过；完整控制平面迁移集合有2项静态清单失败，尚未关闭，不将该集合称为全绿。

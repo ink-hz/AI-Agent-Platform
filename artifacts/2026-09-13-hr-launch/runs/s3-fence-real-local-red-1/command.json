@@ -1,0 +1,20 @@
+{
+  "head": "c312af8d23d0afb4b773bee65675118bf0c257a1",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-red-1/run.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T05:03:15.859539+00:00",
+  "source_patch_sha256": "82e055c82502e3b5d88c3b742da5934446d1e29482af1046154614e78e99ec51",
+  "untracked_source_snapshots": {
+    "backend/app/attachments/object_keys.py": "7f540f099b2827ad7b4b463cb43c7cc5d0a855fa2461cd0986b291ab9d2c65ad",
+    "backend/control_migrations/106_attachment_erasure_write_fence.sql": "5685cf524f221abf939df0403337572a3cbd8e09bd5160e430541eb97f3a5c5c",
+    "backend/tests/test_attachment_fence_capability.py": "316cb9688de2c6a8ba613daab1527589d4728c09e076ca123c8c0a48a27eaa7c",
+    "backend/tests/test_attachment_write_fence.py": "cae346d74569dc4deac9a0895e7ef31e04d160a0364e99e79292d9610b6b56f4",
+    "backend/tests/test_attachment_write_fence_database.py": "c5eb27d838fd9100bb676f0b378cc1a00f687da283a2fcb925c37536a4a3550f"
+  },
+  "boundary": "Expected RED of new fence property against exact b425/4864 core pure deletion; disposable real local MinIO, no DB/production",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T05:03:18.676949+00:00"
+}
