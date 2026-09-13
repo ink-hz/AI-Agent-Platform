@@ -1,0 +1,16 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_schema_readiness_requires_exact_cutover_migration[None-105] _______
+backend/tests/test_hr_agent_foundation.py:208: in test_schema_readiness_requires_exact_cutover_migration
+    assert not check_schema_ready(db)
+E   assert not True
+E    +  where True = <function check_schema_ready at 0x107dd85e0>(HrTestDatabase())
+_ test_schema_readiness_requires_exact_cutover_migration[0000000000000000000000000000000000000000000000000000000000000000-105] _
+backend/tests/test_hr_agent_foundation.py:208: in test_schema_readiness_requires_exact_cutover_migration
+    assert not check_schema_ready(db)
+E   assert not True
+E    +  where True = <function check_schema_ready at 0x107dd85e0>(HrTestDatabase())
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_foundation.py::test_schema_readiness_requires_exact_cutover_migration[None-105]
+FAILED backend/tests/test_hr_agent_foundation.py::test_schema_readiness_requires_exact_cutover_migration[0000000000000000000000000000000000000000000000000000000000000000-105]
+2 failed, 53 deselected in 2.03s

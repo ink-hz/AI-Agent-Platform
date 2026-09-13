@@ -1,0 +1,79 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0 -- /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.14.2, respx-0.23.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+backend/tests/test_hr_source_library.py::test_source_library_is_edition_pinned_filterable_and_paginated FAILED [100%]
+
+=================================== FAILURES ===================================
+________ test_source_library_is_edition_pinned_filterable_and_paginated ________
+backend/tests/test_hr_source_library.py:109: in test_source_library_is_edition_pinned_filterable_and_paginated
+    assert library.catalog() == {
+E   AssertionError: assert {'edition': 'source-b8fe683737065247e51c', 'source_bundle_id': '2ed2262c-63a0-47e5-996c-7d00eb0be1a0', 'observed_at': '2026-09-06T14:00:00+00:00', 'job_count': 2, 'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, 'coverage_state': 'succeeded', 'document_state': 'succeeded', 'observed_at': '2026-09-06T14:00:00+00:00', 'overview': None}]} == {'edition': 'source-b8fe683737065247e51c', 'source_bundle_id': '2ed2262c-63a0-47e5-996c-7d00eb0be1a0', 'observed_at': '2026-09-06T14:00:00+00:00', 'job_count': 2, 'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, 'coverage_state': 'succeeded', 'document_state': 'succeeded', 'observed_at': '2026-09-06T14:00:00+00:00'}]}
+E     
+E     Common items:
+E     {'edition': 'source-b8fe683737065247e51c',
+E      'job_count': 2,
+E      'observed_at': '2026-09-06T14:00:00+00:00',
+E      'source_bundle_id': '2ed2262c-63a0-47e5-996c-7d00eb0be1a0'}
+E     Differing items:
+E     {'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, ...}]} != {'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, ...}]}
+E     
+E     Full diff:
+E       {
+E           'edition': 'source-b8fe683737065247e51c',
+E           'source_bundle_id': '2ed2262c-63a0-47e5-996c-7d00eb0be1a0',
+E           'observed_at': '2026-09-06T14:00:00+00:00',
+E           'job_count': 2,
+E           'companies': [
+E               {
+E                   'company_key': 'sample',
+E                   'name': '样例公司',
+E                   'aliases': [
+E                       'Sample',
+E                   ],
+E                   'job_count': 2,
+E                   'coverage_state': 'succeeded',
+E                   'document_state': 'succeeded',
+E                   'observed_at': '2026-09-06T14:00:00+00:00',
+E     +             'overview': None,
+E               },
+E           ],
+E       }
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_source_library.py::test_source_library_is_edition_pinned_filterable_and_paginated - AssertionError: assert {'edition': 'source-b8fe683737065247e51c', 'source_bundle_id': '2ed2262c-63a0-47e5-996c-7d00eb0be1a0', 'observed_at': '2026-09-06T14:00:00+00:00', 'job_count': 2, 'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, 'coverage_state': 'succeeded', 'document_state': 'succeeded', 'observed_at': '2026-09-06T14:00:00+00:00', 'overview': None}]} == {'edition': 'source-b8fe683737065247e51c', 'source_bundle_id': '2ed2262c-63a0-47e5-996c-7d00eb0be1a0', 'observed_at': '2026-09-06T14:00:00+00:00', 'job_count': 2, 'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, 'coverage_state': 'succeeded', 'document_state': 'succeeded', 'observed_at': '2026-09-06T14:00:00+00:00'}]}
+  
+  Common items:
+  {'edition': 'source-b8fe683737065247e51c',
+   'job_count': 2,
+   'observed_at': '2026-09-06T14:00:00+00:00',
+   'source_bundle_id': '2ed2262c-63a0-47e5-996c-7d00eb0be1a0'}
+  Differing items:
+  {'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, ...}]} != {'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, ...}]}
+  
+  Full diff:
+    {
+        'edition': 'source-b8fe683737065247e51c',
+        'source_bundle_id': '2ed2262c-63a0-47e5-996c-7d00eb0be1a0',
+        'observed_at': '2026-09-06T14:00:00+00:00',
+        'job_count': 2,
+        'companies': [
+            {
+                'company_key': 'sample',
+                'name': '样例公司',
+                'aliases': [
+                    'Sample',
+                ],
+                'job_count': 2,
+                'coverage_state': 'succeeded',
+                'document_state': 'succeeded',
+                'observed_at': '2026-09-06T14:00:00+00:00',
+  +             'overview': None,
+            },
+        ],
+    }
+============================== 1 failed in 0.06s ===============================

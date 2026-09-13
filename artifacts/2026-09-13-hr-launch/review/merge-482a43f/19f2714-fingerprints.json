@@ -1,0 +1,52 @@
+{
+  "review_scope": {
+    "base_commit": "482a43fc34123df73c4c85a46acd63f7139e343f",
+    "fix_commit": "19f2714a1fb72e9748582d3e896e182da954973b",
+    "fix_tree": "556230b3957e4ceca5400b7d7b2667389d67503f",
+    "fix_parents": [
+      "482a43fc34123df73c4c85a46acd63f7139e343f"
+    ],
+    "subject": "fix(hr): preserve position selection through workspace route"
+  },
+  "exact_patch": {
+    "path": "482a43f-to-19f2714.patch",
+    "format": "git diff --binary --full-index --no-ext-diff",
+    "sha256": "3a3cbe48e890b0f0cb443102401465d039e24b6a25800955a86c35a1c2b96a52",
+    "bytes": 4116,
+    "lines": 46,
+    "files_changed": 2,
+    "insertions": 23,
+    "deletions": 1
+  },
+  "source_files": {
+    "webui/src/workspaces/hr/HrWorkspacePage.tsx": {
+      "git_blob": "8b3673ebbf556f3064b9885178c31cd6a862f161",
+      "sha256": "a83a591c9c50f23ad017a1daee214db5a403cd9cc721695bb4c840e0dfe8fe1b"
+    },
+    "webui/src/workspaces/hr/HrWorkspacePage.test.tsx": {
+      "git_blob": "4867a95b67425cfec9189880c6307cf914ac9571",
+      "sha256": "8269aaad5da91f1026ad5c9a2b9e9e3ac15a6fc54f3485bb472e7a8213fc6858"
+    }
+  },
+  "test_evidence_reviewed_without_rerun": {
+    "red": {
+      "command_json_sha256": "ff47fc79bcb8891c454fce904bd21d65e858551f14f9e4b1b1cf04e90e392c0b",
+      "output_log_sha256": "b82f9539a874fcaf576b374264c7d0e4491c77c24afca8a1fcd2253ea88cca6a",
+      "observed_source_receipt_sha256": "30c6907c166077e37613d682f527f1b3ad03f1698b7fd2753687d17528b355a8",
+      "exit_code": 1
+    },
+    "green": {
+      "command_json_sha256": "9769ef4cc3f377ef4bd17b0d21d4df579e3d3405d03de60d751d1c77bcd9d3f3",
+      "output_log_sha256": "0d56af3e73f9306013821c6b7e4dda4125670e67a178be465788b055a76c76d8",
+      "source_patch_sha256": "84aaa23087cb101b0452e0fa800185d9be471d497ccbd1b99f4ad41fae222e6b",
+      "exit_code": 0,
+      "tests_passed": 30
+    },
+    "binding": "The default-index git diff from base_commit to fix_commit is byte-identical to merge-route-green/source.patch and has SHA-256 84aaa23087cb101b0452e0fa800185d9be471d497ccbd1b99f4ad41fae222e6b."
+  },
+  "preserved_original_review_artifacts": {
+    "b184b57-to-482a43f.patch": "9b7e06f81962605691e59d2b340235a38be06372fe5fd84e7b39dc459c7ce452",
+    "source-fingerprints.json": "2cc757d61743224f5854f22866d2a2f70abce140bf8ed2dea1a7c4835e8447fc",
+    "review.md": "1d918d117f97c0ca12a0d31fc565e31a9f0cfcc18a349cc401c184a09c8fbbc0"
+  }
+}

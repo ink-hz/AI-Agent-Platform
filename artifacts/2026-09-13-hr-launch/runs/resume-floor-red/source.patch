@@ -1,0 +1,172 @@
+diff --git a/backend/app/control_plane/authorization.py b/backend/app/control_plane/authorization.py
+index 451201e..2144985 100644
+--- a/backend/app/control_plane/authorization.py
++++ b/backend/app/control_plane/authorization.py
+@@ -352,6 +352,7 @@ _OWNER_ROUTES = frozenset({
+     ("GET", "/api/operations/conversation-metrics"),
+     ("GET", "/api/v1/manage/users"),
+     ("GET", "/api/v1/manage/system-health"),
++    ("GET", "/api/v1/manage/hr-readiness"),
+     ("GET", "/api/attachments/content/{ticket}"),
+     ("POST", "/api/attachments/{attachment_id}/ticket"),
+     ("POST", "/api/review/issues"),
+diff --git a/backend/app/control_plane/middleware.py b/backend/app/control_plane/middleware.py
+index 9ab40e9..593b1cd 100644
+--- a/backend/app/control_plane/middleware.py
++++ b/backend/app/control_plane/middleware.py
+@@ -35,6 +35,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
+         "/api/v1/internal/session/subject",
+         "/api/v1/auth/logout",
+         "/api/v1/manage/system-health",
++        "/api/v1/manage/hr-readiness",
+     }
+ )
+ _WORKER_RUN_ROUTE = re.compile(
+diff --git a/backend/app/control_plane/routes_auth.py b/backend/app/control_plane/routes_auth.py
+index 052f169..613bfd6 100644
+--- a/backend/app/control_plane/routes_auth.py
++++ b/backend/app/control_plane/routes_auth.py
+@@ -484,6 +484,30 @@ def build_auth_router(
+         )
+         return response
+ 
++    @router.get("/api/v1/manage/hr-readiness")
++    async def hr_readiness(request: Request):
++        from starlette.concurrency import run_in_threadpool
++
++        from app.hr_agent.readiness import unavailable
++
++        context: AuthContext = request.state.auth_context
++        if context.role is not Role.PLATFORM_OWNER:
++            raise HTTPException(403, "platform owner required")
++        audit = getattr(request.app.state, "system_health_audit", None)
++        if audit is None:
++            raise HTTPException(503, "required audit unavailable")
++        try:
++            await run_in_threadpool(audit, context)
++        except Exception:
++            raise HTTPException(503, "required audit unavailable") from None
++        probe = getattr(request.app.state, "hr_readiness", None)
++        try:
++            payload = await run_in_threadpool(probe.check) if probe is not None else unavailable()
++        except Exception:
++            payload = unavailable("readiness_unavailable")
++        return JSONResponse(payload, status_code=200 if payload["ready"] else 503,
++                            headers=_NO_STORE)
++
+     @router.get("/api/v1/manage/system-health")
+     async def system_health(request: Request) -> dict[str, Any]:
+         context: AuthContext = request.state.auth_context
+diff --git a/backend/app/main.py b/backend/app/main.py
+index e0c8896..6da0c93 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -1599,6 +1599,20 @@ def create_app(
+             ready=False,
+         )
+     app.state.hr_agent_service = hr_agent_service
++    app.state.hr_readiness = None
++    if config.hr_agent_settings.enabled and hr_agent_service.repository is not None:
++        from .hr_agent.readiness import HrReadiness
++
++        def hr_readiness_connection():
++            return psycopg.connect(
++                hr_database_url, connect_timeout=1,
++                options="-c statement_timeout=1500 -c lock_timeout=500",
++            )
++
++        app.state.hr_readiness = HrReadiness(
++            config.hr_agent_settings, os.environ, hr_readiness_connection,
++            assembled=hr_agent_service.ready and hr_agent_service.access is not None,
++        )
+     app.include_router(build_hr_agent_router(hr_agent_service))
+ 
+     async def require_hr_access(request: Request, *, writable: bool = False):
+diff --git a/backend/tests/test_hr_agent_foundation.py b/backend/tests/test_hr_agent_foundation.py
+index 14ba6d2..f120843 100644
+--- a/backend/tests/test_hr_agent_foundation.py
++++ b/backend/tests/test_hr_agent_foundation.py
+@@ -194,7 +194,7 @@ def test_config_reserves_full_unicode_read_capacity_before_start(tmp_path, input
+         loaded = make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+         assert loaded.provider_profile['context_window_tokens'] == input_capacity + 4096
+ 
+-@pytest.mark.parametrize("version", [102, 103, 104])
++@pytest.mark.parametrize("version", [102, 103, 104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+ def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+     from app.hr_agent.config import check_schema_ready
+diff --git a/backend/tests/test_hr_agent_preflight.py b/backend/tests/test_hr_agent_preflight.py
+index 5029389..bc21d6e 100644
+--- a/backend/tests/test_hr_agent_preflight.py
++++ b/backend/tests/test_hr_agent_preflight.py
+@@ -261,6 +261,7 @@ def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
+         102,
+         103,
+         104,
++        105,
+     ]
+     assert all(item["match"] for item in report["database"]["migrations"])
+     assert report["database"]["permissions_complete"] is True
+@@ -309,7 +310,7 @@ def test_cli_stdout_is_json_and_scrubs_raw_exceptions(tmp_path, capsys):
+     assert str(tmp_path) not in output
+ 
+ 
+-@pytest.mark.parametrize("version", [103, 104])
++@pytest.mark.parametrize("version", [103, 104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt, version):
+     knowledge = _knowledge(tmp_path / "knowledge")
+@@ -331,6 +332,7 @@ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, r
+     (102, "CUTOVER_MIGRATION"),
+     (103, "DRAIN_OCCUPANCY_MIGRATION"),
+     (104, "DRAIN_TERMINAL_MIGRATION"),
++    (105, "CLOUD_RESUME_MIGRATION"),
+ ])
+ @pytest.mark.parametrize("replace_ledger", [False, True])
+ def test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image(
+diff --git a/webui/src/workspaces/hr/HrWorkspacePage.test.tsx b/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
+index 2f3ef62..4867a95 100644
+--- a/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
++++ b/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
+@@ -347,6 +347,28 @@ describe("HrWorkspacePage", () => {
+     expect(scrollTo).not.toHaveBeenCalled();
+   });
+ 
++  it("returns from the position directory with the selected position and unsent draft", async () => {
++    const client = vi.mocked(createHrApi).getMockImplementation()!("csrf");
++    const position = await client.position("44444444-4444-4444-8444-444444444444");
++    vi.mocked(client.listPositions).mockResolvedValue({ items: [position], nextCursor: null });
++    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
++    const textarea = container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")!;
++    await act(async () => {
++      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "保留岗位讨论草稿");
++      textarea.dispatchEvent(new Event("input", { bubbles: true }));
++    });
++    window.history.replaceState({}, "", "/hr/positions");
++    await act(async () => root.render(<HrWorkspacePage account={account} positions />));
++    const resume = [...container.querySelectorAll<HTMLButtonElement>("button")]
++      .find(button => button.textContent === "在主对话中继续");
++    expect(resume).toBeDefined();
++    await act(async () => resume!.click());
++    expect(window.location.pathname).toBe("/hr/conversations/c-7");
++    expect(container.querySelector(".hr-position-picker-trigger")?.textContent).toContain(position.title);
++    expect(textarea.value).toBe("保留岗位讨论草稿");
++    expect(startConversation).not.toHaveBeenCalled();
++  });
++
+   it("keeps the current conversation as the chat navigation target", async () => {
+     await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+     await act(async () => root.render(<HrWorkspacePage account={account} positions />));
+diff --git a/webui/src/workspaces/hr/HrWorkspacePage.tsx b/webui/src/workspaces/hr/HrWorkspacePage.tsx
+index 128d1bc..8b3673e 100644
+--- a/webui/src/workspaces/hr/HrWorkspacePage.tsx
++++ b/webui/src/workspaces/hr/HrWorkspacePage.tsx
+@@ -95,7 +95,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
+       renderTurnContext={turnId=><HrTurnResults turnId={turnId} data={results} readOnly={props.account.hard_stale_read_only} onDraft={(value,id)=>void fill(value,id)}/>}
+     /></WorkspaceErrorBoundary></div>
+     {props.positionId?<HrPositionWorkflow key={props.positionId} account={props.account} positionId={props.positionId} section={props.section} draftError={draftError} api={api} r12={r12} onDraft={(value,id)=>void fill(value,id)}/>
+-      :props.positions?<HrPositionIndex account={props.account} api={api}/>:null}
++      :props.positions?<HrPositionIndex account={props.account} api={api} onSelect={value=>{choose(value);navigate(chatHref);}}/>:null}
+     {panoramaVisited.current&&<div className="hr-workspace-panorama-panel" hidden={!panoramaActive} aria-hidden={!panoramaActive?"true":undefined}><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligence}/>{intelligenceError&&<p role="alert">{intelligenceError}</p>}</WorkspaceErrorBoundary></div>}
+     {selectedPosition&&<HrPositionDetailsDrawer key={selectedPosition.positionId} api={r12} csrfToken={props.account.csrf_token} detail={position.detail??selectedPosition} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
+       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}

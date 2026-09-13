@@ -1,0 +1,82 @@
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run --run src/styles.test.ts -t keeps .* text at the approved minimum
+
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+ ❯ src/styles.test.ts (37 tests | 3 failed | 34 skipped) 5ms
+   ↓ Executive Operations visual contract > gives the VOC workspace a clear draft boundary and responsive layout
+   ↓ Executive Operations visual contract > uses a Chinese-first product typeface and removes template-era chrome
+   ↓ Executive Operations visual contract > presents runtime facts as one structured panel instead of floating cards
+   ↓ Executive Operations visual contract > uses the approved high-contrast foundation
+   ↓ Executive Operations visual contract > never renders visible text below the approved minimum
+   × Executive Operations visual contract > keeps HrLoopWorkspace.css text at the approved minimum 3ms
+     → expected 11 to be greater than or equal to 11.5
+   × Executive Operations visual contract > keeps hrResearch.css text at the approved minimum 0ms
+     → expected 10 to be greater than or equal to 11.5
+   × Executive Operations visual contract > keeps hrCompanyIntelligence.css text at the approved minimum 0ms
+     → expected 11 to be greater than or equal to 11.5
+   ↓ Executive Operations visual contract > renders HR as a calm full-height recruiting workspace instead of a card dashboard
+   ↓ Executive Operations visual contract > keeps the position conversation primary with on-demand responsive controls
+   ↓ Executive Operations visual contract > keeps compact FAE workbench navigation in one keyboard-scrollable row
+   ↓ Executive Operations visual contract > turns the FAE outcome report into a responsive and printable reader
+   ↓ Executive Operations visual contract > bounds the FAE workspace and keeps its reading column legible
+   ↓ Executive Operations visual contract > keeps available non-drillable metrics visually distinct from unavailable metrics
+   ↓ Executive Operations visual contract > stacks Session governance after the header and before Turns at 1040px
+   ↓ Executive Operations visual contract > keeps overview cards single-column and actions visible without hover below 720px
+   ↓ Executive Operations visual contract > gives summary and insight cards visible resting weight
+   ↓ Executive Operations visual contract > keeps chart values readable without hover
+   ↓ Executive Operations visual contract > gives percentage-height trend bars a definite containing block
+   ↓ Executive Operations visual contract > gives every Agent card substantial resting weight
+   ↓ Executive Operations visual contract > keeps Agent names and detail rows readable
+   ↓ Executive Operations visual contract > makes Professional Agent cards obvious links without changing the profile label
+   ↓ Executive Operations visual contract > uses one-column summary and Agent layouts on small screens
+   ↓ Executive Operations visual contract > protects long Agent names beside wide status labels at 320px
+   ↓ Executive Operations visual contract > gives the Daily Brief two equal, substantial desktop columns
+   ↓ Executive Operations visual contract > uses rendered severity hooks for label, icon, border, and color treatments
+   ↓ Executive Operations visual contract > distinguishes stale Briefs and quiet System Agent infrastructure
+   ↓ Executive Operations visual contract > finishes Activity groups, pagination, and Recent Activity cards
+   ↓ Executive Operations visual contract > contains all six Activity filter tracks through the intermediate desktop range
+   ↓ Executive Operations visual contract > stacks the Brief and Activity controls at the approved Operations breakpoint
+   ↓ Executive Operations visual contract > contains rich message content with message-scoped overflow rules
+   ↓ Executive Operations visual contract > scopes Markdown typography and tables to Session messages
+   ↓ Executive Operations visual contract > stacks messages while keeping labels and times readable on mobile
+   ↓ Executive Operations visual contract > keeps continuous Conversation content and composer usable on mobile
+   ↓ Executive Operations visual contract > keeps attachment names and cards readable on narrow screens
+   ↓ Executive Operations visual contract > gives AI notes an independent two-column reading workspace
+   ↓ Executive Operations visual contract > keeps the AI notes home entry quiet and keyboard visible
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/styles.test.ts > Executive Operations visual contract > keeps HrLoopWorkspace.css text at the approved minimum
+ FAIL  src/styles.test.ts > Executive Operations visual contract > keeps hrCompanyIntelligence.css text at the approved minimum
+AssertionError: expected 11 to be greater than or equal to 11.5
+ ❯ src/styles.test.ts:104:36
+    102|         expect(declaration).toMatch(/^(?:[\d.]+px|clamp\([\d.]+px,\s*[…
+    103|         const sizes = [...declaration.matchAll(/([\d.]+)px/g)].map((ma…
+    104|         expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11.5);
+       |                                    ^
+    105|       }
+    106|     },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/styles.test.ts > Executive Operations visual contract > keeps hrResearch.css text at the approved minimum
+AssertionError: expected 10 to be greater than or equal to 11.5
+ ❯ src/styles.test.ts:104:36
+    102|         expect(declaration).toMatch(/^(?:[\d.]+px|clamp\([\d.]+px,\s*[…
+    103|         const sizes = [...declaration.matchAll(/([\d.]+)px/g)].map((ma…
+    104|         expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11.5);
+       |                                    ^
+    105|       }
+    106|     },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 34 skipped (37)
+   Start at  10:56:47
+   Duration  208ms (transform 26ms, setup 0ms, collect 23ms, tests 5ms, environment 0ms, prepare 43ms)
+

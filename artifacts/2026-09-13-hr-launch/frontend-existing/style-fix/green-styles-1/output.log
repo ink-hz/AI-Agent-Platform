@@ -1,0 +1,14 @@
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run --run src/styles.test.ts
+
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+ ✓ src/styles.test.ts (37 tests) 15ms
+
+ Test Files  1 passed (1)
+      Tests  37 passed (37)
+   Start at  10:57:35
+   Duration  178ms (transform 23ms, setup 0ms, collect 20ms, tests 15ms, environment 0ms, prepare 38ms)
+

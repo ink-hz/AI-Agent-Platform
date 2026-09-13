@@ -1,0 +1,118 @@
+{
+  "kind": "external-command-mock-not-production",
+  "block": "HR_ATTACHMENT_HOTFIX",
+  "scenario": "migration_failure",
+  "runbookSha256": "4bba157d64b5cfedfac2a264aeffee54277bf284a4f5466abebe61bebe120e0d",
+  "sourceBlockSha256": "45e4183f0dc023ba62e4284e952b8789461e447fb10a6b6dfc3035e4181bbabc",
+  "executedScriptSha256": "ea67069f8aab15b251ccf184f1b450ca67bbbaef3ab8b9820b87bead0baafeb2",
+  "exit": 2,
+  "stdout": "",
+  "stderr": "ATTACHMENT_HOTFIX_FAILED_KEEP_STOPPED\n",
+  "state": {
+    "hr": "online",
+    "saved": false,
+    "old_running": false,
+    "new_running": false,
+    "new_created": false,
+    "migrated": false,
+    "calls": [
+      [
+        "mock-docker",
+        "image",
+        "inspect",
+        "--format",
+        "{{.Id}}",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      [
+        "mock-docker",
+        "compose",
+        "--env-file",
+        "/opt/orbbec-agent-platform/private/runtime.env",
+        "-f",
+        "/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9540/test_attachment_sequence_fails5/release/deploy/cloud/compose.yaml",
+        "config",
+        "--format",
+        "json"
+      ],
+      [
+        "mock-docker",
+        "run",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--rm",
+        "--read-only",
+        "--user",
+        "10001:10001",
+        "--network",
+        "none",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "python",
+        "-c",
+        "import hashlib,pathlib; print(hashlib.sha256(pathlib.Path(\"/app/backend/app/attachments/erasure.py\").read_bytes()).hexdigest())"
+      ],
+      [
+        "mock-docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "inspect",
+        "--format",
+        "{{.State.Running}}",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "update",
+        "--restart=no",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "stop",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "inspect",
+        "--format",
+        "{{.State.Running}}",
+        "old"
+      ],
+      [
+        "mock-bootstrap",
+        "/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9540/test_attachment_sequence_fails5/release",
+        "/opt/orbbec-agent-platform/private",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "APPROVED_POSTGRES_CONTAINER_ID"
+      ],
+      [
+        "mock-docker",
+        "stop",
+        "old"
+      ],
+      [
+        "mock-docker",
+        "compose",
+        "--env-file",
+        "/opt/orbbec-agent-platform/private/runtime.env",
+        "-f",
+        "/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9540/test_attachment_sequence_fails5/release/deploy/cloud/compose.yaml",
+        "ps",
+        "-q",
+        "platform-attachments"
+      ],
+      [
+        "mock-docker",
+        "stop",
+        "old"
+      ]
+    ]
+  }
+}

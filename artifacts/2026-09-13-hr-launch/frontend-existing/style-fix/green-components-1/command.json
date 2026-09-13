@@ -1,0 +1,29 @@
+{
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "--run",
+    "src/workspaces/hr/HrWorkspaceShell.test.tsx",
+    "src/workspaces/hr/HrKnowledgePanel.test.tsx",
+    "src/workspaces/hr/HrLoopWorkspace.test.tsx",
+    "src/workspaces/hr/HrResearchWorkspace.test.tsx",
+    "src/workspaces/hr/HrPositionIndex.test.tsx",
+    "src/workspaces/hr/HrPositionWorkflow.test.tsx",
+    "src/components/conversation/ConversationSidebar.test.tsx",
+    "src/workspaces/hr/hrCompanyIntelligence.test.ts"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui",
+  "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+  "source_sha256": {
+    "webui/src/styles.css": "4afce04eeab5349726de8bf47f116860fe0801f0d3380b8bd6cd120ab32660f5",
+    "webui/src/styles.test.ts": "c56de5aeab65893d95f34a527fbf89c491ac5c4059445d6c58241b5e15e5ed9a",
+    "webui/src/workspaces/hr/HrLoopWorkspace.css": "35cee5b884b71d0485164f1df0e046c8bde2d222411689e6ba0031a919caac31",
+    "webui/src/workspaces/hr/hrResearch.css": "c54b66f0ba1bfe4d7657ca8a937b1e287ffba9410ac2847d0d784b0b9e6ba618",
+    "webui/src/workspaces/hr/hrCompanyIntelligence.css": "3ed312a638c1317eadd9a828a9b73c09912083a68212ae5f05e3b6f4ad5b61bb"
+  },
+  "started": "2026-09-13T02:57:50.575134+00:00",
+  "exit_code": 0,
+  "ended": "2026-09-13T02:58:01.905304+00:00",
+  "source_unchanged": true
+}

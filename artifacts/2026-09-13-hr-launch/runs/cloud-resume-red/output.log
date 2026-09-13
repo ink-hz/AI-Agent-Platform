@@ -1,0 +1,50 @@
+FFF.                                                                     [100%]
+=================================== FAILURES ===================================
+___ test_resume_cloud_preserves_active_work_and_reopens_only_cloud_admission ___
+backend/tests/test_hr_cloud_resume.py:46: in test_resume_cloud_preserves_active_work_and_reopens_only_cloud_admission
+    resumed = transition(database, "cloud")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_cloud_resume.py:34: in transition
+    return c.execute("select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)",
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.RaiseException: invalid HR execution transition
+E   CONTEXT:  PL/pgSQL function transition_hr_execution_cutover_v102(text,uuid) line 20 at RAISE
+__________ test_resume_cloud_concurrent_same_request_has_one_receipt ___________
+backend/tests/test_hr_cloud_resume.py:59: in test_resume_cloud_concurrent_same_request_has_one_receipt
+    receipts = list(pool.map(lambda _: transition(database, "cloud", request), range(2)))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py:619: in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py:317: in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_cloud_resume.py:59: in <lambda>
+    receipts = list(pool.map(lambda _: transition(database, "cloud", request), range(2)))
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_cloud_resume.py:34: in transition
+    return c.execute("select * from platform_control.transition_hr_execution_cutover_v102(%s,%s)",
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.RaiseException: invalid HR execution transition
+E   CONTEXT:  PL/pgSQL function transition_hr_execution_cutover_v102(text,uuid) line 20 at RAISE
+_____ test_resume_cloud_rejects_residual_legacy_occupancy_without_receipt ______
+backend/tests/test_hr_cloud_resume.py:75: in test_resume_cloud_rejects_residual_legacy_occupancy_without_receipt
+    with pytest.raises(psycopg.Error, match="drain is incomplete"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'drain is incomplete'
+E     Actual message: 'invalid HR execution transition\nCONTEXT:  PL/pgSQL function transition_hr_execution_cutover_v102(text,uuid) line 20 at RAISE'
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cloud_resume.py::test_resume_cloud_preserves_active_work_and_reopens_only_cloud_admission
+FAILED backend/tests/test_hr_cloud_resume.py::test_resume_cloud_concurrent_same_request_has_one_receipt
+FAILED backend/tests/test_hr_cloud_resume.py::test_resume_cloud_rejects_residual_legacy_occupancy_without_receipt
+3 failed, 1 passed in 4.23s

@@ -1,0 +1,15 @@
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+stderr | src/workspaces/hr/HrPositionIndex.test.tsx > uses the default API client once instead of refetching after every render
+Not implemented: Window's scrollTo() method
+
+ ✓ src/workspaces/hr/HrPositionWorkflow.test.tsx (2 tests) 50ms
+ ✓ src/workspaces/hr/HrPositionIndex.test.tsx (14 tests) 152ms
+ ✓ src/workspaces/hr/HrWorkspacePage.test.tsx (14 tests) 244ms
+
+ Test Files  3 passed (3)
+      Tests  30 passed (30)
+   Start at  10:22:47
+   Duration  999ms (transform 322ms, setup 0ms, collect 714ms, tests 446ms, environment 723ms, prepare 106ms)
+

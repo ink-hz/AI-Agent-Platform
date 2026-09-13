@@ -1,0 +1,85 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+command=npm test -- src/workspaces/hr/HrPositionIndex.test.tsx
+
+> orbbec-agent-platform-webui@0.1.0 test
+> vitest run src/workspaces/hr/HrPositionIndex.test.tsx
+
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+stderr | src/workspaces/hr/HrPositionIndex.test.tsx > uses the default API client once instead of refetching after every render
+Not implemented: Window's scrollTo() method
+
+ ❯ src/workspaces/hr/HrPositionIndex.test.tsx (14 tests | 3 failed) 120ms
+   ✓ renders one position-first index with official, internal, and pending work 19ms
+   ✓ searches real loaded positions and offers all draft decisions 9ms
+   ✓ has explicit loading, retryable error, and honest empty states 1ms
+   ✓ starts new-position work from a natural-language request 11ms
+   ✓ uses the default API client once instead of refetching after every render 31ms
+   ✓ requires an explicit visible target before merging a draft 8ms
+   ✓ loads every position page instead of hiding records after the first page 2ms
+   ✓ reuses draft and conversation idempotency after a partial new-position failure 9ms
+   ✓ reuses the persisted conversation id through the real production start path after remount 14ms
+   ✓ offers opt in Hannah work for each existing position 3ms
+   ✓ retains production selection into the main conversation 2ms
+   × keeps archived positions readable through their complete workflow 5ms
+     → expected '招聘工作岗位管理官网同步岗位、内部招聘需求和等待确认的历史识别结果。用对话…' to contain '已归档'
+   × combines internal status and search without hiding pending draft decisions 2ms
+     → expected null not to be null
+   × reports repeated pagination cursors instead of presenting an incomplete position list 2ms
+     → expected '招聘工作岗位管理官网同步岗位、内部招聘需求和等待确认的历史识别结果。用对话…' to contain '岗位数据暂时不可用'
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/workspaces/hr/HrPositionIndex.test.tsx > keeps archived positions readable through their complete workflow
+AssertionError: expected '招聘工作岗位管理官网同步岗位、内部招聘需求和等待确认的历史识别结果。用对话…' to contain '已归档'
+
+Expected: "已归档"
+Received: "招聘工作岗位管理官网同步岗位、内部招聘需求和等待确认的历史识别结果。用对话新建岗位1正式岗位1官网同步0待你确认搜索岗位返回对话官网岗位来自官网同步，状态与内部工作状态分开显示。1官网已下线DQE 工程师研发 · 深圳J11014官网版本 sync-v2在主对话中继续与 Hannah 讨论岗位内部岗位由招聘对话确认创建，不会写回官网注册表。0没有匹配的岗位。待确认识别结果仍是草稿，确认前不会成为正式岗位。0当前没有待确认的岗位草稿。"
+
+ ❯ src/workspaces/hr/HrPositionIndex.test.tsx:304:33
+    302|   expect(container.querySelector('a[href="/hr/positions/position-a"]')…
+    303|   expect(container.querySelector(".hr-position-picker-option")).toBeNu…
+    304|   expect(container.textContent).toContain("已归档");
+       |                                 ^
+    305|   expect(container.textContent).toContain("JD / JR");
+    306|   expect(container.textContent).toContain("查看岗位工作流");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/workspaces/hr/HrPositionIndex.test.tsx > combines internal status and search without hiding pending draft decisions
+AssertionError: expected null not to be null
+ ❯ src/workspaces/hr/HrPositionIndex.test.tsx:319:22
+    317|   }) as never} />));
+    318|   const status = container.querySelector<HTMLSelectElement>('select[ar…
+    319|   expect(status).not.toBeNull();
+       |                      ^
+    320|   const search = container.querySelector<HTMLInputElement>('input[type…
+    321|   const grid = () => [...container.querySelectorAll(".hr-position-grid…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/workspaces/hr/HrPositionIndex.test.tsx > reports repeated pagination cursors instead of presenting an incomplete position list
+AssertionError: expected '招聘工作岗位管理官网同步岗位、内部招聘需求和等待确认的历史识别结果。用对话…' to contain '岗位数据暂时不可用'
+
+Expected: "岗位数据暂时不可用"
+Received: "招聘工作岗位管理官网同步岗位、内部招聘需求和等待确认的历史识别结果。用对话新建岗位2正式岗位1官网同步1待你确认搜索岗位返回对话官网岗位来自官网同步，状态与内部工作状态分开显示。1官网在招算法工程师研发 · 深圳J11014官网版本 sync-v2与 Hannah 讨论岗位内部岗位由招聘对话确认创建，不会写回官网注册表。1内部3D 打印高级结构工程师研发 · 深圳内部岗位内部上下文与 Hannah 讨论岗位待确认识别结果仍是草稿，确认前不会成为正式岗位。1历史识别光学设计岗位规则 history-v1 · 证据已保留选择合并目标…算法工程师 · J110143D 打印高级结构工程师 · 22222222-2222-4222-8222-222222222222确认新建合并到岗位忽略"
+
+ ❯ src/workspaces/hr/HrPositionIndex.test.tsx:354:33
+    352|     .mockResolvedValueOnce({ items: [manual], nextCursor: "loop" });
+    353|   await act(async () => root.render(<HrPositionIndex account={account}…
+    354|   expect(container.textContent).toContain("岗位数据暂时不可用");
+       |                                 ^
+    355|   expect(listPositions).toHaveBeenCalledTimes(2);
+    356| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 11 passed (14)
+   Start at  10:11:22
+   Duration  772ms (transform 77ms, setup 0ms, collect 105ms, tests 120ms, environment 392ms, prepare 40ms)
+
+
+exit_code=1

@@ -1,0 +1,71 @@
+--- a/HrPositionIndex.test.tsx
++++ b/HrPositionIndex.test.tsx
+@@ -289,3 +289,68 @@
+   await act(async () => continueButton.click());
+   expect(onSelect).toHaveBeenCalledWith(official);
+ });
++
++it("keeps archived positions readable through their complete workflow", async () => {
++  const archived: HrPosition = {
++    ...official, positionId: "position-a", title: "DQE 工程师",
++    internalStatus: "archived", officialStatus: "inactive",
++  };
++  const onSelect = vi.fn();
++  await act(async () => root.render(<HrPositionIndex account={account}
++    api={api({ listPositions: vi.fn().mockResolvedValue({ items: [archived], nextCursor: null }), listDrafts: vi.fn().mockResolvedValue([]) }) as never}
++    onSelect={onSelect} />));
++  expect(container.querySelector('a[href="/hr/positions/position-a"]')).not.toBeNull();
++  expect(container.querySelector(".hr-position-picker-option")).toBeNull();
++  expect(container.textContent).toContain("已归档");
++  expect(container.textContent).toContain("JD / JR");
++  expect(container.textContent).toContain("查看岗位工作流");
++  expect([...container.querySelectorAll<HTMLButtonElement>("button")]
++    .find(button => button.textContent === "在主对话中继续")?.disabled).toBe(true);
++  expect(onSelect).not.toHaveBeenCalled();
++});
++
++it("combines internal status and search without hiding pending draft decisions", async () => {
++  const archived: HrPosition = { ...official, internalStatus: "archived" };
++  const draftPosition: HrPosition = { ...manual, positionId: "position-draft", title: "草案岗位", internalStatus: "draft" };
++  await act(async () => root.render(<HrPositionIndex account={account} api={api({
++    listPositions: vi.fn().mockResolvedValue({ items: [archived, manual, draftPosition], nextCursor: null }),
++  }) as never} />));
++  const status = container.querySelector<HTMLSelectElement>('select[aria-label="岗位状态"]');
++  expect(status).not.toBeNull();
++  const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
++  const grid = () => [...container.querySelectorAll(".hr-position-grid")].map(item => item.textContent).join(" ");
++  async function selectStatus(value: string) {
++    await act(async () => {
++      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(status, value);
++      status!.dispatchEvent(new Event("change", { bubbles: true }));
++    });
++  }
++  await selectStatus("archived");
++  expect(grid()).toContain(official.title);
++  expect(grid()).not.toContain(manual.title);
++  await act(async () => {
++    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "3D");
++    search.dispatchEvent(new Event("input", { bubbles: true }));
++  });
++  expect(grid()).not.toContain(official.title);
++  await selectStatus("active");
++  expect(grid()).toContain(manual.title);
++  await act(async () => {
++    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "");
++    search.dispatchEvent(new Event("input", { bubbles: true }));
++  });
++  await selectStatus("draft");
++  expect(grid()).toContain(draftPosition.title);
++  expect(grid()).not.toContain(manual.title);
++  expect([...container.querySelectorAll("button")].map(button => button.textContent))
++    .toEqual(expect.arrayContaining(["确认新建", "合并到岗位", "忽略"]));
++});
++
++it("reports repeated pagination cursors instead of presenting an incomplete position list", async () => {
++  const listPositions = vi.fn()
++    .mockResolvedValueOnce({ items: [official], nextCursor: "loop" })
++    .mockResolvedValueOnce({ items: [manual], nextCursor: "loop" });
++  await act(async () => root.render(<HrPositionIndex account={account} api={api({ listPositions }) as never} />));
++  expect(container.textContent).toContain("岗位数据暂时不可用");
++  expect(listPositions).toHaveBeenCalledTimes(2);
++});

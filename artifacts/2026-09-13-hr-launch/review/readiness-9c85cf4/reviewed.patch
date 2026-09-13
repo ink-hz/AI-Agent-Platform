@@ -1,0 +1,973 @@
+diff --git a/backend/app/control_plane/authorization.py b/backend/app/control_plane/authorization.py
+index 451201e..2144985 100644
+--- a/backend/app/control_plane/authorization.py
++++ b/backend/app/control_plane/authorization.py
+@@ -352,6 +352,7 @@ _OWNER_ROUTES = frozenset({
+     ("GET", "/api/operations/conversation-metrics"),
+     ("GET", "/api/v1/manage/users"),
+     ("GET", "/api/v1/manage/system-health"),
++    ("GET", "/api/v1/manage/hr-readiness"),
+     ("GET", "/api/attachments/content/{ticket}"),
+     ("POST", "/api/attachments/{attachment_id}/ticket"),
+     ("POST", "/api/review/issues"),
+diff --git a/backend/app/control_plane/middleware.py b/backend/app/control_plane/middleware.py
+index 9ab40e9..593b1cd 100644
+--- a/backend/app/control_plane/middleware.py
++++ b/backend/app/control_plane/middleware.py
+@@ -35,6 +35,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
+         "/api/v1/internal/session/subject",
+         "/api/v1/auth/logout",
+         "/api/v1/manage/system-health",
++        "/api/v1/manage/hr-readiness",
+     }
+ )
+ _WORKER_RUN_ROUTE = re.compile(
+diff --git a/backend/app/control_plane/routes_auth.py b/backend/app/control_plane/routes_auth.py
+index 052f169..914f61a 100644
+--- a/backend/app/control_plane/routes_auth.py
++++ b/backend/app/control_plane/routes_auth.py
+@@ -484,6 +484,33 @@ def build_auth_router(
+         )
+         return response
+ 
++    @router.get("/api/v1/manage/hr-readiness")
++    async def hr_readiness(request: Request):
++        from starlette.concurrency import run_in_threadpool
++
++        from app.hr_agent.readiness import unavailable
++
++        context: AuthContext = request.state.auth_context
++        if context.role is not Role.PLATFORM_OWNER:
++            raise HTTPException(403, "platform owner required")
++        audit = getattr(request.app.state, "system_health_audit", None)
++        if audit is None:
++            raise HTTPException(503, "required audit unavailable")
++        try:
++            await run_in_threadpool(audit, context)
++        except Exception:  # noqa: BLE001 - fail closed without exposing dependency errors
++            raise HTTPException(503, "required audit unavailable") from None
++        probe = getattr(request.app.state, "hr_readiness", None)
++        try:
++            payload = (
++                await run_in_threadpool(probe.check) if probe is not None else unavailable()
++            )
++        except Exception:  # noqa: BLE001 - fail closed without exposing dependency errors
++            payload = unavailable("readiness_unavailable")
++        return JSONResponse(
++            payload, status_code=200 if payload["ready"] else 503, headers=_NO_STORE
++        )
++
+     @router.get("/api/v1/manage/system-health")
+     async def system_health(request: Request) -> dict[str, Any]:
+         context: AuthContext = request.state.auth_context
+diff --git a/backend/app/hr_agent/readiness.py b/backend/app/hr_agent/readiness.py
+new file mode 100644
+index 0000000..92b4386
+--- /dev/null
++++ b/backend/app/hr_agent/readiness.py
+@@ -0,0 +1,159 @@
++"""Read-only live dependencies for an already assembled HR process.
++
++No model call, migration, admission, configuration reload or shared API restart.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import re
++from contextlib import nullcontext
++from datetime import datetime, timezone
++from pathlib import Path
++from time import monotonic
++
++from .config import check_schema_ready, load_hr_agent_settings
++from .knowledge import KnowledgeReleases
++
++
++def unavailable(blocker="assembly_unavailable"):
++    return {
++        "ready": False,
++        "new_admission_enabled": False,
++        "phase": None,
++        "blockers": [blocker],
++        "checked_at": datetime.now(timezone.utc).isoformat(),
++    }
++
++
++class _BoundedConnection:
++    """Enforce an aggregate query budget even across schema readiness queries."""
++
++    def __init__(self, connection):
++        self.connection = connection
++        self.deadline = monotonic() + 3
++
++    def execute(self, query, *args, **kwargs):
++        remaining = int((self.deadline - monotonic()) * 1000)
++        if remaining <= 0:
++            raise TimeoutError("readiness deadline")
++        self.connection.execute(
++            "select set_config('statement_timeout',%s,true)",
++            (str(min(remaining, 1500)),),
++        )
++        return self.connection.execute(query, *args, **kwargs)
++
++
++def _file_digest(path):
++    path = Path(path)
++    if path.is_symlink() or not path.is_file() or path.stat().st_size > 1_048_576:
++        raise ValueError("configuration identity unavailable")
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++class HrReadiness:
++    def __init__(
++        self, settings, environment, connection_factory, *, role="api", assembled=True
++    ):
++        self.settings = settings
++        self.environment = dict(environment)
++        self.connect = connection_factory
++        self.role = role
++        self.assembled = assembled
++        release = self.environment.get("PLATFORM_RELEASE_SHA", "")
++        self.release_sha = release if re.fullmatch(r"[0-9a-f]{40}", release) else None
++        self.initial_files = None
++        self.initial_knowledge = None
++        try:
++            self.initial_files = self._files()
++            self.initial_knowledge = self._knowledge()
++        except Exception:  # noqa: BLE001 - optional service failure cannot crash shared API
++            self.initial_knowledge = None
++
++    def _files(self):
++        names = {
++            key: value
++            for key, value in self.environment.items()
++            if value
++            and key.endswith("_FILE")
++            and (
++                key.startswith("PLATFORM_HR_AGENT_")
++                or "DATABASE_URL_FILE" in key
++                or key == "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE"
++            )
++        }
++        names["provider_credential"] = self.settings.provider_profile["credential_file"]
++        return {key: _file_digest(value) for key, value in names.items()}
++
++    def _knowledge(self):
++        knowledge = KnowledgeReleases(self.settings.knowledge_dir)
++        knowledge.check()
++        return knowledge.metadata()
++
++    def check(self):
++        blockers = []
++        if not self.assembled or not self.settings.enabled:
++            blockers.append("assembly_unavailable")
++        if self.release_sha is None:
++            blockers.append("release_unavailable")
++        try:
++            current = load_hr_agent_settings(self.environment)
++            if (
++                current != self.settings
++                or self.initial_files is None
++                or self._files() != self.initial_files
++            ):
++                raise ValueError("configuration drift")
++        except Exception:  # noqa: BLE001 - expose fixed dependency codes, never raw failures
++            blockers.append("configuration_unavailable")
++        knowledge = self.initial_knowledge
++        try:
++            if knowledge is None or self._knowledge() != knowledge:
++                raise ValueError("knowledge drift")
++        except Exception:  # noqa: BLE001 - expose fixed dependency codes, never raw failures
++            blockers.append("knowledge_unavailable")
++        phase = None
++        try:
++            with self.connect() as connection, connection.transaction():
++                connection.execute("SET TRANSACTION READ ONLY")
++                connection.execute("SET LOCAL lock_timeout='500ms'")
++                connection.execute("SET LOCAL statement_timeout='1500ms'")
++                bounded = _BoundedConnection(connection)
++                if not check_schema_ready(lambda: nullcontext(bounded)):
++                    raise ValueError("schema unavailable")
++                row = bounded.execute(
++                    "select phase from platform_control.hr_execution_cutover where singleton"
++                ).fetchone()
++                if row is None or row[0] not in {
++                    "legacy",
++                    "draining_legacy",
++                    "cloud",
++                    "draining_cloud",
++                }:
++                    raise ValueError("gate unavailable")
++                phase = row[0]
++        except Exception:  # noqa: BLE001 - expose fixed dependency codes, never raw failures
++            blockers.append("database_unavailable")
++        # Hash only configuration identity; never return paths, keys or provider bodies.
++        runtime_files = {
++            k: v
++            for k, v in (self.initial_files or {}).items()
++            if k.startswith("PLATFORM_HR_AGENT_") or k == "provider_credential"
++        }
++        runtime_sha = hashlib.sha256(
++            json.dumps(runtime_files, sort_keys=True).encode()
++        ).hexdigest()
++        return {
++            "ready": not blockers,
++            "role": self.role,
++            "checked_at": datetime.now(timezone.utc).isoformat(),
++            "phase": phase,
++            "new_admission_enabled": not blockers and phase == "cloud",
++            "release_sha": self.release_sha,
++            "configuration_sha256": self.settings.configuration_revision,
++            "runtime_identity_sha256": runtime_sha,
++            "knowledge_sha256": (knowledge or {}).get("role_manifest_sha"),
++            "knowledge_release": (knowledge or {}).get("knowledge_release"),
++            "blockers": blockers,
++        }
+diff --git a/backend/app/hr_agent/worker.py b/backend/app/hr_agent/worker.py
+index 8889bc3..985d388 100644
+--- a/backend/app/hr_agent/worker.py
++++ b/backend/app/hr_agent/worker.py
+@@ -22,6 +22,7 @@ def run_worker(
+     worker_id=None,
+     poll_seconds=1.0,
+     runner=run_work,
++    health=None,
+ ):
+     stop_event = stop_event or threading.Event()
+     worker_id = worker_id or "hr-" + str(uuid4())
+@@ -44,6 +45,8 @@ def run_worker(
+             fence = repository.claim(worker_id, repository.settings.lease_seconds)
+         except CutoverRejected:
+             fence = None
++        if health is not None:
++            health.progress()
+         if fence is None:
+             stop_event.wait(poll_seconds)
+             continue
+@@ -58,6 +61,8 @@ def run_worker(
+                     )
+                 except Exception:  # noqa: BLE001 - failed heartbeat or startup must stop safely
+                     valid = False
++                if valid and health is not None:
++                    health.progress()
+                 if not valid:
+                     lost.set()
+                     return
+@@ -89,6 +94,15 @@ def run_worker(
+ 
+ 
+ def main():
++    if sys.argv[1:] == ["healthcheck"]:
++        import json
++
++        from .worker_health import check_worker
++
++        report = check_worker()
++        print(json.dumps(report))
++        return 0 if report["ready"] else 1
++
+     import psycopg
+ 
+     from app.control_plane.dsn import validate_control_dsn
+@@ -124,7 +138,16 @@ def main():
+         stop = threading.Event()
+         for signum in (signal.SIGTERM, signal.SIGINT):
+             signal.signal(signum, lambda *_: stop.set())
+-        run_worker(repository, model, resources, stop_event=stop)
++        from .readiness import HrReadiness
++        from .worker_health import WorkerHealth
++
++        def readiness_connect():
++            return psycopg.connect(dsn, connect_timeout=1,
++                                   options="-c statement_timeout=1500 -c lock_timeout=500")
++
++        readiness = HrReadiness(settings, os.environ, readiness_connect, role="worker")
++        with WorkerHealth(readiness, max_age=settings.heartbeat_seconds * 3) as health:
++            run_worker(repository, model, resources, stop_event=stop, health=health)
+         return 0
+     except Exception:  # noqa: BLE001 - failed heartbeat or startup must stop safely
+         # Never print exception strings, DSNs, provider bodies, or prompts.
+diff --git a/backend/app/hr_agent/worker_health.py b/backend/app/hr_agent/worker_health.py
+new file mode 100644
+index 0000000..f3b7f75
+--- /dev/null
++++ b/backend/app/hr_agent/worker_health.py
+@@ -0,0 +1,153 @@
++"""Health from the actual Worker process; serving probes never renews progress."""
++
++from __future__ import annotations
++
++import json
++import os
++import re
++import socket
++import socketserver
++import stat
++import threading
++import time
++from pathlib import Path
++from uuid import uuid4
++
++from .readiness import unavailable
++
++DEFAULT_STATUS = Path("/tmp/platform-hr-agent-readiness.json")
++
++
++class WorkerHealth:
++    def __init__(self, readiness, path=DEFAULT_STATUS, *, max_age=45):
++        self.readiness = readiness
++        self.path = Path(path)
++        self.max_age = max_age
++        self.last_progress = None
++        self.lock = threading.Lock()
++        self.identity = {
++            "pid": os.getpid(),
++            "started_at_ns": time.time_ns(),
++            "nonce": uuid4().hex,
++        }
++        self.identity["socket"] = "/tmp/hr-ready-" + self.identity["nonce"] + ".sock"
++
++    def progress(self):
++        """Called only after a successful poll or validated active lease renewal."""
++        with self.lock:
++            self.last_progress = time.monotonic()
++
++    def report(self):
++        report = self.readiness.check()
++        with self.lock:
++            age = (
++                None
++                if self.last_progress is None
++                else time.monotonic() - self.last_progress
++            )
++        if age is None or not 0 <= age <= self.max_age:
++            report["ready"] = False
++            report["new_admission_enabled"] = False
++            report["blockers"].append("worker_progress_stale")
++        report["worker"] = {**self.identity, "progress_age_seconds": age}
++        return report
++
++    def __enter__(self):
++        health = self
++
++        class Handler(socketserver.BaseRequestHandler):
++            def handle(self):
++                self.request.settimeout(5)
++                try:
++                    try:
++                        payload = health.report()
++                    except Exception:  # noqa: BLE001 - socketserver must not log dependency exceptions
++                        payload = unavailable("readiness_unavailable")
++                        payload.update(role="worker", worker=health.identity)
++                    self.request.sendall(json.dumps(payload).encode() + b"\n")
++                except OSError:
++                    pass
++
++        self.server = socketserver.UnixStreamServer(self.identity["socket"], Handler)
++        os.chmod(self.identity["socket"], 0o600)
++        temporary = self.path.with_name(self.path.name + "." + self.identity["nonce"])
++        try:
++            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
++            with os.fdopen(descriptor, "w") as stream:
++                json.dump(self.identity, stream)
++            os.replace(temporary, self.path)
++        except Exception:
++            self.server.server_close()
++            Path(self.identity["socket"]).unlink(missing_ok=True)
++            temporary.unlink(missing_ok=True)
++            raise
++        self.thread = threading.Thread(
++            target=self.server.serve_forever,
++            kwargs={"poll_interval": 0.05},
++            daemon=True,
++        )
++        self.thread.start()
++        return self
++
++    def __exit__(self, *_):
++        self.server.shutdown()
++        self.server.server_close()
++        self.thread.join(timeout=6)
++        Path(self.identity["socket"]).unlink(missing_ok=True)
++        try:
++            if json.loads(self.path.read_text()).get("nonce") == self.identity["nonce"]:
++                self.path.unlink()
++        except (OSError, ValueError):
++            pass
++
++
++def check_worker(path=DEFAULT_STATUS):
++    try:
++        path = Path(path)
++        metadata = path.lstat()
++        if (
++            not stat.S_ISREG(metadata.st_mode)
++            or metadata.st_uid != os.getuid()
++            or stat.S_IMODE(metadata.st_mode) != 0o600
++        ):
++            raise ValueError("worker identity unavailable")
++        if metadata.st_size > 4096:
++            raise ValueError("worker identity invalid")
++        identity = json.loads(path.read_text())
++        if set(identity) != {"pid", "started_at_ns", "nonce", "socket"}:
++            raise ValueError("worker identity invalid")
++        if (
++            type(identity["pid"]) is not int
++            or identity["pid"] <= 0
++            or type(identity["started_at_ns"]) is not int
++            or identity["started_at_ns"] <= 0
++            or not isinstance(identity["nonce"], str)
++            or re.fullmatch(r"[0-9a-f]{32}", identity["nonce"]) is None
++            or identity["socket"] != "/tmp/hr-ready-" + identity["nonce"] + ".sock"
++        ):
++            raise ValueError("worker identity invalid")
++        os.kill(identity["pid"], 0)
++        socket_metadata = Path(identity["socket"]).lstat()
++        if (
++            not stat.S_ISSOCK(socket_metadata.st_mode)
++            or socket_metadata.st_uid != os.getuid()
++            or stat.S_IMODE(socket_metadata.st_mode) != 0o600
++        ):
++            raise ValueError("worker socket unavailable")
++        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
++            client.settimeout(6)
++            client.connect(identity["socket"])
++            data = b""
++            while not data.endswith(b"\n"):
++                chunk = client.recv(8192)
++                if not chunk or len(data) + len(chunk) > 65536:
++                    raise ValueError("worker report unavailable")
++                data += chunk
++        report = json.loads(data)
++        if any(report["worker"][key] != value for key, value in identity.items()):
++            raise ValueError("worker instance changed")
++        if report.get("role") != "worker" or type(report.get("ready")) is not bool:
++            raise ValueError("worker report invalid")
++        return report
++    except (OSError, ValueError, KeyError, TypeError):
++        return unavailable("worker_unavailable")
+diff --git a/backend/app/main.py b/backend/app/main.py
+index e0c8896..b8aac8f 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -1537,6 +1537,7 @@ def create_app(
+     from .hr_agent.routes import build_hr_agent_router
+     from .hr_agent.service import HrAgentService
+ 
++    hr_database_url = None
+     if hr_agent_service is None and config.hr_agent_settings.enabled:
+         if not identity_enabled:
+             raise RuntimeError("HR Agent requires platform identity")
+@@ -1599,6 +1600,21 @@ def create_app(
+             ready=False,
+         )
+     app.state.hr_agent_service = hr_agent_service
++    app.state.hr_readiness = None
++    if config.hr_agent_settings.enabled and hr_database_url is not None:
++        from .hr_agent.readiness import HrReadiness
++
++        def hr_readiness_connection():
++            return psycopg.connect(
++                hr_database_url, connect_timeout=1,
++                options="-c statement_timeout=1500 -c lock_timeout=500",
++            )
++
++        app.state.hr_readiness = HrReadiness(
++            config.hr_agent_settings, os.environ, hr_readiness_connection,
++            assembled=(hr_agent_service.ready and hr_agent_service.access is not None
++                       and hr_agent_service.repository is not None),
++        )
+     app.include_router(build_hr_agent_router(hr_agent_service))
+ 
+     async def require_hr_access(request: Request, *, writable: bool = False):
+diff --git a/backend/tests/test_hr_agent_readiness.py b/backend/tests/test_hr_agent_readiness.py
+new file mode 100644
+index 0000000..1af98b2
+--- /dev/null
++++ b/backend/tests/test_hr_agent_readiness.py
+@@ -0,0 +1,249 @@
++"""Dynamic owner HTTP and real PG checks; test identity, no provider requests."""
++
++import importlib.util
++import json
++from pathlib import Path
++from uuid import uuid4
++
++import psycopg
++import pytest
++from app.control_plane.models import AuthContext, Role
++from app.hr_agent.config import load_hr_agent_settings
++from fastapi.testclient import TestClient
++from test_dingtalk_auth_api import FakeAuth, _app
++from test_hr_agent_preflight import _environment
++from tests.hr_agent_support import hr_agent_database
++
++
++@pytest.fixture
++def configured(tmp_path):
++    env = _environment(tmp_path / "runtime", attachments=False)
++    env["PLATFORM_RELEASE_SHA"] = "a" * 40
++    return load_hr_agent_settings(env), env
++
++
++def monitor(settings, env, connect):
++    assert importlib.util.find_spec("app.hr_agent.readiness") is not None, (
++        "dynamic HR readiness is missing"
++    )
++    from app.hr_agent.readiness import HrReadiness
++
++    return HrReadiness(settings, env, connect)
++
++
++@pytest.mark.postgres
++def test_dynamic_schema_phase_and_integrity_are_rechecked(configured):
++    settings, env = configured
++    with hr_agent_database(cutover_phase="legacy") as db:
++        probe = monitor(settings, env, db.connection)
++        before = probe.check()
++        assert before["ready"] and before["phase"] == "legacy"
++        assert before["new_admission_enabled"] is False
++        assert before["configuration_sha256"] == settings.configuration_revision
++        assert before["release_sha"] == "a" * 40
++        assert len(before["knowledge_sha256"]) == 64
++        with db.admin_connection() as c:
++            for phase in ("draining_legacy", "cloud"):
++                c.execute(
++                    "select platform_control.transition_hr_execution_cutover_v102(%s,%s)",
++                    (phase, uuid4()),
++                )
++        assert probe.check()["new_admission_enabled"] is True
++        with db.admin_connection() as c:
++            c.execute(
++                "delete from platform_control.schema_migrations where version=104"
++            )
++        assert probe.check()["ready"] is False
++        assert probe.check()["blockers"] == ["database_unavailable"]
++
++
++@pytest.mark.postgres
++@pytest.mark.parametrize(
++    "fault", ["profile", "knowledge", "permission", "uninitialized"]
++)
++def test_runtime_drift_does_not_become_a_new_loaded_configuration(configured, fault):
++    settings, env = configured
++    with hr_agent_database(cutover_phase="legacy") as db:
++        probe = monitor(settings, env, db.connection)
++        assert probe.check()["ready"]
++        if fault == "profile":
++            path = Path(env["PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE"])
++            value = json.loads(path.read_text())
++            value["revision"] = "changed"
++            path.write_text(json.dumps(value))
++        elif fault == "knowledge":
++            (settings.knowledge_dir / "method.md").write_text("corrupted material")
++        else:
++            with db.admin_connection() as c:
++                c.execute(
++                    "revoke select on platform_hr_agent.inputs from platform_control_app"
++                    if fault == "permission"
++                    else "delete from platform_control.hr_execution_cutover"
++                )
++        result = probe.check()
++        assert not result["ready"] and not result["new_admission_enabled"]
++        assert result["configuration_sha256"] == settings.configuration_revision
++        assert "changed" not in json.dumps(
++            result
++        ) and "corrupted material" not in json.dumps(result)
++
++
++def test_database_exception_is_safe_and_no_new_probe_can_certify_missing_assembly(
++    configured,
++):
++    settings, env = configured
++
++    def broken():
++        raise psycopg.OperationalError("private DSN and SQL must not escape")
++
++    probe = monitor(settings, env, broken)
++    assert probe.check()["blockers"] == ["database_unavailable"]
++    assert "private" not in json.dumps(probe.check())
++
++
++@pytest.mark.postgres
++def test_owner_audit_route_reports_live_failures_without_changing_liveness(
++    tmp_path, monkeypatch, configured
++):
++    settings, env = configured
++    with hr_agent_database(cutover_phase="legacy") as db:
++        probe = monitor(settings, env, db.connection)
++        auth = FakeAuth()
++        app = _app(tmp_path / "app", monkeypatch, auth)
++        app.state.hr_readiness = probe
++        with TestClient(app) as client:
++            client.cookies.set(auth.cookie_name, "valid-cookie")
++            assert (
++                client.get("/api/v1/manage/hr-readiness").status_code == 503
++            )  # audit absent
++            audited = []
++            app.state.system_health_audit = lambda context: audited.append(
++                context.session_id
++            )
++            response = client.get("/api/v1/manage/hr-readiness")
++            assert response.status_code == 200 and response.json()["ready"]
++            assert response.headers["cache-control"] == "no-store"
++            with db.admin_connection() as c:
++                c.execute(
++                    "delete from platform_control.schema_migrations where version=104"
++                )
++            assert client.get("/api/v1/manage/hr-readiness").status_code == 503
++            assert client.get("/api/health").json() == {"status": "ok"}
++            assert len(audited) == 2
++            auth.context = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
++            assert client.get("/api/v1/manage/hr-readiness").status_code == 403
++            assert len(audited) == 2
++
++
++@pytest.mark.postgres
++def test_unassembled_service_remains_unready_and_query_locks_are_bounded(configured):
++    import time
++
++    from app.hr_agent.readiness import HrReadiness
++
++    settings, env = configured
++    with hr_agent_database(cutover_phase="legacy") as db:
++        probe = HrReadiness(settings, env, db.connection, assembled=False)
++        assert probe.check()["blockers"] == ["assembly_unavailable"]
++        probe = HrReadiness(settings, env, db.connection)
++        with db.admin_connection() as blocker:
++            blocker.execute(
++                "lock table platform_control.schema_migrations in access exclusive mode"
++            )
++            started = time.monotonic()
++            result = probe.check()
++            assert time.monotonic() - started < 3
++            assert result["blockers"] == ["database_unavailable"]
++
++
++@pytest.mark.postgres
++def test_owner_endpoint_uses_persisted_session_role_and_audit(configured, tmp_path):
++    import asyncio
++
++    from app.control_plane.auth import (
++        AuthSecrets,
++        DingTalkWebAuth,
++        SystemHealthAuditWriter,
++        WebSessionRepository,
++    )
++    from app.control_plane.authorization import (
++        AuthorizationRepository,
++        AuthorizationService,
++    )
++    from app.control_plane.middleware import IdentitySecurityMiddleware
++    from app.control_plane.routes_auth import build_auth_router
++    from fastapi import FastAPI
++    from test_hr_agent_worker_process import grant_test_owner
++
++    settings, env = configured
++    with hr_agent_database(cutover_phase="legacy") as db:
++        owner = grant_test_owner(db)
++        with db.admin_connection() as connection:
++            connection.execute(
++                "update platform_control.internal_users set role='platform_owner', last_confirmed_generation_id=(select active_generation_id from platform_control.directory_state where singleton) where internal_user_id=%s",
++                (owner,),
++            )
++
++        async def local_login(_code, _verifier):
++            # Only the external DingTalk exchange is substituted; session issuance,
++            # authentication, current owner role and audit execute the real PG path.
++            return owner
++
++        secrets = AuthSecrets(b"r" * 32, key_version=1)
++        auth = DingTalkWebAuth(
++            repository=WebSessionRepository(db.dsn, secrets=secrets),
++            secrets=secrets,
++            qr_login=local_login,
++            in_client_login=None,
++            environment="production",
++            route_prefix="/",
++            public_base_url="https://localhost",
++            app_key="owned-readiness-fixture",
++        )
++        started = auth.start_qr("/")
++        completed = asyncio.run(auth.complete_qr(started.state, "local-code"))
++        app = FastAPI()
++        app.include_router(
++            build_auth_router(
++                auth,
++                static_dir=str(tmp_path),
++                public_assets=frozenset(),
++                detailed_health=dict,
++            )
++        )
++        app.state.hr_readiness = monitor(settings, env, db.connection)
++        app.state.system_health_audit = SystemHealthAuditWriter(
++            db.dsn.replace("user=platform_control_app", "user=platform_audit_append")
++        )
++        app.add_middleware(
++            IdentitySecurityMiddleware,
++            auth=auth,
++            public_assets=frozenset(),
++            authorization=AuthorizationService(AuthorizationRepository(db.dsn)),
++            routes=tuple(app.router.routes),
++        )
++        with TestClient(app, base_url="https://localhost") as client:
++            assert client.get("/api/v1/manage/hr-readiness").status_code == 401
++            client.cookies.set(auth.cookie_name, completed.session.cookie_token)
++            assert client.get("/api/v1/manage/hr-readiness").status_code == 200
++            with db.admin_connection() as connection:
++                assert (
++                    connection.execute(
++                        "select count(*) from platform_control.audit_events where event_type='system_health_read_completed' and actor_internal_user_id=%s",
++                        (owner,),
++                    ).fetchone()[0]
++                    == 1
++                )
++                connection.execute(
++                    "update platform_control.internal_users set role='member' where internal_user_id=%s",
++                    (owner,),
++                )
++            assert client.get("/api/v1/manage/hr-readiness").status_code == 403
++            with db.admin_connection() as connection:
++                assert (
++                    connection.execute(
++                        "select count(*) from platform_control.audit_events where event_type='system_health_read_completed' and actor_internal_user_id=%s",
++                        (owner,),
++                    ).fetchone()[0]
++                    == 1
++                )
+diff --git a/backend/tests/test_hr_agent_worker_health.py b/backend/tests/test_hr_agent_worker_health.py
+new file mode 100644
+index 0000000..4f5a3e1
+--- /dev/null
++++ b/backend/tests/test_hr_agent_worker_health.py
+@@ -0,0 +1,203 @@
++"""Owned child process and real PG readiness; no external model call."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++import time
++from pathlib import Path
++
++import pytest
++from test_hr_agent_preflight import _environment
++from tests.hr_agent_support import hr_agent_database
++
++CHILD = r"""
++import json, sys, time
++from pathlib import Path
++import psycopg
++from app.hr_agent.config import load_hr_agent_settings
++from app.hr_agent.readiness import HrReadiness
++from app.hr_agent.worker_health import WorkerHealth
++value=json.loads(Path(sys.argv[1]).read_text())
++probe=HrReadiness(load_hr_agent_settings(value['env']),value['env'],lambda:psycopg.connect(value['dsn']),role='worker')
++with WorkerHealth(probe,Path(value['status']),max_age=0.4) as health:
++    health.progress()
++    print('ready',flush=True)
++    while True:
++        if not Path(value['block']).exists(): health.progress()
++        time.sleep(.03)
++"""
++
++
++def checker():
++    assert importlib.util.find_spec("app.hr_agent.worker_health") is not None, (
++        "actual worker healthcheck is missing"
++    )
++    from app.hr_agent.worker_health import check_worker
++
++    return check_worker
++
++
++@pytest.mark.postgres
++@pytest.mark.parametrize("fault", ["stale", "dead", "nonce", "profile", "database"])
++def test_live_process_binding_and_dependency_failures_are_checked(tmp_path, fault):
++    check = checker()
++    env = _environment(tmp_path / "runtime", attachments=False)
++    env["PLATFORM_RELEASE_SHA"] = "a" * 40
++    status = tmp_path / "worker.json"
++    block = tmp_path / "blocked"
++    with hr_agent_database(cutover_phase="legacy") as db:
++        spec = tmp_path / "child.json"
++        spec.write_text(
++            json.dumps(
++                {"env": env, "dsn": db.dsn, "status": str(status), "block": str(block)}
++            )
++        )
++        process = subprocess.Popen(
++            [sys.executable, "-c", CHILD, str(spec)],
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True,
++            env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[1])},
++        )
++        try:
++            assert process.stdout.readline().strip() == "ready"
++            result = check(status)
++            assert result["ready"] and result["worker"]["pid"] == process.pid
++            assert not result["new_admission_enabled"]
++            if fault == "stale":
++                block.touch()
++                time.sleep(0.55)
++            elif fault == "dead":
++                process.kill()
++                process.wait(timeout=3)
++            elif fault == "nonce":
++                value = json.loads(status.read_text())
++                value["nonce"] = "wrong-instance"
++                status.write_text(json.dumps(value))
++            elif fault == "profile":
++                Path(env["PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE"]).write_text(
++                    "private invalid configuration"
++                )
++            else:
++                with db.admin_connection() as c:
++                    c.execute(
++                        "delete from platform_control.schema_migrations where version=104"
++                    )
++            result = check(status)
++            assert result["ready"] is False
++            assert "private" not in json.dumps(result)
++        finally:
++            if process.poll() is None:
++                process.kill()
++            process.communicate(timeout=3)
++
++
++def test_missing_worker_state_cannot_pass_by_checking_environment(tmp_path):
++    result = checker()(tmp_path / "missing.json")
++    assert result["ready"] is False
++
++
++@pytest.mark.postgres
++def test_production_worker_lease_heartbeat_keeps_long_local_model_call_healthy(
++    tmp_path,
++):
++    from uuid import uuid4
++
++    from app.hr_agent.config import load_hr_agent_settings
++    from app.hr_agent.resources import build_runtime_services
++    from app.hr_agent.worker_health import DEFAULT_STATUS
++    from test_hr_agent_context import publication
++    from test_hr_agent_worker_process import (
++        Provider,
++        grant_test_owner,
++        process_config,
++        wait_until,
++        wire,
++    )
++
++    check = checker()
++    with hr_agent_database() as db, Provider([(5, wire())]) as provider:
++        config, _ = process_config(tmp_path, db, provider.endpoint)
++        publication(tmp_path / "knowledge")
++        env = json.loads(config.read_text())
++        env.update(
++            PLATFORM_CONTROL_DATABASE_URL_FILE=str(tmp_path / "dsn"),
++            PLATFORM_CONVERSATION_ATTACHMENT_ENABLED="0",
++            PLATFORM_RELEASE_SHA="a" * 40,
++        )
++        settings = load_hr_agent_settings(env)
++        repo, _ = build_runtime_services(settings, db.connection)
++        owner = grant_test_owner(db)
++        repo.submit(
++            owner,
++            {
++                "thread_id": None,
++                "text": "Public local model fixture",
++                "objects": [],
++                "references": [],
++                "budget_profile": "test",
++            },
++            uuid4(),
++        )
++        process = subprocess.Popen(
++            [sys.executable, "-m", "app.hr_agent.worker"],
++            env={**os.environ, **env, "PYTHONPATH": str(Path(__file__).parents[1])},
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++        )
++        try:
++            wait_until(lambda: bool(provider.requests) or process.poll() is not None)
++            assert process.poll() is None
++            time.sleep(
++                3.2
++            )  # longer than lease/health age; real renewals must keep it alive
++            result = check(DEFAULT_STATUS)
++            assert result["ready"] and result["worker"]["pid"] == process.pid
++            assert repo.claim("another-worker", 3) is None
++            cli = subprocess.run(
++                [sys.executable, "-m", "app.hr_agent.worker", "healthcheck"],
++                env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[1])},
++                capture_output=True,
++                timeout=8,
++                check=False,
++            )
++            assert cli.returncode == 0
++            assert json.loads(cli.stdout)["ready"]
++            with db.admin_connection() as c:
++                c.execute(
++                    "delete from platform_control.schema_migrations where version=104"
++                )
++            failed = subprocess.run(
++                [sys.executable, "-m", "app.hr_agent.worker", "healthcheck"],
++                env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[1])},
++                capture_output=True,
++                timeout=8,
++                check=False,
++            )
++            assert failed.returncode == 1
++            assert "database_unavailable" in json.loads(failed.stdout)["blockers"]
++            process.kill()
++            process.wait(timeout=5)
++            assert not check(DEFAULT_STATUS)["ready"]
++        finally:
++            if process.poll() is None:
++                process.kill()
++            process.communicate(timeout=5)
++            DEFAULT_STATUS.unlink(missing_ok=True)
++
++
++def test_worker_healthcheck_does_not_create_model_or_claim_work(tmp_path):
++    import yaml
++
++    document = yaml.safe_load(
++        (Path(__file__).parents[2] / "deploy/cloud/compose.yaml").read_text()
++    )
++    assert document["services"]["platform-hr-agent-worker"]["healthcheck"]["test"] == [
++        "CMD",
++        "python",
++        "-m",
++        "app.hr_agent.worker",
++        "healthcheck",
++    ]
+diff --git a/deploy/cloud/compose.yaml b/deploy/cloud/compose.yaml
+index 75295fe..5640800 100644
+--- a/deploy/cloud/compose.yaml
++++ b/deploy/cloud/compose.yaml
+@@ -161,6 +161,7 @@ services:
+       PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE: /run/hr-agent-secrets/hr-provider-profile.json
+       PLATFORM_HR_AGENT_BUDGET_PROFILE_FILE: /run/hr-agent-secrets/hr-budget-profile.json
+       PLATFORM_HR_AGENT_DIAGNOSTIC_PROFILE_FILE: /run/hr-agent-secrets/hr-diagnostic-profile.json
++      PLATFORM_HR_AGENT_RELEASE_POLICY_FILE: /run/hr-agent-secrets/hr-release-policy.json
+       PLATFORM_HR_AGENT_KNOWLEDGE_DIR: /data/hr-knowledge
+       PLATFORM_HR_AGENT_WORK_DIR: /data/hr-work
+       PLATFORM_CONVERSATION_ATTACHMENT_ENABLED: "${PLATFORM_HR_AGENT_ATTACHMENTS_ENABLED:-0}"
+@@ -184,7 +185,11 @@ services:
+       platform-postgres:
+         condition: service_healthy
+     healthcheck:
+-      disable: true
++      test: ["CMD", "python", "-m", "app.hr_agent.worker", "healthcheck"]
++      interval: 15s
++      timeout: 8s
++      start_period: 30s
++      retries: 2
+ 
+   platform-hr-web-worker:
+     image: ${PLATFORM_IMAGE}

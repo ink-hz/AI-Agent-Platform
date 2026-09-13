@@ -1,0 +1,47 @@
+{
+  "baseline": "b184b57ec09828033ef127ddf34dd748794325dd",
+  "files": [
+    {
+      "path": "artifacts/2026-09-11-hr-e-review/evidence-retention-gap.md",
+      "baseline_sha256": "621fee5382975fbabfc81fffc4b1f886d5bef085dad0fb66e8483fa7f257956a",
+      "current_sha256": "621fee5382975fbabfc81fffc4b1f886d5bef085dad0fb66e8483fa7f257956a",
+      "same_bytes": true
+    },
+    {
+      "path": "artifacts/2026-09-11-hr-e-review/final/styles-baseline.json",
+      "baseline_sha256": "792c1ee86146e6e9d6c290e9df5e3e92842de88f540ad27be5fa1b9e3fed6fb4",
+      "current_sha256": "792c1ee86146e6e9d6c290e9df5e3e92842de88f540ad27be5fa1b9e3fed6fb4",
+      "same_bytes": true
+    },
+    {
+      "path": "artifacts/2026-09-11-hr-e-review/final/README.md",
+      "baseline_sha256": "4053eca1680efbbcc79263fd7f01e62117b5b02c21bafc92405bc4ab635a9d45",
+      "current_sha256": "4053eca1680efbbcc79263fd7f01e62117b5b02c21bafc92405bc4ab635a9d45",
+      "same_bytes": true
+    },
+    {
+      "path": "artifacts/2026-09-11-hr-e-review/final/frontend-repository-verified.log",
+      "baseline_sha256": "0dd2a602eac11ea816361cc3c55937fbfaadd0e7dcad1797b7adbeaa9d53cdef",
+      "current_sha256": "0dd2a602eac11ea816361cc3c55937fbfaadd0e7dcad1797b7adbeaa9d53cdef",
+      "same_bytes": true
+    },
+    {
+      "path": "artifacts/2026-09-11-hr-d-validation/frontend-known-baseline.log",
+      "baseline_sha256": "76a55d5f42c42a6c33afddc8bbc661b0016cae3f1aacaf0fe4dc449a70210ccc",
+      "current_sha256": "76a55d5f42c42a6c33afddc8bbc661b0016cae3f1aacaf0fe4dc449a70210ccc",
+      "same_bytes": true
+    },
+    {
+      "path": "webui/src/styles.css",
+      "baseline_sha256": "6503ac2b267ccf1e73164757dcb1d2e0bdc0da0d0bc8a9e18f55d7e7d4f00308",
+      "current_sha256": "6503ac2b267ccf1e73164757dcb1d2e0bdc0da0d0bc8a9e18f55d7e7d4f00308",
+      "same_bytes": true
+    },
+    {
+      "path": "webui/src/styles.test.ts",
+      "baseline_sha256": "4d592f98d02aabb6df6b4e16cc85d07da01cf37bd6b0c3dd4712cb62a35ce7bf",
+      "current_sha256": "4d592f98d02aabb6df6b4e16cc85d07da01cf37bd6b0c3dd4712cb62a35ce7bf",
+      "same_bytes": true
+    }
+  ]
+}

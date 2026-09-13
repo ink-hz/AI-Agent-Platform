@@ -1,0 +1,23 @@
+{
+  "head": "9c85cf416edd7b83446c52071175f3cefba72468",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_cutover_runbook.py",
+    "backend/tests/test_hr_cutover_operations.py",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T02:37:26.619562+00:00",
+  "source_patch_sha256": "ad1be7fbebdcadba5fff2fccab48f37cfe890fd5fbb5fc0019d53f9ceac31177",
+  "untracked_source_snapshots": {
+    "backend/control_migrations/105_hr_cloud_resume.sql": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+    "backend/tests/test_hr_agent_release_policy.py": "24c62e9b972c270638d992e45a67157484cc72e67be660e5e57fabd256d0c961",
+    "backend/tests/test_hr_cloud_resume.py": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a"
+  },
+  "boundary": "Local synthetic fixtures; each test documents substituted boundaries; no production or model call",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T02:37:45.776268+00:00"
+}

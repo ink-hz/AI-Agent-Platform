@@ -1,0 +1,439 @@
+/* The loop uses a scrollable document; existing chat workspaces own their inner scroll. */
+.hr-workspace-body:has(> .hr-loop) {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+}
+
+.hr-loop {
+  display: grid;
+  grid-template-columns: 210px minmax(350px, 1fr) minmax(280px, 360px);
+  width: 100%;
+  max-width: 1600px;
+  margin: auto;
+  align-items: start;
+  color: #263c3a;
+  background: #f7faf8;
+  min-height: calc(100vh - 76px);
+}
+.hr-loop * {
+  box-sizing: border-box;
+}
+.hr-loop button,
+.hr-loop input,
+.hr-loop textarea {
+  font: inherit;
+}
+.hr-loop button {
+  cursor: pointer;
+  border: 1px solid #b8ccc5;
+  border-radius: 8px;
+  background: #fff;
+  color: #244f43;
+  padding: 8px 12px;
+  line-height: 1.5;
+}
+.hr-loop button:hover:not(:disabled) {
+  background: #eef5f1;
+}
+.hr-loop button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.hr-loop :focus-visible {
+  outline: 3px solid #417967;
+  outline-offset: 3px;
+}
+.hr-loop h1 {
+  font-size: 25px;
+  line-height: 1.35;
+  margin: 10px 0;
+}
+.hr-loop h2 {
+  font-size: 17px;
+  line-height: 1.5;
+}
+.hr-loop h3 {
+  font-size: 16px;
+}
+.hr-loop p {
+  line-height: 1.7;
+}
+.hr-loop small {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #526b62;
+}
+.hr-loop-sidebar {
+  padding: 24px 16px;
+  position: sticky;
+  top: 0;
+  max-height: 90vh;
+  overflow: auto;
+}
+.hr-loop-sidebar > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 8px;
+}
+.hr-loop-sidebar small {
+  display: block;
+}
+.hr-loop-sidebar > p {
+  font-size: 13px;
+  color: #526b62;
+}
+.hr-loop-sidebar h2 {
+  margin-top: 28px;
+}
+.hr-loop-conversation {
+  padding: 28px 30px;
+  border-inline: 1px solid #dce7e1;
+  min-width: 0;
+  background: #fff;
+  min-height: 100vh;
+}
+.hr-loop-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: #507267;
+}
+.hr-loop-conversation > header > p {
+  font-size: 14px;
+  color: #526b62;
+}
+.hr-loop-alert {
+  background: #fff3e9;
+  border: 1px solid #e3b68e;
+  border-radius: 10px;
+  padding: 14px;
+  margin: 18px 0;
+  line-height: 1.7;
+}
+.hr-loop-alert button {
+  margin-left: 8px;
+}
+.hr-loop-notice {
+  font-size: 13px;
+  color: #31614a;
+}
+.hr-loop-status {
+  padding: 14px;
+  background: #f0f6f2;
+  border-radius: 10px;
+  margin: 20px 0;
+}
+.hr-loop-status > span {
+  display: block;
+  font-size: 13px;
+  margin-top: 6px;
+}
+.hr-loop-status p {
+  font-size: 13px;
+}
+.hr-loop-welcome {
+  padding: 40px 0;
+  color: #526b62;
+}
+.hr-loop-welcome p {
+  font-size: 14px;
+}
+.hr-loop-message {
+  margin: 20px 0;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.hr-loop-message--user {
+  background: #f1f6f3;
+  padding: 14px 18px;
+  border-radius: 12px;
+}
+.hr-loop-message > strong {
+  font-size: 12px;
+  color: #547264;
+}
+.hr-loop-method {
+  background: #f8faf8;
+  border: 1px solid #cbded3;
+  padding: 20px;
+  border-radius: 10px;
+  margin-top: 20px;
+}
+.hr-loop-method > header {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+}
+.hr-loop-intelligence-search {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.hr-loop-intelligence-search label {
+  flex: 1;
+  min-width: 150px;
+  font-size: 13px;
+}
+.hr-loop-intelligence-search input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #c5d5cd;
+  border-radius: 6px;
+}
+.hr-loop-intelligence-list {
+  list-style: none;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.hr-loop-intelligence-list li {
+  margin: 10px 0;
+}
+.hr-loop-intelligence-list small {
+  display: block;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.hr-loop-intelligence-meta {
+  font-size: 13px;
+  color: #526b62;
+}
+.hr-loop-intelligence article {
+  border-top: 1px solid #cbded3;
+  padding-top: 12px;
+  overflow-wrap: anywhere;
+}
+.hr-loop-composer {
+  border: 1px solid #bad0c2;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 24px 0;
+  background: #fcfefd;
+}
+.hr-loop-composer > label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.hr-loop textarea {
+  resize: vertical;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #c5d5cd;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+}
+.hr-loop-composer footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.hr-loop-composer button[type="submit"] {
+  background: #275d47;
+  color: #fff;
+  padding: 9px 24px;
+}
+.hr-loop-file {
+  font-size: 13px;
+  max-width: 75%;
+}
+.hr-loop-file input {
+  display: block;
+  width: 100%;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.hr-loop-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.hr-loop-references > span {
+  font-size: 12px;
+  background: #edf4ef;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.hr-loop-references button {
+  border: 0;
+  background: none;
+  padding: 0 5px;
+}
+.hr-loop-upload {
+  border-bottom: 1px solid #dce7e1;
+  padding: 10px 0;
+  font-size: 13px;
+}
+.hr-loop-upload p {
+  margin: 4px 0;
+}
+.hr-loop-results {
+  padding: 26px 18px;
+  min-width: 0;
+}
+.hr-loop-results > p {
+  font-size: 13px;
+  color: #526b62;
+}
+.hr-loop-result,
+.hr-loop-standard {
+  border: 1px solid #d0dfd7;
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 18px;
+  overflow-wrap: anywhere;
+}
+.hr-loop-result > span {
+  font-size: 11px;
+  color: #557363;
+}
+.hr-loop-result .message-markdown {
+  font-size: 13px;
+  line-height: 1.75;
+}
+.hr-loop-result footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.hr-loop-result footer button {
+  font-size: 12px;
+  padding: 6px 9px;
+}
+.hr-loop-result fieldset {
+  border: 1px solid #bbd1c4;
+  border-radius: 8px;
+  margin: 16px 0;
+  padding: 12px;
+}
+.hr-loop-result legend {
+  font-size: 13px;
+}
+.hr-loop-result fieldset label {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.hr-loop-result input[type="checkbox"] {
+  margin-top: 4px;
+  accent-color: #275d47;
+}
+.hr-loop-standard {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.hr-loop-standard button,
+.hr-loop-standard a {
+  display: block;
+  margin-top: 10px;
+}
+.hr-loop-budget {
+  border: 1px solid #d7be96;
+  background: #fffbf2;
+  border-radius: 10px;
+  padding: 16px;
+}
+.hr-loop-budget p {
+  font-size: 13px;
+}
+.hr-loop-budget label {
+  display: block;
+  font-size: 13px;
+  margin: 10px 0;
+}
+.hr-loop-budget input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #cbbb9f;
+  border-radius: 5px;
+  margin-top: 4px;
+}
+.hr-loop pre {
+  white-space: pre-wrap;
+}
+.hr-loop .message-markdown img {
+  max-width: 100%;
+}
+.hr-loop details {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+@media (max-width: 1150px) {
+  .hr-loop {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+  .hr-loop-results {
+    grid-column: 2;
+    border-left: 1px solid #dce7e1;
+  }
+  .hr-loop-conversation {
+    min-height: 0;
+  }
+}
+@media (max-width: 720px) {
+  .hr-loop {
+    display: flex;
+    flex-direction: column;
+  }
+  .hr-loop-sidebar {
+    position: static;
+    max-height: none;
+    width: 100%;
+    padding: 16px;
+    border-bottom: 1px solid #dce7e1;
+  }
+  .hr-loop-sidebar > button {
+    width: auto;
+    display: inline-block;
+    margin-right: 6px;
+  }
+  .hr-loop-sidebar h2 {
+    display: inline-block;
+    margin: 12px 12px 8px 0;
+  }
+  .hr-loop-sidebar small {
+    display: none;
+  }
+  .hr-loop-conversation,
+  .hr-loop-results {
+    width: 100%;
+    padding: 20px 16px;
+    border: 0;
+  }
+  .hr-loop h1 {
+    font-size: 23px;
+  }
+  .hr-loop-results {
+    border-top: 1px solid #dce7e1;
+  }
+  .hr-loop-composer footer {
+    align-items: flex-end;
+  }
+}
+
+.hr-loop-basis {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: #f1f6f3;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.hr-loop-basis ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}

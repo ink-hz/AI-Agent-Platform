@@ -1,0 +1,10 @@
+{
+  "command": "git add -- webui/src/workspaces/hr/HrPositionIndex.tsx webui/src/workspaces/hr/HrPositionIndex.test.tsx; git diff --check --cached -- <two paths>; verify index bytes equal final tested bytes",
+  "files": {
+    "webui/src/workspaces/hr/HrPositionIndex.tsx": "f44d2bbb94e5a36730bb189b0321f72cc38609fb529bfb80bc8abf68370d00cc",
+    "webui/src/workspaces/hr/HrPositionIndex.test.tsx": "2fc98095e3bb68c489b1686ee0e8580172c54daa88f06be8c69878cbb63d2725"
+  },
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": ""
+}

@@ -1,0 +1,320 @@
+diff --git a/backend/app/control_plane/authorization.py b/backend/app/control_plane/authorization.py
+index 451201e..2144985 100644
+--- a/backend/app/control_plane/authorization.py
++++ b/backend/app/control_plane/authorization.py
+@@ -352,6 +352,7 @@ _OWNER_ROUTES = frozenset({
+     ("GET", "/api/operations/conversation-metrics"),
+     ("GET", "/api/v1/manage/users"),
+     ("GET", "/api/v1/manage/system-health"),
++    ("GET", "/api/v1/manage/hr-readiness"),
+     ("GET", "/api/attachments/content/{ticket}"),
+     ("POST", "/api/attachments/{attachment_id}/ticket"),
+     ("POST", "/api/review/issues"),
+diff --git a/backend/app/control_plane/middleware.py b/backend/app/control_plane/middleware.py
+index 9ab40e9..593b1cd 100644
+--- a/backend/app/control_plane/middleware.py
++++ b/backend/app/control_plane/middleware.py
+@@ -35,6 +35,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
+         "/api/v1/internal/session/subject",
+         "/api/v1/auth/logout",
+         "/api/v1/manage/system-health",
++        "/api/v1/manage/hr-readiness",
+     }
+ )
+ _WORKER_RUN_ROUTE = re.compile(
+diff --git a/backend/app/control_plane/routes_auth.py b/backend/app/control_plane/routes_auth.py
+index 052f169..613bfd6 100644
+--- a/backend/app/control_plane/routes_auth.py
++++ b/backend/app/control_plane/routes_auth.py
+@@ -484,6 +484,30 @@ def build_auth_router(
+         )
+         return response
+ 
++    @router.get("/api/v1/manage/hr-readiness")
++    async def hr_readiness(request: Request):
++        from starlette.concurrency import run_in_threadpool
++
++        from app.hr_agent.readiness import unavailable
++
++        context: AuthContext = request.state.auth_context
++        if context.role is not Role.PLATFORM_OWNER:
++            raise HTTPException(403, "platform owner required")
++        audit = getattr(request.app.state, "system_health_audit", None)
++        if audit is None:
++            raise HTTPException(503, "required audit unavailable")
++        try:
++            await run_in_threadpool(audit, context)
++        except Exception:
++            raise HTTPException(503, "required audit unavailable") from None
++        probe = getattr(request.app.state, "hr_readiness", None)
++        try:
++            payload = await run_in_threadpool(probe.check) if probe is not None else unavailable()
++        except Exception:
++            payload = unavailable("readiness_unavailable")
++        return JSONResponse(payload, status_code=200 if payload["ready"] else 503,
++                            headers=_NO_STORE)
++
+     @router.get("/api/v1/manage/system-health")
+     async def system_health(request: Request) -> dict[str, Any]:
+         context: AuthContext = request.state.auth_context
+diff --git a/backend/app/hr_agent/config.py b/backend/app/hr_agent/config.py
+index f8cbeac..067c039 100644
+--- a/backend/app/hr_agent/config.py
++++ b/backend/app/hr_agent/config.py
+@@ -52,6 +52,7 @@ CUTOVER_MIGRATION_SHA256 = {
+     102: "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
+     103: "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+     104: "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
++    105: "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+ }
+ 
+ TABLES = (
+diff --git a/backend/app/hr_agent/worker.py b/backend/app/hr_agent/worker.py
+index 8889bc3..985d388 100644
+--- a/backend/app/hr_agent/worker.py
++++ b/backend/app/hr_agent/worker.py
+@@ -22,6 +22,7 @@ def run_worker(
+     worker_id=None,
+     poll_seconds=1.0,
+     runner=run_work,
++    health=None,
+ ):
+     stop_event = stop_event or threading.Event()
+     worker_id = worker_id or "hr-" + str(uuid4())
+@@ -44,6 +45,8 @@ def run_worker(
+             fence = repository.claim(worker_id, repository.settings.lease_seconds)
+         except CutoverRejected:
+             fence = None
++        if health is not None:
++            health.progress()
+         if fence is None:
+             stop_event.wait(poll_seconds)
+             continue
+@@ -58,6 +61,8 @@ def run_worker(
+                     )
+                 except Exception:  # noqa: BLE001 - failed heartbeat or startup must stop safely
+                     valid = False
++                if valid and health is not None:
++                    health.progress()
+                 if not valid:
+                     lost.set()
+                     return
+@@ -89,6 +94,15 @@ def run_worker(
+ 
+ 
+ def main():
++    if sys.argv[1:] == ["healthcheck"]:
++        import json
++
++        from .worker_health import check_worker
++
++        report = check_worker()
++        print(json.dumps(report))
++        return 0 if report["ready"] else 1
++
+     import psycopg
+ 
+     from app.control_plane.dsn import validate_control_dsn
+@@ -124,7 +138,16 @@ def main():
+         stop = threading.Event()
+         for signum in (signal.SIGTERM, signal.SIGINT):
+             signal.signal(signum, lambda *_: stop.set())
+-        run_worker(repository, model, resources, stop_event=stop)
++        from .readiness import HrReadiness
++        from .worker_health import WorkerHealth
++
++        def readiness_connect():
++            return psycopg.connect(dsn, connect_timeout=1,
++                                   options="-c statement_timeout=1500 -c lock_timeout=500")
++
++        readiness = HrReadiness(settings, os.environ, readiness_connect, role="worker")
++        with WorkerHealth(readiness, max_age=settings.heartbeat_seconds * 3) as health:
++            run_worker(repository, model, resources, stop_event=stop, health=health)
+         return 0
+     except Exception:  # noqa: BLE001 - failed heartbeat or startup must stop safely
+         # Never print exception strings, DSNs, provider bodies, or prompts.
+diff --git a/backend/app/main.py b/backend/app/main.py
+index e0c8896..b8aac8f 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -1537,6 +1537,7 @@ def create_app(
+     from .hr_agent.routes import build_hr_agent_router
+     from .hr_agent.service import HrAgentService
+ 
++    hr_database_url = None
+     if hr_agent_service is None and config.hr_agent_settings.enabled:
+         if not identity_enabled:
+             raise RuntimeError("HR Agent requires platform identity")
+@@ -1599,6 +1600,21 @@ def create_app(
+             ready=False,
+         )
+     app.state.hr_agent_service = hr_agent_service
++    app.state.hr_readiness = None
++    if config.hr_agent_settings.enabled and hr_database_url is not None:
++        from .hr_agent.readiness import HrReadiness
++
++        def hr_readiness_connection():
++            return psycopg.connect(
++                hr_database_url, connect_timeout=1,
++                options="-c statement_timeout=1500 -c lock_timeout=500",
++            )
++
++        app.state.hr_readiness = HrReadiness(
++            config.hr_agent_settings, os.environ, hr_readiness_connection,
++            assembled=(hr_agent_service.ready and hr_agent_service.access is not None
++                       and hr_agent_service.repository is not None),
++        )
+     app.include_router(build_hr_agent_router(hr_agent_service))
+ 
+     async def require_hr_access(request: Request, *, writable: bool = False):
+diff --git a/backend/tests/test_hr_agent_foundation.py b/backend/tests/test_hr_agent_foundation.py
+index 14ba6d2..f120843 100644
+--- a/backend/tests/test_hr_agent_foundation.py
++++ b/backend/tests/test_hr_agent_foundation.py
+@@ -194,7 +194,7 @@ def test_config_reserves_full_unicode_read_capacity_before_start(tmp_path, input
+         loaded = make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+         assert loaded.provider_profile['context_window_tokens'] == input_capacity + 4096
+ 
+-@pytest.mark.parametrize("version", [102, 103, 104])
++@pytest.mark.parametrize("version", [102, 103, 104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+ def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+     from app.hr_agent.config import check_schema_ready
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 2ad2b0c..12021ef 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -222,6 +222,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "102_hr_execution_cutover.sql",
+             "103_hr_execution_drain_occupancy.sql",
+             "104_hr_execution_drain_terminal_contract.sql",
++            "105_hr_cloud_resume.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+diff --git a/backend/tests/test_hr_agent_preflight.py b/backend/tests/test_hr_agent_preflight.py
+index 5029389..bc21d6e 100644
+--- a/backend/tests/test_hr_agent_preflight.py
++++ b/backend/tests/test_hr_agent_preflight.py
+@@ -261,6 +261,7 @@ def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
+         102,
+         103,
+         104,
++        105,
+     ]
+     assert all(item["match"] for item in report["database"]["migrations"])
+     assert report["database"]["permissions_complete"] is True
+@@ -309,7 +310,7 @@ def test_cli_stdout_is_json_and_scrubs_raw_exceptions(tmp_path, capsys):
+     assert str(tmp_path) not in output
+ 
+ 
+-@pytest.mark.parametrize("version", [103, 104])
++@pytest.mark.parametrize("version", [103, 104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt, version):
+     knowledge = _knowledge(tmp_path / "knowledge")
+@@ -331,6 +332,7 @@ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, r
+     (102, "CUTOVER_MIGRATION"),
+     (103, "DRAIN_OCCUPANCY_MIGRATION"),
+     (104, "DRAIN_TERMINAL_MIGRATION"),
++    (105, "CLOUD_RESUME_MIGRATION"),
+ ])
+ @pytest.mark.parametrize("replace_ledger", [False, True])
+ def test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image(
+diff --git a/backend/tools/hr_agent/preflight.py b/backend/tools/hr_agent/preflight.py
+index c811a4f..99549b1 100644
+--- a/backend/tools/hr_agent/preflight.py
++++ b/backend/tools/hr_agent/preflight.py
+@@ -41,6 +41,8 @@ DRAIN_TERMINAL_MIGRATION = (
+     Path(__file__).parents[2] / "control_migrations" / "104_hr_execution_drain_terminal_contract.sql"
+ )
+ 
++CLOUD_RESUME_MIGRATION = Path(__file__).parents[2] / "control_migrations" / "105_hr_cloud_resume.sql"
++
+ ATTACHMENT_KEYS = (
+     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
+     "PLATFORM_ATTACHMENT_S3_BUCKET",
+@@ -210,7 +212,7 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+         expected_migrations.update(CUTOVER_MIGRATION_SHA256)
+         image_digests = {}
+         for version, path in ((102, CUTOVER_MIGRATION), (103, DRAIN_OCCUPANCY_MIGRATION),
+-                              (104, DRAIN_TERMINAL_MIGRATION)):
++                              (104, DRAIN_TERMINAL_MIGRATION), (105, CLOUD_RESUME_MIGRATION)):
+             try:
+                 image_digests[version] = _fingerprint(path.read_bytes())
+             except OSError:
+diff --git a/deploy/cloud/compose.yaml b/deploy/cloud/compose.yaml
+index 75295fe..d6d46c1 100644
+--- a/deploy/cloud/compose.yaml
++++ b/deploy/cloud/compose.yaml
+@@ -184,7 +184,11 @@ services:
+       platform-postgres:
+         condition: service_healthy
+     healthcheck:
+-      disable: true
++      test: ["CMD", "python", "-m", "app.hr_agent.worker", "healthcheck"]
++      interval: 15s
++      timeout: 8s
++      start_period: 30s
++      retries: 2
+ 
+   platform-hr-web-worker:
+     image: ${PLATFORM_IMAGE}
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 1648337..1a45b03 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -188,6 +188,7 @@ class Supervisor:
+             (102, "102_hr_execution_cutover.sql"),
+             (103, "103_hr_execution_drain_occupancy.sql"),
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
++            (105, "105_hr_cloud_resume.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+diff --git a/webui/src/workspaces/hr/HrWorkspacePage.test.tsx b/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
+index 2f3ef62..4867a95 100644
+--- a/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
++++ b/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
+@@ -347,6 +347,28 @@ describe("HrWorkspacePage", () => {
+     expect(scrollTo).not.toHaveBeenCalled();
+   });
+ 
++  it("returns from the position directory with the selected position and unsent draft", async () => {
++    const client = vi.mocked(createHrApi).getMockImplementation()!("csrf");
++    const position = await client.position("44444444-4444-4444-8444-444444444444");
++    vi.mocked(client.listPositions).mockResolvedValue({ items: [position], nextCursor: null });
++    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
++    const textarea = container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")!;
++    await act(async () => {
++      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "保留岗位讨论草稿");
++      textarea.dispatchEvent(new Event("input", { bubbles: true }));
++    });
++    window.history.replaceState({}, "", "/hr/positions");
++    await act(async () => root.render(<HrWorkspacePage account={account} positions />));
++    const resume = [...container.querySelectorAll<HTMLButtonElement>("button")]
++      .find(button => button.textContent === "在主对话中继续");
++    expect(resume).toBeDefined();
++    await act(async () => resume!.click());
++    expect(window.location.pathname).toBe("/hr/conversations/c-7");
++    expect(container.querySelector(".hr-position-picker-trigger")?.textContent).toContain(position.title);
++    expect(textarea.value).toBe("保留岗位讨论草稿");
++    expect(startConversation).not.toHaveBeenCalled();
++  });
++
+   it("keeps the current conversation as the chat navigation target", async () => {
+     await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+     await act(async () => root.render(<HrWorkspacePage account={account} positions />));
+diff --git a/webui/src/workspaces/hr/HrWorkspacePage.tsx b/webui/src/workspaces/hr/HrWorkspacePage.tsx
+index 128d1bc..8b3673e 100644
+--- a/webui/src/workspaces/hr/HrWorkspacePage.tsx
++++ b/webui/src/workspaces/hr/HrWorkspacePage.tsx
+@@ -95,7 +95,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
+       renderTurnContext={turnId=><HrTurnResults turnId={turnId} data={results} readOnly={props.account.hard_stale_read_only} onDraft={(value,id)=>void fill(value,id)}/>}
+     /></WorkspaceErrorBoundary></div>
+     {props.positionId?<HrPositionWorkflow key={props.positionId} account={props.account} positionId={props.positionId} section={props.section} draftError={draftError} api={api} r12={r12} onDraft={(value,id)=>void fill(value,id)}/>
+-      :props.positions?<HrPositionIndex account={props.account} api={api}/>:null}
++      :props.positions?<HrPositionIndex account={props.account} api={api} onSelect={value=>{choose(value);navigate(chatHref);}}/>:null}
+     {panoramaVisited.current&&<div className="hr-workspace-panorama-panel" hidden={!panoramaActive} aria-hidden={!panoramaActive?"true":undefined}><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligence}/>{intelligenceError&&<p role="alert">{intelligenceError}</p>}</WorkspaceErrorBoundary></div>}
+     {selectedPosition&&<HrPositionDetailsDrawer key={selectedPosition.positionId} api={r12} csrfToken={props.account.csrf_token} detail={position.detail??selectedPosition} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
+       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}

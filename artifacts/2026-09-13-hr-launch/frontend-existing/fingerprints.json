@@ -1,0 +1,14 @@
+{
+  "triage.md": "2d0697d7745994c4d876c7cde5a2c079455f7d6e09164d9d4e80812b0d31a3fd",
+  "current-three-1.log": "5b0a80182e4438988788b27ec15705ea0a9b32971721dcdaeaadfa9a7792a6b2",
+  "baseline-byte-check.json": "5353ce025fc8f631bcfe5023308364460dfc770c8c79ec788d3f66b50cbb2d3c",
+  "current-three-1.json": "66e7d8605095f934af647f45841f8fbe71414cf6a0c8d84c7fce22ff908dde78",
+  "source/webui/package-lock.json": "50aa54a6072b56270f10d9a7a752dbada5dfbc3455298f697c9e8eba5731805b",
+  "source/webui/package.json": "a3793ce306fa569a0600deb9be1b4668ec8f8c61c8eed056907860e2c57dba61",
+  "source/webui/src/styles.css": "6503ac2b267ccf1e73164757dcb1d2e0bdc0da0d0bc8a9e18f55d7e7d4f00308",
+  "source/webui/src/styles.test.ts": "4d592f98d02aabb6df6b4e16cc85d07da01cf37bd6b0c3dd4712cb62a35ce7bf",
+  "source/webui/src/workspaces/hr/HrKnowledgePanel.tsx": "54aa0071478d759771f3a009da8751930d5aff28689300951e6900889b809d7f",
+  "source/webui/src/workspaces/hr/HrPositionPicker.tsx": "89819157e532c25dae196dad2a0935382002556ca7f5b96d9bc44f3a9034b52c",
+  "source/webui/src/workspaces/hr/HrWorkspaceShell.tsx": "9928a69d5957e3452432fb920719e5603fe2f6fe2f1d8743a7f1f880324228a3",
+  "source/webui/src/workspaces/hr/HrWorkspacePage.tsx": "a83a591c9c50f23ad017a1daee214db5a403cd9cc721695bb4c840e0dfe8fe1b"
+}

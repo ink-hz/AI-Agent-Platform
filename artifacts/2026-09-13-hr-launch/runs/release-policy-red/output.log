@@ -1,0 +1,40 @@
+FFFFFFF                                                                  [100%]
+=================================== FAILURES ===================================
+__________ test_explicit_policy_binds_loaded_configuration_and_scope ___________
+backend/tests/test_hr_agent_release_policy.py:28: in test_explicit_policy_binds_loaded_configuration_and_scope
+    assert loaded.release_policy == policy
+           ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'HrAgentSettings' object has no attribute 'release_policy'
+_ test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[budget] _
+backend/tests/test_hr_agent_release_policy.py:58: in test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data
+    with pytest.raises(ValueError, match="HR configuration invalid"):
+E   Failed: DID NOT RAISE ValueError
+_ test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[provider] _
+backend/tests/test_hr_agent_release_policy.py:58: in test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data
+    with pytest.raises(ValueError, match="HR configuration invalid"):
+E   Failed: DID NOT RAISE ValueError
+_ test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[diagnostic] _
+backend/tests/test_hr_agent_release_policy.py:58: in test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data
+    with pytest.raises(ValueError, match="HR configuration invalid"):
+E   Failed: DID NOT RAISE ValueError
+__ test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[mode] __
+backend/tests/test_hr_agent_release_policy.py:58: in test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data
+    with pytest.raises(ValueError, match="HR configuration invalid"):
+E   Failed: DID NOT RAISE ValueError
+_ test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[scope] __
+backend/tests/test_hr_agent_release_policy.py:58: in test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data
+    with pytest.raises(ValueError, match="HR configuration invalid"):
+E   Failed: DID NOT RAISE ValueError
+_ test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[empty_ref] _
+backend/tests/test_hr_agent_release_policy.py:58: in test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data
+    with pytest.raises(ValueError, match="HR configuration invalid"):
+E   Failed: DID NOT RAISE ValueError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_release_policy.py::test_explicit_policy_binds_loaded_configuration_and_scope
+FAILED backend/tests/test_hr_agent_release_policy.py::test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[budget]
+FAILED backend/tests/test_hr_agent_release_policy.py::test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[provider]
+FAILED backend/tests/test_hr_agent_release_policy.py::test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[diagnostic]
+FAILED backend/tests/test_hr_agent_release_policy.py::test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[mode]
+FAILED backend/tests/test_hr_agent_release_policy.py::test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[scope]
+FAILED backend/tests/test_hr_agent_release_policy.py::test_policy_cannot_outlive_reviewed_profiles_or_enable_personal_data[empty_ref]
+7 failed in 0.11s

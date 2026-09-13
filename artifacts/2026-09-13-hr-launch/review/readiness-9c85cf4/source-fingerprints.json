@@ -1,0 +1,46 @@
+{
+  "reviewed_commit": "9c85cf416edd7b83446c52071175f3cefba72468",
+  "patch_sha256": "5a7f98f07d0e75a37615444b159fa427b8e9e422ae10bd127f041a308adbe4fc",
+  "files": {
+    "backend/app/control_plane/authorization.py": {
+      "git_blob": "21449857bf7e06d9b401a1fd17a8c9391e2164c8",
+      "sha256": "251b6028d8095222e3c3ccfcbb527e89c124b5fd853b8826901a2f72fb6485fd"
+    },
+    "backend/app/control_plane/middleware.py": {
+      "git_blob": "593b1cdd0bc411bd781b036c647cf23560eb070f",
+      "sha256": "55e2709c84cf369141d70862bcaa22ae588ee7d4e6747d5196761e830e22ff99"
+    },
+    "backend/app/control_plane/routes_auth.py": {
+      "git_blob": "914f61aecd8d77e6a3ecf86df932454b1b12c0b2",
+      "sha256": "72361b2bed10698216d131b0217faed4ee258247e319dd572db1ca11f524e42a"
+    },
+    "backend/app/hr_agent/readiness.py": {
+      "git_blob": "92b438659c6df3c726c09ae43b3a2778904760d6",
+      "sha256": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f"
+    },
+    "backend/app/hr_agent/worker.py": {
+      "git_blob": "985d388ac8c7364eb9d47ad545817f69215f3040",
+      "sha256": "b10c582fd377cb18fa723d7db457e1f5d201463dc79f0506b2eb36f863da1d01"
+    },
+    "backend/app/hr_agent/worker_health.py": {
+      "git_blob": "f3b7f75545a01e79a56c2a99f4c009fb5d9bc58d",
+      "sha256": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3"
+    },
+    "backend/app/main.py": {
+      "git_blob": "b8aac8fd1b155080a408630637cd4396a81d2a13",
+      "sha256": "08f7015b0aa0509be5e5e4bd943633d17ae775b0057eb8eeee04394aa2580ed8"
+    },
+    "backend/tests/test_hr_agent_readiness.py": {
+      "git_blob": "1af98b20893e44a7ec8bcbc2f1c84a8e26ee0e51",
+      "sha256": "5c1c3484a99dde95e1bb1e3c2a9970cd1015743798545895a5709de6597e84dd"
+    },
+    "backend/tests/test_hr_agent_worker_health.py": {
+      "git_blob": "4f5a3e1d82639ac9f7a68b7da78544e36f1d5bef",
+      "sha256": "1efc5ee401bd5f34b859db7ed6f8a79f39d4f9f2a64181ff310719d95b5f4d5b"
+    },
+    "deploy/cloud/compose.yaml": {
+      "git_blob": "564080061596e5420f51c70b1f99539272fd9148",
+      "sha256": "3a87066354ef2f9b17121af974756d657dc4fe3f2c3103d770e683d92a6ee86c"
+    }
+  }
+}

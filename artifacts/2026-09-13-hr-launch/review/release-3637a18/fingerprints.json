@@ -1,0 +1,176 @@
+{
+  "commit": "3637a18baef3b54703d787376e8e56824fb54f04",
+  "parent": "9c85cf416edd7b83446c52071175f3cefba72468",
+  "patch_sha256": "174f642408911d35cf5be880ce6f2cb2712672bd40881e12a6c46d193fabc737",
+  "sources": {
+    "backend/app/hr_agent/config.py": {
+      "blob": "d7ad55ad493cff39006ccbeea6654c527ec69b0b",
+      "sha256": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2"
+    },
+    "backend/control_migrations/105_hr_cloud_resume.sql": {
+      "blob": "782bc256b90abe5e40edb5061f3e39f8e586ef1a",
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f"
+    },
+    "backend/tests/test_hr_agent_foundation.py": {
+      "blob": "f1208435ff8e3721edecd44a8d2fe63b0f19a5b0",
+      "sha256": "2f0ae3ae38d294216ba5c582568bba529b1bff4cb9c69f5befd540a0f7a05a30"
+    },
+    "backend/tests/test_hr_agent_migration_deployment.py": {
+      "blob": "d68dbc815724e5d9fceaeba67586ba6067016f7f",
+      "sha256": "a356a58f0f8af66df0e7e8ee47a52a4c714defbf2483b3f8690713edf2b79047"
+    },
+    "backend/tests/test_hr_agent_preflight.py": {
+      "blob": "bc21d6e6c642c6fc6905f9c05df6c69af7965563",
+      "sha256": "8f39a60f23eb336954db8493fb13d4fe9616783926e7a7ace4dcfe00f70030db"
+    },
+    "backend/tests/test_hr_agent_release_policy.py": {
+      "blob": "a8ff96885c8ca9df30fd24fe13e4a1959f0898d0",
+      "sha256": "24c62e9b972c270638d992e45a67157484cc72e67be660e5e57fabd256d0c961"
+    },
+    "backend/tests/test_hr_cloud_resume.py": {
+      "blob": "3700ea5cdcd5529c667fdaebf6062d9a2eef706a",
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a"
+    },
+    "backend/tools/hr_agent/preflight.py": {
+      "blob": "6888f4e1c803790eebae7fec478a48315b6bbac6",
+      "sha256": "a94a63867caf57c3465cfd9ea341794684c4253b89910bbb719b0acdeda62985"
+    },
+    "deploy/cloud/compose.hr-agent.yaml": {
+      "blob": "b337a9b580ac13dbfad91b12f1babfbc8cfdc4c3",
+      "sha256": "d61a471c9d3a971df22d489ac8b7c1ea45ec5a15937f0001154c2226143b9e40"
+    },
+    "deploy/cloud/hr_agent_migrate.py": {
+      "blob": "1a45b033824f2afcd5872b249f84c0cabacaacd0",
+      "sha256": "cb7a8efc6711394378aab848db292079be63501bfdf960e32df511b1b73dce27"
+    }
+  },
+  "evidence": {
+    "cloud-resume-red": {
+      "hashes": {
+        "command.json": "acee63ffeda7b6f56871075f3d2ce816d433f74a3ccac4e1e833cb2effa04e07",
+        "output.log": "6514a333ddf1b439b79334904a8a84ea320ffb7140eb72528c2ce68a281d5f7e",
+        "source.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "command": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "backend/tests/test_hr_cloud_resume.py",
+        "-q",
+        "--tb=short"
+      ],
+      "exit_code": 1,
+      "summary": "3 failed, 1 passed in 4.23s"
+    },
+    "cloud-resume-green": {
+      "hashes": {
+        "command.json": "6925f4159aae2d53110f5efd70f320c5d43b54ec7c6fcaf10acb36e3f7cc571b",
+        "output.log": "a13a167ad0e2fb1078a9da9d3e389c37b53135eedf98baa4b5af8cfcde0bcbeb",
+        "source.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "command": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "backend/tests/test_hr_cloud_resume.py",
+        "backend/tests/test_hr_execution_cutover.py",
+        "-q",
+        "--tb=short"
+      ],
+      "exit_code": 0,
+      "summary": "18 passed in 5.07s"
+    },
+    "resume-floor-red": {
+      "hashes": {
+        "command.json": "87fe7c6a80fc10b96f1e0a107fbd61092ffcad75523861b8c0081902b1a23848",
+        "output.log": "5d7a5b9d49db36ed3270e21375068c5d021099e28989220e49a2c5f13b62118a",
+        "source.patch": "0ffa317d4f65a72ce5a44fd12a2bce12d091add027de40cbacc4e2425e7a4ad2"
+      },
+      "command": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "backend/tests/test_hr_agent_foundation.py",
+        "-k",
+        "exact_cutover and 105",
+        "-q",
+        "--tb=short"
+      ],
+      "exit_code": 1,
+      "summary": "2 failed, 53 deselected in 2.03s"
+    },
+    "resume-floor-green": {
+      "hashes": {
+        "command.json": "7e9623d784d985406ffab337ef98ff858d0a02be0a792228aa8cac38efb503cd",
+        "output.log": "5f6b8f83b9dea71ec19d48ef555d8cecfd518694fbf0243b20919190cd4c3fe2",
+        "source.patch": "b75439499a1d3a470e267f4fed1f09e233695118a9b064623bf5b5376d640c81"
+      },
+      "command": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "backend/tests/test_hr_agent_foundation.py",
+        "backend/tests/test_hr_agent_preflight.py",
+        "-q",
+        "--tb=short"
+      ],
+      "exit_code": 0,
+      "summary": "79 passed in 44.32s"
+    },
+    "resume-deployment-green": {
+      "hashes": {
+        "command.json": "7509caf0edccded9b452a19479ded8e31df70b4c2c737e3fa785f496f0a201ab",
+        "output.log": "c26f86695034b3a71673f0b003ece8b7977b82de9129c4befe0aa6527e6cdfd7",
+        "source.patch": "718b637dd466369feb35d0ff920493cec3991ce3b18df5aa6c31ec08c3529172"
+      },
+      "command": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "backend/tests/test_hr_agent_migration_deployment.py",
+        "backend/tests/test_hr_cloud_resume.py",
+        "-q",
+        "--tb=short"
+      ],
+      "exit_code": 0,
+      "summary": "23 passed in 42.98s"
+    },
+    "release-policy-red": {
+      "hashes": {
+        "command.json": "a7cf906ad8cd2abe58fb80502ec13d3b473aa0f8ef3e23ad47e233d639976c33",
+        "output.log": "cef3b34477c2abd9cf12cfb3cc3183664ce21ffdc7429fed5659fd1951208004",
+        "source.patch": "1019f0bfefbd81d7733f520d4e13a12c8049869a1d61ca3cab0ea235acb02046"
+      },
+      "command": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "backend/tests/test_hr_agent_release_policy.py",
+        "-q",
+        "--tb=short"
+      ],
+      "exit_code": 1,
+      "summary": "7 failed in 0.11s"
+    },
+    "release-policy-green": {
+      "hashes": {
+        "command.json": "508c4e5518f406dfc39e9dd610c95a8e0fcb77bf6963707f03f3ea6aec8d39b1",
+        "output.log": "aff84794bc7be1d5d83f5abc915b0c284b1eb09a8a31116bab6df61b17f50e63",
+        "source.patch": "4a0c12fee91b15271c6b3de2e21a3ca2aca95d05ceb3fcc2f3e824865b9b75fa"
+      },
+      "command": [
+        "backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "backend/tests/test_hr_agent_release_policy.py",
+        "backend/tests/test_hr_agent_preflight.py",
+        "backend/tests/test_hr_agent_foundation.py",
+        "-q",
+        "--tb=short"
+      ],
+      "exit_code": 0,
+      "summary": "86 passed in 44.96s"
+    }
+  },
+  "historical_102_103_104_unchanged": true
+}

@@ -1,0 +1,14 @@
+.....F........                                                           [100%]
+=================================== FAILURES ===================================
+________ test_source_library_is_edition_pinned_filterable_and_paginated ________
+backend/tests/test_hr_source_library.py:109: in test_source_library_is_edition_pinned_filterable_and_paginated
+    assert library.catalog() == {
+E   AssertionError: assert {'edition': '...ount': 2, ...} == {'edition': '...ount': 2, ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, ...}]} != {'companies': [{'company_key': 'sample', 'name': '样例公司', 'aliases': ['Sample'], 'job_count': 2, ...}]}
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_source_library.py::test_source_library_is_edition_pinned_filterable_and_paginated
+1 failed, 13 passed in 8.46s

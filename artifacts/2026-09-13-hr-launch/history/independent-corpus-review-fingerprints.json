@@ -1,0 +1,21 @@
+{
+  "reviewed_at": "2026-09-13T02:31:32.685106+00:00",
+  "inputs_sha256": {
+    "scenarios.json": "65501ce9f73744f9a3f59a70a758dda72647759713f13b2396b62ff5963d17c2",
+    "analysis.md": "db1a8e31f2d5b8b5612f484dfdb1dc868ba11cb81dcf962c8bc1462ee7095dc7",
+    "private/history-scenario-map.json": "7222f1c87f613d9de2177214ba55e1d36f174d8c6bf7ce7bf483c1ac5c701d8d",
+    "private/history-raw.json": "758028232e16af6d8dc11d9fabc88ff2232eb639808e192bda319a002ea1fd7e",
+    "private/hr-bot-history-raw.json": "41915cf9672ea13838d3c8599b4efd498daa86ee3dfa0f38d5962f89c493770e"
+  },
+  "review_sha256": "41b28af4cf17f128b5da7eb9c9efe5a8b8e437a480cc326f70cc4a7c4b15efb1",
+  "source_counts": {
+    "raw_user_messages": 242,
+    "mapped_messages": 242,
+    "sessions": 63,
+    "cases": 22,
+    "case_source_references": 70,
+    "case_unique_source_messages": 68
+  },
+  "privacy": "No original personal text included; raw source contents remain private",
+  "scope": "Read-only corpus review; no model calls/outputs evaluated"
+}

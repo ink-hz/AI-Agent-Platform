@@ -1,0 +1,26 @@
+{
+  "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+  "files": {
+    "webui/src/styles.css": "6503ac2b267ccf1e73164757dcb1d2e0bdc0da0d0bc8a9e18f55d7e7d4f00308",
+    "webui/src/styles.test.ts": "4d592f98d02aabb6df6b4e16cc85d07da01cf37bd6b0c3dd4712cb62a35ce7bf",
+    "webui/package.json": "a3793ce306fa569a0600deb9be1b4668ec8f8c61c8eed056907860e2c57dba61",
+    "webui/package-lock.json": "50aa54a6072b56270f10d9a7a752dbada5dfbc3455298f697c9e8eba5731805b",
+    "webui/src/workspaces/hr/HrWorkspaceShell.tsx": "9928a69d5957e3452432fb920719e5603fe2f6fe2f1d8743a7f1f880324228a3",
+    "webui/src/workspaces/hr/HrKnowledgePanel.tsx": "54aa0071478d759771f3a009da8751930d5aff28689300951e6900889b809d7f",
+    "webui/src/workspaces/hr/HrPositionPicker.tsx": "89819157e532c25dae196dad2a0935382002556ca7f5b96d9bc44f3a9034b52c"
+  },
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "--run",
+    "src/styles.test.ts",
+    "-t",
+    "never renders visible text below the approved minimum|renders HR as a calm full-height recruiting workspace instead of a card dashboard|keeps the position conversation primary with on-demand responsive controls"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui",
+  "started_at": "2026-09-13T02:53:10.731664+00:00",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T02:53:11.279158+00:00",
+  "source_unchanged": true
+}

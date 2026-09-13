@@ -1,0 +1,24 @@
+{
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "--run",
+    "src/styles.test.ts",
+    "-t",
+    "keeps .* text at the approved minimum"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui",
+  "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+  "source_sha256": {
+    "webui/src/styles.css": "6503ac2b267ccf1e73164757dcb1d2e0bdc0da0d0bc8a9e18f55d7e7d4f00308",
+    "webui/src/styles.test.ts": "ecfa899e320d995684eccbbbeaab3bbec5bf3b3cd4d81bb19f1958fa1969ab0a",
+    "webui/src/workspaces/hr/HrLoopWorkspace.css": "3d973a1bf8d93b8a4bc8ca75ac632169259101857b19fd09243c8dcfb38471d1",
+    "webui/src/workspaces/hr/hrResearch.css": "068e9afb0c4c2f7efcedce1cd32f5acf21ab64830ced6a207e4eb09b61dd6df0",
+    "webui/src/workspaces/hr/hrCompanyIntelligence.css": "c869dd57907e665cbd39b25b97383ee11e0eee3b9e8f53cba96e00412e273151"
+  },
+  "started": "2026-09-13T02:56:47.301271+00:00",
+  "exit_code": 1,
+  "ended": "2026-09-13T02:56:47.888164+00:00",
+  "source_unchanged": true
+}

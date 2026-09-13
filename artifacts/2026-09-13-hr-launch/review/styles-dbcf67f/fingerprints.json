@@ -1,0 +1,186 @@
+{
+  "commit": "dbcf67f6c5915dd72d135584da585cf55126fbb3",
+  "parent": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+  "patch_sha256": "a3ea9b469671dfbae1aced1f02b82feac0101e7c4102c8930920a22e67e3df04",
+  "sources": {
+    "webui/src/styles.css": {
+      "blob": "39b0d86307967c3d6a27cecc2738e6e956929f14",
+      "sha256": "4afce04eeab5349726de8bf47f116860fe0801f0d3380b8bd6cd120ab32660f5"
+    },
+    "webui/src/styles.test.ts": {
+      "blob": "f131e888f89c315724b53f2d7c2bde980ef7b9c9",
+      "sha256": "c56de5aeab65893d95f34a527fbf89c491ac5c4059445d6c58241b5e15e5ed9a"
+    },
+    "webui/src/workspaces/hr/HrLoopWorkspace.css": {
+      "blob": "99fb2ebb327e1a6bc8ef6568a2a96233e4fe2e49",
+      "sha256": "35cee5b884b71d0485164f1df0e046c8bde2d222411689e6ba0031a919caac31"
+    },
+    "webui/src/workspaces/hr/hrCompanyIntelligence.css": {
+      "blob": "b4a1102e6c74d4e15e98117924942463d9d71826",
+      "sha256": "3ed312a638c1317eadd9a828a9b73c09912083a68212ae5f05e3b6f4ad5b61bb"
+    },
+    "webui/src/workspaces/hr/hrResearch.css": {
+      "blob": "ccc56ef9e4c33e12241927edb21aef438adc3d41",
+      "sha256": "c54b66f0ba1bfe4d7657ca8a937b1e287ffba9410ac2847d0d784b0b9e6ba618"
+    }
+  },
+  "css_changes": {
+    "webui/src/styles.css": [
+      {
+        "old": "11px",
+        "new": "12px"
+      },
+      {
+        "old": "11px",
+        "new": "12px"
+      },
+      {
+        "old": "11px",
+        "new": "12px"
+      },
+      {
+        "old": "11px",
+        "new": "12px"
+      }
+    ],
+    "webui/src/workspaces/hr/HrLoopWorkspace.css": [
+      {
+        "old": "11px",
+        "new": "12px"
+      },
+      {
+        "old": "11px",
+        "new": "12px"
+      }
+    ],
+    "webui/src/workspaces/hr/hrCompanyIntelligence.css": [
+      {
+        "old": "11px",
+        "new": "12px"
+      }
+    ],
+    "webui/src/workspaces/hr/hrResearch.css": [
+      {
+        "old": "10px",
+        "new": "12px"
+      },
+      {
+        "old": "11px",
+        "new": "12px"
+      },
+      {
+        "old": "11px",
+        "new": "12px"
+      },
+      {
+        "old": "10px",
+        "new": "12px"
+      },
+      {
+        "old": "11px",
+        "new": "12px"
+      },
+      {
+        "old": "11px",
+        "new": "12px"
+      },
+      {
+        "old": ".8em",
+        "new": "12px"
+      },
+      {
+        "old": "10px",
+        "new": "12px"
+      },
+      {
+        "old": "10px",
+        "new": "12px"
+      }
+    ]
+  },
+  "runs": {
+    "red-hr-fonts-1": {
+      "exit_code": 1,
+      "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--run",
+        "src/styles.test.ts",
+        "-t",
+        "keeps .* text at the approved minimum"
+      ],
+      "source_unchanged": true,
+      "command_sha256": "a7e363cd3e2f1f55ccede68b606fed3f64ecb686c0f9cc9e12ad4745acc3137f",
+      "log_sha256": "105cb12a41e64a2afae3e30b2e60151a7138a4efcd19a99d205d1314cda2d0fd"
+    },
+    "green-styles-1": {
+      "exit_code": 0,
+      "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--run",
+        "src/styles.test.ts"
+      ],
+      "source_unchanged": true,
+      "command_sha256": "29e89af56d6425da6a9eea7428bf7c72e89fc5844eb26a46dad54a8c80d2d8e0",
+      "log_sha256": "717b9b5d7fff83f6ae1b82cc2243815f889e7a64b49c50f5d39af008454ee611",
+      "all_five_source_bytes_match_reviewed_commit": true
+    },
+    "green-components-1": {
+      "exit_code": 0,
+      "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--run",
+        "src/workspaces/hr/HrWorkspaceShell.test.tsx",
+        "src/workspaces/hr/HrKnowledgePanel.test.tsx",
+        "src/workspaces/hr/HrLoopWorkspace.test.tsx",
+        "src/workspaces/hr/HrResearchWorkspace.test.tsx",
+        "src/workspaces/hr/HrPositionIndex.test.tsx",
+        "src/workspaces/hr/HrPositionWorkflow.test.tsx",
+        "src/components/conversation/ConversationSidebar.test.tsx",
+        "src/workspaces/hr/hrCompanyIntelligence.test.ts"
+      ],
+      "source_unchanged": true,
+      "command_sha256": "afd5f8cd478f4e64baff1671d17a4dc77a1c50a8f303cefc4289d237e61c189b",
+      "log_sha256": "f2ac091dc3e51bd8830ffa6fc1f89f615b5f9a7cba85d4dfa96de976704ec27f",
+      "all_five_source_bytes_match_reviewed_commit": true
+    },
+    "green-intelligence-components-1": {
+      "exit_code": 0,
+      "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--run",
+        "src/workspaces/hr/HrTopicWorkspace.test.tsx",
+        "src/workspaces/hr/HrPanoramaWorkspace.test.tsx"
+      ],
+      "source_unchanged": true,
+      "command_sha256": "91758bea2bb8b77b1d9a00590874758b41c4e9f6170c29b41982523a32858587",
+      "log_sha256": "ec05051b108226b896ef503633ac5e3f9ef29afef6928dbd4593f20d5b7d2b9e",
+      "all_five_source_bytes_match_reviewed_commit": true
+    },
+    "green-tsc-1": {
+      "exit_code": 0,
+      "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+      "command": [
+        "npx",
+        "tsc",
+        "-b"
+      ],
+      "source_unchanged": true,
+      "command_sha256": "9f3891e9281dd4ba115db601a1eb8eff2635d9f670706eb44bd938666329f670",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "all_five_source_bytes_match_reviewed_commit": true
+    }
+  },
+  "font_declarations_changed": 16
+}

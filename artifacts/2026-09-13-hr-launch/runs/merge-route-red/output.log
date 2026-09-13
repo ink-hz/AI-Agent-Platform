@@ -1,0 +1,40 @@
+
+ RUN  v3.2.6 /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+
+ ❯ src/workspaces/hr/HrWorkspacePage.test.tsx (14 tests | 1 failed | 13 skipped) 57ms
+   ↓ HrWorkspacePage > opens JD and JR immediately after selecting a position while ancillary data is pending
+   ↓ HrWorkspacePage > opens a conversation-first HR workspace at the canonical root
+   ↓ HrWorkspacePage > keeps an unsent chat draft mounted while visiting positions
+   ↓ HrWorkspacePage > keeps the same chat host, unsent text, selected upload, and current conversation while visiting panorama
+   ↓ HrWorkspacePage > keeps the visited company workspace mounted and inaccessible while chat is active
+   ↓ HrWorkspacePage > unmounts retained company reading state when the account changes
+   ↓ HrWorkspacePage > preserves the company panel scroll position without scheduling window restoration
+   × HrWorkspacePage > returns from the position directory with the selected position and unsent draft 56ms
+     → expected undefined to be defined
+   ↓ HrWorkspacePage > keeps the current conversation as the chat navigation target
+   ↓ HrWorkspacePage > selects explicitly without sending or replacing the draft, then returns to the known chat
+   ↓ HrWorkspacePage > scopes selected intelligence to the account and uses the free-chat draft when no chat is known
+   ↓ HrWorkspacePage > does not route a second account to the first account's retained chat when selecting intelligence
+   ↓ HrWorkspacePage > serializes selected intelligence into one frozen new-conversation request and clears it on success
+   ↓ HrWorkspacePage > clears only the references captured by a successful pending submission
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/workspaces/hr/HrWorkspacePage.test.tsx > HrWorkspacePage > returns from the position directory with the selected position and unsent draft
+AssertionError: expected undefined to be defined
+ ❯ src/workspaces/hr/HrWorkspacePage.test.tsx:364:20
+    362|     const resume = [...container.querySelectorAll<HTMLButtonElement>("…
+    363|       .find(button => button.textContent === "在主对话中继续");
+    364|     expect(resume).toBeDefined();
+       |                    ^
+    365|     await act(async () => resume!.click());
+    366|     expect(window.location.pathname).toBe("/hr/conversations/c-7");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 skipped (14)
+   Start at  10:22:21
+   Duration  801ms (transform 216ms, setup 0ms, collect 382ms, tests 57ms, environment 210ms, prepare 36ms)
+

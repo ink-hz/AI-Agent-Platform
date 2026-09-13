@@ -1,0 +1,46 @@
+diff --git a/webui/src/workspaces/hr/HrWorkspacePage.test.tsx b/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
+index 2f3ef624751295c99ae8035c363c2c6bbb94beef..4867a95b67425cfec9189880c6307cf914ac9571 100644
+--- a/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
++++ b/webui/src/workspaces/hr/HrWorkspacePage.test.tsx
+@@ -347,6 +347,28 @@ describe("HrWorkspacePage", () => {
+     expect(scrollTo).not.toHaveBeenCalled();
+   });
+ 
++  it("returns from the position directory with the selected position and unsent draft", async () => {
++    const client = vi.mocked(createHrApi).getMockImplementation()!("csrf");
++    const position = await client.position("44444444-4444-4444-8444-444444444444");
++    vi.mocked(client.listPositions).mockResolvedValue({ items: [position], nextCursor: null });
++    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
++    const textarea = container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")!;
++    await act(async () => {
++      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "保留岗位讨论草稿");
++      textarea.dispatchEvent(new Event("input", { bubbles: true }));
++    });
++    window.history.replaceState({}, "", "/hr/positions");
++    await act(async () => root.render(<HrWorkspacePage account={account} positions />));
++    const resume = [...container.querySelectorAll<HTMLButtonElement>("button")]
++      .find(button => button.textContent === "在主对话中继续");
++    expect(resume).toBeDefined();
++    await act(async () => resume!.click());
++    expect(window.location.pathname).toBe("/hr/conversations/c-7");
++    expect(container.querySelector(".hr-position-picker-trigger")?.textContent).toContain(position.title);
++    expect(textarea.value).toBe("保留岗位讨论草稿");
++    expect(startConversation).not.toHaveBeenCalled();
++  });
++
+   it("keeps the current conversation as the chat navigation target", async () => {
+     await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+     await act(async () => root.render(<HrWorkspacePage account={account} positions />));
+diff --git a/webui/src/workspaces/hr/HrWorkspacePage.tsx b/webui/src/workspaces/hr/HrWorkspacePage.tsx
+index 128d1bcee6fa154846b5641449e4c583266a3e66..8b3673ebbf556f3064b9885178c31cd6a862f161 100644
+--- a/webui/src/workspaces/hr/HrWorkspacePage.tsx
++++ b/webui/src/workspaces/hr/HrWorkspacePage.tsx
+@@ -95,7 +95,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
+       renderTurnContext={turnId=><HrTurnResults turnId={turnId} data={results} readOnly={props.account.hard_stale_read_only} onDraft={(value,id)=>void fill(value,id)}/>}
+     /></WorkspaceErrorBoundary></div>
+     {props.positionId?<HrPositionWorkflow key={props.positionId} account={props.account} positionId={props.positionId} section={props.section} draftError={draftError} api={api} r12={r12} onDraft={(value,id)=>void fill(value,id)}/>
+-      :props.positions?<HrPositionIndex account={props.account} api={api}/>:null}
++      :props.positions?<HrPositionIndex account={props.account} api={api} onSelect={value=>{choose(value);navigate(chatHref);}}/>:null}
+     {panoramaVisited.current&&<div className="hr-workspace-panorama-panel" hidden={!panoramaActive} aria-hidden={!panoramaActive?"true":undefined}><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligence}/>{intelligenceError&&<p role="alert">{intelligenceError}</p>}</WorkspaceErrorBoundary></div>}
+     {selectedPosition&&<HrPositionDetailsDrawer key={selectedPosition.positionId} api={r12} csrfToken={props.account.csrf_token} detail={position.detail??selectedPosition} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
+       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}

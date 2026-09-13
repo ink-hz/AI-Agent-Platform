@@ -1,0 +1,16 @@
+{
+  "102-to-105-function.diff": "e99f700a7f25e35707a3bfaac1e504dc2031bd214dec6bd55f96ee7f265b5fae",
+  "fingerprints.json": "ad0f39a42bcbb604b36994db44c6660237015b774d38e8f9d62c33fbb7952a1c",
+  "review.md": "16f27cedd93b9012c8fb1186211d79bf06a0ba71212d53e71b16abd3b7856419",
+  "review.patch": "174f642408911d35cf5be880ce6f2cb2712672bd40881e12a6c46d193fabc737",
+  "sources/backend/app/hr_agent/config.py": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2",
+  "sources/backend/control_migrations/105_hr_cloud_resume.sql": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+  "sources/backend/tests/test_hr_agent_foundation.py": "2f0ae3ae38d294216ba5c582568bba529b1bff4cb9c69f5befd540a0f7a05a30",
+  "sources/backend/tests/test_hr_agent_migration_deployment.py": "a356a58f0f8af66df0e7e8ee47a52a4c714defbf2483b3f8690713edf2b79047",
+  "sources/backend/tests/test_hr_agent_preflight.py": "8f39a60f23eb336954db8493fb13d4fe9616783926e7a7ace4dcfe00f70030db",
+  "sources/backend/tests/test_hr_agent_release_policy.py": "24c62e9b972c270638d992e45a67157484cc72e67be660e5e57fabd256d0c961",
+  "sources/backend/tests/test_hr_cloud_resume.py": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+  "sources/backend/tools/hr_agent/preflight.py": "a94a63867caf57c3465cfd9ea341794684c4253b89910bbb719b0acdeda62985",
+  "sources/deploy/cloud/compose.hr-agent.yaml": "d61a471c9d3a971df22d489ac8b7c1ea45ec5a15937f0001154c2226143b9e40",
+  "sources/deploy/cloud/hr_agent_migrate.py": "cb7a8efc6711394378aab848db292079be63501bfdf960e32df511b1b73dce27"
+}

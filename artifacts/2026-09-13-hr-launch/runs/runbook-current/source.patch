@@ -1,0 +1,319 @@
+diff --git "a/HR_Agent\345\267\245\344\275\234\346\265\201.md" "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+index 693d954..1fafe18 100644
+--- "a/HR_Agent\345\267\245\344\275\234\346\265\201.md"
++++ "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+@@ -247,3 +247,12 @@ E复审执行契约：旧派发每次offer与切换共用锁；历史技术终
+ E审计补充（第二轮更正）：初始化、计数与切换命令在显式事务内设置2秒lock_timeout、3秒statement_timeout，后者约束已持有排他锁时的SQL；不保证网络/主机挂起的墙钟上限。实际生产计数及负载仍未验。当前回滚只承诺保留draining_cloud修复新链；legacy恢复因四边状态机缺少失败返回路径而延期，不再提供恢复接单的可执行步骤。附件与PM2停止顺序有绑定完整手册SHA的因果mock和负例，仍不证明实际主机已停止或可恢复。
+ 
+ E恢复与诊断补充：用户resume_search_turn创建新轮次，drain后作为新受理拒绝；v5 recovery可能续签业务工具授权，非停止轮询按旧链continuation受同事务闸门约束，停止与原身份观察回执保留。owner健康详情仅呈现HR API装配状态，worker_checked=false，公共liveness不证明HR可用；自动编排探针与生产告警仍须另行装配。CandidateUnavailable外部503契约保持，内部日志区分切换暂停与数据库故障且不含原异常或SQL。
++
++
++### 2026-09-13 上线修订（验收与发布结果另记）
++
++本轮新增 105，只为同一云端执行链增加 `draining_cloud -> cloud` 恢复入口；102/103/104 不改字节。使用原独占切换锁、原 request UUID 幂等规则和旧链零占用约束，允许云端原工作继续执行，既有 work/租约/成果不迁移。切换仍使用显式事务、2 秒 lock_timeout 与 3 秒 statement_timeout。旧执行器恢复不在本轮承诺内。
++
++HR readiness 分为 owner 审计接口 `/api/v1/manage/hr-readiness` 和常驻 Worker 的私有进程探针，实时核验迁移/权限、已装载配置和知识身份；公共 API health 不代表 HR 可用。可选的 0600 发布评审文件绑定 provider、budget、diagnostic 的准确内容，当前只支持 public-only，按保守估算扣记而不称实际费用；该文件不授予真实个人材料处理权限。
++
++专业角色补充逐事项、时间、来源和覆盖范围的证据一致性核对，区分明确未做、未记录、自述及独立验证；不把记录片段的问题数当整场总量，不把缺少独立经历直接当能力上限。历史语料提取只读保存私有原文，公开回放使用经审读改写和明确标记的新合成材料，旧答案不作金标；场景来源覆盖与 API/模型/故障实际执行结果分别披露。
+diff --git "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md" "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+index 5bac69b..73e0238 100644
+--- "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
++++ "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+@@ -315,3 +315,12 @@ E复审执行契约：旧派发每次offer与切换共用锁；历史技术终
+ E审计补充（第二轮更正）：初始化、计数与切换命令在显式事务内设置2秒lock_timeout、3秒statement_timeout，后者约束已持有排他锁时的SQL；不保证网络/主机挂起的墙钟上限。实际生产计数及负载仍未验。当前回滚只承诺保留draining_cloud修复新链；legacy恢复因四边状态机缺少失败返回路径而延期，不再提供恢复接单的可执行步骤。附件与PM2停止顺序有绑定完整手册SHA的因果mock和负例，仍不证明实际主机已停止或可恢复。
+ 
+ E恢复与诊断补充：用户resume_search_turn创建新轮次，drain后作为新受理拒绝；v5 recovery可能续签业务工具授权，非停止轮询按旧链continuation受同事务闸门约束，停止与原身份观察回执保留。owner健康详情仅呈现HR API装配状态，worker_checked=false，公共liveness不证明HR可用；自动编排探针与生产告警仍须另行装配。CandidateUnavailable外部503契约保持，内部日志区分切换暂停与数据库故障且不含原异常或SQL。
++
++
++### 2026-09-13 上线修订（验收与发布结果另记）
++
++本轮新增 105，只为同一云端执行链增加 `draining_cloud -> cloud` 恢复入口；102/103/104 不改字节。使用原独占切换锁、原 request UUID 幂等规则和旧链零占用约束，允许云端原工作继续执行，既有 work/租约/成果不迁移。切换仍使用显式事务、2 秒 lock_timeout 与 3 秒 statement_timeout。旧执行器恢复不在本轮承诺内。
++
++HR readiness 分为 owner 审计接口 `/api/v1/manage/hr-readiness` 和常驻 Worker 的私有进程探针，实时核验迁移/权限、已装载配置和知识身份；公共 API health 不代表 HR 可用。可选的 0600 发布评审文件绑定 provider、budget、diagnostic 的准确内容，当前只支持 public-only，按保守估算扣记而不称实际费用；该文件不授予真实个人材料处理权限。
++
++专业角色补充逐事项、时间、来源和覆盖范围的证据一致性核对，区分明确未做、未记录、自述及独立验证；不把记录片段的问题数当整场总量，不把缺少独立经历直接当能力上限。历史语料提取只读保存私有原文，公开回放使用经审读改写和明确标记的新合成材料，旧答案不作金标；场景来源覆盖与 API/模型/故障实际执行结果分别披露。
+diff --git a/backend/app/hr_agent/config.py b/backend/app/hr_agent/config.py
+index f8cbeac..d7ad55a 100644
+--- a/backend/app/hr_agent/config.py
++++ b/backend/app/hr_agent/config.py
+@@ -52,6 +52,7 @@ CUTOVER_MIGRATION_SHA256 = {
+     102: "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
+     103: "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+     104: "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
++    105: "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+ }
+ 
+ TABLES = (
+@@ -95,6 +96,8 @@ class HrAgentSettings:
+     lease_seconds: int = 60
+     heartbeat_seconds: int = 15
+     configuration_revision: str = ""
++    release_policy_file: Path | None = field(default=None, repr=False)
++    release_policy: dict = field(default_factory=dict, repr=False)
+ 
+     def create_codec(self) -> ContentCodec:
+         if not self.enabled or self.content_keyring_file is None:
+@@ -257,6 +260,26 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
+             raise ValueError()
+         if integer(budget.get("work_retention_seconds", 0)) <= 0:
+             raise ValueError()
++        identity = {"provider": provider, "budget": budget, "diagnostic": diagnostic}
++        policy_path, policy = None, {}
++        if environment.get(prefix + "RELEASE_POLICY_FILE"):
++            policy_path = path("RELEASE_POLICY_FILE")
++            if not policy_path.is_file() or stat.S_IMODE(policy_path.stat().st_mode) != 0o600:
++                raise ValueError()
++            policy = document("RELEASE_POLICY_FILE")
++            # This review grants public/synthetic work only. Real candidate
++            # authority remains a separate unconfigured boundary.
++            if (
++                set(policy) != {"version", "scope", "authorization_ref", "configuration_sha256", "usage_accounting"}
++                or type(policy["version"]) is not int or policy["version"] != 1
++                or policy["scope"] != "public-only"
++                or not isinstance(policy["authorization_ref"], str)
++                or not 1 <= len(policy["authorization_ref"].strip()) <= 256
++                or policy["configuration_sha256"] != hashlib.sha256(canonical_json(identity).encode()).hexdigest()
++                or policy["usage_accounting"] != "conservative_estimate_not_invoice"
++            ):
++                raise ValueError()
++            identity["release_policy"] = policy
+         settings = HrAgentSettings(
+             True,
+             provider,
+@@ -269,9 +292,11 @@ def load_hr_agent_settings(environment: Mapping[str, str]) -> HrAgentSettings:
+             heartbeat,
+             hashlib.sha256(
+                 canonical_json(
+-                    {"provider": provider, "budget": budget, "diagnostic": diagnostic}
++                    identity
+                 ).encode()
+             ).hexdigest(),
++            policy_path,
++            policy,
+         )
+         settings.create_codec()
+         return settings
+diff --git a/backend/hr_agent_knowledge/role.md b/backend/hr_agent_knowledge/role.md
+index df345fe..4f9d54d 100644
+--- a/backend/hr_agent_knowledge/role.md
++++ b/backend/hr_agent_knowledge/role.md
+@@ -36,6 +36,8 @@
+ 
+ 材料确实记载一句话，与那句话已被事实验证，是两种证据。候选人主动区分贡献或承认缺口，可以作为待核验线索，不能据此认定其诚实、未夸大或可信度已经证实。未提供某段记录不证明相应活动未发生；只有材料明确说明未做，才记为未做。回顾流程时保持这一区分，不能先断言执行缺失，再用后文的可能解释抵消。
+ 
++形成评价前，把每个判断限定到具体事项、发生时间、陈述者和材料覆盖范围，并核对全文中的证据状态是否一致。明确没做过、没有记录、自述做过、已由独立材料证实分别保留；同一事项不能在一处写明确未做、另一处写是否做过未知。片段中记下的问题数量只说明该片段，不扩展成整场活动的总量；未独立完成过一次任务是经历边界，不能直接推断其能力上限。不负责某事项也不证明由另一人主导。
++
+ 突出某个关键缺口不等于它是唯一要求；使用“唯一、全部、均无”等范围判断时，回到完整要求与证据核对其范围。推荐的核验手段应说明为何适合本次缺口及实施条件，不把优先选择写成唯一可能的证明方式。
+ 
+ 复盘区分本批材料里的具体观察、可能解释与下一步验证。某个人的一次失败不直接变成通用硬门槛；不能把候选人的原话、逐人评价或独特经历换个名字后写入岗位标准。涉及长期标准的调整只提出建议及适用边界，仍由用户审阅确认；来源包含个人材料时，按服务端限制处理，不删来源来绕过检查。
+diff --git a/backend/tests/test_hr_agent_foundation.py b/backend/tests/test_hr_agent_foundation.py
+index 14ba6d2..f120843 100644
+--- a/backend/tests/test_hr_agent_foundation.py
++++ b/backend/tests/test_hr_agent_foundation.py
+@@ -194,7 +194,7 @@ def test_config_reserves_full_unicode_read_capacity_before_start(tmp_path, input
+         loaded = make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+         assert loaded.provider_profile['context_window_tokens'] == input_capacity + 4096
+ 
+-@pytest.mark.parametrize("version", [102, 103, 104])
++@pytest.mark.parametrize("version", [102, 103, 104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+ def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+     from app.hr_agent.config import check_schema_ready
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 2ad2b0c..d68dbc8 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -222,6 +222,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "102_hr_execution_cutover.sql",
+             "103_hr_execution_drain_occupancy.sql",
+             "104_hr_execution_drain_terminal_contract.sql",
++            "105_hr_cloud_resume.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+@@ -505,15 +506,16 @@ def test_dirty_at_rest_receipt_is_never_cleanup_verified(tmp_path):
+         assert receipt["failure_code"] == "at_rest_not_clean"
+         assert receipt["cleanup_verified"] is False
+ 
++@pytest.mark.parametrize("version", [104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+-def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
++def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt, version):
+     with hr_agent_database(migrate_hr=False) as database:
+         preview_dsn = _prepare_preview_and_revoke(database)
+         with database.admin_connection() as c:
+             if receipt is None:
+-                c.execute("delete from platform_control.schema_migrations where version=104")
++                c.execute("delete from platform_control.schema_migrations where version=%s", (version,))
+             else:
+-                c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
++                c.execute("update platform_control.schema_migrations set sha256=%s where version=%s", (receipt, version))
+         private = tmp_path / "private"
+         private.mkdir()
+         (private / "control-migrator-database-url").write_text(database.migrator_dsn)
+diff --git a/backend/tests/test_hr_agent_preflight.py b/backend/tests/test_hr_agent_preflight.py
+index 5029389..bc21d6e 100644
+--- a/backend/tests/test_hr_agent_preflight.py
++++ b/backend/tests/test_hr_agent_preflight.py
+@@ -261,6 +261,7 @@ def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
+         102,
+         103,
+         104,
++        105,
+     ]
+     assert all(item["match"] for item in report["database"]["migrations"])
+     assert report["database"]["permissions_complete"] is True
+@@ -309,7 +310,7 @@ def test_cli_stdout_is_json_and_scrubs_raw_exceptions(tmp_path, capsys):
+     assert str(tmp_path) not in output
+ 
+ 
+-@pytest.mark.parametrize("version", [103, 104])
++@pytest.mark.parametrize("version", [103, 104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt, version):
+     knowledge = _knowledge(tmp_path / "knowledge")
+@@ -331,6 +332,7 @@ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, r
+     (102, "CUTOVER_MIGRATION"),
+     (103, "DRAIN_OCCUPANCY_MIGRATION"),
+     (104, "DRAIN_TERMINAL_MIGRATION"),
++    (105, "CLOUD_RESUME_MIGRATION"),
+ ])
+ @pytest.mark.parametrize("replace_ledger", [False, True])
+ def test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image(
+diff --git a/backend/tools/hr_agent/preflight.py b/backend/tools/hr_agent/preflight.py
+index c811a4f..6888f4e 100644
+--- a/backend/tools/hr_agent/preflight.py
++++ b/backend/tools/hr_agent/preflight.py
+@@ -41,6 +41,8 @@ DRAIN_TERMINAL_MIGRATION = (
+     Path(__file__).parents[2] / "control_migrations" / "104_hr_execution_drain_terminal_contract.sql"
+ )
+ 
++CLOUD_RESUME_MIGRATION = Path(__file__).parents[2] / "control_migrations" / "105_hr_cloud_resume.sql"
++
+ ATTACHMENT_KEYS = (
+     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
+     "PLATFORM_ATTACHMENT_S3_BUCKET",
+@@ -161,7 +163,10 @@ def _runtime_report(environment: dict[str, str]) -> tuple[dict | None, str | Non
+             ("diagnostic", "PLATFORM_HR_AGENT_DIAGNOSTIC_PROFILE_FILE"),
+         ):
+             profiles[label] = _file_fingerprint(environment[key])
++        if settings.release_policy_file is not None:
++            profiles["release_policy"] = _file_fingerprint(str(settings.release_policy_file))
+         report = {
++            "d7_product_approved": bool(settings.release_policy),
+             "configuration_fingerprint": settings.configuration_revision,
+             "hr_content_keyring_fingerprint": _file_fingerprint(
+                 environment["PLATFORM_HR_AGENT_CONTENT_KEYRING_FILE"]
+@@ -210,7 +215,7 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+         expected_migrations.update(CUTOVER_MIGRATION_SHA256)
+         image_digests = {}
+         for version, path in ((102, CUTOVER_MIGRATION), (103, DRAIN_OCCUPANCY_MIGRATION),
+-                              (104, DRAIN_TERMINAL_MIGRATION)):
++                              (104, DRAIN_TERMINAL_MIGRATION), (105, CLOUD_RESUME_MIGRATION)):
+             try:
+                 image_digests[version] = _fingerprint(path.read_bytes())
+             except OSError:
+@@ -407,11 +412,13 @@ def build_report(
+         database, database_blockers = _database_report(connection_factory)
+         blockers.extend(database_blockers)
+ 
+-    # No production assembly currently supplies these authorities. Metadata in a
+-    # profile or caller-provided booleans cannot manufacture either approval.
++    # A protected, configuration-bound operator review grants public work.
++    # A caller boolean or arbitrary provider metadata never grants authority.
+     if launch_scope == "full-candidate":
+         blockers.append("personal_processing_authorizer_absent")
+-    blockers.append("d7_product_approval_absent")
++    d7_approved = bool(api and worker and runtime_match and api["d7_product_approved"] and worker["d7_product_approved"])
++    if not d7_approved:
++        blockers.append("d7_product_approval_absent")
+     blockers = list(dict.fromkeys(blockers))
+     return {
+         "schema_version": 1,
+@@ -430,7 +437,7 @@ def build_report(
+             "process_functionality_verified": False,
+             "model_or_network_called": False,
+             "personal_processing_authorizer_present": False,
+-            "d7_product_approved": False,
++            "d7_product_approved": d7_approved,
+             "browser_acceptance_completed": False,
+             "release_window_known": False,
+         },
+diff --git a/deploy/cloud/compose.hr-agent.yaml b/deploy/cloud/compose.hr-agent.yaml
+index 7f462fb..b337a9b 100644
+--- a/deploy/cloud/compose.hr-agent.yaml
++++ b/deploy/cloud/compose.hr-agent.yaml
+@@ -9,6 +9,7 @@ services:
+       PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE: /run/hr-agent-secrets/hr-provider-profile.json
+       PLATFORM_HR_AGENT_BUDGET_PROFILE_FILE: /run/hr-agent-secrets/hr-budget-profile.json
+       PLATFORM_HR_AGENT_DIAGNOSTIC_PROFILE_FILE: /run/hr-agent-secrets/hr-diagnostic-profile.json
++      PLATFORM_HR_AGENT_RELEASE_POLICY_FILE: /run/hr-agent-secrets/hr-release-policy.json
+       PLATFORM_HR_AGENT_KNOWLEDGE_DIR: /data/hr-knowledge
+       PLATFORM_HR_AGENT_WORK_DIR: /data/hr-work
+     volumes:
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 1648337..1a45b03 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -188,6 +188,7 @@ class Supervisor:
+             (102, "102_hr_execution_cutover.sql"),
+             (103, "103_hr_execution_drain_occupancy.sql"),
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
++            (105, "105_hr_cloud_resume.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+diff --git a/docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md b/docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md
+index 62e6ae7..4157997 100644
+--- a/docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md
++++ b/docs/runbooks/2026-09-11-hr-cloud-loop-cutover.md
+@@ -1,6 +1,6 @@
+ # HR 云端 Loop 部署与切换手册（E1c）
+ 
+-本文提供可审阅的操作路径，不授予执行权限。当前发布窗口、真实候选人模型服务及隐私决定、D7 延迟/成本取舍、独立 HR 飞书去向均未知；浏览器验收也未完成。在这些事项分别取得明确决定和证据前，只能做本地或隔离的公开/虚构材料验证，不能切换真实 HR 受理或发送真实个人材料。
++本文提供可审阅的操作路径，执行权限来自当前任务。2026-09-13 用户明确要求“直接做到上线”、排除飞书，并授权从 HR 历史 session 提取问题做真实场景验证；该授权覆盖必要的 HR 与附件维护暂停。执行时仍须记录具体时间、准确镜像/配置、原执行器身份及共享 API 影响。真实候选人模型服务及保留/训练处理规则尚未完整确认，当前可装配的发布策略仅允许公开/已审阅合成场景，真实个人材料授权回调保持关闭。D7 采用单独受保护的发布评审文件绑定当前 provider/budget/diagnostic 内容，不能靠修改 profile 自称获准。浏览器、生产和真实场景验收分别记录实际结果；此处不预先宣布上线通过。
+ 
+ ## 1. 不可合并的两个发布
+ 
+@@ -288,20 +288,20 @@ PY
+ 
+ 上一轮operations-final-1属于历史中间运行，仅覆盖当时的30秒命令和旧恢复假设；不能套用到本版3秒持锁上限与恢复延期路线。新的运维回执必须绑定本版准确runbook SHA，并分别列出已执行和未覆盖的fenced块。
+ 
+-迁移后再次运行带数据库的 preflight。096–104 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
++迁移后再次运行带数据库的 preflight。096–105 任一缺失/checksum 不符、102 gate 未初始化或权限不符时保持 HR disabled。
+ 
+ ## 5. 隔离启动与验证
+ 
+ 迁移和 provisioning 完成后，可先启动 production 服务但保持 102 gate 为 `legacy`，因此云端新 root admission 会被拒绝：
+ 
+ ```bash
+-"${hr_compose[@]}" up -d --force-recreate platform-api platform-hr-agent-worker
++"${hr_compose[@]}" up -d --no-deps --force-recreate platform-api platform-hr-agent-worker
+ "${hr_compose[@]}" ps platform-api platform-hr-agent-worker
+ ```
+ 
+ 预激活阶段只执行不创建工作的检查：
+ 
+-1. 先以真实platform owner身份读取并留存 `GET /api/v1/manage/system-health` 的 `dependencies.services.hr_agent`：api_ready须为true，worker_checked仍为false。api_ready仅是API启动装配快照，不是实时数据库、Worker或业务探针；随后仍须执行带数据库preflight。再用真实认证且有HR权限的用户读取 `GET /api/hr/agent/configuration` 和 `GET /api/hr/agent/knowledge?kind=method`，核对身份、HR权限和实际知识读取。自动compose HR探针本轮延期，共享平台 `/api/health` 只表示公共liveness，不能代替以上前置，也不能声称发布或HR已可用。
++1. 先以真实 platform owner 身份读取并留存 `GET /api/v1/manage/hr-readiness`：HTTP 200、ready 为 true，检查实时数据库迁移/权限、知识与已装配配置的身份；此时 phase=legacy，new_admission_enabled 为 false。该接口受 owner 授权和审计保护，不使用公共 health 代替。随后执行准确 Worker 容器内 `python -m app.hr_agent.worker healthcheck`，要求私有 Unix socket 返回常驻进程的 PID/start/nonce、实时依赖及持续工作进度；compose healthcheck 使用同一命令。API 与 Worker 的 release_sha、configuration_sha256、knowledge 身份必须匹配，另外按 preflight 比对附件装配。再由真实认证且有 HR 权限的用户读取 `GET /api/hr/agent/configuration` 和知识目录，验证实际身份边界。共享 `/api/health` 仍仅表示公共 liveness。
+ 2. 检查 API/Worker 容器使用预期 image、配置/knowledge 指纹，且 Worker 在没有 cloud-lane continuation 时保持空闲。进程存在只证明 supervisor 状态。
+ 3. 不提交 public canary work：`legacy` gate 正确拒绝 cloud root admission。在 production gate 仍为 `legacy` 时强行创建 canary 会绕过切换契约。
+ 
+@@ -318,7 +318,7 @@ PY
+ 
+ ## 6. 切换、排空与回滚
+ 
+-切换前需产品负责人确认具体窗口、用户影响、执行责任人、独立 HR 飞书去向，以及真实候选人模型/保留/日志和 D7 取舍。未确认时 public 102 保持 `legacy`，旧链接单，新链仅隔离测试。
++本轮执行授权与范围见本文开头。实际切换时记录窗口时间和执行者，按当前公开/合成范围运行，飞书不作前置；真实候选人处理在规则未配置时仍关闭。发布评审文件须与实际 API/Worker 配置一致，不能用 public-only 预检证明完整候选人工作可用。
+ 
+ 获准后按 102 状态机执行：
+ 
+@@ -331,7 +331,7 @@ PY
+ 
+ 1. `cloud -> draining_cloud`，立即关闭云端新 root admission；云端 Worker 继续领取/恢复该 lane 已 accepted/queued 的 work 及派生 parse/candidate work。
+ 2. 按 owner/work/source 身份让新链 continuation 完成或明确取消，直到非终态计数为 0；保留已保存成果、确认标准和材料。不得笼统停止认领而把 accepted 工作滞留在队列。
+-3. 当前承诺的唯一恢复终点是保持 `draining_cloud` 修复新链。旧链恢复按§6.2延期，本文不提供可执行恢复或回切路线。数据库四边状态机不代表能随时撤销；不得先切legacy再用draining_legacy伪装为可逆回滚。
++3. 在 `draining_cloud` 修复新链并验证配置、知识、实时依赖及已有 work 归属后，使用上节相同的 3 秒事务切换命令，以新 request UUID 指定 `cloud`。新增 105 只增加 `draining_cloud -> cloud` 同链恢复，允许原云端工作仍在执行，继续要求旧链占用为零；不改 work、租约或历史成果。并发同 UUID 只产生一份回执，其他目标重放拒绝。102/103/104 原字节保留；旧执行器恢复仍按§6.2延期，不得先切legacy再用draining_legacy伪装为可逆回滚。
+ 4. 附件热修复后的旧附件 Worker始终保持停止。HR 回滚绝不能恢复它，即使当前 release 或通用 deploy 失败。
+ 
+ 所有状态切换使用唯一 transition request id，记录前后 epoch/row_version 和只读计数；不得直接 UPDATE 102 表或伪造“零在途”。

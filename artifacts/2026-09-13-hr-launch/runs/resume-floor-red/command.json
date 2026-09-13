@@ -1,0 +1,26 @@
+{
+  "head": "482a43fc34123df73c4c85a46acd63f7139e343f",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_agent_foundation.py",
+    "-k",
+    "exact_cutover and 105",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T02:24:23.715732+00:00",
+  "source_patch_sha256": "0ffa317d4f65a72ce5a44fd12a2bce12d091add027de40cbacc4e2425e7a4ad2",
+  "untracked_source_snapshots": {
+    "backend/app/hr_agent/readiness.py": "fc799033b43e2111713c694ac1eb4f0af5cc6e43bcd5442d7d927dffb5c65630",
+    "backend/control_migrations/105_hr_cloud_resume.sql": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+    "backend/tests/test_hr_agent_readiness.py": "0ce3638d069c3f366b6ff278853a2db2d60efa0fa56fecee26ae5589380e0c5e",
+    "backend/tests/test_hr_agent_worker_health.py": "a3d0ed5575a263e64bcc866c1feaa4e1dc41415b2268af63391fbc47a4f46262",
+    "backend/tests/test_hr_cloud_resume.py": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a"
+  },
+  "boundary": "Local synthetic fixtures; each test documents substituted boundaries; no production or model call",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T02:24:25.903793+00:00"
+}

@@ -1,0 +1,12 @@
+{
+  "captured_at": "2026-09-13T02:12:15.127281+00:00",
+  "source_sha256": "5661d11c818e4c39861d68dfb12860cb4e664cdf7fb316f4cfb41daa7194780b",
+  "raw_sha256": "758028232e16af6d8dc11d9fabc88ff2232eb639808e192bda319a002ea1fd7e",
+  "scope": "all HR direct-agent sessions, active and archived, user messages only",
+  "sessions": 21,
+  "users": 1,
+  "user_messages": 22,
+  "private_raw_retained": true,
+  "production_writes": false,
+  "exit_code": 0
+}

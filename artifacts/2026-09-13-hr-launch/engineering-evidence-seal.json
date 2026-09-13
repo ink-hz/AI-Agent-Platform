@@ -1,0 +1,1278 @@
+{
+  "scope": "Existing launch engineering runs and independent reviews; failures and historical limits retained",
+  "files": {
+    "artifacts/2026-09-13-hr-launch/frontend-existing/triage.md": {
+      "sha256": "2d0697d7745994c4d876c7cde5a2c079455f7d6e09164d9d4e80812b0d31a3fd",
+      "bytes": 5362
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/current-three-1.log": {
+      "sha256": "5b0a80182e4438988788b27ec15705ea0a9b32971721dcdaeaadfa9a7792a6b2",
+      "bytes": 7976
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/baseline-byte-check.json": {
+      "sha256": "5353ce025fc8f631bcfe5023308364460dfc770c8c79ec788d3f66b50cbb2d3c",
+      "bytes": 2109
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/current-three-1.json": {
+      "sha256": "66e7d8605095f934af647f45841f8fbe71414cf6a0c8d84c7fce22ff908dde78",
+      "bytes": 1390
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/fingerprints.json": {
+      "sha256": "005b8a4c2af4fb7fe726fb8879f032bd40c39fe5ca29ad2bd5ea2332ff2d0fb0",
+      "bytes": 1279
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/source/webui/package-lock.json": {
+      "sha256": "50aa54a6072b56270f10d9a7a752dbada5dfbc3455298f697c9e8eba5731805b",
+      "bytes": 199635
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/source/webui/package.json": {
+      "sha256": "a3793ce306fa569a0600deb9be1b4668ec8f8c61c8eed056907860e2c57dba61",
+      "bytes": 782
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/source/webui/src/styles.css": {
+      "sha256": "6503ac2b267ccf1e73164757dcb1d2e0bdc0da0d0bc8a9e18f55d7e7d4f00308",
+      "bytes": 286394
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/source/webui/src/styles.test.ts": {
+      "sha256": "4d592f98d02aabb6df6b4e16cc85d07da01cf37bd6b0c3dd4712cb62a35ce7bf",
+      "bytes": 26583
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/source/webui/src/workspaces/hr/HrKnowledgePanel.tsx": {
+      "sha256": "54aa0071478d759771f3a009da8751930d5aff28689300951e6900889b809d7f",
+      "bytes": 4249
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/source/webui/src/workspaces/hr/HrPositionPicker.tsx": {
+      "sha256": "89819157e532c25dae196dad2a0935382002556ca7f5b96d9bc44f3a9034b52c",
+      "bytes": 5487
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/source/webui/src/workspaces/hr/HrWorkspaceShell.tsx": {
+      "sha256": "9928a69d5957e3452432fb920719e5603fe2f6fe2f1d8743a7f1f880324228a3",
+      "bytes": 2381
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/source/webui/src/workspaces/hr/HrWorkspacePage.tsx": {
+      "sha256": "a83a591c9c50f23ad017a1daee214db5a403cd9cc721695bb4c840e0dfe8fe1b",
+      "bytes": 10757
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/report.md": {
+      "sha256": "3abadb6bebf3fe3ec05f4fc9f5d0656436ea746aad5e535341d500589ca21353",
+      "bytes": 3327
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/final-source.patch": {
+      "sha256": "1021eee1e46f3e59625b894bd328b88838576116bf742b9d935c04e9c8d045e1",
+      "bytes": 25114
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/fingerprints.json": {
+      "sha256": "43b997319dccbfb6eabe78bc84ef05b9bf149e920eb26b5ba7a7cc0836fc29c5",
+      "bytes": 4660
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/run_check.py": {
+      "sha256": "d37a66644d6b0a7bc8e81668b3bbd42183b6baa4246e016bedc30133666f4bea",
+      "bytes": 1241
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-components-1/output.log": {
+      "sha256": "f2ac091dc3e51bd8830ffa6fc1f89f615b5f9a7cba85d4dfa96de976704ec27f",
+      "bytes": 1713
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-components-1/command.json": {
+      "sha256": "afd5f8cd478f4e64baff1671d17a4dc77a1c50a8f303cefc4289d237e61c189b",
+      "bytes": 1368
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-components-1/source/webui/src/styles.css": {
+      "sha256": "4afce04eeab5349726de8bf47f116860fe0801f0d3380b8bd6cd120ab32660f5",
+      "bytes": 286394
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-components-1/source/webui/src/styles.test.ts": {
+      "sha256": "c56de5aeab65893d95f34a527fbf89c491ac5c4059445d6c58241b5e15e5ed9a",
+      "bytes": 29235
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-components-1/source/webui/src/workspaces/hr/hrResearch.css": {
+      "sha256": "c54b66f0ba1bfe4d7657ca8a937b1e287ffba9410ac2847d0d784b0b9e6ba618",
+      "bytes": 7021
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-components-1/source/webui/src/workspaces/hr/HrLoopWorkspace.css": {
+      "sha256": "35cee5b884b71d0485164f1df0e046c8bde2d222411689e6ba0031a919caac31",
+      "bytes": 7797
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-components-1/source/webui/src/workspaces/hr/hrCompanyIntelligence.css": {
+      "sha256": "3ed312a638c1317eadd9a828a9b73c09912083a68212ae5f05e3b6f4ad5b61bb",
+      "bytes": 8066
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-intelligence-components-1/output.log": {
+      "sha256": "ec05051b108226b896ef503633ac5e3f9ef29afef6928dbd4593f20d5b7d2b9e",
+      "bytes": 575
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-intelligence-components-1/command.json": {
+      "sha256": "91758bea2bb8b77b1d9a00590874758b41c4e9f6170c29b41982523a32858587",
+      "bytes": 1045
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-intelligence-components-1/source/webui/src/styles.css": {
+      "sha256": "4afce04eeab5349726de8bf47f116860fe0801f0d3380b8bd6cd120ab32660f5",
+      "bytes": 286394
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-intelligence-components-1/source/webui/src/styles.test.ts": {
+      "sha256": "c56de5aeab65893d95f34a527fbf89c491ac5c4059445d6c58241b5e15e5ed9a",
+      "bytes": 29235
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-intelligence-components-1/source/webui/src/workspaces/hr/hrResearch.css": {
+      "sha256": "c54b66f0ba1bfe4d7657ca8a937b1e287ffba9410ac2847d0d784b0b9e6ba618",
+      "bytes": 7021
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-intelligence-components-1/source/webui/src/workspaces/hr/HrLoopWorkspace.css": {
+      "sha256": "35cee5b884b71d0485164f1df0e046c8bde2d222411689e6ba0031a919caac31",
+      "bytes": 7797
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-intelligence-components-1/source/webui/src/workspaces/hr/hrCompanyIntelligence.css": {
+      "sha256": "3ed312a638c1317eadd9a828a9b73c09912083a68212ae5f05e3b6f4ad5b61bb",
+      "bytes": 8066
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-styles-1/output.log": {
+      "sha256": "717b9b5d7fff83f6ae1b82cc2243815f889e7a64b49c50f5d39af008454ee611",
+      "bytes": 403
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-styles-1/command.json": {
+      "sha256": "29e89af56d6425da6a9eea7428bf7c72e89fc5844eb26a46dad54a8c80d2d8e0",
+      "bytes": 966
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-styles-1/source/webui/src/styles.css": {
+      "sha256": "4afce04eeab5349726de8bf47f116860fe0801f0d3380b8bd6cd120ab32660f5",
+      "bytes": 286394
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-styles-1/source/webui/src/styles.test.ts": {
+      "sha256": "c56de5aeab65893d95f34a527fbf89c491ac5c4059445d6c58241b5e15e5ed9a",
+      "bytes": 29235
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-styles-1/source/webui/src/workspaces/hr/hrResearch.css": {
+      "sha256": "c54b66f0ba1bfe4d7657ca8a937b1e287ffba9410ac2847d0d784b0b9e6ba618",
+      "bytes": 7021
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-styles-1/source/webui/src/workspaces/hr/HrLoopWorkspace.css": {
+      "sha256": "35cee5b884b71d0485164f1df0e046c8bde2d222411689e6ba0031a919caac31",
+      "bytes": 7797
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-styles-1/source/webui/src/workspaces/hr/hrCompanyIntelligence.css": {
+      "sha256": "3ed312a638c1317eadd9a828a9b73c09912083a68212ae5f05e3b6f4ad5b61bb",
+      "bytes": 8066
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-tsc-1/output.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-tsc-1/command.json": {
+      "sha256": "9f3891e9281dd4ba115db601a1eb8eff2635d9f670706eb44bd938666329f670",
+      "bytes": 926
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-tsc-1/source/webui/src/styles.css": {
+      "sha256": "4afce04eeab5349726de8bf47f116860fe0801f0d3380b8bd6cd120ab32660f5",
+      "bytes": 286394
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-tsc-1/source/webui/src/styles.test.ts": {
+      "sha256": "c56de5aeab65893d95f34a527fbf89c491ac5c4059445d6c58241b5e15e5ed9a",
+      "bytes": 29235
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-tsc-1/source/webui/src/workspaces/hr/hrResearch.css": {
+      "sha256": "c54b66f0ba1bfe4d7657ca8a937b1e287ffba9410ac2847d0d784b0b9e6ba618",
+      "bytes": 7021
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-tsc-1/source/webui/src/workspaces/hr/HrLoopWorkspace.css": {
+      "sha256": "35cee5b884b71d0485164f1df0e046c8bde2d222411689e6ba0031a919caac31",
+      "bytes": 7797
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/green-tsc-1/source/webui/src/workspaces/hr/hrCompanyIntelligence.css": {
+      "sha256": "3ed312a638c1317eadd9a828a9b73c09912083a68212ae5f05e3b6f4ad5b61bb",
+      "bytes": 8066
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/red-hr-fonts-1/output.log": {
+      "sha256": "105cb12a41e64a2afae3e30b2e60151a7138a4efcd19a99d205d1314cda2d0fd",
+      "bytes": 6153
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/red-hr-fonts-1/command.json": {
+      "sha256": "a7e363cd3e2f1f55ccede68b606fed3f64ecb686c0f9cc9e12ad4745acc3137f",
+      "bytes": 1021
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/red-hr-fonts-1/source/webui/src/styles.css": {
+      "sha256": "6503ac2b267ccf1e73164757dcb1d2e0bdc0da0d0bc8a9e18f55d7e7d4f00308",
+      "bytes": 286394
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/red-hr-fonts-1/source/webui/src/styles.test.ts": {
+      "sha256": "ecfa899e320d995684eccbbbeaab3bbec5bf3b3cd4d81bb19f1958fa1969ab0a",
+      "bytes": 27306
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/red-hr-fonts-1/source/webui/src/workspaces/hr/hrResearch.css": {
+      "sha256": "068e9afb0c4c2f7efcedce1cd32f5acf21ab64830ced6a207e4eb09b61dd6df0",
+      "bytes": 7021
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/red-hr-fonts-1/source/webui/src/workspaces/hr/HrLoopWorkspace.css": {
+      "sha256": "3d973a1bf8d93b8a4bc8ca75ac632169259101857b19fd09243c8dcfb38471d1",
+      "bytes": 7797
+    },
+    "artifacts/2026-09-13-hr-launch/frontend-existing/style-fix/red-hr-fonts-1/source/webui/src/workspaces/hr/hrCompanyIntelligence.css": {
+      "sha256": "c869dd57907e665cbd39b25b97383ee11e0eee3b9e8f53cba96e00412e273151",
+      "bytes": 8066
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/report.md": {
+      "sha256": "e080bc268dbd2977b7d1c84a0be2e9cca371537f71b95263a1f7e49f066d9b1f",
+      "bytes": 2017
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/merge-inputs.json": {
+      "sha256": "b6665d5d5234a771f652adb64efd2674a2e4290bda06f3dd33a8963b62c1abd8",
+      "bytes": 661
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021307227447Z-typescript.log": {
+      "sha256": "c5194538e6c42e8b4337043e0d15a05102c44724d404c4eaaf134471ce9ca47e",
+      "bytes": 136
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/stage-3-HrPositionIndex.test.tsx": {
+      "sha256": "401d8ef2defe613468c66499d95d33ce7e985bbcaa01806db95d2fbc3ce626c6",
+      "bytes": 1191
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021122369118Z-red.log": {
+      "sha256": "da70fac741cf537c01d608ea63777bc18aeeb5490d2e7dbfe298d2a4afb6a9fa",
+      "bytes": 6176
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/resolved-index.json": {
+      "sha256": "4b13cfd32d3a6c2619b5b00dd0ee5201e153c30621696476e1dce8e9b8f40dc0",
+      "bytes": 520
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021214317179Z-green.log": {
+      "sha256": "70ffa0d1687f349735a5eea57b38ebbb73564ce418701407b3ae476736e5a6cc",
+      "bytes": 1098
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/stage-1-HrPositionIndex.tsx": {
+      "sha256": "7e2807114b5c4610d5158ff01c1d6501dc5d2297a35c2faf910ecf3dea4ece93",
+      "bytes": 2135
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/stage-2-HrPositionIndex.tsx": {
+      "sha256": "5f8c4dd4f80dee59397466ced2cd2345dd2a9c65275ed664ab1a3074646eb390",
+      "bytes": 13701
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/stage-3-HrPositionIndex.tsx": {
+      "sha256": "99cbb79dc16a2336d76b40c5131e2e3d1ae4fd4620a2615ce8981e0b12c63bae",
+      "bytes": 3767
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/stage-2-HrPositionIndex.test.tsx": {
+      "sha256": "9eb5928729b2eeaa9ba7fd952617345e2b6424e3d6b195dade4e25574639a1fb",
+      "bytes": 13749
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021122369118Z-red/changes.patch": {
+      "sha256": "c1a587752bd77fa5bcfabc334e9075c4ffcbe1979f406db30e9e82c7dd4f4a58",
+      "bytes": 3901
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021122369118Z-red/source-sha256.json": {
+      "sha256": "f17a83d3716d73639f3c4b83fc9f7f2e5245ff386ba9c04d5cb881f08c4b6b8d",
+      "bytes": 193
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021122369118Z-red/HrPositionIndex.test.tsx": {
+      "sha256": "2fc98095e3bb68c489b1686ee0e8580172c54daa88f06be8c69878cbb63d2725",
+      "bytes": 17395
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021122369118Z-red/HrPositionIndex.tsx": {
+      "sha256": "5f8c4dd4f80dee59397466ced2cd2345dd2a9c65275ed664ab1a3074646eb390",
+      "bytes": 13701
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021214317179Z-green/changes.patch": {
+      "sha256": "4972474683bc7e4b5dee7cd77c3b9644c96557d0be270cf5b8eca3629f1bfbe5",
+      "bytes": 9439
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021214317179Z-green/source-sha256.json": {
+      "sha256": "9e60c1eb01c67460af1c7cb6fe4133c5d2a2c7157473147546450ec6e3bb2724",
+      "bytes": 193
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021214317179Z-green/HrPositionIndex.test.tsx": {
+      "sha256": "2fc98095e3bb68c489b1686ee0e8580172c54daa88f06be8c69878cbb63d2725",
+      "bytes": 17395
+    },
+    "artifacts/2026-09-13-hr-launch/merge-ui/20260913T021214317179Z-green/HrPositionIndex.tsx": {
+      "sha256": "f44d2bbb94e5a36730bb189b0321f72cc38609fb529bfb80bc8abf68370d00cc",
+      "bytes": 14782
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/real-postgres-slow-count.json": {
+      "sha256": "48d14979b99d6076f0ea89908e045c99f2037e0b5b13d4e5a0c51039a2dc055c",
+      "bytes": 575
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-missing_approval/result.json": {
+      "sha256": "4dc55570761e8a71892f04c4ab6a733a48f42c1cf4c7bce4143c4b3cf0894984",
+      "bytes": 1507
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-missing_approval/executed.sh": {
+      "sha256": "86e2b11d36efda4ededd17d8c6999670a66c96be49e7300bf939cae8d30c1a11",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-stop_no_effect/result.json": {
+      "sha256": "f5119bdd6530468655541dd4fd0255134dc46f0d4202cfe6283cdca3ee306024",
+      "bytes": 2228
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-stop_no_effect/executed.sh": {
+      "sha256": "a8fc3582aa8046268f0b0e2fdf020712d854119cf49c379ead86cc4d68e00448",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-success/result.json": {
+      "sha256": "ddd54e495e766a087219e4bce868466ccdb073fc8a70f04cca0e199064abae6f",
+      "bytes": 1060
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-success/pm2-stop-receipt.json": {
+      "sha256": "0d8d94cea6892c70d7d4c0f3355b0f13479915c80847afa8157e23d69d851b66",
+      "bytes": 490
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-success/executed.sh": {
+      "sha256": "c00f566d1711eae6f90c0cc61c1bcd56b217ebd1323baf665e2629407f3271b2",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-peers_changed/result.json": {
+      "sha256": "71057bb2cc5ec5ddc258021c66dbce7b97fa1e51fb492ca0bbc99d0bdf6400b8",
+      "bytes": 1306
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-peers_changed/executed.sh": {
+      "sha256": "f0cdf430626903ccaa311b46b4431c6902a6cee2369c6994aab5c76c944a18a5",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-ledger_failure/result.json": {
+      "sha256": "9733578a28ddcf7b8057e9db3ff7dbd6a799e0014671d2fc2a9c431834e0353f",
+      "bytes": 4272
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-ledger_failure/executed.sh": {
+      "sha256": "2c5a3d1a8bf704211a6cc7f3c3c79ba8a5454ea80a004056c7bc68535d2ca96b",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-wrong_started_image/result.json": {
+      "sha256": "7f105cbde1084f5403db8a799e2771863c867d66eb11ba62ac89d9893b5cb7a5",
+      "bytes": 5184
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-wrong_started_image/executed.sh": {
+      "sha256": "d36d0035f257a6222d370b238f56228f567d231fb7d89c6db12f2b3c8c5f8efd",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-save_failure/result.json": {
+      "sha256": "41ea06f487f79b3b5d8e19ee2625f1c8b138269db4f220899812e77ca3b580e8",
+      "bytes": 1066
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-save_failure/executed.sh": {
+      "sha256": "779e5e9196f8281e5ee2f8b13e2a1edddc14890a5e9b23063c343e571a0368df",
+      "bytes": 3804
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-wrong_runbook/result.json": {
+      "sha256": "626ffc1af0cd989fdff8f7b37b89fec0edf58cdf7085f38ad9b2e7cc73d18c81",
+      "bytes": 697
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-wrong_runbook/executed.sh": {
+      "sha256": "95113c51542157b9f3aec8bea101f812f37a603f7c6770ccec8d4f9121bc86df",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-delete_failure/result.json": {
+      "sha256": "e453f8aeb8658c9d95a5ce767075d6d444cbe551c0a41f605000007cf72770c7",
+      "bytes": 852
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-delete_failure/executed.sh": {
+      "sha256": "a5e67369118a81cd20861b52c7877e3fcc2a0febeaa14a8b81a47cbde7ce6fa9",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-wrong_state/result.json": {
+      "sha256": "9a793e6478b4c1f01545f47b1ab389957bbc6b3ab495254a653418e910b315a0",
+      "bytes": 863
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-wrong_state/executed.sh": {
+      "sha256": "a157704503ed4a016dec0566748c9a26db3cb759deb73a02c24bbe7f8f772663",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-wrong_host/result.json": {
+      "sha256": "a6a4a90f582cab068e717d03ea11b6bdfd4d9ec53ad9a849618393dd8903c445",
+      "bytes": 693
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-wrong_host/executed.sh": {
+      "sha256": "8fcac9fb62e1fb88dda5879cbf11aa5d8166ad8da6022450d3b498071875f1e1",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-wrong_wrapper/result.json": {
+      "sha256": "e9a2e2b8e4904fbad5298b661dee3d11ce9adce9d1b9065e82d060c566de46f3",
+      "bytes": 697
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-wrong_wrapper/executed.sh": {
+      "sha256": "84eedbcd02111d64f993a5445d642cae8ed5113a840235b5c199039a387fbd74",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-start_failure/result.json": {
+      "sha256": "d67b4b31f46d3ea4fd428dc39c8eb1aafb5ec17f7eba3d95fdaadd8649574506",
+      "bytes": 4692
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-start_failure/executed.sh": {
+      "sha256": "af383324c765ee78bb6261ae43a1d51b764a7d389e4bc2dcd20b10e3d153691c",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-reused_evidence/result.json": {
+      "sha256": "0c1f8c23e5bd443932cfb071291754113cc8e15130cfcf4b4c6d07b3f22702bb",
+      "bytes": 698
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-reused_evidence/executed.sh": {
+      "sha256": "ee288eb6956186a2cc6e0b605960f4387d41553bce271eb55dbf0e8fe561883a",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-stop_failure/result.json": {
+      "sha256": "876da635f04e8bede6c3da2b75d5617d25d05df9b9d4d9988f3a3efb708fbda6",
+      "bytes": 2104
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-stop_failure/executed.sh": {
+      "sha256": "05b3050f51f4eaf426658e23849e347b60269ceb1c049120732730d1a8d0350d",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-source_mismatch/result.json": {
+      "sha256": "537d1f36f025c5ad3b742fdc3093fbadfce0bee3c9571f103ccc3f332ff615dc",
+      "bytes": 1702
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-source_mismatch/executed.sh": {
+      "sha256": "9b928108cd3eb2d0c675af2dfcd5f506083e460f5befe4e4b159a8b3789c2858",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-delete_no_effect/result.json": {
+      "sha256": "01063d915b11c15dddb52d6486f5bbf5736a6455c16a99b48d9332e91d35511c",
+      "bytes": 933
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_LEGACY_STOP-delete_no_effect/executed.sh": {
+      "sha256": "2147e7812f92fb78f8a70dedddd3ce761945abb05633be9ab8a15ccc982df243",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-wrong_config_image/result.json": {
+      "sha256": "c22ca5f2e962408480e9db418f0b17845403129ff71941f63538735a2398b2ed",
+      "bytes": 1275
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-wrong_config_image/executed.sh": {
+      "sha256": "f4dbc00d6bec868e05293f0baa803992f8f6a4ac72d77f2ae9a821c896de21f8",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-success/result.json": {
+      "sha256": "512f04bf5ca2a81e84a1901365565add5ab85d004a4fd2785d9b4b36b175aba6",
+      "bytes": 4743
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-success/attachment-hotfix-receipt.json": {
+      "sha256": "d3cff6848067d6176d111569d028080adb0d5453dddbe00be77636b7e3e78e57",
+      "bytes": 936
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-success/executed.sh": {
+      "sha256": "0ff6dd096d5ffd10242835b32f1e7f778768fc62825c1e6423de2d942826a631",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-migration_failure/result.json": {
+      "sha256": "e20bafc81c0972eb0233f97198d3ef501e28aacf2d17efac05f97122e2227b86",
+      "bytes": 3130
+    },
+    "artifacts/2026-09-13-hr-launch/operations-confirmed-1/HR_ATTACHMENT_HOTFIX-migration_failure/executed.sh": {
+      "sha256": "3dc39e2f45729a8744b7ac1ced727d8fdeb427d1c73517aa55684dc42d7c9e91",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-missing_approval/result.json": {
+      "sha256": "6bfb72a8e96abc752d1d0cc9a076a9d2c960eb2512aa5b78aafb2b5b15572392",
+      "bytes": 1507
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-missing_approval/executed.sh": {
+      "sha256": "1edf3b99aaacbd97d999681dda8e4a97e61086af1f946b41a6778d773b1ca0c8",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-stop_no_effect/result.json": {
+      "sha256": "3f122b2b386344d412bb4edbe1b205810908b0699075f7be22f67751859b93c1",
+      "bytes": 2228
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-stop_no_effect/executed.sh": {
+      "sha256": "eb8b723b36b5d3e3c06275e0b7689b35337a5a509a10ec84bfaa7d66cdec4bd5",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-success/result.json": {
+      "sha256": "a6948ccfdf98141c1842b0d52a24cd44fd9bb29f4943b26d27404293061499c7",
+      "bytes": 1060
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-success/pm2-stop-receipt.json": {
+      "sha256": "bee96202d7c7b5a7f0fe49728762c6279e647526ee085bb8fb2b37b11fc51455",
+      "bytes": 490
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-success/executed.sh": {
+      "sha256": "b36458c4b68b8172d41c74e5c26f1b573be172e21c35b3502ed851e29a06d616",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-peers_changed/result.json": {
+      "sha256": "49602bf4929678a51947a8b4fcdf79a0a8eb1b011bf9ba1c2f750170f3efa9ca",
+      "bytes": 1306
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-peers_changed/executed.sh": {
+      "sha256": "bac1a63b31c4752701f3792fa7779c19ee14253b18b20b78540b7a7e5612147a",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-ledger_failure/result.json": {
+      "sha256": "988f51fa286d0fc3b2b7bf3968bbbae451eb557aec08619eacb69827ff41763d",
+      "bytes": 4272
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-ledger_failure/executed.sh": {
+      "sha256": "51f4ec96f1a58a96233816e384f8e1a2afaea57b50a06cc6171fefa3b883e626",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-wrong_started_image/result.json": {
+      "sha256": "e209482dacc487011385aca268682dc1d07bc20d5feb284105621d1141979dcb",
+      "bytes": 5184
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-wrong_started_image/executed.sh": {
+      "sha256": "8b2ab2f60700d45b07b71b332f771f35c57e2d9d1b16de88ee403484120b572b",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-save_failure/result.json": {
+      "sha256": "1acbe05d3436579e6bb6e3282cb8a6ad08f38d6e68dce5ff09f7d824ae4f523b",
+      "bytes": 1066
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-save_failure/executed.sh": {
+      "sha256": "5f19d490b7f13f30a470710a9653a7c9f97a316e01abf6361b04fa8847d88c9e",
+      "bytes": 3804
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-wrong_runbook/result.json": {
+      "sha256": "16d5f868f36348a86b55e9f0328849ad1ce40f282101d2fe29522261ed6055e8",
+      "bytes": 697
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-wrong_runbook/executed.sh": {
+      "sha256": "f11bb8c71b0e3759685b1810d27b5f312d319cba77f5df1ae769eebac282aaef",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-delete_failure/result.json": {
+      "sha256": "0534589e479acd11fbeed299486d4589f4479ccfc2934e3396ab559b08d35598",
+      "bytes": 852
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-delete_failure/executed.sh": {
+      "sha256": "c394b517951bf619c627792b0ad5405f47f58f3afedfa3b72f41b28c990e5d37",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-wrong_state/result.json": {
+      "sha256": "0ca2ff59f44e6fae82e984bd77abffabe7c7c6dca9f3db58f1c17e48a3aed678",
+      "bytes": 863
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-wrong_state/executed.sh": {
+      "sha256": "e251f8ad3763d2e63629f68f393b5062706701614e6a51b7bcb208f77e7768c3",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-wrong_host/result.json": {
+      "sha256": "f3a71470f2f5421b50fb1a0436019c3a22c5898e89f6365fa67a58fa1563c8de",
+      "bytes": 693
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-wrong_host/executed.sh": {
+      "sha256": "5c3ca7e52547ef769971f107dec1f83cd8da10d9f0cf82bbd182083421040bf0",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-wrong_wrapper/result.json": {
+      "sha256": "262de20f385da9e3da9206a0f0e6f609969cbc3999016baa099e250251f40b68",
+      "bytes": 697
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-wrong_wrapper/executed.sh": {
+      "sha256": "62a306f9579f28636acacfedac0b7283de60aa47a8e666b99923f6694bf241a2",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-start_failure/result.json": {
+      "sha256": "497815fb5679bc602686f530fb8b063693ae12e03b943b5bfd78672255cb9242",
+      "bytes": 4692
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-start_failure/executed.sh": {
+      "sha256": "f18f1d3ad01ac44beb5957e179cf8e8c2fcecda9cfaa7fa3f23bff1aa9e0e203",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-reused_evidence/result.json": {
+      "sha256": "7495955235e073b814acc9f618a9cd8fdc0844ec65b704b1f48a8e02a260e86b",
+      "bytes": 698
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-reused_evidence/executed.sh": {
+      "sha256": "3c6e907b28297dd8f2fc8a728a2635cd49175687a2ca51ad611c4b6859bb29d7",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-stop_failure/result.json": {
+      "sha256": "813d936c4654b86621cef842793fedcc9cfbd203bf2b19c106879b13b8498e80",
+      "bytes": 2104
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-stop_failure/executed.sh": {
+      "sha256": "23aa04f949a2248958f64181131a309db5e9d360151eb6ee8a5a235f1a2bbac6",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-source_mismatch/result.json": {
+      "sha256": "fe431ffe4e7012bcb6eda9efb1f3555a9f293f3c70e71213677b9d2835914327",
+      "bytes": 1702
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-source_mismatch/executed.sh": {
+      "sha256": "95c91572bc8de5ea987d5b0993f4e3dfd7618c81d43504f59ef6b5754c038864",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-delete_no_effect/result.json": {
+      "sha256": "18477627d1d0c671a13a6616b0ec688a923a26760458cc5f2b5e47a43c19314f",
+      "bytes": 933
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_LEGACY_STOP-delete_no_effect/executed.sh": {
+      "sha256": "8a2943cc50b1371285247db584f0f38b2a8ff3e25431c93a06ff88ee874af4f7",
+      "bytes": 3795
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-wrong_config_image/result.json": {
+      "sha256": "d87e272c526abd0ac76db945b7ce028d90954a24ea61ce4881a20998f4f9862c",
+      "bytes": 1275
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-wrong_config_image/executed.sh": {
+      "sha256": "ec4875bc5e28ed0318aaa1af3493dd01b5a30c8cede033054dec567b5ab31a3e",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-success/result.json": {
+      "sha256": "91194de2bf59fe54cdf2d57f644ec81bd99211f04bfa3c33cda4063b38523cf4",
+      "bytes": 4743
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-success/attachment-hotfix-receipt.json": {
+      "sha256": "808f9a81e4d36acc8629e9db68b7c9f321f42986b300fba36fc66538c2ccb523",
+      "bytes": 936
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-success/executed.sh": {
+      "sha256": "c9fa0271a7b85333a926abae21819039542851a51c404b06f0178145d92502b5",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-migration_failure/result.json": {
+      "sha256": "f4657c7852d33130968adc48d24de56c57eee034a939bd968c48032249bfe46a",
+      "bytes": 3130
+    },
+    "artifacts/2026-09-13-hr-launch/operations-final/HR_ATTACHMENT_HOTFIX-migration_failure/executed.sh": {
+      "sha256": "ea67069f8aab15b251ccf184f1b450ca67bbbaef3ab8b9820b87bead0baafeb2",
+      "bytes": 8607
+    },
+    "artifacts/2026-09-13-hr-launch/review/readiness-9c85cf4/source-fingerprints.json": {
+      "sha256": "002623ca08bfc4cd43e1a4c7e94d636874b3e97824bab81957354a6d72540f1d",
+      "bytes": 2140
+    },
+    "artifacts/2026-09-13-hr-launch/review/readiness-9c85cf4/reviewed.patch": {
+      "sha256": "5a7f98f07d0e75a37615444b159fa427b8e9e422ae10bd127f041a308adbe4fc",
+      "bytes": 39230
+    },
+    "artifacts/2026-09-13-hr-launch/review/readiness-9c85cf4/review.md": {
+      "sha256": "e7d13d6f47f8cf60d35e020b87db99c31b925dfb35f00b3213e3dbaae96a33ef",
+      "bytes": 2378
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/review.patch": {
+      "sha256": "174f642408911d35cf5be880ce6f2cb2712672bd40881e12a6c46d193fabc737",
+      "bytes": 22975
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/review-artifact-sha256.json": {
+      "sha256": "c2e2a9edba7f095aaba481b6e262e7befa9899b4a1e89e503296dfb97c64125a",
+      "bytes": 1576
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/fingerprints.json": {
+      "sha256": "ad0f39a42bcbb604b36994db44c6660237015b774d38e8f9d62c33fbb7952a1c",
+      "bytes": 6657
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/review.md": {
+      "sha256": "16f27cedd93b9012c8fb1186211d79bf06a0ba71212d53e71b16abd3b7856419",
+      "bytes": 5922
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/102-to-105-function.diff": {
+      "sha256": "e99f700a7f25e35707a3bfaac1e504dc2031bd214dec6bd55f96ee7f265b5fae",
+      "bytes": 837
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/deploy/cloud/compose.hr-agent.yaml": {
+      "sha256": "d61a471c9d3a971df22d489ac8b7c1ea45ec5a15937f0001154c2226143b9e40",
+      "bytes": 1079
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/deploy/cloud/hr_agent_migrate.py": {
+      "sha256": "cb7a8efc6711394378aab848db292079be63501bfdf960e32df511b1b73dce27",
+      "bytes": 16124
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/backend/tools/hr_agent/preflight.py": {
+      "sha256": "a94a63867caf57c3465cfd9ea341794684c4253b89910bbb719b0acdeda62985",
+      "bytes": 20624
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/backend/app/hr_agent/config.py": {
+      "sha256": "c2e99ba99c16c3fc7864e7dafeeabb78fcc2549ed65fe92e538f920c6b9be7c2",
+      "bytes": 16333
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/backend/tests/test_hr_agent_foundation.py": {
+      "sha256": "2f0ae3ae38d294216ba5c582568bba529b1bff4cb9c69f5befd540a0f7a05a30",
+      "bytes": 11026
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/backend/tests/test_hr_agent_release_policy.py": {
+      "sha256": "24c62e9b972c270638d992e45a67157484cc72e67be660e5e57fabd256d0c961",
+      "bytes": 2745
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/backend/tests/test_hr_agent_preflight.py": {
+      "sha256": "8f39a60f23eb336954db8493fb13d4fe9616783926e7a7ace4dcfe00f70030db",
+      "bytes": 14195
+    },
+    "artifacts/2026-09-13-hr-launch/review/release-3637a18/sources/backend/tests/test_hr_agent_migration_deployment.py": {
+      "sha256": "a356a58f0f8af66df0e7e8ee47a52a4c714defbf2483b3f8690713edf2b79047",
+      "bytes": 27542
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/review.patch": {
+      "sha256": "a3ea9b469671dfbae1aced1f02b82feac0101e7c4102c8930920a22e67e3df04",
+      "bytes": 25444
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/artifact-sha256.json": {
+      "sha256": "b5bb36afe3cb550851a1d580f0e489d96a4c82755fc56d8895fce8447e006f5f",
+      "bytes": 847
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/fingerprints.json": {
+      "sha256": "3d040cd5b9ecab6037721fa55a8a430fff14a44aaff82e1bfa157c26ac3f7b73",
+      "bytes": 5451
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/review.md": {
+      "sha256": "e0e9508caf1a661673671882e72fa455f81c2c1a54e5cbc47b64a573e78caa75",
+      "bytes": 5358
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/sources/webui/src/styles.css": {
+      "sha256": "4afce04eeab5349726de8bf47f116860fe0801f0d3380b8bd6cd120ab32660f5",
+      "bytes": 286394
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/sources/webui/src/styles.test.ts": {
+      "sha256": "c56de5aeab65893d95f34a527fbf89c491ac5c4059445d6c58241b5e15e5ed9a",
+      "bytes": 29235
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/sources/webui/src/workspaces/hr/hrResearch.css": {
+      "sha256": "c54b66f0ba1bfe4d7657ca8a937b1e287ffba9410ac2847d0d784b0b9e6ba618",
+      "bytes": 7021
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/sources/webui/src/workspaces/hr/HrLoopWorkspace.css": {
+      "sha256": "35cee5b884b71d0485164f1df0e046c8bde2d222411689e6ba0031a919caac31",
+      "bytes": 7797
+    },
+    "artifacts/2026-09-13-hr-launch/review/styles-dbcf67f/sources/webui/src/workspaces/hr/hrCompanyIntelligence.css": {
+      "sha256": "3ed312a638c1317eadd9a828a9b73c09912083a68212ae5f05e3b6f4ad5b61bb",
+      "bytes": 8066
+    },
+    "artifacts/2026-09-13-hr-launch/review/merge-482a43f/source-fingerprints.json": {
+      "sha256": "2cc757d61743224f5854f22866d2a2f70abce140bf8ed2dea1a7c4835e8447fc",
+      "bytes": 4597
+    },
+    "artifacts/2026-09-13-hr-launch/review/merge-482a43f/482a43f-to-19f2714.patch": {
+      "sha256": "3a3cbe48e890b0f0cb443102401465d039e24b6a25800955a86c35a1c2b96a52",
+      "bytes": 4116
+    },
+    "artifacts/2026-09-13-hr-launch/review/merge-482a43f/19f2714-fix-review.md": {
+      "sha256": "2510dc7f009547185c799775b7835119e553281e4f279e8b116832a2c348d592",
+      "bytes": 3154
+    },
+    "artifacts/2026-09-13-hr-launch/review/merge-482a43f/19f2714-fingerprints.json": {
+      "sha256": "9f8cc768453ba105edff5b85b3e3a46b04f4c99bf5d3e0f0b3f6f69a13354089",
+      "bytes": 2405
+    },
+    "artifacts/2026-09-13-hr-launch/review/merge-482a43f/review.md": {
+      "sha256": "1d918d117f97c0ca12a0d31fc565e31a9f0cfcc18a349cc401c184a09c8fbbc0",
+      "bytes": 4878
+    },
+    "artifacts/2026-09-13-hr-launch/review/merge-482a43f/b184b57-to-482a43f.patch": {
+      "sha256": "9b7e06f81962605691e59d2b340235a38be06372fe5fd84e7b39dc459c7ce452",
+      "bytes": 7735388
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/source.patch": {
+      "sha256": "4a0c12fee91b15271c6b3de2e21a3ca2aca95d05ceb3fcc2f3e824865b9b75fa",
+      "bytes": 20028
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/output.log": {
+      "sha256": "aff84794bc7be1d5d83f5abc915b0c284b1eb09a8a31116bab6df61b17f50e63",
+      "bytes": 180
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/command.json": {
+      "sha256": "508c4e5518f406dfc39e9dd610c95a8e0fcb77bf6963707f03f3ea6aec8d39b1",
+      "bytes": 1588
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/untracked/backend/app/hr_agent/readiness.py": {
+      "sha256": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+      "bytes": 6231
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/untracked/backend/app/hr_agent/worker_health.py": {
+      "sha256": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3",
+      "bytes": 5824
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/untracked/backend/tests/test_hr_agent_release_policy.py": {
+      "sha256": "24c62e9b972c270638d992e45a67157484cc72e67be660e5e57fabd256d0c961",
+      "bytes": 2745
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "7074bf350da320d77a2abd5b9280af1e5ff1ad04685bbd0bad5eca5a132497db",
+      "bytes": 10312
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-green/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "1efc5ee401bd5f34b859db7ed6f8a79f39d4f9f2a64181ff310719d95b5f4d5b",
+      "bytes": 7392
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/source.patch": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/output.log": {
+      "sha256": "b82f9539a874fcaf576b374264c7d0e4491c77c24afca8a1fcd2253ea88cca6a",
+      "bytes": 2682
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/command.json": {
+      "sha256": "ff47fc79bcb8891c454fce904bd21d65e858551f14f9e4b1b1cf04e90e392c0b",
+      "bytes": 1190
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "0ce3638d069c3f366b6ff278853a2db2d60efa0fa56fecee26ae5589380e0c5e",
+      "bytes": 5117
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "a3d0ed5575a263e64bcc866c1feaa4e1dc41415b2268af63391fbc47a4f46262",
+      "bytes": 3172
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/observed-source/receipt.json": {
+      "sha256": "30c6907c166077e37613d682f527f1b3ad03f1698b7fd2753687d17528b355a8",
+      "bytes": 380
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/observed-source/webui/src/workspaces/hr/HrWorkspacePage.tsx": {
+      "sha256": "96463c001e39deb75775eae458da8837a17f09d2a203ab9c7a76a9fdbf13df0b",
+      "bytes": 10703
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-red/observed-source/webui/src/workspaces/hr/HrWorkspacePage.test.tsx": {
+      "sha256": "8269aaad5da91f1026ad5c9a2b9e9e3ac15a6fc54f3485bb472e7a8213fc6858",
+      "bytes": 27570
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-red/source.patch": {
+      "sha256": "0ffa317d4f65a72ce5a44fd12a2bce12d091add027de40cbacc4e2425e7a4ad2",
+      "bytes": 9892
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-red/output.log": {
+      "sha256": "5d7a5b9d49db36ed3270e21375068c5d021099e28989220e49a2c5f13b62118a",
+      "bytes": 1269
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-red/command.json": {
+      "sha256": "87fe7c6a80fc10b96f1e0a107fbd61092ffcad75523861b8c0081902b1a23848",
+      "bytes": 1292
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-red/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-red/untracked/backend/app/hr_agent/readiness.py": {
+      "sha256": "fc799033b43e2111713c694ac1eb4f0af5cc6e43bcd5442d7d927dffb5c65630",
+      "bytes": 5617
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-red/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-red/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "0ce3638d069c3f366b6ff278853a2db2d60efa0fa56fecee26ae5589380e0c5e",
+      "bytes": 5117
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-red/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "a3d0ed5575a263e64bcc866c1feaa4e1dc41415b2268af63391fbc47a4f46262",
+      "bytes": 3172
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-confirmed-1/source.patch": {
+      "sha256": "9a1f01495e08274e1e883a1655fe5ae4ece6b78de9384de338a22aa9372e9871",
+      "bytes": 24460
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-confirmed-1/output.log": {
+      "sha256": "b98360d6a14f2751273033e4c5294628dbbc5a14beb46318e8e053930ad90610",
+      "bytes": 100
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-confirmed-1/command.json": {
+      "sha256": "2521b158fd5a5765b30fed4f7e825649119b5274d2e8213db7f9c051306d5606",
+      "bytes": 889
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/source.patch": {
+      "sha256": "1019f0bfefbd81d7733f520d4e13a12c8049869a1d61ca3cab0ea235acb02046",
+      "bytes": 15362
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/output.log": {
+      "sha256": "2d404e47b21d44802fc04b17335b5879f0e0664e2596bbb188980e7b90b7ecad",
+      "bytes": 110
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/command.json": {
+      "sha256": "c6b114eee97aa653d69389fd07e47aad9eed565d45a68893a98ac69a7e86e295",
+      "bytes": 1403
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/boundary-correction.json": {
+      "sha256": "fa5f1aee2a9a0de7801c004a87459264604f2cb0b8b676977567af99479368ae",
+      "bytes": 503
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/untracked/backend/app/hr_agent/readiness.py": {
+      "sha256": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+      "bytes": 6231
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/untracked/backend/app/hr_agent/worker_health.py": {
+      "sha256": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3",
+      "bytes": 5824
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "b310fde2cde4bab46a9fe0d3e3dc6c00c9934b94ba8815883c0588f29f453a01",
+      "bytes": 6302
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-1/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "1efc5ee401bd5f34b859db7ed6f8a79f39d4f9f2a64181ff310719d95b5f4d5b",
+      "bytes": 7392
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-final/source.patch": {
+      "sha256": "9a1f01495e08274e1e883a1655fe5ae4ece6b78de9384de338a22aa9372e9871",
+      "bytes": 24460
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-final/output.log": {
+      "sha256": "b1b3f1343b888389ca150eadb1d0e70ab266a3d1416273d317e63ce2571793d0",
+      "bytes": 1128
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-final/command.json": {
+      "sha256": "52a6f0ed8f7920b365c40d38eb67ae7fdc418adcc6230ff3de8970067621a7f8",
+      "bytes": 889
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-green/source.patch": {
+      "sha256": "84aaa23087cb101b0452e0fa800185d9be471d497ccbd1b99f4ad41fae222e6b",
+      "bytes": 3984
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-green/output.log": {
+      "sha256": "0d56af3e73f9306013821c6b7e4dda4125670e67a178be465788b055a76c76d8",
+      "bytes": 657
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-green/command.json": {
+      "sha256": "9769ef4cc3f377ef4bd17b0d21d4df579e3d3405d03de60d751d1c77bcd9d3f3",
+      "bytes": 1240
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-green/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-green/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-green/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "0ce3638d069c3f366b6ff278853a2db2d60efa0fa56fecee26ae5589380e0c5e",
+      "bytes": 5117
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-route-green/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "a3d0ed5575a263e64bcc866c1feaa4e1dc41415b2268af63391fbc47a4f46262",
+      "bytes": 3172
+    },
+    "artifacts/2026-09-13-hr-launch/runs/history-real-1/source.patch": {
+      "sha256": "dbc7a1adb6efe84d13d1c6601020e81c2dfdd991de16eccffb3f68b773b9a169",
+      "bytes": 4781
+    },
+    "artifacts/2026-09-13-hr-launch/runs/history-real-1/output.log": {
+      "sha256": "b0a7155dcf97a20e00f93bd3b7ff77867eafbd6dee53f41dfffd70f4da63fe39",
+      "bytes": 624
+    },
+    "artifacts/2026-09-13-hr-launch/runs/history-real-1/command.json": {
+      "sha256": "f8d55640161f20f9e3783ccc14c2a096f9170a3dd64087133f5ce91e77f910c9",
+      "bytes": 947
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/source.patch": {
+      "sha256": "1019f0bfefbd81d7733f520d4e13a12c8049869a1d61ca3cab0ea235acb02046",
+      "bytes": 15362
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/output.log": {
+      "sha256": "cef3b34477c2abd9cf12cfb3cc3183664ce21ffdc7429fed5659fd1951208004",
+      "bytes": 3380
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/command.json": {
+      "sha256": "a7cf906ad8cd2abe58fb80502ec13d3b473aa0f8ef3e23ad47e233d639976c33",
+      "bytes": 1491
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/untracked/backend/app/hr_agent/readiness.py": {
+      "sha256": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+      "bytes": 6231
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/untracked/backend/app/hr_agent/worker_health.py": {
+      "sha256": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3",
+      "bytes": 5824
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/untracked/backend/tests/test_hr_agent_release_policy.py": {
+      "sha256": "24c62e9b972c270638d992e45a67157484cc72e67be660e5e57fabd256d0c961",
+      "bytes": 2745
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "132af7e571540d5e6bed2654971b77e7de9707f2f11077ab91f596f4719da669",
+      "bytes": 10198
+    },
+    "artifacts/2026-09-13-hr-launch/runs/release-policy-red/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "1efc5ee401bd5f34b859db7ed6f8a79f39d4f9f2a64181ff310719d95b5f4d5b",
+      "bytes": 7392
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-current/source.patch": {
+      "sha256": "ad1be7fbebdcadba5fff2fccab48f37cfe890fd5fbb5fc0019d53f9ceac31177",
+      "bytes": 25906
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-current/output.log": {
+      "sha256": "8c4e42debcda88a5c0e3c17cdaf708f66b7a2c5d749b0243882ceed5aff0e5fe",
+      "bytes": 100
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-current/command.json": {
+      "sha256": "ac0dc0c121a39e7745aafbfb7e05fe4d893ce13ffa24c3a626d79ce71f0861c9",
+      "bytes": 1079
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-current/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-current/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-current/untracked/backend/tests/test_hr_agent_release_policy.py": {
+      "sha256": "24c62e9b972c270638d992e45a67157484cc72e67be660e5e57fabd256d0c961",
+      "bytes": 2745
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/source.patch": {
+      "sha256": "718b637dd466369feb35d0ff920493cec3991ce3b18df5aa6c31ec08c3529172",
+      "bytes": 13478
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/output.log": {
+      "sha256": "c26f86695034b3a71673f0b003ece8b7977b82de9129c4befe0aa6527e6cdfd7",
+      "bytes": 100
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/command.json": {
+      "sha256": "7509caf0edccded9b452a19479ded8e31df70b4c2c737e3fa785f496f0a201ab",
+      "bytes": 1421
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/untracked/backend/app/hr_agent/readiness.py": {
+      "sha256": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+      "bytes": 6231
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/untracked/backend/app/hr_agent/worker_health.py": {
+      "sha256": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3",
+      "bytes": 5824
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "b310fde2cde4bab46a9fe0d3e3dc6c00c9934b94ba8815883c0588f29f453a01",
+      "bytes": 6302
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-deployment-green/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "1efc5ee401bd5f34b859db7ed6f8a79f39d4f9f2a64181ff310719d95b5f4d5b",
+      "bytes": 7392
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-api-only-1/source.patch": {
+      "sha256": "c4b82b67d33b22c8bbeeac207e6a2588849d82f7f8af9338df2cfc1ba0941595",
+      "bytes": 12792
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-api-only-1/output.log": {
+      "sha256": "3a410c3c49c4c773efef1d28bb0a590a04835cefb5ec0027169c43dbf1b0404c",
+      "bytes": 100
+    },
+    "artifacts/2026-09-13-hr-launch/runs/runbook-api-only-1/command.json": {
+      "sha256": "aac5914effde16192ea46d22d66cabb19f98caaf4c0b12d419533f0bf4c5a638",
+      "bytes": 945
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-backend/source.patch": {
+      "sha256": "6d29885809eb028a5401b86b26e9ee706da9b6867ad8b6219827d757048348bb",
+      "bytes": 7570656
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-backend/output.log": {
+      "sha256": "d463d5b51264861ab0a9516d63236e5d8e6641018abed464df7d948afd417974",
+      "bytes": 1041
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-backend/command.json": {
+      "sha256": "9113ec29770d065e00ff56609e5a23d0c60d8bde4823d1c2733d6ae08f52e3a2",
+      "bytes": 809
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-3/source.patch": {
+      "sha256": "dbc7a1adb6efe84d13d1c6601020e81c2dfdd991de16eccffb3f68b773b9a169",
+      "bytes": 4781
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-3/output.log": {
+      "sha256": "9768bd58829811bd04d0e2bf347b7f326bb3f45a6b315816783f27940920a144",
+      "bytes": 110
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-3/command.json": {
+      "sha256": "0c4efa9d4692b008741cd8366d4cc3fd4a66124029e5af03a230dc1d3d72a4b8",
+      "bytes": 759
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-backend-green/source.patch": {
+      "sha256": "7867f1389e60fb2ab3e13c79dcd29e8c15b9616070d03386c78a775673e69c4c",
+      "bytes": 7570691
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-backend-green/output.log": {
+      "sha256": "1ca821b1881badedf76a4a4808de63975441107b5d9c7baa1004fbeef2573186",
+      "bytes": 99
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-backend-green/command.json": {
+      "sha256": "8096c82e56d6794b7b4b6e8251dc301c3d0dd1d9cc30d42035bbbf6aa4aee43e",
+      "bytes": 809
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-2/source.patch": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-2/output.log": {
+      "sha256": "025c816bad842be4efd5c6c389013baa9b455304e019c15d84b3edb5e7c8fdf5",
+      "bytes": 110
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-2/command.json": {
+      "sha256": "62e437ccd4a0df25e8feb3bb5bae981c5a36c755f35ff9efcdbbb43a0950d5a5",
+      "bytes": 1000
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-2/untracked/backend/tests/test_hr_agent_history_replay.py": {
+      "sha256": "ae2802e7f3eee9c1a72e3b7037a4a159bd28cf56c783d03781aedfc27680f56e",
+      "bytes": 3906
+    },
+    "artifacts/2026-09-13-hr-launch/runs/d-real-2/untracked/backend/tests/helpers/hr_history_replay.py": {
+      "sha256": "cff2362235e715e4b8d2c182a83fb422ccaebfd6fc7e5b6b90f20a00438be596",
+      "bytes": 18669
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-red/source.patch": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-red/output.log": {
+      "sha256": "6514a333ddf1b439b79334904a8a84ea320ffb7140eb72528c2ce68a281d5f7e",
+      "bytes": 3925
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-red/command.json": {
+      "sha256": "acee63ffeda7b6f56871075f3d2ce816d433f74a3ccac4e1e833cb2effa04e07",
+      "bytes": 894
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-red/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-red/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "0ce3638d069c3f366b6ff278853a2db2d60efa0fa56fecee26ae5589380e0c5e",
+      "bytes": 5117
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-source-red/source.patch": {
+      "sha256": "6d29885809eb028a5401b86b26e9ee706da9b6867ad8b6219827d757048348bb",
+      "bytes": 7570656
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-source-red/output.log": {
+      "sha256": "1c77462f5019234ab3fd73a1517f6f1bbb0d92a5d0558a4fc761f6e8f68dd344",
+      "bytes": 5177
+    },
+    "artifacts/2026-09-13-hr-launch/runs/merge-source-red/command.json": {
+      "sha256": "c2a1f4dd21dc0a659717896b5fdb1bd96458472e17ac3b9a2eb45c11adc114ce",
+      "bytes": 730
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-green/source.patch": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-green/output.log": {
+      "sha256": "a13a167ad0e2fb1078a9da9d3e389c37b53135eedf98baa4b5af8cfcde0bcbeb",
+      "bytes": 99
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-green/command.json": {
+      "sha256": "6925f4159aae2d53110f5efd70f320c5d43b54ec7c6fcaf10acb36e3f7cc571b",
+      "bytes": 1190
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-green/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-green/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-green/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "0ce3638d069c3f366b6ff278853a2db2d60efa0fa56fecee26ae5589380e0c5e",
+      "bytes": 5117
+    },
+    "artifacts/2026-09-13-hr-launch/runs/cloud-resume-green/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "a3d0ed5575a263e64bcc866c1feaa4e1dc41415b2268af63391fbc47a4f46262",
+      "bytes": 3172
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/source.patch": {
+      "sha256": "b75439499a1d3a470e267f4fed1f09e233695118a9b064623bf5b5376d640c81",
+      "bytes": 16159
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/output.log": {
+      "sha256": "5f6b8f83b9dea71ec19d48ef555d8cecfd518694fbf0243b20919190cd4c3fe2",
+      "bytes": 180
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/command.json": {
+      "sha256": "7e9623d784d985406ffab337ef98ff858d0a02be0a792228aa8cac38efb503cd",
+      "bytes": 1414
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/untracked/backend/control_migrations/105_hr_cloud_resume.sql": {
+      "sha256": "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+      "bytes": 2694
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/untracked/backend/app/hr_agent/readiness.py": {
+      "sha256": "fc799033b43e2111713c694ac1eb4f0af5cc6e43bcd5442d7d927dffb5c65630",
+      "bytes": 5617
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/untracked/backend/app/hr_agent/worker_health.py": {
+      "sha256": "e140c83657cb81f8dc9ec853da1b1c20510ea8f1d1f5174fb0788e1d11bc8033",
+      "bytes": 4815
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/untracked/backend/tests/test_hr_cloud_resume.py": {
+      "sha256": "af983293fb1b3c2273ae87709d014ba24e44075ec1a7bab5e8174e7ee5d87e7a",
+      "bytes": 4366
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/untracked/backend/tests/test_hr_agent_readiness.py": {
+      "sha256": "0ce3638d069c3f366b6ff278853a2db2d60efa0fa56fecee26ae5589380e0c5e",
+      "bytes": 5117
+    },
+    "artifacts/2026-09-13-hr-launch/runs/resume-floor-green/untracked/backend/tests/test_hr_agent_worker_health.py": {
+      "sha256": "44b7cde0971d5e4885a9b75b5ac8cab846791381acef0d50056be71bbf260e3d",
+      "bytes": 3215
+    },
+    "artifacts/2026-09-13-hr-launch/history/analysis.md": {
+      "sha256": "db1a8e31f2d5b8b5612f484dfdb1dc868ba11cb81dcf962c8bc1462ee7095dc7",
+      "bytes": 2698
+    },
+    "artifacts/2026-09-13-hr-launch/history/independent-corpus-review-fingerprints.json": {
+      "sha256": "01c5f364948dd3735faf5b35c35924fd9e5010ee83387a3ee59e5bcc1f8a1d4d",
+      "bytes": 1013
+    },
+    "artifacts/2026-09-13-hr-launch/history/independent-corpus-review.md": {
+      "sha256": "41b28af4cf17f128b5da7eb9c9efe5a8b8e437a480cc326f70cc4a7c4b15efb1",
+      "bytes": 4497
+    },
+    "artifacts/2026-09-13-hr-launch/history/scenarios.json": {
+      "sha256": "65501ce9f73744f9a3f59a70a758dda72647759713f13b2396b62ff5963d17c2",
+      "bytes": 62180
+    },
+    "artifacts/2026-09-13-hr-launch/production/history-inventory.json": {
+      "sha256": "ce0ee94235b1bb815d229ffb7b2b5d5ecd78d4a09e2851b78ed3a2e1bf5d9d86",
+      "bytes": 446
+    },
+    "artifacts/2026-09-13-hr-launch/production/hr-bot-history-inventory.json": {
+      "sha256": "8c895308a0dcc98f53d594fea3ba19a971831d238ff2aa9c2e3ce08c091138ea",
+      "bytes": 462
+    },
+    "artifacts/2026-09-13-hr-launch/production/read_hr_history.py": {
+      "sha256": "5661d11c818e4c39861d68dfb12860cb4e664cdf7fb316f4cfb41daa7194780b",
+      "bytes": 2635
+    },
+    "artifacts/2026-09-13-hr-launch/production/read_hr_bot_history.py": {
+      "sha256": "f8dec19c43dd6eb382e42e1187c487e62a31684b82bda6b976ed87860bbdfcb5",
+      "bytes": 1176
+    },
+    "artifacts/2026-09-13-hr-launch/record_run.py": {
+      "sha256": "5bec3361a3230ee209f7bf9799aadbc831527e380097e79acee817ddfeb9d2cb",
+      "bytes": 2057
+    }
+  },
+  "exact_provider_credential_found": false
+}

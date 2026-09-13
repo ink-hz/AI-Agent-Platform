@@ -1,0 +1,41 @@
+{
+  "kind": "external-command-mock-not-production",
+  "block": "HR_LEGACY_STOP",
+  "scenario": "delete_no_effect",
+  "runbookSha256": "4bba157d64b5cfedfac2a264aeffee54277bf284a4f5466abebe61bebe120e0d",
+  "sourceBlockSha256": "bf2054ceaeda34b7dcd1d538e102a96af368afc31cb0ef10eddcc280e1ef2950",
+  "executedScriptSha256": "8a2943cc50b1371285247db584f0f38b2a8ff3e25431c93a06ff88ee874af4f7",
+  "exit": 1,
+  "stdout": "",
+  "stderr": "",
+  "state": {
+    "hr": "online",
+    "saved": false,
+    "old_running": true,
+    "new_running": false,
+    "new_created": false,
+    "migrated": false,
+    "calls": [
+      [
+        "mock-pm2",
+        "state-one",
+        "metabot-hr"
+      ],
+      [
+        "mock-pm2",
+        "snapshot-except",
+        "metabot-hr"
+      ],
+      [
+        "mock-pm2",
+        "delete-one",
+        "metabot-hr"
+      ],
+      [
+        "mock-pm2",
+        "state-one",
+        "metabot-hr"
+      ]
+    ]
+  }
+}

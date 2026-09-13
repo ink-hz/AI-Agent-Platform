@@ -1,0 +1,18 @@
+--- 102-function
++++ 105-function
+@@ -1,4 +1,4 @@
+-CREATE FUNCTION platform_control.transition_hr_execution_cutover_v102(
++CREATE OR REPLACE FUNCTION platform_control.transition_hr_execution_cutover_v102(
+   selected_phase text, selected_request_id uuid
+ ) RETURNS platform_control.hr_execution_cutover
+ LANGUAGE plpgsql SECURITY DEFINER
+@@ -21,7 +21,8 @@
+   IF NOT FOUND THEN RAISE EXCEPTION 'hr execution cutover is not initialized'; END IF;
+   IF (current_row.phase,selected_phase) NOT IN (
+     ('legacy','draining_legacy'),('draining_legacy','cloud'),
+-    ('cloud','draining_cloud'),('draining_cloud','legacy')) THEN
++    ('cloud','draining_cloud'),('draining_cloud','legacy'),
++    ('draining_cloud','cloud')) THEN
+     RAISE EXCEPTION 'invalid HR execution transition';
+   END IF;
+   IF selected_phase IN ('cloud','legacy') THEN

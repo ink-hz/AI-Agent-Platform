@@ -1,0 +1,40 @@
+{
+  "review_object": "482a43fc34123df73c4c85a46acd63f7139e343f",
+  "review_tree": "f48b7a16d24c25c11f4dab2f50a6893eedd61278",
+  "parents": [
+    "a7d9b5c45b063bada711dea43d305736630ad1dc",
+    "35ab8d63d58817f0a9235fbb4d650703d00864fc"
+  ],
+  "baseline": "b184b57ec09828033ef127ddf34dd748794325dd",
+  "production_source": "65e7fbd14a3cbe99883b0b31e31b5705d183d1f9",
+  "patch": {
+    "path": "b184b57-to-482a43f.patch",
+    "sha256": "9b7e06f81962605691e59d2b340235a38be06372fe5fd84e7b39dc459c7ce452",
+    "bytes": 7735388,
+    "lines": 3070
+  },
+  "files": {
+    "HR总体架构设计.md": {"git_blob": "5bac69b2d7764261cdcd6f67111da77d4f98a06a", "sha256": "e39c3d4f0ae4e60efa1bc851e66201006a5bbd5ef6b8bc2c88d46e48f32690a6"},
+    "HR_Agent工作流.md": {"git_blob": "693d954a1951c6adeba338f22dd21e2dfa657d60", "sha256": "ea7f9a234ea1ce4c24e6f8052bb89cc3d882347573df0d7c4e311e8f9dc56208"},
+    "docs/runbooks/2026-09-08-hr-web-core-handoff.md": {"git_blob": "0a995698744a3142d1e7cb8ecb960ca11240255a", "sha256": "788a981edf5ba575b9a88059e56c9107c1c4142c62145bb7737e416b931119c6"},
+    "docs/superpowers/plans/2026-09-13-hr-launch.md": {"git_blob": "5c30d177e6324b834ab12b8838203b6b05e11e34", "sha256": "dbde978bf4df28d30a2595cd9b5e9a68839224cf4b8613dd079b60696d23d240"},
+    "backend/app/control_plane/authorization.py": {"git_blob": "451201e37e863e5ebefe80e41b1e093a1d48cc84", "sha256": "0a1dab8c661868b07dd48e5374b9a984c8889b4dfd09235f77cfd4303d6bce59"},
+    "backend/app/hr/panorama_routes.py": {"git_blob": "1556d78ba30a62af3c8c37a742418d416b620d6d", "sha256": "38bf47094126ee4a04c3d752ff7f8c2eb96882bf03702ff44ee75272790ede46"},
+    "backend/app/hr/research_library.py": {"git_blob": "cfbcbc5d0df5b294801145f49820421f4ecfad38", "sha256": "73064a95e18143e95b31f8cd78fbd3669bcc67bc15ae8718c8b0db1ec6c5bab2"},
+    "backend/app/hr/source_library.py": {"git_blob": "f0582f6014097fa6b5f1dc8a2bd002ae5d1b726d", "sha256": "a2abddde119157c8dfd162b0b5c5a538cae40ed305f095439fc757557db5af6e"},
+    "backend/app/hr/tool_routes.py": {"git_blob": "eeee0440b5de17db92eed742daf7ff45c199499d", "sha256": "1cc86f618c26a81f169757660db6b57b69ed31bc1d9667c5b26eccdc12b52101"},
+    "backend/app/hr/tool_service.py": {"git_blob": "b73a6acc31a42cba99a8606701065d63dd6d647b", "sha256": "4254fac56ebcb321f1e3a1f55fc8a9ad010f575f062dde274de0fb1971e23672"},
+    "backend/tests/test_hr_source_http.py": {"git_blob": "b87c201b58653b1cd3c4763aff0289b0a809d5dd", "sha256": "7f193e5ba9de0be13c98e9a251d6a624631fc9c61a4b1248a06d5a0ea4dd01a2"},
+    "backend/tests/test_hr_source_library.py": {"git_blob": "432942fc33195e01f6d63af2f6c18e03f25ad5ab", "sha256": "496ef6fce7cfd5223a82c8f977ed497c76a0707f9282a394a6fbbfbc8eb6c15c"},
+    "backend/tests/test_hr_research_source_links.py": {"git_blob": "e0f84a669ac36161ab0ec5632c9fa82dffc17ba9", "sha256": "596bd148117c146d5a56b03bbf29139f2379a8ba5eb93a690bba8a9b5b8167f2"},
+    "backend/tests/test_hr_tools_v7_http.py": {"git_blob": "2d29615a0bed3684a542ff802dc555e033b35ed7", "sha256": "3bfce83f48e668bc11788c9104351c5d8221612d3e53b2319f74a708a6bd322b"},
+    "webui/src/workspaces/hr/HrWorkspacePage.tsx": {"git_blob": "128d1bcee6fa154846b5641449e4c583266a3e66", "sha256": "96463c001e39deb75775eae458da8837a17f09d2a203ab9c7a76a9fdbf13df0b"},
+    "webui/src/workspaces/hr/HrPositionIndex.tsx": {"git_blob": "1b883efb2da9c6c520369d976272998e4c29c865", "sha256": "f44d2bbb94e5a36730bb189b0321f72cc38609fb529bfb80bc8abf68370d00cc"},
+    "webui/src/workspaces/hr/HrPositionIndex.test.tsx": {"git_blob": "b830ec524d3a8c07cf050d50fa1e58c7522d3b30", "sha256": "2fc98095e3bb68c489b1686ee0e8580172c54daa88f06be8c69878cbb63d2725"},
+    "webui/src/workspaces/hr/HrPositionWorkflow.tsx": {"git_blob": "d14d255ce8624a78bc9250b8974c9bcabfdc3bbb", "sha256": "9182e88901beca77d5eef8d0652c8c7f53098679c2fbed40b97f2bb8a1280a40"},
+    "webui/src/workspaces/hr/HrPositionWorkflow.test.tsx": {"git_blob": "35955678807490dcf7021e4ec365ab2f39fb7b24", "sha256": "3547375a6b754a0ce0c4f93d79963a31e7280c82f57b2948304287a373ebb940"},
+    "webui/src/workspaces/hr/HrPanoramaWorkspace.tsx": {"git_blob": "32fe7b1ca7075fd07ac9f169eb33b7e16751ed66", "sha256": "4eaea449e991dccf6d802a6e53f6a494651cacd1f1c6cad6901c4b0f0228c921"},
+    "webui/src/workspaces/hr/HrResearchWorkspace.tsx": {"git_blob": "39be681b021001977bb90963a13094a93381114e", "sha256": "e870dcbf67da39ce6dbc3015a9c1daf2275d23b475821218080bdb5dbd52f7b3"},
+    "webui/src/workspaces/hr/HrSourceWorkspace.tsx": {"git_blob": "a8c90333c7f17a9f2d89a1c2a247740a35f18bad", "sha256": "5db734a7b28439e2f3d5af681b772a4c6e9e044d9d857434033cc6b87ee676ad"}
+  }
+}

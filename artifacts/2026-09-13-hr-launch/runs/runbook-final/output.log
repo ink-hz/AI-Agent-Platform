@@ -1,0 +1,13 @@
+......F............................                                      [100%]
+=================================== FAILURES ===================================
+_____ test_held_exclusive_slow_count_times_out_before_non_hr_append_limit ______
+backend/tests/test_hr_cutover_runbook.py:210: in test_held_exclusive_slow_count_times_out_before_non_hr_append_limit
+    with path.open("x") as stream:
+         ^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1044: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/operations-final/real-postgres-slow-count.json'
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_cutover_runbook.py::test_held_exclusive_slow_count_times_out_before_non_hr_append_limit
+1 failed, 34 passed in 19.54s

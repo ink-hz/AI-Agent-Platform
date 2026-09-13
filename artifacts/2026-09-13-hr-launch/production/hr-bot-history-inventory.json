@@ -1,0 +1,15 @@
+{
+  "captured_at": "2026-09-13T02:15:25.488599+00:00",
+  "scope": "HR Bot sessions.db snapshot, user messages only, all stored channels",
+  "source_sha256": "f8dec19c43dd6eb382e42e1187c487e62a31684b82bda6b976ed87860bbdfcb5",
+  "raw_sha256": "41915cf9672ea13838d3c8599b4efd498daa86ee3dfa0f38d5962f89c493770e",
+  "sessions": 42,
+  "user_messages": 220,
+  "channels": [
+    "feishu",
+    "web"
+  ],
+  "raw_private_only": true,
+  "writes": false,
+  "exit_code": 0
+}

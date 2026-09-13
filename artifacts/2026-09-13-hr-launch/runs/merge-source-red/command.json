@@ -1,0 +1,18 @@
+{
+  "head": "051993f92ffd13f24f23b414dc65404db893862c",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_source_library.py::test_source_library_is_edition_pinned_filterable_and_paginated",
+    "-vv",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T02:16:18.615055+00:00",
+  "source_patch_sha256": "6d29885809eb028a5401b86b26e9ee706da9b6867ad8b6219827d757048348bb",
+  "untracked_source_snapshots": {},
+  "boundary": "Local synthetic fixtures; each test documents substituted boundaries; no production or model call",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T02:16:18.822940+00:00"
+}

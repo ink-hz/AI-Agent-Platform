@@ -1,0 +1,307 @@
+diff --git a/backend/app/control_plane/authorization.py b/backend/app/control_plane/authorization.py
+index 451201e..2144985 100644
+--- a/backend/app/control_plane/authorization.py
++++ b/backend/app/control_plane/authorization.py
+@@ -352,6 +352,7 @@ _OWNER_ROUTES = frozenset({
+     ("GET", "/api/operations/conversation-metrics"),
+     ("GET", "/api/v1/manage/users"),
+     ("GET", "/api/v1/manage/system-health"),
++    ("GET", "/api/v1/manage/hr-readiness"),
+     ("GET", "/api/attachments/content/{ticket}"),
+     ("POST", "/api/attachments/{attachment_id}/ticket"),
+     ("POST", "/api/review/issues"),
+diff --git a/backend/app/control_plane/middleware.py b/backend/app/control_plane/middleware.py
+index 9ab40e9..593b1cd 100644
+--- a/backend/app/control_plane/middleware.py
++++ b/backend/app/control_plane/middleware.py
+@@ -35,6 +35,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
+         "/api/v1/internal/session/subject",
+         "/api/v1/auth/logout",
+         "/api/v1/manage/system-health",
++        "/api/v1/manage/hr-readiness",
+     }
+ )
+ _WORKER_RUN_ROUTE = re.compile(
+diff --git a/backend/app/control_plane/routes_auth.py b/backend/app/control_plane/routes_auth.py
+index 052f169..613bfd6 100644
+--- a/backend/app/control_plane/routes_auth.py
++++ b/backend/app/control_plane/routes_auth.py
+@@ -484,6 +484,30 @@ def build_auth_router(
+         )
+         return response
+ 
++    @router.get("/api/v1/manage/hr-readiness")
++    async def hr_readiness(request: Request):
++        from starlette.concurrency import run_in_threadpool
++
++        from app.hr_agent.readiness import unavailable
++
++        context: AuthContext = request.state.auth_context
++        if context.role is not Role.PLATFORM_OWNER:
++            raise HTTPException(403, "platform owner required")
++        audit = getattr(request.app.state, "system_health_audit", None)
++        if audit is None:
++            raise HTTPException(503, "required audit unavailable")
++        try:
++            await run_in_threadpool(audit, context)
++        except Exception:
++            raise HTTPException(503, "required audit unavailable") from None
++        probe = getattr(request.app.state, "hr_readiness", None)
++        try:
++            payload = await run_in_threadpool(probe.check) if probe is not None else unavailable()
++        except Exception:
++            payload = unavailable("readiness_unavailable")
++        return JSONResponse(payload, status_code=200 if payload["ready"] else 503,
++                            headers=_NO_STORE)
++
+     @router.get("/api/v1/manage/system-health")
+     async def system_health(request: Request) -> dict[str, Any]:
+         context: AuthContext = request.state.auth_context
+diff --git a/backend/app/hr_agent/config.py b/backend/app/hr_agent/config.py
+index f8cbeac..067c039 100644
+--- a/backend/app/hr_agent/config.py
++++ b/backend/app/hr_agent/config.py
+@@ -52,6 +52,7 @@ CUTOVER_MIGRATION_SHA256 = {
+     102: "70fd110bb17c5471e0206ccb62886822578af19182cad67caa97708e23ac0ce6",
+     103: "1795af66ae8ae5034bc0cb7385cd51ac3485601611a4be7258517bd40aadd6d0",
+     104: "cb25b4f81b01bfd7ee3ea3056604b32794c3925ff4c336254d238456fa7a4a8d",
++    105: "cef71adb2bee76cc2dc234a07c4f2a20e7f247010bf27f84fd57ec77defda20f",
+ }
+ 
+ TABLES = (
+diff --git a/backend/app/hr_agent/worker.py b/backend/app/hr_agent/worker.py
+index 8889bc3..985d388 100644
+--- a/backend/app/hr_agent/worker.py
++++ b/backend/app/hr_agent/worker.py
+@@ -22,6 +22,7 @@ def run_worker(
+     worker_id=None,
+     poll_seconds=1.0,
+     runner=run_work,
++    health=None,
+ ):
+     stop_event = stop_event or threading.Event()
+     worker_id = worker_id or "hr-" + str(uuid4())
+@@ -44,6 +45,8 @@ def run_worker(
+             fence = repository.claim(worker_id, repository.settings.lease_seconds)
+         except CutoverRejected:
+             fence = None
++        if health is not None:
++            health.progress()
+         if fence is None:
+             stop_event.wait(poll_seconds)
+             continue
+@@ -58,6 +61,8 @@ def run_worker(
+                     )
+                 except Exception:  # noqa: BLE001 - failed heartbeat or startup must stop safely
+                     valid = False
++                if valid and health is not None:
++                    health.progress()
+                 if not valid:
+                     lost.set()
+                     return
+@@ -89,6 +94,15 @@ def run_worker(
+ 
+ 
+ def main():
++    if sys.argv[1:] == ["healthcheck"]:
++        import json
++
++        from .worker_health import check_worker
++
++        report = check_worker()
++        print(json.dumps(report))
++        return 0 if report["ready"] else 1
++
+     import psycopg
+ 
+     from app.control_plane.dsn import validate_control_dsn
+@@ -124,7 +138,16 @@ def main():
+         stop = threading.Event()
+         for signum in (signal.SIGTERM, signal.SIGINT):
+             signal.signal(signum, lambda *_: stop.set())
+-        run_worker(repository, model, resources, stop_event=stop)
++        from .readiness import HrReadiness
++        from .worker_health import WorkerHealth
++
++        def readiness_connect():
++            return psycopg.connect(dsn, connect_timeout=1,
++                                   options="-c statement_timeout=1500 -c lock_timeout=500")
++
++        readiness = HrReadiness(settings, os.environ, readiness_connect, role="worker")
++        with WorkerHealth(readiness, max_age=settings.heartbeat_seconds * 3) as health:
++            run_worker(repository, model, resources, stop_event=stop, health=health)
+         return 0
+     except Exception:  # noqa: BLE001 - failed heartbeat or startup must stop safely
+         # Never print exception strings, DSNs, provider bodies, or prompts.
+diff --git a/backend/app/main.py b/backend/app/main.py
+index e0c8896..b8aac8f 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -1537,6 +1537,7 @@ def create_app(
+     from .hr_agent.routes import build_hr_agent_router
+     from .hr_agent.service import HrAgentService
+ 
++    hr_database_url = None
+     if hr_agent_service is None and config.hr_agent_settings.enabled:
+         if not identity_enabled:
+             raise RuntimeError("HR Agent requires platform identity")
+@@ -1599,6 +1600,21 @@ def create_app(
+             ready=False,
+         )
+     app.state.hr_agent_service = hr_agent_service
++    app.state.hr_readiness = None
++    if config.hr_agent_settings.enabled and hr_database_url is not None:
++        from .hr_agent.readiness import HrReadiness
++
++        def hr_readiness_connection():
++            return psycopg.connect(
++                hr_database_url, connect_timeout=1,
++                options="-c statement_timeout=1500 -c lock_timeout=500",
++            )
++
++        app.state.hr_readiness = HrReadiness(
++            config.hr_agent_settings, os.environ, hr_readiness_connection,
++            assembled=(hr_agent_service.ready and hr_agent_service.access is not None
++                       and hr_agent_service.repository is not None),
++        )
+     app.include_router(build_hr_agent_router(hr_agent_service))
+ 
+     async def require_hr_access(request: Request, *, writable: bool = False):
+diff --git a/backend/hr_agent_knowledge/role.md b/backend/hr_agent_knowledge/role.md
+index df345fe..4f9d54d 100644
+--- a/backend/hr_agent_knowledge/role.md
++++ b/backend/hr_agent_knowledge/role.md
+@@ -36,6 +36,8 @@
+ 
+ 材料确实记载一句话，与那句话已被事实验证，是两种证据。候选人主动区分贡献或承认缺口，可以作为待核验线索，不能据此认定其诚实、未夸大或可信度已经证实。未提供某段记录不证明相应活动未发生；只有材料明确说明未做，才记为未做。回顾流程时保持这一区分，不能先断言执行缺失，再用后文的可能解释抵消。
+ 
++形成评价前，把每个判断限定到具体事项、发生时间、陈述者和材料覆盖范围，并核对全文中的证据状态是否一致。明确没做过、没有记录、自述做过、已由独立材料证实分别保留；同一事项不能在一处写明确未做、另一处写是否做过未知。片段中记下的问题数量只说明该片段，不扩展成整场活动的总量；未独立完成过一次任务是经历边界，不能直接推断其能力上限。不负责某事项也不证明由另一人主导。
++
+ 突出某个关键缺口不等于它是唯一要求；使用“唯一、全部、均无”等范围判断时，回到完整要求与证据核对其范围。推荐的核验手段应说明为何适合本次缺口及实施条件，不把优先选择写成唯一可能的证明方式。
+ 
+ 复盘区分本批材料里的具体观察、可能解释与下一步验证。某个人的一次失败不直接变成通用硬门槛；不能把候选人的原话、逐人评价或独特经历换个名字后写入岗位标准。涉及长期标准的调整只提出建议及适用边界，仍由用户审阅确认；来源包含个人材料时，按服务端限制处理，不删来源来绕过检查。
+diff --git a/backend/tests/test_hr_agent_foundation.py b/backend/tests/test_hr_agent_foundation.py
+index 14ba6d2..f120843 100644
+--- a/backend/tests/test_hr_agent_foundation.py
++++ b/backend/tests/test_hr_agent_foundation.py
+@@ -194,7 +194,7 @@ def test_config_reserves_full_unicode_read_capacity_before_start(tmp_path, input
+         loaded = make_hr_settings(tmp_path / 'load', PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE=str(path))
+         assert loaded.provider_profile['context_window_tokens'] == input_capacity + 4096
+ 
+-@pytest.mark.parametrize("version", [102, 103, 104])
++@pytest.mark.parametrize("version", [102, 103, 104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+ def test_schema_readiness_requires_exact_cutover_migration(version, receipt):
+     from app.hr_agent.config import check_schema_ready
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 2ad2b0c..d68dbc8 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -222,6 +222,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "102_hr_execution_cutover.sql",
+             "103_hr_execution_drain_occupancy.sql",
+             "104_hr_execution_drain_terminal_contract.sql",
++            "105_hr_cloud_resume.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+@@ -505,15 +506,16 @@ def test_dirty_at_rest_receipt_is_never_cleanup_verified(tmp_path):
+         assert receipt["failure_code"] == "at_rest_not_clean"
+         assert receipt["cleanup_verified"] is False
+ 
++@pytest.mark.parametrize("version", [104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+-def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt):
++def test_helper_rejects_missing_or_mismatched_terminal_contract(tmp_path, receipt, version):
+     with hr_agent_database(migrate_hr=False) as database:
+         preview_dsn = _prepare_preview_and_revoke(database)
+         with database.admin_connection() as c:
+             if receipt is None:
+-                c.execute("delete from platform_control.schema_migrations where version=104")
++                c.execute("delete from platform_control.schema_migrations where version=%s", (version,))
+             else:
+-                c.execute("update platform_control.schema_migrations set sha256=%s where version=104", (receipt,))
++                c.execute("update platform_control.schema_migrations set sha256=%s where version=%s", (receipt, version))
+         private = tmp_path / "private"
+         private.mkdir()
+         (private / "control-migrator-database-url").write_text(database.migrator_dsn)
+diff --git a/backend/tests/test_hr_agent_preflight.py b/backend/tests/test_hr_agent_preflight.py
+index 5029389..bc21d6e 100644
+--- a/backend/tests/test_hr_agent_preflight.py
++++ b/backend/tests/test_hr_agent_preflight.py
+@@ -261,6 +261,7 @@ def test_database_readiness_reports_exact_migrations_without_writes(tmp_path):
+         102,
+         103,
+         104,
++        105,
+     ]
+     assert all(item["match"] for item in report["database"]["migrations"])
+     assert report["database"]["permissions_complete"] is True
+@@ -309,7 +310,7 @@ def test_cli_stdout_is_json_and_scrubs_raw_exceptions(tmp_path, capsys):
+     assert str(tmp_path) not in output
+ 
+ 
+-@pytest.mark.parametrize("version", [103, 104])
++@pytest.mark.parametrize("version", [103, 104, 105])
+ @pytest.mark.parametrize("receipt", [None, "0" * 64])
+ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, receipt, version):
+     knowledge = _knowledge(tmp_path / "knowledge")
+@@ -331,6 +332,7 @@ def test_database_readiness_requires_exact_drain_occupancy_migration(tmp_path, r
+     (102, "CUTOVER_MIGRATION"),
+     (103, "DRAIN_OCCUPANCY_MIGRATION"),
+     (104, "DRAIN_TERMINAL_MIGRATION"),
++    (105, "CLOUD_RESUME_MIGRATION"),
+ ])
+ @pytest.mark.parametrize("replace_ledger", [False, True])
+ def test_cutover_diagnostics_use_reviewed_constants_and_detect_changed_image(
+diff --git a/backend/tools/hr_agent/preflight.py b/backend/tools/hr_agent/preflight.py
+index c811a4f..99549b1 100644
+--- a/backend/tools/hr_agent/preflight.py
++++ b/backend/tools/hr_agent/preflight.py
+@@ -41,6 +41,8 @@ DRAIN_TERMINAL_MIGRATION = (
+     Path(__file__).parents[2] / "control_migrations" / "104_hr_execution_drain_terminal_contract.sql"
+ )
+ 
++CLOUD_RESUME_MIGRATION = Path(__file__).parents[2] / "control_migrations" / "105_hr_cloud_resume.sql"
++
+ ATTACHMENT_KEYS = (
+     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
+     "PLATFORM_ATTACHMENT_S3_BUCKET",
+@@ -210,7 +212,7 @@ def _database_report(connection_factory) -> tuple[dict, list[str]]:
+         expected_migrations.update(CUTOVER_MIGRATION_SHA256)
+         image_digests = {}
+         for version, path in ((102, CUTOVER_MIGRATION), (103, DRAIN_OCCUPANCY_MIGRATION),
+-                              (104, DRAIN_TERMINAL_MIGRATION)):
++                              (104, DRAIN_TERMINAL_MIGRATION), (105, CLOUD_RESUME_MIGRATION)):
+             try:
+                 image_digests[version] = _fingerprint(path.read_bytes())
+             except OSError:
+diff --git a/deploy/cloud/compose.yaml b/deploy/cloud/compose.yaml
+index 75295fe..d6d46c1 100644
+--- a/deploy/cloud/compose.yaml
++++ b/deploy/cloud/compose.yaml
+@@ -184,7 +184,11 @@ services:
+       platform-postgres:
+         condition: service_healthy
+     healthcheck:
+-      disable: true
++      test: ["CMD", "python", "-m", "app.hr_agent.worker", "healthcheck"]
++      interval: 15s
++      timeout: 8s
++      start_period: 30s
++      retries: 2
+ 
+   platform-hr-web-worker:
+     image: ${PLATFORM_IMAGE}
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index 1648337..1a45b03 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -188,6 +188,7 @@ class Supervisor:
+             (102, "102_hr_execution_cutover.sql"),
+             (103, "103_hr_execution_drain_occupancy.sql"),
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
++            (105, "105_hr_cloud_resume.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():

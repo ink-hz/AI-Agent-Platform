@@ -1,0 +1,13 @@
+{
+  "hostname": "Zion",
+  "wrapperSha256": "1f7ec97bc06d2755ff78bba389a43019019b534e99d9c9bdda6a1a3deb0b0921",
+  "ecosystemSha256": "055c7b7d99c661bafc8d2acaa6c589614cde53da5aa0641416b02022bbe09355",
+  "expectedState": "online",
+  "runbookSha256": "4bba157d64b5cfedfac2a264aeffee54277bf284a4f5466abebe61bebe120e0d",
+  "beforeState": "online",
+  "otherInstances": {},
+  "block": "HR_LEGACY_STOP",
+  "afterState": "absent",
+  "saved": true,
+  "checkedAt": "2026-09-13T02:43:04.607598+00:00"
+}

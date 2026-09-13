@@ -1,0 +1,15 @@
+{
+  "runbookSha256": "4bba157d64b5cfedfac2a264aeffee54277bf284a4f5466abebe61bebe120e0d",
+  "releasePath": "/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9540/test_attachment_sequence_fails0/release",
+  "releaseSha": "cccccccccccccccccccccccccccccccccccccccc",
+  "imageId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "oldImageId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "oldContainerId": "old",
+  "newContainerId": "new",
+  "sourceSha256": "c9f6434031084cf419c913981e8ee48965e98459347d9b7fadf67113fe342351",
+  "migration100Sha256": "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177",
+  "stoppedAt": "2026-09-13T02:42:17.663070+00:00",
+  "block": "HR_ATTACHMENT_HOTFIX",
+  "checkedAt": "2026-09-13T02:42:17.998426+00:00",
+  "limitation": "Identity/order verification only; real erasure canary is separately required"
+}

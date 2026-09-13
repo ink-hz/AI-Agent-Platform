@@ -1,0 +1,11 @@
+{
+  "head": "051993f92ffd13f24f23b414dc65404db893862c",
+  "merge_head": "65e7fbd14a3cbe99883b0b31e31b5705d183d1f9",
+  "sources": {
+    "stage-1-HrPositionIndex.tsx": "7e2807114b5c4610d5158ff01c1d6501dc5d2297a35c2faf910ecf3dea4ece93",
+    "stage-2-HrPositionIndex.tsx": "5f8c4dd4f80dee59397466ced2cd2345dd2a9c65275ed664ab1a3074646eb390",
+    "stage-3-HrPositionIndex.tsx": "99cbb79dc16a2336d76b40c5131e2e3d1ae4fd4620a2615ce8981e0b12c63bae",
+    "stage-2-HrPositionIndex.test.tsx": "9eb5928729b2eeaa9ba7fd952617345e2b6424e3d6b195dade4e25574639a1fb",
+    "stage-3-HrPositionIndex.test.tsx": "401d8ef2defe613468c66499d95d33ce7e985bbcaa01806db95d2fbc3ce626c6"
+  }
+}

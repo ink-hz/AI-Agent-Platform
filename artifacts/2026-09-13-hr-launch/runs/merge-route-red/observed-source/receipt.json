@@ -1,0 +1,7 @@
+{
+  "boundary": "Captured immediately after RED, before implementation edit; original generic recorder omitted webui",
+  "files": {
+    "webui/src/workspaces/hr/HrWorkspacePage.tsx": "96463c001e39deb75775eae458da8837a17f09d2a203ab9c7a76a9fdbf13df0b",
+    "webui/src/workspaces/hr/HrWorkspacePage.test.tsx": "8269aaad5da91f1026ad5c9a2b9e9e3ac15a6fc54f3485bb472e7a8213fc6858"
+  }
+}

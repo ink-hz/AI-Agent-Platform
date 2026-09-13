@@ -1,0 +1,4 @@
+cwd=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/webui
+command=npx tsc -b --pretty false
+
+exit_code=0
