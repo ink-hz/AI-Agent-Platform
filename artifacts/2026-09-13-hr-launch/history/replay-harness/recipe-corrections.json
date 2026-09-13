@@ -1,0 +1,41 @@
+{
+  "corpus_sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+  "corpus_modified": false,
+  "authority": "root steering 2026-09-13: actual UI same-goal continuation and input contract take precedence over v2 execution recipe",
+  "corrections": [
+    {
+      "field": "work continuation",
+      "frozen_recipe": "new work each turn with same thread and exact preceding saved results",
+      "execution": "first POST /works with thread_id null; subsequent POST /works/{work_id}/inputs using current expected_input_revision and pending_question_id only when waiting_user; same work and retained material/method references",
+      "source_evidence": "backend/app/hr_agent/repository.py append_input, lines590-652; runtime save_result rejects updating a result from another origin_work_id at lines1686-1688"
+    },
+    {
+      "field": "H01 receiving turns1/2",
+      "frozen_recipe": "turn2/3 prior_result_binding requires preceding completed-turn results",
+      "execution": "receiving turns may finish or wait for user without saving; no fake receipt inserted; final turn requires actual jd and requirements result kinds",
+      "source_evidence": "H01 turn1 我会分两次提供...请先接收; turn2 【虚构旧稿】...; only turn3 asks整合两份材料输出新版JD与JR"
+    },
+    {
+      "field": "H03 revisions",
+      "execution": "each turn must persist jd and requirements; subsequent inputs bind actual previous UUID/revision/SHA; next result revisions must retain result IDs and change revision",
+      "source_evidence": "H03 turn1明确请求JD/JR; turns2-4 revise current version"
+    },
+    {
+      "field": "Idempotency-Key",
+      "frozen_recipe_example": "replay-v2:... human recipe label",
+      "execution": "fresh UUID for each input operation; exact same UUID/body replay exercises real idempotency",
+      "source_evidence": "actual existing HR tests use uuid4 and runtime idempotency persists operation receipts"
+    },
+    {
+      "field": "synthetic text attachment material",
+      "execution": "H06/H13 turn1 and H01 turns2/3, H03 turns1/4 upload exact turn-specific context_fixture bytes through HTTP; then real attachment processor and exact material ref; remaining per-turn context inline explicitly labelled synthetic",
+      "source_evidence": "manifest.assets path/version/SHA; no reviewer context-v1.txt total package is injected"
+    }
+  ],
+  "not_claimed": [
+    "real model run",
+    "historical original material",
+    "full-candidate personal processing authority",
+    "professional quality from ScriptModel"
+  ]
+}

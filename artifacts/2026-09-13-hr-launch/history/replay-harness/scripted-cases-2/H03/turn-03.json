@@ -1,0 +1,368 @@
+{
+  "number": 3,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [],
+  "status": "completed",
+  "inline_material": {
+    "path": "fixtures/H03/turn-03-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "version": "synthetic-v2.1"
+  },
+  "request": {
+    "thread_id": "a4aaa716-d768-4b79-848d-4e1cf3d75600",
+    "text": "调性正确，但请减少冗余。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+    "objects": [],
+    "references": [
+      {
+        "kind": "result",
+        "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+        "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+        "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+      }
+    ],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "5a107fff-53d5-4e7a-87da-37b0158f341a",
+  "persisted": {
+    "work": {
+      "work_id": "8883ddfa-b689-4c02-a3e9-70ecd545ff4a",
+      "thread_id": "a4aaa716-d768-4b79-848d-4e1cf3d75600",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "da797cad-e39a-4863-9deb-db4422760995",
+          "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+          "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 2.270615,
+        "charged_calls": 3,
+        "charged_tokens": 63672,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 24,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+              "kind": "result",
+              "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+              "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 23
+          }
+        ],
+        "revision": 7
+      },
+      "last_event_seq": 9
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "fa99b34e-0254-49c4-88cd-84640408900a",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "调性正确，但请减少冗余。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "c3035fb3-39e0-48d0-857d-a2af2382743e",
+          "seq": 4,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放保存完成。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 4
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [
+          {
+            "input_revision": 1,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+        "changes": [],
+        "kind": "role_calibration",
+        "objects": [],
+        "preceding_refs": [
+          {
+            "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+            "kind": "result",
+            "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+            "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+            "kind": "result",
+            "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+            "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+          }
+        ],
+        "title": "工程回放合成成果",
+        "ref": {
+          "kind": "result",
+          "id": "da797cad-e39a-4863-9deb-db4422760995",
+          "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+          "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+        },
+        "access_state": "available"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt_id": "7bed613e-4867-4d07-99a7-40380dd7553d",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36024,
+        "charged_tokens": 19640,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+                  "kind": "result",
+                  "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+                  "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "0181a6fe-bb19-44d1-9a96-977d36357c31",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 37345,
+        "charged_tokens": 20961,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "base_standard_ref": null,
+                "basis": [
+                  {
+                    "input_revision": 1,
+                    "kind": "user_temporary",
+                    "ref": null
+                  }
+                ],
+                "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+                "changes": [],
+                "expected_revision": null,
+                "kind": "role_calibration",
+                "objects": [],
+                "preceding_refs": [
+                  {
+                    "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+                    "kind": "result",
+                    "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+                    "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+                  }
+                ],
+                "result_id": null,
+                "source_refs": [
+                  {
+                    "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+                    "kind": "result",
+                    "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+                    "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+                  }
+                ],
+                "title": "工程回放合成成果"
+              },
+              "name": "save_result",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "e18c9bb9-5ba2-48d8-85db-21fbfffda65a",
+        "ordinal": 3,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 39455,
+        "charged_tokens": 23071,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放保存完成。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "8258ef79-afcf-4f66-98c5-469bd9a324cd",
+        "attempt_id": "7bed613e-4867-4d07-99a7-40380dd7553d",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 23,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "20cd2d06-e985-41e3-b7f4-ba62f84b9b69",
+            "ref": {
+              "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+              "kind": "result",
+              "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+              "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+            },
+            "text": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "total_characters": 23
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "d5cb4584-8d3b-4b7b-9ece-fec15bd39acc",
+        "attempt_id": "0181a6fe-bb19-44d1-9a96-977d36357c31",
+        "namespace": "tool:save_result",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "access_state": "available",
+            "base_standard_ref": null,
+            "basis": [
+              {
+                "input_revision": 1,
+                "kind": "user_temporary",
+                "ref": null
+              }
+            ],
+            "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "changes": [],
+            "kind": "role_calibration",
+            "objects": [],
+            "preceding_refs": [
+              {
+                "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+                "kind": "result",
+                "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+                "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+              }
+            ],
+            "ref": {
+              "id": "da797cad-e39a-4863-9deb-db4422760995",
+              "kind": "result",
+              "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+              "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+            },
+            "source_refs": [
+              {
+                "id": "dcb17f2f-b48f-4324-9fc6-f89cce69f0d3",
+                "kind": "result",
+                "revision": "f5eea69c-0c81-44e0-a2bd-f87dd6b8ccb8",
+                "sha256": "78bb9323d8b13946ec85c8344439f91a6f80f2b1f17781496179df6b5b2cf235"
+              }
+            ],
+            "title": "工程回放合成成果"
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  }
+}

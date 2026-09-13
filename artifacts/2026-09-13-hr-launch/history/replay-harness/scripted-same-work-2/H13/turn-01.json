@@ -1,0 +1,419 @@
+{
+  "number": 1,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [
+    {
+      "path": "fixtures/H13/turn-01-context.txt",
+      "sha256": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a",
+      "version": "synthetic-v2.1",
+      "attachment_id": "beb29445-9b5f-49d4-88a2-2171d103df28",
+      "ref": {
+        "kind": "material",
+        "id": "beb29445-9b5f-49d4-88a2-2171d103df28:text",
+        "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+        "sha256": "b4a86e4d1eac1ab6a66fcf931ef2c0c7878d4a6f7fd332d6a9378e582543514c"
+      },
+      "http": 200
+    }
+  ],
+  "status": "completed",
+  "endpoint": "/api/hr/agent/works",
+  "request": {
+    "thread_id": null,
+    "text": "【本轮合成文字材料：虚构离职分析】包含分组统计、开放文本和缺失字段。请提出改进措施，区分数据事实、解释假设与需补证事项。",
+    "objects": [],
+    "references": [
+      {
+        "kind": "material",
+        "id": "beb29445-9b5f-49d4-88a2-2171d103df28:text",
+        "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+        "sha256": "b4a86e4d1eac1ab6a66fcf931ef2c0c7878d4a6f7fd332d6a9378e582543514c"
+      }
+    ],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "c60c76a9-e80f-42c9-b56e-826c56c9d688",
+  "persisted": {
+    "work": {
+      "work_id": "7d34a7d4-5047-4cf2-afee-ae50ae9ee810",
+      "thread_id": "2632c041-54d3-43e3-834b-ef5f283bdef8",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "3b50c5a1-0ab4-4a1e-a243-41af49f90c73",
+          "revision": "873c1ad5-bcf4-47f0-87d1-225345b94373",
+          "sha256": "8543cf3eca5df3243530f00ba560c0f25700e179d9906c170f109d4d77389f6b"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 0.9368440000000002,
+        "charged_calls": 3,
+        "charged_tokens": 64669,
+        "limits": {
+          "active_seconds": 1800,
+          "model_calls": 32,
+          "total_tokens": 1200000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "beb29445-9b5f-49d4-88a2-2171d103df28:text",
+              "kind": "material",
+              "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+              "sha256": "b4a86e4d1eac1ab6a66fcf931ef2c0c7878d4a6f7fd332d6a9378e582543514c"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 187
+          }
+        ],
+        "revision": 7
+      },
+      "last_event_seq": 9
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "5b52c1ac-5d70-43b8-8bbe-bd173a79e898",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "【本轮合成文字材料：虚构离职分析】包含分组统计、开放文本和缺失字段。请提出改进措施，区分数据事实、解释假设与需补证事项。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "298de52e-a67d-427c-9fe7-e14646868234",
+          "seq": 4,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放保存完成。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 4
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [
+          {
+            "input_revision": 1,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+        "changes": [],
+        "kind": "research",
+        "objects": [],
+        "preceding_refs": [],
+        "source_refs": [
+          {
+            "id": "beb29445-9b5f-49d4-88a2-2171d103df28:text",
+            "kind": "material",
+            "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+            "sha256": "b4a86e4d1eac1ab6a66fcf931ef2c0c7878d4a6f7fd332d6a9378e582543514c"
+          }
+        ],
+        "title": "工程回放合成成果 research",
+        "ref": {
+          "kind": "result",
+          "id": "3b50c5a1-0ab4-4a1e-a243-41af49f90c73",
+          "revision": "873c1ad5-bcf4-47f0-87d1-225345b94373",
+          "sha256": "8543cf3eca5df3243530f00ba560c0f25700e179d9906c170f109d4d77389f6b"
+        },
+        "access_state": "available"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt_id": "425a448a-f2e5-43a4-9c32-065225e8b3d1",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36315,
+        "charged_tokens": 19931,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "beb29445-9b5f-49d4-88a2-2171d103df28:text",
+                  "kind": "material",
+                  "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+                  "sha256": "b4a86e4d1eac1ab6a66fcf931ef2c0c7878d4a6f7fd332d6a9378e582543514c"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "2a0dbbd8-98e8-483b-a835-f97c0c78748f",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 37857,
+        "charged_tokens": 21473,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "base_standard_ref": null,
+                "basis": [
+                  {
+                    "input_revision": 1,
+                    "kind": "user_temporary",
+                    "ref": null
+                  }
+                ],
+                "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+                "changes": [],
+                "expected_revision": null,
+                "kind": "research",
+                "objects": [],
+                "preceding_refs": [],
+                "result_id": null,
+                "source_refs": [
+                  {
+                    "id": "beb29445-9b5f-49d4-88a2-2171d103df28:text",
+                    "kind": "material",
+                    "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+                    "sha256": "b4a86e4d1eac1ab6a66fcf931ef2c0c7878d4a6f7fd332d6a9378e582543514c"
+                  }
+                ],
+                "title": "工程回放合成成果 research"
+              },
+              "name": "save_result",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "36c7b3f4-4de7-447a-930e-65cca02871fe",
+        "ordinal": 3,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 39649,
+        "charged_tokens": 23265,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放保存完成。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "2b51b38b-9cb2-4217-a9cb-fdd9b85abb31",
+        "attempt_id": "425a448a-f2e5-43a4-9c32-065225e8b3d1",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 187,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "5ae27e5e-9be3-4c08-9747-9511e7b3d597",
+            "ref": {
+              "id": "beb29445-9b5f-49d4-88a2-2171d103df28:text",
+              "kind": "material",
+              "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+              "sha256": "b4a86e4d1eac1ab6a66fcf931ef2c0c7878d4a6f7fd332d6a9378e582543514c"
+            },
+            "text": "SYNTHETIC synthetic-v2.1\n完全合成离职分析 v1：观察窗口为合成季度Q1，两个部门样本数为12和8；主动离职记录分别3和2，分母为窗口起始人数，未提供期内入职数，不能据此声称完整离职率。离职原因问卷回收4份：发展2、管理1、通勤1；可多因素但原始表仅允许选一项。开放评论：期待反馈更及时；希望任务边界清楚。部门与评论没有个体关联键；不提供个人明细。\n",
+            "total_characters": 187
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "68071584-92d0-4670-8fb6-e9ec584de717",
+        "attempt_id": "2a0dbbd8-98e8-483b-a835-f97c0c78748f",
+        "namespace": "tool:save_result",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "access_state": "available",
+            "base_standard_ref": null,
+            "basis": [
+              {
+                "input_revision": 1,
+                "kind": "user_temporary",
+                "ref": null
+              }
+            ],
+            "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "changes": [],
+            "kind": "research",
+            "objects": [],
+            "preceding_refs": [],
+            "ref": {
+              "id": "3b50c5a1-0ab4-4a1e-a243-41af49f90c73",
+              "kind": "result",
+              "revision": "873c1ad5-bcf4-47f0-87d1-225345b94373",
+              "sha256": "8543cf3eca5df3243530f00ba560c0f25700e179d9906c170f109d4d77389f6b"
+            },
+            "source_refs": [
+              {
+                "id": "beb29445-9b5f-49d4-88a2-2171d103df28:text",
+                "kind": "material",
+                "revision": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a:utf8-v1",
+                "sha256": "b4a86e4d1eac1ab6a66fcf931ef2c0c7878d4a6f7fd332d6a9378e582543514c"
+              }
+            ],
+            "title": "工程回放合成成果 research"
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  },
+  "http_trace": [
+    {
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/attachments/uploads/f5394945-2ee2-4d8c-89e7-290ef6b010d2/content",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads/f5394945-2ee2-4d8c-89e7-290ef6b010d2/complete",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/materials/beb29445-9b5f-49d4-88a2-2171d103df28",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/7d34a7d4-5047-4cf2-afee-ae50ae9ee810",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/7d34a7d4-5047-4cf2-afee-ae50ae9ee810",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/7d34a7d4-5047-4cf2-afee-ae50ae9ee810/messages",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/results/3b50c5a1-0ab4-4a1e-a243-41af49f90c73/revisions/873c1ad5-bcf4-47f0-87d1-225345b94373",
+      "status": 200
+    }
+  ]
+}

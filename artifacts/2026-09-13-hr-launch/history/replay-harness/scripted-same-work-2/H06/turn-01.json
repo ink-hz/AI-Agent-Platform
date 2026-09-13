@@ -1,0 +1,419 @@
+{
+  "number": 1,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [
+    {
+      "path": "fixtures/H06/turn-01-context.txt",
+      "sha256": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d",
+      "version": "synthetic-v2.1",
+      "attachment_id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0",
+      "ref": {
+        "kind": "material",
+        "id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0:text",
+        "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+        "sha256": "75df8075446d82dbd732cddb9c47a6fd2f1c570bbda7298737d4e169a3331992"
+      },
+      "http": 200
+    }
+  ],
+  "status": "completed",
+  "endpoint": "/api/hr/agent/works",
+  "request": {
+    "thread_id": null,
+    "text": "【本轮合成文字材料：明确虚构的候选人Q通话记录】记录包含本人项目动作、团队成果、未知归因和职业偏好。请形成供招聘负责人审阅的人才报告。",
+    "objects": [],
+    "references": [
+      {
+        "kind": "material",
+        "id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0:text",
+        "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+        "sha256": "75df8075446d82dbd732cddb9c47a6fd2f1c570bbda7298737d4e169a3331992"
+      }
+    ],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "de74bf5b-3dcc-436f-a315-71b6ea8a5d78",
+  "persisted": {
+    "work": {
+      "work_id": "3185b151-ec9c-42a4-9824-dfb00759fd4e",
+      "thread_id": "561118dc-3729-4256-980f-35cb0ea15436",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "fbf525ac-d43e-4e04-b176-ca32cad0f036",
+          "revision": "605bbbe4-6f1d-42b5-8f93-fead9223728d",
+          "sha256": "04497628dd01113232fc1410768c63e5637c352d580b489eedc4065f03477f9f"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 0.953389,
+        "charged_calls": 3,
+        "charged_tokens": 65015,
+        "limits": {
+          "active_seconds": 1800,
+          "model_calls": 32,
+          "total_tokens": 1200000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0:text",
+              "kind": "material",
+              "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+              "sha256": "75df8075446d82dbd732cddb9c47a6fd2f1c570bbda7298737d4e169a3331992"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 213
+          }
+        ],
+        "revision": 7
+      },
+      "last_event_seq": 9
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "4c6aeead-122f-4585-b108-5757a0711885",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "【本轮合成文字材料：明确虚构的候选人Q通话记录】记录包含本人项目动作、团队成果、未知归因和职业偏好。请形成供招聘负责人审阅的人才报告。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "7a9ec95c-3108-4b23-a5c3-768ea64b673d",
+          "seq": 4,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放保存完成。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 4
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [
+          {
+            "input_revision": 1,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+        "changes": [],
+        "kind": "candidate_assessment",
+        "objects": [],
+        "preceding_refs": [],
+        "source_refs": [
+          {
+            "id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0:text",
+            "kind": "material",
+            "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+            "sha256": "75df8075446d82dbd732cddb9c47a6fd2f1c570bbda7298737d4e169a3331992"
+          }
+        ],
+        "title": "工程回放合成成果 candidate_assessment",
+        "ref": {
+          "kind": "result",
+          "id": "fbf525ac-d43e-4e04-b176-ca32cad0f036",
+          "revision": "605bbbe4-6f1d-42b5-8f93-fead9223728d",
+          "sha256": "04497628dd01113232fc1410768c63e5637c352d580b489eedc4065f03477f9f"
+        },
+        "access_state": "available"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt_id": "6d95388f-9de7-4ba4-829c-bc0007243864",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36353,
+        "charged_tokens": 19969,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0:text",
+                  "kind": "material",
+                  "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+                  "sha256": "75df8075446d82dbd732cddb9c47a6fd2f1c570bbda7298737d4e169a3331992"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "d6115a77-5b78-4b5f-8fc5-4461601be65d",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 37987,
+        "charged_tokens": 21603,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "base_standard_ref": null,
+                "basis": [
+                  {
+                    "input_revision": 1,
+                    "kind": "user_temporary",
+                    "ref": null
+                  }
+                ],
+                "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+                "changes": [],
+                "expected_revision": null,
+                "kind": "candidate_assessment",
+                "objects": [],
+                "preceding_refs": [],
+                "result_id": null,
+                "source_refs": [
+                  {
+                    "id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0:text",
+                    "kind": "material",
+                    "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+                    "sha256": "75df8075446d82dbd732cddb9c47a6fd2f1c570bbda7298737d4e169a3331992"
+                  }
+                ],
+                "title": "工程回放合成成果 candidate_assessment"
+              },
+              "name": "save_result",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "9c696fc1-a72b-407f-bc2a-9955eadf7150",
+        "ordinal": 3,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 39827,
+        "charged_tokens": 23443,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放保存完成。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "2000d1c8-0566-49a3-855a-1d24ff9bcbbd",
+        "attempt_id": "6d95388f-9de7-4ba4-829c-bc0007243864",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 213,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "5b5afbdc-1054-43a6-8a1e-0708e2938f50",
+            "ref": {
+              "id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0:text",
+              "kind": "material",
+              "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+              "sha256": "75df8075446d82dbd732cddb9c47a6fd2f1c570bbda7298737d4e169a3331992"
+            },
+            "text": "SYNTHETIC synthetic-v2.1\n完全虚构通话逐字稿 v1：访谈者：你具体做了什么？Q：我写了传感器回放脚本和异常分类说明。访谈者：效果呢？Q：团队后来修复了间歇丢帧，但我不知道自己的脚本贡献占多少；统计结果还没有给我。访谈者：谁做根因验证？Q：同事做硬件复测，我参与对齐日志。访谈者：希望下一份工作怎样？Q：想做更深入的系统诊断，能否带人暂时没想好。以上为新编材料，无真实个人来源；没有其他录音或简历可用。\n",
+            "total_characters": 213
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "a9f1c319-d4de-463f-b3c7-c4a41cf4a62f",
+        "attempt_id": "d6115a77-5b78-4b5f-8fc5-4461601be65d",
+        "namespace": "tool:save_result",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "access_state": "available",
+            "base_standard_ref": null,
+            "basis": [
+              {
+                "input_revision": 1,
+                "kind": "user_temporary",
+                "ref": null
+              }
+            ],
+            "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "changes": [],
+            "kind": "candidate_assessment",
+            "objects": [],
+            "preceding_refs": [],
+            "ref": {
+              "id": "fbf525ac-d43e-4e04-b176-ca32cad0f036",
+              "kind": "result",
+              "revision": "605bbbe4-6f1d-42b5-8f93-fead9223728d",
+              "sha256": "04497628dd01113232fc1410768c63e5637c352d580b489eedc4065f03477f9f"
+            },
+            "source_refs": [
+              {
+                "id": "3a369a38-f43a-4d82-9feb-1e49dc78dbc0:text",
+                "kind": "material",
+                "revision": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d:utf8-v1",
+                "sha256": "75df8075446d82dbd732cddb9c47a6fd2f1c570bbda7298737d4e169a3331992"
+              }
+            ],
+            "title": "工程回放合成成果 candidate_assessment"
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  },
+  "http_trace": [
+    {
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/attachments/uploads/5bf297fa-35de-4903-a8ed-b9ada708c52d/content",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads/5bf297fa-35de-4903-a8ed-b9ada708c52d/complete",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/materials/3a369a38-f43a-4d82-9feb-1e49dc78dbc0",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/3185b151-ec9c-42a4-9824-dfb00759fd4e",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/3185b151-ec9c-42a4-9824-dfb00759fd4e",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/3185b151-ec9c-42a4-9824-dfb00759fd4e/messages",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/results/fbf525ac-d43e-4e04-b176-ca32cad0f036/revisions/605bbbe4-6f1d-42b5-8f93-fead9223728d",
+      "status": 200
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+________________ test_manifest_bytes_are_required_before_replay ________________
+backend/tests/test_hr_agent_history_replay.py:18: in test_manifest_bytes_are_required_before_replay
+    h = harness()
+        ^^^^^^^^^
+backend/tests/test_hr_agent_history_replay.py:12: in harness
+    assert importlib.util.find_spec("tests.helpers.hr_history_replay") is not None, "history replay harness missing"
+E   AssertionError: history replay harness missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x10323c180>('tests.helpers.hr_history_replay')
+E    +    where <function find_spec at 0x10323c180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+_______ test_missing_previous_result_never_becomes_fabricated_reference ________
+backend/tests/test_hr_agent_history_replay.py:25: in test_missing_previous_result_never_becomes_fabricated_reference
+    h = harness()
+        ^^^^^^^^^
+backend/tests/test_hr_agent_history_replay.py:12: in harness
+    assert importlib.util.find_spec("tests.helpers.hr_history_replay") is not None, "history replay harness missing"
+E   AssertionError: history replay harness missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x10323c180>('tests.helpers.hr_history_replay')
+E    +    where <function find_spec at 0x10323c180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+________ test_real_run_requires_separate_explicit_profile_and_evidence _________
+backend/tests/test_hr_agent_history_replay.py:31: in test_real_run_requires_separate_explicit_profile_and_evidence
+    h = harness()
+        ^^^^^^^^^
+backend/tests/test_hr_agent_history_replay.py:12: in harness
+    assert importlib.util.find_spec("tests.helpers.hr_history_replay") is not None, "history replay harness missing"
+E   AssertionError: history replay harness missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x10323c180>('tests.helpers.hr_history_replay')
+E    +    where <function find_spec at 0x10323c180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+______________ test_shared_real_port_budget_denies_the_97th_call _______________
+backend/tests/test_hr_agent_history_replay.py:55: in test_shared_real_port_budget_denies_the_97th_call
+    h = harness()
+        ^^^^^^^^^
+backend/tests/test_hr_agent_history_replay.py:12: in harness
+    assert importlib.util.find_spec("tests.helpers.hr_history_replay") is not None, "history replay harness missing"
+E   AssertionError: history replay harness missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x10323c180>('tests.helpers.hr_history_replay')
+E    +    where <function find_spec at 0x10323c180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_history_replay.py::test_manifest_bytes_are_required_before_replay
+FAILED backend/tests/test_hr_agent_history_replay.py::test_missing_previous_result_never_becomes_fabricated_reference
+FAILED backend/tests/test_hr_agent_history_replay.py::test_real_run_requires_separate_explicit_profile_and_evidence
+FAILED backend/tests/test_hr_agent_history_replay.py::test_shared_real_port_budget_denies_the_97th_call
+4 failed, 5 deselected in 0.05s

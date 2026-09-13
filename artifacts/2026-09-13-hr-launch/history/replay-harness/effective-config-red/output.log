@@ -1,0 +1,12 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_experiment_configuration_revision_matches_effective_profiles _______
+backend/tests/test_hr_agent_history_replay.py:270: in test_experiment_configuration_revision_matches_effective_profiles
+    assert settings.configuration_revision == expected
+E   AssertionError: assert 'a778175ca430...d4ea5fb46b7a8' == '38fe20b9fa62...277da86adcf52'
+E     
+E     - 38fe20b9fa62b5363377942b5cbecdf3bfffbb602827af003c2277da86adcf52
+E     + a778175ca4304b735f7c875baa88257d5456306aea8a43fc147d4ea5fb46b7a8
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_history_replay.py::test_experiment_configuration_revision_matches_effective_profiles
+1 failed, 12 deselected in 1.38s

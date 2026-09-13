@@ -1,0 +1,86 @@
+{
+  "test_summary": "12 passed, 1 skipped in 71.50s (0:01:11)",
+  "source_hashes": {
+    "backend/tests/test_hr_agent_history_replay.py": "199aca5205ceead8c39cc71a91ec1237e261837c81a42e5e860597cc1893ac47",
+    "backend/tests/helpers/hr_history_replay.py": "4c610bd4ff630010d23eb28f218dbbcb118ec5fc68a09d173be73645da13fb1a"
+  },
+  "tested_head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+  "model_execution": "ScriptModel only; real opt-in skipped",
+  "production_default_verified": false,
+  "cases": {
+    "H01": {
+      "turns": 3,
+      "state": "completed",
+      "input_revision": 3,
+      "work_ids": [
+        "182240c9-9a6e-4501-b16d-abf9c10fd985"
+      ],
+      "final_result_kinds": [
+        "jd",
+        "requirements"
+      ],
+      "model_attempts": 8,
+      "knowledge": {
+        "role_release": "hr-8930a9c878a1b6ac7786ca1c",
+        "knowledge_release": "hr-8930a9c878a1b6ac7786ca1c",
+        "role_manifest_sha": "a4603e5e893432cc6caa4bb2402ec4aa3ebe77eec628ae94a520d5582e418700"
+      },
+      "effective_configuration_revision": "d478634c79ee29c7f072f58ae1b55f0cc4ee01efdeea97dc7e9557893e121d97"
+    },
+    "H03": {
+      "turns": 4,
+      "state": "completed",
+      "input_revision": 4,
+      "work_ids": [
+        "60d57d8d-3351-4f77-a839-5eedb4a62081"
+      ],
+      "final_result_kinds": [
+        "jd",
+        "requirements"
+      ],
+      "model_attempts": 23,
+      "knowledge": {
+        "role_release": "hr-8930a9c878a1b6ac7786ca1c",
+        "knowledge_release": "hr-8930a9c878a1b6ac7786ca1c",
+        "role_manifest_sha": "a4603e5e893432cc6caa4bb2402ec4aa3ebe77eec628ae94a520d5582e418700"
+      },
+      "effective_configuration_revision": "1e21f4070a2b33b4d55a0eb070016eba8bd166498715933c0ea16740e30d73ad"
+    },
+    "H06": {
+      "turns": 1,
+      "state": "completed",
+      "input_revision": 1,
+      "work_ids": [
+        "f48c6a3c-a733-41a0-a6ef-4e4c2608a172"
+      ],
+      "final_result_kinds": [
+        "candidate_assessment"
+      ],
+      "model_attempts": 3,
+      "knowledge": {
+        "role_release": "hr-8930a9c878a1b6ac7786ca1c",
+        "knowledge_release": "hr-8930a9c878a1b6ac7786ca1c",
+        "role_manifest_sha": "a4603e5e893432cc6caa4bb2402ec4aa3ebe77eec628ae94a520d5582e418700"
+      },
+      "effective_configuration_revision": "0366539f2250bd28261ca9fb714ae0df03e4021cf3d9c095811cc92760b385fb"
+    },
+    "H13": {
+      "turns": 1,
+      "state": "completed",
+      "input_revision": 1,
+      "work_ids": [
+        "a4821cac-a9a9-4d61-8869-089dbc167cdf"
+      ],
+      "final_result_kinds": [
+        "research"
+      ],
+      "model_attempts": 3,
+      "knowledge": {
+        "role_release": "hr-8930a9c878a1b6ac7786ca1c",
+        "knowledge_release": "hr-8930a9c878a1b6ac7786ca1c",
+        "role_manifest_sha": "a4603e5e893432cc6caa4bb2402ec4aa3ebe77eec628ae94a520d5582e418700"
+      },
+      "effective_configuration_revision": "3a8e3f2908e39d98923e7110a5205b264395a79e6be13e3954abab29fe941f5d"
+    }
+  }
+}

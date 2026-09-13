@@ -1,0 +1,479 @@
+{
+  "number": 2,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [
+    {
+      "path": "fixtures/H01/turn-02-context.txt",
+      "sha256": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7",
+      "version": "synthetic-v2.1",
+      "attachment_id": "720c5efe-10bb-424a-aee7-bde56b2b816a",
+      "ref": {
+        "kind": "material",
+        "id": "720c5efe-10bb-424a-aee7-bde56b2b816a:text",
+        "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+        "sha256": "1e4bab1f56036d7a98353fef9802a69af58a382a142c88b673821e7261ec093d"
+      },
+      "http": 200
+    }
+  ],
+  "status": "completed",
+  "request": {
+    "thread_id": "5a560602-7fda-4da5-9c49-842f02a28398",
+    "text": "【虚构旧稿】高级电路版图岗位负责多层高速板布局、跨硬件结构协作与生产资料交付。",
+    "objects": [],
+    "references": [
+      {
+        "kind": "result",
+        "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+        "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+        "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+      },
+      {
+        "kind": "material",
+        "id": "720c5efe-10bb-424a-aee7-bde56b2b816a:text",
+        "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+        "sha256": "1e4bab1f56036d7a98353fef9802a69af58a382a142c88b673821e7261ec093d"
+      }
+    ],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "52bdfe91-935c-4e0a-886d-d742645bb19f",
+  "persisted": {
+    "work": {
+      "work_id": "5773193e-8a26-4321-a40f-c30976c176ab",
+      "thread_id": "5a560602-7fda-4da5-9c49-842f02a28398",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+          "revision": "da738882-38a5-4339-b762-695669daae3b",
+          "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 2.235017,
+        "charged_calls": 4,
+        "charged_tokens": 89332,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 24,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "720c5efe-10bb-424a-aee7-bde56b2b816a:text",
+              "kind": "material",
+              "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+              "sha256": "1e4bab1f56036d7a98353fef9802a69af58a382a142c88b673821e7261ec093d"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 126
+          },
+          {
+            "ref": {
+              "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+              "kind": "result",
+              "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+              "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 23
+          }
+        ],
+        "revision": 9
+      },
+      "last_event_seq": 11
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "a3e017ad-3fc6-4643-b5db-beca35d774ff",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "【虚构旧稿】高级电路版图岗位负责多层高速板布局、跨硬件结构协作与生产资料交付。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "9c3ba701-ca00-4cb6-b988-2ea91932be91",
+          "seq": 5,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放保存完成。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 5
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [
+          {
+            "input_revision": 1,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+        "changes": [],
+        "kind": "role_calibration",
+        "objects": [],
+        "preceding_refs": [
+          {
+            "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+            "kind": "result",
+            "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+            "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+            "kind": "result",
+            "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+            "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+          },
+          {
+            "id": "720c5efe-10bb-424a-aee7-bde56b2b816a:text",
+            "kind": "material",
+            "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+            "sha256": "1e4bab1f56036d7a98353fef9802a69af58a382a142c88b673821e7261ec093d"
+          }
+        ],
+        "title": "工程回放合成成果",
+        "ref": {
+          "kind": "result",
+          "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+          "revision": "da738882-38a5-4339-b762-695669daae3b",
+          "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+        },
+        "access_state": "available"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt_id": "a3a7d65f-84b3-4e29-a027-6e05d3671d6f",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36393,
+        "charged_tokens": 20009,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+                  "kind": "result",
+                  "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+                  "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "8b142b32-bd28-4cdc-bc88-fc7bfba98c41",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 37715,
+        "charged_tokens": 21331,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "720c5efe-10bb-424a-aee7-bde56b2b816a:text",
+                  "kind": "material",
+                  "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+                  "sha256": "1e4bab1f56036d7a98353fef9802a69af58a382a142c88b673821e7261ec093d"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "562ac969-2de8-4358-891f-fa523482a323",
+        "ordinal": 3,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 39078,
+        "charged_tokens": 22694,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "base_standard_ref": null,
+                "basis": [
+                  {
+                    "input_revision": 1,
+                    "kind": "user_temporary",
+                    "ref": null
+                  }
+                ],
+                "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+                "changes": [],
+                "expected_revision": null,
+                "kind": "role_calibration",
+                "objects": [],
+                "preceding_refs": [
+                  {
+                    "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+                    "kind": "result",
+                    "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+                    "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+                  }
+                ],
+                "result_id": null,
+                "source_refs": [
+                  {
+                    "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+                    "kind": "result",
+                    "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+                    "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+                  },
+                  {
+                    "id": "720c5efe-10bb-424a-aee7-bde56b2b816a:text",
+                    "kind": "material",
+                    "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+                    "sha256": "1e4bab1f56036d7a98353fef9802a69af58a382a142c88b673821e7261ec093d"
+                  }
+                ],
+                "title": "工程回放合成成果"
+              },
+              "name": "save_result",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "6051422b-a197-48bf-a3e7-13f5edcb4ef9",
+        "ordinal": 4,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 41682,
+        "charged_tokens": 25298,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放保存完成。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "9e194597-4fdd-4486-9079-95f30486ebab",
+        "attempt_id": "a3a7d65f-84b3-4e29-a027-6e05d3671d6f",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 23,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "acd38add-1e01-401f-818c-8cd2c483f791",
+            "ref": {
+              "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+              "kind": "result",
+              "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+              "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+            },
+            "text": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "total_characters": 23
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "e90f501c-2683-4bd7-9346-60aa456918c7",
+        "attempt_id": "8b142b32-bd28-4cdc-bc88-fc7bfba98c41",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 126,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "214b31a1-4941-4a85-bb44-8fd0b10b9002",
+            "ref": {
+              "id": "720c5efe-10bb-424a-aee7-bde56b2b816a:text",
+              "kind": "material",
+              "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+              "sha256": "1e4bab1f56036d7a98353fef9802a69af58a382a142c88b673821e7261ec093d"
+            },
+            "text": "SYNTHETIC synthetic-v2.1\n旧版JD v1：高级电路版图工程师。负责多层高速PCB布局布线、与硬件及结构工程师共同评审约束、输出生产资料。要求能解释阻抗/回流路径和约束冲突；加分为板厂DFM协作。没有管理职责、学历或年限硬门槛。\n",
+            "total_characters": 126
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "8b0d5412-f8fe-4bff-a7c4-6f5cf1323998",
+        "attempt_id": "562ac969-2de8-4358-891f-fa523482a323",
+        "namespace": "tool:save_result",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "access_state": "available",
+            "base_standard_ref": null,
+            "basis": [
+              {
+                "input_revision": 1,
+                "kind": "user_temporary",
+                "ref": null
+              }
+            ],
+            "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "changes": [],
+            "kind": "role_calibration",
+            "objects": [],
+            "preceding_refs": [
+              {
+                "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+                "kind": "result",
+                "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+                "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+              }
+            ],
+            "ref": {
+              "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+              "kind": "result",
+              "revision": "da738882-38a5-4339-b762-695669daae3b",
+              "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+            },
+            "source_refs": [
+              {
+                "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+                "kind": "result",
+                "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+                "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+              },
+              {
+                "id": "720c5efe-10bb-424a-aee7-bde56b2b816a:text",
+                "kind": "material",
+                "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+                "sha256": "1e4bab1f56036d7a98353fef9802a69af58a382a142c88b673821e7261ec093d"
+              }
+            ],
+            "title": "工程回放合成成果"
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  }
+}

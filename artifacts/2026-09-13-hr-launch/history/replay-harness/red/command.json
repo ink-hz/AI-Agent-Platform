@@ -1,0 +1,20 @@
+{
+  "head": "ac8c27588b2962ba08d00c11545eada370613908",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_agent_history_replay.py",
+    "-k",
+    "manifest or missing_previous or real_run_requires or shared_real",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T02:43:52.246232+00:00",
+  "sources": {
+    "backend/tests/test_hr_agent_history_replay.py": "ae2802e7f3eee9c1a72e3b7037a4a159bd28cf56c783d03781aedfc27680f56e"
+  },
+  "exit_code": 1,
+  "finished_at": "2026-09-13T02:43:52.497298+00:00"
+}

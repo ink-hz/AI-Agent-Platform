@@ -1,0 +1,13 @@
+....F...s                                                                [100%]
+=================================== FAILURES ===================================
+_ test_scripted_replay_retains_http_identity_material_and_result_boundaries[H03] _
+backend/tests/test_hr_agent_history_replay.py:42: in test_scripted_replay_retains_http_identity_material_and_result_boundaries
+    assert report["status"] == "completed", report
+E   AssertionError: {'case_id': 'H03', 'status': 'failed', 'model_boundary': 'ScriptModel_engineering_only', 'turns': [{'number': 1, 'http....}, {'number': 3, 'http': {'submit': 202, 'replay': 202, 'work': 200}, 'materials': [], 'status': 'failed', ...}], ...}
+E   assert 'failed' == 'completed'
+E     
+E     - completed
+E     + failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_history_replay.py::test_scripted_replay_retains_http_identity_material_and_result_boundaries[H03]
+1 failed, 7 passed, 1 skipped in 44.24s

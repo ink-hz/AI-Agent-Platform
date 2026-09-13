@@ -1,0 +1,240 @@
+{
+  "number": 1,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [],
+  "status": "completed",
+  "inline_material": {
+    "path": "fixtures/H01/turn-01-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "version": "synthetic-v2.1"
+  },
+  "request": {
+    "thread_id": null,
+    "text": "我会分两次提供虚构公司的旧版岗位说明与用人经理访谈记录，请先接收。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+    "objects": [],
+    "references": [],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "49d07b5b-283c-45ef-af23-be0836976846",
+  "persisted": {
+    "work": {
+      "work_id": "23834672-c049-415f-881c-a1c3115ae188",
+      "thread_id": "5a560602-7fda-4da5-9c49-842f02a28398",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+          "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+          "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 0.35574600000000006,
+        "charged_calls": 2,
+        "charged_tokens": 40424,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 24,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [],
+        "revision": 5
+      },
+      "last_event_seq": 7
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "c16bc28d-bf9b-465d-92d5-5cdaabbf5b8c",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "我会分两次提供虚构公司的旧版岗位说明与用人经理访谈记录，请先接收。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "50c2db80-2f4f-4243-8eb6-746563cbc457",
+          "seq": 3,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放保存完成。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 3
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [
+          {
+            "input_revision": 1,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+        "changes": [],
+        "kind": "role_calibration",
+        "objects": [],
+        "preceding_refs": [],
+        "source_refs": [],
+        "title": "工程回放合成成果",
+        "ref": {
+          "kind": "result",
+          "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+          "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+          "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+        },
+        "access_state": "available"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt_id": "2f14fecc-fc8f-486f-aec2-b75b0762b065",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 35947,
+        "charged_tokens": 19563,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "base_standard_ref": null,
+                "basis": [
+                  {
+                    "input_revision": 1,
+                    "kind": "user_temporary",
+                    "ref": null
+                  }
+                ],
+                "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+                "changes": [],
+                "expected_revision": null,
+                "kind": "role_calibration",
+                "objects": [],
+                "preceding_refs": [],
+                "result_id": null,
+                "source_refs": [],
+                "title": "工程回放合成成果"
+              },
+              "name": "save_result",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "a46fbd2f-4f38-41b6-9251-2075a5276d51",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 37245,
+        "charged_tokens": 20861,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放保存完成。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "c8bb66a1-3ae5-40c3-9699-57a93fc816e2",
+        "attempt_id": "2f14fecc-fc8f-486f-aec2-b75b0762b065",
+        "namespace": "tool:save_result",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "access_state": "available",
+            "base_standard_ref": null,
+            "basis": [
+              {
+                "input_revision": 1,
+                "kind": "user_temporary",
+                "ref": null
+              }
+            ],
+            "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "changes": [],
+            "kind": "role_calibration",
+            "objects": [],
+            "preceding_refs": [],
+            "ref": {
+              "id": "163a982d-ef98-48d1-93d3-4d842eaa864a",
+              "kind": "result",
+              "revision": "384d3a0c-7015-4e84-b224-0c636e2564ba",
+              "sha256": "32cc26f8c605bdf1b73be419d9f0e9c581f40fd5576a3d8c9201f9c9b56a1d3a"
+            },
+            "source_refs": [],
+            "title": "工程回放合成成果"
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  }
+}

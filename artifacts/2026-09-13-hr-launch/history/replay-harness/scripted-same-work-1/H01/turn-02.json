@@ -1,0 +1,266 @@
+{
+  "number": 2,
+  "http": {
+    "submit": 202,
+    "replay": 202,
+    "work": 200
+  },
+  "materials": [
+    {
+      "path": "fixtures/H01/turn-02-context.txt",
+      "sha256": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7",
+      "version": "synthetic-v2.1",
+      "attachment_id": "b7841971-0293-4dad-8621-8fbd9a4cc409",
+      "ref": {
+        "kind": "material",
+        "id": "b7841971-0293-4dad-8621-8fbd9a4cc409:text",
+        "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+        "sha256": "6c157cc463bf918e02f2d2ac9e1a2baad67fc46b2a95ae79b4dce2632a1007a3"
+      },
+      "http": 200
+    }
+  ],
+  "status": "completed",
+  "endpoint": "/api/hr/agent/works/a884b2b1-c92f-41a2-ad81-c0130f491b23/inputs",
+  "request": {
+    "expected_input_revision": 1,
+    "question_id": null,
+    "text": "【虚构旧稿】高级电路版图岗位负责多层高速板布局、跨硬件结构协作与生产资料交付。",
+    "objects": [],
+    "references": [
+      {
+        "kind": "material",
+        "id": "b7841971-0293-4dad-8621-8fbd9a4cc409:text",
+        "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+        "sha256": "6c157cc463bf918e02f2d2ac9e1a2baad67fc46b2a95ae79b4dce2632a1007a3"
+      }
+    ]
+  },
+  "idempotency_key": "5cd9414f-dcf5-4e1f-9298-09e1c492c8f0",
+  "persisted": {
+    "work": {
+      "work_id": "a884b2b1-c92f-41a2-ad81-c0130f491b23",
+      "thread_id": "d1e723e3-88f7-4f91-88d0-1e879f65aa58",
+      "input_revision": 2,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 0.732364,
+        "charged_calls": 3,
+        "charged_tokens": 61422,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 24,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 2,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "b7841971-0293-4dad-8621-8fbd9a4cc409:text",
+              "kind": "material",
+              "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+              "sha256": "6c157cc463bf918e02f2d2ac9e1a2baad67fc46b2a95ae79b4dce2632a1007a3"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 126
+          }
+        ],
+        "revision": 5
+      },
+      "last_event_seq": 10
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "25d13db3-1676-4a7d-84b7-186727a73a46",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "我会分两次提供虚构公司的旧版岗位说明与用人经理访谈记录，请先接收。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "f312c977-303f-4f1d-94e1-07e238deb87a",
+          "seq": 2,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放已接收本轮材料。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "52860562-c9a2-4a54-93b2-3c5c1dbd8c7a",
+          "seq": 3,
+          "input_revision": 2,
+          "kind": "user",
+          "body": "【虚构旧稿】高级电路版图岗位负责多层高速板布局、跨硬件结构协作与生产资料交付。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "a8b25650-a9bb-4784-84d2-9e9bfea3b200",
+          "seq": 5,
+          "input_revision": 2,
+          "kind": "assistant",
+          "body": "工程回放已接收本轮材料。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 5
+    },
+    "results": [],
+    "attempts": [
+      {
+        "attempt_id": "47af5515-1740-4349-9907-7628208cc008",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 35947,
+        "charged_tokens": 19563,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放已接收本轮材料。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "a19a76ac-4f6e-4e9f-8ca6-01c310cd297c",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36632,
+        "charged_tokens": 20248,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "b7841971-0293-4dad-8621-8fbd9a4cc409:text",
+                  "kind": "material",
+                  "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+                  "sha256": "6c157cc463bf918e02f2d2ac9e1a2baad67fc46b2a95ae79b4dce2632a1007a3"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "6414d857-1c5d-4685-8128-fb632e7cae1c",
+        "ordinal": 3,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 37995,
+        "charged_tokens": 21611,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放已接收本轮材料。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "31d4e27e-d2ee-4cec-bb7e-381d966c75c8",
+        "attempt_id": "a19a76ac-4f6e-4e9f-8ca6-01c310cd297c",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 126,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "3f6377e1-e82a-4268-88ba-578eb064dcbf",
+            "ref": {
+              "id": "b7841971-0293-4dad-8621-8fbd9a4cc409:text",
+              "kind": "material",
+              "revision": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7:utf8-v1",
+              "sha256": "6c157cc463bf918e02f2d2ac9e1a2baad67fc46b2a95ae79b4dce2632a1007a3"
+            },
+            "text": "SYNTHETIC synthetic-v2.1\n旧版JD v1：高级电路版图工程师。负责多层高速PCB布局布线、与硬件及结构工程师共同评审约束、输出生产资料。要求能解释阻抗/回流路径和约束冲突；加分为板厂DFM协作。没有管理职责、学历或年限硬门槛。\n",
+            "total_characters": 126
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_scripted_replay_retains_http_identity_material_and_result_boundaries[H01] _
+backend/tests/test_hr_agent_history_replay.py:45: in test_scripted_replay_retains_http_identity_material_and_result_boundaries
+    assert all(turn["http"]["submit"] == (201 if index == 0 else 202) and turn["http"]["replay"] == (200 if index == 0 else 202) for index, turn in enumerate(turns))
+E   assert False
+E    +  where False = all(<generator object test_scripted_replay_retains_http_identity_material_and_result_boundaries.<locals>.<genexpr> at 0x10332fe60>)
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_history_replay.py::test_scripted_replay_retains_http_identity_material_and_result_boundaries[H01]
+1 failed, 8 deselected in 8.55s

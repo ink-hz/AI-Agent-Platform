@@ -1,0 +1,159 @@
+{
+  "number": 1,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [],
+  "status": "completed",
+  "inline_material": {
+    "path": "fixtures/H01/turn-01-context.txt",
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+    "version": "synthetic-v2.1"
+  },
+  "endpoint": "/api/hr/agent/works",
+  "request": {
+    "thread_id": null,
+    "text": "我会分两次提供虚构公司的旧版岗位说明与用人经理访谈记录，请先接收。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+    "objects": [],
+    "references": [],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "41149902-e4fb-4aa9-96fa-8859038fde73",
+  "persisted": {
+    "work": {
+      "work_id": "182240c9-9a6e-4501-b16d-abf9c10fd985",
+      "thread_id": "ae842e4c-3c88-45ff-b805-9979946bf2b1",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 0.253906,
+        "charged_calls": 1,
+        "charged_tokens": 19563,
+        "limits": {
+          "active_seconds": 1800,
+          "model_calls": 32,
+          "total_tokens": 1200000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [],
+        "revision": 3
+      },
+      "last_event_seq": 4
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "a22833a2-5f97-4d04-a281-425ac30e3ead",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "我会分两次提供虚构公司的旧版岗位说明与用人经理访谈记录，请先接收。\n\n【本轮新创合成文字背景；非历史原件】\nSYNTHETIC synthetic-v2.1\n本轮没有新增材料；只依据本轮问题及已授权的前轮精确成果与材料。\n",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "37007824-31f1-4c54-a0e7-c3727629706e",
+          "seq": 2,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放已接收本轮材料。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 2
+    },
+    "results": [],
+    "attempts": [
+      {
+        "attempt_id": "162e46e8-5fbc-4fa9-9ce9-b144a5a9aa44",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 35947,
+        "charged_tokens": 19563,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放已接收本轮材料。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": []
+  },
+  "http_trace": [
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/182240c9-9a6e-4501-b16d-abf9c10fd985",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/182240c9-9a6e-4501-b16d-abf9c10fd985",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/agent/works/182240c9-9a6e-4501-b16d-abf9c10fd985/messages",
+      "status": 200
+    }
+  ]
+}

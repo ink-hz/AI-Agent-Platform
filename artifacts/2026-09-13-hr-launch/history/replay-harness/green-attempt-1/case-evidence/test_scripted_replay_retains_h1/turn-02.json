@@ -1,0 +1,8 @@
+{
+  "number": 2,
+  "http": {},
+  "materials": [],
+  "status": "failed",
+  "failure_type": "ValueError",
+  "failure_code": "previous result absent: cannot fabricate saved result"
+}

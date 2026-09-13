@@ -1,0 +1,479 @@
+{
+  "number": 3,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [
+    {
+      "path": "fixtures/H01/turn-03-context.txt",
+      "sha256": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f",
+      "version": "synthetic-v2.1",
+      "attachment_id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6",
+      "ref": {
+        "kind": "material",
+        "id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6:text",
+        "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+        "sha256": "78de73233c297388da202a4806ba5f2b7c0d9f8edda7e228d1e0aa781aeb44dc"
+      },
+      "http": 200
+    }
+  ],
+  "status": "completed",
+  "request": {
+    "thread_id": "5a560602-7fda-4da5-9c49-842f02a28398",
+    "text": "这是一个新的高级版图专家岗位，不需要等待确认。请整合两份材料输出新版 JD 与 JR，并区分必需、加分和待确认信息。",
+    "objects": [],
+    "references": [
+      {
+        "kind": "result",
+        "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+        "revision": "da738882-38a5-4339-b762-695669daae3b",
+        "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+      },
+      {
+        "kind": "material",
+        "id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6:text",
+        "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+        "sha256": "78de73233c297388da202a4806ba5f2b7c0d9f8edda7e228d1e0aa781aeb44dc"
+      }
+    ],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "b2bd76c9-a01e-4508-984e-0c372aa76386",
+  "persisted": {
+    "work": {
+      "work_id": "80998865-2ae3-46fe-82b8-c93c0032d703",
+      "thread_id": "5a560602-7fda-4da5-9c49-842f02a28398",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "1a81047f-b46f-428d-a478-7ebb306f9497",
+          "revision": "2af11799-b79f-4b54-8cd7-a6d44d8cf93b",
+          "sha256": "bde455ac53042d3f191f12f024ea8bd7a1722b04731af74898939f092cb96c54"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 3.5715369999999997,
+        "charged_calls": 4,
+        "charged_tokens": 89832,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 24,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6:text",
+              "kind": "material",
+              "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+              "sha256": "78de73233c297388da202a4806ba5f2b7c0d9f8edda7e228d1e0aa781aeb44dc"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 146
+          },
+          {
+            "ref": {
+              "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+              "kind": "result",
+              "revision": "da738882-38a5-4339-b762-695669daae3b",
+              "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 23
+          }
+        ],
+        "revision": 9
+      },
+      "last_event_seq": 11
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "00d0b047-937a-416b-9915-70ace91d7e90",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "这是一个新的高级版图专家岗位，不需要等待确认。请整合两份材料输出新版 JD 与 JR，并区分必需、加分和待确认信息。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "3b2df211-c067-4688-934e-11231e5063a9",
+          "seq": 5,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放保存完成。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 5
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [
+          {
+            "input_revision": 1,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+        "changes": [],
+        "kind": "role_calibration",
+        "objects": [],
+        "preceding_refs": [
+          {
+            "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+            "kind": "result",
+            "revision": "da738882-38a5-4339-b762-695669daae3b",
+            "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+            "kind": "result",
+            "revision": "da738882-38a5-4339-b762-695669daae3b",
+            "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+          },
+          {
+            "id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6:text",
+            "kind": "material",
+            "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+            "sha256": "78de73233c297388da202a4806ba5f2b7c0d9f8edda7e228d1e0aa781aeb44dc"
+          }
+        ],
+        "title": "工程回放合成成果",
+        "ref": {
+          "kind": "result",
+          "id": "1a81047f-b46f-428d-a478-7ebb306f9497",
+          "revision": "2af11799-b79f-4b54-8cd7-a6d44d8cf93b",
+          "sha256": "bde455ac53042d3f191f12f024ea8bd7a1722b04731af74898939f092cb96c54"
+        },
+        "access_state": "available"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt_id": "ac8957b9-4ca8-4b42-b1bd-4d47a65c0300",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36479,
+        "charged_tokens": 20095,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+                  "kind": "result",
+                  "revision": "da738882-38a5-4339-b762-695669daae3b",
+                  "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "59fb561e-0f00-4316-bad8-fe4791043b12",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 37801,
+        "charged_tokens": 21417,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6:text",
+                  "kind": "material",
+                  "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+                  "sha256": "78de73233c297388da202a4806ba5f2b7c0d9f8edda7e228d1e0aa781aeb44dc"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "9b0bd89d-0fc2-45c2-8fe0-aa4ef8f80789",
+        "ordinal": 3,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 39242,
+        "charged_tokens": 22858,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "base_standard_ref": null,
+                "basis": [
+                  {
+                    "input_revision": 1,
+                    "kind": "user_temporary",
+                    "ref": null
+                  }
+                ],
+                "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+                "changes": [],
+                "expected_revision": null,
+                "kind": "role_calibration",
+                "objects": [],
+                "preceding_refs": [
+                  {
+                    "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+                    "kind": "result",
+                    "revision": "da738882-38a5-4339-b762-695669daae3b",
+                    "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+                  }
+                ],
+                "result_id": null,
+                "source_refs": [
+                  {
+                    "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+                    "kind": "result",
+                    "revision": "da738882-38a5-4339-b762-695669daae3b",
+                    "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+                  },
+                  {
+                    "id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6:text",
+                    "kind": "material",
+                    "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+                    "sha256": "78de73233c297388da202a4806ba5f2b7c0d9f8edda7e228d1e0aa781aeb44dc"
+                  }
+                ],
+                "title": "工程回放合成成果"
+              },
+              "name": "save_result",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "a421b2b9-18f8-4a28-be09-23dfa2f6d148",
+        "ordinal": 4,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 41846,
+        "charged_tokens": 25462,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放保存完成。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "f3d564bb-09e2-47f4-a274-862b9899aefa",
+        "attempt_id": "ac8957b9-4ca8-4b42-b1bd-4d47a65c0300",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 23,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "f6c0efd5-6d2c-4bcc-b9cf-6242ca6f1ee8",
+            "ref": {
+              "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+              "kind": "result",
+              "revision": "da738882-38a5-4339-b762-695669daae3b",
+              "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+            },
+            "text": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "total_characters": 23
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "8a3647f5-39d5-4599-aa79-175b0b02502f",
+        "attempt_id": "59fb561e-0f00-4316-bad8-fe4791043b12",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 146,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "61b09e4d-dfea-479e-9173-d64b2f0ced69",
+            "ref": {
+              "id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6:text",
+              "kind": "material",
+              "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+              "sha256": "78de73233c297388da202a4806ba5f2b7c0d9f8edda7e228d1e0aa781aeb44dc"
+            },
+            "text": "SYNTHETIC synthetic-v2.1\n用人经理访谈 v1：新设专家岗位，要主导复杂板级方案评审和疑难问题闭环，也亲自实施关键布局；不能把所有布线执行都交给别人。对高速信号与电源完整性，需要能与仿真工程师共同核验；具体速率、层数、汇报关系及编制尚未确定。旧岗不是被批准的新岗标准。\n",
+            "total_characters": 146
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "3537070c-7b17-463c-be6a-c1cd38c07cb1",
+        "attempt_id": "9b0bd89d-0fc2-45c2-8fe0-aa4ef8f80789",
+        "namespace": "tool:save_result",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "access_state": "available",
+            "base_standard_ref": null,
+            "basis": [
+              {
+                "input_revision": 1,
+                "kind": "user_temporary",
+                "ref": null
+              }
+            ],
+            "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "changes": [],
+            "kind": "role_calibration",
+            "objects": [],
+            "preceding_refs": [
+              {
+                "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+                "kind": "result",
+                "revision": "da738882-38a5-4339-b762-695669daae3b",
+                "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+              }
+            ],
+            "ref": {
+              "id": "1a81047f-b46f-428d-a478-7ebb306f9497",
+              "kind": "result",
+              "revision": "2af11799-b79f-4b54-8cd7-a6d44d8cf93b",
+              "sha256": "bde455ac53042d3f191f12f024ea8bd7a1722b04731af74898939f092cb96c54"
+            },
+            "source_refs": [
+              {
+                "id": "0ecd55d7-bdbe-4a89-80bc-099e88c5adf2",
+                "kind": "result",
+                "revision": "da738882-38a5-4339-b762-695669daae3b",
+                "sha256": "9a94f98c69a525c243d7e53af1acac569c9c1f746cfda03810bf413fe239c2ee"
+              },
+              {
+                "id": "d6eb33c7-0ccd-40d2-a75a-42c1ecad7fe6:text",
+                "kind": "material",
+                "revision": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f:utf8-v1",
+                "sha256": "78de73233c297388da202a4806ba5f2b7c0d9f8edda7e228d1e0aa781aeb44dc"
+              }
+            ],
+            "title": "工程回放合成成果"
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  }
+}

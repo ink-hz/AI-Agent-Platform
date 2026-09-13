@@ -1,0 +1,21 @@
+{
+  "head": "30dcd350cdb7127271aa5bb1788eef19825e4d51",
+  "command": [
+    "env",
+    "HR_HISTORY_SCRIPT_EVIDENCE_DIR=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/history/replay-harness/final-scripted-cases",
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_agent_history_replay.py",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T02:55:55.288946+00:00",
+  "sources": {
+    "backend/tests/test_hr_agent_history_replay.py": "2e11b3fc1c0cefb769c46d78e5396ee858aafaa4ff5b16052628fb660531546a",
+    "backend/tests/helpers/hr_history_replay.py": "024c45dbe6fba3f74fb536e8e985c1d424847623dcf427c1e43f39cf7ecea74a"
+  },
+  "exit_code": 0,
+  "finished_at": "2026-09-13T02:57:05.218776+00:00"
+}

@@ -1,0 +1,479 @@
+{
+  "number": 4,
+  "http": {
+    "submit": 201,
+    "replay": 200,
+    "work": 200
+  },
+  "materials": [
+    {
+      "path": "fixtures/H03/turn-04-context.txt",
+      "sha256": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099",
+      "version": "synthetic-v2.1",
+      "attachment_id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb",
+      "ref": {
+        "kind": "material",
+        "id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb:text",
+        "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+        "sha256": "5e71868dc1d474163b4614fffae0d2e15967e6517a4cdb6da8229302c73b47cd"
+      },
+      "http": 200
+    }
+  ],
+  "status": "completed",
+  "request": {
+    "thread_id": "a4aaa716-d768-4b79-848d-4e1cf3d75600",
+    "text": "把虚构产品范围补入可制造性职责：视觉模组、扫描设备、增材制造设备、工业与具身机器人、协作臂和采集设备。",
+    "objects": [],
+    "references": [
+      {
+        "kind": "result",
+        "id": "da797cad-e39a-4863-9deb-db4422760995",
+        "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+        "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+      },
+      {
+        "kind": "material",
+        "id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb:text",
+        "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+        "sha256": "5e71868dc1d474163b4614fffae0d2e15967e6517a4cdb6da8229302c73b47cd"
+      }
+    ],
+    "budget_profile": "test"
+  },
+  "idempotency_key": "4a18523f-7b94-4056-8c81-336b32495748",
+  "persisted": {
+    "work": {
+      "work_id": "a7751d69-8edf-4c45-84b1-8f8dd9bfacac",
+      "thread_id": "a4aaa716-d768-4b79-848d-4e1cf3d75600",
+      "input_revision": 1,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "4ac47162-8996-4ff2-8e3c-270041e52816",
+          "revision": "9af27297-b43a-4bdb-aa1c-1143dbd2c3db",
+          "sha256": "c0e512f0b75b91efe3349ddbe6aab7c06490da465a52ea774f82d30d47be1188"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 4.230479,
+        "charged_calls": 4,
+        "charged_tokens": 89290,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 24,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 1,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb:text",
+              "kind": "material",
+              "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+              "sha256": "5e71868dc1d474163b4614fffae0d2e15967e6517a4cdb6da8229302c73b47cd"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 64
+          },
+          {
+            "ref": {
+              "id": "da797cad-e39a-4863-9deb-db4422760995",
+              "kind": "result",
+              "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+              "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 23
+          }
+        ],
+        "revision": 9
+      },
+      "last_event_seq": 11
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "b02b5a56-94df-4801-b8c3-a5df2fe3f8f9",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "把虚构产品范围补入可制造性职责：视觉模组、扫描设备、增材制造设备、工业与具身机器人、协作臂和采集设备。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "6706c6ed-ee35-491c-8e8a-e36f192a43b9",
+          "seq": 5,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "工程回放保存完成。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 5
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [
+          {
+            "input_revision": 1,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+        "changes": [],
+        "kind": "role_calibration",
+        "objects": [],
+        "preceding_refs": [
+          {
+            "id": "da797cad-e39a-4863-9deb-db4422760995",
+            "kind": "result",
+            "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+            "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "da797cad-e39a-4863-9deb-db4422760995",
+            "kind": "result",
+            "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+            "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+          },
+          {
+            "id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb:text",
+            "kind": "material",
+            "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+            "sha256": "5e71868dc1d474163b4614fffae0d2e15967e6517a4cdb6da8229302c73b47cd"
+          }
+        ],
+        "title": "工程回放合成成果",
+        "ref": {
+          "kind": "result",
+          "id": "4ac47162-8996-4ff2-8e3c-270041e52816",
+          "revision": "9af27297-b43a-4bdb-aa1c-1143dbd2c3db",
+          "sha256": "c0e512f0b75b91efe3349ddbe6aab7c06490da465a52ea774f82d30d47be1188"
+        },
+        "access_state": "available"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt_id": "9e517c8f-5c44-455d-aaef-d16f14571487",
+        "ordinal": 1,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 36465,
+        "charged_tokens": 20081,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "da797cad-e39a-4863-9deb-db4422760995",
+                  "kind": "result",
+                  "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+                  "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "a2d4c039-aa01-4b4b-aede-92e8605ea026",
+        "ordinal": 2,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 37787,
+        "charged_tokens": 21403,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "ref": {
+                  "id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb:text",
+                  "kind": "material",
+                  "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+                  "sha256": "5e71868dc1d474163b4614fffae0d2e15967e6517a4cdb6da8229302c73b47cd"
+                }
+              },
+              "name": "read_resource",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "355ff85a-2fed-4568-a904-3b68fbd67922",
+        "ordinal": 3,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 38985,
+        "charged_tokens": 22601,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "tool_calls",
+          "text": "",
+          "tool_calls": [
+            {
+              "arguments": {
+                "base_standard_ref": null,
+                "basis": [
+                  {
+                    "input_revision": 1,
+                    "kind": "user_temporary",
+                    "ref": null
+                  }
+                ],
+                "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+                "changes": [],
+                "expected_revision": null,
+                "kind": "role_calibration",
+                "objects": [],
+                "preceding_refs": [
+                  {
+                    "id": "da797cad-e39a-4863-9deb-db4422760995",
+                    "kind": "result",
+                    "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+                    "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+                  }
+                ],
+                "result_id": null,
+                "source_refs": [
+                  {
+                    "id": "da797cad-e39a-4863-9deb-db4422760995",
+                    "kind": "result",
+                    "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+                    "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+                  },
+                  {
+                    "id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb:text",
+                    "kind": "material",
+                    "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+                    "sha256": "5e71868dc1d474163b4614fffae0d2e15967e6517a4cdb6da8229302c73b47cd"
+                  }
+                ],
+                "title": "工程回放合成成果"
+              },
+              "name": "save_result",
+              "provider_call_id": "call-1"
+            }
+          ],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      },
+      {
+        "attempt_id": "5488f619-3d86-4f2f-b888-0d371eccdb97",
+        "ordinal": 4,
+        "status": "committed",
+        "purpose": "work",
+        "usage_quality": "estimated",
+        "reserved_tokens": 41589,
+        "charged_tokens": 25205,
+        "response_model": {
+          "reported_models": [],
+          "status": "not_reported_or_not_captured",
+          "identity_assurance": "provider_self_report_only"
+        },
+        "reply": {
+          "stop_reason": "stop",
+          "text": "工程回放保存完成。",
+          "tool_calls": [],
+          "usage": {
+            "input_total": 10,
+            "output_total": 5,
+            "quality": "reported",
+            "raw": {
+              "completion_tokens": 5,
+              "prompt_tokens": 10
+            }
+          }
+        }
+      }
+    ],
+    "tools": [
+      {
+        "operation_id": "ca4ef9ca-4e05-47fa-94c1-4f088f715988",
+        "attempt_id": "9e517c8f-5c44-455d-aaef-d16f14571487",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 23,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "06c709c3-f908-46d5-81db-4f7f8fc2b9a5",
+            "ref": {
+              "id": "da797cad-e39a-4863-9deb-db4422760995",
+              "kind": "result",
+              "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+              "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+            },
+            "text": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "total_characters": 23
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "c8423224-c51a-41b8-8ec1-fedc08035d2c",
+        "attempt_id": "a2d4c039-aa01-4b4b-aede-92e8605ea026",
+        "namespace": "tool:read_resource",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "coverage_complete": true,
+            "coverage_notes": [],
+            "end": 64,
+            "next_offset": null,
+            "offset": 0,
+            "read_id": "3a51fd0a-1a49-4a97-a674-4b8b3d8b39a5",
+            "ref": {
+              "id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb:text",
+              "kind": "material",
+              "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+              "sha256": "5e71868dc1d474163b4614fffae0d2e15967e6517a4cdb6da8229302c73b47cd"
+            },
+            "text": "SYNTHETIC synthetic-v2.1\n产品范围：视觉模组、扫描设备、增材设备、工业及具身机器人、协作臂、采集设备。\n",
+            "total_characters": 64
+          },
+          "error": null,
+          "status": "ok"
+        }
+      },
+      {
+        "operation_id": "f2c1df57-b68d-456c-96bb-614e497ec551",
+        "attempt_id": "355ff85a-2fed-4568-a904-3b68fbd67922",
+        "namespace": "tool:save_result",
+        "status": "committed",
+        "receipt": {
+          "data": {
+            "access_state": "available",
+            "base_standard_ref": null,
+            "basis": [
+              {
+                "input_revision": 1,
+                "kind": "user_temporary",
+                "ref": null
+              }
+            ],
+            "body": "仅验证真实保存与精确引用，不表示专业质量合格。",
+            "changes": [],
+            "kind": "role_calibration",
+            "objects": [],
+            "preceding_refs": [
+              {
+                "id": "da797cad-e39a-4863-9deb-db4422760995",
+                "kind": "result",
+                "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+                "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+              }
+            ],
+            "ref": {
+              "id": "4ac47162-8996-4ff2-8e3c-270041e52816",
+              "kind": "result",
+              "revision": "9af27297-b43a-4bdb-aa1c-1143dbd2c3db",
+              "sha256": "c0e512f0b75b91efe3349ddbe6aab7c06490da465a52ea774f82d30d47be1188"
+            },
+            "source_refs": [
+              {
+                "id": "da797cad-e39a-4863-9deb-db4422760995",
+                "kind": "result",
+                "revision": "f0b53f3b-0896-404e-bbd2-25a5ebca1dc9",
+                "sha256": "ba0d4686fdc38107567595be843ab8536e337bda1e4040461b4f039989eaabf5"
+              },
+              {
+                "id": "71daf6f4-bc7c-4a48-a932-fd468509b6cb:text",
+                "kind": "material",
+                "revision": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099:utf8-v1",
+                "sha256": "5e71868dc1d474163b4614fffae0d2e15967e6517a4cdb6da8229302c73b47cd"
+              }
+            ],
+            "title": "工程回放合成成果"
+          },
+          "error": null,
+          "status": "ok"
+        }
+      }
+    ]
+  }
+}
