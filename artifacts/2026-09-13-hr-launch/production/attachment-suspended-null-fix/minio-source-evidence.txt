@@ -1,0 +1,10 @@
+MinIO source commit: 7ced9663e6a791fef9dc6be798ff24cda9c730ac
+File: cmd/api-headers.go
+File SHA-256: 81b485e3db8b14df32a0654642fe9d151210ce8ef44da9c3b2f599e52e5d67ac
+Relevant lines 229-234:
+	}
+
+	// Set the relevant version ID as part of the response header.
+	if objInfo.VersionID != "" && objInfo.VersionID != nullVersionID {
+		w.Header()[xhttp.AmzVersionID] = []string{objInfo.VersionID}
+	}

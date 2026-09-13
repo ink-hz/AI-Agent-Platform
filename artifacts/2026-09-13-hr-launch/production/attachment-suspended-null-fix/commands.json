@@ -1,0 +1,33 @@
+{
+  "commands": [
+    {
+      "exit": 1,
+      "phase": "red-real-shape",
+      "shell_command": "backend/.venv/bin/python -m pytest -q backend/tests/test_attachment_s3_version_erasure.py::test_suspended_null_fence_head_may_omit_version_echo backend/tests/test_attachment_write_fence.py::test_version_head_must_bind_the_exact_listed_version"
+    },
+    {
+      "exit": 1,
+      "phase": "red-explicit-none",
+      "shell_command": "backend/.venv/bin/python -m pytest -q backend/tests/test_attachment_s3_version_erasure.py -k 'suspended_null_fence_head_rejects_conflicting_version_echo'"
+    },
+    {
+      "exit": 0,
+      "phase": "green-focused-final",
+      "shell_command": "backend/.venv/bin/python -m pytest -q backend/tests/test_attachment_s3_version_erasure.py::test_suspended_null_fence_head_may_omit_version_echo backend/tests/test_attachment_s3_version_erasure.py::test_suspended_null_fence_head_rejects_conflicting_version_echo backend/tests/test_attachment_write_fence.py::test_version_head_must_bind_the_exact_listed_version"
+    },
+    {
+      "exit": 0,
+      "phase": "green-attachment-suite-final",
+      "shell_command": "backend/.venv/bin/python -m pytest -q backend/tests/test_attachment*.py"
+    },
+    {
+      "exit": 0,
+      "phase": "green-ruff-final",
+      "shell_command": "backend/.venv/bin/ruff check backend/app/attachments/s3_erasure.py backend/tests/test_attachment_s3_version_erasure.py"
+    }
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "external_real_minio_driver_owned_by": "root",
+  "external_real_minio_receipt": "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-4/receipt.json",
+  "schema_version": 1
+}

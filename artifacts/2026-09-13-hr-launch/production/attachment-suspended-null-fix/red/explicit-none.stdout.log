@@ -1,0 +1,20 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+____ test_suspended_null_fence_head_rejects_conflicting_version_echo[None] _____
+
+reported_version = None
+
+    @pytest.mark.parametrize("reported_version", (None, "other-version"))
+    def test_suspended_null_fence_head_rejects_conflicting_version_echo(reported_version):
+        client = SuspendedNullHeadS3(
+            ({"Kind": "version", "Key": "owned", "VersionId": "payload"},),
+            reported_version=reported_version,
+        )
+    
+>       with pytest.raises(AttachmentObjectWriterError, match="delete failed"):
+E       Failed: DID NOT RAISE AttachmentObjectWriterError
+
+backend/tests/test_attachment_s3_version_erasure.py:297: Failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_s3_version_erasure.py::test_suspended_null_fence_head_rejects_conflicting_version_echo[None]
+1 failed, 1 passed, 17 deselected in 0.13s

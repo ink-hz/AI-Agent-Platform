@@ -1,0 +1,23 @@
+{
+  "base_commit": "b80ea68890d8a16bb959cb171e2709cc2bd61cbc",
+  "base_files_sha256": {
+    "HR_Agent\u5de5\u4f5c\u6d41.md": "bc0166cf8f75213597dcc21b356928f8eb39525e414159ba2af4919a9eb5af0a",
+    "HR\u603b\u4f53\u67b6\u6784\u8bbe\u8ba1.md": "7f646d00d69ac263d7a5eeee6802e8013dcece8318f55b473f48afdf1bab3b4d",
+    "backend/app/attachments/s3_erasure.py": "06bece78e4711df636e7e92e424c7eb9cd1e2e39054ac9b4a2b4eb79e9f694ba",
+    "backend/tests/test_attachment_s3_version_erasure.py": "995d4cdb8a50e9230d6316213fff3d36e375dd0ebf10439ab72d33edbd90cd60"
+  },
+  "minio_api_headers_sha256": "81b485e3db8b14df32a0654642fe9d151210ce8ef44da9c3b2f599e52e5d67ac",
+  "minio_source_commit": "7ced9663e6a791fef9dc6be798ff24cda9c730ac",
+  "minio_source_evidence_sha256": "a5997e8ea05dd06fc546224f56e3923d3d4240a9c44b45dcbd3accebfa595fba",
+  "result_files_sha256": {
+    "HR_Agent\u5de5\u4f5c\u6d41.md": "479eec77965abe443af861d546c9305510cd1e445478fec520ec27955a6e44f6",
+    "HR\u603b\u4f53\u67b6\u6784\u8bbe\u8ba1.md": "acc00b0969ca95ef7ca6fbd34ad535987023549142455dc22a1f8f15701f007e",
+    "artifacts/2026-09-13-hr-launch/production/minio-version-readonly-1/stdout.log": "6793e100e0107bbcd2ac531f2e13f22c7fb6774023336adb1b1377591b47f1c7",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-4/receipt.json": "9b71c7f53645766d1e201bf165c8898cb3bd0c82a3d0dd867512364db681be0d",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-diagnostic-3/receipt.json": "d0125370e1ddd3c5371fd3d65038e91ff261d7bcd929f3c8573f7d7193bf0031",
+    "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-diagnostic-3/suspended-trace.jsonl": "0c340f95319cbdcfcc7727ed27f5eef58f641af7029987346ea98b93f2e414e7",
+    "backend/app/attachments/s3_erasure.py": "42c230ff413fd53402176dd988ff78b511a79a28489130890808d7331cc44933",
+    "backend/tests/test_attachment_s3_version_erasure.py": "a981e2d38f4642dfb09719719d921f22600f6df2b5cefdbd4d3343f916cb1b5e"
+  },
+  "schema_version": 1
+}

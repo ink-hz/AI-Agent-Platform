@@ -1,0 +1,161 @@
+diff --git "a/HR_Agent\345\267\245\344\275\234\346\265\201.md" "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+index d836f30f..4198061d 100644
+--- "a/HR_Agent\345\267\245\344\275\234\346\265\201.md"
++++ "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+@@ -233,7 +233,7 @@ C评审后发现未消费工具批次的硬窗口死锁，进入D前按[修订
+ 
+ 研究成功只在显式300秒配置下发生；120秒默认配置目前无C3成功记录。7岗样例需要16384输出，费用核算不得把约2倍实报的保守扣记当账单。工作用量标签按实际扣记来源汇总，全估算不写mixed。平台附件擦除缺陷独立登记为架构D5，旧Worker停止、迁移100、修复镜像启动必须按该顺序处置；本地测试不代表生产已经恢复。
+ 
+-附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传正文先在有界、可 seek 的临时文件中流式完成长度与 SHA 校验，再允许对象客户端做完整性预读和重试；长度错误不会先写远端。上传失败的清理只删除成功响应证明属于本次写入的准确不可变版本；`VersionId=null` 或响应不确定时保留引用，不能删除整个 key 或现有 fence。
++附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；暂停桶中，只有从完整清单取得 `VersionId=null` 后显式按该值 HEAD 的响应可以省略版本回显，零长度与专用元数据仍须完全匹配，其他版本缺少或错报版本回显一律失败；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传正文先在有界、可 seek 的临时文件中流式完成长度与 SHA 校验，再允许对象客户端做完整性预读和重试；长度错误不会先写远端。上传失败的清理只删除成功响应证明属于本次写入的准确不可变版本；`VersionId=null` 或响应不确定时保留引用，不能删除整个 key 或现有 fence。
+ 
+ 106 在擦除领取事务中先锁附件并写 `deleted/erasure_pending`，保留上传尝试与其他对象引用，再读取全部 derive job，并按 Worker 共用的确定性 key 算法补齐尚未登记的衍生对象。先完成扫描的一侧会先登记 derive job；擦除先领取的一侧会使晚到处理结果因 deleted 检查失败，而其在途条件 PUT 只能在 fence 前成功并被本次枚举删除，或在 fence 后收到 412。API、附件处理 Worker 与维护 Worker 必须同批使用该协议并排除旧无条件写者；附件 API 构建、两类 Worker 构建和 healthcheck 在任何 payload PUT 或擦除 claim 前只读核实准确角色、106 固定校验和与维护角色四列权限。运行中撤权仍按实际数据库错误保持引用，不能由启动检查宣称永久安全。当前 running 领取没有自动 lease/reaper，进程领取后崩溃需由发布监督器明确发现并处置。
+ 
+diff --git "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md" "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+index c9a4bc96..e87a9bf4 100644
+--- "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
++++ "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+@@ -238,7 +238,7 @@ D候选入口、原始记录、准确来源续作及评估/面试/复盘的当
+ | A3 | 内部岗位/候选人/成果/在途实际量未知 | 本次未访问生产业务库；空 fixture 不证明没有数据 | 切换前进行批准范围内的只读计数，见 §10 |
+ | A4 | 生产开关、供应商与材料承诺未验证 | compose 默认开关值不能证明部署状态；本地运行不证明数据不出网 | 真实流量切换前逐项核对 |
+ 
+-附件对象擦除还必须覆盖对象存储的版本语义。生产只读证据确认附件桶已启用版本控制；不带 `VersionId` 的删除只产生 delete marker，不能作为物理擦除完成。106 将合法写入与擦除闭合为同一协议：所有业务 payload 使用 `If-None-Match: *`；擦除对每个准确 key 先无条件写入零字节普通对象，并只接受准确元数据 `platform-erasure-fence=v1` 的 fence。版本已启用或暂停时，维护端有界分页枚举该 key 的所有普通版本与 delete marker，以版本级 HEAD 核实 fence 身份，只保留 fence 并删除 payload/marker；未启用版本控制时也保留零字节 fence，不再裸删 key。权限、网络、分页、版本身份或最终当前对象不确定时保持失败/可重试，不能抹除数据库引用或确认孤儿已清理。业务流先在有界、可 seek 的临时文件中流式核实长度与 SHA，再交给对象客户端做完整性预读和网络重试；本地长度失败不产生远端 PUT。上传请求结果不确定时不得删除整个 key；成功响应返回准确 `VersionId` 时只能清理本次版本，`null` 不视为不可变版本身份。
++附件对象擦除还必须覆盖对象存储的版本语义。生产只读证据确认附件桶已启用版本控制；不带 `VersionId` 的删除只产生 delete marker，不能作为物理擦除完成。106 将合法写入与擦除闭合为同一协议：所有业务 payload 使用 `If-None-Match: *`；擦除对每个准确 key 先无条件写入零字节普通对象，并只接受准确元数据 `platform-erasure-fence=v1` 的 fence。版本已启用或暂停时，维护端有界分页枚举该 key 的所有普通版本与 delete marker，以版本级 HEAD 核实 fence 身份，只保留 fence 并删除 payload/marker；暂停桶中，只有从完整清单取得 `VersionId=null` 后显式按该值 HEAD 的响应可以省略版本回显，零长度与专用元数据仍须完全匹配，其他版本缺少或错报版本回显一律失败。未启用版本控制时也保留零字节 fence，不再裸删 key。权限、网络、分页、版本身份或最终当前对象不确定时保持失败/可重试，不能抹除数据库引用或确认孤儿已清理。业务流先在有界、可 seek 的临时文件中流式核实长度与 SHA，再交给对象客户端做完整性预读和网络重试；本地长度失败不产生远端 PUT。上传请求结果不确定时不得删除整个 key；成功响应返回准确 `VersionId` 时只能清理本次版本，`null` 不视为不可变版本身份。
+ 
+ 106 的领取事务先锁附件并将其置为 `deleted/erasure_pending`、保留全部引用，再读取所有状态的 derive job，用与 Worker 相同的确定性算法补齐尚未登记的衍生 key。处理结果函数原有的 job→attachment 锁顺序与 deleted 检查会拒绝晚到的衍生登记；已经在外部存储进行的上传或衍生写仍只能命中已建立的 fence 并收到 412，不得删除既有 canonical 或 fence。该保证要求 API 与附件 Worker 同批切换，排除旧无条件写者；两个 payload 运行端及维护 healthcheck 在首次 PUT/claim 前只读核实准确数据库身份、106 固定校验和及维护角色四列权限。启动检查不等于权限永久不变，运行时数据库错误仍须保持 partial/引用。现行领取只选择 queued/partial，进程在领取后崩溃会留下无法自动重领的 running job；发布监督器必须显式发现并处置，不能把它伪装成普通 partial 重试。
+ 
+diff --git a/backend/app/attachments/s3_erasure.py b/backend/app/attachments/s3_erasure.py
+index 6bd97db9..a60c460b 100644
+--- a/backend/app/attachments/s3_erasure.py
++++ b/backend/app/attachments/s3_erasure.py
+@@ -113,8 +113,12 @@ def _is_fence(client: Any, bucket: str, object_ref: str, version_id=None) -> boo
+         raise S3ObjectErasureError()
+     length = response.get("ContentLength")
+     metadata = response.get("Metadata")
+-    if version_id is not None and response.get("VersionId") != version_id:
+-        raise S3ObjectErasureError()
++    if version_id is not None:
++        reported_version_id = response.get("VersionId")
++        if reported_version_id != version_id and not (
++            version_id == "null" and "VersionId" not in response
++        ):
++            raise S3ObjectErasureError()
+     return (
+         type(length) is int
+         and length == 0
+diff --git a/backend/tests/test_attachment_s3_version_erasure.py b/backend/tests/test_attachment_s3_version_erasure.py
+index 455e4038..66edcfc0 100644
+--- a/backend/tests/test_attachment_s3_version_erasure.py
++++ b/backend/tests/test_attachment_s3_version_erasure.py
+@@ -4,8 +4,6 @@ import io
+ from types import SimpleNamespace
+ 
+ import pytest
+-from botocore.exceptions import ClientError
+-
+ from app.attachments.erasure import AttachmentErasureService, ErasureJob
+ from app.attachments.object_writer import (
+     AttachmentObjectWriter,
+@@ -16,6 +14,7 @@ from app.attachments.worker_runtime import (
+     AttachmentWorkerRuntimeError,
+     S3ProcessingObjectStore,
+ )
++from botocore.exceptions import ClientError
+ 
+ 
+ class VersionedS3:
+@@ -167,6 +166,46 @@ class VersionedS3:
+         return [entry for entry in self.entries if entry["Key"] == key]
+ 
+ 
++_MISSING_VERSION_ECHO = object()
++
++
++class SuspendedNullHeadS3(VersionedS3):
++    def __init__(
++        self, entries=(), *, reported_version=_MISSING_VERSION_ECHO
++    ) -> None:
++        super().__init__(entries, status="Suspended")
++        self.reported_version = reported_version
++
++    def put_object(self, **kwargs):
++        self._call("put_object", kwargs)
++        key = kwargs["Key"]
++        self.entries = [
++            entry
++            for entry in self.entries
++            if not (entry["Key"] == key and entry["VersionId"] == "null")
++        ]
++        self.entries.insert(
++            0,
++            {
++                "Kind": "version",
++                "Key": key,
++                "VersionId": "null",
++                "Body": kwargs["Body"],
++                "Metadata": dict(kwargs["Metadata"]),
++            },
++        )
++        return {}
++
++    def head_object(self, **kwargs):
++        response = super().head_object(**kwargs)
++        if kwargs.get("VersionId") == "null":
++            if self.reported_version is _MISSING_VERSION_ECHO:
++                response.pop("VersionId")
++            else:
++                response["VersionId"] = self.reported_version
++        return response
++
++
+ @pytest.mark.parametrize("status", ("Enabled", "Suspended"))
+ def test_processing_delete_purges_every_exact_version_and_marker_across_pages(status):
+     client = VersionedS3(
+@@ -222,6 +261,47 @@ def test_unversioned_delete_replaces_payload_with_erasure_fence():
+     ]
+ 
+ 
++def test_suspended_null_fence_head_may_omit_version_echo():
++    client = SuspendedNullHeadS3(
++        (
++            {"Kind": "version", "Key": "owned", "VersionId": "null"},
++            {"Kind": "version", "Key": "owned", "VersionId": "historical"},
++        ),
++    )
++
++    AttachmentObjectWriter(client, "private-bucket").delete("owned")
++
++    assert client.exact("owned") == [
++        {
++            "Kind": "version",
++            "Key": "owned",
++            "VersionId": "null",
++            "Body": b"",
++            "Metadata": {"platform-erasure-fence": "v1"},
++        }
++    ]
++    assert {
++        kwargs["VersionId"]
++        for operation, kwargs in client.calls
++        if operation == "delete_object"
++    } == {"historical"}
++
++
++@pytest.mark.parametrize("reported_version", (None, "other-version"))
++def test_suspended_null_fence_head_rejects_conflicting_version_echo(reported_version):
++    client = SuspendedNullHeadS3(
++        ({"Kind": "version", "Key": "owned", "VersionId": "payload"},),
++        reported_version=reported_version,
++    )
++
++    with pytest.raises(AttachmentObjectWriterError, match="delete failed"):
++        AttachmentObjectWriter(client, "private-bucket").delete("owned")
++
++    assert any(entry["Body"] == b"" for entry in client.exact("owned"))
++    assert any(entry["VersionId"] == "payload" for entry in client.exact("owned"))
++    assert not [call for call in client.calls if call[0] == "delete_object"]
++
++
+ def test_object_writer_delete_uses_the_same_version_purge():
+     client = VersionedS3(
+         (

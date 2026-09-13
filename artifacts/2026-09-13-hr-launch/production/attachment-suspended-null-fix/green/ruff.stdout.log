@@ -1,0 +1,36 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> backend/tests/test_attachment_s3_version_erasure.py:1:1
+   |
+ 1 | / from __future__ import annotations
+ 2 | |
+ 3 | | import io
+ 4 | | from types import SimpleNamespace
+ 5 | |
+ 6 | | import pytest
+ 7 | | from botocore.exceptions import ClientError
+ 8 | |
+ 9 | | from app.attachments.erasure import AttachmentErasureService, ErasureJob
+10 | | from app.attachments.object_writer import (
+11 | |     AttachmentObjectWriter,
+12 | |     AttachmentObjectWriterError,
+13 | |     AttachmentObjectWriterSizeMismatch,
+14 | | )
+15 | | from app.attachments.worker_runtime import (
+16 | |     AttachmentWorkerRuntimeError,
+17 | |     S3ProcessingObjectStore,
+18 | | )
+   | |_^
+help: Organize imports
+   |
+6  | import pytest
+   - from botocore.exceptions import ClientError
+   -
+7  | from app.attachments.erasure import AttachmentErasureService, ErasureJob
+--------------------------------------------------------------------------------
+16 | )
+17 + from botocore.exceptions import ClientError
+18 |
+   |
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.

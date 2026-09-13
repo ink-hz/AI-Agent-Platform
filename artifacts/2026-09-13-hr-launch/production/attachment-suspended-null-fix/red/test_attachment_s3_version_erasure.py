@@ -4,6 +4,8 @@ import io
 from types import SimpleNamespace
 
 import pytest
+from botocore.exceptions import ClientError
+
 from app.attachments.erasure import AttachmentErasureService, ErasureJob
 from app.attachments.object_writer import (
     AttachmentObjectWriter,
@@ -14,7 +16,6 @@ from app.attachments.worker_runtime import (
     AttachmentWorkerRuntimeError,
     S3ProcessingObjectStore,
 )
-from botocore.exceptions import ClientError
 
 
 class VersionedS3:
@@ -166,46 +167,6 @@ class VersionedS3:
         return [entry for entry in self.entries if entry["Key"] == key]
 
 
-_MISSING_VERSION_ECHO = object()
-
-
-class SuspendedNullHeadS3(VersionedS3):
-    def __init__(
-        self, entries=(), *, reported_version=_MISSING_VERSION_ECHO
-    ) -> None:
-        super().__init__(entries, status="Suspended")
-        self.reported_version = reported_version
-
-    def put_object(self, **kwargs):
-        self._call("put_object", kwargs)
-        key = kwargs["Key"]
-        self.entries = [
-            entry
-            for entry in self.entries
-            if not (entry["Key"] == key and entry["VersionId"] == "null")
-        ]
-        self.entries.insert(
-            0,
-            {
-                "Kind": "version",
-                "Key": key,
-                "VersionId": "null",
-                "Body": kwargs["Body"],
-                "Metadata": dict(kwargs["Metadata"]),
-            },
-        )
-        return {}
-
-    def head_object(self, **kwargs):
-        response = super().head_object(**kwargs)
-        if kwargs.get("VersionId") == "null":
-            if self.reported_version is _MISSING_VERSION_ECHO:
-                response.pop("VersionId")
-            else:
-                response["VersionId"] = self.reported_version
-        return response
-
-
 @pytest.mark.parametrize("status", ("Enabled", "Suspended"))
 def test_processing_delete_purges_every_exact_version_and_marker_across_pages(status):
     client = VersionedS3(
@@ -262,11 +223,39 @@ def test_unversioned_delete_replaces_payload_with_erasure_fence():
 
 
 def test_suspended_null_fence_head_may_omit_version_echo():
-    client = SuspendedNullHeadS3(
+    class SuspendedNullHead(VersionedS3):
+        def put_object(self, **kwargs):
+            self._call("put_object", kwargs)
+            key = kwargs["Key"]
+            self.entries = [
+                entry
+                for entry in self.entries
+                if not (entry["Key"] == key and entry["VersionId"] == "null")
+            ]
+            self.entries.insert(
+                0,
+                {
+                    "Kind": "version",
+                    "Key": key,
+                    "VersionId": "null",
+                    "Body": kwargs["Body"],
+                    "Metadata": dict(kwargs["Metadata"]),
+                },
+            )
+            return {}
+
+        def head_object(self, **kwargs):
+            response = super().head_object(**kwargs)
+            if kwargs.get("VersionId") == "null":
+                response.pop("VersionId")
+            return response
+
+    client = SuspendedNullHead(
         (
             {"Kind": "version", "Key": "owned", "VersionId": "null"},
             {"Kind": "version", "Key": "owned", "VersionId": "historical"},
         ),
+        status="Suspended",
     )
 
     AttachmentObjectWriter(client, "private-bucket").delete("owned")
@@ -285,21 +274,6 @@ def test_suspended_null_fence_head_may_omit_version_echo():
         for operation, kwargs in client.calls
         if operation == "delete_object"
     } == {"historical"}
-
-
-@pytest.mark.parametrize("reported_version", (None, "other-version"))
-def test_suspended_null_fence_head_rejects_conflicting_version_echo(reported_version):
-    client = SuspendedNullHeadS3(
-        ({"Kind": "version", "Key": "owned", "VersionId": "payload"},),
-        reported_version=reported_version,
-    )
-
-    with pytest.raises(AttachmentObjectWriterError, match="delete failed"):
-        AttachmentObjectWriter(client, "private-bucket").delete("owned")
-
-    assert any(entry["Body"] == b"" for entry in client.exact("owned"))
-    assert any(entry["VersionId"] == "payload" for entry in client.exact("owned"))
-    assert not [call for call in client.calls if call[0] == "delete_object"]
 
 
 def test_object_writer_delete_uses_the_same_version_purge():

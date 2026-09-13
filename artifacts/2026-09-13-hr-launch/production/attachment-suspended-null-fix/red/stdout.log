@@ -1,0 +1,63 @@
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+_____________ test_suspended_null_fence_head_may_omit_version_echo _____________
+
+    def test_suspended_null_fence_head_may_omit_version_echo():
+        class SuspendedNullHead(VersionedS3):
+            def put_object(self, **kwargs):
+                self._call("put_object", kwargs)
+                key = kwargs["Key"]
+                self.entries = [
+                    entry
+                    for entry in self.entries
+                    if not (entry["Key"] == key and entry["VersionId"] == "null")
+                ]
+                self.entries.insert(
+                    0,
+                    {
+                        "Kind": "version",
+                        "Key": key,
+                        "VersionId": "null",
+                        "Body": kwargs["Body"],
+                        "Metadata": dict(kwargs["Metadata"]),
+                    },
+                )
+                return {}
+    
+            def head_object(self, **kwargs):
+                response = super().head_object(**kwargs)
+                if kwargs.get("VersionId") == "null":
+                    response.pop("VersionId")
+                return response
+    
+        client = SuspendedNullHead(
+            (
+                {"Kind": "version", "Key": "owned", "VersionId": "null"},
+                {"Kind": "version", "Key": "owned", "VersionId": "historical"},
+            ),
+            status="Suspended",
+        )
+    
+>       AttachmentObjectWriter(client, "private-bucket").delete("owned")
+
+backend/tests/test_attachment_s3_version_erasure.py:261: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.attachments.object_writer.AttachmentObjectWriter object at 0x10994e7d0>
+object_ref = 'owned'
+
+    def delete(self, object_ref: str) -> None:
+        if not isinstance(object_ref, str) or not object_ref:
+            raise ValueError("attachment object reference invalid")
+        try:
+            erase_s3_object(self._client, self._bucket, object_ref)
+        except Exception:  # noqa: BLE001 - storage clients are injected
+>           raise AttachmentObjectWriterError(
+                "attachment object delete failed"
+            ) from None
+E           app.attachments.object_writer.AttachmentObjectWriterError: attachment object delete failed
+
+backend/app/attachments/object_writer.py:168: AttachmentObjectWriterError
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_s3_version_erasure.py::test_suspended_null_fence_head_may_omit_version_echo
+1 failed, 2 passed in 0.14s
