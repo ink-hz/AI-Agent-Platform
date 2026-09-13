@@ -1,0 +1,632 @@
+diff --git a/backend/tests/test_attachment_erasure_production_canary.py b/backend/tests/test_attachment_erasure_production_canary.py
+new file mode 100644
+index 0000000..71a1cba
+--- /dev/null
++++ b/backend/tests/test_attachment_erasure_production_canary.py
+@@ -0,0 +1,332 @@
++"""Local real identity/PG attachment canary; HR schema deliberately absent."""
++
++import importlib.util
++from pathlib import Path
++from uuid import uuid4
++
++import pytest
++
++PRODUCTION = Path(__file__).parents[2] / "artifacts/2026-09-13-hr-launch/production"
++
++
++def harness(monkeypatch):
++    monkeypatch.syspath_prepend(str(PRODUCTION))
++    path = PRODUCTION / "attachment_erasure_canary.py"
++    assert path.is_file(), "independent attachment erasure canary missing"
++    spec = importlib.util.spec_from_file_location("attachment_canary", path)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++@pytest.fixture
++def api(tmp_path, request):
++    import asyncio
++
++    from app.attachments.conversation_repository import ConversationAttachmentRepository
++    from app.attachments.conversation_routes import build_conversation_attachment_router
++    from app.attachments.derivatives import DerivativeBuilder
++    from app.attachments.download_service import (
++        ConversationAttachmentAccessRepository,
++        ConversationAttachmentDownloadService,
++    )
++    from app.attachments.scanner import TrustedInternalScanner
++    from app.attachments.upload_service import AttachmentUploadService
++    from app.attachments.validation import AttachmentValidator
++    from app.attachments.worker import AttachmentProcessor
++    from app.attachments.worker_runtime import AttachmentProcessingRepository
++    from app.control_plane.auth import (
++        AuthSecrets,
++        DingTalkWebAuth,
++        WebSessionRepository,
++    )
++    from app.control_plane.authorization import (
++        AuthorizationRepository,
++        AuthorizationService,
++    )
++    from app.control_plane.crypto import IdentityKeyring
++    from app.control_plane.middleware import IdentitySecurityMiddleware
++    from app.control_plane.routes_auth import build_auth_router
++    from app.execution_relay.content_crypto import ContentCodec
++    from fastapi import FastAPI
++    from fastapi.testclient import TestClient
++    from tests.hr_agent_support import hr_agent_database
++    from tests.test_agent_brain_migration import _seed_active_directory
++    from tests.test_hr_agent_materials import MemoryStore
++
++    with hr_agent_database(migrate_hr=False) as db:
++        with db.admin_connection() as c:
++            owner, *_ = _seed_active_directory(c)
++            c.execute(
++                "update platform_control.internal_users set role='platform_owner',last_confirmed_generation_id=(select active_generation_id from platform_control.directory_state where singleton) where internal_user_id=%s",
++                (owner,),
++            )
++            assert (
++                c.execute("select to_regnamespace('platform_hr_agent')").fetchone()[0]
++                is None
++            )
++
++        async def login(_code, _verifier):
++            return owner  # Only the external login exchange is local.
++
++        secrets = AuthSecrets(b"e" * 32, key_version=1)
++        auth = DingTalkWebAuth(
++            repository=WebSessionRepository(db.dsn, secrets=secrets),
++            secrets=secrets,
++            qr_login=login,
++            in_client_login=None,
++            environment="production",
++            route_prefix="/",
++            public_base_url="https://localhost",
++            app_key="local-erasure-canary",
++        )
++        started = auth.start_qr("/")
++        session = asyncio.run(auth.complete_qr(started.state, "local")).session
++        codec = ContentCodec(
++            IdentityKeyring(
++                active_version=1,
++                purpose="platform-content-encryption",
++                _keys={1: b"e" * 32},
++            )
++        )
++        store = MemoryStore()
++        app = FastAPI()
++        app.state.conversation_attachment_upload_service = AttachmentUploadService(
++            ConversationAttachmentRepository(db.dsn, content_codec=codec), store
++        )
++        app.state.conversation_attachment_download_service = (
++            ConversationAttachmentDownloadService(
++                ConversationAttachmentAccessRepository(db.dsn, content_codec=codec),
++                store,
++                ticket_secret=b"d" * 32,
++            )
++        )
++        app.include_router(build_conversation_attachment_router())
++        app.include_router(
++            build_auth_router(
++                auth,
++                static_dir=str(tmp_path),
++                public_assets=frozenset(),
++                detailed_health=dict,
++            )
++        )
++        app.add_middleware(
++            IdentitySecurityMiddleware,
++            auth=auth,
++            public_assets=frozenset(),
++            authorization=AuthorizationService(AuthorizationRepository(db.dsn)),
++            routes=tuple(app.router.routes),
++        )
++        processor = AttachmentProcessor(
++            repository=AttachmentProcessingRepository(
++                db.dsn.replace(
++                    "user=platform_control_app", "user=platform_brain_worker"
++                ),
++                content_codec=codec,
++            ),
++            object_store=store,
++            validator=AttachmentValidator(),
++            scanner=TrustedInternalScanner(),
++            derivatives=DerivativeBuilder(),
++            worker_id="erasure-canary-engineering",
++        )
++        config = {
++            "owner_id": str(owner),
++            "session_cookie": session.cookie_token,
++            "csrf": session.csrf_token,
++            "public_origin": "https://localhost",
++            "api_base_url": "https://localhost",
++        }
++        with TestClient(app, base_url="https://localhost") as client:
++
++            class Scheduled:
++                lose_delete = False
++                delay_processing = False
++                lose_upload = False
++
++                def request(self, method, url, **kwargs):
++                    result = client.request(method, url, **kwargs)
++                    if (
++                        method == "POST"
++                        and url.endswith("/complete")
++                        and result.status_code == 200
++                        and not self.delay_processing
++                    ) or (
++                        method == "GET"
++                        and "/attachments/" in url
++                        and self.delay_processing
++                    ):
++                        for _ in range(8):
++                            if not asyncio.run(processor.process_next()):
++                                break
++                    if (method == "DELETE" and self.lose_delete) or (
++                        method == "POST"
++                        and url.endswith("/attachments/uploads")
++                        and self.lose_upload
++                    ):
++                        self.lose_delete = self.lose_upload = False
++                        import httpx
++
++                        raise httpx.ReadTimeout(
++                            "injected after actual DELETE acceptance"
++                        )
++                    return result
++
++            yield {
++                "db": db,
++                "owner": owner,
++                "config": config,
++                "client": Scheduled(),
++                "store": store,
++                "codec": codec,
++            }
++            import os
++            import shutil
++
++            evidence_root = os.environ.get("ATTACHMENT_CANARY_ENGINEERING_EVIDENCE_DIR")
++            if evidence_root:
++                evidence = Path(evidence_root) / request.node.name
++                evidence.mkdir(parents=True, exist_ok=False)
++                for ledger in tmp_path.rglob("ledger.json"):
++                    target = evidence / (ledger.parent.name + ".json")
++                    shutil.copyfile(ledger, target)
++                    target.chmod(0o600)
++
++
++@pytest.mark.postgres
++def test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure(
++    api, tmp_path, monkeypatch
++):
++    h = harness(monkeypatch)
++    runner = h.AttachmentCanary(api["config"], tmp_path / "run", api["client"])
++    api["client"].delay_processing = True
++    report = runner.prepare()
++    assert report["status"] == "prepared"
++    aid = report["attachment_id"]
++    assert report["prepared"]["content_sha256"] == h.sha(runner.synthetic())
++    objects = set(api["store"].objects)
++    assert objects
++    resumed = h.AttachmentCanary(
++        api["config"], runner.directory, api["client"], resume=True
++    )
++    report = resumed.erase()
++    assert report["status"] == "awaiting_external_erasure_evidence"
++    assert report["attachment_id"] == aid
++    assert report["operations"]["erase"]["response"] == {"http_status": 204}
++    assert resumed.observe()["http_status"] == 404
++    assert objects <= set(api["store"].objects), (
++        "HTTP disappearance precedes physical erasure"
++    )
++    from app.attachments.erasure import (
++        AttachmentErasureRepository,
++        AttachmentErasureService,
++    )
++
++    repository = AttachmentErasureRepository(
++        api["db"].dsn.replace(
++            "user=platform_control_app", "user=platform_control_maintenance"
++        ),
++        content_codec=api["codec"],
++    )
++    service = AttachmentErasureService(repository, api["store"])
++    assert service.process_next("owned-erasure-test")
++    assert not (objects & set(api["store"].objects))
++    with api["db"].admin_connection() as c:
++        assert (
++            c.execute(
++                "select state from platform_attachments.erasure_jobs where attachment_id=%s",
++                (aid,),
++            ).fetchone()[0]
++            == "completed"
++        )
++        assert (
++            c.execute(
++                "select count(*) from platform_attachments.attachments"
++            ).fetchone()[0]
++            == 1
++        )
++    assert report["status"] == "awaiting_external_erasure_evidence", (
++        "script cannot certify object store"
++    )
++    assert all(
++        "/hr/" not in row["path"] and "hr-readiness" not in row["path"]
++        for row in report["http"]
++    )
++    text = (runner.directory / "ledger.json").read_text()
++    assert (
++        api["config"]["session_cookie"] not in text
++        and api["config"]["csrf"] not in text
++    )
++
++
++@pytest.mark.postgres
++def test_expired_mutation_deadline_allows_only_bounded_observation(
++    api, tmp_path, monkeypatch
++):
++    h = harness(monkeypatch)
++    runner = h.AttachmentCanary(api["config"], tmp_path / "expired", api["client"])
++    runner.prepare()
++    runner.ledger["deadline"] = 0
++    runner.save()
++    with pytest.raises(h.CanaryError, match="deadline_exhausted"):
++        runner.erase()
++    assert runner.observe()["state"] == "ready"
++    assert runner.ledger["deadline"] == 0
++    assert not any(row["method"] == "DELETE" for row in runner.ledger["http"])
++
++
++@pytest.mark.postgres
++def test_lost_delete_reply_stops_without_reissuing_delete(api, tmp_path, monkeypatch):
++    h = harness(monkeypatch)
++    runner = h.AttachmentCanary(api["config"], tmp_path / "unknown", api["client"])
++    runner.prepare()
++    api["client"].lose_delete = True
++    with pytest.raises(h.CanaryError, match="outcome_unknown"):
++        runner.erase()
++    resumed = h.AttachmentCanary(
++        api["config"], runner.directory, api["client"], resume=True
++    )
++    with pytest.raises(h.CanaryError, match="outcome_unknown"):
++        resumed.erase()
++    assert resumed.observe()["http_status"] == 404
++    assert (
++        len([row for row in resumed.ledger["http"] if row["method"] == "DELETE"]) == 1
++    )
++
++
++@pytest.mark.postgres
++def test_unknown_initial_upload_and_wrong_owner_never_create_a_replacement(
++    api, tmp_path, monkeypatch
++):
++    h = harness(monkeypatch)
++    api["client"].lose_upload = True
++    runner = h.AttachmentCanary(
++        api["config"], tmp_path / "unknown-upload", api["client"]
++    )
++    with pytest.raises(h.CanaryError, match="outcome_unknown"):
++        runner.prepare()
++    resumed = h.AttachmentCanary(
++        api["config"], runner.directory, api["client"], resume=True
++    )
++    with pytest.raises(h.CanaryError, match="outcome_unknown"):
++        resumed.prepare()
++    wrong = h.AttachmentCanary(
++        {**api["config"], "owner_id": str(uuid4())},
++        tmp_path / "wrong-owner",
++        api["client"],
++    )
++    with pytest.raises(h.CanaryError, match="owner_identity_denied"):
++        wrong.prepare()
++    with api["db"].admin_connection() as c:
++        assert (
++            c.execute(
++                "select count(*) from platform_attachments.attachments"
++            ).fetchone()[0]
++            == 1
++        )
++        assert (
++            c.execute(
++                "select count(*) from platform_attachments.erasure_jobs"
++            ).fetchone()[0]
++            == 0
++        )
+diff --git a/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py b/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py
+new file mode 100644
+index 0000000..234183e
+--- /dev/null
++++ b/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py
+@@ -0,0 +1,288 @@
++"""Account/attachment-only canary. HTTP deletion is NOT physical object erasure."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import time
++from uuid import UUID, uuid4
++
++import httpx
++from api_canary import Canary, CanaryError, load_config, sha
++
++
++class AttachmentCanary(Canary):
++    """Reuse private credentials/journal only; no HR endpoint or runtime dependency."""
++
++    def __init__(self, *args, resume=False, **kwargs):
++        super().__init__(*args, resume=resume, **kwargs)
++        self.readonly_until = None
++        if resume:
++            if self.ledger.get("kind") != "attachment_erasure":
++                raise CanaryError("attachment_ledger_required")
++        else:
++            self.ledger.update(kind="attachment_erasure", deadline=time.time() + 300)
++            self.save()
++
++    def request(
++        self, method, path, *, key=None, body=None, content=None, accepted=(200,)
++    ):
++        remaining = (
++            self.readonly_until
++            if self.readonly_until is not None
++            else self.ledger["deadline"]
++        ) - time.time()
++        if remaining <= 0:
++            raise CanaryError("deadline_exhausted")
++        if self.readonly_until is not None and method != "GET":
++            raise CanaryError("readonly_observation")
++        if path != "/api/v1/account" and not path.startswith("/api/v1/attachments/"):
++            raise CanaryError("attachment_endpoint_required")
++        if any(part in path for part in ("..", "?", "#")):
++            raise CanaryError("request_path_invalid")
++        receipt = {
++            "request_id": str(uuid4()),
++            "method": method,
++            "path": path,
++            "status": "sending",
++        }
++        self.ledger["http"].append(receipt)
++        self.save()
++        headers = {
++            "Cookie": "__Host-platform_session=" + self.config["session_cookie"],
++            "Origin": self.config["public_origin"],
++            "X-CSRF-Token": self.config["csrf"],
++            "X-Request-ID": receipt["request_id"],
++        }
++        if key:
++            headers["Idempotency-Key"] = key
++        if content is not None:
++            headers.update(
++                {
++                    "Content-Type": "application/octet-stream",
++                    "Content-Length": str(len(content)),
++                }
++            )
++        try:
++            response = self.client.request(
++                method,
++                self.config["api_base_url"] + path,
++                headers=headers,
++                json=body,
++                content=content,
++                timeout=min(20, remaining),
++                follow_redirects=False,
++            )
++        except httpx.HTTPError:
++            receipt["status"] = "transport_unknown"
++            self.save()
++            raise CanaryError("outcome_unknown") from None
++        receipt["status"] = response.status_code
++        self.save()
++        if response.status_code not in accepted:
++            raise CanaryError("http_" + str(response.status_code))
++        if response.status_code in (204, 404):
++            return {"http_status": response.status_code}
++        try:
++            value = response.json()
++            if not isinstance(value, dict):
++                raise TypeError
++            return value
++        except (ValueError, TypeError):
++            raise CanaryError("response_invalid") from None
++
++    def identity(self):
++        account = self.request("GET", "/api/v1/account")
++        safe = {
++            key: account.get(key)
++            for key in ("internal_user_id", "role", "hard_stale_read_only")
++        }
++        self.ledger["account"] = safe
++        self.save()
++        if safe != {
++            "internal_user_id": self.config["owner_id"],
++            "role": "platform_owner",
++            "hard_stale_read_only": False,
++        }:
++            raise CanaryError("owner_identity_denied")
++
++    def synthetic(self):
++        return (
++            "纯合成附件擦除验收；不包含真实人员或业务材料。\n"
++            + self.ledger["run_id"]
++            + "\n虚构样例设备：甲、乙、丙。仅用于一次性上传和擦除验证。\n"
++        ).encode()
++
++    def validate_metadata(self, metadata):
++        original = self.ledger["operations"]["upload_begin"].get("response", {})
++        try:
++            aid = str(UUID(original["attachment_id"]))
++        except (KeyError, ValueError, TypeError):
++            raise CanaryError("owned_attachment_unproven") from None
++        if (
++            self.ledger.get("attachment_id") != aid
++            or metadata.get("attachment_id") != aid
++            or metadata.get("original_name")
++            != "synthetic-erasure-" + self.ledger["run_id"] + ".txt"
++            or metadata.get("size_bytes") != len(self.synthetic())
++            or metadata.get("declared_mime") != "text/plain"
++        ):
++            raise CanaryError("owned_attachment_unproven")
++        return aid
++
++    def prepare(self):
++        self.identity()
++        if "erase" in self.ledger["operations"]:
++            raise CanaryError("erasure_already_requested")
++        raw = self.synthetic()
++        body = {
++            "conversation_id": None,
++            "original_name": "synthetic-erasure-" + self.ledger["run_id"] + ".txt",
++            "declared_mime": "text/plain",
++            "declared_size": len(raw),
++        }
++        upload = self.mutate(
++            "upload_begin", "/api/v1/attachments/uploads", body, (201,)
++        )
++        try:
++            uid, aid = (str(UUID(upload[k])) for k in ("upload_id", "attachment_id"))
++        except (ValueError, KeyError, TypeError):
++            raise CanaryError("upload_identity_invalid") from None
++        self.ledger.update(upload_id=uid, attachment_id=aid)
++        self.save()
++        self.mutate(
++            "upload_content",
++            "/api/v1/attachments/uploads/" + uid + "/content",
++            None,
++            (200,),
++            method="PUT",
++            content=raw,
++        )
++        self.mutate(
++            "upload_complete",
++            "/api/v1/attachments/uploads/" + uid + "/complete",
++            None,
++            (200,),
++        )
++        while True:
++            metadata = self.request("GET", "/api/v1/attachments/" + aid)
++            self.validate_metadata(metadata)
++            self.ledger["latest_metadata"] = metadata
++            self.save()
++            if metadata.get("state") == "ready":
++                self.ledger.update(
++                    status="prepared",
++                    prepared={
++                        "metadata": metadata,
++                        "content_sha256": sha(raw),
++                        "metadata_sha256": sha(
++                            json.dumps(metadata, sort_keys=True).encode()
++                        ),
++                        "hash_boundary": "content hash is bytes sent; HTTP metadata has no server byte hash",
++                    },
++                )
++                self.save()
++                return self.ledger
++            if metadata.get("state") not in {"validating", "scanning"}:
++                raise CanaryError("attachment_not_ready")
++            self.sleep()
++
++    def erase(self):
++        if self.ledger["deadline"] <= time.time():
++            raise CanaryError("deadline_exhausted")
++        self.identity()
++        op = self.ledger["operations"].get("erase")
++        if op:
++            if op["status"] != "received":
++                raise CanaryError("outcome_unknown")
++            return self.ledger
++        prepared = self.ledger.get("prepared")
++        if (
++            not prepared
++            or prepared.get("content_sha256") != sha(self.synthetic())
++            or prepared.get("metadata_sha256")
++            != sha(json.dumps(prepared["metadata"], sort_keys=True).encode())
++        ):
++            raise CanaryError("prepared_attachment_required")
++        aid = self.validate_metadata(prepared["metadata"])
++        metadata = self.request("GET", "/api/v1/attachments/" + aid)
++        self.validate_metadata(metadata)
++        if metadata.get("state") != "ready":
++            raise CanaryError("attachment_not_ready")
++        self.mutate(
++            "erase", "/api/v1/attachments/" + aid, None, (204,), method="DELETE"
++        )
++        self.ledger["status"] = "awaiting_external_erasure_evidence"
++        self.save()
++        return self.ledger
++
++    def observe(self):
++        # This read-only window does not renew the original mutation deadline.
++        self.readonly_until = time.time() + 20
++        try:
++            self.identity()
++            prepared = self.ledger.get("prepared")
++            if not prepared:
++                raise CanaryError("prepared_attachment_required")
++            aid = self.validate_metadata(prepared["metadata"])
++            metadata = self.request(
++                "GET", "/api/v1/attachments/" + aid, accepted=(200, 404)
++            )
++            if metadata.get("http_status") != 404:
++                self.validate_metadata(metadata)
++            self.ledger.setdefault("observations", []).append(
++                {
++                    "observed_at": time.time(),
++                    "metadata": metadata,
++                    "physical_erasure_verified": False,
++                }
++            )
++            self.save()
++            return metadata
++        finally:
++            self.readonly_until = None
++
++
++def main(argv=None):
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("command", choices=("prepare", "erase", "observe"))
++    parser.add_argument("--private-config", required=True)
++    parser.add_argument("--evidence-dir", required=True)
++    parser.add_argument("--resume-prepare", action="store_true")
++    args = parser.parse_args(argv)
++    runner = None
++    try:
++        config = load_config(args.private_config)
++        with httpx.Client(
++            trust_env=False, verify=True, follow_redirects=False
++        ) as client:
++            runner = AttachmentCanary(
++                config,
++                args.evidence_dir,
++                client,
++                resume=args.command != "prepare" or args.resume_prepare,
++            )
++            getattr(runner, args.command)()
++        print(
++            json.dumps(
++                {
++                    "status": runner.ledger["status"],
++                    "run_id": runner.ledger["run_id"],
++                    "physical_erasure_verified": False,
++                }
++            )
++        )
++        return 0
++    except CanaryError as error:
++        if runner:
++            runner.ledger["failure"] = str(error)
++            runner.save()
++        print(json.dumps({"status": "stopped", "reason": str(error)}))
++        return 1
++    except Exception:  # noqa: BLE001 - never print credential-bearing library exceptions
++        print(json.dumps({"status": "stopped", "reason": "unexpected_local_failure"}))
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

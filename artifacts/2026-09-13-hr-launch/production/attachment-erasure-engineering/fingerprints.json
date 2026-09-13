@@ -1,0 +1,35 @@
+{
+  "source_head": "404862b93c57e6782016182f089b67766ab569ff",
+  "files": {
+    "backend/tests/test_attachment_erasure_production_canary.py": "91c358b7d50626f401f81514d3ccb5a63696b5184f00a998abf8487b2f9d25ca",
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py": "1fedda28a1d9e5dca8fbcd525341c03598555f9eb0e907eac84723eb65ff42b2",
+    "artifacts/2026-09-13-hr-launch/production/api_canary.py": "7e9662e6ec37e75c28baec414a020bc7e2244d4bb3c360e0ecb797409be0329f"
+  },
+  "implementation_patch_sha256": "1bb8ef326a74e3bfef62cd6b1625d3854720ca0db2a92f85c3a9ad5638b79548",
+  "evidence": {
+    "README.md": "141fa37ef5fcfc8ab48ea723f5815e7af98176180df461c682c0b7f4c07eb090",
+    "green-final-1/api_canary.py": "7e9662e6ec37e75c28baec414a020bc7e2244d4bb3c360e0ecb797409be0329f",
+    "green-final-1/attachment_erasure_canary.py": "1fedda28a1d9e5dca8fbcd525341c03598555f9eb0e907eac84723eb65ff42b2",
+    "green-final-1/command.json": "4deef7441a39a7c9391ca98fcbeb9c6d3af1096dfaed7562731ffb0f06641a4d",
+    "green-final-1/http-receipts/test_expired_mutation_deadline_allows_only_bounded_observation/expired.json": "a0052e3b24a4b9e50d5ddd89906884e288a728aa495b3b309b6c21d6487b9780",
+    "green-final-1/http-receipts/test_lost_delete_reply_stops_without_reissuing_delete/unknown.json": "4b63f11a2dbef41cefcffb06975d94a1598cd0cbe4b3c9324bd5353f9531304a",
+    "green-final-1/http-receipts/test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure/run.json": "fff25a53b62c6ccc8b81ebe29415932adf97d5316a1cbbf3a583bcdffce8a89a",
+    "green-final-1/http-receipts/test_unknown_initial_upload_and_wrong_owner_never_create_a_replacement/unknown-upload.json": "e2630c7a567160d28fdeef1aeecaa3b5140cbadae6a90cd52719fe1f0683f493",
+    "green-final-1/http-receipts/test_unknown_initial_upload_and_wrong_owner_never_create_a_replacement/wrong-owner.json": "0f26ee3f77a7e72d49f8cf02c27f10eb3a84e891d1eb1891bf093da905e9bce5",
+    "green-final-1/output.log": "ba2755dc1335bbbfc9b93f36b1fdb4804b751649965ead110a63a1e93634555f",
+    "green-final-1/test_attachment_erasure_production_canary.py": "91c358b7d50626f401f81514d3ccb5a63696b5184f00a998abf8487b2f9d25ca",
+    "implementation.patch": "1bb8ef326a74e3bfef62cd6b1625d3854720ca0db2a92f85c3a9ad5638b79548",
+    "local-check-0.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "local-check-1.log": "9069fc98a42090f67749536fea4ed6b5f1ed1d6c028938aba1d5e36bda0bc8b2",
+    "local-check-2.log": "02dc7d27cc87b2bcc2ed4dbbbc95c9564765866e4edbb7ca0cb3663133307291",
+    "local-checks.json": "9a1ad7cc0522b0f6a3f43f5fd49d6596307906e22af8248c17388bb355768e81",
+    "plan.md": "f9f98e705e53608fdfc335ec8a701a5fe2410c3bdd8ca883fdd79db6d26107ad",
+    "red-1/command.json": "2123b5f897b268620cc32eaedaeefee511a5c1e7f45bce0b4e30dcf383e21cc1",
+    "red-1/output.log": "5f1299aacf04576f550d6562e9dfde320498993de834ca0930c21145a69ff96e",
+    "red-1/test_attachment_erasure_production_canary.py": "ce37afa588b52fc6b4bd2b9bc787bbae06739e98b38e332702fcbf05003e2a22",
+    "red-2-validating/attachment_erasure_canary.py": "9663d39384ef73c74c20b9d877eb7bda49d8a7701b37147f4c42534cd899d5fe",
+    "red-2-validating/command.json": "f276bbec00b93d2c7db4c2360950dd280151236a0059f645e533d20e0f6e18fa",
+    "red-2-validating/output.log": "f83d0ed437e93c2ea5fc04fa6dba6990ef62305e156dd903f25f4083eb63283e",
+    "red-2-validating/test_attachment_erasure_production_canary.py": "7d924b5fba92272f038669f0c79d24fab2ff3e28bf8e481ff619d4ae23161006"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_attachment_erasure_production_canary.py",
+    "-q"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+  "exit_code": 0,
+  "sha256": {
+    "backend/tests/test_attachment_erasure_production_canary.py": "91c358b7d50626f401f81514d3ccb5a63696b5184f00a998abf8487b2f9d25ca",
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py": "1fedda28a1d9e5dca8fbcd525341c03598555f9eb0e907eac84723eb65ff42b2",
+    "artifacts/2026-09-13-hr-launch/production/api_canary.py": "7e9662e6ec37e75c28baec414a020bc7e2244d4bb3c360e0ecb797409be0329f"
+  },
+  "source_unchanged": true,
+  "head": "404862b93c57e6782016182f089b67766ab569ff",
+  "environment": {
+    "ATTACHMENT_CANARY_ENGINEERING_EVIDENCE_DIR": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment-erasure-engineering/green-final-1/http-receipts"
+  },
+  "boundary": "Real local owner/session/auth/PG/attachment processor/maintenance-role erasure; external login exchange and MemoryStore only substituted, explicit lost reply injection. HR schema absent. No S3/production/model/browser/restart."
+}

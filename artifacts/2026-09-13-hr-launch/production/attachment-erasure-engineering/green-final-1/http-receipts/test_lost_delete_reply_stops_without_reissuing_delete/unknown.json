@@ -1,0 +1,192 @@
+{
+  "run_id": "c95e5e78-fcb2-4737-a053-8bc91b07dfcf",
+  "owner_id": "f6e82668-1f8b-4512-9ee3-ae57a599a28e",
+  "public_origin": "https://localhost",
+  "deadline": 1789271493.812494,
+  "operations": {
+    "upload_begin": {
+      "key": "bf065569-3609-4553-baf6-2e53c9759a53",
+      "path": "/api/v1/attachments/uploads",
+      "body": {
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-c95e5e78-fcb2-4737-a053-8bc91b07dfcf.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189
+      },
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "upload_id": "de5408a8-beb1-49a0-9788-9cacd718d8bb",
+        "attachment_id": "e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-c95e5e78-fcb2-4737-a053-8bc91b07dfcf.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189,
+        "state": "uploading",
+        "uploaded_bytes": 0,
+        "expires_at": "2026-09-14T03:46:33.828793Z"
+      }
+    },
+    "upload_content": {
+      "key": "95ad769e-d828-4e64-812a-9ca5abb967b0",
+      "path": "/api/v1/attachments/uploads/de5408a8-beb1-49a0-9788-9cacd718d8bb/content",
+      "body": null,
+      "content_sha256": "1775ab315d57d89d89e453e0d2103870d7baf1406cfc3417bb8dadbc43823570",
+      "method": "PUT",
+      "status": "received",
+      "response": {
+        "upload_id": "de5408a8-beb1-49a0-9788-9cacd718d8bb",
+        "attachment_id": "e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-c95e5e78-fcb2-4737-a053-8bc91b07dfcf.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189,
+        "state": "validating",
+        "uploaded_bytes": 189,
+        "expires_at": "2026-09-14T03:46:33.828793Z"
+      }
+    },
+    "upload_complete": {
+      "key": "9fbf2d77-4abc-4ec5-86ae-d7f8964c8b38",
+      "path": "/api/v1/attachments/uploads/de5408a8-beb1-49a0-9788-9cacd718d8bb/complete",
+      "body": null,
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "attachment_id": "e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-c95e5e78-fcb2-4737-a053-8bc91b07dfcf.txt",
+        "declared_mime": "text/plain",
+        "detected_mime": null,
+        "size_bytes": 189,
+        "state": "validating",
+        "created_at": "2026-09-13T03:46:33.830207Z",
+        "retained_until": "2027-09-13T03:46:33.830207Z"
+      }
+    },
+    "erase": {
+      "key": "da216008-986c-468d-a550-3135e1328c85",
+      "path": "/api/v1/attachments/e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+      "body": null,
+      "content_sha256": null,
+      "method": "DELETE",
+      "status": "outcome_unknown"
+    }
+  },
+  "http": [
+    {
+      "request_id": "16ffb111-dbe1-4976-8031-d5b3988f8b5f",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "2d8126b5-4028-49b9-95b2-516ea5ce55e8",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": 201
+    },
+    {
+      "request_id": "8ca5b8f2-9f96-4012-aa57-0218bc4ba5ad",
+      "method": "PUT",
+      "path": "/api/v1/attachments/uploads/de5408a8-beb1-49a0-9788-9cacd718d8bb/content",
+      "status": 200
+    },
+    {
+      "request_id": "60b0ad29-1463-4150-8290-6135b912581d",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads/de5408a8-beb1-49a0-9788-9cacd718d8bb/complete",
+      "status": 200
+    },
+    {
+      "request_id": "f41a72cb-14e9-4557-91dc-5553b06a56c9",
+      "method": "GET",
+      "path": "/api/v1/attachments/e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+      "status": 200
+    },
+    {
+      "request_id": "a1cc705c-bed7-475d-8be6-ca69bfd16657",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "afa772fd-2b54-4846-83a3-4d16b879f1fc",
+      "method": "GET",
+      "path": "/api/v1/attachments/e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+      "status": 200
+    },
+    {
+      "request_id": "b0aad2be-d52a-441c-b8ce-7f51d0b753ef",
+      "method": "DELETE",
+      "path": "/api/v1/attachments/e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+      "status": "transport_unknown"
+    },
+    {
+      "request_id": "430ae199-36f9-487d-8d98-2daa5694e85d",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "d3b0d8d1-8203-4a1e-9eac-67a6c5cde54d",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "fa7f3de9-5170-405a-a796-5e94a471885e",
+      "method": "GET",
+      "path": "/api/v1/attachments/e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+      "status": 404
+    }
+  ],
+  "turns": [],
+  "status": "prepared",
+  "kind": "attachment_erasure",
+  "account": {
+    "internal_user_id": "f6e82668-1f8b-4512-9ee3-ae57a599a28e",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  },
+  "upload_id": "de5408a8-beb1-49a0-9788-9cacd718d8bb",
+  "attachment_id": "e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+  "latest_metadata": {
+    "attachment_id": "e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+    "conversation_id": null,
+    "original_name": "synthetic-erasure-c95e5e78-fcb2-4737-a053-8bc91b07dfcf.txt",
+    "declared_mime": "text/plain",
+    "detected_mime": "text/plain",
+    "size_bytes": 189,
+    "state": "ready",
+    "created_at": "2026-09-13T03:46:33.830207Z",
+    "retained_until": "2027-09-13T03:46:33.830207Z"
+  },
+  "prepared": {
+    "metadata": {
+      "attachment_id": "e8fe4d04-6f8a-47ac-92f5-75393a88fcd7",
+      "conversation_id": null,
+      "original_name": "synthetic-erasure-c95e5e78-fcb2-4737-a053-8bc91b07dfcf.txt",
+      "declared_mime": "text/plain",
+      "detected_mime": "text/plain",
+      "size_bytes": 189,
+      "state": "ready",
+      "created_at": "2026-09-13T03:46:33.830207Z",
+      "retained_until": "2027-09-13T03:46:33.830207Z"
+    },
+    "content_sha256": "1775ab315d57d89d89e453e0d2103870d7baf1406cfc3417bb8dadbc43823570",
+    "metadata_sha256": "95a774c8b30d2e9e5c5509f0e5033bdaab9f61117a16eb8a35b6340fe7d2a86a",
+    "hash_boundary": "content hash is bytes sent; HTTP metadata has no server byte hash"
+  },
+  "observations": [
+    {
+      "observed_at": 1789271193.9332092,
+      "metadata": {
+        "http_status": 404
+      },
+      "physical_erasure_verified": false
+    }
+  ]
+}

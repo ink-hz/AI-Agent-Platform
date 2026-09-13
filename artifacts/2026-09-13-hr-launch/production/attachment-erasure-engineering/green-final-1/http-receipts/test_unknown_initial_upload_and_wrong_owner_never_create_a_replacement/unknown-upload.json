@@ -1,0 +1,49 @@
+{
+  "run_id": "7dea8757-b2b7-4266-aa72-0d9d868ae3b1",
+  "owner_id": "49b3c70e-a007-44fc-9cc8-4797e001a5f7",
+  "public_origin": "https://localhost",
+  "deadline": 1789271494.873333,
+  "operations": {
+    "upload_begin": {
+      "key": "d69153e1-f7e9-4c7b-bc17-51e6a015cef8",
+      "path": "/api/v1/attachments/uploads",
+      "body": {
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-7dea8757-b2b7-4266-aa72-0d9d868ae3b1.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189
+      },
+      "content_sha256": null,
+      "method": "POST",
+      "status": "outcome_unknown"
+    }
+  },
+  "http": [
+    {
+      "request_id": "7bf5ea3f-8184-47ee-8295-b4663c3d6ba5",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "abcb0579-ac9a-498d-84ea-8aff72d2f980",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": "transport_unknown"
+    },
+    {
+      "request_id": "9fd92c33-3b4b-4732-8c67-12089b18a675",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    }
+  ],
+  "turns": [],
+  "status": "created",
+  "kind": "attachment_erasure",
+  "account": {
+    "internal_user_id": "49b3c70e-a007-44fc-9cc8-4797e001a5f7",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  }
+}

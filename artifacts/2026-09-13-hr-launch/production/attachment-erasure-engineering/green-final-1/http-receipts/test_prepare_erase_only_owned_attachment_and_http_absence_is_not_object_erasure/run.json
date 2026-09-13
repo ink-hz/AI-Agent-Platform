@@ -1,0 +1,195 @@
+{
+  "run_id": "681a84c4-c61a-43d6-a5c9-b455258ce62b",
+  "owner_id": "b9bca965-f61c-4754-9194-fa32b43f37e9",
+  "public_origin": "https://localhost",
+  "deadline": 1789271489.66527,
+  "operations": {
+    "upload_begin": {
+      "key": "2673e773-7979-45f4-9422-596ae485a2d7",
+      "path": "/api/v1/attachments/uploads",
+      "body": {
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-681a84c4-c61a-43d6-a5c9-b455258ce62b.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189
+      },
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "upload_id": "531c8449-b292-4af4-97fd-aa33a041047c",
+        "attachment_id": "d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-681a84c4-c61a-43d6-a5c9-b455258ce62b.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189,
+        "state": "uploading",
+        "uploaded_bytes": 0,
+        "expires_at": "2026-09-14T03:46:29.681960Z"
+      }
+    },
+    "upload_content": {
+      "key": "2290f62a-5448-484f-bb0a-bf9db6f40b86",
+      "path": "/api/v1/attachments/uploads/531c8449-b292-4af4-97fd-aa33a041047c/content",
+      "body": null,
+      "content_sha256": "4e3843c94500601720b30c808298dcf2dbebaaa1615ce086bf762d08a2dbd8d5",
+      "method": "PUT",
+      "status": "received",
+      "response": {
+        "upload_id": "531c8449-b292-4af4-97fd-aa33a041047c",
+        "attachment_id": "d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-681a84c4-c61a-43d6-a5c9-b455258ce62b.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189,
+        "state": "validating",
+        "uploaded_bytes": 189,
+        "expires_at": "2026-09-14T03:46:29.681960Z"
+      }
+    },
+    "upload_complete": {
+      "key": "1fa65c09-0466-48d0-b7b7-93f5ad4c550b",
+      "path": "/api/v1/attachments/uploads/531c8449-b292-4af4-97fd-aa33a041047c/complete",
+      "body": null,
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "attachment_id": "d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-681a84c4-c61a-43d6-a5c9-b455258ce62b.txt",
+        "declared_mime": "text/plain",
+        "detected_mime": null,
+        "size_bytes": 189,
+        "state": "validating",
+        "created_at": "2026-09-13T03:46:29.683090Z",
+        "retained_until": "2027-09-13T03:46:29.683090Z"
+      }
+    },
+    "erase": {
+      "key": "2f1676bb-3ef6-4ff6-bdef-995fb98b72c4",
+      "path": "/api/v1/attachments/d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+      "body": null,
+      "content_sha256": null,
+      "method": "DELETE",
+      "status": "received",
+      "response": {
+        "http_status": 204
+      }
+    }
+  },
+  "http": [
+    {
+      "request_id": "4ce27615-e2b6-406a-8995-773cce57298f",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "fda0ef46-1f4f-42a3-aac3-3cda3633b6e1",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": 201
+    },
+    {
+      "request_id": "293aa78e-d076-408a-bdc0-262235949a2f",
+      "method": "PUT",
+      "path": "/api/v1/attachments/uploads/531c8449-b292-4af4-97fd-aa33a041047c/content",
+      "status": 200
+    },
+    {
+      "request_id": "31b5e5fb-6116-410e-8545-19974b0b4a29",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads/531c8449-b292-4af4-97fd-aa33a041047c/complete",
+      "status": 200
+    },
+    {
+      "request_id": "9bae6b10-84db-407b-9158-1b77b564ac68",
+      "method": "GET",
+      "path": "/api/v1/attachments/d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+      "status": 200
+    },
+    {
+      "request_id": "abf951c0-6234-4bcb-afc6-3911b77cce19",
+      "method": "GET",
+      "path": "/api/v1/attachments/d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+      "status": 200
+    },
+    {
+      "request_id": "a03ce63e-94eb-4b7f-bc0c-f77183b33d41",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "59ad3e7b-2075-45a5-9fc4-3aa2ee1a8a1e",
+      "method": "GET",
+      "path": "/api/v1/attachments/d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+      "status": 200
+    },
+    {
+      "request_id": "e4b1b084-7bd1-4b3b-960f-ebb851acb69f",
+      "method": "DELETE",
+      "path": "/api/v1/attachments/d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+      "status": 204
+    },
+    {
+      "request_id": "1368072e-9560-4c46-bc35-06f566fd965e",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "ffd8cd1d-72fd-40cb-8cd9-befef259153b",
+      "method": "GET",
+      "path": "/api/v1/attachments/d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+      "status": 404
+    }
+  ],
+  "turns": [],
+  "status": "awaiting_external_erasure_evidence",
+  "kind": "attachment_erasure",
+  "account": {
+    "internal_user_id": "b9bca965-f61c-4754-9194-fa32b43f37e9",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  },
+  "upload_id": "531c8449-b292-4af4-97fd-aa33a041047c",
+  "attachment_id": "d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+  "latest_metadata": {
+    "attachment_id": "d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+    "conversation_id": null,
+    "original_name": "synthetic-erasure-681a84c4-c61a-43d6-a5c9-b455258ce62b.txt",
+    "declared_mime": "text/plain",
+    "detected_mime": "text/plain",
+    "size_bytes": 189,
+    "state": "ready",
+    "created_at": "2026-09-13T03:46:29.683090Z",
+    "retained_until": "2027-09-13T03:46:29.683090Z"
+  },
+  "prepared": {
+    "metadata": {
+      "attachment_id": "d4dc6f3c-9dcf-44e9-be66-b5f6d705f3ed",
+      "conversation_id": null,
+      "original_name": "synthetic-erasure-681a84c4-c61a-43d6-a5c9-b455258ce62b.txt",
+      "declared_mime": "text/plain",
+      "detected_mime": "text/plain",
+      "size_bytes": 189,
+      "state": "ready",
+      "created_at": "2026-09-13T03:46:29.683090Z",
+      "retained_until": "2027-09-13T03:46:29.683090Z"
+    },
+    "content_sha256": "4e3843c94500601720b30c808298dcf2dbebaaa1615ce086bf762d08a2dbd8d5",
+    "metadata_sha256": "c306a658f8b955aa130096e63265ce0d431677262904533c14ca57f8c132363c",
+    "hash_boundary": "content hash is bytes sent; HTTP metadata has no server byte hash"
+  },
+  "observations": [
+    {
+      "observed_at": 1789271191.85043,
+      "metadata": {
+        "http_status": 404
+      },
+      "physical_erasure_verified": false
+    }
+  ]
+}

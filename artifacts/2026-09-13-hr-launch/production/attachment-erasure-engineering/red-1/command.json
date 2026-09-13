@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_attachment_erasure_production_canary.py",
+    "-q"
+  ],
+  "exit_code": 1,
+  "test_sha256": "ce37afa588b52fc6b4bd2b9bc787bbae06739e98b38e332702fcbf05003e2a22",
+  "script_absent": true
+}

@@ -1,0 +1,85 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure _
+
+api = {'db': HrTestDatabase(), 'owner': UUID('bdb74780-d718-4c5d-9cde-e9733cab40d7'), 'config': {'owner_id': 'bdb74780-d718-...alhost', ...}, 'client': <test_attachment_erasure_production_canary.api.<locals>.Scheduled object at 0x10a5750d0>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9573/test_prepare_erase_only_owned_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a577e50>
+
+    @pytest.mark.postgres
+    def test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure(api, tmp_path, monkeypatch):
+>       h = harness(monkeypatch)
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_attachment_erasure_production_canary.py:91: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a577e50>
+
+    def harness(monkeypatch):
+        monkeypatch.syspath_prepend(str(PRODUCTION))
+        path = PRODUCTION / "attachment_erasure_canary.py"
+>       assert path.is_file(), "independent attachment erasure canary missing"
+E       AssertionError: independent attachment erasure canary missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py').is_file
+
+tests/test_attachment_erasure_production_canary.py:15: AssertionError
+________ test_expired_mutation_deadline_allows_only_bounded_observation ________
+
+api = {'db': HrTestDatabase(), 'owner': UUID('bdf4732a-4e10-431a-b491-ba32e98c4b8f'), 'config': {'owner_id': 'bdf4732a-4e10-...alhost', ...}, 'client': <test_attachment_erasure_production_canary.api.<locals>.Scheduled object at 0x10a6f9010>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9573/test_expired_mutation_deadline0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a6d7650>
+
+    @pytest.mark.postgres
+    def test_expired_mutation_deadline_allows_only_bounded_observation(api, tmp_path, monkeypatch):
+>       h = harness(monkeypatch)
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_attachment_erasure_production_canary.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a6d7650>
+
+    def harness(monkeypatch):
+        monkeypatch.syspath_prepend(str(PRODUCTION))
+        path = PRODUCTION / "attachment_erasure_canary.py"
+>       assert path.is_file(), "independent attachment erasure canary missing"
+E       AssertionError: independent attachment erasure canary missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py').is_file
+
+tests/test_attachment_erasure_production_canary.py:15: AssertionError
+____________ test_lost_delete_reply_stops_without_reissuing_delete _____________
+
+api = {'db': HrTestDatabase(), 'owner': UUID('7df90a92-ab83-4626-81f8-6ce960919793'), 'config': {'owner_id': '7df90a92-ab83-...alhost', ...}, 'client': <test_attachment_erasure_production_canary.api.<locals>.Scheduled object at 0x10a7bea50>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9573/test_lost_delete_reply_stops_w0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a6f8810>
+
+    @pytest.mark.postgres
+    def test_lost_delete_reply_stops_without_reissuing_delete(api, tmp_path, monkeypatch):
+>       h = harness(monkeypatch)
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_attachment_erasure_production_canary.py:136: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a6f8810>
+
+    def harness(monkeypatch):
+        monkeypatch.syspath_prepend(str(PRODUCTION))
+        path = PRODUCTION / "attachment_erasure_canary.py"
+>       assert path.is_file(), "independent attachment erasure canary missing"
+E       AssertionError: independent attachment erasure canary missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py').is_file
+
+tests/test_attachment_erasure_production_canary.py:15: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_attachment_erasure_production_canary.py::test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure
+FAILED tests/test_attachment_erasure_production_canary.py::test_expired_mutation_deadline_allows_only_bounded_observation
+FAILED tests/test_attachment_erasure_production_canary.py::test_lost_delete_reply_stops_without_reissuing_delete
+3 failed in 3.13s

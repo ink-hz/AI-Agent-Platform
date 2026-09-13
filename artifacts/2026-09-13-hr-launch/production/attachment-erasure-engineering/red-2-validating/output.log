@@ -1,0 +1,65 @@
+F...                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure _
+
+api = {'db': HrTestDatabase(), 'owner': UUID('fea99899-5898-4323-aa18-c99b4f3a543d'), 'config': {'owner_id': 'fea99899-5898-...alhost', ...}, 'client': <test_attachment_erasure_production_canary.api.<locals>.Scheduled object at 0x106939050>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9575/test_prepare_erase_only_owned_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105003750>
+
+    @pytest.mark.postgres
+    def test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure(api, tmp_path, monkeypatch):
+        h = harness(monkeypatch)
+        runner = h.AttachmentCanary(api["config"], tmp_path / "run", api["client"])
+        api["client"].delay_processing = True
+>       report = runner.prepare()
+                 ^^^^^^^^^^^^^^^^
+
+tests/test_attachment_erasure_production_canary.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <attachment_canary.AttachmentCanary object at 0x1069b7290>
+
+    def prepare(self):
+        self.identity()
+        if "erase" in self.ledger["operations"]:
+            raise CanaryError("erasure_already_requested")
+        raw = self.synthetic()
+        body = {"conversation_id": None, "original_name": "synthetic-erasure-" + self.ledger["run_id"] + ".txt",
+                "declared_mime": "text/plain", "declared_size": len(raw)}
+        upload = self.mutate("upload_begin", "/api/v1/attachments/uploads", body, (201,))
+        try:
+            uid, aid = (str(UUID(upload[k])) for k in ("upload_id", "attachment_id"))
+        except (ValueError, KeyError, TypeError):
+            raise CanaryError("upload_identity_invalid") from None
+        self.ledger.update(upload_id=uid, attachment_id=aid)
+        self.save()
+        self.mutate("upload_content", "/api/v1/attachments/uploads/" + uid + "/content", None, (200,), method="PUT", content=raw)
+        self.mutate("upload_complete", "/api/v1/attachments/uploads/" + uid + "/complete", None, (200,))
+        while True:
+            metadata = self.request("GET", "/api/v1/attachments/" + aid)
+            self.validate_metadata(metadata)
+            self.ledger["latest_metadata"] = metadata
+            self.save()
+            if metadata.get("state") == "ready":
+                self.ledger.update(status="prepared", prepared={"metadata": metadata, "content_sha256": sha(raw),
+                    "metadata_sha256": sha(json.dumps(metadata, sort_keys=True).encode()),
+                    "hash_boundary": "content hash is bytes sent; HTTP metadata has no server byte hash"})
+                self.save()
+                return self.ledger
+            if metadata.get("state") not in {"uploaded", "quarantined", "scanning", "processing", "pending"}:
+>               raise CanaryError("attachment_not_ready")
+E               api_canary.CanaryError: attachment_not_ready
+
+../artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py:119: CanaryError
+=============================== warnings summary ===============================
+tests/test_attachment_erasure_production_canary.py::test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure
+tests/test_attachment_erasure_production_canary.py::test_expired_mutation_deadline_allows_only_bounded_observation
+tests/test_attachment_erasure_production_canary.py::test_lost_delete_reply_stops_without_reissuing_delete
+tests/test_attachment_erasure_production_canary.py::test_unknown_initial_upload_and_wrong_owner_never_create_a_replacement
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:78: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_attachment_erasure_production_canary.py::test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure
+1 failed, 3 passed, 4 warnings in 4.29s

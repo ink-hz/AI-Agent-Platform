@@ -1,0 +1,168 @@
+{
+  "run_id": "7b199120-7e3f-43da-b02a-f126aff446ef",
+  "owner_id": "d79f7153-e798-44fc-b205-335ff69b96a4",
+  "public_origin": "https://localhost",
+  "deadline": 0,
+  "operations": {
+    "upload_begin": {
+      "key": "9aaea3e5-a4dd-4b8d-814c-8cb196a378a1",
+      "path": "/api/v1/attachments/uploads",
+      "body": {
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-7b199120-7e3f-43da-b02a-f126aff446ef.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189
+      },
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "upload_id": "c3ebf991-bf82-4844-a20c-24b9791d59b2",
+        "attachment_id": "8c809126-ca71-4b7d-b2df-d34c0b5de825",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-7b199120-7e3f-43da-b02a-f126aff446ef.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189,
+        "state": "uploading",
+        "uploaded_bytes": 0,
+        "expires_at": "2026-09-14T03:46:32.810624Z"
+      }
+    },
+    "upload_content": {
+      "key": "47a1ca53-766c-42e6-bc2d-803cccd70574",
+      "path": "/api/v1/attachments/uploads/c3ebf991-bf82-4844-a20c-24b9791d59b2/content",
+      "body": null,
+      "content_sha256": "3c72a89de69044afb007da9bfdc1bd2ce38909545f45693a1b1c9978c752d43a",
+      "method": "PUT",
+      "status": "received",
+      "response": {
+        "upload_id": "c3ebf991-bf82-4844-a20c-24b9791d59b2",
+        "attachment_id": "8c809126-ca71-4b7d-b2df-d34c0b5de825",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-7b199120-7e3f-43da-b02a-f126aff446ef.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 189,
+        "state": "validating",
+        "uploaded_bytes": 189,
+        "expires_at": "2026-09-14T03:46:32.810624Z"
+      }
+    },
+    "upload_complete": {
+      "key": "6ba23c94-aeee-4ba1-87ff-257116d42180",
+      "path": "/api/v1/attachments/uploads/c3ebf991-bf82-4844-a20c-24b9791d59b2/complete",
+      "body": null,
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "attachment_id": "8c809126-ca71-4b7d-b2df-d34c0b5de825",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-7b199120-7e3f-43da-b02a-f126aff446ef.txt",
+        "declared_mime": "text/plain",
+        "detected_mime": null,
+        "size_bytes": 189,
+        "state": "validating",
+        "created_at": "2026-09-13T03:46:32.811773Z",
+        "retained_until": "2027-09-13T03:46:32.811773Z"
+      }
+    }
+  },
+  "http": [
+    {
+      "request_id": "35a579bc-3e24-4def-87f8-a97d0c2638bb",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "54abdeed-ab86-4e73-9271-3f8a2c79690c",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": 201
+    },
+    {
+      "request_id": "cb1e541d-38dd-431e-8d64-1e6181514b24",
+      "method": "PUT",
+      "path": "/api/v1/attachments/uploads/c3ebf991-bf82-4844-a20c-24b9791d59b2/content",
+      "status": 200
+    },
+    {
+      "request_id": "2cdcea18-be1d-4ba2-9137-c16fecd7abec",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads/c3ebf991-bf82-4844-a20c-24b9791d59b2/complete",
+      "status": 200
+    },
+    {
+      "request_id": "af5ad3a9-bbb5-4970-8871-568c6b3243e0",
+      "method": "GET",
+      "path": "/api/v1/attachments/8c809126-ca71-4b7d-b2df-d34c0b5de825",
+      "status": 200
+    },
+    {
+      "request_id": "f04e994e-3300-416e-942f-0adb1d562567",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "7e64a9e7-d3d3-48d7-9546-fd23458dea62",
+      "method": "GET",
+      "path": "/api/v1/attachments/8c809126-ca71-4b7d-b2df-d34c0b5de825",
+      "status": 200
+    }
+  ],
+  "turns": [],
+  "status": "prepared",
+  "kind": "attachment_erasure",
+  "account": {
+    "internal_user_id": "d79f7153-e798-44fc-b205-335ff69b96a4",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  },
+  "upload_id": "c3ebf991-bf82-4844-a20c-24b9791d59b2",
+  "attachment_id": "8c809126-ca71-4b7d-b2df-d34c0b5de825",
+  "latest_metadata": {
+    "attachment_id": "8c809126-ca71-4b7d-b2df-d34c0b5de825",
+    "conversation_id": null,
+    "original_name": "synthetic-erasure-7b199120-7e3f-43da-b02a-f126aff446ef.txt",
+    "declared_mime": "text/plain",
+    "detected_mime": "text/plain",
+    "size_bytes": 189,
+    "state": "ready",
+    "created_at": "2026-09-13T03:46:32.811773Z",
+    "retained_until": "2027-09-13T03:46:32.811773Z"
+  },
+  "prepared": {
+    "metadata": {
+      "attachment_id": "8c809126-ca71-4b7d-b2df-d34c0b5de825",
+      "conversation_id": null,
+      "original_name": "synthetic-erasure-7b199120-7e3f-43da-b02a-f126aff446ef.txt",
+      "declared_mime": "text/plain",
+      "detected_mime": "text/plain",
+      "size_bytes": 189,
+      "state": "ready",
+      "created_at": "2026-09-13T03:46:32.811773Z",
+      "retained_until": "2027-09-13T03:46:32.811773Z"
+    },
+    "content_sha256": "3c72a89de69044afb007da9bfdc1bd2ce38909545f45693a1b1c9978c752d43a",
+    "metadata_sha256": "b27c5c31bac9f4001a11d257205567faad97c735b8c3556aba678f283d3b9a2f",
+    "hash_boundary": "content hash is bytes sent; HTTP metadata has no server byte hash"
+  },
+  "observations": [
+    {
+      "observed_at": 1789271192.883399,
+      "metadata": {
+        "attachment_id": "8c809126-ca71-4b7d-b2df-d34c0b5de825",
+        "conversation_id": null,
+        "original_name": "synthetic-erasure-7b199120-7e3f-43da-b02a-f126aff446ef.txt",
+        "declared_mime": "text/plain",
+        "detected_mime": "text/plain",
+        "size_bytes": 189,
+        "state": "ready",
+        "created_at": "2026-09-13T03:46:32.811773Z",
+        "retained_until": "2027-09-13T03:46:32.811773Z"
+      },
+      "physical_erasure_verified": false
+    }
+  ]
+}

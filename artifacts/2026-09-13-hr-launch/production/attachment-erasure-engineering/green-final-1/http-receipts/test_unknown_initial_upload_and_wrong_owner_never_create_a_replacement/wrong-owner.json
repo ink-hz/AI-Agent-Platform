@@ -1,0 +1,23 @@
+{
+  "run_id": "c2dba6ff-5851-4801-b85a-43291f642a3f",
+  "owner_id": "4555774c-cca4-4686-9fc4-3ccf59b143ae",
+  "public_origin": "https://localhost",
+  "deadline": 1789271494.906542,
+  "operations": {},
+  "http": [
+    {
+      "request_id": "9d1f6933-2bc9-4f5e-9a14-3ef345336c1e",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    }
+  ],
+  "turns": [],
+  "status": "created",
+  "kind": "attachment_erasure",
+  "account": {
+    "internal_user_id": "49b3c70e-a007-44fc-9cc8-4797e001a5f7",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  }
+}

@@ -1,0 +1,15 @@
+usage: attachment_erasure_canary.py [-h] --private-config PRIVATE_CONFIG
+                                    --evidence-dir EVIDENCE_DIR
+                                    [--resume-prepare]
+                                    {prepare,erase,observe}
+
+Account/attachment-only canary. HTTP deletion is NOT physical object erasure.
+
+positional arguments:
+  {prepare,erase,observe}
+
+options:
+  -h, --help            show this help message and exit
+  --private-config PRIVATE_CONFIG
+  --evidence-dir EVIDENCE_DIR
+  --resume-prepare

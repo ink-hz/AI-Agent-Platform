@@ -1,0 +1,31 @@
+[
+  {
+    "command": [
+      "backend/.venv/bin/ruff",
+      "check",
+      "backend/tests/test_attachment_erasure_production_canary.py",
+      "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py"
+    ],
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "backend/.venv/bin/python",
+      "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py",
+      "--help"
+    ],
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "backend/.venv/bin/python",
+      "artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py",
+      "prepare",
+      "--private-config",
+      "/nonexistent/never-read-private-canary.json",
+      "--evidence-dir",
+      "/nonexistent/not-created-attachment-run"
+    ],
+    "exit_code": 1
+  }
+]
