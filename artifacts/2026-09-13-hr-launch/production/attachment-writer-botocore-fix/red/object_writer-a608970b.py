@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-import tempfile
 from pathlib import Path
 from typing import BinaryIO
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import Config
 from app.local_secrets import SecretFileUnavailable, read_secret_file
@@ -24,31 +25,38 @@ class AttachmentObjectWriterSizeMismatch(AttachmentObjectWriterError):
     pass
 
 
-def _stage_stream(body: BinaryIO, staged: BinaryIO, expected_size: int) -> ObjectReceipt:
-    size = 0
-    digest = hashlib.sha256()
-    while size < expected_size:
-        chunk = body.read(min(_READ_CHUNK_BYTES, expected_size - size))
+class _DigestingReader:
+    def __init__(self, body: BinaryIO, expected_size: int) -> None:
+        self._body = body
+        self._expected_size = expected_size
+        self._size = 0
+        self._digest = hashlib.sha256()
+
+    def read(self, size: int = -1) -> bytes:
+        remaining = self._expected_size - self._size
+        if remaining <= 0:
+            return b""
+        requested = min(
+            remaining,
+            _READ_CHUNK_BYTES if size is None or size < 0 else size,
+            _READ_CHUNK_BYTES,
+        )
+        chunk = self._body.read(requested)
         if not isinstance(chunk, bytes):
             raise TypeError("attachment stream must return bytes")
-        if not chunk:
-            break
-        size += len(chunk)
-        if size > expected_size:
+        self._size += len(chunk)
+        self._digest.update(chunk)
+        return chunk
+
+    def receipt(self) -> ObjectReceipt:
+        extra = self._body.read(1)
+        if not isinstance(extra, bytes):
+            raise TypeError("attachment stream must return bytes")
+        if self._size != self._expected_size or extra:
             raise AttachmentObjectWriterSizeMismatch(
                 "attachment object size mismatch"
             )
-        staged.write(chunk)
-        digest.update(chunk)
-    extra = body.read(1)
-    if not isinstance(extra, bytes):
-        raise TypeError("attachment stream must return bytes")
-    if size != expected_size or extra:
-        raise AttachmentObjectWriterSizeMismatch(
-            "attachment object size mismatch"
-        )
-    staged.seek(0)
-    return ObjectReceipt(size, digest.digest())
+        return ObjectReceipt(self._size, self._digest.digest())
 
 
 def _credential(path_value: str) -> str:
@@ -116,6 +124,27 @@ class AttachmentObjectWriter:
             max_file_bytes=config.attachment_max_file_bytes,
         )
 
+    def _best_effort_delete(self, object_ref: str, put_response) -> None:
+        if not isinstance(put_response, dict):
+            return
+        if "VersionId" in put_response:
+            version_id = put_response["VersionId"]
+            if not isinstance(version_id, str) or not version_id:
+                return
+            try:
+                self._client.delete_object(
+                    Bucket=self._bucket,
+                    Key=object_ref,
+                    VersionId=version_id,
+                )
+            except (BotoCoreError, ClientError, OSError, RuntimeError):
+                pass
+            return
+        try:
+            erase_s3_object(self._client, self._bucket, object_ref)
+        except Exception:  # noqa: BLE001, S110 - retry ledger retains the key
+            pass
+
     def put_stream(
         self, object_ref: str, body: BinaryIO, expected_size: int
     ) -> ObjectReceipt:
@@ -130,34 +159,25 @@ class AttachmentObjectWriter:
             raise AttachmentObjectWriterSizeMismatch(
                 "attachment object size mismatch"
             )
-        with tempfile.SpooledTemporaryFile(max_size=_READ_CHUNK_BYTES) as staged:
-            try:
-                receipt = _stage_stream(body, staged, expected_size)
-            except AttachmentObjectWriterSizeMismatch:
-                raise
-            except Exception:  # noqa: BLE001 - sanitize arbitrary stream errors
-                raise AttachmentObjectWriterError(
-                    "attachment object write failed"
-                ) from None
-            try:
-                response = self._client.put_object(
-                    Bucket=self._bucket,
-                    Key=object_ref,
-                    Body=staged,
-                    ContentLength=expected_size,
-                    IfNoneMatch="*",
-                )
-                if not isinstance(response, dict):
-                    raise AttachmentObjectWriterError(
-                        "attachment object write failed"
-                    )
-            except AttachmentObjectWriterError:
-                raise
-            except Exception:  # noqa: BLE001 - sanitize arbitrary client errors
-                raise AttachmentObjectWriterError(
-                    "attachment object write failed"
-                ) from None
-            return receipt
+        reader = _DigestingReader(body, expected_size)
+        put_response = None
+        try:
+            put_response = self._client.put_object(
+                Bucket=self._bucket,
+                Key=object_ref,
+                Body=reader,
+                ContentLength=expected_size,
+                IfNoneMatch="*",
+            )
+            return reader.receipt()
+        except AttachmentObjectWriterSizeMismatch:
+            self._best_effort_delete(object_ref, put_response)
+            raise
+        except Exception:  # noqa: BLE001 - sanitize arbitrary stream/client errors
+            self._best_effort_delete(object_ref, put_response)
+            raise AttachmentObjectWriterError(
+                "attachment object write failed"
+            ) from None
 
     def delete(self, object_ref: str) -> None:
         if not isinstance(object_ref, str) or not object_ref:

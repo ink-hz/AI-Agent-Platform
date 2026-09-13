@@ -51,6 +51,8 @@ class StreamingS3:
         self.deletes: list[tuple[str, str]] = []
         self.fences: list[tuple[str, str]] = []
         self.objects = {}
+        self.payload_body_seekable = []
+        self.payload_body_rolled = []
 
     def put_object(
         self,
@@ -87,6 +89,8 @@ class StreamingS3:
         if Metadata == {"platform-erasure-fence": "v1"}:
             self.fences.append((Bucket, Key))
         else:
+            self.payload_body_seekable.append(Body.seekable())
+            self.payload_body_rolled.append(bool(getattr(Body, "_rolled", False)))
             self.puts.append((Bucket, Key, total))
         return {"ETag": "opaque"}
 
@@ -118,6 +122,8 @@ def test_object_writer_streams_fifty_mb_and_calculates_sha256() -> None:
     assert receipt.sha256 == expected.digest()
     assert stream.largest_read <= 1024 * 1024
     assert s3.puts == [("private-attachments", "objects/random", MAX_FILE_BYTES)]
+    assert s3.payload_body_seekable == [True]
+    assert s3.payload_body_rolled == [True]
 
 
 def test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write() -> None:
@@ -128,7 +134,31 @@ def test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write() -> N
         writer.put_stream("objects/random", io.BytesIO(b"abcd"), 3)
 
     assert s3.deletes == []
-    assert s3.fences == [("private-attachments", "objects/random")]
+    assert s3.fences == []
+    assert s3.puts == []
+
+
+def test_suspended_null_fence_is_untouched_when_size_validation_fails() -> None:
+    class SuspendedFence:
+        def __init__(self):
+            self.puts = []
+            self.deletes = []
+
+        def put_object(self, **kwargs):
+            self.puts.append(kwargs)
+            return {"VersionId": "null"}
+
+        def delete_object(self, **kwargs):
+            self.deletes.append(kwargs)
+
+    s3 = SuspendedFence()
+    writer = AttachmentObjectWriter(s3, "private-attachments")
+
+    with pytest.raises(AttachmentObjectWriterSizeMismatch):
+        writer.put_stream("objects/fenced", io.BytesIO(b"abcd"), 3)
+
+    assert s3.puts == []
+    assert s3.deletes == []
 
 
 def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup() -> None:
@@ -147,12 +177,14 @@ def test_storage_error_redacts_endpoint_object_key_and_cause() -> None:
     endpoint = "http://storage-secret.invalid:9000"
     object_ref = "private-object-token"
 
+    deletes = []
+
     class FailedS3:
         def put_object(self, **_kwargs):
             raise EndpointConnectionError(endpoint_url=endpoint)
 
-        def delete_object(self, **_kwargs):
-            raise EndpointConnectionError(endpoint_url=endpoint)
+        def delete_object(self, **kwargs):
+            deletes.append(kwargs)
 
     writer = AttachmentObjectWriter(FailedS3(), "private-attachments")
 
@@ -163,6 +195,7 @@ def test_storage_error_redacts_endpoint_object_key_and_cause() -> None:
     assert captured.value.__cause__ is None
     for protected in (endpoint, object_ref, "storage-secret", "private-object"):
         assert protected not in rendered
+    assert deletes == []
 
 
 class MemoryRepository:

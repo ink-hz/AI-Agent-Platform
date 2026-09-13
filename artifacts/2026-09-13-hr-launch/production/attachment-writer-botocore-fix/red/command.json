@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/production/attachment-writer-botocore-fix/red/run_old_source.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit": 1,
+  "runner_loads_source_sha256": "dd974dafafa38146b71c56a221c300bbe9773bbeaae8e074027b8bbfcfe1a1d3",
+  "pytest_selection": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_object_writer_botocore.py",
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_upload_service.py::test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write",
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_upload_service.py::test_suspended_null_fence_is_untouched_when_size_validation_fails",
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_s3_version_erasure.py::test_size_mismatch_is_rejected_before_any_versioned_put_or_delete"
+  ]
+}

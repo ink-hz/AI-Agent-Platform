@@ -377,12 +377,14 @@ def test_orphan_cleanup_does_not_acknowledge_failed_version_inventory():
     assert repository.acknowledged == []
 
 
-def test_successful_versioned_put_cleanup_deletes_only_returned_version():
+def test_size_mismatch_is_rejected_before_any_versioned_put_or_delete():
     class Client:
         def __init__(self):
+            self.puts = []
             self.calls = []
 
-        def put_object(self, **_kwargs):
+        def put_object(self, **kwargs):
+            self.puts.append(kwargs)
             return {"VersionId": "this-write"}
 
         def delete_object(self, **kwargs):
@@ -394,9 +396,8 @@ def test_successful_versioned_put_cleanup_deletes_only_returned_version():
             "owned", io.BytesIO(b"extra"), 4
         )
 
-    assert client.calls == [
-        {"Bucket": "private-bucket", "Key": "owned", "VersionId": "this-write"}
-    ]
+    assert client.puts == []
+    assert client.calls == []
 
 
 def test_ambiguous_failed_put_does_not_issue_destructive_key_delete():

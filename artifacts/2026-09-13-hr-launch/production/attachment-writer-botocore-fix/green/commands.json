@@ -1,0 +1,75 @@
+{
+  "recorded_after_execution": true,
+  "commands": [
+    {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_attachment_object_writer_botocore.py",
+        "tests/test_attachment_upload_service.py::test_object_writer_streams_fifty_mb_and_calculates_sha256",
+        "tests/test_attachment_upload_service.py::test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write",
+        "tests/test_attachment_upload_service.py::test_suspended_null_fence_is_untouched_when_size_validation_fails",
+        "tests/test_attachment_upload_service.py::test_storage_error_redacts_endpoint_object_key_and_cause",
+        "tests/test_attachment_write_fence.py::test_payload_put_is_conditional_and_cannot_overwrite_fence",
+        "tests/test_attachment_s3_version_erasure.py::test_size_mismatch_is_rejected_before_any_versioned_put_or_delete"
+      ],
+      "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+      "exit": 0,
+      "stdout": "core.stdout.log",
+      "stderr": "core.stderr.log"
+    },
+    {
+      "shell_selection": "tests/test_attachment*.py",
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_attachment_api.py",
+        "tests/test_attachment_artifacts.py",
+        "tests/test_attachment_derivatives.py",
+        "tests/test_attachment_erasure.py",
+        "tests/test_attachment_erasure_hotfix_database.py",
+        "tests/test_attachment_erasure_observer.py",
+        "tests/test_attachment_erasure_production_canary.py",
+        "tests/test_attachment_erasure_readonly_runbook.py",
+        "tests/test_attachment_fence_capability.py",
+        "tests/test_attachment_grants.py",
+        "tests/test_attachment_hotfix_supervisor.py",
+        "tests/test_attachment_object_writer_botocore.py",
+        "tests/test_attachment_repository.py",
+        "tests/test_attachment_retention.py",
+        "tests/test_attachment_s3_version_erasure.py",
+        "tests/test_attachment_scanner.py",
+        "tests/test_attachment_service.py",
+        "tests/test_attachment_upload_service.py",
+        "tests/test_attachment_validation.py",
+        "tests/test_attachment_view_migration.py",
+        "tests/test_attachment_worker_runtime.py",
+        "tests/test_attachment_write_fence.py",
+        "tests/test_attachment_write_fence_database.py"
+      ],
+      "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+      "exit": 0,
+      "stdout": "attachment-suite.stdout.log",
+      "stderr": "attachment-suite.stderr.log"
+    },
+    {
+      "argv": [
+        ".venv/bin/ruff",
+        "check",
+        "app/attachments/object_writer.py",
+        "tests/test_attachment_object_writer_botocore.py",
+        "tests/test_attachment_upload_service.py",
+        "tests/test_attachment_s3_version_erasure.py"
+      ],
+      "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+      "exit": 0,
+      "stdout": "ruff.stdout.log",
+      "stderr": "ruff.stderr.log"
+    }
+  ],
+  "superseded_green_receipts": "Files named *-before-expanded-assertions.* are retained earlier passing runs before the final assertions were added."
+}

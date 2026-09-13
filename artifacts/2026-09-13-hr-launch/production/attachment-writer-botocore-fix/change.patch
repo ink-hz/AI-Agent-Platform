@@ -1,0 +1,397 @@
+diff --git "a/HR_Agent\345\267\245\344\275\234\346\265\201.md" "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+index 046ca3f3..d836f30f 100644
+--- "a/HR_Agent\345\267\245\344\275\234\346\265\201.md"
++++ "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+@@ -233,7 +233,7 @@ C评审后发现未消费工具批次的硬窗口死锁，进入D前按[修订
+ 
+ 研究成功只在显式300秒配置下发生；120秒默认配置目前无C3成功记录。7岗样例需要16384输出，费用核算不得把约2倍实报的保守扣记当账单。工作用量标签按实际扣记来源汇总，全估算不写mixed。平台附件擦除缺陷独立登记为架构D5，旧Worker停止、迁移100、修复镜像启动必须按该顺序处置；本地测试不代表生产已经恢复。
+ 
+-附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传失败的清理只删除成功响应证明属于本次写入的准确版本；响应不确定时保留引用，不能盲删整个 key。
++附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传正文先在有界、可 seek 的临时文件中流式完成长度与 SHA 校验，再允许对象客户端做完整性预读和重试；长度错误不会先写远端。上传失败的清理只删除成功响应证明属于本次写入的准确不可变版本；`VersionId=null` 或响应不确定时保留引用，不能删除整个 key 或现有 fence。
+ 
+ 106 在擦除领取事务中先锁附件并写 `deleted/erasure_pending`，保留上传尝试与其他对象引用，再读取全部 derive job，并按 Worker 共用的确定性 key 算法补齐尚未登记的衍生对象。先完成扫描的一侧会先登记 derive job；擦除先领取的一侧会使晚到处理结果因 deleted 检查失败，而其在途条件 PUT 只能在 fence 前成功并被本次枚举删除，或在 fence 后收到 412。API、附件处理 Worker 与维护 Worker 必须同批使用该协议并排除旧无条件写者；附件 API 构建、两类 Worker 构建和 healthcheck 在任何 payload PUT 或擦除 claim 前只读核实准确角色、106 固定校验和与维护角色四列权限。运行中撤权仍按实际数据库错误保持引用，不能由启动检查宣称永久安全。当前 running 领取没有自动 lease/reaper，进程领取后崩溃需由发布监督器明确发现并处置。
+ 
+diff --git "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md" "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+index 63405d2e..c9a4bc96 100644
+--- "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
++++ "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+@@ -238,7 +238,7 @@ D候选入口、原始记录、准确来源续作及评估/面试/复盘的当
+ | A3 | 内部岗位/候选人/成果/在途实际量未知 | 本次未访问生产业务库；空 fixture 不证明没有数据 | 切换前进行批准范围内的只读计数，见 §10 |
+ | A4 | 生产开关、供应商与材料承诺未验证 | compose 默认开关值不能证明部署状态；本地运行不证明数据不出网 | 真实流量切换前逐项核对 |
+ 
+-附件对象擦除还必须覆盖对象存储的版本语义。生产只读证据确认附件桶已启用版本控制；不带 `VersionId` 的删除只产生 delete marker，不能作为物理擦除完成。106 将合法写入与擦除闭合为同一协议：所有业务 payload 使用 `If-None-Match: *`；擦除对每个准确 key 先无条件写入零字节普通对象，并只接受准确元数据 `platform-erasure-fence=v1` 的 fence。版本已启用或暂停时，维护端有界分页枚举该 key 的所有普通版本与 delete marker，以版本级 HEAD 核实 fence 身份，只保留 fence 并删除 payload/marker；未启用版本控制时也保留零字节 fence，不再裸删 key。权限、网络、分页、版本身份或最终当前对象不确定时保持失败/可重试，不能抹除数据库引用或确认孤儿已清理。上传请求结果不确定时不得删除整个 key；成功响应返回准确 `VersionId` 时只能清理本次版本。
++附件对象擦除还必须覆盖对象存储的版本语义。生产只读证据确认附件桶已启用版本控制；不带 `VersionId` 的删除只产生 delete marker，不能作为物理擦除完成。106 将合法写入与擦除闭合为同一协议：所有业务 payload 使用 `If-None-Match: *`；擦除对每个准确 key 先无条件写入零字节普通对象，并只接受准确元数据 `platform-erasure-fence=v1` 的 fence。版本已启用或暂停时，维护端有界分页枚举该 key 的所有普通版本与 delete marker，以版本级 HEAD 核实 fence 身份，只保留 fence 并删除 payload/marker；未启用版本控制时也保留零字节 fence，不再裸删 key。权限、网络、分页、版本身份或最终当前对象不确定时保持失败/可重试，不能抹除数据库引用或确认孤儿已清理。业务流先在有界、可 seek 的临时文件中流式核实长度与 SHA，再交给对象客户端做完整性预读和网络重试；本地长度失败不产生远端 PUT。上传请求结果不确定时不得删除整个 key；成功响应返回准确 `VersionId` 时只能清理本次版本，`null` 不视为不可变版本身份。
+ 
+ 106 的领取事务先锁附件并将其置为 `deleted/erasure_pending`、保留全部引用，再读取所有状态的 derive job，用与 Worker 相同的确定性算法补齐尚未登记的衍生 key。处理结果函数原有的 job→attachment 锁顺序与 deleted 检查会拒绝晚到的衍生登记；已经在外部存储进行的上传或衍生写仍只能命中已建立的 fence 并收到 412，不得删除既有 canonical 或 fence。该保证要求 API 与附件 Worker 同批切换，排除旧无条件写者；两个 payload 运行端及维护 healthcheck 在首次 PUT/claim 前只读核实准确数据库身份、106 固定校验和及维护角色四列权限。启动检查不等于权限永久不变，运行时数据库错误仍须保持 partial/引用。现行领取只选择 queued/partial，进程在领取后崩溃会留下无法自动重领的 running job；发布监督器必须显式发现并处置，不能把它伪装成普通 partial 重试。
+ 
+diff --git a/backend/app/attachments/object_writer.py b/backend/app/attachments/object_writer.py
+index eaf48ba0..ee434a59 100644
+--- a/backend/app/attachments/object_writer.py
++++ b/backend/app/attachments/object_writer.py
+@@ -3,11 +3,10 @@ from __future__ import annotations
+ import hashlib
+ import os
+ import stat
++import tempfile
+ from pathlib import Path
+ from typing import BinaryIO
+ 
+-from botocore.exceptions import BotoCoreError, ClientError
+-
+ from app.config import Config
+ from app.local_secrets import SecretFileUnavailable, read_secret_file
+ 
+@@ -25,38 +24,31 @@ class AttachmentObjectWriterSizeMismatch(AttachmentObjectWriterError):
+     pass
+ 
+ 
+-class _DigestingReader:
+-    def __init__(self, body: BinaryIO, expected_size: int) -> None:
+-        self._body = body
+-        self._expected_size = expected_size
+-        self._size = 0
+-        self._digest = hashlib.sha256()
+-
+-    def read(self, size: int = -1) -> bytes:
+-        remaining = self._expected_size - self._size
+-        if remaining <= 0:
+-            return b""
+-        requested = min(
+-            remaining,
+-            _READ_CHUNK_BYTES if size is None or size < 0 else size,
+-            _READ_CHUNK_BYTES,
+-        )
+-        chunk = self._body.read(requested)
++def _stage_stream(body: BinaryIO, staged: BinaryIO, expected_size: int) -> ObjectReceipt:
++    size = 0
++    digest = hashlib.sha256()
++    while size < expected_size:
++        chunk = body.read(min(_READ_CHUNK_BYTES, expected_size - size))
+         if not isinstance(chunk, bytes):
+             raise TypeError("attachment stream must return bytes")
+-        self._size += len(chunk)
+-        self._digest.update(chunk)
+-        return chunk
+-
+-    def receipt(self) -> ObjectReceipt:
+-        extra = self._body.read(1)
+-        if not isinstance(extra, bytes):
+-            raise TypeError("attachment stream must return bytes")
+-        if self._size != self._expected_size or extra:
++        if not chunk:
++            break
++        size += len(chunk)
++        if size > expected_size:
+             raise AttachmentObjectWriterSizeMismatch(
+                 "attachment object size mismatch"
+             )
+-        return ObjectReceipt(self._size, self._digest.digest())
++        staged.write(chunk)
++        digest.update(chunk)
++    extra = body.read(1)
++    if not isinstance(extra, bytes):
++        raise TypeError("attachment stream must return bytes")
++    if size != expected_size or extra:
++        raise AttachmentObjectWriterSizeMismatch(
++            "attachment object size mismatch"
++        )
++    staged.seek(0)
++    return ObjectReceipt(size, digest.digest())
+ 
+ 
+ def _credential(path_value: str) -> str:
+@@ -124,27 +116,6 @@ class AttachmentObjectWriter:
+             max_file_bytes=config.attachment_max_file_bytes,
+         )
+ 
+-    def _best_effort_delete(self, object_ref: str, put_response) -> None:
+-        if not isinstance(put_response, dict):
+-            return
+-        if "VersionId" in put_response:
+-            version_id = put_response["VersionId"]
+-            if not isinstance(version_id, str) or not version_id:
+-                return
+-            try:
+-                self._client.delete_object(
+-                    Bucket=self._bucket,
+-                    Key=object_ref,
+-                    VersionId=version_id,
+-                )
+-            except (BotoCoreError, ClientError, OSError, RuntimeError):
+-                pass
+-            return
+-        try:
+-            erase_s3_object(self._client, self._bucket, object_ref)
+-        except Exception:  # noqa: BLE001, S110 - retry ledger retains the key
+-            pass
+-
+     def put_stream(
+         self, object_ref: str, body: BinaryIO, expected_size: int
+     ) -> ObjectReceipt:
+@@ -159,25 +130,34 @@ class AttachmentObjectWriter:
+             raise AttachmentObjectWriterSizeMismatch(
+                 "attachment object size mismatch"
+             )
+-        reader = _DigestingReader(body, expected_size)
+-        put_response = None
+-        try:
+-            put_response = self._client.put_object(
+-                Bucket=self._bucket,
+-                Key=object_ref,
+-                Body=reader,
+-                ContentLength=expected_size,
+-                IfNoneMatch="*",
+-            )
+-            return reader.receipt()
+-        except AttachmentObjectWriterSizeMismatch:
+-            self._best_effort_delete(object_ref, put_response)
+-            raise
+-        except Exception:  # noqa: BLE001 - sanitize arbitrary stream/client errors
+-            self._best_effort_delete(object_ref, put_response)
+-            raise AttachmentObjectWriterError(
+-                "attachment object write failed"
+-            ) from None
++        with tempfile.SpooledTemporaryFile(max_size=_READ_CHUNK_BYTES) as staged:
++            try:
++                receipt = _stage_stream(body, staged, expected_size)
++            except AttachmentObjectWriterSizeMismatch:
++                raise
++            except Exception:  # noqa: BLE001 - sanitize arbitrary stream errors
++                raise AttachmentObjectWriterError(
++                    "attachment object write failed"
++                ) from None
++            try:
++                response = self._client.put_object(
++                    Bucket=self._bucket,
++                    Key=object_ref,
++                    Body=staged,
++                    ContentLength=expected_size,
++                    IfNoneMatch="*",
++                )
++                if not isinstance(response, dict):
++                    raise AttachmentObjectWriterError(
++                        "attachment object write failed"
++                    )
++            except AttachmentObjectWriterError:
++                raise
++            except Exception:  # noqa: BLE001 - sanitize arbitrary client errors
++                raise AttachmentObjectWriterError(
++                    "attachment object write failed"
++                ) from None
++            return receipt
+ 
+     def delete(self, object_ref: str) -> None:
+         if not isinstance(object_ref, str) or not object_ref:
+diff --git a/backend/tests/test_attachment_object_writer_botocore.py b/backend/tests/test_attachment_object_writer_botocore.py
+new file mode 100644
+index 00000000..97fd55a3
+--- /dev/null
++++ b/backend/tests/test_attachment_object_writer_botocore.py
+@@ -0,0 +1,85 @@
++from __future__ import annotations
++
++import hashlib
++import threading
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++
++import boto3
++from botocore.config import Config as BotoConfig
++
++from app.attachments.object_writer import AttachmentObjectWriter
++
++
++def test_seekable_staged_body_survives_real_botocore_checksum_and_retry():
++    payload = b"payload-block-" * 100_000
++    received = []
++    headers = []
++
++    class Handler(BaseHTTPRequestHandler):
++        protocol_version = "HTTP/1.1"
++
++        def do_PUT(self):
++            length = int(self.headers["Content-Length"])
++            received.append(self.rfile.read(length))
++            headers.append(dict(self.headers))
++            if len(received) == 1:
++                body = b"<Error><Code>InternalError</Code></Error>"
++                self.send_response(500)
++                self.send_header("Content-Type", "application/xml")
++                self.send_header("Content-Length", str(len(body)))
++                self.end_headers()
++                self.wfile.write(body)
++                return
++            self.send_response(200)
++            self.send_header("ETag", '"fixture-etag"')
++            self.send_header("x-amz-version-id", "fixture-version")
++            self.send_header("Content-Length", "0")
++            self.end_headers()
++
++        def log_message(self, _format, *_args):
++            return
++
++    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
++    thread = threading.Thread(target=server.serve_forever)
++    thread.start()
++    try:
++        client = boto3.client(
++            "s3",
++            endpoint_url=f"http://127.0.0.1:{server.server_port}",
++            region_name="us-east-1",
++            aws_access_key_id="fixture-access",
++            aws_secret_access_key="fixture-secret",
++            config=BotoConfig(
++                s3={"addressing_style": "path"},
++                retries={"mode": "standard", "max_attempts": 2},
++            ),
++        )
++        receipt = AttachmentObjectWriter(client, "fixture-bucket").put_stream(
++            "fixture-object", GeneratedNonSeekable(payload), len(payload)
++        )
++    finally:
++        server.shutdown()
++        server.server_close()
++        thread.join(timeout=5)
++
++    assert not thread.is_alive()
++    assert receipt.size_bytes == len(payload)
++    assert receipt.sha256 == hashlib.sha256(payload).digest()
++    assert received == [payload, payload]
++    assert all(item["If-None-Match"] == "*" for item in headers)
++    assert all("x-amz-checksum-crc32" in item for item in headers)
++
++
++class GeneratedNonSeekable:
++    def __init__(self, payload: bytes) -> None:
++        self._payload = payload
++        self._offset = 0
++        self.largest_read = 0
++
++    def read(self, size: int = -1) -> bytes:
++        if size < 0:
++            size = len(self._payload) - self._offset
++        self.largest_read = max(self.largest_read, size)
++        result = self._payload[self._offset : self._offset + size]
++        self._offset += len(result)
++        return result
+diff --git a/backend/tests/test_attachment_s3_version_erasure.py b/backend/tests/test_attachment_s3_version_erasure.py
+index 7766b8ad..455e4038 100644
+--- a/backend/tests/test_attachment_s3_version_erasure.py
++++ b/backend/tests/test_attachment_s3_version_erasure.py
+@@ -377,12 +377,14 @@ def test_orphan_cleanup_does_not_acknowledge_failed_version_inventory():
+     assert repository.acknowledged == []
+ 
+ 
+-def test_successful_versioned_put_cleanup_deletes_only_returned_version():
++def test_size_mismatch_is_rejected_before_any_versioned_put_or_delete():
+     class Client:
+         def __init__(self):
++            self.puts = []
+             self.calls = []
+ 
+-        def put_object(self, **_kwargs):
++        def put_object(self, **kwargs):
++            self.puts.append(kwargs)
+             return {"VersionId": "this-write"}
+ 
+         def delete_object(self, **kwargs):
+@@ -394,9 +396,8 @@ def test_successful_versioned_put_cleanup_deletes_only_returned_version():
+             "owned", io.BytesIO(b"extra"), 4
+         )
+ 
+-    assert client.calls == [
+-        {"Bucket": "private-bucket", "Key": "owned", "VersionId": "this-write"}
+-    ]
++    assert client.puts == []
++    assert client.calls == []
+ 
+ 
+ def test_ambiguous_failed_put_does_not_issue_destructive_key_delete():
+diff --git a/backend/tests/test_attachment_upload_service.py b/backend/tests/test_attachment_upload_service.py
+index e5a5a5af..15208d50 100644
+--- a/backend/tests/test_attachment_upload_service.py
++++ b/backend/tests/test_attachment_upload_service.py
+@@ -51,6 +51,8 @@ class StreamingS3:
+         self.deletes: list[tuple[str, str]] = []
+         self.fences: list[tuple[str, str]] = []
+         self.objects = {}
++        self.payload_body_seekable = []
++        self.payload_body_rolled = []
+ 
+     def put_object(
+         self,
+@@ -87,6 +89,8 @@ class StreamingS3:
+         if Metadata == {"platform-erasure-fence": "v1"}:
+             self.fences.append((Bucket, Key))
+         else:
++            self.payload_body_seekable.append(Body.seekable())
++            self.payload_body_rolled.append(bool(getattr(Body, "_rolled", False)))
+             self.puts.append((Bucket, Key, total))
+         return {"ETag": "opaque"}
+ 
+@@ -118,6 +122,8 @@ def test_object_writer_streams_fifty_mb_and_calculates_sha256() -> None:
+     assert receipt.sha256 == expected.digest()
+     assert stream.largest_read <= 1024 * 1024
+     assert s3.puts == [("private-attachments", "objects/random", MAX_FILE_BYTES)]
++    assert s3.payload_body_seekable == [True]
++    assert s3.payload_body_rolled == [True]
+ 
+ 
+ def test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write() -> None:
+@@ -128,7 +134,31 @@ def test_object_writer_rejects_extra_bytes_and_fences_the_confirmed_write() -> N
+         writer.put_stream("objects/random", io.BytesIO(b"abcd"), 3)
+ 
+     assert s3.deletes == []
+-    assert s3.fences == [("private-attachments", "objects/random")]
++    assert s3.fences == []
++    assert s3.puts == []
++
++
++def test_suspended_null_fence_is_untouched_when_size_validation_fails() -> None:
++    class SuspendedFence:
++        def __init__(self):
++            self.puts = []
++            self.deletes = []
++
++        def put_object(self, **kwargs):
++            self.puts.append(kwargs)
++            return {"VersionId": "null"}
++
++        def delete_object(self, **kwargs):
++            self.deletes.append(kwargs)
++
++    s3 = SuspendedFence()
++    writer = AttachmentObjectWriter(s3, "private-attachments")
++
++    with pytest.raises(AttachmentObjectWriterSizeMismatch):
++        writer.put_stream("objects/fenced", io.BytesIO(b"abcd"), 3)
++
++    assert s3.puts == []
++    assert s3.deletes == []
+ 
+ 
+ def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup() -> None:
+@@ -147,12 +177,14 @@ def test_storage_error_redacts_endpoint_object_key_and_cause() -> None:
+     endpoint = "http://storage-secret.invalid:9000"
+     object_ref = "private-object-token"
+ 
++    deletes = []
++
+     class FailedS3:
+         def put_object(self, **_kwargs):
+             raise EndpointConnectionError(endpoint_url=endpoint)
+ 
+-        def delete_object(self, **_kwargs):
+-            raise EndpointConnectionError(endpoint_url=endpoint)
++        def delete_object(self, **kwargs):
++            deletes.append(kwargs)
+ 
+     writer = AttachmentObjectWriter(FailedS3(), "private-attachments")
+ 
+@@ -163,6 +195,7 @@ def test_storage_error_redacts_endpoint_object_key_and_cause() -> None:
+     assert captured.value.__cause__ is None
+     for protected in (endpoint, object_ref, "storage-secret", "private-object"):
+         assert protected not in rendered
++    assert deletes == []
+ 
+ 
+ class MemoryRepository:

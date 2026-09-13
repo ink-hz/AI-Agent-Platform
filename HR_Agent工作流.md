@@ -233,7 +233,7 @@ C评审后发现未消费工具批次的硬窗口死锁，进入D前按[修订�
 
 研究成功只在显式300秒配置下发生；120秒默认配置目前无C3成功记录。7岗样例需要16384输出，费用核算不得把约2倍实报的保守扣记当账单。工作用量标签按实际扣记来源汇总，全估算不写mixed。平台附件擦除缺陷独立登记为架构D5，旧Worker停止、迁移100、修复镜像启动必须按该顺序处置；本地测试不代表生产已经恢复。
 
-附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传失败的清理只删除成功响应证明属于本次写入的准确版本；响应不确定时保留引用，不能盲删整个 key。
+附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传正文先在有界、可 seek 的临时文件中流式完成长度与 SHA 校验，再允许对象客户端做完整性预读和重试；长度错误不会先写远端。上传失败的清理只删除成功响应证明属于本次写入的准确不可变版本；`VersionId=null` 或响应不确定时保留引用，不能删除整个 key 或现有 fence。
 
 106 在擦除领取事务中先锁附件并写 `deleted/erasure_pending`，保留上传尝试与其他对象引用，再读取全部 derive job，并按 Worker 共用的确定性 key 算法补齐尚未登记的衍生对象。先完成扫描的一侧会先登记 derive job；擦除先领取的一侧会使晚到处理结果因 deleted 检查失败，而其在途条件 PUT 只能在 fence 前成功并被本次枚举删除，或在 fence 后收到 412。API、附件处理 Worker 与维护 Worker 必须同批使用该协议并排除旧无条件写者；附件 API 构建、两类 Worker 构建和 healthcheck 在任何 payload PUT 或擦除 claim 前只读核实准确角色、106 固定校验和与维护角色四列权限。运行中撤权仍按实际数据库错误保持引用，不能由启动检查宣称永久安全。当前 running 领取没有自动 lease/reaper，进程领取后崩溃需由发布监督器明确发现并处置。
 

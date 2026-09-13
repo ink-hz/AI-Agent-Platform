@@ -1,0 +1,34 @@
+{
+  "head_before_commit": "e8032bc1a340cb204026058dff52882a5d7f5546",
+  "base_fence_commit": "a608970bb2d1283e16d3f787101fe3555d674fda",
+  "diagnostic_receipt": {
+    "path": "artifacts/2026-09-13-hr-launch/production/s3-fence-real-local-diagnostic-1/receipt.json",
+    "sha256": "b1ac65401d40e250481553c7c9a571140d21337e9b703090e0280c96b0f7dfb1"
+  },
+  "files": {
+    "HR总体架构设计.md": {
+      "sha256": "7f646d00d69ac263d7a5eeee6802e8013dcece8318f55b473f48afdf1bab3b4d",
+      "bytes": 55654
+    },
+    "HR_Agent工作流.md": {
+      "sha256": "bc0166cf8f75213597dcc21b356928f8eb39525e414159ba2af4919a9eb5af0a",
+      "bytes": 39789
+    },
+    "backend/app/attachments/object_writer.py": {
+      "sha256": "3ac26ca1d99d27a08426018a58c5a68e2171f84161ccd9ee0425fe65fc073564",
+      "bytes": 5894
+    },
+    "backend/tests/test_attachment_object_writer_botocore.py": {
+      "sha256": "7f3a72359a5836e57c59e7e9bdf14f11f9b24e757a430ab3d92186f47c9cdafb",
+      "bytes": 2987
+    },
+    "backend/tests/test_attachment_upload_service.py": {
+      "sha256": "2e33d452fa4b30b3d1f83d2d24f88e53515f89efe922ab740ea29a3535b1f46d",
+      "bytes": 16779
+    },
+    "backend/tests/test_attachment_s3_version_erasure.py": {
+      "sha256": "995d4cdb8a50e9230d6316213fff3d36e375dd0ebf10439ab72d33edbd90cd60",
+      "bytes": 14626
+    }
+  }
+}
