@@ -1,0 +1,43 @@
+[
+  {
+    "argv": [
+      "backend/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/test_attachment_s3_version_erasure.py"
+    ],
+    "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+    "name": "targeted"
+  },
+  {
+    "argv": [
+      "backend/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/test_attachment*.py",
+      "tests/test_conversation_attachment*.py",
+      "tests/test_hr_agent_candidate_erasure.py"
+    ],
+    "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+    "name": "attachment-regression",
+    "shell_globs_expanded_at_execution": true
+  },
+  {
+    "argv": [
+      "backend/.venv/bin/python",
+      "-m",
+      "ruff",
+      "check",
+      "app/attachments/s3_erasure.py",
+      "app/attachments/object_writer.py",
+      "app/attachments/worker_runtime.py",
+      "tests/test_attachment_s3_version_erasure.py",
+      "tests/test_attachment_upload_service.py",
+      "tests/test_attachment_erasure_hotfix_database.py"
+    ],
+    "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+    "name": "ruff"
+  }
+]

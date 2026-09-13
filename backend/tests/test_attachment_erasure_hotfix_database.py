@@ -6,6 +6,9 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from test_control_plane_migration import control_database
+from test_conversation_attachment_migration import _insert_attachment, _seed_task
+
 from app.attachments.conversation_repository import attachment_object_subject
 from app.attachments.erasure import (
     AttachmentErasureRepository,
@@ -14,8 +17,6 @@ from app.attachments.erasure import (
 from app.attachments.object_writer import AttachmentObjectWriter
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
-from test_control_plane_migration import control_database
-from test_conversation_attachment_migration import _insert_attachment, _seed_task
 
 
 def _codec() -> ContentCodec:
@@ -135,6 +136,10 @@ class _ObjectClient:
         assert Key in self.refs
         self.refs.remove(Key)
         self.deleted.append(Key)
+
+    def get_bucket_versioning(self, *, Bucket):
+        assert Bucket == "attachment-regression"
+        return {}
 
 
 @pytest.mark.postgres

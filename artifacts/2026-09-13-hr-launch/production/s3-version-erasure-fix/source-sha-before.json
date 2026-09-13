@@ -1,0 +1,12 @@
+{
+  "HR_Agent\u5de5\u4f5c\u6d41.md": "455cf5eea5031e86f655f32ebe4945c35415a405baa2e69c63b0e7f24ac10fc3",
+  "HR\u603b\u4f53\u67b6\u6784\u8bbe\u8ba1.md": "c4e0215430237bcdbea5417439a371e3d66f7a8a4940ce32b3fd1a6b3598e9e7",
+  "backend/app/attachments/erasure.py": "e4862777c8e256fc3a37c6fe73cb8ad401329b660cbf69c05194768f60bd93be",
+  "backend/app/attachments/object_writer.py": "3f5f8a3fdd1e672f519b77bfa767ec56a969e2462c2c2e190b991d3c891780ff",
+  "backend/app/attachments/upload_service.py": "4efc5753fb3c8b131dd97dc51704d54d4f47e6304947ff4c6878b413e0d4e0a2",
+  "backend/app/attachments/worker.py": "44b037879d561294eb6a89bb12f01905e60048db70228f6058c8680a5b2f15dd",
+  "backend/app/attachments/worker_runtime.py": "9ecfdf9bece025db0b4a3777ad23f452e9c6a003723360a6c1816ea5f5450299",
+  "backend/control_migrations/064_conversation_attachments.sql": "1f9f083e76c3fc14e14a2ccfc403fcfb83716b4f1602cd5c41882e9ffb04c3aa",
+  "backend/tests/test_attachment_s3_version_erasure.py": "cd4bc3e6d6285beb4136af5c69404a99dbc88d48c1d4213ba3f4ecaf83263d1a",
+  "head": "ef459d579085eea28b98efc38257882aab49aab6"
+}

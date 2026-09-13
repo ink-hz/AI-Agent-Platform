@@ -1,0 +1,699 @@
+diff --git "a/HR_Agent\345\267\245\344\275\234\346\265\201.md" "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+index 3c9795a..f443bb4 100644
+--- "a/HR_Agent\345\267\245\344\275\234\346\265\201.md"
++++ "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+@@ -229,6 +229,10 @@ C评审后发现未消费工具批次的硬窗口死锁，进入D前按[修订
+ 
+ 研究成功只在显式300秒配置下发生；120秒默认配置目前无C3成功记录。7岗样例需要16384输出，费用核算不得把约2倍实报的保守扣记当账单。工作用量标签按实际扣记来源汇总，全估算不写mixed。平台附件擦除缺陷独立登记为架构D5，旧Worker停止、迁移100、修复镜像启动必须按该顺序处置；本地测试不代表生产已经恢复。
+ 
++附件维护的“删除成功”以对象存储实际版本边界判定：对已启用或暂停版本控制的桶，准确 key 的普通版本和 delete marker 都须分页列全、逐版本删除并再次确认为空；同前缀其他 key 不得受影响。版本状态、列举、分页或删除遇到权限/网络错误时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。未启用版本控制时执行单 key 删除。上传失败的清理只删除成功响应能证明属于本次写入的准确版本；响应不确定时由保留对象引用的孤儿/擦除流程后续处理，不能盲删整个 key。
++
++上述复查会捕获擦除进行期间到达的版本，并对持续写入有界失败；它不能阻止空复查之后才完成的在途 `put`。064 仍存在取消上传与外部写跨系统的时间窗，数据库/写入完成栅栏闭合前，生产验收必须把晚到写列为独立风险，不能只凭一次或多次空列表宣称强并发擦除已经完成。
++
+ 
+ C再次评审的单条读取保护与准入判断见[本轮收尾](docs/reviews/2026-09-11-hr-c-followup.md)：read_resource成功回执提交前，用实际完整条目和更新后的checkpoint逐条检查同批读取能否进入摘要；超窗整笔回滚，本次正文过大指引缩小limit，新来源令旧读取失配则指引先处理已有内容，失败范围不算已读，不要求用户新建任务。旧不可拆历史与用户固定超大输入仍保留原blocked边界。平台附件独立状态普查发现2条uploading、无deleted标记，100未发布；研究计数探针标准路径404，配置与计量前置未因此关闭。
+ 
+diff --git "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md" "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+index 58e1cd0..4f92163 100644
+--- "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
++++ "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+@@ -234,6 +234,10 @@ D候选入口、原始记录、准确来源续作及评估/面试/复盘的当
+ | A3 | 内部岗位/候选人/成果/在途实际量未知 | 本次未访问生产业务库；空 fixture 不证明没有数据 | 切换前进行批准范围内的只读计数，见 §10 |
+ | A4 | 生产开关、供应商与材料承诺未验证 | compose 默认开关值不能证明部署状态；本地运行不证明数据不出网 | 真实流量切换前逐项核对 |
+ 
++附件对象擦除还必须覆盖对象存储的版本语义。生产只读证据确认附件桶已启用版本控制；不带 `VersionId` 的删除只产生 delete marker，不能作为物理擦除完成。维护擦除与孤儿写清理对每个准确对象 key 先核对桶版本状态；版本已启用或暂停时完整分页枚举该 key 的所有 versions 与 delete markers，逐版本删除并复查，权限、网络、分页或持续并发变化不确定时保持失败/可重试，不能抹除数据库引用或确认孤儿已清理。未启用版本控制的桶保留单 key 删除兼容。上传请求结果不确定时不得为清理而删除整个 key；只有成功响应返回的准确 `VersionId`，或已由数据库判定整 key 可清理，才扩大相应删除范围。
++
++对象存储复查只能覆盖调用期间已经可见的版本，不能阻止最后一次空列表之后才完成的外部写。当前 064 取消上传会将写尝试改为 abandoned 并清除当前尝试，但不能中止已在 S3 进行的 `put`；擦除完成又会抹除尝试中的对象引用。因此强并发擦除仍需要写入端与数据库的独立完成栅栏，在该栅栏闭合前不得把多轮空列表表述为对晚到写的永久保证。
++
+ 旧 `tool_operations_v6` 的敏感 payload 已有加密存储及服务端归属校验；新实现必须满足 §5–6 的同等目标，不能因更换结构移除保护。通用“dangerously-skip-permissions”姿态不进入新工具环境。
+ 
+ D1 的污染载体是历史消息及其摘要中复述的个人事实，不是已证实的简历附件正文重新绑定：master 的附件按轮次绑定，结构化候选人信封另有逐候选人校验。修复需要处理共享会话与历史范围的关系，不能仅描述为“给 SQL 加一个候选人 where”。本轮已有当前分支失败回归与保守补丁，未在生产或 `38dfc7a` 上发布；较新分支仅静态核查，不能宣称两个在用基线均已修复。
+diff --git a/backend/app/attachments/object_writer.py b/backend/app/attachments/object_writer.py
+index 1370a02..089b129 100644
+--- a/backend/app/attachments/object_writer.py
++++ b/backend/app/attachments/object_writer.py
+@@ -12,6 +12,7 @@ from app.config import Config
+ from app.local_secrets import SecretFileUnavailable, read_secret_file
+ 
+ from .conversation_models import MAX_FILE_BYTES, ObjectReceipt
++from .s3_erasure import erase_s3_object
+ 
+ _READ_CHUNK_BYTES = 1024 * 1024
+ 
+@@ -123,9 +124,17 @@ class AttachmentObjectWriter:
+             max_file_bytes=config.attachment_max_file_bytes,
+         )
+ 
+-    def _best_effort_delete(self, object_ref: str) -> None:
++    def _best_effort_delete(self, object_ref: str, put_response) -> None:
++        if not isinstance(put_response, dict):
++            return
++        request = {"Bucket": self._bucket, "Key": object_ref}
++        if "VersionId" in put_response:
++            version_id = put_response["VersionId"]
++            if not isinstance(version_id, str) or not version_id:
++                return
++            request["VersionId"] = version_id
+         try:
+-            self._client.delete_object(Bucket=self._bucket, Key=object_ref)
++            self._client.delete_object(**request)
+         except (BotoCoreError, ClientError, OSError, RuntimeError):
+             pass
+ 
+@@ -144,8 +153,9 @@ class AttachmentObjectWriter:
+                 "attachment object size mismatch"
+             )
+         reader = _DigestingReader(body, expected_size)
++        put_response = None
+         try:
+-            self._client.put_object(
++            put_response = self._client.put_object(
+                 Bucket=self._bucket,
+                 Key=object_ref,
+                 Body=reader,
+@@ -153,10 +163,10 @@ class AttachmentObjectWriter:
+             )
+             return reader.receipt()
+         except AttachmentObjectWriterSizeMismatch:
+-            self._best_effort_delete(object_ref)
++            self._best_effort_delete(object_ref, put_response)
+             raise
+         except Exception:  # noqa: BLE001 - sanitize arbitrary stream/client errors
+-            self._best_effort_delete(object_ref)
++            self._best_effort_delete(object_ref, put_response)
+             raise AttachmentObjectWriterError(
+                 "attachment object write failed"
+             ) from None
+@@ -165,7 +175,7 @@ class AttachmentObjectWriter:
+         if not isinstance(object_ref, str) or not object_ref:
+             raise ValueError("attachment object reference invalid")
+         try:
+-            self._client.delete_object(Bucket=self._bucket, Key=object_ref)
++            erase_s3_object(self._client, self._bucket, object_ref)
+         except Exception:  # noqa: BLE001 - storage clients are injected
+             raise AttachmentObjectWriterError(
+                 "attachment object delete failed"
+diff --git a/backend/app/attachments/worker_runtime.py b/backend/app/attachments/worker_runtime.py
+index 455d09a..5ec1c0f 100644
+--- a/backend/app/attachments/worker_runtime.py
++++ b/backend/app/attachments/worker_runtime.py
+@@ -7,7 +7,6 @@ import os
+ import secrets
+ import sys
+ from collections.abc import Callable
+-from contextlib import suppress
+ from datetime import UTC, datetime
+ from pathlib import Path
+ from typing import Any
+@@ -26,6 +25,7 @@ from .derivatives import BubblewrapPdfSandbox, Derivative, DerivativeBuilder
+ from .erasure import AttachmentErasureRepository, AttachmentErasureService
+ from .object_writer import _credential
+ from .retention import AttachmentRetentionRepository, AttachmentRetentionService
++from .s3_erasure import erase_s3_object
+ from .scanner import ClamAVScanner, TrustedInternalScanner
+ from .validation import AttachmentValidator, OpenedObject, ValidationResult
+ from .worker import (
+@@ -397,13 +397,11 @@ class S3ProcessingObjectStore:
+             )
+             return StoredDerivative(object_ref, len(data), digest)
+         except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
+-            with suppress(Exception):
+-                self._client.delete_object(Bucket=self._bucket, Key=object_ref)
+             raise AttachmentWorkerRuntimeError() from None
+ 
+     def delete(self, object_ref: str) -> None:
+         try:
+-            self._client.delete_object(Bucket=self._bucket, Key=object_ref)
++            erase_s3_object(self._client, self._bucket, object_ref)
+         except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
+             raise AttachmentWorkerRuntimeError() from None
+ 
+diff --git a/backend/tests/test_attachment_erasure_hotfix_database.py b/backend/tests/test_attachment_erasure_hotfix_database.py
+index fb3011d..ceb0888 100644
+--- a/backend/tests/test_attachment_erasure_hotfix_database.py
++++ b/backend/tests/test_attachment_erasure_hotfix_database.py
+@@ -6,6 +6,9 @@ from uuid import uuid4
+ 
+ import psycopg
+ import pytest
++from test_control_plane_migration import control_database
++from test_conversation_attachment_migration import _insert_attachment, _seed_task
++
+ from app.attachments.conversation_repository import attachment_object_subject
+ from app.attachments.erasure import (
+     AttachmentErasureRepository,
+@@ -14,8 +17,6 @@ from app.attachments.erasure import (
+ from app.attachments.object_writer import AttachmentObjectWriter
+ from app.control_plane.crypto import IdentityKeyring
+ from app.execution_relay.content_crypto import ContentCodec
+-from test_control_plane_migration import control_database
+-from test_conversation_attachment_migration import _insert_attachment, _seed_task
+ 
+ 
+ def _codec() -> ContentCodec:
+@@ -136,6 +137,10 @@ class _ObjectClient:
+         self.refs.remove(Key)
+         self.deleted.append(Key)
+ 
++    def get_bucket_versioning(self, *, Bucket):
++        assert Bucket == "attachment-regression"
++        return {}
++
+ 
+ @pytest.mark.postgres
+ def test_legacy_composite_single_claim_loses_attachment_id(control_database):
+diff --git a/backend/tests/test_attachment_upload_service.py b/backend/tests/test_attachment_upload_service.py
+index 3bb599f..69c7042 100644
+--- a/backend/tests/test_attachment_upload_service.py
++++ b/backend/tests/test_attachment_upload_service.py
+@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
+ from uuid import uuid4
+ 
+ import pytest
++from botocore.exceptions import EndpointConnectionError
++
+ from app.attachments.conversation_models import (
+     MAX_FILE_BYTES,
+     AttachmentRecord,
+@@ -26,7 +28,6 @@ from app.attachments.upload_service import (
+     AttachmentUploadConflict,
+     AttachmentUploadService,
+ )
+-from botocore.exceptions import EndpointConnectionError
+ 
+ 
+ class GeneratedStream:
+@@ -59,6 +60,10 @@ class StreamingS3:
+         self.puts.append((Bucket, Key, total))
+         return {"ETag": "opaque"}
+ 
++    def get_bucket_versioning(self, *, Bucket):
++        assert Bucket == "private-attachments"
++        return {}
++
+     def delete_object(self, *, Bucket, Key):
+         self.deletes.append((Bucket, Key))
+ 
+@@ -90,7 +95,7 @@ def test_object_writer_rejects_extra_bytes_and_deletes_written_object() -> None:
+     assert s3.deletes == [("private-attachments", "objects/random")]
+ 
+ 
+-def test_object_writer_cleans_partial_failure_and_delete_is_idempotent() -> None:
++def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup() -> None:
+     s3 = StreamingS3(fail_once=True)
+     writer = AttachmentObjectWriter(s3, "private-attachments")
+ 
+@@ -98,10 +103,7 @@ def test_object_writer_cleans_partial_failure_and_delete_is_idempotent() -> None
+         writer.put_stream("objects/random", io.BytesIO(b"payload"), 7)
+     writer.delete("objects/random")
+ 
+-    assert s3.deletes == [
+-        ("private-attachments", "objects/random"),
+-        ("private-attachments", "objects/random"),
+-    ]
++    assert s3.deletes == [("private-attachments", "objects/random")]
+ 
+ 
+ def test_storage_error_redacts_endpoint_object_key_and_cause() -> None:
+diff --git a/backend/app/attachments/s3_erasure.py b/backend/app/attachments/s3_erasure.py
+new file mode 100644
+index 0000000..ea8f271
+--- /dev/null
++++ b/backend/app/attachments/s3_erasure.py
+@@ -0,0 +1,101 @@
++from __future__ import annotations
++
++from typing import Any
++
++_MAX_VERSION_PURGE_SWEEPS = 8
++_VERSION_PAGE_SIZE = 1000
++
++
++class S3ObjectErasureError(RuntimeError):
++    pass
++
++
++def _versioning_status(client: Any, bucket: str) -> str | None:
++    response = client.get_bucket_versioning(Bucket=bucket)
++    if not isinstance(response, dict):
++        raise S3ObjectErasureError()
++    status = response.get("Status")
++    if status is not None and status not in {"Enabled", "Suspended"}:
++        raise S3ObjectErasureError()
++    return status
++
++
++def _exact_version_identifiers(
++    client: Any, bucket: str, object_ref: str
++) -> tuple[str, ...]:
++    request: dict[str, Any] = {
++        "Bucket": bucket,
++        "Prefix": object_ref,
++        "MaxKeys": _VERSION_PAGE_SIZE,
++    }
++    identifiers: list[str] = []
++    seen_identifiers: set[str] = set()
++    seen_cursors: set[tuple[str, str]] = set()
++    while True:
++        response = client.list_object_versions(**request)
++        if not isinstance(response, dict) or not isinstance(
++            response.get("IsTruncated"), bool
++        ):
++            raise S3ObjectErasureError()
++        for field in ("Versions", "DeleteMarkers"):
++            values = response.get(field, [])
++            if not isinstance(values, list):
++                raise S3ObjectErasureError()
++            for value in values:
++                if (
++                    not isinstance(value, dict)
++                    or not isinstance(value.get("Key"), str)
++                    or not isinstance(value.get("VersionId"), str)
++                    or not value["VersionId"]
++                ):
++                    raise S3ObjectErasureError()
++                if (
++                    value["Key"] == object_ref
++                    and value["VersionId"] not in seen_identifiers
++                ):
++                    seen_identifiers.add(value["VersionId"])
++                    identifiers.append(value["VersionId"])
++        if not response["IsTruncated"]:
++            return tuple(identifiers)
++        key_marker = response.get("NextKeyMarker")
++        version_marker = response.get("NextVersionIdMarker")
++        if (
++            not isinstance(key_marker, str)
++            or not key_marker
++            or not isinstance(version_marker, str)
++            or not version_marker
++        ):
++            raise S3ObjectErasureError()
++        cursor = (key_marker, version_marker)
++        if cursor in seen_cursors:
++            raise S3ObjectErasureError()
++        seen_cursors.add(cursor)
++        request["KeyMarker"] = key_marker
++        request["VersionIdMarker"] = version_marker
++
++
++def erase_s3_object(client: Any, bucket: str, object_ref: str) -> None:
++    if not isinstance(bucket, str) or not bucket.strip():
++        raise S3ObjectErasureError()
++    if not isinstance(object_ref, str) or not object_ref:
++        raise S3ObjectErasureError()
++    try:
++        if _versioning_status(client, bucket) is None:
++            client.delete_object(Bucket=bucket, Key=object_ref)
++            return
++        for _sweep in range(_MAX_VERSION_PURGE_SWEEPS):
++            identifiers = _exact_version_identifiers(client, bucket, object_ref)
++            if not identifiers:
++                return
++            for version_id in identifiers:
++                client.delete_object(
++                    Bucket=bucket,
++                    Key=object_ref,
++                    VersionId=version_id,
++                )
++        if _exact_version_identifiers(client, bucket, object_ref):
++            raise S3ObjectErasureError()
++    except S3ObjectErasureError:
++        raise
++    except Exception:  # noqa: BLE001 - injected storage errors are sanitized
++        raise S3ObjectErasureError() from None
+diff --git a/backend/tests/test_attachment_s3_version_erasure.py b/backend/tests/test_attachment_s3_version_erasure.py
+new file mode 100644
+index 0000000..384698f
+--- /dev/null
++++ b/backend/tests/test_attachment_s3_version_erasure.py
+@@ -0,0 +1,369 @@
++from __future__ import annotations
++
++import io
++from types import SimpleNamespace
++
++import pytest
++
++from app.attachments.erasure import AttachmentErasureService, ErasureJob
++from app.attachments.object_writer import (
++    AttachmentObjectWriter,
++    AttachmentObjectWriterError,
++    AttachmentObjectWriterSizeMismatch,
++)
++from app.attachments.worker_runtime import (
++    AttachmentWorkerRuntimeError,
++    S3ProcessingObjectStore,
++)
++
++
++class VersionedS3:
++    def __init__(
++        self,
++        entries=(),
++        *,
++        status="Enabled",
++        page_size=2,
++        fail_at=None,
++        add_after_empty=False,
++        keep_adding=False,
++    ) -> None:
++        self.entries = [dict(entry) for entry in entries]
++        self.status = status
++        self.page_size = page_size
++        self.fail_at = fail_at
++        self.add_after_empty = add_after_empty
++        self.keep_adding = keep_adding
++        self.added = False
++        self.calls = []
++        self.next_version = 0
++
++    def _call(self, operation, kwargs):
++        self.calls.append((operation, dict(kwargs)))
++        if self.fail_at == operation:
++            raise OSError(f"{operation} unavailable with private-object-token")
++
++    def get_bucket_versioning(self, **kwargs):
++        self._call("get_bucket_versioning", kwargs)
++        return {} if self.status is None else {"Status": self.status}
++
++    def list_object_versions(self, **kwargs):
++        self._call("list_object_versions", kwargs)
++        prefix = kwargs["Prefix"]
++        selected = [entry for entry in self.entries if entry["Key"].startswith(prefix)]
++        offset = int(kwargs.get("VersionIdMarker", "0"))
++        page = selected[offset : offset + self.page_size]
++        result = {
++            "IsTruncated": offset + len(page) < len(selected),
++            "Versions": [
++                {"Key": entry["Key"], "VersionId": entry["VersionId"]}
++                for entry in page
++                if entry["Kind"] == "version"
++            ],
++            "DeleteMarkers": [
++                {"Key": entry["Key"], "VersionId": entry["VersionId"]}
++                for entry in page
++                if entry["Kind"] == "marker"
++            ],
++        }
++        if result["IsTruncated"]:
++            result["NextKeyMarker"] = prefix
++            result["NextVersionIdMarker"] = str(offset + len(page))
++        return result
++
++    def delete_object(self, **kwargs):
++        self._call("delete_object", kwargs)
++        key = kwargs["Key"]
++        if self.status is None:
++            self.entries = [entry for entry in self.entries if entry["Key"] != key]
++            return {}
++        version_id = kwargs.get("VersionId")
++        if version_id is None:
++            self.entries.append(
++                {"Kind": "marker", "Key": key, "VersionId": "bare-delete-marker"}
++            )
++            return {"DeleteMarker": True, "VersionId": "bare-delete-marker"}
++        self.entries = [
++            entry
++            for entry in self.entries
++            if not (entry["Key"] == key and entry["VersionId"] == version_id)
++        ]
++        if not any(entry["Key"] == key for entry in self.entries) and (
++            self.keep_adding or (self.add_after_empty and not self.added)
++        ):
++            self.added = True
++            self.next_version += 1
++            self.entries.append(
++                {
++                    "Kind": "version",
++                    "Key": key,
++                    "VersionId": f"concurrent-{self.next_version}",
++                }
++            )
++        return {"VersionId": version_id}
++
++    def exact(self, key):
++        return [entry for entry in self.entries if entry["Key"] == key]
++
++
++@pytest.mark.parametrize("status", ("Enabled", "Suspended"))
++def test_processing_delete_purges_every_exact_version_and_marker_across_pages(status):
++    client = VersionedS3(
++        (
++            {"Kind": "version", "Key": "owned", "VersionId": "v3"},
++            {"Kind": "marker", "Key": "owned", "VersionId": "m2"},
++            {"Kind": "version", "Key": "owned-other", "VersionId": "sibling"},
++            {"Kind": "version", "Key": "owned", "VersionId": "null"},
++            {"Kind": "marker", "Key": "owned", "VersionId": "m1"},
++        ),
++        status=status,
++    )
++
++    S3ProcessingObjectStore(client, "private-bucket").delete("owned")
++
++    assert client.exact("owned") == []
++    assert client.exact("owned-other") == [
++        {"Kind": "version", "Key": "owned-other", "VersionId": "sibling"}
++    ]
++    listed = [
++        kwargs
++        for operation, kwargs in client.calls
++        if operation == "list_object_versions"
++    ]
++    assert len(listed) >= 3
++    assert all(call["Prefix"] == "owned" for call in listed)
++    assert any("KeyMarker" in call and "VersionIdMarker" in call for call in listed)
++    deleted = [
++        kwargs for operation, kwargs in client.calls if operation == "delete_object"
++    ]
++    assert {call["VersionId"] for call in deleted} == {"v3", "m2", "null", "m1"}
++    assert all(call["Key"] == "owned" for call in deleted)
++
++
++def test_unversioned_delete_keeps_single_exact_delete_compatibility():
++    client = VersionedS3(
++        ({"Kind": "version", "Key": "owned", "VersionId": "unversioned"},),
++        status=None,
++    )
++
++    AttachmentObjectWriter(client, "private-bucket").delete("owned")
++
++    assert client.exact("owned") == []
++    assert [operation for operation, _kwargs in client.calls] == [
++        "get_bucket_versioning",
++        "delete_object",
++    ]
++    assert "VersionId" not in client.calls[-1][1]
++
++
++def test_object_writer_delete_uses_the_same_version_purge():
++    client = VersionedS3(
++        (
++            {"Kind": "version", "Key": "owned", "VersionId": "v1"},
++            {"Kind": "marker", "Key": "owned", "VersionId": "m1"},
++        )
++    )
++
++    AttachmentObjectWriter(client, "private-bucket").delete("owned")
++
++    assert client.exact("owned") == []
++    assert {
++        kwargs["VersionId"]
++        for operation, kwargs in client.calls
++        if operation == "delete_object"
++    } == {"v1", "m1"}
++
++
++@pytest.mark.parametrize(
++    "fail_at", ("get_bucket_versioning", "list_object_versions", "delete_object")
++)
++def test_version_erasure_permission_or_transport_failure_never_reports_success(fail_at):
++    client = VersionedS3(
++        ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
++        fail_at=fail_at,
++    )
++
++    with pytest.raises(AttachmentObjectWriterError, match="delete failed") as captured:
++        AttachmentObjectWriter(client, "private-bucket").delete("owned")
++
++    assert captured.value.__cause__ is None
++    assert "private-object-token" not in str(captured.value)
++
++
++def test_bad_version_pagination_fails_closed():
++    class BadPagination(VersionedS3):
++        def list_object_versions(self, **kwargs):
++            self._call("list_object_versions", kwargs)
++            return {"IsTruncated": True, "Versions": [], "DeleteMarkers": []}
++
++    with pytest.raises(AttachmentWorkerRuntimeError):
++        S3ProcessingObjectStore(BadPagination(), "private-bucket").delete("owned")
++
++
++def test_repeated_version_pagination_cursor_fails_closed():
++    class RepeatedPagination(VersionedS3):
++        def list_object_versions(self, **kwargs):
++            self._call("list_object_versions", kwargs)
++            return {
++                "IsTruncated": True,
++                "Versions": [],
++                "DeleteMarkers": [],
++                "NextKeyMarker": "owned",
++                "NextVersionIdMarker": "same",
++            }
++
++    with pytest.raises(AttachmentWorkerRuntimeError):
++        S3ProcessingObjectStore(RepeatedPagination(), "private-bucket").delete("owned")
++
++
++def test_version_arriving_during_purge_is_removed_by_followup_sweep():
++    client = VersionedS3(
++        ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
++        add_after_empty=True,
++    )
++
++    S3ProcessingObjectStore(client, "private-bucket").delete("owned")
++
++    assert client.added is True
++    assert client.exact("owned") == []
++    deleted = [
++        kwargs["VersionId"]
++        for operation, kwargs in client.calls
++        if operation == "delete_object"
++    ]
++    assert deleted == ["v1", "concurrent-1"]
++
++
++def test_continuous_concurrent_versions_hit_bound_and_fail_closed():
++    client = VersionedS3(
++        ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
++        keep_adding=True,
++    )
++
++    with pytest.raises(AttachmentWorkerRuntimeError):
++        S3ProcessingObjectStore(client, "private-bucket").delete("owned")
++
++    assert client.exact("owned")
++    assert len([call for call in client.calls if call[0] == "delete_object"]) > 1
++
++
++def test_erasure_service_records_partial_when_version_inventory_fails():
++    job = ErasureJob(
++        SimpleNamespace(hex="job"), SimpleNamespace(hex="attachment"), ("owned",)
++    )
++
++    class Repository:
++        def __init__(self):
++            self.records = []
++
++        def claim(self, _worker_id):
++            return job
++
++        def record(self, selected, *, failed):
++            self.records.append((selected, failed))
++
++    repository = Repository()
++    store = S3ProcessingObjectStore(
++        VersionedS3(
++            ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
++            fail_at="list_object_versions",
++        ),
++        "private-bucket",
++    )
++
++    assert AttachmentErasureService(repository, store).process_next("worker") is True
++    assert repository.records == [(job, 1)]
++
++
++def test_orphan_cleanup_does_not_acknowledge_failed_version_inventory():
++    attempt = SimpleNamespace(attempt_id="attempt", object_ref="owned")
++
++    class Repository:
++        def __init__(self):
++            self.acknowledged = []
++
++        def list_orphaned_writes(self, *, limit):
++            assert limit == 1
++            return (attempt,)
++
++        def acknowledge_orphaned_write(self, attempt_id):
++            self.acknowledged.append(attempt_id)
++
++    repository = Repository()
++    writer = AttachmentObjectWriter(
++        VersionedS3(
++            ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
++            fail_at="list_object_versions",
++        ),
++        "private-bucket",
++    )
++
++    from app.attachments.upload_service import AttachmentUploadService
++
++    assert (
++        AttachmentUploadService(repository, writer).cleanup_orphaned_writes(limit=1)
++        == 0
++    )
++    assert repository.acknowledged == []
++
++
++def test_successful_versioned_put_cleanup_deletes_only_returned_version():
++    class Client:
++        def __init__(self):
++            self.calls = []
++
++        def put_object(self, **_kwargs):
++            return {"VersionId": "this-write"}
++
++        def delete_object(self, **kwargs):
++            self.calls.append(kwargs)
++
++    client = Client()
++    with pytest.raises(AttachmentObjectWriterSizeMismatch):
++        AttachmentObjectWriter(client, "private-bucket").put_stream(
++            "owned", io.BytesIO(b"extra"), 4
++        )
++
++    assert client.calls == [
++        {"Bucket": "private-bucket", "Key": "owned", "VersionId": "this-write"}
++    ]
++
++
++def test_ambiguous_failed_put_does_not_issue_destructive_key_delete():
++    class Client:
++        def __init__(self):
++            self.calls = []
++
++        def put_object(self, **_kwargs):
++            raise OSError("reply lost")
++
++        def delete_object(self, **kwargs):
++            self.calls.append(kwargs)
++
++    client = Client()
++    with pytest.raises(AttachmentObjectWriterError):
++        AttachmentObjectWriter(client, "private-bucket").put_stream(
++            "owned", io.BytesIO(b"data"), 4
++        )
++
++    assert client.calls == []
++
++
++def test_ambiguous_failed_derivative_put_does_not_issue_destructive_key_delete():
++    class Client:
++        def __init__(self):
++            self.calls = []
++
++        def put_object(self, **_kwargs):
++            raise OSError("reply lost")
++
++        def delete_object(self, **kwargs):
++            self.calls.append(kwargs)
++
++    client = Client()
++    with pytest.raises(AttachmentWorkerRuntimeError):
++        S3ProcessingObjectStore(client, "private-bucket").put_derivative(
++            b"data", object_key="a" * 64
++        )
++
++    assert client.calls == []

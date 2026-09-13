@@ -12,6 +12,7 @@ from app.config import Config
 from app.local_secrets import SecretFileUnavailable, read_secret_file
 
 from .conversation_models import MAX_FILE_BYTES, ObjectReceipt
+from .s3_erasure import erase_s3_object
 
 _READ_CHUNK_BYTES = 1024 * 1024
 
@@ -123,9 +124,17 @@ class AttachmentObjectWriter:
             max_file_bytes=config.attachment_max_file_bytes,
         )
 
-    def _best_effort_delete(self, object_ref: str) -> None:
+    def _best_effort_delete(self, object_ref: str, put_response) -> None:
+        if not isinstance(put_response, dict):
+            return
+        request = {"Bucket": self._bucket, "Key": object_ref}
+        if "VersionId" in put_response:
+            version_id = put_response["VersionId"]
+            if not isinstance(version_id, str) or not version_id:
+                return
+            request["VersionId"] = version_id
         try:
-            self._client.delete_object(Bucket=self._bucket, Key=object_ref)
+            self._client.delete_object(**request)
         except (BotoCoreError, ClientError, OSError, RuntimeError):
             pass
 
@@ -144,8 +153,9 @@ class AttachmentObjectWriter:
                 "attachment object size mismatch"
             )
         reader = _DigestingReader(body, expected_size)
+        put_response = None
         try:
-            self._client.put_object(
+            put_response = self._client.put_object(
                 Bucket=self._bucket,
                 Key=object_ref,
                 Body=reader,
@@ -153,10 +163,10 @@ class AttachmentObjectWriter:
             )
             return reader.receipt()
         except AttachmentObjectWriterSizeMismatch:
-            self._best_effort_delete(object_ref)
+            self._best_effort_delete(object_ref, put_response)
             raise
         except Exception:  # noqa: BLE001 - sanitize arbitrary stream/client errors
-            self._best_effort_delete(object_ref)
+            self._best_effort_delete(object_ref, put_response)
             raise AttachmentObjectWriterError(
                 "attachment object write failed"
             ) from None
@@ -165,7 +175,7 @@ class AttachmentObjectWriter:
         if not isinstance(object_ref, str) or not object_ref:
             raise ValueError("attachment object reference invalid")
         try:
-            self._client.delete_object(Bucket=self._bucket, Key=object_ref)
+            erase_s3_object(self._client, self._bucket, object_ref)
         except Exception:  # noqa: BLE001 - storage clients are injected
             raise AttachmentObjectWriterError(
                 "attachment object delete failed"

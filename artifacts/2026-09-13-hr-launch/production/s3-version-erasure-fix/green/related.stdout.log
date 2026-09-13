@@ -1,0 +1,21 @@
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 55%]
+........................................................................ [ 74%]
+........................................................................ [ 93%]
+..........................                                               [100%]
+=============================== warnings summary ===============================
+tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+tests/test_attachment_erasure_production_canary.py::test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure
+tests/test_attachment_erasure_production_canary.py::test_expired_mutation_deadline_allows_only_bounded_observation
+tests/test_attachment_erasure_production_canary.py::test_lost_delete_reply_stops_without_reissuing_delete
+tests/test_attachment_erasure_production_canary.py::test_unknown_initial_upload_and_wrong_owner_never_create_a_replacement
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+tests/test_conversation_attachment_binding.py: 10 warnings
+  /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/starlette/testclient.py:454: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+386 passed, 15 warnings in 43.23s

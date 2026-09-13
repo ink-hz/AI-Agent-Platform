@@ -1,0 +1,301 @@
+FFFFF.FFFFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+_ test_processing_delete_purges_every_exact_version_and_marker_across_pages[Enabled] _
+
+status = 'Enabled'
+
+    @pytest.mark.parametrize("status", ("Enabled", "Suspended"))
+    def test_processing_delete_purges_every_exact_version_and_marker_across_pages(status):
+        client = VersionedS3(
+            (
+                {"Kind": "version", "Key": "owned", "VersionId": "v3"},
+                {"Kind": "marker", "Key": "owned", "VersionId": "m2"},
+                {"Kind": "version", "Key": "owned-other", "VersionId": "sibling"},
+                {"Kind": "version", "Key": "owned", "VersionId": "null"},
+                {"Kind": "marker", "Key": "owned", "VersionId": "m1"},
+            ),
+            status=status,
+        )
+    
+        S3ProcessingObjectStore(client, "private-bucket").delete("owned")
+    
+>       assert client.exact("owned") == []
+E       AssertionError: assert [{'Kind': 've...lete-marker'}] == []
+E         
+E         Left contains 5 more items, first extra item: {'Kind': 'version', 'Key': 'owned', 'VersionId': 'v3'}
+E         Use -v to get more diff
+
+tests/test_attachment_s3_version_erasure.py:124: AssertionError
+_ test_processing_delete_purges_every_exact_version_and_marker_across_pages[Suspended] _
+
+status = 'Suspended'
+
+    @pytest.mark.parametrize("status", ("Enabled", "Suspended"))
+    def test_processing_delete_purges_every_exact_version_and_marker_across_pages(status):
+        client = VersionedS3(
+            (
+                {"Kind": "version", "Key": "owned", "VersionId": "v3"},
+                {"Kind": "marker", "Key": "owned", "VersionId": "m2"},
+                {"Kind": "version", "Key": "owned-other", "VersionId": "sibling"},
+                {"Kind": "version", "Key": "owned", "VersionId": "null"},
+                {"Kind": "marker", "Key": "owned", "VersionId": "m1"},
+            ),
+            status=status,
+        )
+    
+        S3ProcessingObjectStore(client, "private-bucket").delete("owned")
+    
+>       assert client.exact("owned") == []
+E       AssertionError: assert [{'Kind': 've...lete-marker'}] == []
+E         
+E         Left contains 5 more items, first extra item: {'Kind': 'version', 'Key': 'owned', 'VersionId': 'v3'}
+E         Use -v to get more diff
+
+tests/test_attachment_s3_version_erasure.py:124: AssertionError
+_______ test_unversioned_delete_keeps_single_exact_delete_compatibility ________
+
+    def test_unversioned_delete_keeps_single_exact_delete_compatibility():
+        client = VersionedS3(
+            ({"Kind": "version", "Key": "owned", "VersionId": "unversioned"},),
+            status=None,
+        )
+    
+        AttachmentObjectWriter(client, "private-bucket").delete("owned")
+    
+        assert client.exact("owned") == []
+>       assert [operation for operation, _kwargs in client.calls] == [
+            "get_bucket_versioning",
+            "delete_object",
+        ]
+E       AssertionError: assert ['delete_object'] == ['get_bucket_...elete_object']
+E         
+E         At index 0 diff: 'delete_object' != 'get_bucket_versioning'
+E         Right contains one more item: 'delete_object'
+E         Use -v to get more diff
+
+tests/test_attachment_s3_version_erasure.py:146: AssertionError
+_ test_version_erasure_permission_or_transport_failure_never_reports_success[get_bucket_versioning] _
+
+fail_at = 'get_bucket_versioning'
+
+    @pytest.mark.parametrize("fail_at", ("get_bucket_versioning", "list_object_versions", "delete_object"))
+    def test_version_erasure_permission_or_transport_failure_never_reports_success(fail_at):
+        client = VersionedS3(
+            ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
+            fail_at=fail_at,
+        )
+    
+>       with pytest.raises(AttachmentObjectWriterError, match="delete failed") as captured:
+E       Failed: DID NOT RAISE AttachmentObjectWriterError
+
+tests/test_attachment_s3_version_erasure.py:160: Failed
+_ test_version_erasure_permission_or_transport_failure_never_reports_success[list_object_versions] _
+
+fail_at = 'list_object_versions'
+
+    @pytest.mark.parametrize("fail_at", ("get_bucket_versioning", "list_object_versions", "delete_object"))
+    def test_version_erasure_permission_or_transport_failure_never_reports_success(fail_at):
+        client = VersionedS3(
+            ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
+            fail_at=fail_at,
+        )
+    
+>       with pytest.raises(AttachmentObjectWriterError, match="delete failed") as captured:
+E       Failed: DID NOT RAISE AttachmentObjectWriterError
+
+tests/test_attachment_s3_version_erasure.py:160: Failed
+___________________ test_bad_version_pagination_fails_closed ___________________
+
+    def test_bad_version_pagination_fails_closed():
+        class BadPagination(VersionedS3):
+            def list_object_versions(self, **kwargs):
+                self._call("list_object_versions", kwargs)
+                return {"IsTruncated": True, "Versions": [], "DeleteMarkers": []}
+    
+>       with pytest.raises(AttachmentWorkerRuntimeError):
+E       Failed: DID NOT RAISE AttachmentWorkerRuntimeError
+
+tests/test_attachment_s3_version_erasure.py:173: Failed
+_______ test_version_arriving_during_purge_is_removed_by_followup_sweep ________
+
+    def test_version_arriving_during_purge_is_removed_by_followup_sweep():
+        client = VersionedS3(
+            ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
+            add_after_empty=True,
+        )
+    
+        S3ProcessingObjectStore(client, "private-bucket").delete("owned")
+    
+>       assert client.added is True
+E       assert False is True
+E        +  where False = <test_attachment_s3_version_erasure.VersionedS3 object at 0x10a38bc50>.added
+
+tests/test_attachment_s3_version_erasure.py:185: AssertionError
+________ test_continuous_concurrent_versions_hit_bound_and_fail_closed _________
+
+    def test_continuous_concurrent_versions_hit_bound_and_fail_closed():
+        client = VersionedS3(
+            ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
+            keep_adding=True,
+        )
+    
+>       with pytest.raises(AttachmentWorkerRuntimeError):
+E       Failed: DID NOT RAISE AttachmentWorkerRuntimeError
+
+tests/test_attachment_s3_version_erasure.py:197: Failed
+______ test_erasure_service_records_partial_when_version_inventory_fails _______
+
+    def test_erasure_service_records_partial_when_version_inventory_fails():
+        job = ErasureJob(SimpleNamespace(hex="job"), SimpleNamespace(hex="attachment"), ("owned",))
+    
+        class Repository:
+            records = []
+    
+            def claim(self, _worker_id):
+                return job
+    
+            def record(self, selected, *, failed):
+                self.records.append((selected, failed))
+    
+        repository = Repository()
+        store = S3ProcessingObjectStore(
+            VersionedS3(
+                ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
+                fail_at="list_object_versions",
+            ),
+            "private-bucket",
+        )
+    
+        assert AttachmentErasureService(repository, store).process_next("worker") is True
+>       assert repository.records == [(job, 1)]
+E       AssertionError: assert [(ErasureJob(...chment')), 0)] == [(ErasureJob(...chment')), 1)]
+E         
+E         At index 0 diff: (ErasureJob(erasure_job_id=namespace(hex='job'), attachment_id=namespace(hex='attachment')), 0) != (ErasureJob(erasure_job_id=namespace(hex='job'), attachment_id=namespace(hex='attachment')), 1)
+E         Use -v to get more diff
+
+tests/test_attachment_s3_version_erasure.py:226: AssertionError
+______ test_orphan_cleanup_does_not_acknowledge_failed_version_inventory _______
+
+    def test_orphan_cleanup_does_not_acknowledge_failed_version_inventory():
+        attempt = SimpleNamespace(attempt_id="attempt", object_ref="owned")
+    
+        class Repository:
+            acknowledged = []
+    
+            def list_orphaned_writes(self, *, limit):
+                assert limit == 1
+                return (attempt,)
+    
+            def acknowledge_orphaned_write(self, attempt_id):
+                self.acknowledged.append(attempt_id)
+    
+        repository = Repository()
+        writer = AttachmentObjectWriter(
+            VersionedS3(
+                ({"Kind": "version", "Key": "owned", "VersionId": "v1"},),
+                fail_at="list_object_versions",
+            ),
+            "private-bucket",
+        )
+    
+        from app.attachments.upload_service import AttachmentUploadService
+    
+>       assert AttachmentUploadService(repository, writer).cleanup_orphaned_writes(limit=1) == 0
+E       AssertionError: assert 1 == 0
+E        +  where 1 = cleanup_orphaned_writes(limit=1)
+E        +    where cleanup_orphaned_writes = <app.attachments.upload_service.AttachmentUploadService object at 0x10a380110>.cleanup_orphaned_writes
+E        +      where <app.attachments.upload_service.AttachmentUploadService object at 0x10a380110> = <class 'app.attachments.upload_service.AttachmentUploadService'>(<test_attachment_s3_version_erasure.test_orphan_cleanup_does_not_acknowledge_failed_version_inventory.<locals>.Repository object at 0x10a3807d0>, <app.attachments.object_writer.AttachmentObjectWriter object at 0x10a381c90>)
+
+tests/test_attachment_s3_version_erasure.py:253: AssertionError
+_____ test_successful_versioned_put_cleanup_deletes_only_returned_version ______
+
+    def test_successful_versioned_put_cleanup_deletes_only_returned_version():
+        class Client:
+            calls = []
+    
+            def put_object(self, **_kwargs):
+                return {"VersionId": "this-write"}
+    
+            def delete_object(self, **kwargs):
+                self.calls.append(kwargs)
+    
+        client = Client()
+        with pytest.raises(AttachmentObjectWriterSizeMismatch):
+            AttachmentObjectWriter(client, "private-bucket").put_stream(
+                "owned", io.BytesIO(b"extra"), 4
+            )
+    
+>       assert client.calls == [
+            {"Bucket": "private-bucket", "Key": "owned", "VersionId": "this-write"}
+        ]
+E       AssertionError: assert [{'Bucket': '...ey': 'owned'}] == [{'Bucket': '...'this-write'}]
+E         
+E         At index 0 diff: {'Bucket': 'private-bucket', 'Key': 'owned'} != {'Bucket': 'private-bucket', 'Key': 'owned', 'VersionId': 'this-write'}
+E         Use -v to get more diff
+
+tests/test_attachment_s3_version_erasure.py:273: AssertionError
+_______ test_ambiguous_failed_put_does_not_issue_destructive_key_delete ________
+
+    def test_ambiguous_failed_put_does_not_issue_destructive_key_delete():
+        class Client:
+            calls = []
+    
+            def put_object(self, **_kwargs):
+                raise OSError("reply lost")
+    
+            def delete_object(self, **kwargs):
+                self.calls.append(kwargs)
+    
+        client = Client()
+        with pytest.raises(AttachmentObjectWriterError):
+            AttachmentObjectWriter(client, "private-bucket").put_stream(
+                "owned", io.BytesIO(b"data"), 4
+            )
+    
+>       assert client.calls == []
+E       AssertionError: assert [{'Bucket': '...ey': 'owned'}] == []
+E         
+E         Left contains one more item: {'Bucket': 'private-bucket', 'Key': 'owned'}
+E         Use -v to get more diff
+
+tests/test_attachment_s3_version_erasure.py:294: AssertionError
+__ test_ambiguous_failed_derivative_put_does_not_issue_destructive_key_delete __
+
+    def test_ambiguous_failed_derivative_put_does_not_issue_destructive_key_delete():
+        class Client:
+            calls = []
+    
+            def put_object(self, **_kwargs):
+                raise OSError("reply lost")
+    
+            def delete_object(self, **kwargs):
+                self.calls.append(kwargs)
+    
+        client = Client()
+        with pytest.raises(AttachmentWorkerRuntimeError):
+            S3ProcessingObjectStore(client, "private-bucket").put_derivative(
+                b"data", object_key="a" * 64
+            )
+    
+>       assert client.calls == []
+E       AssertionError: assert [{'Bucket': '...aaaaaaaaaaa'}] == []
+E         
+E         Left contains one more item: {'Bucket': 'private-bucket', 'Key': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+E         Use -v to get more diff
+
+tests/test_attachment_s3_version_erasure.py:313: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_attachment_s3_version_erasure.py::test_processing_delete_purges_every_exact_version_and_marker_across_pages[Enabled]
+FAILED tests/test_attachment_s3_version_erasure.py::test_processing_delete_purges_every_exact_version_and_marker_across_pages[Suspended]
+FAILED tests/test_attachment_s3_version_erasure.py::test_unversioned_delete_keeps_single_exact_delete_compatibility
+FAILED tests/test_attachment_s3_version_erasure.py::test_version_erasure_permission_or_transport_failure_never_reports_success[get_bucket_versioning]
+FAILED tests/test_attachment_s3_version_erasure.py::test_version_erasure_permission_or_transport_failure_never_reports_success[list_object_versions]
+FAILED tests/test_attachment_s3_version_erasure.py::test_bad_version_pagination_fails_closed
+FAILED tests/test_attachment_s3_version_erasure.py::test_version_arriving_during_purge_is_removed_by_followup_sweep
+FAILED tests/test_attachment_s3_version_erasure.py::test_continuous_concurrent_versions_hit_bound_and_fail_closed
+FAILED tests/test_attachment_s3_version_erasure.py::test_erasure_service_records_partial_when_version_inventory_fails
+FAILED tests/test_attachment_s3_version_erasure.py::test_orphan_cleanup_does_not_acknowledge_failed_version_inventory
+FAILED tests/test_attachment_s3_version_erasure.py::test_successful_versioned_put_cleanup_deletes_only_returned_version
+FAILED tests/test_attachment_s3_version_erasure.py::test_ambiguous_failed_put_does_not_issue_destructive_key_delete
+FAILED tests/test_attachment_s3_version_erasure.py::test_ambiguous_failed_derivative_put_does_not_issue_destructive_key_delete
+13 failed, 1 passed in 0.15s

@@ -7,7 +7,6 @@ import os
 import secrets
 import sys
 from collections.abc import Callable
-from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,7 @@ from .derivatives import BubblewrapPdfSandbox, Derivative, DerivativeBuilder
 from .erasure import AttachmentErasureRepository, AttachmentErasureService
 from .object_writer import _credential
 from .retention import AttachmentRetentionRepository, AttachmentRetentionService
+from .s3_erasure import erase_s3_object
 from .scanner import ClamAVScanner, TrustedInternalScanner
 from .validation import AttachmentValidator, OpenedObject, ValidationResult
 from .worker import (
@@ -397,13 +397,11 @@ class S3ProcessingObjectStore:
             )
             return StoredDerivative(object_ref, len(data), digest)
         except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
-            with suppress(Exception):
-                self._client.delete_object(Bucket=self._bucket, Key=object_ref)
             raise AttachmentWorkerRuntimeError() from None
 
     def delete(self, object_ref: str) -> None:
         try:
-            self._client.delete_object(Bucket=self._bucket, Key=object_ref)
+            erase_s3_object(self._client, self._bucket, object_ref)
         except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
             raise AttachmentWorkerRuntimeError() from None
 

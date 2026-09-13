@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from botocore.exceptions import EndpointConnectionError
+
 from app.attachments.conversation_models import (
     MAX_FILE_BYTES,
     AttachmentRecord,
@@ -26,7 +28,6 @@ from app.attachments.upload_service import (
     AttachmentUploadConflict,
     AttachmentUploadService,
 )
-from botocore.exceptions import EndpointConnectionError
 
 
 class GeneratedStream:
@@ -59,6 +60,10 @@ class StreamingS3:
         self.puts.append((Bucket, Key, total))
         return {"ETag": "opaque"}
 
+    def get_bucket_versioning(self, *, Bucket):
+        assert Bucket == "private-attachments"
+        return {}
+
     def delete_object(self, *, Bucket, Key):
         self.deletes.append((Bucket, Key))
 
@@ -90,7 +95,7 @@ def test_object_writer_rejects_extra_bytes_and_deletes_written_object() -> None:
     assert s3.deletes == [("private-attachments", "objects/random")]
 
 
-def test_object_writer_cleans_partial_failure_and_delete_is_idempotent() -> None:
+def test_object_writer_defers_ambiguous_partial_failure_to_idempotent_cleanup() -> None:
     s3 = StreamingS3(fail_once=True)
     writer = AttachmentObjectWriter(s3, "private-attachments")
 
@@ -98,10 +103,7 @@ def test_object_writer_cleans_partial_failure_and_delete_is_idempotent() -> None
         writer.put_stream("objects/random", io.BytesIO(b"payload"), 7)
     writer.delete("objects/random")
 
-    assert s3.deletes == [
-        ("private-attachments", "objects/random"),
-        ("private-attachments", "objects/random"),
-    ]
+    assert s3.deletes == [("private-attachments", "objects/random")]
 
 
 def test_storage_error_redacts_endpoint_object_key_and_cause() -> None:

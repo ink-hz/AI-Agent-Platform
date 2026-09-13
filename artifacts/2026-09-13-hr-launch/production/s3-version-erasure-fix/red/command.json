@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_attachment_s3_version_erasure.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+  "recording": "captured at execution by shell redirection before implementation"
+}
