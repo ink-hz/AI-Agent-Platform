@@ -1,0 +1,34 @@
+{
+  "files": {
+    "backend/tests/test_attachment_hotfix_supervisor.py": "c864f2ade756a55999d864a64447794edab10578ee04175981c0b651c9e392a4",
+    "artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34",
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-preparation/expected-inputs.json": "a1740c60f8d10890ad56f84cb8d5760cfa82a678c8bf4d7d2c8459a41eccac93"
+  },
+  "helper_commit": "404862b93c57e6782016182f089b67766ab569ff",
+  "bundle_manifest_sha256": "4887e1a1ba0324bcb5c7feabd7ac294f3dea430b0782c21de0261ccbc7494ce2",
+  "implementation_patch_sha256": "20676bdffdaeea8d22f8031207aa83da0392487547fdc559e607b33b496f7f62",
+  "evidence": {
+    "PLAN.md": "5b5269fa3ccaa376c6a9078be9dd287466959a259b0e5827ac4689d965afb0c6",
+    "bundle/SHA256SUMS": "4887e1a1ba0324bcb5c7feabd7ac294f3dea430b0782c21de0261ccbc7494ce2",
+    "bundle/attachment_hotfix.py": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34",
+    "bundle/expected-inputs.json": "a1740c60f8d10890ad56f84cb8d5760cfa82a678c8bf4d7d2c8459a41eccac93",
+    "bundle/hr_agent_migrate.py": "381dbfbcf89bdc286dc1544982705f656ba9b1a0f2ba4442769f7498a56455b2",
+    "bundle/preflight-execution-job-kind.sh": "88644e92079949a49e695474ab0c5d15e77cc238d13116e76db880f14d2e3b2e",
+    "expected-inputs.json": "a1740c60f8d10890ad56f84cb8d5760cfa82a678c8bf4d7d2c8459a41eccac93",
+    "green-final-1/attachment_hotfix.py": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34",
+    "green-final-1/command.json": "709f45b3c24d384f021abfbd0fd0a910f7d649b31fda0bd8a839f9a719002215",
+    "green-final-1/expected-inputs.json": "a1740c60f8d10890ad56f84cb8d5760cfa82a678c8bf4d7d2c8459a41eccac93",
+    "green-final-1/output.log": "0704d589d3e78a7bf4f79e7dc856f77bbea29f432207b24632fff71b14a0ac5d",
+    "green-final-1/test_attachment_hotfix_supervisor.py": "c864f2ade756a55999d864a64447794edab10578ee04175981c0b651c9e392a4",
+    "implementation.patch": "20676bdffdaeea8d22f8031207aa83da0392487547fdc559e607b33b496f7f62",
+    "lint-command.json": "25a6f842e1adf1f125c444f064d9971007ef1b61e11eb5c952ac1d60616fe4a1",
+    "lint.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "red-1/command.json": "2ebbd8ac6d41e9ca5171a3bb622000b81679a29742714b5b1b7769a99a608f41",
+    "red-1/output.log": "7b3a2334a63bc4d0283800dc8d0ba02c94a239a33553f1846a7c462a152116c4",
+    "red-1/test_attachment_hotfix_supervisor.py": "fdf2c741a7615120b6e65c96a8bec9fbd6b7a786f670f8e9c7016fa37250c808",
+    "red-2-identity-cleanup/attachment_hotfix.py": "eabf82a475044895dfe179db5aa64064bb36100dda7b0cbeb781d86ba3e28415",
+    "red-2-identity-cleanup/command.json": "dc75cb7bebd3ddb641f8c356ba9f704b9ff9f71c8ce88cd54a03a69d030d6e5c",
+    "red-2-identity-cleanup/output.log": "26385b63afc03a1c4f4272581fb85695d2e6ecebed612dfabf2d974558701e71",
+    "red-2-identity-cleanup/test_attachment_hotfix_supervisor.py": "ea71fd8d77638f52511ad263df8d0a8c36ca1c7cc97249fa834ce6c59f494902"
+  }
+}

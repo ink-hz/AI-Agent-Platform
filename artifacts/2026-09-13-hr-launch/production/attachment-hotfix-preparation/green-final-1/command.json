@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_attachment_hotfix_supervisor.py",
+    "-q"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+  "exit_code": 0,
+  "sha256": {
+    "backend/tests/test_attachment_hotfix_supervisor.py": "c864f2ade756a55999d864a64447794edab10578ee04175981c0b651c9e392a4",
+    "artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py": "2e13d1e2f508d6bdf06761fd5e830a795130dc01df4d4eb7e8dd2a6fb6301b34",
+    "artifacts/2026-09-13-hr-launch/production/attachment-hotfix-preparation/expected-inputs.json": "a1740c60f8d10890ad56f84cb8d5760cfa82a678c8bf4d7d2c8459a41eccac93"
+  },
+  "source_unchanged": true,
+  "head": "828e89e491522486647da575db7e14b2bca55d4c",
+  "boundary": "Real owned local command processes for four signals and timeout; injected Docker/SQL/filesystem control-flow negatives. No Docker deployment, production access, model, browser or erasure acceptance."
+}

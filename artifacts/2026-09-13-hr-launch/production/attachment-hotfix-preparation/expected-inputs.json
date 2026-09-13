@@ -1,0 +1,201 @@
+{
+  "source_snapshot_sha256": "945b0285bff7b8b1c712d272e03c6b2098562e56e1640a6db2bb224ab42fe7a5",
+  "observed_at": "2026-09-13T04:01:03.180565+00:00",
+  "current_target": "/opt/orbbec-agent-platform/releases/65e7fbd14a3cbe99883b0b31e31b5705d183d1f9",
+  "platform_env_sha256": "26453f195401e7272182a777ca0aee631b8c5be7fb57e8000a6e1622ebccb443",
+  "current_compose_sha256": "bbe74da0986bbc6b21c51e1610388921296364b0b2de5d2cfb5b19e6d5a0e858",
+  "containers": {
+    "amazing_wright": {
+      "id": "4ad9735bb07a30d1df5301411d369f054614ae941ff0377802f3848c9454f6b5",
+      "image": "sha256:79b0c4d8a6562a82fb5167e1c89553d1f2a6f3b767c5786304df8a732d9a836f",
+      "running": false,
+      "started_at": "2026-09-13T03:03:55.770589856Z",
+      "restart_count": 0,
+      "restart_policy": "no"
+    },
+    "orbbec-agent-platform-platform-api-1": {
+      "id": "3347e61ede7d3ab0bd96c0cdc25cff1d6808c89ab2b8a31f24953bebccd4fcf7",
+      "image": "sha256:b16eccfad79350c324c1ba229f847eaf693e31d7cc5567115b81f1d7eeaf4a35",
+      "running": true,
+      "started_at": "2026-09-12T01:31:38.115542452Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-agent-platform-platform-hr-web-worker-1": {
+      "id": "ce6d1b1f1593a756c3f58cb11f1529c16af29a504721521b76e1cd118351d767",
+      "image": "sha256:a8c0ded298d9c677d6cbd143e761cce276ab0f37a9efd188db64f947e23cf609",
+      "running": true,
+      "started_at": "2026-09-09T03:46:16.371543849Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "ai-fae-backend": {
+      "id": "609cb7c69ca361f20f5c002d9c45261a6b1b2726f173d10fa4257b8702a7d592",
+      "image": "sha256:1ea20f90757c4d052af9af824e1793f43e960ea053ec163a2e3da1e77c526cf8",
+      "running": true,
+      "started_at": "2026-09-08T07:37:08.185171099Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-agent-platform-platform-attachments-1": {
+      "id": "908c2f63e1de01f5226d6ddf8eb87dd4d1d3ff1edc45e534193f08203f81f819",
+      "image": "sha256:ee24975e38f8ef51cac4e6036aa92c42e46d508c91615773eeba181ee38eb1b1",
+      "running": true,
+      "started_at": "2026-09-08T06:57:02.527921824Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-agent-platform-platform-loopback-1": {
+      "id": "382c52f325458d16a9e952bfb7d7064d7d126feec0d2386af40d8e6e363709d1",
+      "image": "sha256:35b0b211ccdeacfe5aa9fcd0665bff82d9fc3e91a7609dc6e337c10c1d166c8c",
+      "running": true,
+      "started_at": "2026-09-07T05:03:21.06458649Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-agent-platform-platform-dingtalk-stream-1": {
+      "id": "32d8af29814b2824d5fe59fb98e0ee0bab1bb787b1af59bbfabd6f832757eca0",
+      "image": "sha256:35b0b211ccdeacfe5aa9fcd0665bff82d9fc3e91a7609dc6e337c10c1d166c8c",
+      "running": true,
+      "started_at": "2026-09-07T05:03:15.222431754Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-agent-platform-platform-brain-1": {
+      "id": "7b1ed623bef46587eb351595abccd2c574c1fcb0b1b9c9279b4cad8401fa2fb7",
+      "image": "sha256:35b0b211ccdeacfe5aa9fcd0665bff82d9fc3e91a7609dc6e337c10c1d166c8c",
+      "running": true,
+      "started_at": "2026-09-07T05:03:15.221917025Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-agent-platform-platform-directory-1": {
+      "id": "6ff9572388252bf762e6fc8abf48e5bc315a1d924740050e291835bcfb6d4d25",
+      "image": "sha256:35b0b211ccdeacfe5aa9fcd0665bff82d9fc3e91a7609dc6e337c10c1d166c8c",
+      "running": true,
+      "started_at": "2026-09-07T05:03:15.221556708Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-agent-platform-platform-postgres-1": {
+      "id": "12ef0c782a5e458b9e52dbe40ffaa3aa877e07269ddea52051e93d258ebdbb0e",
+      "image": "sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3",
+      "running": true,
+      "started_at": "2026-09-07T05:03:00.601306554Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-voc-bot-interact-1": {
+      "id": "59489ae3c5ed923212e1e24d2d792a12bec62f1ae7a10b776459a89704a38540",
+      "image": "sha256:90fa7f8a3947712b239d0d180ef5aa8cc9763d8135a26caaf302bddd492de15a",
+      "running": true,
+      "started_at": "2026-09-05T23:18:53.852143946Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-voc-bot-ingest-1": {
+      "id": "d227c4d9e6d7723fab24d5abd6bc8d7e73498cafd1e86bb3b3f4122ecc339d9c",
+      "image": "sha256:90fa7f8a3947712b239d0d180ef5aa8cc9763d8135a26caaf302bddd492de15a",
+      "running": true,
+      "started_at": "2026-09-05T23:18:53.853451171Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-voc-workspace-1": {
+      "id": "69c0fae091916a555531a1e60534f128bcc41c3c21d2423b40628d8b52d70a3d",
+      "image": "sha256:90fa7f8a3947712b239d0d180ef5aa8cc9763d8135a26caaf302bddd492de15a",
+      "running": true,
+      "started_at": "2026-09-05T23:18:34.761316132Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-agent-platform-platform-attachment-storage-init-1": {
+      "id": "0e272f6d784f6bf511b7c6e829fa35eedfeabe33aa525cdc533c86be82205a17",
+      "image": "sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc",
+      "running": false,
+      "started_at": "2026-09-07T05:03:15.92784145Z",
+      "restart_count": 0,
+      "restart_policy": "no"
+    },
+    "orbbec-agent-platform-platform-minio-1": {
+      "id": "de10f2bd60988f07a77c685b55919cfb98ebed8e6792d41aa7c5e2a9a0b34238",
+      "image": "sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0",
+      "running": true,
+      "started_at": "2026-09-04T00:33:10.349799852Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "orbbec-voc-postgres-1": {
+      "id": "ec9e660bcb45a072cd421462d7538321cdaf1e6b4b92a9e97dd8e97189487e5d",
+      "image": "sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3",
+      "running": true,
+      "started_at": "2026-08-26T12:42:08.635252828Z",
+      "restart_count": 0,
+      "restart_policy": "no"
+    },
+    "ai-admin-postgres-bridge": {
+      "id": "54e5a3a14682af39630e03279262651da238b95fa3f3ca224ecd69532ebf4526",
+      "image": "sha256:d85531a29ef5ba99dfb4717485c239307e2902d522a1bc010992a2728c92cfad",
+      "running": true,
+      "started_at": "2026-07-13T02:56:39.284526103Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "langfuse-minio": {
+      "id": "7d52866823df85cd079f73d1e21993cbe5011c22d847d09dda5e5c8ea479db13",
+      "image": "sha256:0476769da6d4a45d5b9d4d25bef0d2a5358a34d88ea4aa6bd0c42d657011a681",
+      "running": true,
+      "started_at": "2026-06-17T08:57:42.059185603Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "langfuse-web": {
+      "id": "18e0140b795d79cd0ea64e572bfccc097937b28ac69255237366a865a78420bb",
+      "image": "sha256:3adc1fe41b546f378c4a924462c22d0088ba7e000877a2ba62d4c5080962db72",
+      "running": true,
+      "started_at": "2026-06-17T08:58:17.137286573Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "langfuse-worker": {
+      "id": "78fee6c8eeff6c69a3f6ca676501b2ecaac3187061496400d0b9e6f6ed62bf8d",
+      "image": "sha256:077ef8977e43288cd2e05743c95868b819e93f2aa795b83cf392b3ec3d23cd43",
+      "running": true,
+      "started_at": "2026-06-17T08:58:17.137594562Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "langfuse-postgres": {
+      "id": "e3c35f65cdc76474737cf9204d41aa7f61f767b5b74ae9ae354d8c776c0ceeb1",
+      "image": "sha256:2203e6282d9e7de7c24d7da234e2a744fb325df366a3fd8ed940e8abbee39527",
+      "running": true,
+      "started_at": "2026-06-17T08:54:05.427043706Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "langfuse-redis": {
+      "id": "21791510b9478e9a532fbf86219625174ab5c5fe9c6e2cc0881ddd0739757821",
+      "image": "sha256:33d7c9a245edd95e6703a0addbeaa48fe40c3b3b4783627a72085155462ebfdb",
+      "running": true,
+      "started_at": "2026-06-17T08:54:05.424964261Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "langfuse-clickhouse": {
+      "id": "7d93e7c5a7e846a9d7030efd9604bb9ab52d221a38d69ad40bf25eba1a303250",
+      "image": "sha256:07afc18d8a9706eb9d85c5c5d2752e5270f91bbc2894caeaecb73e4d0f603bf5",
+      "running": true,
+      "started_at": "2026-06-17T08:54:05.427430001Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    },
+    "ai-fae-postgres": {
+      "id": "dcda26814bbea82b3d67f963a41e4bdc7f366eb08df97ac66b54b8160e501a37",
+      "image": "sha256:d845e7f0ac8517b9d9868b6d20379f9688ba3676595e50ca7c0b664964b2a760",
+      "running": true,
+      "started_at": "2026-06-17T08:51:39.124983159Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped"
+    }
+  }
+}

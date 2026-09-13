@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_attachment_hotfix_supervisor.py",
+    "-q"
+  ],
+  "exit_code": 1,
+  "sha256": {
+    "backend/tests/test_attachment_hotfix_supervisor.py": "ea71fd8d77638f52511ad263df8d0a8c36ca1c7cc97249fa834ce6c59f494902",
+    "artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py": "eabf82a475044895dfe179db5aa64064bb36100dda7b0cbeb781d86ba3e28415"
+  }
+}

@@ -1,0 +1,62 @@
+.........FFF                                                             [100%]
+=================================== FAILURES ===================================
+________ test_old_stop_proof_rejects_absent_or_replaced_identity[None] _________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9585/test_old_stop_proof_rejects_ab0')
+row = None
+
+    @pytest.mark.parametrize("row", [None, {"Id": "replacement", "Image": "wrong", "Name": "/other", "State": {"Running": False}, "HostConfig": {"RestartPolicy": {"Name": "no"}}}])
+    def test_old_stop_proof_rejects_absent_or_replaced_identity(tmp_path, row):
+        h = helper()
+        runner = h.Hotfix(tmp_path / "inputs", tmp_path / "helpers")
+        runner.at = lambda _identity: row
+>       assert hasattr(runner, "verify_old_stopped"), "strict pre-migration stopped identity missing"
+E       AssertionError: strict pre-migration stopped identity missing
+E       assert False
+E        +  where False = hasattr(<attachment_hotfix.Hotfix object at 0x106da7610>, 'verify_old_stopped')
+
+tests/test_attachment_hotfix_supervisor.py:108: AssertionError
+________ test_old_stop_proof_rejects_absent_or_replaced_identity[row1] _________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9585/test_old_stop_proof_rejects_ab1')
+row = {'Id': 'replacement', 'Image': 'wrong', 'Name': '/other', 'State': {'Running': False}, ...}
+
+    @pytest.mark.parametrize("row", [None, {"Id": "replacement", "Image": "wrong", "Name": "/other", "State": {"Running": False}, "HostConfig": {"RestartPolicy": {"Name": "no"}}}])
+    def test_old_stop_proof_rejects_absent_or_replaced_identity(tmp_path, row):
+        h = helper()
+        runner = h.Hotfix(tmp_path / "inputs", tmp_path / "helpers")
+        runner.at = lambda _identity: row
+>       assert hasattr(runner, "verify_old_stopped"), "strict pre-migration stopped identity missing"
+E       AssertionError: strict pre-migration stopped identity missing
+E       assert False
+E        +  where False = hasattr(<attachment_hotfix.Hotfix object at 0x106de6890>, 'verify_old_stopped')
+
+tests/test_attachment_hotfix_supervisor.py:108: AssertionError
+_______ test_daemon_failure_does_not_skip_revocation_of_proven_own_grant _______
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9585/test_daemon_failure_does_not_s0')
+
+    def test_daemon_failure_does_not_skip_revocation_of_proven_own_grant(tmp_path):
+        h = helper()
+        runner = h.Hotfix(tmp_path / "inputs", tmp_path / "helpers")
+        runner.migration_started = True
+        runner.child_receipt = lambda: {"container_name": "hr-migration-" + "a" * 36 + "-production", "events": [{"stage": "grant_pending", "environment": "production"}]}
+        def unavailable(_identity):
+            raise h.HotfixFailure("daemon_unavailable")
+        runner.at = unavailable
+        operations = []
+        runner.admin = lambda sql, **kwargs: operations.append((sql, kwargs))
+        runner.at_rest = lambda: operations.append("at_rest")
+        assert runner.fail_closed() is False
+>       assert operations == [("revoke platform_control_owner from platform_control_migrator", {"write": True}), "at_rest"]
+E       AssertionError: assert [] == [('revoke pla...}), 'at_rest']
+E         
+E         Right contains 2 more items, first extra item: ('revoke platform_control_owner from platform_control_migrator', {'write': True})
+E         Use -v to get more diff
+
+tests/test_attachment_hotfix_supervisor.py:125: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_attachment_hotfix_supervisor.py::test_old_stop_proof_rejects_absent_or_replaced_identity[None]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_old_stop_proof_rejects_absent_or_replaced_identity[row1]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_daemon_failure_does_not_skip_revocation_of_proven_own_grant
+3 failed, 9 passed in 0.45s

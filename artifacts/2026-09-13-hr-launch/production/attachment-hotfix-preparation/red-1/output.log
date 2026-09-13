@@ -1,0 +1,192 @@
+FFFFFFFFF                                                                [100%]
+=================================== FAILURES ===================================
+_______ test_snapshot_drift_is_rejected_without_learning_a_new_baseline ________
+
+    def test_snapshot_drift_is_rejected_without_learning_a_new_baseline():
+>       h = helper()
+            ^^^^^^^^
+
+tests/test_attachment_hotfix_supervisor.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+_ test_failure_after_old_stop_never_starts_new_or_restores_old[migration_cleanup_unverified] _
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9581/test_failure_after_old_stop_ne0')
+failure = 'migration_cleanup_unverified'
+
+    @pytest.mark.parametrize("failure", ["migration_cleanup_unverified", "peer_changed", "command_timeout"])
+    def test_failure_after_old_stop_never_starts_new_or_restores_old(tmp_path, failure):
+>       h = helper()
+            ^^^^^^^^
+
+tests/test_attachment_hotfix_supervisor.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+__ test_failure_after_old_stop_never_starts_new_or_restores_old[peer_changed] __
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9581/test_failure_after_old_stop_ne1')
+failure = 'peer_changed'
+
+    @pytest.mark.parametrize("failure", ["migration_cleanup_unverified", "peer_changed", "command_timeout"])
+    def test_failure_after_old_stop_never_starts_new_or_restores_old(tmp_path, failure):
+>       h = helper()
+            ^^^^^^^^
+
+tests/test_attachment_hotfix_supervisor.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+_ test_failure_after_old_stop_never_starts_new_or_restores_old[command_timeout] _
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9581/test_failure_after_old_stop_ne2')
+failure = 'command_timeout'
+
+    @pytest.mark.parametrize("failure", ["migration_cleanup_unverified", "peer_changed", "command_timeout"])
+    def test_failure_after_old_stop_never_starts_new_or_restores_old(tmp_path, failure):
+>       h = helper()
+            ^^^^^^^^
+
+tests/test_attachment_hotfix_supervisor.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+__________ test_four_signals_reap_the_exact_local_command_process[2] ___________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9581/test_four_signals_reap_the_exa0')
+number = <Signals.SIGINT: 2>
+
+    @pytest.mark.parametrize("number", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT])
+    def test_four_signals_reap_the_exact_local_command_process(tmp_path, number):
+>       helper()
+
+tests/test_attachment_hotfix_supervisor.py:62: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+__________ test_four_signals_reap_the_exact_local_command_process[15] __________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9581/test_four_signals_reap_the_exa1')
+number = <Signals.SIGTERM: 15>
+
+    @pytest.mark.parametrize("number", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT])
+    def test_four_signals_reap_the_exact_local_command_process(tmp_path, number):
+>       helper()
+
+tests/test_attachment_hotfix_supervisor.py:62: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+__________ test_four_signals_reap_the_exact_local_command_process[1] ___________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9581/test_four_signals_reap_the_exa2')
+number = <Signals.SIGHUP: 1>
+
+    @pytest.mark.parametrize("number", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT])
+    def test_four_signals_reap_the_exact_local_command_process(tmp_path, number):
+>       helper()
+
+tests/test_attachment_hotfix_supervisor.py:62: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+__________ test_four_signals_reap_the_exact_local_command_process[3] ___________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9581/test_four_signals_reap_the_exa3')
+number = <Signals.SIGQUIT: 3>
+
+    @pytest.mark.parametrize("number", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT])
+    def test_four_signals_reap_the_exact_local_command_process(tmp_path, number):
+>       helper()
+
+tests/test_attachment_hotfix_supervisor.py:62: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+__________ test_command_timeout_reaps_owned_client_and_stays_failure ___________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9581/test_command_timeout_reaps_own0')
+
+    def test_command_timeout_reaps_owned_client_and_stays_failure(tmp_path):
+>       h = helper()
+            ^^^^^^^^
+
+tests/test_attachment_hotfix_supervisor.py:95: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def helper():
+>       assert SCRIPT.is_file(), "fixed attachment hotfix supervisor missing"
+E       AssertionError: fixed attachment hotfix supervisor missing
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/attachment_hotfix.py').is_file
+
+tests/test_attachment_hotfix_supervisor.py:16: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_attachment_hotfix_supervisor.py::test_snapshot_drift_is_rejected_without_learning_a_new_baseline
+FAILED tests/test_attachment_hotfix_supervisor.py::test_failure_after_old_stop_never_starts_new_or_restores_old[migration_cleanup_unverified]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_failure_after_old_stop_never_starts_new_or_restores_old[peer_changed]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_failure_after_old_stop_never_starts_new_or_restores_old[command_timeout]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_four_signals_reap_the_exact_local_command_process[2]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_four_signals_reap_the_exact_local_command_process[15]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_four_signals_reap_the_exact_local_command_process[1]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_four_signals_reap_the_exact_local_command_process[3]
+FAILED tests/test_attachment_hotfix_supervisor.py::test_command_timeout_reaps_owned_client_and_stays_failure
+9 failed in 0.04s

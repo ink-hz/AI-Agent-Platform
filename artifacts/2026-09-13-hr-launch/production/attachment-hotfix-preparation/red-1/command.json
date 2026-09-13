@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_attachment_hotfix_supervisor.py",
+    "-q"
+  ],
+  "exit_code": 1,
+  "test_sha256": "fdf2c741a7615120b6e65c96a8bec9fbd6b7a786f670f8e9c7016fa37250c808",
+  "script_absent": true
+}
