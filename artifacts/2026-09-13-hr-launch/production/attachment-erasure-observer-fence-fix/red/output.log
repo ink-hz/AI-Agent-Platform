@@ -1,0 +1,35 @@
+F...F.                                                                   [100%]
+=================================== FAILURES ===================================
+_____________ test_multiple_exact_fences_and_current_head_required _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105d4a890>
+
+    def test_multiple_exact_fences_and_current_head_required(monkeypatch):
+        observer = module(monkeypatch)
+        client = FenceS3()
+        result = observer.verify_absence(client, 'bucket', {'owned': ['old']})
+>       assert result['status'] == 'absent'
+E       AssertionError: assert 'remaining' == 'absent'
+E         
+E         - absent
+E         + remaining
+
+backend/tests/test_attachment_erasure_observer.py:471: AssertionError
+________________ test_current_delete_marker_is_not_write_fence _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1084c0a10>
+
+    def test_current_delete_marker_is_not_write_fence(monkeypatch):
+        observer = module(monkeypatch)
+        result = observer.verify_absence(FenceS3(marker=True), 'bucket', {'owned': ['old']})
+>       assert result['status'] == 'unprotected'
+E       AssertionError: assert 'remaining' == 'unprotected'
+E         
+E         - unprotected
+E         + remaining
+
+backend/tests/test_attachment_erasure_observer.py:487: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_observer.py::test_multiple_exact_fences_and_current_head_required
+FAILED backend/tests/test_attachment_erasure_observer.py::test_current_delete_marker_is_not_write_fence
+2 failed, 4 passed, 11 deselected in 0.18s

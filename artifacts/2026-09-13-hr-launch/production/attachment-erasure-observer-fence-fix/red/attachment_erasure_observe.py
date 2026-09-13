@@ -13,7 +13,7 @@ import json
 import os
 import time
 from pathlib import Path
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import UUID
 
 import httpx
 import psycopg
@@ -26,7 +26,6 @@ from api_canary import (
     write_private,
 )
 from app.attachments.conversation_repository import attachment_object_subject
-from app.attachments.object_keys import derivative_object_key
 from app.attachments.worker_runtime import _build_content_codec, _build_s3_client
 from app.control_plane.dsn import validate_control_dsn
 from app.execution_relay.content_crypto import SealedContent
@@ -43,9 +42,9 @@ class Unknown(Exception):
     """No protected detail is allowed in diagnostics."""
 
 
-def inventory(client, bucket, key, *, include_markers=False):
+def inventory(client, bucket, key):
     """List the entire exact-key data-version set; markers are not payload bytes."""
-    values, markers, cursors = set(), set(), set()
+    values, cursors = set(), set()
     kwargs = {"Bucket": bucket, "Prefix": key, "MaxKeys": 128}
     for _ in range(MAX_PAGES):
         page = client.list_object_versions(**kwargs)
@@ -59,20 +58,8 @@ def inventory(client, bucket, key, *, include_markers=False):
                 values.add(version)
                 if len(values) > MAX_VERSIONS:
                     raise Unknown("version_limit")
-        for entry in page.get("DeleteMarkers", []):
-            if entry.get("Key") == key:
-                version = entry.get("VersionId")
-                if not isinstance(version, str) or not version:
-                    raise Unknown("marker_version_missing")
-                markers.add(version)
-        if len(values) + len(markers) > MAX_VERSIONS:
-            raise Unknown("version_limit")
         if not page["IsTruncated"]:
-            return (
-                {"versions": sorted(values), "markers": sorted(markers)}
-                if include_markers
-                else sorted(values)
-            )
+            return sorted(values)
         cursor = (page.get("NextKeyMarker"), page.get("NextVersionIdMarker"))
         if (
             not all(isinstance(item, str) and item for item in cursor)
@@ -84,12 +71,9 @@ def inventory(client, bucket, key, *, include_markers=False):
     raise Unknown("version_page_limit")
 
 
-def head(client, bucket, key, version=None):
+def present(client, bucket, key, version):
     try:
-        args = {"Bucket": bucket, "Key": key}
-        if version is not None:
-            args["VersionId"] = version
-        result = client.head_object(**args)
+        result = client.head_object(Bucket=bucket, Key=key, VersionId=version)
     except ClientError as error:
         detail = error.response
         if detail.get("ResponseMetadata", {}).get(
@@ -100,57 +84,27 @@ def head(client, bucket, key, version=None):
             "NoSuchVersion",
             "NotFound",
         }:
-            return None
+            return False
         raise Unknown("head_unknown") from None
     except Exception:  # noqa: BLE001 - transport details must stay private
         raise Unknown("head_unknown") from None
-    if (
-        not isinstance(result.get("VersionId"), str)
-        or (version is not None and result["VersionId"] != version)
-        or type(result.get("ContentLength")) is not int
-    ):
+    if result.get("VersionId") != version or "ContentLength" not in result:
         raise Unknown("head_version_unproven")
-    return result
-
-
-def fence(value):
-    return (
-        value is not None
-        and value.get("DeleteMarker") is not True
-        and value["ContentLength"] == 0
-        and value.get("Metadata") == {"platform-erasure-fence": "v1"}
-    )
-
-
-def present(client, bucket, key, version):
-    return head(client, bucket, key, version) is not None
+    return True
 
 
 def verify_absence(client, bucket, frozen):
     if not frozen or len(frozen) > MAX_KEYS:
         raise Unknown("reference_set_missing_or_large")
-    checked, remaining, unprotected, receipts, fence_count = 0, False, False, [], 0
+    checked, remaining, receipts = 0, False, []
     for key, versions in frozen.items():
         if not versions or len(versions) > MAX_VERSIONS:
             raise Unknown("version_set_missing_or_large")
-        current = inventory(client, bucket, key, include_markers=True)
-        verified = set()
-        unprotected |= bool(current["markers"])
-        for version in sorted(set(versions) | set(current["versions"])):
-            value = head(client, bucket, key, version)
-            exists = value is not None
-            is_fence = fence(value)
-            # Every frozen version was payload before erasure. It must disappear,
-            # even if a provider inconsistently reports new metadata for its ID.
-            if version in versions:
-                remaining |= exists
-            elif exists and is_fence:
-                verified.add(version)
-                fence_count += 1
-            else:
-                # A listed version disappearing mid-observation is not a clean
-                # stable enumeration; observe again with a new receipt.
-                remaining = True
+        current = inventory(client, bucket, key)
+        remaining |= bool(current)
+        for version in sorted(set(versions) | set(current)):
+            exists = present(client, bucket, key, version)
+            remaining |= exists
             checked += 1
             if checked > MAX_VERSIONS:
                 raise Unknown("total_version_limit")
@@ -159,23 +113,11 @@ def verify_absence(client, bucket, frozen):
                     "key_sha256": sha(key.encode()),
                     "version_sha256": sha(version.encode()),
                     "exists": exists,
-                    "verified_fence": is_fence,
                 }
             )
-        latest = head(client, bucket, key)
-        protected = fence(latest) and latest["VersionId"] in verified
-        unprotected |= not protected
-        receipts.append(
-            {"key_sha256": sha(key.encode()), "current_fence_verified": protected}
-        )
     return {
-        "status": "remaining"
-        if remaining
-        else "unprotected"
-        if unprotected
-        else "absent",
+        "status": "remaining" if remaining else "absent",
         "checked_versions": checked,
-        "verified_fence_versions": fence_count,
         "objects": receipts,
     }
 
@@ -220,10 +162,6 @@ class Repository:
                 "select derivative_id,object_ref_ciphertext,object_ref_key_version from platform_attachments.derivatives where attachment_id=%s limit 33",
                 (aid,),
             ).fetchall()
-            derive_jobs = connection.execute(
-                "select processing_job_id,derivative_kind,state from platform_attachments.processing_jobs where attachment_id=%s and job_kind='derive' limit 33",
-                (aid,),
-            ).fetchall()
             artifacts = connection.execute(
                 "select artifact_version_id from platform_attachments.artifact_versions where attachment_id=%s limit 1",
                 (aid,),
@@ -240,22 +178,17 @@ class Repository:
             raise Unknown("upload_only_scope_artifact_present")
         if active:
             raise Unknown("processing_active")
-        if len(attempts) + len(derivatives) + len(derive_jobs) + 2 > MAX_KEYS:
+        if len(attempts) + len(derivatives) + 2 > MAX_KEYS:
             raise Unknown("reference_limit")
         return {
             "base": base,
             "uploads": uploads,
             "attempts": attempts,
             "derivatives": derivatives,
-            "derive_jobs": derive_jobs,
             "jobs": jobs,
             "row_ids": sorted(
                 [str(row["attempt_id"]) for row in attempts]
                 + [str(row["derivative_id"]) for row in derivatives]
-                + [
-                    str(row["processing_job_id"]) + ":" + str(row["derivative_kind"])
-                    for row in derive_jobs
-                ]
             ),
         }
 
@@ -301,33 +234,6 @@ def references(codec, graph, aid):
             if not locator.startswith("version:"):
                 raise Unknown("version_locator_required")
             result[value["object_ref"]].add(locator[len("version:") :])
-    derived_ids = {str(row["derivative_id"]): row for row in graph["derivatives"]}
-    expected_ids = set()
-    if not graph["derive_jobs"]:
-        raise Unknown("canary_derive_jobs_missing")
-    for job in graph["derive_jobs"]:
-        kind = job["derivative_kind"]
-        identity = str(
-            uuid5(
-                NAMESPACE_URL,
-                f"platform-attachment-derivative-v64:{job['processing_job_id']}:{kind}",
-            )
-        )
-        expected_ids.add(identity)
-        if job["state"] != "completed" or identity not in derived_ids:
-            raise Unknown("unrecorded_derive_key")
-        expected_key = derivative_object_key(job["processing_job_id"], kind)
-        row = derived_ids[identity]
-        value = codec.unseal_json(
-            f"attachment:{aid}:derivative:{identity}:object-ref",
-            SealedContent(
-                bytes(row["object_ref_ciphertext"]), row["object_ref_key_version"]
-            ),
-        )
-        if value != {"object_ref": expected_key} or expected_key not in result:
-            raise Unknown("derive_key_mismatch")
-    if set(derived_ids) != expected_ids:
-        raise Unknown("derive_job_mapping_incomplete")
     return result
 
 
@@ -435,16 +341,11 @@ def observe(phase, ledger, config, repository, codec, client, bucket, snapshot=N
             raise Unknown("database_content_binding_invalid")
         frozen = {}
         for key, locators in references(codec, graph, aid).items():
-            listing = inventory(client, bucket, key, include_markers=True)
-            versions = listing["versions"]
-            if listing["markers"]:
-                raise Unknown("before_delete_markers_present")
+            versions = inventory(client, bucket, key)
             if not versions or not locators.issubset(set(versions)):
                 raise Unknown("before_versions_missing")
-            for version in versions:
-                value = head(client, bucket, key, version)
-                if value is None or fence(value):
-                    raise Unknown("before_payload_version_unavailable")
+            if not all(present(client, bucket, key, version) for version in versions):
+                raise Unknown("before_version_unavailable")
             frozen[key] = versions
             if sum(map(len, frozen.values())) > MAX_VERSIONS:
                 raise Unknown("total_version_limit")

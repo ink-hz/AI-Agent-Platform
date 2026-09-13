@@ -70,7 +70,7 @@ def test_head_forbidden_is_unknown(monkeypatch):
 def test_complete_enumeration_and_exact_version_absent(monkeypatch):
     observer = module(monkeypatch)
     result = observer.verify_absence(S3(), "bucket", {"owned": ["old"]})
-    assert result["status"] == "unprotected"
+    assert result["status"] == "absent"
     assert result["checked_versions"] == 1
 
 
@@ -137,9 +137,6 @@ def test_real_owner_pg_readonly_snapshot_and_terminal_gate(api, tmp_path, monkey
         return StoredDerivative(object_key, len(data), hashlib.sha256(data).digest())
 
     api["store"].put_derivative = put_derivative
-    import time
-
-    canary.ledger["deadline"] = time.time() + 15
     canary.prepare()
     repository = observer.Repository(api["db"].dsn)
     ledger = canary.ledger
@@ -168,18 +165,6 @@ def test_real_owner_pg_readonly_snapshot_and_terminal_gate(api, tmp_path, monkey
         row["immutable_locator"] = "version:v1"
     refs = observer.references(api["codec"], graph, aid)
     assert refs
-    import copy
-
-    missing_derived = copy.deepcopy(graph)
-    missing_derived["derivatives"] = []
-    with pytest.raises(observer.Unknown, match="unrecorded_derive_key"):
-        observer.references(api["codec"], missing_derived, aid)
-    future_derived = copy.deepcopy(graph)
-    future_derived["derive_jobs"].append(
-        {"processing_job_id": uuid4(), "derivative_kind": "text", "state": "completed"}
-    )
-    with pytest.raises(observer.Unknown, match="unrecorded_derive_key"):
-        observer.references(api["codec"], future_derived, aid)
 
     class Objects:
         from types import SimpleNamespace
@@ -195,9 +180,7 @@ def test_real_owner_pg_readonly_snapshot_and_terminal_gate(api, tmp_path, monkey
             assert kwargs["Prefix"] in refs
             return {
                 "IsTruncated": False,
-                "Versions": [
-                    {"Key": kwargs["Prefix"], "VersionId": v} for v in ("f1", "f2")
-                ]
+                "Versions": []
                 if self.erased
                 else [{"Key": kwargs["Prefix"], "VersionId": "v1"}],
             }
@@ -212,12 +195,6 @@ def test_real_owner_pg_readonly_snapshot_and_terminal_gate(api, tmp_path, monkey
                     },
                     "HeadObject",
                 )
-            if self.erased and kwargs.get("VersionId") in (None, "f1", "f2"):
-                return {
-                    "ContentLength": 0,
-                    "VersionId": kwargs.get("VersionId", "f2"),
-                    "Metadata": {"platform-erasure-fence": "v1"},
-                }
             if self.erased:
                 raise ClientError(
                     {
@@ -463,118 +440,54 @@ def test_pagination_limit_is_unknown(monkeypatch):
 
 class FenceS3(S3):
     def __init__(self, metadata=None, size=0, marker=False, payload=False):
-        super().__init__(["f1", "f2"] + (["payload"] if payload else []))
-        self.metadata = (
-            {"platform-erasure-fence": "v1"} if metadata is None else metadata
-        )
+        super().__init__(['f1', 'f2'] + (['payload'] if payload else []))
+        self.metadata = {'platform-erasure-fence': 'v1'} if metadata is None else metadata
         self.size, self.marker = size, marker
 
     def list_object_versions(self, **kwargs):
         page = super().list_object_versions(**kwargs)
         if self.marker:
-            page["DeleteMarkers"] = [{"Key": "owned", "VersionId": "marker"}]
+            page['DeleteMarkers'] = [{'Key': 'owned', 'VersionId': 'marker'}]
         return page
 
     def head_object(self, **kwargs):
         self.calls.append(kwargs)
-        version = kwargs.get("VersionId")
+        version = kwargs.get('VersionId')
         if version is None:
             if self.marker:
-                raise ClientError(
-                    {
-                        "Error": {"Code": "404"},
-                        "ResponseMetadata": {"HTTPStatusCode": 404},
-                    },
-                    "HeadObject",
-                )
-            version = "f2"
-        if version in ("f1", "f2"):
-            return {
-                "VersionId": version,
-                "ContentLength": self.size,
-                "Metadata": self.metadata,
-            }
-        if version == "payload" and version in self.versions:
-            return {"VersionId": version, "ContentLength": 3, "Metadata": {}}
-        raise ClientError(
-            {"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}},
-            "HeadObject",
-        )
+                raise ClientError({'Error': {'Code': '404'}, 'ResponseMetadata': {'HTTPStatusCode': 404}}, 'HeadObject')
+            version = 'f2'
+        if version in ('f1', 'f2'):
+            return {'VersionId': version, 'ContentLength': self.size, 'Metadata': self.metadata}
+        if version == 'payload' and version in self.versions:
+            return {'VersionId': version, 'ContentLength': 3, 'Metadata': {}}
+        raise ClientError({'Error': {'Code': '404'}, 'ResponseMetadata': {'HTTPStatusCode': 404}}, 'HeadObject')
 
 
 def test_multiple_exact_fences_and_current_head_required(monkeypatch):
     observer = module(monkeypatch)
     client = FenceS3()
-    result = observer.verify_absence(client, "bucket", {"owned": ["old"]})
-    assert result["status"] == "absent"
-    assert result["verified_fence_versions"] == 2
-    assert any(
-        call.get("Key") == "owned" and "VersionId" not in call for call in client.calls
-    )
-    assert {"f1", "f2", "old"} <= {call.get("VersionId") for call in client.calls}
+    result = observer.verify_absence(client, 'bucket', {'owned': ['old']})
+    assert result['status'] == 'absent'
+    assert result['verified_fence_versions'] == 2
+    assert any(call.get('Key') == 'owned' and 'VersionId' not in call for call in client.calls)
+    assert {'f1', 'f2', 'old'} <= {call.get('VersionId') for call in client.calls}
 
 
-@pytest.mark.parametrize(
-    "metadata,size",
-    [
-        ({}, 0),
-        ({"platform-erasure-fence": "v1", "extra": "x"}, 0),
-        ({"platform-erasure-fence": "v1"}, 1),
-    ],
-)
+@pytest.mark.parametrize('metadata,size', [({}, 0), ({'platform-erasure-fence': 'v1', 'extra': 'x'}, 0), ({'platform-erasure-fence': 'v1'}, 1)])
 def test_unmarked_zero_or_nonempty_marker_is_payload(monkeypatch, metadata, size):
     observer = module(monkeypatch)
-    result = observer.verify_absence(
-        FenceS3(metadata, size), "bucket", {"owned": ["old"]}
-    )
-    assert result["status"] == "remaining"
+    result = observer.verify_absence(FenceS3(metadata, size), 'bucket', {'owned': ['old']})
+    assert result['status'] == 'remaining'
 
 
 def test_current_delete_marker_is_not_write_fence(monkeypatch):
     observer = module(monkeypatch)
-    result = observer.verify_absence(FenceS3(marker=True), "bucket", {"owned": ["old"]})
-    assert result["status"] == "unprotected"
+    result = observer.verify_absence(FenceS3(marker=True), 'bucket', {'owned': ['old']})
+    assert result['status'] == 'unprotected'
 
 
 def test_new_payload_among_fences_fails(monkeypatch):
     observer = module(monkeypatch)
-    result = observer.verify_absence(
-        FenceS3(payload=True), "bucket", {"owned": ["old"]}
-    )
-    assert result["status"] == "remaining"
-
-
-def test_current_head_marker_even_after_marker_free_listing(monkeypatch):
-    observer = module(monkeypatch)
-
-    class LatestMarker(FenceS3):
-        def head_object(self, **kwargs):
-            if "VersionId" not in kwargs:
-                raise ClientError(
-                    {
-                        "Error": {"Code": "404"},
-                        "ResponseMetadata": {"HTTPStatusCode": 404},
-                    },
-                    "HeadObject",
-                )
-            return super().head_object(**kwargs)
-
-    assert (
-        observer.verify_absence(LatestMarker(), "bucket", {"owned": ["old"]})["status"]
-        == "unprotected"
-    )
-
-
-def test_latest_fence_does_not_classify_older_payload(monkeypatch):
-    observer = module(monkeypatch)
-
-    class OlderPayload(FenceS3):
-        def head_object(self, **kwargs):
-            if kwargs.get("VersionId") == "f1":
-                return {"VersionId": "f1", "ContentLength": 0, "Metadata": {}}
-            return super().head_object(**kwargs)
-
-    assert (
-        observer.verify_absence(OlderPayload(), "bucket", {"owned": ["old"]})["status"]
-        == "remaining"
-    )
+    result = observer.verify_absence(FenceS3(payload=True), 'bucket', {'owned': ['old']})
+    assert result['status'] == 'remaining'

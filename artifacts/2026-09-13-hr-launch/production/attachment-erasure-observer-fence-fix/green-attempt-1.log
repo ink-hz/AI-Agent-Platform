@@ -1,0 +1,28 @@
+..F...
+=================================== FAILURES ===================================
+______________ test_complete_enumeration_and_exact_version_absent ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105965390>
+
+    def test_complete_enumeration_and_exact_version_absent(monkeypatch):
+        observer = module(monkeypatch)
+        result = observer.verify_absence(S3(), "bucket", {"owned": ["old"]})
+>       assert result["status"] == "absent"
+E       AssertionError: assert 'unprotected' == 'absent'
+E         
+E         - absent
+E         + unprotected
+
+backend/tests/test_attachment_erasure_observer.py:73: AssertionError
+=============================== warnings summary ===============================
+tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_observer.py::test_complete_enumeration_and_exact_version_absent
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/api_canary.py:425: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+1 failed, 5 passed, 1 warning in 57.80s

@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_attachment_erasure_observer.py",
+    "-q",
+    "-s"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "environment_overrides": {
+    "PYTHONPATH": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend"
+  },
+  "exit_code": 0,
+  "before_sha256": {
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py": "4321f952e7db4f28464f545f46a164b159f24e80a83fa21ea30097ead181bc38",
+    "backend/tests/test_attachment_erasure_observer.py": "5122e8b5457baf9c5390b69523c4fbea88cff37b53bd5a1da38489ca03864e19",
+    "backend/app/attachments/object_keys.py": "7f540f099b2827ad7b4b463cb43c7cc5d0a855fa2461cd0986b291ab9d2c65ad",
+    "backend/app/attachments/worker.py": "2fd97664c91683212acc1a366262af7137380b7b76bf1af5ade445762c23122b",
+    "backend/app/attachments/erasure.py": "fb4f70a6c2b985daa4c1d71226bb1ddc2e6501472da5291b7f25c77a6d13beef",
+    "backend/app/attachments/worker_runtime.py": "6bb74c96ab2551c24d72a1101c1525e63e02897c4aad2c1591f4cb42836c6959"
+  },
+  "after_sha256": {
+    "artifacts/2026-09-13-hr-launch/production/attachment_erasure_observe.py": "4321f952e7db4f28464f545f46a164b159f24e80a83fa21ea30097ead181bc38",
+    "backend/tests/test_attachment_erasure_observer.py": "5122e8b5457baf9c5390b69523c4fbea88cff37b53bd5a1da38489ca03864e19",
+    "backend/app/attachments/object_keys.py": "7f540f099b2827ad7b4b463cb43c7cc5d0a855fa2461cd0986b291ab9d2c65ad",
+    "backend/app/attachments/worker.py": "2fd97664c91683212acc1a366262af7137380b7b76bf1af5ade445762c23122b",
+    "backend/app/attachments/erasure.py": "fb4f70a6c2b985daa4c1d71226bb1ddc2e6501472da5291b7f25c77a6d13beef",
+    "backend/app/attachments/worker_runtime.py": "6bb74c96ab2551c24d72a1101c1525e63e02897c4aad2c1591f4cb42836c6959"
+  },
+  "all_listed_sources_unchanged": true
+}

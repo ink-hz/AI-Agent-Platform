@@ -1,0 +1,82 @@
+SCAN_DIAG 218 NameError name 'hashlib' is not defined
+F
+=================================== FAILURES ===================================
+____________ test_real_owner_pg_readonly_snapshot_and_terminal_gate ____________
+
+api = {'db': HrTestDatabase(), 'owner': UUID('2637ecde-f300-4ff2-b6cf-500f9d6dab29'), 'config': {'owner_id': '2637ecde-f300-...', ...}, 'client': <tests.test_attachment_erasure_production_canary.api.<locals>.Scheduled object at 0x10ad544d0>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9614/test_real_owner_pg_readonly_sn0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1087c0b10>
+
+    def test_real_owner_pg_readonly_snapshot_and_terminal_gate(api, tmp_path, monkeypatch):  # noqa: F811
+        from uuid import uuid4
+    
+        import psycopg
+        from tests.test_attachment_erasure_production_canary import harness
+    
+        observer = module(monkeypatch)
+        canary_module = harness(monkeypatch)
+        canary = canary_module.AttachmentCanary(
+            api["config"], tmp_path / "canary", api["client"]
+        )
+        import hashlib
+    
+        from app.attachments.worker import StoredDerivative
+    
+        def put_derivative(data, *, object_key):
+            api["store"].objects[object_key] = data
+            return StoredDerivative(object_key, len(data), hashlib.sha256(data).digest())
+    
+        api["store"].put_derivative = put_derivative
+        import sys
+        import time
+        from app.attachments.worker import AttachmentProcessor
+        original_scan = AttachmentProcessor._scan
+        def debug_scan(self, job):
+            def trace(frame, event, arg):
+                if event == "exception" and frame.f_code.co_filename.endswith("/attachments/worker.py"):
+                    print("SCAN_DIAG", frame.f_lineno, arg[0].__name__, str(arg[1]))
+                return trace
+            prior = sys.gettrace()
+            sys.settrace(trace)
+            try:
+                return original_scan(self, job)
+            finally:
+                sys.settrace(prior)
+        monkeypatch.setattr(AttachmentProcessor, "_scan", debug_scan)
+        canary.ledger["deadline"] = time.time() + 5
+>       canary.prepare()
+
+backend/tests/test_attachment_erasure_observer.py:157: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py:187: in prepare
+    metadata = self.request("GET", "/api/v1/attachments/" + aid)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <attachment_canary.AttachmentCanary object at 0x10ad11a90>
+method = 'GET'
+path = '/api/v1/attachments/e08fe1b5-c928-4d06-b397-977d22a7dbd8', key = None
+body = None, content = None, accepted = (200,)
+
+    def request(
+        self, method, path, *, key=None, body=None, content=None, accepted=(200,)
+    ):
+        remaining = (
+            self.readonly_until
+            if self.readonly_until is not None
+            else self.ledger["deadline"]
+        ) - time.time()
+        if remaining <= 0:
+>           raise CanaryError("deadline_exhausted")
+E           api_canary.CanaryError: deadline_exhausted
+
+artifacts/2026-09-13-hr-launch/production/attachment_erasure_canary.py:46: CanaryError
+=============================== warnings summary ===============================
+tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+1 failed, 1 warning in 6.23s
