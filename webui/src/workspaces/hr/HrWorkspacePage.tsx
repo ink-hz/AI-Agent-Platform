@@ -95,7 +95,7 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
       renderTurnContext={turnId=><HrTurnResults turnId={turnId} data={results} readOnly={props.account.hard_stale_read_only} onDraft={(value,id)=>void fill(value,id)}/>}
     /></WorkspaceErrorBoundary></div>
     {props.positionId?<HrPositionWorkflow key={props.positionId} account={props.account} positionId={props.positionId} section={props.section} draftError={draftError} api={api} r12={r12} onDraft={(value,id)=>void fill(value,id)}/>
-      :props.positions?<HrPositionIndex account={props.account} api={api}/>:null}
+      :props.positions?<HrPositionIndex account={props.account} api={api} onSelect={value=>{choose(value);navigate(chatHref);}}/>:null}
     {panoramaVisited.current&&<div className="hr-workspace-panorama-panel" hidden={!panoramaActive} aria-hidden={!panoramaActive?"true":undefined}><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligence}/>{intelligenceError&&<p role="alert">{intelligenceError}</p>}</WorkspaceErrorBoundary></div>}
     {selectedPosition&&<HrPositionDetailsDrawer key={selectedPosition.positionId} api={r12} csrfToken={props.account.csrf_token} detail={position.detail??selectedPosition} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}

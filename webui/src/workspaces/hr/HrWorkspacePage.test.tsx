@@ -347,6 +347,28 @@ describe("HrWorkspacePage", () => {
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
+  it("returns from the position directory with the selected position and unsent draft", async () => {
+    const client = vi.mocked(createHrApi).getMockImplementation()!("csrf");
+    const position = await client.position("44444444-4444-4444-8444-444444444444");
+    vi.mocked(client.listPositions).mockResolvedValue({ items: [position], nextCursor: null });
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
+    const textarea = container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "保留岗位讨论草稿");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    window.history.replaceState({}, "", "/hr/positions");
+    await act(async () => root.render(<HrWorkspacePage account={account} positions />));
+    const resume = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find(button => button.textContent === "在主对话中继续");
+    expect(resume).toBeDefined();
+    await act(async () => resume!.click());
+    expect(window.location.pathname).toBe("/hr/conversations/c-7");
+    expect(container.querySelector(".hr-position-picker-trigger")?.textContent).toContain(position.title);
+    expect(textarea.value).toBe("保留岗位讨论草稿");
+    expect(startConversation).not.toHaveBeenCalled();
+  });
+
   it("keeps the current conversation as the chat navigation target", async () => {
     await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
     await act(async () => root.render(<HrWorkspacePage account={account} positions />));
