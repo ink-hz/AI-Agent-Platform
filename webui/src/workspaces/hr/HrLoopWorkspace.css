@@ -95,7 +95,7 @@
   min-height: 100vh;
 }
 .hr-loop-eyebrow {
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   color: #507267;
 }
@@ -294,7 +294,7 @@
   overflow-wrap: anywhere;
 }
 .hr-loop-result > span {
-  font-size: 11px;
+  font-size: 12px;
   color: #557363;
 }
 .hr-loop-result .message-markdown {

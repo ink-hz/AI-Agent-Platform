@@ -92,24 +92,50 @@ describe("Executive Operations visual contract", () => {
     }
   });
 
+  it.each(["HrLoopWorkspace.css", "hrResearch.css", "hrCompanyIntelligence.css"])(
+    "keeps %s text at the approved minimum",
+    (file) => {
+      const css = readFileSync(new URL(`./workspaces/hr/${file}`, import.meta.url), "utf8");
+      const declarations = [...css.matchAll(/font-size:\s*([^;}]+)/g)].map((match) => match[1].trim());
+      expect(declarations.length).toBeGreaterThan(0);
+      for (const declaration of declarations) {
+        expect(declaration).toMatch(/^(?:[\d.]+px|clamp\([\d.]+px,\s*[\d.]+vw,\s*[\d.]+px\))$/);
+        const sizes = [...declaration.matchAll(/([\d.]+)px/g)].map((match) => Number(match[1]));
+        expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11.5);
+      }
+    },
+  );
+
   it("renders HR as a calm full-height recruiting workspace instead of a card dashboard", () => {
     expect(rule(".app.is-hr-workspace-shell")).toContain("height: 100dvh");
     expect(rule(".page.is-hr-workspace")).toContain("width: 100%");
     expect(rule(".page.is-hr-workspace")).toContain("padding: 0");
     expect(rule(".app.is-hr-workspace-shell > .topbar")).toContain("display: none");
-    expect(rule(".hr-workspace-shell")).toContain("background: #eef1f4");
-    expect(rule(".hr-workspace-topbar")).toContain("backdrop-filter: blur(20px) saturate(135%)");
+    expect(rule(".hr-workspace-shell")).toContain("--hr-sidebar-width: 248px");
+    expect(rule(".hr-workspace-shell")).toContain("radial-gradient(circle at 8% 5%");
+    expect(rule(".hr-workspace-shell")).toContain("linear-gradient(145deg, #f4faff 0%, #edf6ff 45%, #eef2ff 100%)");
+    expect(rule(".hr-workspace-topbar")).toContain("backdrop-filter: blur(22px) saturate(138%)");
     expect(rule(".hr-workspace-body")).toContain("min-height: 0");
     expect(rule(".hr-workspace-chat-panel,.hr-workspace-position-panel")).toContain("height: 100%");
     expect(rule(".hr-workspace-chat-panel,.hr-workspace-position-panel")).toContain("min-height: 0");
     expect(styles).toContain(".hr-workspace-position-panel { overflow-x: hidden; overflow-y: auto;");
-    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"]')).toContain("grid-template-columns: 268px minmax(0, 1fr)");
-    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .brain-workspace-main')).toContain("background: #f7f8fa");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"]')).toContain("grid-template-columns: var(--hr-sidebar-width,248px) minmax(0, 1fr)");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .brain-workspace-main')).toContain("background: transparent");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .brain-workspace-main')).toContain("min-height: 0");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-scroll-region')).toContain("overflow-y: auto");
     expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-workspace-grid')).toContain("grid-template-columns: minmax(0, 1fr) 296px");
-    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-page')).toContain("max-width: 960px");
-    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer')).toContain("bottom: 0");
-    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea')).toContain("min-height: clamp(320px,38vh,420px)");
-    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments')).toContain("border-top: 1px solid #dbe3ea");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-page')).toContain("max-width: none");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-page')).toContain("width: 100%");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-page')).toContain("padding: 0 28px");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer')).toContain("position: relative");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer')).toContain("flex: 0 0 auto");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer')).toContain("bottom: auto");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea')).toContain("min-height: 96px");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea')).toContain("max-height: 220px");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-composer textarea')).toContain("overflow-y: auto");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments')).toContain("grid-column: 1");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments')).toContain("grid-row: 2");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .agent-direct-attachments')).toContain("min-width: 0");
     expect(rule(".hr-position-grid")).toContain("grid-template-columns: 1fr");
     expect(styles).toContain('@media (max-width: 1260px)');
     const mobile = blockContaining("@media screen and (max-width: 720px)", ".hr-workspace-topbar");
@@ -119,18 +145,22 @@ describe("Executive Operations visual contract", () => {
     expect(mobile).toContain("grid-column: 1 / -1");
     expect(mobile).toContain("grid-template-columns: repeat(3,minmax(0,1fr))");
     expect(mobile).toContain(".hr-workspace-nav a { min-width: 0;");
+    expect(mobile).toContain('.agent-use-workspace[data-agent-id="hr-bot"] { display: block; }');
+    expect(mobile).toContain('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-page { padding: 0 14px; }');
     expect(mobile).toContain(".hr-position-card { grid-template-columns: 1fr;");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce) { .hr-panorama-run-pulse { animation: none; } }");
   });
 
   it("keeps the position conversation primary with on-demand responsive controls", () => {
+    // Retained legacy CSS contract; current position-workflow interaction is covered separately.
+    expect(rule(".hr-workspace-shell")).toContain("--hr-sidebar-width: 248px");
     expect(rule(".hr-position-workspace")).toContain("height: 100%");
     expect(rule(".hr-position-workspace")).toContain("min-height: 0");
     expect(rule(".hr-position-workspace")).toContain("overflow: hidden");
     expect(rule(".hr-position-bar")).toContain("height: 64px");
     expect(rule(".hr-position-chat-surface")).toContain("flex: 1");
     expect(rule(".hr-position-chat-surface")).toContain("min-height: 0");
-    expect(rule(".hr-position-chat-surface > .agent-use-workspace.is-focused")).toContain("grid-template-columns: 248px minmax(0,1fr)");
+    expect(rule(".hr-position-chat-surface > .agent-use-workspace.is-focused")).toContain("grid-template-columns: var(--hr-sidebar-width,248px) minmax(0,1fr)");
     expect(rule(".hr-position-details-drawer")).toContain("position: absolute");
     expect(rule(".hr-position-details-drawer")).toContain("right: 0");
     expect(rule(".hr-position-task-popover")).toContain("bottom: calc(100% + 10px)");
@@ -152,6 +182,7 @@ describe("Executive Operations visual contract", () => {
       "@media screen and (max-width: 720px)",
       ".hr-position-details-drawer",
     );
+    expect(mobile).toContain(".hr-position-chat-surface > .agent-use-workspace.is-focused { display: block; }");
     expect(mobile).toContain(".hr-position-details-drawer { top: auto; left: 0; width: 100%;");
     expect(mobile).toContain("border-radius: 16px 16px 0 0");
     expect(rule(".hr-drawer-backdrop")).toContain("position: fixed");
