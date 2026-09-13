@@ -1,0 +1,9 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_production_worker_lease_heartbeat_keeps_long_local_model_call_healthy __
+backend/tests/test_hr_agent_worker_health.py:157: in test_production_worker_lease_heartbeat_keeps_long_local_model_call_healthy
+    assert result["ready"] and result["worker"]["pid"] == process.pid
+E   assert (False)
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_worker_health.py::test_production_worker_lease_heartbeat_keeps_long_local_model_call_healthy
+1 failed in 4.96s

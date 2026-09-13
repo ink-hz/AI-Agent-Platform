@@ -1,0 +1,165 @@
+diff --git a/backend/app/control_plane/authorization.py b/backend/app/control_plane/authorization.py
+index 451201e..2144985 100644
+--- a/backend/app/control_plane/authorization.py
++++ b/backend/app/control_plane/authorization.py
+@@ -352,6 +352,7 @@ _OWNER_ROUTES = frozenset({
+     ("GET", "/api/operations/conversation-metrics"),
+     ("GET", "/api/v1/manage/users"),
+     ("GET", "/api/v1/manage/system-health"),
++    ("GET", "/api/v1/manage/hr-readiness"),
+     ("GET", "/api/attachments/content/{ticket}"),
+     ("POST", "/api/attachments/{attachment_id}/ticket"),
+     ("POST", "/api/review/issues"),
+diff --git a/backend/app/control_plane/middleware.py b/backend/app/control_plane/middleware.py
+index 9ab40e9..593b1cd 100644
+--- a/backend/app/control_plane/middleware.py
++++ b/backend/app/control_plane/middleware.py
+@@ -35,6 +35,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
+         "/api/v1/internal/session/subject",
+         "/api/v1/auth/logout",
+         "/api/v1/manage/system-health",
++        "/api/v1/manage/hr-readiness",
+     }
+ )
+ _WORKER_RUN_ROUTE = re.compile(
+diff --git a/backend/app/control_plane/routes_auth.py b/backend/app/control_plane/routes_auth.py
+index 052f169..613bfd6 100644
+--- a/backend/app/control_plane/routes_auth.py
++++ b/backend/app/control_plane/routes_auth.py
+@@ -484,6 +484,30 @@ def build_auth_router(
+         )
+         return response
+ 
++    @router.get("/api/v1/manage/hr-readiness")
++    async def hr_readiness(request: Request):
++        from starlette.concurrency import run_in_threadpool
++
++        from app.hr_agent.readiness import unavailable
++
++        context: AuthContext = request.state.auth_context
++        if context.role is not Role.PLATFORM_OWNER:
++            raise HTTPException(403, "platform owner required")
++        audit = getattr(request.app.state, "system_health_audit", None)
++        if audit is None:
++            raise HTTPException(503, "required audit unavailable")
++        try:
++            await run_in_threadpool(audit, context)
++        except Exception:
++            raise HTTPException(503, "required audit unavailable") from None
++        probe = getattr(request.app.state, "hr_readiness", None)
++        try:
++            payload = await run_in_threadpool(probe.check) if probe is not None else unavailable()
++        except Exception:
++            payload = unavailable("readiness_unavailable")
++        return JSONResponse(payload, status_code=200 if payload["ready"] else 503,
++                            headers=_NO_STORE)
++
+     @router.get("/api/v1/manage/system-health")
+     async def system_health(request: Request) -> dict[str, Any]:
+         context: AuthContext = request.state.auth_context
+diff --git a/backend/app/hr_agent/worker.py b/backend/app/hr_agent/worker.py
+index 8889bc3..1fc4ee9 100644
+--- a/backend/app/hr_agent/worker.py
++++ b/backend/app/hr_agent/worker.py
+@@ -22,6 +22,7 @@ def run_worker(
+     worker_id=None,
+     poll_seconds=1.0,
+     runner=run_work,
++    health=None,
+ ):
+     stop_event = stop_event or threading.Event()
+     worker_id = worker_id or "hr-" + str(uuid4())
+@@ -44,6 +45,8 @@ def run_worker(
+             fence = repository.claim(worker_id, repository.settings.lease_seconds)
+         except CutoverRejected:
+             fence = None
++        if health is not None:
++            health.progress()
+         if fence is None:
+             stop_event.wait(poll_seconds)
+             continue
+@@ -89,6 +92,15 @@ def run_worker(
+ 
+ 
+ def main():
++    if sys.argv[1:] == ["healthcheck"]:
++        import json
++
++        from .worker_health import check_worker
++
++        report = check_worker()
++        print(json.dumps(report))
++        return 0 if report["ready"] else 1
++
+     import psycopg
+ 
+     from app.control_plane.dsn import validate_control_dsn
+@@ -124,7 +136,16 @@ def main():
+         stop = threading.Event()
+         for signum in (signal.SIGTERM, signal.SIGINT):
+             signal.signal(signum, lambda *_: stop.set())
+-        run_worker(repository, model, resources, stop_event=stop)
++        from .readiness import HrReadiness
++        from .worker_health import WorkerHealth
++
++        def readiness_connect():
++            return psycopg.connect(dsn, connect_timeout=1,
++                                   options="-c statement_timeout=1500 -c lock_timeout=500")
++
++        readiness = HrReadiness(settings, os.environ, readiness_connect, role="worker")
++        with WorkerHealth(readiness, max_age=settings.heartbeat_seconds * 3) as health:
++            run_worker(repository, model, resources, stop_event=stop, health=health)
+         return 0
+     except Exception:  # noqa: BLE001 - failed heartbeat or startup must stop safely
+         # Never print exception strings, DSNs, provider bodies, or prompts.
+diff --git a/backend/app/main.py b/backend/app/main.py
+index e0c8896..b8aac8f 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -1537,6 +1537,7 @@ def create_app(
+     from .hr_agent.routes import build_hr_agent_router
+     from .hr_agent.service import HrAgentService
+ 
++    hr_database_url = None
+     if hr_agent_service is None and config.hr_agent_settings.enabled:
+         if not identity_enabled:
+             raise RuntimeError("HR Agent requires platform identity")
+@@ -1599,6 +1600,21 @@ def create_app(
+             ready=False,
+         )
+     app.state.hr_agent_service = hr_agent_service
++    app.state.hr_readiness = None
++    if config.hr_agent_settings.enabled and hr_database_url is not None:
++        from .hr_agent.readiness import HrReadiness
++
++        def hr_readiness_connection():
++            return psycopg.connect(
++                hr_database_url, connect_timeout=1,
++                options="-c statement_timeout=1500 -c lock_timeout=500",
++            )
++
++        app.state.hr_readiness = HrReadiness(
++            config.hr_agent_settings, os.environ, hr_readiness_connection,
++            assembled=(hr_agent_service.ready and hr_agent_service.access is not None
++                       and hr_agent_service.repository is not None),
++        )
+     app.include_router(build_hr_agent_router(hr_agent_service))
+ 
+     async def require_hr_access(request: Request, *, writable: bool = False):
+diff --git a/deploy/cloud/compose.yaml b/deploy/cloud/compose.yaml
+index 75295fe..d6d46c1 100644
+--- a/deploy/cloud/compose.yaml
++++ b/deploy/cloud/compose.yaml
+@@ -184,7 +184,11 @@ services:
+       platform-postgres:
+         condition: service_healthy
+     healthcheck:
+-      disable: true
++      test: ["CMD", "python", "-m", "app.hr_agent.worker", "healthcheck"]
++      interval: 15s
++      timeout: 8s
++      start_period: 30s
++      retries: 2
+ 
+   platform-hr-web-worker:
+     image: ${PLATFORM_IMAGE}

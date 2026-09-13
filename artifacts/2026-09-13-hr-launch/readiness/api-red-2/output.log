@@ -1,0 +1,88 @@
+FFFFFFF                                                                  [100%]
+=================================== FAILURES ===================================
+____________ test_dynamic_schema_phase_and_integrity_are_rechecked _____________
+backend/tests/test_hr_agent_readiness.py:34: in test_dynamic_schema_phase_and_integrity_are_rechecked
+    probe = monitor(settings, env, db.connection)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_agent_readiness.py:25: in monitor
+    assert importlib.util.find_spec("app.hr_agent.readiness") is not None, "dynamic HR readiness is missing"
+E   AssertionError: dynamic HR readiness is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x102b50180>('app.hr_agent.readiness')
+E    +    where <function find_spec at 0x102b50180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+____ test_runtime_drift_does_not_become_a_new_loaded_configuration[profile] ____
+backend/tests/test_hr_agent_readiness.py:56: in test_runtime_drift_does_not_become_a_new_loaded_configuration
+    probe = monitor(settings, env, db.connection)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_agent_readiness.py:25: in monitor
+    assert importlib.util.find_spec("app.hr_agent.readiness") is not None, "dynamic HR readiness is missing"
+E   AssertionError: dynamic HR readiness is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x102b50180>('app.hr_agent.readiness')
+E    +    where <function find_spec at 0x102b50180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+___ test_runtime_drift_does_not_become_a_new_loaded_configuration[knowledge] ___
+backend/tests/test_hr_agent_readiness.py:56: in test_runtime_drift_does_not_become_a_new_loaded_configuration
+    probe = monitor(settings, env, db.connection)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_agent_readiness.py:25: in monitor
+    assert importlib.util.find_spec("app.hr_agent.readiness") is not None, "dynamic HR readiness is missing"
+E   AssertionError: dynamic HR readiness is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x102b50180>('app.hr_agent.readiness')
+E    +    where <function find_spec at 0x102b50180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+__ test_runtime_drift_does_not_become_a_new_loaded_configuration[permission] ___
+backend/tests/test_hr_agent_readiness.py:56: in test_runtime_drift_does_not_become_a_new_loaded_configuration
+    probe = monitor(settings, env, db.connection)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_agent_readiness.py:25: in monitor
+    assert importlib.util.find_spec("app.hr_agent.readiness") is not None, "dynamic HR readiness is missing"
+E   AssertionError: dynamic HR readiness is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x102b50180>('app.hr_agent.readiness')
+E    +    where <function find_spec at 0x102b50180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+_ test_runtime_drift_does_not_become_a_new_loaded_configuration[uninitialized] _
+backend/tests/test_hr_agent_readiness.py:56: in test_runtime_drift_does_not_become_a_new_loaded_configuration
+    probe = monitor(settings, env, db.connection)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_agent_readiness.py:25: in monitor
+    assert importlib.util.find_spec("app.hr_agent.readiness") is not None, "dynamic HR readiness is missing"
+E   AssertionError: dynamic HR readiness is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x102b50180>('app.hr_agent.readiness')
+E    +    where <function find_spec at 0x102b50180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+_ test_database_exception_is_safe_and_no_new_probe_can_certify_missing_assembly _
+backend/tests/test_hr_agent_readiness.py:77: in test_database_exception_is_safe_and_no_new_probe_can_certify_missing_assembly
+    probe = monitor(settings, env, broken)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_agent_readiness.py:25: in monitor
+    assert importlib.util.find_spec("app.hr_agent.readiness") is not None, "dynamic HR readiness is missing"
+E   AssertionError: dynamic HR readiness is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x102b50180>('app.hr_agent.readiness')
+E    +    where <function find_spec at 0x102b50180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+____ test_owner_audit_route_reports_live_failures_without_changing_liveness ____
+backend/tests/test_hr_agent_readiness.py:86: in test_owner_audit_route_reports_live_failures_without_changing_liveness
+    probe = monitor(settings, env, db.connection)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_hr_agent_readiness.py:25: in monitor
+    assert importlib.util.find_spec("app.hr_agent.readiness") is not None, "dynamic HR readiness is missing"
+E   AssertionError: dynamic HR readiness is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x102b50180>('app.hr_agent.readiness')
+E    +    where <function find_spec at 0x102b50180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_readiness.py::test_dynamic_schema_phase_and_integrity_are_rechecked
+FAILED backend/tests/test_hr_agent_readiness.py::test_runtime_drift_does_not_become_a_new_loaded_configuration[profile]
+FAILED backend/tests/test_hr_agent_readiness.py::test_runtime_drift_does_not_become_a_new_loaded_configuration[knowledge]
+FAILED backend/tests/test_hr_agent_readiness.py::test_runtime_drift_does_not_become_a_new_loaded_configuration[permission]
+FAILED backend/tests/test_hr_agent_readiness.py::test_runtime_drift_does_not_become_a_new_loaded_configuration[uninitialized]
+FAILED backend/tests/test_hr_agent_readiness.py::test_database_exception_is_safe_and_no_new_probe_can_certify_missing_assembly
+FAILED backend/tests/test_hr_agent_readiness.py::test_owner_audit_route_reports_live_failures_without_changing_liveness
+7 failed in 6.36s

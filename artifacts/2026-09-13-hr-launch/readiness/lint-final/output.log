@@ -1,0 +1,134 @@
+{
+  "baseline": [
+    {
+      "file": "backend/app/main.py",
+      "code": "I001",
+      "message": "Import block is un-sorted or un-formatted"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "F401",
+      "message": "`uuid.uuid4` imported but unused"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "TRY201",
+      "message": "Use `raise` without specifying exception name"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "DTZ011",
+      "message": "`datetime.date.today()` used"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "F841",
+      "message": "Local variable `candidate_task_validator` is assigned to but never used"
+    },
+    {
+      "file": "backend/app/control_plane/routes_auth.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/control_plane/routes_auth.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/control_plane/routes_auth.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/control_plane/middleware.py",
+      "code": "PIE810",
+      "message": "Call `startswith` once with a `tuple`"
+    },
+    {
+      "file": "backend/app/control_plane/middleware.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/control_plane/middleware.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    }
+  ],
+  "current": [
+    {
+      "file": "backend/app/main.py",
+      "code": "I001",
+      "message": "Import block is un-sorted or un-formatted"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "F401",
+      "message": "`uuid.uuid4` imported but unused"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "TRY201",
+      "message": "Use `raise` without specifying exception name"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "DTZ011",
+      "message": "`datetime.date.today()` used"
+    },
+    {
+      "file": "backend/app/main.py",
+      "code": "F841",
+      "message": "Local variable `candidate_task_validator` is assigned to but never used"
+    },
+    {
+      "file": "backend/app/control_plane/routes_auth.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/control_plane/routes_auth.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/control_plane/routes_auth.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/control_plane/middleware.py",
+      "code": "PIE810",
+      "message": "Call `startswith` once with a `tuple`"
+    },
+    {
+      "file": "backend/app/control_plane/middleware.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/app/control_plane/middleware.py",
+      "code": "BLE001",
+      "message": "Do not catch blind exception: `Exception`"
+    },
+    {
+      "file": "backend/tests/test_hr_agent_readiness.py",
+      "code": "PIE807",
+      "message": "Prefer `dict` over useless lambda"
+    }
+  ],
+  "new_diagnostics": [
+    "{\"code\": \"PIE807\", \"file\": \"backend/tests/test_hr_agent_readiness.py\", \"message\": \"Prefer `dict` over useless lambda\"}"
+  ]
+}

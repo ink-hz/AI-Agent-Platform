@@ -1,0 +1,76 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_____ test_live_process_binding_and_dependency_failures_are_checked[stale] _____
+backend/tests/test_hr_agent_worker_health.py:41: in test_live_process_binding_and_dependency_failures_are_checked
+    check = checker()
+            ^^^^^^^^^
+backend/tests/test_hr_agent_worker_health.py:33: in checker
+    assert importlib.util.find_spec("app.hr_agent.worker_health") is not None, "actual worker healthcheck is missing"
+E   AssertionError: actual worker healthcheck is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x1017a8180>('app.hr_agent.worker_health')
+E    +    where <function find_spec at 0x1017a8180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+_____ test_live_process_binding_and_dependency_failures_are_checked[dead] ______
+backend/tests/test_hr_agent_worker_health.py:41: in test_live_process_binding_and_dependency_failures_are_checked
+    check = checker()
+            ^^^^^^^^^
+backend/tests/test_hr_agent_worker_health.py:33: in checker
+    assert importlib.util.find_spec("app.hr_agent.worker_health") is not None, "actual worker healthcheck is missing"
+E   AssertionError: actual worker healthcheck is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x1017a8180>('app.hr_agent.worker_health')
+E    +    where <function find_spec at 0x1017a8180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+_____ test_live_process_binding_and_dependency_failures_are_checked[nonce] _____
+backend/tests/test_hr_agent_worker_health.py:41: in test_live_process_binding_and_dependency_failures_are_checked
+    check = checker()
+            ^^^^^^^^^
+backend/tests/test_hr_agent_worker_health.py:33: in checker
+    assert importlib.util.find_spec("app.hr_agent.worker_health") is not None, "actual worker healthcheck is missing"
+E   AssertionError: actual worker healthcheck is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x1017a8180>('app.hr_agent.worker_health')
+E    +    where <function find_spec at 0x1017a8180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+____ test_live_process_binding_and_dependency_failures_are_checked[profile] ____
+backend/tests/test_hr_agent_worker_health.py:41: in test_live_process_binding_and_dependency_failures_are_checked
+    check = checker()
+            ^^^^^^^^^
+backend/tests/test_hr_agent_worker_health.py:33: in checker
+    assert importlib.util.find_spec("app.hr_agent.worker_health") is not None, "actual worker healthcheck is missing"
+E   AssertionError: actual worker healthcheck is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x1017a8180>('app.hr_agent.worker_health')
+E    +    where <function find_spec at 0x1017a8180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+___ test_live_process_binding_and_dependency_failures_are_checked[database] ____
+backend/tests/test_hr_agent_worker_health.py:41: in test_live_process_binding_and_dependency_failures_are_checked
+    check = checker()
+            ^^^^^^^^^
+backend/tests/test_hr_agent_worker_health.py:33: in checker
+    assert importlib.util.find_spec("app.hr_agent.worker_health") is not None, "actual worker healthcheck is missing"
+E   AssertionError: actual worker healthcheck is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x1017a8180>('app.hr_agent.worker_health')
+E    +    where <function find_spec at 0x1017a8180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+________ test_missing_worker_state_cannot_pass_by_checking_environment _________
+backend/tests/test_hr_agent_worker_health.py:72: in test_missing_worker_state_cannot_pass_by_checking_environment
+    result = checker()(tmp_path / "missing.json")
+             ^^^^^^^^^
+backend/tests/test_hr_agent_worker_health.py:33: in checker
+    assert importlib.util.find_spec("app.hr_agent.worker_health") is not None, "actual worker healthcheck is missing"
+E   AssertionError: actual worker healthcheck is missing
+E   assert None is not None
+E    +  where None = <function find_spec at 0x1017a8180>('app.hr_agent.worker_health')
+E    +    where <function find_spec at 0x1017a8180> = <module 'importlib.util' (frozen)>.find_spec
+E    +      where <module 'importlib.util' (frozen)> = importlib.util
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_worker_health.py::test_live_process_binding_and_dependency_failures_are_checked[stale]
+FAILED backend/tests/test_hr_agent_worker_health.py::test_live_process_binding_and_dependency_failures_are_checked[dead]
+FAILED backend/tests/test_hr_agent_worker_health.py::test_live_process_binding_and_dependency_failures_are_checked[nonce]
+FAILED backend/tests/test_hr_agent_worker_health.py::test_live_process_binding_and_dependency_failures_are_checked[profile]
+FAILED backend/tests/test_hr_agent_worker_health.py::test_live_process_binding_and_dependency_failures_are_checked[database]
+FAILED backend/tests/test_hr_agent_worker_health.py::test_missing_worker_state_cannot_pass_by_checking_environment
+6 failed in 0.10s

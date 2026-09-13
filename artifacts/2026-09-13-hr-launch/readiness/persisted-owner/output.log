@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_owner_endpoint_uses_persisted_session_role_and_audit ___________
+backend/tests/test_hr_agent_readiness.py:204: in test_owner_endpoint_uses_persisted_session_role_and_audit
+    completed = asyncio.run(auth.complete_qr(started.state, "local-code"))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend/app/control_plane/auth.py:681: in complete_qr
+    return await self._complete(
+backend/app/control_plane/auth.py:651: in _complete
+    raise AuthenticationError("login unavailable")
+E   app.control_plane.auth.AuthenticationError: login unavailable
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_agent_readiness.py::test_owner_endpoint_uses_persisted_session_role_and_audit
+1 failed in 1.64s

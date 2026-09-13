@@ -1,0 +1,27 @@
+{
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "head": "19f2714a1fb72e9748582d3e896e182da954973b",
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_agent_readiness.py::test_owner_endpoint_uses_persisted_session_role_and_audit",
+    "-q",
+    "--tb=short"
+  ],
+  "started_at": "2026-09-13T02:33:31.482776+00:00",
+  "sources": {
+    "backend/app/hr_agent/readiness.py": "640e78cc1e9f3543173866a32a1b1a429827c9fad99dca8f255beca1f73b440f",
+    "backend/app/hr_agent/worker_health.py": "5042c48bfeb70fa9cc67a7184d1045d7a8646c1250ae88cf5ddb0dfe9e3fe5e3",
+    "backend/app/hr_agent/worker.py": "b10c582fd377cb18fa723d7db457e1f5d201463dc79f0506b2eb36f863da1d01",
+    "backend/app/main.py": "08f7015b0aa0509be5e5e4bd943633d17ae775b0057eb8eeee04394aa2580ed8",
+    "backend/app/control_plane/routes_auth.py": "a76a5691492ee4b3d462c33f662605221ed7354e3afe775f9c0d4934cd48503e",
+    "backend/app/control_plane/authorization.py": "251b6028d8095222e3c3ccfcbb527e89c124b5fd853b8826901a2f72fb6485fd",
+    "backend/app/control_plane/middleware.py": "55e2709c84cf369141d70862bcaa22ae588ee7d4e6747d5196761e830e22ff99",
+    "deploy/cloud/compose.yaml": "734a4b0cd283219f63d9d6802ae8d9a7c9623fc0e97230edb20c2f2c89e5d206",
+    "backend/tests/test_hr_agent_readiness.py": "132af7e571540d5e6bed2654971b77e7de9707f2f11077ab91f596f4719da669",
+    "backend/tests/test_hr_agent_worker_health.py": "1efc5ee401bd5f34b859db7ed6f8a79f39d4f9f2a64181ff310719d95b5f4d5b"
+  },
+  "exit_code": 1,
+  "finished_at": "2026-09-13T02:33:33.396203+00:00"
+}
