@@ -1,0 +1,537 @@
+name: orbbec-agent-platform
+
+services:
+  platform-postgres:
+    image: postgres:17.6-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent_platform
+      POSTGRES_USER: platform_owner
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-owner-password
+    volumes:
+      - /data/orbbec-agent-platform/postgres:/var/lib/postgresql/data
+      - platform-postgres-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.2
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform_owner -d agent_platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  platform-api:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        PLATFORM_DINGTALK_APP_KEY="$(/bin/cat /run/secrets/dingtalk-app-key)"
+        PLATFORM_DINGTALK_AGENT_ID="$(/bin/cat /run/secrets/dingtalk-agent-id)"
+        PLATFORM_DINGTALK_CORP_ID="$(/bin/cat /run/secrets/dingtalk-corp-id)"
+        test -n "$$PLATFORM_DINGTALK_APP_KEY"
+        test -n "$$PLATFORM_DINGTALK_AGENT_ID"
+        test -n "$$PLATFORM_DINGTALK_CORP_ID"
+        export PLATFORM_DINGTALK_APP_KEY PLATFORM_DINGTALK_AGENT_ID PLATFORM_DINGTALK_CORP_ID
+        exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8080 --no-proxy-headers --no-access-log
+    environment: &platform-api-environment
+      PLATFORM_DEPLOYMENT_MODE: cloud-replica
+      PLATFORM_CLOUD_AUTH_MODE: dingtalk
+      PLATFORM_HOST: 127.0.0.1
+      PLATFORM_PORT: "8080"
+      PLATFORM_REGISTRY_PATH: /app/registry.yaml
+      PLATFORM_METABOT_CONTRACT_PATH: /app/metabot.runtime-contract.json
+      PLATFORM_STATIC_DIR: /app/backend/app/static
+      PLATFORM_FLYWHEEL_ENABLED: "0"
+      PLATFORM_REVIEW_ENABLED: "0"
+      PLATFORM_ATTACHMENT_ENABLED: "0"
+      PLATFORM_CONVERSATION_ATTACHMENT_ENABLED: "1"
+      PLATFORM_ATTACHMENT_S3_ENDPOINT: http://platform-minio:9000
+      PLATFORM_ATTACHMENT_S3_BUCKET: orbbec-agent-attachments
+      PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE: /run/secrets/attachment-s3-access-key
+      PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE: /run/secrets/attachment-s3-secret-key
+      PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE: /run/secrets/control-database-url
+      PLATFORM_TRUSTED_PROXY_CIDRS: "172.30.0.3/32"
+      PLATFORM_IDENTITY_MODE: production
+      PLATFORM_PUBLIC_BASE_URL: https://agent.orbbec.com.cn
+      PLATFORM_ROUTE_PREFIX: /
+      PLATFORM_COOKIE_NAME: __Host-platform_session
+      PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED: "1"
+      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/office-recipient/platform-office-recipient-bearer
+      PLATFORM_CONTROL_DATABASE_URL_FILE: /run/secrets/control-database-url
+      PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE: /run/secrets/control-audit-database-url
+      PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
+      PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE: /run/secrets/dingtalk-in-client-apps.json
+      PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
+      PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /run/secrets/identity-hmac-keyring
+      PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE: /run/secrets/rate-limit-hmac-keyring
+      PLATFORM_EXECUTION_RELAY_ENABLED: "1"
+      PLATFORM_DIRECT_AGENT_ENABLED: "${PLATFORM_DIRECT_AGENT_ENABLED:-0}"
+      PLATFORM_HR_WEB_WORKER_ENABLED: "${PLATFORM_HR_WEB_WORKER_ENABLED:-0}"
+      PLATFORM_HR_ROLE_PACKAGE_ROOT: /data/agent-platform/hr-role-packages
+      PLATFORM_HR_ROLE_PACKAGE_COMMIT: "${PLATFORM_HR_ROLE_PACKAGE_COMMIT:-}"
+      PLATFORM_HR_KNOWLEDGE_ROOT: "${PLATFORM_HR_KNOWLEDGE_ROOT:-}"
+      PLATFORM_HR_KNOWLEDGE_AGENT_ROOT: "${PLATFORM_HR_KNOWLEDGE_AGENT_ROOT:-}"
+      PLATFORM_HR_KNOWLEDGE_COMMIT: "${PLATFORM_HR_KNOWLEDGE_COMMIT:-}"
+      PLATFORM_AGENT_BRAIN_ENABLED: "${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
+      PLATFORM_AGENT_BRAIN_V2_ENABLED: "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
+      PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/secrets/content-encryption-keyring
+      PLATFORM_EXECUTION_WORKER_PUBLIC_KEYRING_FILE: /run/secrets/execution-worker-public-keyring.json
+      PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS: "21600"
+      PLATFORM_IDENTITY_WARNING_AFTER_SECONDS: "28800"
+      PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS: "86400"
+      PLATFORM_REPLICA_DATABASE_URL_FILE: /run/secrets/replica-database-url
+      PLATFORM_REPLICA_ENCRYPTION_KEY_FILE: /run/secrets/replica-encryption-key
+      PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE: /run/secrets/replica-signing-public-key
+      PLATFORM_REPLICA_STALE_SECONDS: "900"
+      PLATFORM_VOC_EXTENSION_ENABLED: "1"
+      PLATFORM_VOC_EXTENSION_BASE_URL: http://172.29.0.3:18130
+      PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE: /run/secrets/voc-extension-signing-key
+      PLATFORM_VOC_SERVICE_BEARER_FILE: /run/secrets/voc-service-bearer
+      PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS: "10"
+      # FAE partner operator identity is production-disabled: no real Partner
+      # Provider has been selected yet. These values are deliberately empty so
+      # the release gate fails closed and no Partner start or callback route is
+      # mounted. Enabling requires validated Provider release evidence created
+      # by docs/runbooks/fae-partner-provider-probe.md; the Reference Provider
+      # can never be used here.
+      PLATFORM_PARTNER_IDENTITY_ENABLED: "0"
+      PLATFORM_PARTNER_PROVIDER_KIND: ""
+      PLATFORM_PARTNER_PROVIDER_RELEASE_FILE: ""
+      PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256: ""
+    volumes: &platform-api-volumes
+      - platform-api-secrets:/run/secrets:ro
+      - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro
+      - /data/orbbec-agent-platform/hr-role-packages:/data/agent-platform/hr-role-packages:ro
+      - /data/orbbec-agent-platform/hr-knowledge:/data/agent-platform/hr-knowledge:ro
+      - type: bind
+        source: /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+        target: /run/office-recipient/platform-office-recipient-bearer
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.4
+      platform-edge:
+        ipv4_address: 172.31.0.4
+        gw_priority: 1
+      voc-extension:
+        ipv4_address: 172.29.0.2
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-attachment-storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  platform-hr-agent-worker:
+    image: ${PLATFORM_IMAGE}
+    profiles: ["hr-agent"]
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command: ["python", "-m", "app.hr_agent.worker"]
+    environment:
+      PLATFORM_HR_AGENT_ENABLED: "1"
+      PLATFORM_EXECUTION_RELAY_ENABLED: "0"
+      PLATFORM_CONTROL_DATABASE_URL_FILE: /run/hr-agent-secrets/control-database-url
+      PLATFORM_HR_AGENT_CONTENT_KEYRING_FILE: /run/hr-agent-secrets/hr-content-keyring.json
+      PLATFORM_HR_AGENT_MODEL: "${PLATFORM_HR_AGENT_MODEL:-}"
+      PLATFORM_HR_AGENT_PROVIDER_PROFILE_FILE: /run/hr-agent-secrets/hr-provider-profile.json
+      PLATFORM_HR_AGENT_BUDGET_PROFILE_FILE: /run/hr-agent-secrets/hr-budget-profile.json
+      PLATFORM_HR_AGENT_DIAGNOSTIC_PROFILE_FILE: /run/hr-agent-secrets/hr-diagnostic-profile.json
+      PLATFORM_HR_AGENT_RELEASE_POLICY_FILE: /run/hr-agent-secrets/hr-release-policy.json
+      PLATFORM_HR_AGENT_KNOWLEDGE_DIR: /data/hr-knowledge
+      PLATFORM_HR_AGENT_WORK_DIR: /data/hr-work
+      PLATFORM_CONVERSATION_ATTACHMENT_ENABLED: "${PLATFORM_HR_AGENT_ATTACHMENTS_ENABLED:-0}"
+      PLATFORM_ATTACHMENT_S3_ENDPOINT: http://platform-minio:9000
+      PLATFORM_ATTACHMENT_S3_BUCKET: orbbec-agent-attachments
+      PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE: /run/hr-agent-secrets/attachment-s3-access-key
+      PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE: /run/hr-agent-secrets/attachment-s3-secret-key
+      PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE: /run/hr-agent-secrets/control-database-url
+      PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/hr-agent-secrets/content-encryption-keyring
+    volumes:
+      - platform-hr-agent-secrets:/run/hr-agent-secrets:ro
+      - /data/orbbec-agent-platform/hr-knowledge:/data/hr-knowledge:ro
+      - /data/orbbec-agent-platform/hr-work:/data/hr-work
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    networks:
+      platform-internal: {}
+      platform-edge:
+        gw_priority: 1
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.hr_agent.worker", "healthcheck"]
+      interval: 15s
+      timeout: 8s
+      start_period: 30s
+      retries: 2
+
+  platform-hr-web-worker:
+    image: ${PLATFORM_IMAGE}
+    profiles: ["hr-web"]
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        PLATFORM_DINGTALK_APP_KEY="$(/bin/cat /run/secrets/dingtalk-app-key)"
+        PLATFORM_DINGTALK_AGENT_ID="$(/bin/cat /run/secrets/dingtalk-agent-id)"
+        PLATFORM_DINGTALK_CORP_ID="$(/bin/cat /run/secrets/dingtalk-corp-id)"
+        test -n "$$PLATFORM_DINGTALK_APP_KEY"
+        test -n "$$PLATFORM_DINGTALK_AGENT_ID"
+        test -n "$$PLATFORM_DINGTALK_CORP_ID"
+        export PLATFORM_DINGTALK_APP_KEY PLATFORM_DINGTALK_AGENT_ID PLATFORM_DINGTALK_CORP_ID
+        exec python -m app.agent_brain.direct_worker
+    environment: *platform-api-environment
+    volumes: *platform-api-volumes
+    networks:
+      platform-internal: {}
+      platform-edge:
+        gw_priority: 1
+    # No HTTP server: process exit is supervised by Docker; durable readiness
+    # and progress are checked through the existing execution ledgers.
+    healthcheck:
+      disable: true
+
+  platform-minio:
+    image: ${PLATFORM_MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z}
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        export MINIO_ROOT_USER="$$(cat /run/secrets/attachment-s3-access-key)"
+        export MINIO_ROOT_PASSWORD="$$(cat /run/secrets/attachment-s3-secret-key)"
+        exec minio server /data --address :9000 --console-address :9001
+    volumes:
+      - /data/orbbec-agent-platform/attachments:/data
+      - platform-attachment-storage-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.8
+
+  platform-attachment-storage-init:
+    image: ${PLATFORM_MINIO_MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z}
+    restart: "no"
+    read_only: true
+    environment:
+      MC_CONFIG_DIR: /tmp/.mc
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        ready=0
+        for attempt in $$(seq 1 60); do
+          if mc alias set platform http://platform-minio:9000 "$$(cat /run/secrets/attachment-s3-access-key)" "$$(cat /run/secrets/attachment-s3-secret-key)"; then
+            ready=1
+            break
+          fi
+          sleep 1
+        done
+        test "$$ready" = "1"
+        mc mb --ignore-existing platform/orbbec-agent-attachments
+        mc anonymous set none platform/orbbec-agent-attachments
+        mc version enable platform/orbbec-agent-attachments
+    volumes:
+      - platform-attachment-storage-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.11
+    depends_on:
+      platform-minio:
+        condition: service_started
+
+  platform-attachments:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=0700
+    command: ["python", "-m", "app.attachments.worker_runtime", "all"]
+    environment:
+      PLATFORM_ATTACHMENT_WORKER_DATABASE_URL_FILE: /run/secrets/brain-worker-database-url
+      PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE: /run/secrets/control-maintenance-database-url
+      PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/secrets/content-encryption-keyring
+      PLATFORM_ATTACHMENT_S3_ENDPOINT: http://platform-minio:9000
+      PLATFORM_ATTACHMENT_S3_BUCKET: orbbec-agent-attachments
+      PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE: /run/secrets/attachment-s3-access-key
+      PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE: /run/secrets/attachment-s3-secret-key
+      PLATFORM_ATTACHMENT_SCAN_MODE: trusted-internal
+    volumes:
+      - platform-attachment-worker-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.10
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-attachment-storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.attachments.worker_runtime", "healthcheck"]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 20s
+
+  platform-directory:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    command: ["python", "-m", "app.control_plane.worker_runtime", "directory"]
+    environment:
+      PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE: /run/secrets/control-directory-worker-database-url
+      PLATFORM_DINGTALK_APP_KEY_FILE: /run/secrets/dingtalk-app-key
+      PLATFORM_DINGTALK_AGENT_ID_FILE: /run/secrets/dingtalk-agent-id
+      PLATFORM_DINGTALK_CORP_ID_FILE: /run/secrets/dingtalk-corp-id
+      PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
+      PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE: /run/secrets/dingtalk-hrm-real-name-field-code
+      PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
+      PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /run/secrets/identity-hmac-keyring
+    volumes:
+      - platform-directory-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.5
+      platform-edge:
+        ipv4_address: 172.31.0.5
+        gw_priority: 1
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  platform-dingtalk-stream:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    command: ["python", "-m", "app.control_plane.worker_runtime", "stream"]
+    environment:
+      PLATFORM_CONTROL_STREAM_DATABASE_URL_FILE: /run/secrets/control-stream-ingest-database-url
+      PLATFORM_DINGTALK_APP_KEY_FILE: /run/secrets/dingtalk-app-key
+      PLATFORM_DINGTALK_CORP_ID_FILE: /run/secrets/dingtalk-corp-id
+      PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
+      PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
+    volumes:
+      - platform-stream-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.6
+      platform-edge:
+        ipv4_address: 172.31.0.6
+        gw_priority: 1
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  platform-brain:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    command: ["python", "-m", "app.agent_brain.worker_runtime", "all"]
+    environment:
+      PLATFORM_BRAIN_DATABASE_URL_FILE: /run/secrets/brain-worker-database-url
+      PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/secrets/content-encryption-keyring
+      PLATFORM_BRAIN_MODEL_MANIFEST: /app/brain-model.release.json
+      PLATFORM_BRAIN_SYSTEM_PROMPT: /app/backend/app/agent_brain/prompts/brain_v1.md
+      PLATFORM_BRAIN_PROVIDER_BASE_URL: "${PLATFORM_BRAIN_PROVIDER_BASE_URL:-https://cc.nexcor.ai}"
+      PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME: "${PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME:-bearer}"
+      PLATFORM_BRAIN_PROVIDER_API_KEY_FILE: /run/secrets/brain-provider-api-key
+      PLATFORM_VOC_EXTENSION_BASE_URL: http://172.29.0.3:18130
+      PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE: /run/secrets/voc-extension-signing-key
+      PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS: "10"
+    volumes:
+      - platform-brain-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.7
+      platform-edge:
+        ipv4_address: 172.31.0.7
+        gw_priority: 1
+      voc-extension:
+        ipv4_address: 172.29.0.4
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.agent_brain.worker_runtime", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+
+  platform-loopback:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700
+    command: ["uvicorn", "app.cloud_replica.loopback_proxy:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers"]
+    environment:
+      PLATFORM_LOOPBACK_TARGET_BASE_URL: http://172.30.0.4:8080
+      PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS: 127.0.0.1/32,172.31.0.1/32,172.31.0.8/32
+      PLATFORM_LOOPBACK_SOURCE_ADDRESS: 172.30.0.3
+      PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED: "1"
+      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/office-recipient/platform-office-recipient-bearer
+      PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS: 172.31.0.1/32
+    volumes:
+      - type: bind
+        source: /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+        target: /run/office-recipient/platform-office-recipient-bearer
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.3
+      platform-edge:
+        ipv4_address: 172.31.0.3
+    depends_on:
+      platform-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; request=urllib.request.Request('http://127.0.0.1:8080/api/health',headers={'X-Real-IP':'127.0.0.1','X-Forwarded-Proto':'http'}); urllib.request.urlopen(request, timeout=2).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+networks:
+  voc-extension:
+    name: orbbec-agent-voc-extension
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.0.0/29
+          gateway: 172.29.0.1
+  platform-internal:
+    name: orbbec-agent-platform-internal
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/28
+          gateway: 172.30.0.1
+  platform-edge:
+    name: orbbec-agent-platform-edge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.31.0.0/28
+          gateway: 172.31.0.1
+
+volumes:
+  platform-postgres-secrets:
+    name: orbbec-agent-platform-postgres-secrets
+    external: true
+  platform-api-secrets:
+    name: orbbec-agent-platform-api-secrets
+    external: true
+  platform-directory-secrets:
+    name: orbbec-agent-platform-directory-secrets
+    external: true
+  platform-stream-secrets:
+    name: orbbec-agent-platform-stream-secrets
+    external: true
+  platform-brain-secrets:
+    name: orbbec-agent-platform-brain-secrets
+    external: true
+  platform-attachment-storage-secrets:
+    name: orbbec-agent-platform-attachment-storage-secrets
+    external: true
+  platform-attachment-worker-secrets:
+    name: orbbec-agent-platform-attachment-worker-secrets
+    external: true
+  platform-hr-agent-secrets:
+    name: orbbec-agent-platform-hr-agent-secrets
+    external: true

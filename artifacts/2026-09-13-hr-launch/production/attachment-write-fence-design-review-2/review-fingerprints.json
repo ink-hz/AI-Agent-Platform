@@ -1,0 +1,13 @@
+{
+  "fingerprints.json": "9d3741fe5ab88231602d1921737fc1b156fbeb63d09fdf45b6b6176bce6184fc",
+  "review.md": "5b067d066245fb4b6e03c091568d1622d7e23d1a0b9720a2c28ee5dfa4d6a8b3",
+  "source/backend/control_migrations/064_conversation_attachments.sql": "1f9f083e76c3fc14e14a2ccfc403fcfb83716b4f1602cd5c41882e9ffb04c3aa",
+  "source/backend/control_migrations/100_attachment_erasure_worker_access.sql": "15355874fce1ea58d00056eb07233a0fb3ef4a3cd7e807ea6e6608deb3668177",
+  "source/backend/app/attachments/worker.py": "44b037879d561294eb6a89bb12f01905e60048db70228f6058c8680a5b2f15dd",
+  "source/backend/app/attachments/conversation_repository.py": "ab00115aa04a85a5408d54ec949179b072bce8734f33fc334ab0f1db42426622",
+  "source/backend/app/attachments/worker_runtime.py": "2ecf40460e97ca4c521b99072a55b31d001a8cc57e69c03fc30380a4805ab29b",
+  "source/backend/app/attachments/download_service.py": "8cd42f163ad8638683649894c9e80f8c7eea669483eac4f7868ed8299b36f190",
+  "source/backend/app/attachments/grant_service.py": "bbee91a1f14193bbc3a60e6b8a2279fb3dc8e284d94bd1801b283a9f3085dfb2",
+  "source/backend/app/attachments/erasure.py": "e4862777c8e256fc3a37c6fe73cb8ad401329b660cbf69c05194768f60bd93be",
+  "source/backend/app/attachments/object_writer.py": "2a986ac02223d9d5b784eb50502fabfc9e7a0cd98aacb2740de0c7aa8599788d"
+}

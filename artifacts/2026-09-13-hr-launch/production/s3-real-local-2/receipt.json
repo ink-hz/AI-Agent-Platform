@@ -1,0 +1,27 @@
+{
+  "started_at": 1789275202.265891,
+  "boundary": "local disposable real MinIO, real boto3 signed requests; no production or database access",
+  "checks": [
+    "ce6 adapter bare deletion leaves exact previous data version readable",
+    {
+      "versioned_pagination_exact_key": "passed",
+      "prior_entries": 1003,
+      "prior_pages": 2,
+      "exact_old_data_versions_checked": 1002
+    },
+    "object writer deletes suspended historical and null versions",
+    "unversioned object writer deletes exact key"
+  ],
+  "minio_binary_sha256": "f9707f74c17b2d291e99e71eebeb6e7095a11a6a4617f751c4254ef45c469e4d",
+  "minio_source_commit": "7ced9663e6a791fef9dc6be798ff24cda9c730ac",
+  "status": "passed",
+  "owned_process_reaped": true,
+  "server_log_sha256": "607b1681ad5a624cd3f2e76b51a98ad80fae364df0f3d654ea23ec843695c82a",
+  "finished_at": 1789275206.742819,
+  "driver_sha256": "41e8f85685eeeef81357d4a13ff454b243f7f56e00b455afb1e2a8346f01fa9b",
+  "adapter_sha256": {
+    "backend/app/attachments/worker_runtime.py": "2ecf40460e97ca4c521b99072a55b31d001a8cc57e69c03fc30380a4805ab29b",
+    "backend/app/attachments/object_writer.py": "2a986ac02223d9d5b784eb50502fabfc9e7a0cd98aacb2740de0c7aa8599788d",
+    "backend/app/attachments/s3_erasure.py": "637a226ecad9ba920cab8c66a63cc52da79049e24dda0c8732557967b5f47358"
+  }
+}

@@ -1,0 +1,96 @@
+SIGSEGV: segmentation violation
+PC=0x18e7971a8 m=0 sigcode=2 addr=0x0
+signal arrived during cgo execution
+
+goroutine 1 gp=0x140000021c0 m=0 mp=0x107251a60 [syscall, locked to thread]:
+runtime.cgocall(0x1031ee028, 0x140000d2e08)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/cgocall.go:167 +0x44 fp=0x140000d2dd0 sp=0x140000d2d90 pc=0x100e76464
+github.com/shoenig/go-m1cpu._Cfunc_initialize()
+	_cgo_gotypes.go:150 +0x30 fp=0x140000d2e00 sp=0x140000d2dd0 pc=0x1012fd070
+github.com/shoenig/go-m1cpu.init.0()
+	/tmp/hr-launch-minio-20260913/gopath/pkg/mod/github.com/shoenig/go-m1cpu@v0.1.6/cpu.go:148 +0x1c fp=0x140000d2e10 sp=0x140000d2e00 pc=0x1012fd0fc
+runtime.doInit1(0x10704b4a0)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:7350 +0xd4 fp=0x140000d2f40 sp=0x140000d2e10 pc=0x100e53944
+runtime.doInit(...)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:7317
+runtime.main()
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:254 +0x340 fp=0x140000d2fd0 sp=0x140000d2f40 pc=0x100e43c90
+runtime.goexit({})
+	/tmp/hr-launch-minio-20260913/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140000d2fd0 sp=0x140000d2fd0 pc=0x100e82724
+
+goroutine 18 gp=0x14000102380 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:435 +0xc8 fp=0x140000be790 sp=0x140000be770 pc=0x100e79e48
+runtime.goparkunlock(...)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:441
+runtime.forcegchelper()
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:348 +0xb8 fp=0x140000be7d0 sp=0x140000be790 pc=0x100e43f28
+runtime.goexit({})
+	/tmp/hr-launch-minio-20260913/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140000be7d0 sp=0x140000be7d0 pc=0x100e82724
+created by runtime.init.7 in goroutine 1
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:336 +0x24
+
+goroutine 19 gp=0x14000102540 m=nil [GC sweep wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:435 +0xc8 fp=0x140000bef60 sp=0x140000bef40 pc=0x100e79e48
+runtime.goparkunlock(...)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:441
+runtime.bgsweep(0x14000112000)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/mgcsweep.go:276 +0xa0 fp=0x140000befb0 sp=0x140000bef60 pc=0x100e2c470
+runtime.gcenable.gowrap1()
+	/tmp/hr-launch-minio-20260913/go/src/runtime/mgc.go:204 +0x28 fp=0x140000befd0 sp=0x140000befb0 pc=0x100e20138
+runtime.goexit({})
+	/tmp/hr-launch-minio-20260913/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140000befd0 sp=0x140000befd0 pc=0x100e82724
+created by runtime.gcenable in goroutine 1
+	/tmp/hr-launch-minio-20260913/go/src/runtime/mgc.go:204 +0x6c
+
+goroutine 20 gp=0x14000102700 m=nil [GC scavenge wait]:
+runtime.gopark(0x14000112000?, 0x104a34f18?, 0x1?, 0x0?, 0x14000102700?)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:435 +0xc8 fp=0x140000bf760 sp=0x140000bf740 pc=0x100e79e48
+runtime.goparkunlock(...)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/proc.go:441
+runtime.(*scavengerState).park(0x107245420)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/mgcscavenge.go:425 +0x5c fp=0x140000bf790 sp=0x140000bf760 pc=0x100e29f6c
+runtime.bgscavenge(0x14000112000)
+	/tmp/hr-launch-minio-20260913/go/src/runtime/mgcscavenge.go:653 +0x44 fp=0x140000bf7b0 sp=0x140000bf790 pc=0x100e2a4a4
+runtime.gcenable.gowrap2()
+	/tmp/hr-launch-minio-20260913/go/src/runtime/mgc.go:205 +0x28 fp=0x140000bf7d0 sp=0x140000bf7b0 pc=0x100e200d8
+runtime.goexit({})
+	/tmp/hr-launch-minio-20260913/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140000bf7d0 sp=0x140000bf7d0 pc=0x100e82724
+created by runtime.gcenable in goroutine 1
+	/tmp/hr-launch-minio-20260913/go/src/runtime/mgc.go:205 +0xac
+
+r0      0x14
+r1      0x0
+r2      0x0
+r3      0x16effe6c0
+r4      0xffffffff9968fec0
+r5      0x20
+r6      0x48
+r7      0x0
+r8      0x51889898440b006a
+r9      0x51889898440b006a
+r10     0x7ffffffffffff8
+r11     0x0
+r12     0x100000003
+r13     0xa7d
+r14     0x52
+r15     0x80
+r16     0x18e661ef8
+r17     0x1fba48ca8
+r18     0x0
+r19     0x0
+r20     0x465000
+r21     0x10868e4f0
+r22     0x10729be9c
+r23     0x1fa4131a0
+r24     0x1
+r25     0x16effedf0
+r26     0x10704b4a8
+r27     0x810
+r28     0x107246d00
+r29     0x16effe6f0
+lr      0x18e661f1c
+sp      0x16effe6e0
+pc      0x18e7971a8
+fault   0x0

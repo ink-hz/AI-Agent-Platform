@@ -1,0 +1,14 @@
+{
+  "head": "4864abfbe6bd71c5392f15af29b43ec3e6166617",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/production/s3-real-local-1/run.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T04:47:41.243879+00:00",
+  "source_patch_sha256": "32ce45756ab557e8b4c77a28f8f4b223b0382fee5c00ddc02c667bdee3564c34",
+  "untracked_source_snapshots": {},
+  "boundary": "Disposable actual loopback MinIO source7ced9663 and boto3 requests; original ce6 adapter negative then 4864 core version purge; no DB or production; bounded 300-second work + cleanup",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T04:47:43.067057+00:00"
+}

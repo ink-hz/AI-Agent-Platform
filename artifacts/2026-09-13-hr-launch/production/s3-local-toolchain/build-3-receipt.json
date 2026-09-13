@@ -1,0 +1,17 @@
+{
+  "started_at": "2026-09-13T04:49:24.107519+00:00",
+  "argv": [
+    "/tmp/hr-launch-minio-20260913/go/bin/go",
+    "build",
+    "-o",
+    "/tmp/hr-launch-minio-20260913/minio-nocgo",
+    "."
+  ],
+  "cwd": "/tmp/hr-launch-minio-20260913/source",
+  "GOPROXY": "https://goproxy.cn,https://proxy.golang.org,direct",
+  "CGO_ENABLED": "0",
+  "checksum_verification": "source go.sum retained; GOSUMDB unchanged",
+  "boundary": "local source compile only; no server or production access",
+  "exit_code": 0,
+  "finished_at": "2026-09-13T04:49:32.659361+00:00"
+}

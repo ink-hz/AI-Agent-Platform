@@ -1,0 +1,92 @@
+[
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-3/summary.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/summary.json",
+    "bytes": 27064,
+    "sha256": "0d08054f7c1cc79df5baf36d898b87a81d65a0581dc2cbb0027458ba3425a63a"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-3/configuration.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/configuration.json",
+    "bytes": 618,
+    "sha256": "597634706bcd877743d8275395917e67e549e99ac221c9f06755d8b0e43953e0"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-01.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-01.json",
+    "bytes": 83676,
+    "sha256": "86ab6fcfc13db16712ff4924c64384d3f9dc85108510f2a5612b268ecf1d3af3"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/report.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/report.json",
+    "bytes": 759322,
+    "sha256": "2b217e55bee9d99230e933c904cab723b6e1d2b4740e9a4358ebbb50a4363143"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-04.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-04.json",
+    "bytes": 308447,
+    "sha256": "53b759a8c34db6ea6eda64c6ba5b61dc350b34281913ed8a3505935abfcabae1"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-02.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-02.json",
+    "bytes": 133492,
+    "sha256": "0541e67b4d4b9b85ee36cf3737410e22b4a57e4bf66f983d813a610e986b6fed"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-03.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-03.json",
+    "bytes": 190096,
+    "sha256": "9444f9a0bad21f6464ed1629fc94423ac4ebc3728180739bcde1cea6b36c11d9"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-01-context.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-01-context.txt",
+    "bytes": 218,
+    "sha256": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-04-context.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-04-context.txt",
+    "bytes": 140,
+    "sha256": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-02-context.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-02-context.txt",
+    "bytes": 119,
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/context-v1.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/context-v1.txt",
+    "bytes": 602,
+    "sha256": "9f2ae8dcd6716bf8c5e5e5f64b529903186f392fab301ec9f9e711b6f1ae4d92"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-03-context.txt",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-03-context.txt",
+    "bytes": 119,
+    "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/corpus.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/corpus.json",
+    "bytes": 173319,
+    "sha256": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e"
+  },
+  {
+    "source": "artifacts/2026-09-13-hr-launch/history/replay-v2/manifest.json",
+    "snapshot": "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/manifest.json",
+    "bytes": 28005,
+    "sha256": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739"
+  },
+  {
+    "source": "backend/app/hr_agent/repository.py",
+    "snapshot": "frozen/backend/app/hr_agent/repository.py",
+    "bytes": 94795,
+    "sha256": "87febf7d6947813a27aeb6a4fe571e3ea85cbeb389a3af36b1c542040654a488"
+  }
+]

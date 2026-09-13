@@ -1,0 +1,415 @@
+{
+    "current_public_intelligence": {
+        "agent_markdown_count": 85,
+        "analysis_bytes_not_for_export": 154170921,
+        "bundle_id": "aebca08a-1715-536a-869a-39663b81c8e4",
+        "bundle_locator": "bundles/aebca08a-1715-536a-869a-39663b81c8e4",
+        "bundle_schema_version": 2,
+        "database_manifest_sha256": "d227bbb7f4ccb9ecf865bf259c06b17fee54ebd17b5fca2356eb6e3b34b0cad5",
+        "disk_manifest_sha256": "d227bbb7f4ccb9ecf865bf259c06b17fee54ebd17b5fca2356eb6e3b34b0cad5",
+        "evidence_file_count_not_for_export": 29
+    },
+    "current_target": "/opt/orbbec-agent-platform/releases/65e7fbd14a3cbe99883b0b31e31b5705d183d1f9",
+    "database": {
+        "cutover_table_exists": false,
+        "hr_agent_schema_exists": false,
+        "migration_100_exists": false,
+        "preview_migrations": {
+            "count": 87,
+            "max": 87,
+            "min": 1
+        },
+        "production_migrations": {
+            "count": 95,
+            "max": 95,
+            "min": 1
+        }
+    },
+    "disk": [
+        "Mounted on    1B-blocks        Used       Avail Use%",
+        "/          105286258688 62945882112 37827723264  63%",
+        "/data      105088192512 31141842944 68560920576  32%"
+    ],
+    "docker": {
+        "compose": "2.40.3+ds1-0ubuntu1~24.04.1",
+        "engine": "29.1.3"
+    },
+    "hr_secret_volume_exists": false,
+    "observed_at": "2026-09-13T03:06:35Z",
+    "private_metadata": {
+        "/data/orbbec-agent-platform/hr-knowledge/current.json": {
+            "state": "absent"
+        },
+        "/data/orbbec-agent-platform/hr-work": {
+            "state": "absent"
+        },
+        "/opt/orbbec-agent-platform/private": {
+            "gid": 0,
+            "kind": "directory",
+            "mode": "0700",
+            "state": "present",
+            "uid": 0
+        },
+        "/opt/orbbec-agent-platform/private/agent-brain-action.lock": {
+            "state": "absent"
+        },
+        "/opt/orbbec-agent-platform/private/deploy-input.lock": {
+            "state": "absent"
+        },
+        "/opt/orbbec-agent-platform/private/deploy-input.transaction.lock": {
+            "gid": 0,
+            "kind": "regular",
+            "mode": "0600",
+            "state": "present",
+            "uid": 0
+        },
+        "/opt/orbbec-agent-platform/private/hr-agent": {
+            "state": "absent"
+        },
+        "/opt/orbbec-agent-platform/private/hr-p0-acceptance.json": {
+            "state": "absent"
+        },
+        "/opt/orbbec-agent-platform/private/platform.env": {
+            "gid": 0,
+            "kind": "regular",
+            "mode": "0600",
+            "state": "present",
+            "uid": 0
+        }
+    },
+    "schema_version": 1,
+    "services": {
+        "api": {
+            "compose_config_files": "/opt/orbbec-agent-platform/releases/65e7fbd14a3cbe99883b0b31e31b5705d183d1f9/deploy/cloud/compose.yaml",
+            "configured_image": "orbbec-agent-platform:65e7fbd14a3cbe99883b0b31e31b5705d183d1f9",
+            "container_id": "3347e61ede7d3ab0bd96c0cdc25cff1d6808c89ab2b8a31f24953bebccd4fcf7",
+            "environment_names": [
+                "GPG_KEY",
+                "LANG",
+                "PATH",
+                "PIP_DISABLE_PIP_VERSION_CHECK",
+                "PIP_INDEX_URL",
+                "PLATFORM_AGENT_BRAIN_ENABLED",
+                "PLATFORM_AGENT_BRAIN_V2_ENABLED",
+                "PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE",
+                "PLATFORM_ATTACHMENT_ENABLED",
+                "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
+                "PLATFORM_ATTACHMENT_S3_BUCKET",
+                "PLATFORM_ATTACHMENT_S3_ENDPOINT",
+                "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+                "PLATFORM_CLOUD_AUTH_MODE",
+                "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE",
+                "PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE",
+                "PLATFORM_CONTROL_DATABASE_URL_FILE",
+                "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED",
+                "PLATFORM_COOKIE_NAME",
+                "PLATFORM_DEPLOYMENT_MODE",
+                "PLATFORM_DINGTALK_APP_SECRET_FILE",
+                "PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE",
+                "PLATFORM_DIRECT_AGENT_ENABLED",
+                "PLATFORM_EXECUTION_RELAY_ENABLED",
+                "PLATFORM_EXECUTION_WORKER_PUBLIC_KEYRING_FILE",
+                "PLATFORM_FLYWHEEL_ENABLED",
+                "PLATFORM_HOST",
+                "PLATFORM_HR_KNOWLEDGE_AGENT_ROOT",
+                "PLATFORM_HR_KNOWLEDGE_COMMIT",
+                "PLATFORM_HR_KNOWLEDGE_ROOT",
+                "PLATFORM_HR_ROLE_PACKAGE_COMMIT",
+                "PLATFORM_HR_ROLE_PACKAGE_ROOT",
+                "PLATFORM_HR_WEB_WORKER_ENABLED",
+                "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE",
+                "PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS",
+                "PLATFORM_IDENTITY_HMAC_KEYRING_FILE",
+                "PLATFORM_IDENTITY_MODE",
+                "PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS",
+                "PLATFORM_IDENTITY_WARNING_AFTER_SECONDS",
+                "PLATFORM_METABOT_CONTRACT_PATH",
+                "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE",
+                "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED",
+                "PLATFORM_PARTNER_IDENTITY_ENABLED",
+                "PLATFORM_PARTNER_PROVIDER_KIND",
+                "PLATFORM_PARTNER_PROVIDER_RELEASE_FILE",
+                "PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256",
+                "PLATFORM_PORT",
+                "PLATFORM_PUBLIC_BASE_URL",
+                "PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE",
+                "PLATFORM_REGISTRY_PATH",
+                "PLATFORM_RELEASE_SHA",
+                "PLATFORM_REPLICA_DATABASE_URL_FILE",
+                "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE",
+                "PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE",
+                "PLATFORM_REPLICA_STALE_SECONDS",
+                "PLATFORM_REVIEW_ENABLED",
+                "PLATFORM_ROUTE_PREFIX",
+                "PLATFORM_STATIC_DIR",
+                "PLATFORM_TRUSTED_PROXY_CIDRS",
+                "PLATFORM_VOC_EXTENSION_BASE_URL",
+                "PLATFORM_VOC_EXTENSION_ENABLED",
+                "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE",
+                "PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS",
+                "PLATFORM_VOC_SERVICE_BEARER_FILE",
+                "PYTHONDONTWRITEBYTECODE",
+                "PYTHONUNBUFFERED",
+                "PYTHON_SHA256",
+                "PYTHON_VERSION"
+            ],
+            "explicit_nonsecret_flags": {
+                "PLATFORM_AGENT_BRAIN_ENABLED": "0",
+                "PLATFORM_AGENT_BRAIN_V2_ENABLED": "0",
+                "PLATFORM_CLOUD_AUTH_MODE": "dingtalk",
+                "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED": "1",
+                "PLATFORM_DEPLOYMENT_MODE": "cloud-replica",
+                "PLATFORM_DIRECT_AGENT_ENABLED": "1",
+                "PLATFORM_EXECUTION_RELAY_ENABLED": "1",
+                "PLATFORM_HR_WEB_WORKER_ENABLED": "1"
+            },
+            "health": "healthy",
+            "image_id": "sha256:b16eccfad79350c324c1ba229f847eaf693e31d7cc5567115b81f1d7eeaf4a35",
+            "mounts": [
+                {
+                    "destination": "/data/agent-platform/hr-intelligence",
+                    "rw": false,
+                    "source": "/data/orbbec-agent-platform/hr-intelligence",
+                    "type": "bind"
+                },
+                {
+                    "destination": "/data/agent-platform/hr-knowledge",
+                    "rw": false,
+                    "source": "/data/orbbec-agent-platform/hr-knowledge",
+                    "type": "bind"
+                },
+                {
+                    "destination": "/data/agent-platform/hr-role-packages",
+                    "rw": false,
+                    "source": "/data/orbbec-agent-platform/hr-role-packages",
+                    "type": "bind"
+                },
+                {
+                    "destination": "/run/office-recipient/platform-office-recipient-bearer",
+                    "rw": false,
+                    "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+                    "type": "bind"
+                },
+                {
+                    "destination": "/run/secrets",
+                    "rw": false,
+                    "source": "/var/lib/docker/volumes/orbbec-agent-platform-api-secrets/_data",
+                    "type": "volume"
+                }
+            ],
+            "networks": [
+                "orbbec-agent-platform-edge",
+                "orbbec-agent-platform-internal",
+                "orbbec-agent-voc-extension"
+            ],
+            "restart_count": 0,
+            "running": true
+        },
+        "attachments": {
+            "compose_config_files": "/opt/orbbec-agent-platform/releases/03e60f83cddcfffe704cce627c1ca62d29da0327/deploy/cloud/compose.yaml",
+            "configured_image": "orbbec-agent-platform:03e60f83cddcfffe704cce627c1ca62d29da0327",
+            "container_id": "908c2f63e1de01f5226d6ddf8eb87dd4d1d3ff1edc45e534193f08203f81f819",
+            "environment_names": [
+                "GPG_KEY",
+                "LANG",
+                "PATH",
+                "PIP_DISABLE_PIP_VERSION_CHECK",
+                "PIP_INDEX_URL",
+                "PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE",
+                "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
+                "PLATFORM_ATTACHMENT_S3_BUCKET",
+                "PLATFORM_ATTACHMENT_S3_ENDPOINT",
+                "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+                "PLATFORM_ATTACHMENT_SCAN_MODE",
+                "PLATFORM_ATTACHMENT_WORKER_DATABASE_URL_FILE",
+                "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE",
+                "PLATFORM_RELEASE_SHA",
+                "PYTHONDONTWRITEBYTECODE",
+                "PYTHONUNBUFFERED",
+                "PYTHON_SHA256",
+                "PYTHON_VERSION"
+            ],
+            "explicit_nonsecret_flags": {
+                "PLATFORM_ATTACHMENT_SCAN_MODE": "trusted-internal"
+            },
+            "health": "healthy",
+            "image_id": "sha256:ee24975e38f8ef51cac4e6036aa92c42e46d508c91615773eeba181ee38eb1b1",
+            "mounts": [
+                {
+                    "destination": "/run/secrets",
+                    "rw": false,
+                    "source": "/var/lib/docker/volumes/orbbec-agent-platform-attachment-worker-secrets/_data",
+                    "type": "volume"
+                }
+            ],
+            "networks": [
+                "orbbec-agent-platform-internal"
+            ],
+            "restart_count": 0,
+            "running": true
+        },
+        "legacy_hr_worker": {
+            "compose_config_files": "/opt/orbbec-agent-platform/releases/1a705ebb4b6598c61bc0d767ff44e2afc038a539/deploy/cloud/compose.yaml",
+            "configured_image": "orbbec-agent-platform:1a705ebb4b6598c61bc0d767ff44e2afc038a539",
+            "container_id": "ce6d1b1f1593a756c3f58cb11f1529c16af29a504721521b76e1cd118351d767",
+            "environment_names": [
+                "GPG_KEY",
+                "LANG",
+                "PATH",
+                "PIP_DISABLE_PIP_VERSION_CHECK",
+                "PIP_INDEX_URL",
+                "PLATFORM_AGENT_BRAIN_ENABLED",
+                "PLATFORM_AGENT_BRAIN_V2_ENABLED",
+                "PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE",
+                "PLATFORM_ATTACHMENT_ENABLED",
+                "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
+                "PLATFORM_ATTACHMENT_S3_BUCKET",
+                "PLATFORM_ATTACHMENT_S3_ENDPOINT",
+                "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+                "PLATFORM_CLOUD_AUTH_MODE",
+                "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE",
+                "PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE",
+                "PLATFORM_CONTROL_DATABASE_URL_FILE",
+                "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED",
+                "PLATFORM_COOKIE_NAME",
+                "PLATFORM_DEPLOYMENT_MODE",
+                "PLATFORM_DINGTALK_APP_SECRET_FILE",
+                "PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE",
+                "PLATFORM_DIRECT_AGENT_ENABLED",
+                "PLATFORM_EXECUTION_RELAY_ENABLED",
+                "PLATFORM_EXECUTION_WORKER_PUBLIC_KEYRING_FILE",
+                "PLATFORM_FLYWHEEL_ENABLED",
+                "PLATFORM_HOST",
+                "PLATFORM_HR_KNOWLEDGE_AGENT_ROOT",
+                "PLATFORM_HR_KNOWLEDGE_COMMIT",
+                "PLATFORM_HR_KNOWLEDGE_ROOT",
+                "PLATFORM_HR_ROLE_PACKAGE_COMMIT",
+                "PLATFORM_HR_ROLE_PACKAGE_ROOT",
+                "PLATFORM_HR_WEB_WORKER_ENABLED",
+                "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE",
+                "PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS",
+                "PLATFORM_IDENTITY_HMAC_KEYRING_FILE",
+                "PLATFORM_IDENTITY_MODE",
+                "PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS",
+                "PLATFORM_IDENTITY_WARNING_AFTER_SECONDS",
+                "PLATFORM_METABOT_CONTRACT_PATH",
+                "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE",
+                "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED",
+                "PLATFORM_PARTNER_IDENTITY_ENABLED",
+                "PLATFORM_PARTNER_PROVIDER_KIND",
+                "PLATFORM_PARTNER_PROVIDER_RELEASE_FILE",
+                "PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256",
+                "PLATFORM_PORT",
+                "PLATFORM_PUBLIC_BASE_URL",
+                "PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE",
+                "PLATFORM_REGISTRY_PATH",
+                "PLATFORM_RELEASE_SHA",
+                "PLATFORM_REPLICA_DATABASE_URL_FILE",
+                "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE",
+                "PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE",
+                "PLATFORM_REPLICA_STALE_SECONDS",
+                "PLATFORM_REVIEW_ENABLED",
+                "PLATFORM_ROUTE_PREFIX",
+                "PLATFORM_STATIC_DIR",
+                "PLATFORM_TRUSTED_PROXY_CIDRS",
+                "PLATFORM_VOC_EXTENSION_BASE_URL",
+                "PLATFORM_VOC_EXTENSION_ENABLED",
+                "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE",
+                "PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS",
+                "PLATFORM_VOC_SERVICE_BEARER_FILE",
+                "PYTHONDONTWRITEBYTECODE",
+                "PYTHONUNBUFFERED",
+                "PYTHON_SHA256",
+                "PYTHON_VERSION"
+            ],
+            "explicit_nonsecret_flags": {
+                "PLATFORM_AGENT_BRAIN_ENABLED": "0",
+                "PLATFORM_AGENT_BRAIN_V2_ENABLED": "0",
+                "PLATFORM_CLOUD_AUTH_MODE": "dingtalk",
+                "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED": "1",
+                "PLATFORM_DEPLOYMENT_MODE": "cloud-replica",
+                "PLATFORM_DIRECT_AGENT_ENABLED": "1",
+                "PLATFORM_EXECUTION_RELAY_ENABLED": "1",
+                "PLATFORM_HR_WEB_WORKER_ENABLED": "1"
+            },
+            "health": null,
+            "image_id": "sha256:a8c0ded298d9c677d6cbd143e761cce276ab0f37a9efd188db64f947e23cf609",
+            "mounts": [
+                {
+                    "destination": "/data/agent-platform/hr-intelligence",
+                    "rw": false,
+                    "source": "/data/orbbec-agent-platform/hr-intelligence",
+                    "type": "bind"
+                },
+                {
+                    "destination": "/data/agent-platform/hr-knowledge",
+                    "rw": false,
+                    "source": "/data/orbbec-agent-platform/hr-knowledge",
+                    "type": "bind"
+                },
+                {
+                    "destination": "/data/agent-platform/hr-role-packages",
+                    "rw": false,
+                    "source": "/data/orbbec-agent-platform/hr-role-packages",
+                    "type": "bind"
+                },
+                {
+                    "destination": "/run/office-recipient/platform-office-recipient-bearer",
+                    "rw": false,
+                    "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+                    "type": "bind"
+                },
+                {
+                    "destination": "/run/secrets",
+                    "rw": false,
+                    "source": "/var/lib/docker/volumes/orbbec-agent-platform-api-secrets/_data",
+                    "type": "volume"
+                }
+            ],
+            "networks": [
+                "orbbec-agent-platform-edge",
+                "orbbec-agent-platform-internal"
+            ],
+            "restart_count": 0,
+            "running": true
+        },
+        "postgres": {
+            "compose_config_files": "/opt/orbbec-agent-platform/releases/56af3962cd770791dbb0757944ec03f5affd765b/deploy/cloud/compose.yaml",
+            "configured_image": "postgres:17.6-bookworm",
+            "container_id": "12ef0c782a5e458b9e52dbe40ffaa3aa877e07269ddea52051e93d258ebdbb0e",
+            "environment_names": [
+                "GOSU_VERSION",
+                "LANG",
+                "PATH",
+                "PGDATA",
+                "PG_MAJOR",
+                "PG_VERSION",
+                "POSTGRES_DB",
+                "POSTGRES_PASSWORD_FILE",
+                "POSTGRES_USER"
+            ],
+            "explicit_nonsecret_flags": {},
+            "health": "healthy",
+            "image_id": "sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3",
+            "mounts": [
+                {
+                    "destination": "/run/secrets",
+                    "rw": false,
+                    "source": "/var/lib/docker/volumes/orbbec-agent-platform-postgres-secrets/_data",
+                    "type": "volume"
+                },
+                {
+                    "destination": "/var/lib/postgresql/data",
+                    "rw": true,
+                    "source": "/data/orbbec-agent-platform/postgres",
+                    "type": "bind"
+                }
+            ],
+            "networks": [
+                "orbbec-agent-platform-internal"
+            ],
+            "restart_count": 0,
+            "running": true
+        }
+    }
+}

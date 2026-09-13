@@ -1,0 +1,91 @@
+diff --git a/backend/app/hr_agent/repository.py b/backend/app/hr_agent/repository.py
+index 83062bb..5dcaa06 100644
+--- a/backend/app/hr_agent/repository.py
++++ b/backend/app/hr_agent/repository.py
+@@ -1687,7 +1687,12 @@ class HrAgentRepository(RepositoryViewsMixin):
+             if previous["origin_work_id"] != work["work_id"]:
+                 raise problem("scope_denied", http_status=403)
+             if previous["kind"] != args["kind"]:
+-                raise problem("invalid_input")
++                raise problem(
++                    "invalid_input",
++                    "Existing result kind cannot change; keep the saved kind when "
++                    "revising this result.",
++                    details={"field": "kind", "expected_kind": previous["kind"]},
++                )
+         else:
+             identity = uuid4()
+         revision = uuid4()
+diff --git a/backend/hr_agent_knowledge/role.md b/backend/hr_agent_knowledge/role.md
+index 1eac595..bc078cc 100644
+--- a/backend/hr_agent_knowledge/role.md
++++ b/backend/hr_agent_knowledge/role.md
+@@ -30,6 +30,8 @@
+ 
+ 对话问答可以直接回答。用户需要保留时，用 save_result 保存准确成果；save_note 保存阶段发现、待解决问题和剩余阅读。ask_user 只问推进当前工作所需的问题。工具返回成功才表示已保存，失败或冲突如实解释。
+ 
++修订已有成果时，先读取准确成果，沿用它的 result_id、kind 和当前 expected_revision；调整正文或标题不改变成果类型。工具给出参数错误时按具体字段和准确原稿修正，不反复盲试同一无效参数，不新建“占位”“测试”等调试成果来探测保存通道。无法修正时保留原成果，向用户说明未保存的内容和原因。
++
+ 用户希望改变长期标准时，先读目标岗位的正式标准（如存在），将建议作为 standard_proposal 分条保存，准确给出 base_standard_ref；当前无正式标准才用 null。模型没有确认工具。用户在界面明确选中条目后才由平台确认；沉默、继续讨论、保存提案都不是正式确认。并发冲突需要重读并结合最新正式标准重新审视提案，不能只换修订号。
+ 
+ 区分回答结束、成果已保存、标准已确认和业务目标已完成。预算收尾时保留已有成果、证据不足与未完成范围，不把未完成工作说成完成。
+diff --git a/backend/tests/test_hr_agent_repository.py b/backend/tests/test_hr_agent_repository.py
+index e79c7df..1b8c0c2 100644
+--- a/backend/tests/test_hr_agent_repository.py
++++ b/backend/tests/test_hr_agent_repository.py
+@@ -423,3 +423,55 @@ def test_object_only_note_revocation_hides_checkpoint_text(repo):
+     repo.execute_local_tool(fence, op)
+     revoked = True
+     assert repo.get_work(owner, work["work_id"])["checkpoint"]["open_questions"] == []
++
++
++def test_result_kind_error_identifies_field_without_replacing_saved_result(repo, database):
++    """A saved JD can be repaired after a wrong-kind update, without probe writes."""
++    from app.hr_agent.types import ToolCall
++
++    owner = uuid4()
++    work = repo.submit(owner, request(), uuid4())
++    fence = repo.claim("result-kind-feedback", 60)
++    payload = {
++        "result_id": None, "expected_revision": None, "kind": "jd",
++        "title": "虚构岗位", "body": "完整职责与任职要求", "objects": [],
++        "source_refs": [], "preceding_refs": [], "base_standard_ref": None,
++        "changes": [], "basis": [{"kind": "user_temporary", "input_revision": 1, "ref": None}],
++    }
++
++    def save(args):
++        attempt = repo.prepare_model(fence, model_context())
++        repo.mark_model_sending(fence, attempt.attempt_id)
++        operations = repo.commit_model(
++            fence, attempt.attempt_id,
++            reply("", [ToolCall(str(uuid4()), "save_result", args)]),
++        )
++        receipt = repo.execute_local_tool(fence, operations[0])
++        assert repo.execute_local_tool(fence, operations[0]) == receipt
++        return receipt
++
++    first = save(payload)
++    assert first["status"] == "ok", first
++    original = first["data"]["ref"]
++    wrong = {**payload, "result_id": original["id"],
++             "expected_revision": original["revision"], "kind": "role_calibration",
++             "body": "补充真实用户给定的产品范围"}
++    rejected = save(wrong)
++    assert rejected["status"] == "invalid"
++    assert rejected["error"]["code"] == "invalid_input"
++    assert rejected["error"]["details"] == {"field": "kind", "expected_kind": "jd"}
++    assert "keep" in rejected["error"]["message"]
++    assert repo.get_work(owner, work["work_id"])["result_refs"] == [original]
++    repaired = save({**wrong, "kind": "jd"})
++    assert repaired["status"] == "ok"
++    assert repaired["data"]["ref"]["id"] == original["id"]
++    assert repaired["data"]["ref"]["revision"] != original["revision"]
++    assert repaired["data"]["body"] == wrong["body"]
++    with database.admin_connection() as connection:
++        assert connection.execute(
++            "select count(*) from platform_hr_agent.results where owner_id=%s", (owner,)
++        ).fetchone()[0] == 1
++        assert connection.execute(
++            "select count(*) from platform_hr_agent.result_revisions where result_id=%s",
++            (original["id"],),
++        ).fetchone()[0] == 2

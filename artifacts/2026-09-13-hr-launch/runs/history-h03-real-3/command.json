@@ -1,0 +1,14 @@
+{
+  "head": "8c9afd0a7ce61336812dd42014a64b0d18ccb9bf",
+  "command": [
+    "backend/.venv/bin/python",
+    "artifacts/2026-09-13-hr-launch/history/replay_h03_real_v2.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "started_at": "2026-09-13T04:19:32.967935+00:00",
+  "source_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "untracked_source_snapshots": {},
+  "boundary": "H03 four-turn synthetic historical-intent replay only; actual configured model; real local HTTP and PostgreSQL with local external-login and object-store substitutes; 32-call per-work 1.2M-token/1800-second local budget, 96 shared hard cap; no production or candidate data; original RED and failed import retained",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T04:36:31.296794+00:00"
+}

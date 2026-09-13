@@ -1,0 +1,62 @@
+{
+  "observed_at": "2026-09-13T04:01:03.180565+00:00",
+  "current_target": "/opt/orbbec-agent-platform/releases/65e7fbd14a3cbe99883b0b31e31b5705d183d1f9",
+  "total_containers": 24,
+  "containers": {
+    "orbbec-agent-platform-platform-api-1": {
+      "id": "3347e61ede7d3ab0bd96c0cdc25cff1d6808c89ab2b8a31f24953bebccd4fcf7",
+      "image": "sha256:b16eccfad79350c324c1ba229f847eaf693e31d7cc5567115b81f1d7eeaf4a35",
+      "running": true,
+      "started_at": "2026-09-12T01:31:38.115542452Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped",
+      "health": "healthy",
+      "service": "platform-api",
+      "project": "orbbec-agent-platform"
+    },
+    "orbbec-agent-platform-platform-hr-web-worker-1": {
+      "id": "ce6d1b1f1593a756c3f58cb11f1529c16af29a504721521b76e1cd118351d767",
+      "image": "sha256:a8c0ded298d9c677d6cbd143e761cce276ab0f37a9efd188db64f947e23cf609",
+      "running": true,
+      "started_at": "2026-09-09T03:46:16.371543849Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped",
+      "health": null,
+      "service": "platform-hr-web-worker",
+      "project": "orbbec-agent-platform"
+    },
+    "orbbec-agent-platform-platform-attachments-1": {
+      "id": "908c2f63e1de01f5226d6ddf8eb87dd4d1d3ff1edc45e534193f08203f81f819",
+      "image": "sha256:ee24975e38f8ef51cac4e6036aa92c42e46d508c91615773eeba181ee38eb1b1",
+      "running": true,
+      "started_at": "2026-09-08T06:57:02.527921824Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped",
+      "health": "healthy",
+      "service": "platform-attachments",
+      "project": "orbbec-agent-platform"
+    },
+    "orbbec-agent-platform-platform-attachment-storage-init-1": {
+      "id": "0e272f6d784f6bf511b7c6e829fa35eedfeabe33aa525cdc533c86be82205a17",
+      "image": "sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc",
+      "running": false,
+      "started_at": "2026-09-07T05:03:15.92784145Z",
+      "restart_count": 0,
+      "restart_policy": "no",
+      "health": null,
+      "service": "platform-attachment-storage-init",
+      "project": "orbbec-agent-platform"
+    },
+    "orbbec-agent-platform-platform-minio-1": {
+      "id": "de10f2bd60988f07a77c685b55919cfb98ebed8e6792d41aa7c5e2a9a0b34238",
+      "image": "sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0",
+      "running": true,
+      "started_at": "2026-09-04T00:33:10.349799852Z",
+      "restart_count": 0,
+      "restart_policy": "unless-stopped",
+      "health": null,
+      "service": "platform-minio",
+      "project": "orbbec-agent-platform"
+    }
+  }
+}

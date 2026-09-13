@@ -1,0 +1,3132 @@
+{
+  "schema_version": 2,
+  "source_v1_sha256": "65501ce9f73744f9a3f59a70a758dda72647759713f13b2396b62ff5963d17c2",
+  "provenance": "22 historical-intent adaptations with newly synthetic materials; not verbatim history and not full replay of 242 messages",
+  "coverage": {
+    "source_files": 2,
+    "sessions": 63,
+    "messages": 242,
+    "by_dataset": {
+      "legacy": 220,
+      "cloud": 22
+    },
+    "by_historical_channel": {
+      "web": 57,
+      "feishu": 185
+    },
+    "classification_counts": {
+      "test_or_operational_probe": 21,
+      "greeting_or_self_introduction": 46,
+      "real_business_or_domain_question": 152,
+      "out_of_scope_personal_or_non_hr": 23
+    },
+    "selected_cases": 22,
+    "all_messages_classified": true,
+    "selected_source_references": 70,
+    "selected_unique_messages": 68
+  },
+  "review_status": "pending independent review by a non-author",
+  "sources_policy": "Local served synthetic static snapshots, never represented as real public-company facts; bind fixture_origin to harness allowed HTTP origin. If runtime forbids loopback, serve unchanged fixtures on an approved reachable origin; do not disable SSRF checks.",
+  "cases": [
+    {
+      "id": "H01",
+      "title": "碎片化岗位信息到可审阅 JD/JR",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_6bea11089105ce9ef77c4fbd8977884076e651375be5f18d67917c4dd887f279",
+          "ordinal": 2,
+          "source_text_sha256": "3fd59c772ef2a6f497b5f8f7739cd62c1908acff42aededfc4c5fdbad364552e"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_59f4c3081fe9e92897ad272fefc283825e86ebd45441e5c6a5d6b6454fccb55f",
+          "ordinal": 3,
+          "source_text_sha256": "1ad2a840ee65006f056c96c327e66c8d03986680b52afb030c2ad4bac98c08c6"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_04a3a590347305c47ce2eb95d3f700dc3c58ade7508d118d504ee6e64faffda9",
+          "ordinal": 4,
+          "source_text_sha256": "dcc20476ee8b93dac148f05b55d837a7819a80dc8420db2298cf54efe3d0ed36"
+        }
+      ],
+      "original_question_intent": "用户先给旧稿与访谈补充，随后明确这是新岗位且无需等待确认。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "多轮上下文准确关联；读取完整材料；分别保存JD/JR或明确可保存成果；不把待确认项写成事实。"
+      ],
+      "professional_review_questions": [
+        "是否保留原要求逻辑；是否从任务推导能力；是否避免凭空增加年限、组织或技术门槛。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "80aa3002cc1e629373d030f1330d6b897ef2f9a0cfadc8c1c6948aa0a5d4f1be",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H01/context-v1.txt",
+          "sha256": "54124b37340ea470768f81bb429e29300e6db29a8566d282f0db5e3f1558601a",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H01/turn-01-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H01/turn-02-context.txt",
+          "sha256": "36ac917965fd1c38fb53291016ef3c43988e631a938f631186b486252ba07bf7",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H01/turn-03-context.txt",
+          "sha256": "c466474e5ebeaea3e5d5a0136d77a9d8d58a9d663a6b81d1a4ee38ec2e5e6b9f",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "我会分两次提供虚构公司的旧版岗位说明与用人经理访谈记录，请先接收。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H01/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "【虚构旧稿】高级电路版图岗位负责多层高速板布局、跨硬件结构协作与生产资料交付。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H01/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 3,
+          "text": "这是一个新的高级版图专家岗位，不需要等待确认。请整合两份材料输出新版 JD 与 JR，并区分必需、加分和待确认信息。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H01/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H01:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "3df090f7a3bd8b6dac3a8cc563482b247a84883cad832f2a137a036d1215b7a9"
+    },
+    {
+      "id": "H02",
+      "title": "差稿纠正后压缩而不丢约束",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_b0977f60473861514f0faac65bfeeac1897bc79bdf95d0f36474dc703477bf41",
+          "ordinal": 23,
+          "source_text_sha256": "edbbae5f152921770089173222d08fcd03adcfbfc8c6c7fc2dd401019046d4fb"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_6129ce2898896cfa10c996faefbba8795b4f62f239a22a51c29c53fa495c570e",
+          "ordinal": 24,
+          "source_text_sha256": "e279d6a363ed1fa182984577c39719f6cf244b9729a85fe5a4585dc670ecd8da"
+        }
+      ],
+      "original_question_intent": "用户否定原JD，要求结合市场理解重写，随后限定JD/JR各五条。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "第二轮沿用第一轮任务；修订而非新建无关版本；可追溯公开资料；输出结构满足条数。"
+      ],
+      "professional_review_questions": [
+        "压缩是否丢掉量产导入、客户质量、风险识别等承重任务；行业资料是否被误当公司事实。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "248e207b26773505a897a65eb89bac155541f4bdd6b34953cb4677a584154f35",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H02/context-v1.txt",
+          "sha256": "9b51a11d7f405141017bc73018c439c78a079e4da0ce593a261ba2a841faef9b",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H02/web/quality.html",
+          "sha256": "0732dadaacf8f2da7d0efdd73c19bafef2a418cb7bafa66161e104add52ebc7e",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H02/turn-01-context.txt",
+          "sha256": "627cfa3656ccebc2f7f145a5e2b9fdfb932f647859878af3718ea5bff1e9b8e6",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H02/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [
+        {
+          "url_template": "{fixture_origin}/H02/quality",
+          "asset": "fixtures/H02/web/quality.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 0,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        }
+      ],
+      "turns": [
+        {
+          "number": 1,
+          "text": "【虚构岗位】某复杂设备公司的供应商质量岗位，旧稿泛泛，只列项目导入质量、量产质量和客诉处理。请结合行业公开岗位与业务任务重写，职业、清晰。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H02/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": [
+            "{fixture_origin}/H02/quality"
+          ]
+        },
+        {
+          "number": 2,
+          "text": "请压缩为 JD 与 JR 各五条；加分项放入 JR；保留核心业务约束。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H02/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": [
+            "{fixture_origin}/H02/quality"
+          ]
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H02:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "b8b97cdbead60189b73be9f3db2b8bd6f24e50e989126bdf8479553d316f286e"
+    },
+    {
+      "id": "H03",
+      "title": "岗位层级被写低后的纠正",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_93e9aefd0e03540190424304aced8c3c99bf76955ef0b291bd6b526e94370d55",
+          "ordinal": 37,
+          "source_text_sha256": "d20cbdf5e341b7d340f661c60a59cafded4f11bf9de207e90e35b549910b39d7"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_d67c52fad528702a73719b7229986181f3d605587c0ad3fbbe04ba4c36d0813c",
+          "ordinal": 38,
+          "source_text_sha256": "4668b7e3c48436fd2ba7c3a6abbf8cb35756b3a2b232a58fc4a3e95df4c9918b"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_f5371e89b89aa84d6280a8e239307f149a9ee111e73d37abf1350a1c1ebfde07",
+          "ordinal": 39,
+          "source_text_sha256": "69d218ccefd71571a977beb43456ca7efa8c6cf4d0dc50fea12d0b7994e4d854"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_90a6cb017b6e49b9861e84c9faf24f094dc6d546667094531c5670aa112ce42f",
+          "ordinal": 40,
+          "source_text_sha256": "222e34136a30ca45efd1774d71ea7b2782f9c8d3a84327f4d58000b012f49e65"
+        }
+      ],
+      "original_question_intent": "部门负责人岗位初稿像一线员工，用户要求体现带队达成目标且本人保持专家贡献，随后要求简洁并补产品范围。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "逐轮修订同一成果；最后版本覆盖所有确认约束；候选个人材料不得进入通用标准。"
+      ],
+      "professional_review_questions": [
+        "是否真正体现组织责任与专家贡献；是否把规模和候选经历误作公开广告事实；精简后承重内容是否仍在。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "0e9618a4511d0355d1f46fce477a76f8bc26bd5d6ac7f201bc909aaa35b9089a",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H03/context-v1.txt",
+          "sha256": "9f2ae8dcd6716bf8c5e5e5f64b529903186f392fab301ec9f9e711b6f1ae4d92",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H03/turn-01-context.txt",
+          "sha256": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H03/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H03/turn-03-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H03/turn-04-context.txt",
+          "sha256": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "为虚构公司写“研发工程总监”JD/JR：专家型管理岗，统筹NPI、工装夹具和工程软件，管理约30人。参考材料中的候选画像只作能力线索。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H03/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "当前版本放到一线员工也不违和。请体现带团队达成目标，同时本人不能只做管理。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H03/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 3,
+          "text": "调性正确，但请减少冗余。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H03/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 4,
+          "text": "把虚构产品范围补入可制造性职责：视觉模组、扫描设备、增材制造设备、工业与具身机器人、协作臂和采集设备。",
+          "depends_on_turn": 3,
+          "context_fixture": "fixtures/H03/turn-04-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H03:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "b5586a0c83538a73141f5ac5da2e5535ee66f6c9e7ab2ce8e6fe5e533713b1cc"
+    },
+    {
+      "id": "H04",
+      "title": "招聘定位降级中的用户纠偏与停步",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_b11ea6d3e87a0bfdb16916e49682582a2d7f2819057d983a206275a764b9dbc3",
+          "ordinal": 45,
+          "source_text_sha256": "2fd85b036a3b7d38e7a0f4ec1dea815288441ee521921684840232f08c5a7da7"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_01e8f41eea5e732e26cbd3929d7721105caed6ff92ea42721cff8bb96e0685d1",
+          "ordinal": 46,
+          "source_text_sha256": "c64f8015f25557dfba0e2c2605b1bac5e105b51763a528684acb71c910e99d97"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_8c5b7ba012c33c94b5c7193ec0f030a2b607f71bb434ab6a362f5a05ab59d882",
+          "ordinal": 47,
+          "source_text_sha256": "4f5481bd8184428f0c317ba5027d3b52d29e13ba1a399f9598ddaef9a180c46a"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_332adbd13de6a24a2900b516652aa06e1999486dd2c1458187ff622662ea7cb7",
+          "ordinal": 48,
+          "source_text_sha256": "ff67d6c346eff633aa43993bdc5b8091ef78b486ebf224bc79eea5eb0478e1e8"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_eaff1af865e269029703d35d72d278339e767273ca50967cbe3c81209d121c0e",
+          "ordinal": 49,
+          "source_text_sha256": "7ac5c1094f67319d53fe62538196a20a717db195323c5a545d71aeaca5511fb8"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_84c73d2d30c39285240c1427509831d49bcf0f17e9d26ee93d7829577dbffc0d",
+          "ordinal": 50,
+          "source_text_sha256": "0709f89f055a980368c2d713825317153341d37cc155eb4924b027ff3f934997"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_e9ca8196e4c8cc35466799a8af73da55dea2a241ae9554bd54c615e35f3d9296",
+          "ordinal": 51,
+          "source_text_sha256": "c4eb82ebc6336ff6294af8c68ba7bfee37eaa9b0e49bddce77a9d9269ec18692"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_664b582d80b7ad568f518d61b51837bd41eaf8654985af7a4f64b8df8a42baad",
+          "ordinal": 52,
+          "source_text_sha256": "32159f5b87367750df1019afa9b55d68cac2372de1bbd76de086107de0c46ea0"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_f5e07b5b4826008d28f01b1f5687636136be9d48fb7ce528dfa9a42412b212ee",
+          "ordinal": 53,
+          "source_text_sha256": "e275f1e937807a30f409a262765348129896d244234a740f21241e08cfd59d72"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_67863c57078c137d62d76dbd12d3588b3ab8c392e2457f952797859017e30a7e",
+          "ordinal": 54,
+          "source_text_sha256": "7be7848cd495da11c523e8894fd67084800782f85980df0002779f710d13b4b4"
+        }
+      ],
+      "original_question_intent": "用户要把专家岗调整为潜力人才，先要求理解参考履历，再只改一个岗位；用户反对擅自推进另一个岗位，并补充人才来源研究要求。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "附件归属与全文读取；遵守一次只处理当前岗位；用户纠正后停止越界；公开研究含来源和未知；保留版本连续性。"
+      ],
+      "professional_review_questions": [
+        "是否把年龄/学校变成歧视性硬筛；是否从单个候选人复制个人特征；“降级”是否只调整责任层级而保留岗位真实技术任务。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "e9d2eb976a021b1592c7a82fc77dba8256ce8e6aa517420d124f09107202437b",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H04/context-v1.txt",
+          "sha256": "96686315a3e58ec7986ed023e742b48d154176b8b119e491661516179dfb111c",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H04/web/talent.html",
+          "sha256": "98d0fa8c9266c976e386e6022b9cd01674f495dabe0289c2b7e9a27cde178eb2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H04/turn-01-context.txt",
+          "sha256": "f7a2fc9b2a34fdc6b2977a234b2000ee2db690c2d9dfcb4c07136bf7daef9724",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H04/turn-02-context.txt",
+          "sha256": "4243253a9fef4e34c82d2bc5e7ac2c273aa5a3d8b3fc97fef0b7bccf319c5f8a",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H04/turn-03-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H04/turn-04-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H04/turn-05-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H04/turn-06-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [
+        {
+          "url_template": "{fixture_origin}/H04/talent",
+          "asset": "fixtures/H04/web/talent.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 0,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        }
+      ],
+      "turns": [
+        {
+          "number": 1,
+          "text": "我们有两个虚构机器人岗位，希望从资深专家定位调整为有潜力、动手能力强的初级人才。先接收一份虚构参考履历，之后逐个处理。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H04/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "【本轮合成文字材料：虚构候选人Q履历】请只理解其可迁移的任务证据，不要直接生成两个JD。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H04/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 3,
+          "text": "先处理运动控制岗位，技术要求仍需保留。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H04/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 4,
+          "text": "当前格式和措辞不合格；你只应调整资历层级，不要乱改技术内容。",
+          "depends_on_turn": 3,
+          "context_fixture": "fixtures/H04/turn-04-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 5,
+          "text": "不要提前处理另一个岗位；请先研究适合的院校与研究机构来源，把经核验的信息作为加分项候选。",
+          "depends_on_turn": 4,
+          "context_fixture": "fixtures/H04/turn-05-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": [
+            "{fixture_origin}/H04/talent"
+          ]
+        },
+        {
+          "number": 6,
+          "text": "采用精简版本并合入完整JD/JR；完成后再等我明确开始下一个岗位。",
+          "depends_on_turn": 5,
+          "context_fixture": "fixtures/H04/turn-06-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": [
+            "{fixture_origin}/H04/talent"
+          ]
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H04:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "9a3240853a07d3de66800d91090de0ec3829b2ddec5ebb56a93369637c8c5ca7"
+    },
+    {
+      "id": "H05",
+      "title": "职位重心变化的微调",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_67863c57078c137d62d76dbd12d3588b3ab8c392e2457f952797859017e30a7e",
+          "ordinal": 54,
+          "source_text_sha256": "7be7848cd495da11c523e8894fd67084800782f85980df0002779f710d13b4b4"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_9829f1f43301fe3db8b57b2342d9374caabd8bbed34412e9a5ca81fc9e735139",
+          "ordinal": 55,
+          "source_text_sha256": "2c362724dba3df5fd46d10723e9a49acaac417580736f45faea73abbbff0c47d"
+        }
+      ],
+      "original_question_intent": "用户说明旧岗位把两个难题捆绑，现应将90%重心放在具身模型落地并弱化数据飞轮。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "比较旧版与新要求；生成变更摘要；未知处不补；保留准确旧版本引用。"
+      ],
+      "professional_review_questions": [
+        "标题和职责权重是否一致；是否把“90%”误作精确工时承诺；是否仍要求一个人承担两个完整专家岗位。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "9cbec6f376c50727e13495ab89d7e3edf3ef89a524069fad5666e70be87ca502",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H05/context-v1.txt",
+          "sha256": "8d064f612e33be512a285e79bdf11798eb79d8f245f505f18b6267bda176da78",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H05/turn-01-context.txt",
+          "sha256": "71a0cc61922c6ea01e4dcab1b2e4215213407e895d2d30d5679a95740c0f0dad",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H05/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "【虚构旧岗位】AI大模型研究专家，同时负责具身模型与数据飞轮。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H05/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "业务变化：约90%的重心转为VLM/VLA/世界模型从仿真到真机运行；数据飞轮仅为预研。两个主题并列在职位名中会劝退候选人。请做有限修订并说明变化。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H05/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H05:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "56aa4f64e564910852ab6f34d788e660b4e65ab9d83e0b407f4af88ef4fc02d8"
+    },
+    {
+      "id": "H06",
+      "title": "通话记录提取人才报告",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_328b7c731ec34981e77f272f6220fd0b2451dc6bfbdaf41f93c4145386a0022e",
+          "ordinal": 56,
+          "source_text_sha256": "d9fdb096502adb6a48a44dca3532659f511a29576c86950b5c9a0e3c7ac50e43"
+        }
+      ],
+      "original_question_intent": "用户提供通话文字记录，要求提取候选技能与优势供内部人才报告。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "只读取本轮获准附件；报告保留来源；不自动确认候选档案；不作录用决定。"
+      ],
+      "professional_review_questions": [
+        "是否区分个人动作、团队结果与自述；是否保留未知和矛盾；是否避免将表达流畅等同能力已证实。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "7ca3b66e99d95feb8cf63cb24a3c5d22d9bd3fbfba58408f8e7cf045b75a77f4",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H06/context-v1.txt",
+          "sha256": "bbb99816cfc79359b6b594787f7b64aa741a357d4fb93d50d614a62bd288117a",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H06/turn-01-context.txt",
+          "sha256": "50abfa42b782ea03e105b00bb1821865126457f2fdd889429e3b774944b3d38d",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "【本轮合成文字材料：明确虚构的候选人Q通话记录】记录包含本人项目动作、团队成果、未知归因和职业偏好。请形成供招聘负责人审阅的人才报告。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H06/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H06:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "5e43768e0684f410163589d90655d0540f22259ccc4131949c1cc7cccf04cb91"
+    },
+    {
+      "id": "H07",
+      "title": "劳动合同双语转换与法律边界",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_3ca937b5c644e59a053d81ed85ad570b0624fed5efa1429f2abb44eb7c076910",
+          "ordinal": 57,
+          "source_text_sha256": "3e7799c4ed904fe9c82c697fc75a5c2c9f311988645b67cbfef4f8a8c30a95c0"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_85f00ef6eb8d22cfe91a2fecacd866ce3a1a5b128665a43481ae3a0fdf7d10c0",
+          "ordinal": 58,
+          "source_text_sha256": "3767b7f2a1efdcfec188b62ee3d6878739685700731cafc6adebaea45eda6d2e"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_0396c7f05af732eb4f5e9d92930c7676ce167e70443a31b496181e4991098e86",
+          "ordinal": 59,
+          "source_text_sha256": "eacce092230ac0f774d24585a71ddffde47755f141cfca4e53dcf59476885e16"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_b9a53d7b2d2fa3000bcd360a3a7813b87307e7a259c191b8fc8763a737c5e3cd",
+          "ordinal": 60,
+          "source_text_sha256": "8816f8b8ab536a63fd752c4dabdd79165e8577884d7c729eb7bd5123426912b6"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_d78d2fc1967d36e0b3057182dc8b50e93be9361991868ee5a8bc7d55826033f6",
+          "ordinal": 61,
+          "source_text_sha256": "a72e9c2c17de736da674681ec6bfe6bea4c0154206bd6c6fb4670df2fa466840"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_c515034d227a660112bd31899bc9b078a42d379294cb0687e5c4b622f252c38d",
+          "ordinal": 62,
+          "source_text_sha256": "796a959c5077b1ce171fd3b58880b93f7aaf0814cd993342a1c6e4d03eac5cd6"
+        }
+      ],
+      "original_question_intent": "用户先要求理解中文合同并生成越南语，再要求逐行对照、替换虚构主体、清理乱码并导出文件。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "附件版本与主体替换可追溯；生成文档可下载；明确翻译与法律审查的边界；不泄露主体或个人信息。"
+      ],
+      "professional_review_questions": [
+        "翻译是否保持义务对等；是否对潜在法律冲突作审慎标注；是否虚构适用法律结论。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "88180720e4feaf533cd807f21d796df0934771a3660b9219377cc066760fc6ed",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H07/context-v1.txt",
+          "sha256": "0adf8303aa6c1ee47314dd443954f0e631dfd294b966acdead95c532f2d9934f",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H07/turn-01-context.txt",
+          "sha256": "0148f27bf84c51d85d40c56faa7a4bc4a72b35ae3ac8110fe5146346bbaf2fd0",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H07/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H07/turn-03-context.txt",
+          "sha256": "3246441785bf5f9d4e56ccf6a1ba471d60e96fe8d22f615add7e70391ed24c26",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "【本轮合成文字材料：虚构中文劳动合同模板】签约主体尚待补充。请先识别需要本地法律专业确认的条款，不要声称完成法律审查。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H07/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "请生成一行中文、一行越南文的对照草稿。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H07/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 3,
+          "text": "【本轮合成文字材料：虚构越南主体信息】替换主体；将乱码占位符清理为空格，并导出可下载文档。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H07/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H07:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "58116110f0dcbcb36ec9f65896fa67b8fe4a20441c1049143a5941ca855313c9"
+    },
+    {
+      "id": "H08",
+      "title": "平台采购岗从泛稿到正式广告",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_cd5d1a8f165d47bcb8dbe6c2e90e8b0f3917ef8830d00bad9bbf052c3652325b",
+          "ordinal": 63,
+          "source_text_sha256": "7b0dc2eeadc1365d7339334766b957aacf92ec960555f63af6f187d9a7836c38"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_05458565edc3e3b3bad0196c79bfbbf66d0d82863b9e847f29dc6ea7830bd30d",
+          "ordinal": 64,
+          "source_text_sha256": "a95cac8c39ed629cd3245a395b45747aa3ac7c27f40aef50ee4741afb69ed930"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_f915c28e2fdbb40cd250c7677c0dfc3862b429933b28da26fb77e222ffa256e3",
+          "ordinal": 65,
+          "source_text_sha256": "e24808fd4b714855d6155a507d634ac92360f47b06894239949b650aff969f1f"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_ba7fba7ea0d5884acb90e4d55746bca444c530130c6c0eb3251c2de614d2b2da",
+          "ordinal": 66,
+          "source_text_sha256": "1b37b70e0107051d64bc9070685b112ead85c434441e1dbd948287e089771d07"
+        }
+      ],
+      "original_question_intent": "用户补充多产品、OEM/ODM、指定供应商和个人操盘边界，持续纠正文风、格式和是否带人。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "最终版本继承全部纠正；格式符合纯文本；不把指定供应商写成可随意替换；不凭空添加管理职责。"
+      ],
+      "professional_review_questions": [
+        "职责是否反映受限议价、交付和风险管理；是否仍把“经理”误写为团队主管；是否保持广告专业性。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "26bcd26f6bea4124b7687b12a95fba3f72b029ec19a297a1f61d2565a7b2c3d9",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H08/context-v1.txt",
+          "sha256": "cf4bf8d3a12ec15d25a9cf6cbbad3f8ad59738c273f413c655b6f5e2db05dcde",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H08/turn-01-context.txt",
+          "sha256": "ce1cdb3e55ae64bfc4f15f2adcd0ba90fc2d85a473eb93f862695a60c629d314",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H08/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H08/turn-03-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H08/turn-04-context.txt",
+          "sha256": "e882be4b6a1da91f50fa2f21ad7a648d8248921dc5d5a5def344269671bd1ecf",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "为虚构复杂硬件公司的结构件采购经理修订JD/JR：平台部门覆盖多类产品，重点承接OEM/ODM项目和客户指定供应商。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H08/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "文风需正式，避免口头表达。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H08/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 3,
+          "text": "不要使用Markdown加粗符号；给可直接发布的纯文本。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H08/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 4,
+          "text": "确认：替代供应商空间很小；岗位本人操盘，不带团队。",
+          "depends_on_turn": 3,
+          "context_fixture": "fixtures/H08/turn-04-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H08:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "85fb1bc6b2dc6cdf20a534089163e8320a76ca2bff0cfbb88295da3a766065be"
+    },
+    {
+      "id": "H09",
+      "title": "敏感履历润色不添事实",
+      "source": [
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_9cd3bd7952694474c35f90297ef1923a7a86e9d4fdc507b50c2110cbbf9dcd4d",
+          "ordinal": 67,
+          "source_text_sha256": "6a02439b5d88ac60dc3cdd1d78a856839e2affe1d78b652c53bebaf4dc4adcf4"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_e716b18a7728756815e3305eb6373c1e13b1062584ae47cf657581d15cf079ab",
+          "ordinal": 68,
+          "source_text_sha256": "0d2f757110f76944c9eae6f60b06b9426dd16ae6fb12b4a0668b201172795b66"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_4d0143e5629a3d40b8e66dee6bf70635f89705f483198195bf9d76a0630feec3",
+          "ordinal": 69,
+          "source_text_sha256": "57d548535db5fd509e5d5d96629996492ebcaca1ba6ee96c445af0827995de71"
+        },
+        {
+          "session_alias": "s_9725c2ddade7c90b1b263a044b2b56d8ddf0ad603a3138a8929d5cc3f7e2ce2c",
+          "message_alias": "m_8f3cbe7ef507d688dc381f55b68f8795bf8cfdba46abd01285a48e9a38d04ba0",
+          "ordinal": 70,
+          "source_text_sha256": "cc8e2b0ea0838d264560222a57bf77c15de2e6993696b7055ff437fddd5e8c28"
+        }
+      ],
+      "original_question_intent": "用户明确要求专业润色且不得增加信息，后续要求突出职责成果。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。 删除家庭、婚育、年龄等非岗位相关个人属性；机构和数字替换为虚构等效项。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "个人材料不进入共享标准；正文与派生结果分离；不把自述变成验证事实。"
+      ],
+      "professional_review_questions": [
+        "是否移除与岗位无关的敏感属性；是否保留事实边界；是否因“抓眼球”夸大业绩或关系资源。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "e82ceab15069f0006c883bc90c4f2a1091b335288092fda60847e1c9e3a3bb7b",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H09/context-v1.txt",
+          "sha256": "e6f2655198023c92bc9f8e0396ee2931ba85068020bdb65e193d05d0cdfb81ba",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H09/turn-01-context.txt",
+          "sha256": "ffc0f4805183d6f06afb1850318d34a8c39b644687c5962c5d9bb9b8aed21313",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H09/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "【虚构履历】候选人Q有政企项目、区域业务和公共事务经历；材料混有个人属性、资源自述和未经核验的业绩数字。请仅润色岗位相关内容，不增加信息。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H09/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "请把职责和成果从流水账改成有层次的专业表述，同时标记需要核验的自述。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H09/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H09:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "f1fae5c33003a02e326cd3bb0199f4cb132e82e4ee06f6a3bdccf84a2c6b4fa5"
+    },
+    {
+      "id": "H10",
+      "title": "公开招聘全景与当前性",
+      "source": [
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_3fe6499829e82040849d92fa9335d93f1e760fa3600f8d2b4f5a1662e043d7aa",
+          "ordinal": 6,
+          "source_text_sha256": "d12ca7a8c2cff4c69ee64ae1a922bcd4d4a7b7d8ee7461ba28ecf4a96c2fde96"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_b42d5ff2e5fdb323a50965384f0f55cc88e98659fdc288554bb7926a0fbca4f0",
+          "ordinal": 7,
+          "source_text_sha256": "40cadce45ab905f588015623ed83710ac0e41b45be2c3e12307864b9d5a33480"
+        }
+      ],
+      "original_question_intent": "用户询问当前公开招聘全貌及渠道，并要求评价JD质量。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "逐来源记录抓取状态与as-of时间；失败来源不推断停招；事实与分析分开；保存研究成果及引用。"
+      ],
+      "professional_review_questions": [
+        "“当前”是否有时间戳；质量评价依据是否透明；未采集是否误写成没有岗位。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "12cf062817fb11906ca4303f6e3a307523028babee330eed5399f15d69e78e6a",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H10/context-v1.txt",
+          "sha256": "55ba269a98c5c57d5355835e7177a978d9ca21797fdbf5920fe56c5d26ffc324",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H10/web/root.html",
+          "sha256": "32675b02968ef9e901dc4dfcdd13cd2ff4cf90b3795d197c79665f0d817998b3",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H10/web/social.html",
+          "sha256": "6aa4d1d916b13327889933ffcd72ccc71a8e28c8459c6b84f398f272c124d641",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H10/web/campus.html",
+          "sha256": "77fe4547d467417b99ae0db355a0c96a76d45dca3df1f5a2a46baf23eed621f5",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H10/turn-01-context.txt",
+          "sha256": "f7a17688a1e1d317ab6d39ca207eecb95bde45e3f361cdb14c3dda9c297a271f",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [
+        {
+          "url_template": "{fixture_origin}/H10/root",
+          "asset": "fixtures/H10/web/root.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 0,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        },
+        {
+          "url_template": "{fixture_origin}/H10/social",
+          "asset": "fixtures/H10/web/social.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 0,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        },
+        {
+          "url_template": "{fixture_origin}/H10/campus",
+          "asset": "fixtures/H10/web/campus.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 0,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        }
+      ],
+      "turns": [
+        {
+          "number": 1,
+          "text": "调研虚构目标公司当前公开招聘需求、投放渠道，并评价哪些JD信息充分、哪些需要改善。只访问明确批准的公开URL。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H10/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": [
+            "{fixture_origin}/H10/root",
+            "{fixture_origin}/H10/social",
+            "{fixture_origin}/H10/campus"
+          ]
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H10:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "3d2c28723ed9da0ff609a493062faabee2775046bf220482da285ae13926da64"
+    },
+    {
+      "id": "H11",
+      "title": "组织问题研究的连续追问",
+      "source": [
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_b3ff5c2294dba10e120dca7d067ab36b27b63e17dad6dea00cac2d2b1c6f88de",
+          "ordinal": 1,
+          "source_text_sha256": "2474cdd6aaaa78ca1b78c7323bcd56bb58dd57dea105f30babb793a2210a82cb"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_c7dcd88be5dc80635f0a6853c2f97a5e00b48cc7ec1af0912f1ea94c4b835fcf",
+          "ordinal": 2,
+          "source_text_sha256": "00b7b95e5f23b97f2bca1e9ee0ad8c8ab0a6f9a0bcbed2950a7e31d8b61fe079"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_8ed6ec6e219f2268cbe4b363e7ea9e66d44f7c6a64c39edda12ebe617df2cd6b",
+          "ordinal": 3,
+          "source_text_sha256": "c3ff4a556d2ce38cf4a4c829c2a1403f07565c240c1931c28dcb76eed46e2a6e"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_05db2527cc716c60f329ed68e729d21df356ae694e23848f63917fb1d396c579",
+          "ordinal": 8,
+          "source_text_sha256": "5e6d908e5bef4343c77e9489cad78ab30c5f4a7d2f907151843375cec87ba773"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_bda2067af35e49fd43d1831262199f7e5b440772bb9354baecda5f75fcbaa38f",
+          "ordinal": 9,
+          "source_text_sha256": "b595fed6c552bd0dc24773cf3445c51243a742c0d4e9eb271a2c6d5be8ef4803"
+        }
+      ],
+      "original_question_intent": "用户从研发中台案例、具体公司案例继续到本公司建议、利弊和推进节奏。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "跨轮复用准确研究成果；公开来源按时点引用；输出替代方案与未知；不把同行做法直接套用。"
+      ],
+      "professional_review_questions": [
+        "是否识别组织情境差异；是否把相关性当成功因果；建议是否含可逆试验和失败条件。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "849aebf7c009b9c5188e7d34829552e1a399e908f4ffc546b7265986fcb47022",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H11/context-v1.txt",
+          "sha256": "cdaa5df2a54542e47242c83ae72afcbd1aaf15f24ac66fec08c072ab03b4d165",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H11/web/peer.html",
+          "sha256": "b9f4816e918764ef817c05a095838ac23f002e61c4fabe06fcb5f363f331ef4b",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H11/turn-01-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H11/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H11/turn-03-context.txt",
+          "sha256": "643651ef2f6e5680e7ef6c0232175b22e1ca50e1d7bf5f92496f982fd61420d7",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [
+        {
+          "url_template": "{fixture_origin}/H11/peer",
+          "asset": "fixtures/H11/web/peer.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 0,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        }
+      ],
+      "turns": [
+        {
+          "number": 1,
+          "text": "先研究业界研发中台的成功条件。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H11/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": [
+            "{fixture_origin}/H11/peer"
+          ]
+        },
+        {
+          "number": 2,
+          "text": "再分析一个虚构同行案例的构建方式、收益与代价。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H11/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": [
+            "{fixture_origin}/H11/peer"
+          ]
+        },
+        {
+          "number": 3,
+          "text": "基于前两步，为虚构成长型硬件公司提出是否建设研发中台、设置原则和推进节奏，并同时列出不建设或局部建设路径。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H11/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": [
+            "{fixture_origin}/H11/peer"
+          ]
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H11:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "26c058902ce0a1071414c72ef9a765731e726584dedcc537423d5b111b5ceca6"
+    },
+    {
+      "id": "H12",
+      "title": "招聘体系回答不满意后的重构",
+      "source": [
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_f62b3b1097be374df0a03c155a3e058ab8f412514c018e2f62c7b73837adf857",
+          "ordinal": 15,
+          "source_text_sha256": "c7f6f20f476423e6d6cc31d47d29da791d86bda529a8f66a9a99794b1053b27b"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_f266f3e52b0f96f8ef3a4f635891da2ad26da3faa4dea809744f01aade3e28be",
+          "ordinal": 16,
+          "source_text_sha256": "a0fc7063a06ab8dd5fa2faa8f22912bb4f8004cd7ad76980b11ab4b5adf93344"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_0048c43b80b8b6bc97a96386d2874b5ca8c09da648c5de5c8d1588675387f563",
+          "ordinal": 17,
+          "source_text_sha256": "8a40b78d046b8df658bc53164443a637440a941755d9fe1ef629d10df9bd40de"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_1e0041dd2e2a7fb664e0aaaa9e3830b63b8851adcfa579fa01bdfce81a13f22f",
+          "ordinal": 18,
+          "source_text_sha256": "3532e72c2c6e0bd25c8be6e317fc8e845b13dd35403ca33431a5d6ca52ca986d"
+        }
+      ],
+      "original_question_intent": "用户两次表示不满意，随后要求跳出特定公司身份，从成长型企业的一般问题重答。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "识别这是同一目标的纠正；第三轮改变适用范围；不重复旧答案；保存新的适用边界。"
+      ],
+      "professional_review_questions": [
+        "是否提出可执行机制而非堆清单；是否说明规模/阶段假设；是否避免把历史公司事实带入泛化答案。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "a337e49b02f8e230674ad8ab925b86775d8e36d22973badccc075f3da15c7037",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H12/context-v1.txt",
+          "sha256": "5942bc6000b15216d57ee0468dcea65e347d534ffea5095e2e95bb088d798ad2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H12/turn-01-context.txt",
+          "sha256": "11623a3b7a8350dede8bab7993d56df92e5c8822b9c185edcb807026927ac546",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H12/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H12/turn-03-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "如何从团队、工具和流程搭建高效招聘体系？",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H12/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "不够详细，请重写。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H12/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 3,
+          "text": "仍不满意。请跳出单一公司的身份，面向成长型企业，从团队、流程、方法和工具多维重构。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H12/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H12:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "e2fe7c573b387e0cbe6f48aac762bd60aac31fc3bdd18a9786a148a9f9221d1c"
+    },
+    {
+      "id": "H13",
+      "title": "附件离职分析到改进行动",
+      "source": [
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_ecaf8f717a17add86276b10d95b9593874a331ed737e3efa1daa9bbe078702e0",
+          "ordinal": 19,
+          "source_text_sha256": "c7936d8812cb62ad228efaf6d86b25fbffeaaf1eb732cc0e938633b115f39b37"
+        },
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_fe70f0e6a37fcae7767e239ba2be0f7024dad4032c4b7dd3748aad98b26eb9f2",
+          "ordinal": 20,
+          "source_text_sha256": "b3644fcbb636270d0bb0d42086a456f2e4255c30b9dfea8b50cfb84749d18086"
+        }
+      ],
+      "original_question_intent": "用户上传分析文件并要求据此提出改善措施。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "全文读取与未读范围透明；引用附件版本；保存分析结果；不暴露逐人记录。"
+      ],
+      "professional_review_questions": [
+        "是否避免小样本因果化；措施是否对应证据并设验证指标；是否保留选择偏差和缺失数据限制。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "65842e35a186249a35228add602fb4011f80a21999acbaf093e34ac5856a5bda",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H13/context-v1.txt",
+          "sha256": "fadefa510ea28bbc58efd33d077695278dd3e854699cfdfa172a8aff6b2d257f",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H13/turn-01-context.txt",
+          "sha256": "7c53c1cf97a06a48778c34a9b19d983792b09cef21dde49c350bebceaf48693a",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "【本轮合成文字材料：虚构离职分析】包含分组统计、开放文本和缺失字段。请提出改进措施，区分数据事实、解释假设与需补证事项。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H13/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H13:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "9607bcbab2433b5e75c2ae5adecbda5d36ce110bddfca1fe04878598f6bb06d6"
+    },
+    {
+      "id": "H14",
+      "title": "研发效率困境诊断",
+      "source": [
+        {
+          "session_alias": "s_756d537e50a8ea0bf7e3e1b2404c229e73dba8bd35db6d6cbebc62decf01dc97",
+          "message_alias": "m_14090a24a5f5d971480c80694c70172bf912ffe80c3f2a495b88ca673ab85d09",
+          "ordinal": 28,
+          "source_text_sha256": "7e05700517f8af2723ee3932f435db8fe85d62e903e2af25815102756c9b2b2d"
+        }
+      ],
+      "original_question_intent": "用户描述重复踩坑、产品差异大、公共组件缓慢、人力被交付占满、周期推迟，要求破局。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "无需岗位对象也可启动专题研究；形成假设、所需证据和可逆行动；不把用户描述直接当根因。"
+      ],
+      "professional_review_questions": [
+        "是否区分症状与机制；是否兼顾交付与平台投入；指标是否会诱发错误优化。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "9b15b4e5920a658cd87d67e63c8379e4ee10f068e85d786aefe3f70007519453",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H14/context-v1.txt",
+          "sha256": "d774be08636fb87e92fe37c589acef92f10770f347806cc0df440cde5c8743c8",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H14/turn-01-context.txt",
+          "sha256": "04c957258a10089373b41d06dae6fd4d238c0274f482e913849c3a50da78cd4b",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "虚构研发团队频繁重复踩坑，产品形态差异大，公共组件建设慢，人员被交付占满，项目周期持续推迟。请诊断相互竞争的解释并给分阶段行动。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H14/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H14:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "ccc23046e010ecd77bd3ad66e0f47c733bd41a08f50c57a87f063dcfe15c7239"
+    },
+    {
+      "id": "H15",
+      "title": "多地点仓储经理面试方案",
+      "source": [
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_6a1ca96237b8faefdf9707300d162573099ae7ce8f9addc18fcdec2aa636cf12",
+          "ordinal": 4,
+          "source_text_sha256": "f94158f6a8ea62f0e62b0263174e04b5fead1c6deef354e587a67fd63ceb4f57"
+        }
+      ],
+      "original_question_intent": "用户要求为负责两个国家/地区仓库的经理设计面试题。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "可直接保存interview_plan；不制造候选人回答；地点与合规未知需标明。"
+      ],
+      "professional_review_questions": [
+        "是否覆盖库存准确、跨境协同、安全合规和异常恢复；是否把国籍/语言作无依据筛选；是否提供行为证据锚点。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "a504472265174587c4afa8b98aa5f4f5ff045247ea179361dd1b5bc65ba4230c",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H15/context-v1.txt",
+          "sha256": "ef1f558e55bc0f554820f72e34277315d2eb8a386c613d9ef360e108aedeb863",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H15/turn-01-context.txt",
+          "sha256": "637acf481997d9a7ef4c9454177122e137f1e1448925f2703ef5fa0bf02ef716",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "为虚构公司仓储经理设计结构化面试：负责甲地与海外乙地仓库。请给共同核心、追问、证据记录方式和未知。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H15/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H15:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "e9429cbf14166d43a59cb99c24f2f1ae9a5ceaf9c34bd362d4e60d0fb715c298"
+    },
+    {
+      "id": "H16",
+      "title": "技术岗位面试题与失败恢复",
+      "source": [
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_9581aab0924fdf442058d3b04f698ec807942a72eddadd9ecd61eab392821c9e",
+          "ordinal": 16,
+          "source_text_sha256": "c87f04ede45fe9e4e4263c9bab3b836ed33bff9201bd0326b6e920777821990d"
+        },
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_8ed6cae0d21af4df29338a45dfc73f159899882fe8a1ded257b5d20e382e2378",
+          "ordinal": 17,
+          "source_text_sha256": "563d498e8b246c4f0fcc867824efcb1038a01ba0caa01ff02018a5a098eef505"
+        },
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_f75ba4a68b2c1de80010078f1389ef542dc48ab6ef90f211caf5fefda13c039d",
+          "ordinal": 21,
+          "source_text_sha256": "0f3f63e5fbc8bc314eca46fb6bed7fecace60867a0f3cf3bf3eb7abf5dbd1045"
+        }
+      ],
+      "original_question_intent": "用户要求喷嘴/挤出工艺结构岗面试题，中途报告系统反复出错，随后发起恢复重跑。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "新用户抱怨可见；恢复使用同一输入身份或明确新重试；不重复副作用；最终成果与失败记录分离。"
+      ],
+      "professional_review_questions": [
+        "是否因恢复丢失原重点；是否真正验证故障诊断、材料适配与量产；是否生成假面试事实。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "c3974054023ddfd0738c57048fd01208a900ce963be75608714b8ee6b277306e",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H16/context-v1.txt",
+          "sha256": "43171f62066f8eb43e77497b3e5626c4af490104ce269380e11ce6af65c7067f",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H16/turn-01-context.txt",
+          "sha256": "24a2187eee010d0319cbe2a29beeab93c1cf74a4d3da38fca610c197c19922d3",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H16/turn-02-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H16/turn-03-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "为虚构增材制造设备高级结构工程师设计面试，重点验证热端、喷嘴和挤出工艺。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H16/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "怎么总出问题？",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H16/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 3,
+          "text": "这是失败任务的恢复重跑。保持原目标，输出可追问、可记录证据的面试方案；不要把系统故障写入业务成果。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H16/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H16:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "fault_spec": {
+        "kind": "owned_local_worker_process_sigkill_restart",
+        "trigger_turn": 1,
+        "preconditions": [
+          "disposable local DB/API and separately owned real worker process",
+          "real configured HR model; no fake success rows or provider stubs for business acceptance",
+          "observer can identify committed active model attempt for this work and its exact input revision/lease epoch; if not, BLOCKED"
+        ],
+        "steps": [
+          "Submit actual authorized request; capture key/body SHA/work_id/thread_id/input_revision.",
+          "Wait for running work and committed unfinished model attempt, capture attempt_id, lease owner/epoch/deadline and ordered event/message/result identifiers via read-only observer.",
+          "Send SIGKILL only to captured owned Worker PID and verify OS process exit; do not edit lease/state rows.",
+          "Replay identical POST key/body; assert same work_id and no second logical request.",
+          "Wait actual configured lease expiry; restart same release worker and observe claim epoch advances plus recovery_started event for same work.",
+          "Observe interrupted old attempt and new attempt or explicit bounded recovery state; wait terminal outcome.",
+          "Only after recovery observation deliver later narrative complaint/correction turns; these are not fault injection."
+        ],
+        "assertions": [
+          "Persisted input revision, exact references and scope survive crash byte-for-byte.",
+          "New lease epoch fences prior owner; no old-epoch commit accepted (actual stale attempt exercise or mark this assertion unverified).",
+          "Each committed result revision remains readable with matching bytes/hash; duplicate logical output effect forbidden, legitimate user-requested revisions allowed.",
+          "Recorded usage/attempt outcomes preserve interrupted uncertainty; never claim provider exactly-once billing.",
+          "Recovery remains in original owner/thread; H17 reads all nine allowed originals in order and excludes company A after correction.",
+          "Timeout, no observable attempt checkpoint, provider exhaustion, or missing vision support produce blocked/failed evidence, never synthetic pass."
+        ],
+        "timeout_seconds": 300,
+        "production_fault_injection_authorized": false
+      },
+      "content_sha256": "d27bc60661b27d82ba55a46c576cbf97a12b4b30f50a2c9e28fb4bf38ac3b921"
+    },
+    {
+      "id": "H17",
+      "title": "附件公司纠正与九图恢复",
+      "source": [
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_ddfd53c7611d8b899fbccfa56c5602cd947b26ae0484dea93d46ed0e9b26f646",
+          "ordinal": 13,
+          "source_text_sha256": "dad0edac470160f8bba938aab75500e8552959b6f0661dc4fba737a442402b65"
+        },
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_89f8205575f199819a50f9fcc45c23847e8f4f2ed5aaea8944a3ee2eabdd6a8c",
+          "ordinal": 14,
+          "source_text_sha256": "8bbdd3af26397e23bfa51553eecd8fbdb34dc5a701bfb7b34636d67c8726ff90"
+        },
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_fd84f34802724a1722d8edc93b4cd922a979037c7dae8179983411340a20d5d8",
+          "ordinal": 15,
+          "source_text_sha256": "18a563fd99517fb2bba95c51021bf49b7dd0f3eedf80a8d6f64a314aefc0fe83"
+        },
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_8ed6cae0d21af4df29338a45dfc73f159899882fe8a1ded257b5d20e382e2378",
+          "ordinal": 17,
+          "source_text_sha256": "563d498e8b246c4f0fcc867824efcb1038a01ba0caa01ff02018a5a098eef505"
+        },
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_47b348e50de0c526d1b06be27272b9f9d18bd96e64130230e44e3d35caff1b9a",
+          "ordinal": 18,
+          "source_text_sha256": "87ac0e2b9ddc3ddb9db2d794487d0fba6bd0fa7be7adb4ef7b334c4b1e79dcc3"
+        },
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_9055e4223ace303eed7b2203641d36967e8e2db37abff9dc9a9f58f31683ef4e",
+          "ordinal": 19,
+          "source_text_sha256": "106e6b00e7341dc9d9719cea4ce096862aec463928942e1dce74c8cb60e49df1"
+        }
+      ],
+      "original_question_intent": "用户先纠正目标公司，要求逐图聚类研发岗位；失败后带准确附件身份恢复。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。 所有公司名、附件ID、路径与图片正文均替换为虚构等效材料。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "附件数量/顺序/哈希冻结；失败恢复不扩大scope；九份均有读取回执后再总结；不重复保存冲突成果。"
+      ],
+      "professional_review_questions": [
+        "聚类是否允许一岗多类；岗位数量是否误推预算/战略；失败或不可读图片是否明确披露。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "b0a301d53047b14a7bd60b6823698e9fa2e5e793f64153a60de6a0f7d51934ef",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H17/context-v1.txt",
+          "sha256": "056142eda478601f859842448964e858a3e1ad86f7df25d49dbc475f25dd1d9c",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-01.png",
+          "sha256": "fe31ba25a9225f9929298066c2e383f751ae3d21f3f63684db5465fd93b0e04b",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 1,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-01.review-only.txt",
+          "sha256": "84f92c068bcac9da31c86ace915d086901b4d48d528895754bc997d9f82d3322",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-02.png",
+          "sha256": "6ccee6417f9cfa1212ca250c39c832832d355c3af57efaf81072543c55dc9131",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 2,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-02.review-only.txt",
+          "sha256": "410392a4f99b6ea62bca41433465c9e058d18aa87021bcc9bef881a18674a17b",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-03.png",
+          "sha256": "af5639c87c6c5e0aaa249916d7b68873bcc622efbb803568df7b5dbcbfe0fe63",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 3,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-03.review-only.txt",
+          "sha256": "ea4e471bfc8b96d8ae365fad96415e3afdc443e9ddf2c9cde82b85f696af8140",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-04.png",
+          "sha256": "fc39d26490c33db129e8b17b61b11d672acf7a27fb5e8d82fff455c007dc09ee",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 4,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-04.review-only.txt",
+          "sha256": "52522fb989e5411653b1d46ac50f2e9cfb4ac9bc391bc6bb628eca52b4c8493e",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-05.png",
+          "sha256": "6cdd8099d32acf6d7cbe4307a839b236025483670ce6f9b6275b68c673e62331",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 5,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-05.review-only.txt",
+          "sha256": "b242673fb5923a69ccaebfd799f4ae15587417f521e85bcca3b24bd5625e1b56",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-06.png",
+          "sha256": "2b24c8fa1e173d94130d1fa7b574ed2a247983dcd4ad5d89ff2832e4f3adf9b7",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 6,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-06.review-only.txt",
+          "sha256": "ec257b57761df81f9edd9bea9331ea9e543ef50da0d0439c4b1e98580411b2a4",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-07.png",
+          "sha256": "5b8d0efebc8cb46c89991508e98ad87c2460c261830a23f238a2d45134baf92a",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 7,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-07.review-only.txt",
+          "sha256": "c3c5c0ba74010dc5afe23c2feaa987049d03ff07f3cde5e33c0311d1a7f55c93",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-08.png",
+          "sha256": "f527aa205b00bf65fcb774720555a7531f24bd203e198f4951de9d04ffc3e238",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 8,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-08.review-only.txt",
+          "sha256": "62ad9cf8d3bd9fb84ab128d120e6c4a30eb5cd1d19e867174186be03219ecb0d",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/image-09.png",
+          "sha256": "5a5971fa0f54e15c3a14c0e8fb32b99a72ff8e02f16fc803164d1bc9403b6d26",
+          "version": "synthetic-v2.1",
+          "provenance": "newly rendered synthetic screenshot",
+          "ordinal": 9,
+          "role": "model_image_input"
+        },
+        {
+          "path": "fixtures/H17/image-09.review-only.txt",
+          "sha256": "a7b6e42dae295ce0b5a072c7a8f2af46acf61c196d6588298395a6009768424d",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/turn-01-context.txt",
+          "sha256": "dc1f631ac3a2566fa4724a075f93862feeda5aac190382cf30e0a1070d356bcb",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/turn-02-context.txt",
+          "sha256": "2a1bc040da0329a4c60017cd56c5c35f7221db05ab3c6fa1b168bcb7d196bc5a",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/turn-03-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H17/turn-04-context.txt",
+          "sha256": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "研究虚构目标公司A的研发岗位。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H17/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "纠正：目标是公司B；【附件：9张虚构岗位截图】。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H17/turn-02-context.txt",
+          "attach_assets": [
+            "fixtures/H17/image-01.png",
+            "fixtures/H17/image-02.png",
+            "fixtures/H17/image-03.png",
+            "fixtures/H17/image-04.png",
+            "fixtures/H17/image-05.png",
+            "fixtures/H17/image-06.png",
+            "fixtures/H17/image-07.png",
+            "fixtures/H17/image-08.png",
+            "fixtures/H17/image-09.png"
+          ],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 3,
+          "text": "逐张读取，按光学、硬件、结构、软件、算法、制造工艺聚类，并分析资源方向；区分图片事实与推断。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H17/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        },
+        {
+          "number": 4,
+          "text": "此前失败，请从持久记录恢复；不得遗漏、不得把图片外信息写成事实。",
+          "depends_on_turn": 3,
+          "context_fixture": "fixtures/H17/turn-04-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H17:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "fault_spec": {
+        "kind": "owned_local_worker_process_sigkill_restart",
+        "trigger_turn": 2,
+        "preconditions": [
+          "disposable local DB/API and separately owned real worker process",
+          "real configured HR model; no fake success rows or provider stubs for business acceptance",
+          "observer can identify committed active model attempt for this work and its exact input revision/lease epoch; if not, BLOCKED"
+        ],
+        "steps": [
+          "Submit actual authorized request; capture key/body SHA/work_id/thread_id/input_revision.",
+          "Wait for running work and committed unfinished model attempt, capture attempt_id, lease owner/epoch/deadline and ordered event/message/result identifiers via read-only observer.",
+          "Send SIGKILL only to captured owned Worker PID and verify OS process exit; do not edit lease/state rows.",
+          "Replay identical POST key/body; assert same work_id and no second logical request.",
+          "Wait actual configured lease expiry; restart same release worker and observe claim epoch advances plus recovery_started event for same work.",
+          "Observe interrupted old attempt and new attempt or explicit bounded recovery state; wait terminal outcome.",
+          "Only after recovery observation deliver later narrative complaint/correction turns; these are not fault injection."
+        ],
+        "assertions": [
+          "Persisted input revision, exact references and scope survive crash byte-for-byte.",
+          "New lease epoch fences prior owner; no old-epoch commit accepted (actual stale attempt exercise or mark this assertion unverified).",
+          "Each committed result revision remains readable with matching bytes/hash; duplicate logical output effect forbidden, legitimate user-requested revisions allowed.",
+          "Recorded usage/attempt outcomes preserve interrupted uncertainty; never claim provider exactly-once billing.",
+          "Recovery remains in original owner/thread; H17 reads all nine allowed originals in order and excludes company A after correction.",
+          "Timeout, no observable attempt checkpoint, provider exhaustion, or missing vision support produce blocked/failed evidence, never synthetic pass."
+        ],
+        "timeout_seconds": 300,
+        "production_fault_injection_authorized": false
+      },
+      "image_coverage": {
+        "historical_nine_images": "not_available_not_covered",
+        "synthetic_images": "Pillow rendered new text-only job cards before image-generation constraint reminder; not historical reconstructions; no equivalence or quality claim",
+        "vision_acceptance": "not_run; review sidecars cannot replace actual image reads"
+      },
+      "content_sha256": "37ab67f2634fad0cd13d9d7f78d9e3a05eee8691da03c0e30bacf512d4ea981e"
+    },
+    {
+      "id": "H18",
+      "title": "搜寻地点约束与量产证据",
+      "source": [
+        {
+          "session_alias": "s_454fd6072959bf7dfc25953cb56ea0a6bf39235a1409a4277f04610824f19e0d",
+          "message_alias": "m_31780b506728eec260489a1ab23cd2f6a0cc1b0dd6bac50fb9e60f7eb42b2cfd",
+          "ordinal": 2,
+          "source_text_sha256": "b4a3846d46c537283e9608f9a5b5278086739538dd181df099c2f1750095baf7"
+        }
+      ],
+      "original_question_intent": "用户要找智能设备视觉算法人才，限定当前或意向地点并强调量产经验。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "公开研究与候选个人材料边界分开；只生成线索/策略；不发送；来源与时间可追溯。"
+      ],
+      "professional_review_questions": [
+        "是否把地点意向和量产经验当作已证实；是否定义量产任务证据而非只看公司标签；是否避免年龄等不相关筛选。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "86dcdf536123cf82c677ac57201ce21b0a4f4b7b55b98e602d888a8e179af8b5",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H18/context-v1.txt",
+          "sha256": "7e657a01bc9eeb027804bd7ddb6cb3ac1812728fb3b87c91d94ea6a7d892c336",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H18/web/channels.html",
+          "sha256": "6d3b3fe4a97578d29b23aa810c71ba9a355c797f9e3160d9f163b1d9b6bad745",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H18/turn-01-context.txt",
+          "sha256": "f5659b7af0510c007c09f95b0e7320fec3d188e1e9b545341669f724d268de8a",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [
+        {
+          "url_template": "{fixture_origin}/H18/channels",
+          "asset": "fixtures/H18/web/channels.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 0,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        }
+      ],
+      "turns": [
+        {
+          "number": 1,
+          "text": "为虚构智能户外设备公司的视觉算法岗位形成搜寻策略：工作地或明确意向地为虚构城市S，要求有量产相关证据。不要联系任何人。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H18/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": [
+            "{fixture_origin}/H18/channels"
+          ]
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H18:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "059b075acbe4d53695236277012c26dc701c888ed36e4fef6a2f68358273d94f"
+    },
+    {
+      "id": "H19",
+      "title": "测试负责人需求逐步明确",
+      "source": [
+        {
+          "session_alias": "s_94637f0286dab566f115cd512883b7c09d10226bf5758028fba1fbefdf75efa2",
+          "message_alias": "m_02b67ee702b996c137ec534b730d4a73cc2f2e06340c2db528bd65bfadc198c2",
+          "ordinal": 4,
+          "source_text_sha256": "30f2dc1bbd7e680601905d4cc495e9eae44823e3af2147ad57a2cc8f923d9819"
+        },
+        {
+          "session_alias": "s_94637f0286dab566f115cd512883b7c09d10226bf5758028fba1fbefdf75efa2",
+          "message_alias": "m_72fa26e60a4d590cc29000d5d70f921f1e53b086641445c25ebf28538ffa005e",
+          "ordinal": 5,
+          "source_text_sha256": "e07e100f22fbba25878bde8a66ba98f34458fcf7fe69b841a590f4adfcd31314"
+        }
+      ],
+      "original_question_intent": "用户从替换负责人开始，补充这是测试一号位、汇报关系、软件/硬件/自动化范围和大团队规模。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "第二轮修订同一岗位；组织信息仅用于本轮；保留未知；不凭“替换”评价前任。"
+      ],
+      "professional_review_questions": [
+        "是否从团队规模推导治理职责而非简单堆管理词；是否覆盖质量体系与业务结果；是否制造汇报层级外事实。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "5cf28dbeb222a1eebd90797287a2ebc23062612534230e1c0487c41752295a66",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H19/context-v1.txt",
+          "sha256": "09cc1442a1aaabffe0f8ee37c7ace7f70a8e2ba3123d18eafdbae99bc66a5cf9",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H19/turn-01-context.txt",
+          "sha256": "2ed7270983a1d13174ce00ed37d2489b961edd6391ed47f8a50bf21b4d03634a",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H19/turn-02-context.txt",
+          "sha256": "7a0363e251b58d29e1bb36aed00bf4cebe2ec3f21da850bb9f15ba3833349c95",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "虚构公司需要替换测试组负责人，请先起草岗位理解。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H19/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "补充：这是测试一号位，向研发负责人汇报，覆盖软件、硬件和自动化测试，团队规模较大。请据此修订JD/JR，并列仍需确认的业务结果。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H19/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H19:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "b165bb93a79f1fe455228ac65e546484661798ea3f2a49446c33c90d06f36af6"
+    },
+    {
+      "id": "H20",
+      "title": "制造模式专题的依赖式追问",
+      "source": [
+        {
+          "session_alias": "s_94637f0286dab566f115cd512883b7c09d10226bf5758028fba1fbefdf75efa2",
+          "message_alias": "m_30ec391bd7ba005e8bd5f0e6430fe163f370d6e7c2c94f2a53b43c23b2089e86",
+          "ordinal": 6,
+          "source_text_sha256": "399db3afc026fab249c7ad2589f588eb3253840d87e69cc8cd54c749dc5327d1"
+        },
+        {
+          "session_alias": "s_94637f0286dab566f115cd512883b7c09d10226bf5758028fba1fbefdf75efa2",
+          "message_alias": "m_6debd85c78b21967652d484c1a8197859075b6ab8cd89daf7e83cfded1e749b3",
+          "ordinal": 7,
+          "source_text_sha256": "c9e9a062f5d588f3adb481458f2b719b1a133ffb48b468eb0f61be6004dae9de"
+        },
+        {
+          "session_alias": "s_94637f0286dab566f115cd512883b7c09d10226bf5758028fba1fbefdf75efa2",
+          "message_alias": "m_88157b686dd62c8e75c17aa2b095a2ec9e9d9386b60db8411c33ddb576b3cb5a",
+          "ordinal": 8,
+          "source_text_sha256": "e07a40bb0e4815e5372384f2ceeb876ab4e9170337ce425dabff63cf41c2e60c"
+        },
+        {
+          "session_alias": "s_94637f0286dab566f115cd512883b7c09d10226bf5758028fba1fbefdf75efa2",
+          "message_alias": "m_0d7b6dddc621f9ea576e2993b71af2a11c6f8dbf76d314b41bccd4393543f8aa",
+          "ordinal": 9,
+          "source_text_sha256": "2ec4caccef53fb1d85607cbb8b71af59d46060e74027ccbe2bd7370ec74dc3a7"
+        },
+        {
+          "session_alias": "s_94637f0286dab566f115cd512883b7c09d10226bf5758028fba1fbefdf75efa2",
+          "message_alias": "m_24705ab43dc1a7c5e93eab81deefb47efd06916ca1492a87822c42a841ea80fe",
+          "ordinal": 10,
+          "source_text_sha256": "e1537a7a2f98b868b6ce163822a540845bb93ea98efafe939cace04277c88ee2"
+        }
+      ],
+      "original_question_intent": "用户从是否建工厂继续到制造飞轮、小批量多机种案例、学习模式和OEM/ODM范围。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "前一轮研究可作为准确历史成果；公开来源真实引用；比较自建、合作、混合路径；保存未知。"
+      ],
+      "professional_review_questions": [
+        "是否把案例存在当作本公司应建厂；是否识别规模、产品复杂度和资本约束；“飞轮”是否有可验证机制。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "1b161c96eeb467e7906ad93a1c70e66c621a69797bd45a42df671dc14532a327",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H20/context-v1.txt",
+          "sha256": "6fd4cb2fc20d45f562b205687c987ac9ca42163d614d34577316552ad4b50600",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H20/web/cases.html",
+          "sha256": "2d6c609102c3c467f06021ee6ac5285221704e267236681cbb27116eca3a6489",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H20/turn-01-context.txt",
+          "sha256": "5ec0259667141f5dcbf5e8dfd16da0a74fe4f33d25647fea4b7cf59d4ce1aeb9",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H20/turn-02-context.txt",
+          "sha256": "3d3700b9d49b7428b7d0afceecc3c152aef0f75c9cfde9c2100d6d22c1985aeb",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H20/turn-03-context.txt",
+          "sha256": "c261dfe80d3ba0c7f4b5d41cb89c99f438b0c45d627318702d1c696c268fb5b4",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [
+        {
+          "url_template": "{fixture_origin}/H20/cases",
+          "asset": "fixtures/H20/web/cases.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 0,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        }
+      ],
+      "turns": [
+        {
+          "number": 1,
+          "text": "虚构复杂硬件公司是否有必要建设制造能力？价值、代价与形成飞轮的条件是什么？",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H20/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        },
+        {
+          "number": 2,
+          "text": "继续研究小批量、多机种制造企业案例。",
+          "depends_on_turn": 1,
+          "context_fixture": "fixtures/H20/turn-02-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": [
+            "{fixture_origin}/H20/cases"
+          ]
+        },
+        {
+          "number": 3,
+          "text": "聚焦机械加工与整机、同时承接OEM/ODM的企业，提炼可迁移模式及不可迁移条件。",
+          "depends_on_turn": 2,
+          "context_fixture": "fixtures/H20/turn-03-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": "exact results returned by immediately preceding completed turn; retain UUID revision and sha256, never latest",
+          "allowed_source_urls": [
+            "{fixture_origin}/H20/cases"
+          ]
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H20:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "954a26bb537970fdbddd81cf71b191f79d60fd7323dc0889e21b0e05497b129b"
+    },
+    {
+      "id": "H21",
+      "title": "采购提速方案",
+      "source": [
+        {
+          "session_alias": "s_94637f0286dab566f115cd512883b7c09d10226bf5758028fba1fbefdf75efa2",
+          "message_alias": "m_9f4638ea1d60c3c49d7bbf1638992b7f95e404beb78d13701ed2f7214a0681f7",
+          "ordinal": 11,
+          "source_text_sha256": "b3d9068bc22d7290736bca4dce97703fd0fea223803a055c943d3694c5c00414"
+        }
+      ],
+      "original_question_intent": "用户仅给出研发/项目采购提速目标，需要先诊断再提出方案。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "可先回答并明确最少澄清项；不因缺数据停住所有工作；建议采集可验证指标。"
+      ],
+      "professional_review_questions": [
+        "是否区分需求变更、寻源、审批、交期、质量等瓶颈；是否避免单纯压缩控制导致风险外溢。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "d21658aa065cedc308d44ffa417a260f2aa7e57dfa21935ba3a7ae72d5d2e829",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H21/context-v1.txt",
+          "sha256": "b75a25f73e3d56cdbcce4e3de6635942e5ddcf0d1079de331b2de3dbc51fb238",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H21/turn-01-context.txt",
+          "sha256": "6126bb7c6a2eba04e1eca40f448d047eaeeffaab1782a1875cc84ec4151650e5",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [],
+      "turns": [
+        {
+          "number": 1,
+          "text": "为虚构硬件公司提出研发采购和项目采购提速方案。当前没有提供周期数据、瓶颈分类或供应商表现。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H21/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": []
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H21:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "f90e02c06f5e6624da70f009ac3e1551788a10f5a8f7c3cb931e02873707f370"
+    },
+    {
+      "id": "H22",
+      "title": "受限公开招聘研究与单源失败",
+      "source": [
+        {
+          "session_alias": "s_12acd2231c022c1432f4cad43086118d2b1b3961b1fbc8cc867434cc36d478ec",
+          "message_alias": "m_74407216c758a8c7cf13587e211603c9b8332824c6a25b42aea734d47cec70fb",
+          "ordinal": 1,
+          "source_text_sha256": "ca5f7dbb2b64f915550c23e8d6ba26395c2aa609aa99dfd6f95822405b02e01c"
+        }
+      ],
+      "original_question_intent": "历史云端输入要求只访问批准URL、分别覆盖社招校招实习，并对瞬时失败有限重试。",
+      "transformation": "将原公司、岗位编号、人员、地点、履历和数量替换为明确虚构的等效事实；保留轮次顺序、纠正关系和证据强弱。 URL、公司及内部输出协议被替换；保留权限、失败隔离和时间边界。",
+      "channel_for_replay": "web_api_only",
+      "observable_engineering_expectations": [
+        "严格URL allowlist；单源失败不停止其他来源；未知/未采集/本次未发现三态分开；Web/API回放。"
+      ],
+      "professional_review_questions": [
+        "是否把采集失败说成停止招聘；分类是否有标题/职责/页面证据；当前性是否被准确限定。"
+      ],
+      "semantic_assessment": "requires_human_or_independent_AI_review; no assistant history used as gold",
+      "v1_case_sha256": "655129cb71a483694904acd66c279929883b4aba0f0838f58d3f65c9a90a27d1",
+      "v2_changes": [
+        "Explicit newly synthetic evidence packet, immutable fixture bytes and exact API binding recipe.",
+        "Context packet is test setup; stage instructions and corrections remain ordered."
+      ],
+      "fixtures": [
+        {
+          "path": "fixtures/H22/context-v1.txt",
+          "sha256": "1518262b1ffc56d927993fbd4ce866adb2e29edeab5fbd69ad9b7ffc36b24a8e",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H22/web/root.html",
+          "sha256": "5553531928639ae4dc9097e1c3c0eaf7ff46f37e022a713849bbc84b395a9d72",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H22/web/social.html",
+          "sha256": "69dfa2ea85bbeb52bf21b1dbe0cfa3c75893c2ee2f79d3dc1915d2d0b64c4429",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H22/web/campus.html",
+          "sha256": "d18a97b6a053da91d3f73737ad605545dac0bb4f3721fcfbcbe0a16cd5e5fd43",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H22/web/intern.html",
+          "sha256": "74862b7b057631a127cc86d48e65c80e4f2ee1eef36f044b8631dbbc79c33de1",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        },
+        {
+          "path": "fixtures/H22/turn-01-context.txt",
+          "sha256": "158cf85309d9216c74193e27db7f92e74e6a46115d57499a751ccda8aabd581f",
+          "version": "synthetic-v2.1",
+          "provenance": "newly authored synthetic fixture; not historical original"
+        }
+      ],
+      "sources": [
+        {
+          "url_template": "{fixture_origin}/H22/root",
+          "asset": "fixtures/H22/web/root.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 1,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        },
+        {
+          "url_template": "{fixture_origin}/H22/social",
+          "asset": "fixtures/H22/web/social.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 1,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        },
+        {
+          "url_template": "{fixture_origin}/H22/campus",
+          "asset": "fixtures/H22/web/campus.html",
+          "response_statuses": [
+            503,
+            200
+          ],
+          "max_retries": 1,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        },
+        {
+          "url_template": "{fixture_origin}/H22/intern",
+          "asset": "fixtures/H22/web/intern.html",
+          "response_statuses": [
+            200
+          ],
+          "max_retries": 1,
+          "published_at": "2026-09-13",
+          "synthetic": true
+        }
+      ],
+      "turns": [
+        {
+          "number": 1,
+          "text": "仅研究虚构公司C的批准公开URL及其路径边界。分别检查社招、校招、实习；某来源瞬时不可用最多重试一次，其他来源继续。按as-of时点报告。",
+          "depends_on_turn": null,
+          "context_fixture": "fixtures/H22/turn-01-context.txt",
+          "attach_assets": [],
+          "prior_result_binding": null,
+          "allowed_source_urls": [
+            "{fixture_origin}/H22/root",
+            "{fixture_origin}/H22/social",
+            "{fixture_origin}/H22/campus",
+            "{fixture_origin}/H22/intern"
+          ]
+        }
+      ],
+      "setup": {
+        "identity": "authenticated synthetic user with current HR write entitlement; normal session/Origin/CSRF",
+        "objects": [],
+        "object_policy": "free-form HR work; positions/candidates in materials are fictional draft subjects, not preconfirmed persisted business objects; no confirmation or hiring mutations authorized",
+        "context_delivery": "append ONLY turns[number].context_fixture text to that turn. context-v1.txt is reviewer inventory only, never send wholesale; later corrections must not leak into early turns",
+        "thread": "new thread per case; subsequent completed turns submit new works on same returned thread_id, with authorized exact previous result refs",
+        "material_setup": "For each image, upload through actual attachment API as same owner; resolve GET /api/hr/agent/materials/{attachment_id}; use returned exact original refs and validate digest. Review-only sidecars never sent to model. Text context is inline, no missing attachment reference.",
+        "budget_profile": "read actual GET /api/hr/agent/configuration; bind returned profile; record limits; exhaustion is not professional failure or automatic permission to extend"
+      },
+      "http_recipe": {
+        "submit": {
+          "method": "POST",
+          "path": "/api/hr/agent/works",
+          "headers": {
+            "Idempotency-Key": "replay-v2:{run_uuid}:H22:{turn_number}"
+          },
+          "body": {
+            "thread_id": "null for turn1, returned UUID afterwards",
+            "text": "turn.text plus exact UTF-8 turn.context_fixture bytes and that turn.allowed_source_urls resolved to approved fixture_origin",
+            "objects": [],
+            "references": "resolved image ExactRefs and exact prior ResultRefs only",
+            "budget_profile": "configuration.budget_profile"
+          }
+        },
+        "observe": [
+          "GET /api/hr/agent/works/{work_id}",
+          "GET /api/hr/agent/works/{work_id}/input",
+          "GET /api/hr/agent/works/{work_id}/events",
+          "GET /api/hr/agent/works/{work_id}/messages",
+          "GET /api/hr/agent/results?thread_id={thread_id}"
+        ],
+        "idempotency": "resubmit identical accepted body/key and assert same work_id, no duplicate user input/work; changed payload with same key must reject"
+      },
+      "execution_status": "not_run; independent v2 corpus review required",
+      "content_sha256": "c3b1583ac731ff66e3e71dbc65afa60ceecf6ba3d69b9355fd0d0d9350e91e63"
+    }
+  ]
+}

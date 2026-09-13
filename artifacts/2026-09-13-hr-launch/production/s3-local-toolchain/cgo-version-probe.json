@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "/tmp/hr-launch-minio-20260913/minio",
+    "--version"
+  ],
+  "exit_code": 2,
+  "binary_sha256": "76faf6b904b36fb403db52680b25d4581f1be21b0311c78e0792bb986cfde0fe",
+  "claim": "fresh reproduction of failed local startup; not missing run1 server log"
+}

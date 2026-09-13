@@ -1,0 +1,20 @@
+{
+  "turn-audit.json": "0f0983eb77b097bbab560081d6fc5ee0869393f090391f04114f2ce018d2e3b5",
+  "fingerprints.json": "5d30ca033d874f49ec97c162ba2905190402f5a8cd05ff80e89b20df8928b061",
+  "review.md": "999428254f78943f639f68d7fbd0179268e1accc5e7a1cdda0779195be753720",
+  "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/summary.json": "0d08054f7c1cc79df5baf36d898b87a81d65a0581dc2cbb0027458ba3425a63a",
+  "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/configuration.json": "597634706bcd877743d8275395917e67e549e99ac221c9f06755d8b0e43953e0",
+  "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-01.json": "86ab6fcfc13db16712ff4924c64384d3f9dc85108510f2a5612b268ecf1d3af3",
+  "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/report.json": "2b217e55bee9d99230e933c904cab723b6e1d2b4740e9a4358ebbb50a4363143",
+  "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-04.json": "53b759a8c34db6ea6eda64c6ba5b61dc350b34281913ed8a3505935abfcabae1",
+  "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-02.json": "0541e67b4d4b9b85ee36cf3737410e22b4a57e4bf66f983d813a610e986b6fed",
+  "frozen/artifacts/2026-09-13-hr-launch/history-h03-real-run-3/H03/turn-03.json": "9444f9a0bad21f6464ed1629fc94423ac4ebc3728180739bcde1cea6b36c11d9",
+  "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/corpus.json": "d410a6336da3153002bd89462352787bcf8189a88ca623695e7be46dab32480e",
+  "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/manifest.json": "b00960d5729ed73159b05ac8bb1b90efa98a6e2c0c31b2b9d709dbe93f9d3739",
+  "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-01-context.txt": "3dbfde02905c018e058c8af0edfce9c8d839b5a095fa94fdba6273ad4dd6b5d9",
+  "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-04-context.txt": "79bbd5194cec6650707cffa60dbcb23055c7d72c84469be94f277c17fa1e6099",
+  "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-02-context.txt": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+  "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/context-v1.txt": "9f2ae8dcd6716bf8c5e5e5f64b529903186f392fab301ec9f9e711b6f1ae4d92",
+  "frozen/artifacts/2026-09-13-hr-launch/history/replay-v2/fixtures/H03/turn-03-context.txt": "3ad4f4176dfa2294b87a9e07959c865fd4b24d32886fe3a74bdd2fc7b8cb62a2",
+  "frozen/backend/app/hr_agent/repository.py": "87febf7d6947813a27aeb6a4fe571e3ea85cbeb389a3af36b1c542040654a488"
+}

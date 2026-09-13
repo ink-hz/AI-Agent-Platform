@@ -1,0 +1,8 @@
+{
+  "tag": "RELEASE.2025-07-23T15-54-02Z",
+  "commit": "7ced9663e6a791fef9dc6be798ff24cda9c730ac",
+  "working_tree_diff": "",
+  "go_mod_sha256": "1092c21cbe753941b16da2943be699d1517e70ebdd4da6d5c994ca27a85ba430",
+  "go_sum_sha256": "bd2c712debe48fa4406c87180609266fb92130fd0120797a29bda477a242f252",
+  "binary_no_cgo_sha256": "f9707f74c17b2d291e99e71eebeb6e7095a11a6a4617f751c4254ef45c469e4d"
+}

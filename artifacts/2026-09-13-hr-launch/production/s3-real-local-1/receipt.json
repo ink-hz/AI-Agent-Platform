@@ -1,0 +1,18 @@
+{
+  "started_at": 1789274861.4314282,
+  "boundary": "local disposable real MinIO, real boto3 signed requests; no production or database access",
+  "checks": [],
+  "minio_binary_sha256": "76faf6b904b36fb403db52680b25d4581f1be21b0311c78e0792bb986cfde0fe",
+  "minio_source_commit": "7ced9663e6a791fef9dc6be798ff24cda9c730ac",
+  "status": "failed",
+  "error_type": "RuntimeError",
+  "error_message": "owned MinIO exited before ready",
+  "owned_process_reaped": true,
+  "finished_at": 1789274862.9782982,
+  "driver_sha256": "ae3364ec3aa52e615af3166b875846c0b52e60328784d9269e7d5fbc8cfcd523",
+  "adapter_sha256": {
+    "backend/app/attachments/worker_runtime.py": "2ecf40460e97ca4c521b99072a55b31d001a8cc57e69c03fc30380a4805ab29b",
+    "backend/app/attachments/object_writer.py": "2a986ac02223d9d5b784eb50502fabfc9e7a0cd98aacb2740de0c7aa8599788d",
+    "backend/app/attachments/s3_erasure.py": "637a226ecad9ba920cab8c66a63cc52da79049e24dda0c8732557967b5f47358"
+  }
+}

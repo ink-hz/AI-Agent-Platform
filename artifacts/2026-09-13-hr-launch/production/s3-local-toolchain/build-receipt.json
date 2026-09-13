@@ -1,0 +1,14 @@
+{
+  "started_at": "2026-09-13T04:36:43.530418+00:00",
+  "argv": [
+    "/tmp/hr-launch-minio-20260913/go/bin/go",
+    "build",
+    "-o",
+    "/tmp/hr-launch-minio-20260913/minio",
+    "."
+  ],
+  "cwd": "/tmp/hr-launch-minio-20260913/source",
+  "boundary": "local source compile only; no server or production access",
+  "exit_code": 1,
+  "finished_at": "2026-09-13T04:38:40.184876+00:00"
+}
