@@ -1,0 +1,15 @@
+........                                                                 [100%]
+=============================== warnings summary ===============================
+tests/test_hr_agent_production_canary.py::test_actual_http_upload_saved_revision_same_work_replay_and_safe_evidence
+tests/test_hr_agent_production_canary.py::test_lost_real_http_acceptance_resume_never_duplicates_owned_resources[upload]
+tests/test_hr_agent_production_canary.py::test_lost_real_http_acceptance_resume_never_duplicates_owned_resources[work]
+tests/test_hr_agent_production_canary.py::test_running_pause_and_resume_are_observations_not_invented_restart_proof
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_agent_production_canary.py:132: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    response = client.request(method, url, **kwargs)
+
+tests/test_hr_agent_production_canary.py::test_owner_csrf_origin_and_live_readiness_fail_before_any_canary_write
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/api_canary.py:120: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    response = self.client.request(method, self.config["api_base_url"] + path,
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+8 passed, 5 warnings in 27.52s

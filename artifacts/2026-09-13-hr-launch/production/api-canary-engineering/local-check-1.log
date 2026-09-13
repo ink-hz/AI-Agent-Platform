@@ -1,0 +1,19 @@
+usage: api_canary.py [-h] --private-config PRIVATE_CONFIG --evidence-dir
+                     EVIDENCE_DIR [--pause-at-running]
+                     [--label {manual,before_external_restart,after_external_restart}]
+                     {run,resume,observe}
+
+Bounded public/synthetic HTTP canary. No credential issuance or service
+control. Requires an existing owner session in an absolute, regular 0600 JSON
+file. See api-canary-engineering/README.md before explicitly executing against
+production.
+
+positional arguments:
+  {run,resume,observe}
+
+options:
+  -h, --help            show this help message and exit
+  --private-config PRIVATE_CONFIG
+  --evidence-dir EVIDENCE_DIR
+  --pause-at-running
+  --label {manual,before_external_restart,after_external_restart}

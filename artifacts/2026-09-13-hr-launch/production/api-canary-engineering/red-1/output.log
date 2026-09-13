@@ -1,0 +1,45 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_private_config_requires_absolute_regular_0600_and_same_https_origin ___
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9558/test_private_config_requires_a0')
+
+    def test_private_config_requires_absolute_regular_0600_and_same_https_origin(tmp_path):
+>       h = canary()
+            ^^^^^^^^
+
+tests/test_hr_agent_production_canary.py:31: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def canary():
+>       assert SCRIPT.exists(), "bounded API canary is missing"
+E       AssertionError: bounded API canary is missing
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/api_canary.py').exists
+
+tests/test_hr_agent_production_canary.py:13: AssertionError
+________ test_unknown_upload_acceptance_is_journaled_and_never_retried _________
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9558/test_unknown_upload_acceptance0')
+
+    def test_unknown_upload_acceptance_is_journaled_and_never_retried(tmp_path):
+        import httpx
+>       h = canary()
+            ^^^^^^^^
+
+tests/test_hr_agent_production_canary.py:52: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def canary():
+>       assert SCRIPT.exists(), "bounded API canary is missing"
+E       AssertionError: bounded API canary is missing
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-13-hr-launch/production/api_canary.py').exists
+
+tests/test_hr_agent_production_canary.py:13: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_hr_agent_production_canary.py::test_private_config_requires_absolute_regular_0600_and_same_https_origin
+FAILED tests/test_hr_agent_production_canary.py::test_unknown_upload_acceptance_is_journaled_and_never_retried
+2 failed in 0.11s

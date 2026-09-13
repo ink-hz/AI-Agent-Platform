@@ -1,0 +1,119 @@
+{
+  "run_id": "595669b8-1844-4661-85fb-6577deddc865",
+  "owner_id": "97b04b33-7da9-4aca-8e9d-bdd392dba519",
+  "public_origin": "https://localhost",
+  "deadline": 1789271419.467901,
+  "operations": {
+    "upload_begin": {
+      "key": "f81aa1bf-b200-4223-8e8b-8297000ba1bb",
+      "path": "/api/v1/attachments/uploads",
+      "body": {
+        "conversation_id": null,
+        "original_name": "synthetic-canary-595669b8-1844-4661-85fb-6577deddc865.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 582
+      },
+      "content_sha256": null,
+      "method": "POST",
+      "status": "outcome_unknown"
+    }
+  },
+  "http": [
+    {
+      "request_id": "3f7c8e70-4784-4da8-bbed-8d63c74d9620",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "ba6918df-c847-4bd0-b090-04c54489406d",
+      "method": "GET",
+      "path": "/api/v1/manage/hr-readiness",
+      "status": 200
+    },
+    {
+      "request_id": "bf63e9b3-a0c1-44c8-a13a-3309a57cf800",
+      "method": "GET",
+      "path": "/api/hr/agent/configuration",
+      "status": 200
+    },
+    {
+      "request_id": "f3ea6026-c0d0-4685-bea9-53a00da30873",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": "transport_unknown"
+    },
+    {
+      "request_id": "91fd200e-9776-4c25-ad90-1948536629ac",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "b0aacb8b-9c27-4410-991f-a03126048f88",
+      "method": "GET",
+      "path": "/api/v1/manage/hr-readiness",
+      "status": 200
+    },
+    {
+      "request_id": "d33fe732-43ce-4ff8-9b1e-508c75adb6a7",
+      "method": "GET",
+      "path": "/api/hr/agent/configuration",
+      "status": 200
+    }
+  ],
+  "turns": [],
+  "status": "stopped",
+  "account": {
+    "internal_user_id": "97b04b33-7da9-4aca-8e9d-bdd392dba519",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  },
+  "readiness_observations": [
+    {
+      "ready": true,
+      "role": "api",
+      "checked_at": "2026-09-13T03:35:19.494958+00:00",
+      "phase": "cloud",
+      "new_admission_enabled": true,
+      "release_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "configuration_sha256": "69b6828287e81643a99ab04e8bc8465c2221af599ff0d5e56d75a14189324319",
+      "runtime_identity_sha256": "41e72023b7f5fe58d39a26b69c8dff3d402ba6d4c1677c4ce5519233d532720e",
+      "knowledge_sha256": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe",
+      "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b",
+      "blockers": []
+    },
+    {
+      "ready": true,
+      "role": "api",
+      "checked_at": "2026-09-13T03:35:19.536819+00:00",
+      "phase": "cloud",
+      "new_admission_enabled": true,
+      "release_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "configuration_sha256": "69b6828287e81643a99ab04e8bc8465c2221af599ff0d5e56d75a14189324319",
+      "runtime_identity_sha256": "41e72023b7f5fe58d39a26b69c8dff3d402ba6d4c1677c4ce5519233d532720e",
+      "knowledge_sha256": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe",
+      "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b",
+      "blockers": []
+    }
+  ],
+  "release_identity": {
+    "release_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configuration_sha256": "69b6828287e81643a99ab04e8bc8465c2221af599ff0d5e56d75a14189324319",
+    "runtime_identity_sha256": "41e72023b7f5fe58d39a26b69c8dff3d402ba6d4c1677c4ce5519233d532720e",
+    "knowledge_sha256": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe",
+    "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b"
+  },
+  "budget_evidence": {
+    "source": "authenticated_configuration_api",
+    "budget_profile": "test",
+    "limits": {
+      "model_calls": 32,
+      "total_tokens": 600000,
+      "active_seconds": 900
+    },
+    "configuration_sha256": "69b6828287e81643a99ab04e8bc8465c2221af599ff0d5e56d75a14189324319"
+  },
+  "restart_observation": "not_requested",
+  "failure": "outcome_unknown"
+}

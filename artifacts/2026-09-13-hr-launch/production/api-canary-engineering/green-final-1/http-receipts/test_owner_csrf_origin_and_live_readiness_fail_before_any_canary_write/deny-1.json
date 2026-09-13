@@ -1,0 +1,23 @@
+{
+  "run_id": "d649f5e8-eb5c-4cfe-95c7-a20ef59eb658",
+  "owner_id": "8369dc86-4534-4a8c-aba6-0a4957e84c8d",
+  "public_origin": "https://localhost",
+  "deadline": 1789271418.315399,
+  "operations": {},
+  "http": [
+    {
+      "request_id": "a9488190-ed49-4756-84ce-1adddee8e64d",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    }
+  ],
+  "turns": [],
+  "status": "stopped",
+  "account": {
+    "internal_user_id": "d713110d-124e-42e0-b75f-fb5551abda62",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  },
+  "failure": "owner_identity_denied"
+}

@@ -1,0 +1,15 @@
+{
+  "command": [
+    "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_hr_agent_production_canary.py",
+    "-q"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend",
+  "exit_code": 1,
+  "sha256": {
+    "backend/tests/test_hr_agent_production_canary.py": "5d5cfb47deafdb4434739b718c23fddd7172fbfc4afe72f5b80addf1799ffbdb",
+    "artifacts/2026-09-13-hr-launch/production/api_canary.py": "9dbee87cc25453363517b82746da8c6f21566ad05b6993c9a0c6f1f49b5dde01"
+  }
+}

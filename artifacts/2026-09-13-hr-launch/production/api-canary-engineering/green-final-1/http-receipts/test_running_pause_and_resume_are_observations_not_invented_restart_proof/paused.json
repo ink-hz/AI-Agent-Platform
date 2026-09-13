@@ -1,0 +1,971 @@
+{
+  "run_id": "20bfa21e-c289-4a80-99d6-60adece52407",
+  "owner_id": "5529e22c-a25b-48bf-8322-24879ac0dbc7",
+  "public_origin": "https://localhost",
+  "deadline": 1789271426.694815,
+  "operations": {
+    "upload_begin": {
+      "key": "7921c30d-1bda-4a7e-897f-61fb4f25261d",
+      "path": "/api/v1/attachments/uploads",
+      "body": {
+        "conversation_id": null,
+        "original_name": "synthetic-canary-20bfa21e-c289-4a80-99d6-60adece52407.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 582
+      },
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "upload_id": "32115ad7-3d32-465f-b4cf-f75452ae6477",
+        "attachment_id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616",
+        "conversation_id": null,
+        "original_name": "synthetic-canary-20bfa21e-c289-4a80-99d6-60adece52407.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 582,
+        "state": "uploading",
+        "uploaded_bytes": 0,
+        "expires_at": "2026-09-14T03:35:26.734096Z"
+      }
+    },
+    "upload_content": {
+      "key": "58b84c86-d10f-428b-bc04-27f5ed46610e",
+      "path": "/api/v1/attachments/uploads/32115ad7-3d32-465f-b4cf-f75452ae6477/content",
+      "body": null,
+      "content_sha256": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0",
+      "method": "PUT",
+      "status": "received",
+      "response": {
+        "upload_id": "32115ad7-3d32-465f-b4cf-f75452ae6477",
+        "attachment_id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616",
+        "conversation_id": null,
+        "original_name": "synthetic-canary-20bfa21e-c289-4a80-99d6-60adece52407.txt",
+        "declared_mime": "text/plain",
+        "declared_size": 582,
+        "state": "validating",
+        "uploaded_bytes": 582,
+        "expires_at": "2026-09-14T03:35:26.734096Z"
+      }
+    },
+    "upload_complete": {
+      "key": "f90ccaeb-b8d4-4c2b-acab-7f9a1e64e297",
+      "path": "/api/v1/attachments/uploads/32115ad7-3d32-465f-b4cf-f75452ae6477/complete",
+      "body": null,
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "attachment_id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616",
+        "conversation_id": null,
+        "original_name": "synthetic-canary-20bfa21e-c289-4a80-99d6-60adece52407.txt",
+        "declared_mime": "text/plain",
+        "detected_mime": null,
+        "size_bytes": 582,
+        "state": "validating",
+        "created_at": "2026-09-13T03:35:26.735424Z",
+        "retained_until": "2027-09-13T03:35:26.735424Z"
+      }
+    },
+    "work": {
+      "key": "963f4d2a-e2e3-4f53-ab8a-da53a34ab8c8",
+      "path": "/api/hr/agent/works",
+      "body": {
+        "thread_id": null,
+        "text": "纯合成 API canary 20bfa21e-c289-4a80-99d6-60adece52407。请读取附件，以附件的虚构岗位为对象保存一份简短 research 成果，列明工作需求与假设。禁止外网和个人材料。",
+        "objects": [],
+        "references": [
+          {
+            "kind": "material",
+            "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+            "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+            "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+          }
+        ],
+        "budget_profile": "test"
+      },
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "answer_state": "none",
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 0,
+          "charged_calls": 0,
+          "charged_tokens": 0,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 32,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 2,
+            "total_tokens": 32768
+          },
+          "revision": 1,
+          "usage_quality": "reported"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [],
+          "revision": 1
+        },
+        "input_revision": 1,
+        "last_event_seq": 1,
+        "pending_question_id": null,
+        "phase": "research",
+        "result_refs": [],
+        "state": "queued",
+        "thread_id": "50657560-66bc-447d-bc31-6bfb9312c6d2",
+        "work_id": "162d2b9a-1456-4138-b0b0-ead8556da2d0"
+      }
+    },
+    "input": {
+      "key": "afcf5892-0301-467b-a116-070c0a8b8165",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0/inputs",
+      "body": {
+        "expected_input_revision": 1,
+        "question_id": null,
+        "text": "纯合成 API canary 20bfa21e-c289-4a80-99d6-60adece52407：在刚才同一份 research 成果中补充一个可验证的验收指标，并保存同一成果的新修订。其他合成条件与材料保持不变；不得外网查询。",
+        "objects": [],
+        "references": [
+          {
+            "kind": "material",
+            "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+            "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+            "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+          },
+          {
+            "kind": "result",
+            "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+            "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+            "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+          }
+        ]
+      },
+      "content_sha256": null,
+      "method": "POST",
+      "status": "received",
+      "response": {
+        "answer_state": "ended",
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 1.1229079999999998,
+          "charged_calls": 3,
+          "charged_tokens": 66226,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 32,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 2,
+            "total_tokens": 32768
+          },
+          "revision": 1,
+          "usage_quality": "estimated"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 2,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+                "kind": "material",
+                "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+                "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+              },
+              "remaining_ranges": [],
+              "state": "unread",
+              "total_characters": null
+            }
+          ],
+          "revision": 1
+        },
+        "input_revision": 2,
+        "last_event_seq": 10,
+        "pending_question_id": null,
+        "phase": "research",
+        "result_refs": [
+          {
+            "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+            "kind": "result",
+            "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+            "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+          }
+        ],
+        "state": "queued",
+        "thread_id": "50657560-66bc-447d-bc31-6bfb9312c6d2",
+        "work_id": "162d2b9a-1456-4138-b0b0-ead8556da2d0"
+      }
+    }
+  },
+  "http": [
+    {
+      "request_id": "4bdb523d-9d24-49f1-8594-771d67055067",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "de50fbe8-6ac3-4a74-ac48-b16f91ac5042",
+      "method": "GET",
+      "path": "/api/v1/manage/hr-readiness",
+      "status": 200
+    },
+    {
+      "request_id": "1c2469e9-c984-4646-b7b4-127fa6251f41",
+      "method": "GET",
+      "path": "/api/hr/agent/configuration",
+      "status": 200
+    },
+    {
+      "request_id": "58b46487-fdfc-4158-9bd9-82e9edd5830d",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads",
+      "status": 201
+    },
+    {
+      "request_id": "628c3c16-d1f0-4c4b-8856-b6b209e511aa",
+      "method": "PUT",
+      "path": "/api/v1/attachments/uploads/32115ad7-3d32-465f-b4cf-f75452ae6477/content",
+      "status": 200
+    },
+    {
+      "request_id": "b81169e2-6a2a-47f0-89f0-620f472a9b1f",
+      "method": "POST",
+      "path": "/api/v1/attachments/uploads/32115ad7-3d32-465f-b4cf-f75452ae6477/complete",
+      "status": 200
+    },
+    {
+      "request_id": "5495e8ca-013b-48d9-9263-0f1c032202a6",
+      "method": "GET",
+      "path": "/api/hr/agent/materials/8e6bd895-c14b-4ebd-8bde-1dcd4553b616",
+      "status": 200
+    },
+    {
+      "request_id": "08a07253-8b39-489f-993b-c29029e7ec63",
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 201
+    },
+    {
+      "request_id": "2614b520-3797-4c50-b64c-e8138721b3a3",
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 200
+    },
+    {
+      "request_id": "51ccf306-dca9-4010-b6a2-ce30951518f4",
+      "method": "GET",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0/messages",
+      "status": 200
+    },
+    {
+      "request_id": "8dbc90f8-08c5-4399-9e2e-38fe8b6d09eb",
+      "method": "GET",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0",
+      "status": 200
+    },
+    {
+      "request_id": "2a158f51-94b1-4fdc-a6c1-c9737cdd0441",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "4addfde9-92d3-4f58-b0a8-c8ee15a520ef",
+      "method": "GET",
+      "path": "/api/v1/manage/hr-readiness",
+      "status": 200
+    },
+    {
+      "request_id": "65400cf1-23b9-409c-ab5e-fe35fe0ec3c1",
+      "method": "GET",
+      "path": "/api/hr/agent/configuration",
+      "status": 200
+    },
+    {
+      "request_id": "e8b56bdc-b801-4bef-88f1-85b76182df03",
+      "method": "GET",
+      "path": "/api/hr/agent/materials/8e6bd895-c14b-4ebd-8bde-1dcd4553b616",
+      "status": 200
+    },
+    {
+      "request_id": "5b8e953d-e43e-4b52-8d50-521e0a8f7d87",
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 200
+    },
+    {
+      "request_id": "1cc2db24-e0f9-44d0-a479-ebf88cd94860",
+      "method": "POST",
+      "path": "/api/hr/agent/works",
+      "status": 200
+    },
+    {
+      "request_id": "812e0488-5e08-44a9-9177-5a50634991bc",
+      "method": "GET",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0/messages",
+      "status": 200
+    },
+    {
+      "request_id": "ac693ee8-bff4-4b98-a8fb-e76a39871c4b",
+      "method": "GET",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0",
+      "status": 200
+    },
+    {
+      "request_id": "d1ea7df5-a9e3-42a4-9fad-c616b16c3bb3",
+      "method": "GET",
+      "path": "/api/hr/agent/results/3e815191-db6f-4571-ad5e-86c540c964f1/revisions/08b81ff3-8c99-4758-89bb-7eeb102d7530",
+      "status": 200
+    },
+    {
+      "request_id": "67cec5ba-d745-4222-b0cf-64c859107767",
+      "method": "GET",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0/messages",
+      "status": 200
+    },
+    {
+      "request_id": "ae31c778-5ff1-4e0f-85e1-d00389989242",
+      "method": "POST",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0/inputs",
+      "status": 202
+    },
+    {
+      "request_id": "e720e970-96e9-4eff-b22f-714adf99920c",
+      "method": "POST",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0/inputs",
+      "status": 202
+    },
+    {
+      "request_id": "068fefd9-03c1-4c9e-9a9c-a554b36b377d",
+      "method": "GET",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0/messages",
+      "status": 200
+    },
+    {
+      "request_id": "314e602a-31f5-4873-bfa2-1deab2c788a7",
+      "method": "GET",
+      "path": "/api/hr/agent/works/162d2b9a-1456-4138-b0b0-ead8556da2d0",
+      "status": 200
+    },
+    {
+      "request_id": "d10f6f9a-d660-4eca-8c10-42ef736b1317",
+      "method": "GET",
+      "path": "/api/hr/agent/results/3e815191-db6f-4571-ad5e-86c540c964f1/revisions/825d1587-d13e-40cf-8f67-cd8969ae81f4",
+      "status": 200
+    }
+  ],
+  "turns": [
+    {
+      "observed_at": 1789270528.185591,
+      "work": {
+        "work_id": "162d2b9a-1456-4138-b0b0-ead8556da2d0",
+        "thread_id": "50657560-66bc-447d-bc31-6bfb9312c6d2",
+        "input_revision": 1,
+        "state": "completed",
+        "phase": "research",
+        "answer_state": "ended",
+        "result_refs": [
+          {
+            "kind": "result",
+            "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+            "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+            "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+          }
+        ],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 1.1229079999999998,
+          "charged_calls": 3,
+          "charged_tokens": 66226,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 32,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 2,
+            "total_tokens": 32768
+          },
+          "revision": 1,
+          "usage_quality": "estimated"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+                "kind": "material",
+                "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+                "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 220
+            }
+          ],
+          "revision": 7
+        },
+        "last_event_seq": 9
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "a9dcfdb0-cbcf-40b9-b167-fefd4a129208",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "纯合成 API canary 20bfa21e-c289-4a80-99d6-60adece52407。请读取附件，以附件的虚构岗位为对象保存一份简短 research 成果，列明工作需求与假设。禁止外网和个人材料。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          },
+          {
+            "entry_id": "f272dbc2-cbff-433c-b606-3691ccf24799",
+            "seq": 4,
+            "input_revision": 1,
+            "kind": "assistant",
+            "body": "合成成果已保存。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 4
+      },
+      "results": [
+        {
+          "base_standard_ref": null,
+          "basis": [
+            {
+              "input_revision": 1,
+              "kind": "user_temporary",
+              "ref": null
+            }
+          ],
+          "body": "纯合成工程成果，不表示模型质量。",
+          "changes": [],
+          "kind": "research",
+          "objects": [],
+          "preceding_refs": [],
+          "source_refs": [
+            {
+              "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+              "kind": "material",
+              "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+              "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+            }
+          ],
+          "title": "合成 API 验收成果",
+          "ref": {
+            "kind": "result",
+            "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+            "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+            "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+          },
+          "access_state": "available"
+        }
+      ]
+    },
+    {
+      "observed_at": 1789270531.705239,
+      "work": {
+        "work_id": "162d2b9a-1456-4138-b0b0-ead8556da2d0",
+        "thread_id": "50657560-66bc-447d-bc31-6bfb9312c6d2",
+        "input_revision": 2,
+        "state": "completed",
+        "phase": "research",
+        "answer_state": "ended",
+        "result_refs": [
+          {
+            "kind": "result",
+            "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+            "revision": "825d1587-d13e-40cf-8f67-cd8969ae81f4",
+            "sha256": "5cfad47f490747f60d4eea119420be9fd326fe661beae90a21e465e122196867"
+          }
+        ],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 4.175999999999999,
+          "charged_calls": 7,
+          "charged_tokens": 173951,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 32,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 2,
+            "total_tokens": 32768
+          },
+          "revision": 1,
+          "usage_quality": "estimated"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 2,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+                "kind": "material",
+                "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+                "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 220
+            },
+            {
+              "ref": {
+                "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+                "kind": "result",
+                "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+                "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+              },
+              "remaining_ranges": [],
+              "state": "returned",
+              "total_characters": 16
+            }
+          ],
+          "revision": 9
+        },
+        "last_event_seq": 20
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "a9dcfdb0-cbcf-40b9-b167-fefd4a129208",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "纯合成 API canary 20bfa21e-c289-4a80-99d6-60adece52407。请读取附件，以附件的虚构岗位为对象保存一份简短 research 成果，列明工作需求与假设。禁止外网和个人材料。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          },
+          {
+            "entry_id": "f272dbc2-cbff-433c-b606-3691ccf24799",
+            "seq": 4,
+            "input_revision": 1,
+            "kind": "assistant",
+            "body": "合成成果已保存。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          },
+          {
+            "entry_id": "d36d2a52-b92c-4f1b-afb7-eeb4c76719e7",
+            "seq": 5,
+            "input_revision": 2,
+            "kind": "user",
+            "body": "纯合成 API canary 20bfa21e-c289-4a80-99d6-60adece52407：在刚才同一份 research 成果中补充一个可验证的验收指标，并保存同一成果的新修订。其他合成条件与材料保持不变；不得外网查询。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          },
+          {
+            "entry_id": "f78c18f0-d10c-4f6a-82ac-b4f3750acbf0",
+            "seq": 9,
+            "input_revision": 2,
+            "kind": "assistant",
+            "body": "合成成果已保存。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 9
+      },
+      "results": [
+        {
+          "base_standard_ref": null,
+          "basis": [
+            {
+              "input_revision": 2,
+              "kind": "user_temporary",
+              "ref": null
+            }
+          ],
+          "body": "纯合成工程成果，不表示模型质量。",
+          "changes": [],
+          "kind": "research",
+          "objects": [],
+          "preceding_refs": [
+            {
+              "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+              "kind": "result",
+              "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+              "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+            }
+          ],
+          "source_refs": [
+            {
+              "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+              "kind": "material",
+              "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+              "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+            },
+            {
+              "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+              "kind": "result",
+              "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+              "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+            }
+          ],
+          "title": "合成 API 验收成果",
+          "ref": {
+            "kind": "result",
+            "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+            "revision": "825d1587-d13e-40cf-8f67-cd8969ae81f4",
+            "sha256": "5cfad47f490747f60d4eea119420be9fd326fe661beae90a21e465e122196867"
+          },
+          "access_state": "available"
+        }
+      ]
+    }
+  ],
+  "status": "completed",
+  "account": {
+    "internal_user_id": "5529e22c-a25b-48bf-8322-24879ac0dbc7",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  },
+  "readiness_observations": [
+    {
+      "ready": true,
+      "role": "api",
+      "checked_at": "2026-09-13T03:35:26.721052+00:00",
+      "phase": "cloud",
+      "new_admission_enabled": true,
+      "release_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "configuration_sha256": "cd9b118f1034165f66a31030cd21c56f3b27319d0028e6c88c22485c3cf318ca",
+      "runtime_identity_sha256": "74faa794c43a7d3cb48199be271f5ec24fe2c4072fea9b3815e44319cc124e46",
+      "knowledge_sha256": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe",
+      "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b",
+      "blockers": []
+    },
+    {
+      "ready": true,
+      "role": "api",
+      "checked_at": "2026-09-13T03:35:28.025830+00:00",
+      "phase": "cloud",
+      "new_admission_enabled": true,
+      "release_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "configuration_sha256": "cd9b118f1034165f66a31030cd21c56f3b27319d0028e6c88c22485c3cf318ca",
+      "runtime_identity_sha256": "74faa794c43a7d3cb48199be271f5ec24fe2c4072fea9b3815e44319cc124e46",
+      "knowledge_sha256": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe",
+      "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b",
+      "blockers": []
+    }
+  ],
+  "release_identity": {
+    "release_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configuration_sha256": "cd9b118f1034165f66a31030cd21c56f3b27319d0028e6c88c22485c3cf318ca",
+    "runtime_identity_sha256": "74faa794c43a7d3cb48199be271f5ec24fe2c4072fea9b3815e44319cc124e46",
+    "knowledge_sha256": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe",
+    "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b"
+  },
+  "budget_evidence": {
+    "source": "authenticated_configuration_api",
+    "budget_profile": "test",
+    "limits": {
+      "model_calls": 32,
+      "total_tokens": 600000,
+      "active_seconds": 900
+    },
+    "configuration_sha256": "cd9b118f1034165f66a31030cd21c56f3b27319d0028e6c88c22485c3cf318ca"
+  },
+  "restart_observation": "running_window_observed",
+  "upload_id": "32115ad7-3d32-465f-b4cf-f75452ae6477",
+  "attachment_id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616",
+  "material": {
+    "attachment_id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616",
+    "state": "ready",
+    "visibility": {
+      "kind": "private",
+      "subject_id": "5529e22c-a25b-48bf-8322-24879ac0dbc7"
+    },
+    "original_ref": {
+      "kind": "material",
+      "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:original",
+      "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0",
+      "sha256": "a9c5086c4d9e58dbfe1b3d2ae62738637801587c673b91eecacaaa76b7bd1646"
+    },
+    "text_ref": {
+      "kind": "material",
+      "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+      "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+      "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+    },
+    "parse_state": "ready",
+    "parser_release": "utf8-v1",
+    "coverage_complete": true
+  },
+  "work_id": "162d2b9a-1456-4138-b0b0-ead8556da2d0",
+  "latest": {
+    "observed_at": 1789270531.705239,
+    "work": {
+      "work_id": "162d2b9a-1456-4138-b0b0-ead8556da2d0",
+      "thread_id": "50657560-66bc-447d-bc31-6bfb9312c6d2",
+      "input_revision": 2,
+      "state": "completed",
+      "phase": "research",
+      "answer_state": "ended",
+      "result_refs": [
+        {
+          "kind": "result",
+          "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+          "revision": "825d1587-d13e-40cf-8f67-cd8969ae81f4",
+          "sha256": "5cfad47f490747f60d4eea119420be9fd326fe661beae90a21e465e122196867"
+        }
+      ],
+      "pending_question_id": null,
+      "block_reason": null,
+      "budget": {
+        "active_seconds": 4.175999999999999,
+        "charged_calls": 7,
+        "charged_tokens": 173951,
+        "limits": {
+          "active_seconds": 900,
+          "model_calls": 32,
+          "total_tokens": 600000
+        },
+        "reserve": {
+          "active_seconds": 30,
+          "model_calls": 2,
+          "total_tokens": 32768
+        },
+        "revision": 1,
+        "usage_quality": "estimated"
+      },
+      "checkpoint": {
+        "catalog_refs": [],
+        "discovery_state": "open",
+        "input_revision": 2,
+        "last_note_entry_id": null,
+        "open_questions": [],
+        "pending_operation_ids": [],
+        "readings": [
+          {
+            "ref": {
+              "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+              "kind": "material",
+              "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+              "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 220
+          },
+          {
+            "ref": {
+              "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+              "kind": "result",
+              "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+              "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+            },
+            "remaining_ranges": [],
+            "state": "returned",
+            "total_characters": 16
+          }
+        ],
+        "revision": 9
+      },
+      "last_event_seq": 20
+    },
+    "messages": {
+      "items": [
+        {
+          "entry_id": "a9dcfdb0-cbcf-40b9-b167-fefd4a129208",
+          "seq": 1,
+          "input_revision": 1,
+          "kind": "user",
+          "body": "纯合成 API canary 20bfa21e-c289-4a80-99d6-60adece52407。请读取附件，以附件的虚构岗位为对象保存一份简短 research 成果，列明工作需求与假设。禁止外网和个人材料。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "f272dbc2-cbff-433c-b606-3691ccf24799",
+          "seq": 4,
+          "input_revision": 1,
+          "kind": "assistant",
+          "body": "合成成果已保存。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "d36d2a52-b92c-4f1b-afb7-eeb4c76719e7",
+          "seq": 5,
+          "input_revision": 2,
+          "kind": "user",
+          "body": "纯合成 API canary 20bfa21e-c289-4a80-99d6-60adece52407：在刚才同一份 research 成果中补充一个可验证的验收指标，并保存同一成果的新修订。其他合成条件与材料保持不变；不得外网查询。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        },
+        {
+          "entry_id": "f78c18f0-d10c-4f6a-82ac-b4f3750acbf0",
+          "seq": 9,
+          "input_revision": 2,
+          "kind": "assistant",
+          "body": "合成成果已保存。",
+          "options": [],
+          "question_id": null,
+          "visibility": "available"
+        }
+      ],
+      "next_after": 9
+    },
+    "results": [
+      {
+        "base_standard_ref": null,
+        "basis": [
+          {
+            "input_revision": 2,
+            "kind": "user_temporary",
+            "ref": null
+          }
+        ],
+        "body": "纯合成工程成果，不表示模型质量。",
+        "changes": [],
+        "kind": "research",
+        "objects": [],
+        "preceding_refs": [
+          {
+            "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+            "kind": "result",
+            "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+            "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+          }
+        ],
+        "source_refs": [
+          {
+            "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+            "kind": "material",
+            "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+            "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+          },
+          {
+            "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+            "kind": "result",
+            "revision": "08b81ff3-8c99-4758-89bb-7eeb102d7530",
+            "sha256": "7be937eaac2d33048a4a940726954ec5ff29d706dfc53db656f38600d6611942"
+          }
+        ],
+        "title": "合成 API 验收成果",
+        "ref": {
+          "kind": "result",
+          "id": "3e815191-db6f-4571-ad5e-86c540c964f1",
+          "revision": "825d1587-d13e-40cf-8f67-cd8969ae81f4",
+          "sha256": "5cfad47f490747f60d4eea119420be9fd326fe661beae90a21e465e122196867"
+        },
+        "access_state": "available"
+      }
+    ]
+  },
+  "observations": [
+    {
+      "label": "before_external_restart",
+      "observed_at": 1789270526.907255,
+      "work": {
+        "work_id": "162d2b9a-1456-4138-b0b0-ead8556da2d0",
+        "thread_id": "50657560-66bc-447d-bc31-6bfb9312c6d2",
+        "input_revision": 1,
+        "state": "running",
+        "phase": "research",
+        "answer_state": "none",
+        "result_refs": [],
+        "pending_question_id": null,
+        "block_reason": null,
+        "budget": {
+          "active_seconds": 0,
+          "charged_calls": 0,
+          "charged_tokens": 0,
+          "limits": {
+            "active_seconds": 900,
+            "model_calls": 32,
+            "total_tokens": 600000
+          },
+          "reserve": {
+            "active_seconds": 30,
+            "model_calls": 2,
+            "total_tokens": 32768
+          },
+          "revision": 1,
+          "usage_quality": "reported"
+        },
+        "checkpoint": {
+          "catalog_refs": [],
+          "discovery_state": "open",
+          "input_revision": 1,
+          "last_note_entry_id": null,
+          "open_questions": [],
+          "pending_operation_ids": [],
+          "readings": [
+            {
+              "ref": {
+                "id": "8e6bd895-c14b-4ebd-8bde-1dcd4553b616:text",
+                "kind": "material",
+                "revision": "4c4293e17926e9768e6aa468c0bb9403f2d8ef762f88a899cd3fb366e6020cb0:utf8-v1",
+                "sha256": "4e11ab0d3c97fb0878e8f72b44bca0a6b74a2ccd14b5e61b1d9b751dfe07be94"
+              },
+              "remaining_ranges": [],
+              "state": "unread",
+              "total_characters": null
+            }
+          ],
+          "revision": 1
+        },
+        "last_event_seq": 2
+      },
+      "messages": {
+        "items": [
+          {
+            "entry_id": "a9dcfdb0-cbcf-40b9-b167-fefd4a129208",
+            "seq": 1,
+            "input_revision": 1,
+            "kind": "user",
+            "body": "纯合成 API canary 20bfa21e-c289-4a80-99d6-60adece52407。请读取附件，以附件的虚构岗位为对象保存一份简短 research 成果，列明工作需求与假设。禁止外网和个人材料。",
+            "options": [],
+            "question_id": null,
+            "visibility": "available"
+          }
+        ],
+        "next_after": 1
+      },
+      "results": []
+    }
+  ]
+}

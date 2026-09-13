@@ -1,0 +1,40 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_actual_http_upload_saved_revision_same_work_replay_and_safe_evidence ___
+
+real_api = {'client': <starlette.testclient.TestClient object at 0x1084e01d0>, 'other': <starlette.testclient.TestClient object a...y922buCix9GugEgd2eKDh_Sa5lMBOCC7qqPY'}, 'repo': <app.hr_agent.repository.HrAgentRepository object at 0x10824d150>, ...}
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9571/test_actual_http_upload_saved_0')
+
+    @pytest.mark.postgres
+    def test_actual_http_upload_saved_revision_same_work_replay_and_safe_evidence(real_api, tmp_path):
+        h = canary()
+        config = h.load_config(real_api["config_path"])
+        runner = h.Canary(config, tmp_path / "canary-run", real_api["scheduled"])
+        result = runner.run()
+        assert result["status"] == "completed"
+        assert len(result["turns"]) == 2
+        first, second = result["turns"]
+        assert first["work"]["work_id"] == second["work"]["work_id"]
+        assert second["work"]["input_revision"] == 2
+        assert first["results"][0]["ref"]["id"] == second["results"][0]["ref"]["id"]
+        assert first["results"][0]["ref"]["revision"] != second["results"][0]["ref"]["revision"]
+        assert result["material"]["original_ref"]["revision"] == h.sha(runner.synthetic())
+        assert result["budget_evidence"]["source"] == "authenticated_configuration_api"
+        assert result["budget_evidence"]["limits"]["total_tokens"] == 600000
+        work_submits = [row["status"] for row in result["http"] if row["method"] == "POST" and row["path"] == "/api/hr/agent/works"]
+>       assert work_submits == [201, 200]
+E       assert [201] == [201, 200]
+E         
+E         Right contains one more item: 200
+E         Use -v to get more diff
+
+tests/test_hr_agent_production_canary.py:183: AssertionError
+=============================== warnings summary ===============================
+tests/test_hr_agent_production_canary.py::test_actual_http_upload_saved_revision_same_work_replay_and_safe_evidence
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_hr_agent_production_canary.py:132: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    response = client.request(method, url, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_hr_agent_production_canary.py::test_actual_http_upload_saved_revision_same_work_replay_and_safe_evidence
+1 failed, 1 warning in 6.84s

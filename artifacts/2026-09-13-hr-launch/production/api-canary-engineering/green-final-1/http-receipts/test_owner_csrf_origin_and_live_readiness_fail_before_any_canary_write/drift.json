@@ -1,0 +1,46 @@
+{
+  "run_id": "ccabcf21-bf1c-446f-9272-e613b1454632",
+  "owner_id": "d713110d-124e-42e0-b75f-fb5551abda62",
+  "public_origin": "https://localhost",
+  "deadline": 1789271418.327317,
+  "operations": {},
+  "http": [
+    {
+      "request_id": "21f41122-336d-4f23-8e89-000ea405edf4",
+      "method": "GET",
+      "path": "/api/v1/account",
+      "status": 200
+    },
+    {
+      "request_id": "3a0d45eb-0ecf-4bc5-a784-3876674a9491",
+      "method": "GET",
+      "path": "/api/v1/manage/hr-readiness",
+      "status": 503
+    }
+  ],
+  "turns": [],
+  "status": "stopped",
+  "account": {
+    "internal_user_id": "d713110d-124e-42e0-b75f-fb5551abda62",
+    "role": "platform_owner",
+    "hard_stale_read_only": false
+  },
+  "readiness_observations": [
+    {
+      "ready": false,
+      "role": "api",
+      "checked_at": "2026-09-13T03:35:18.352752+00:00",
+      "phase": "cloud",
+      "new_admission_enabled": false,
+      "release_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "configuration_sha256": "d5dc917d234f66ba38c91c49250c91c04b616ee357aebd8da461b43dd6cb8b5e",
+      "runtime_identity_sha256": "36e962b7147d041187480cc6dd7b74ca9815217a79ec153b0c8b5c3f35d59138",
+      "knowledge_sha256": "4a30fa3d2536996d0f3762ec0d69fada0da193a451f582bfd8f4473345f48afe",
+      "knowledge_release": "hr-07ae50d49fbca7c8e78cdd2b",
+      "blockers": [
+        "configuration_unavailable"
+      ]
+    }
+  ],
+  "failure": "hr_readiness_denied"
+}
