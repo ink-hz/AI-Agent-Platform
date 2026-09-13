@@ -39,7 +39,7 @@ if args[0]=='exec':
             pass
         rows=cursor.fetchall() if cursor.description else []
         if rows:
-            print('\\n'.join(('t' if row[0] is True else 'f' if row[0] is False else str(row[0])) for row in rows))
+            print('\\n'.join(str(row[0]) for row in rows))
 elif args[0]=='create':
     state_path=pathlib.Path(os.environ['TEST_DOCKER_STATE'])
     name=args[args.index('--name')+1]

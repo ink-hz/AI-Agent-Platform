@@ -1,0 +1,4 @@
+{
+  "deploy/cloud/hr_agent_migrate.py": "381dbfbcf89bdc286dc1544982705f656ba9b1a0f2ba4442769f7498a56455b2",
+  "deploy/cloud/preflight-execution-job-kind.sh": "88644e92079949a49e695474ab0c5d15e77cc238d13116e76db880f14d2e3b2e"
+}

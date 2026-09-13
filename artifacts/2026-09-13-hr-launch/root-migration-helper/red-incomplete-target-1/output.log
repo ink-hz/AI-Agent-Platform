@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_root_requires_complete_105_target_from_95_baseline[95] __________
+backend/tests/test_hr_root_migration_deployment.py:184: in test_root_requires_complete_105_target_from_95_baseline
+    assert result.returncode != 0
+E   AssertionError: assert 0 != 0
+E    +  where 0 = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python', '/Users/neo/Developer/w...nvironment', 'production'], returncode=0, stdout='HR_AGENT_MIGRATIONS_OK environments=1 cleanup=verified\n', stderr='').returncode
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_requires_complete_105_target_from_95_baseline[95]
+1 failed in 3.48s

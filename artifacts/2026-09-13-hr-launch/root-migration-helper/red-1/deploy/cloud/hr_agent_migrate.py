@@ -35,8 +35,6 @@ class DeploymentSignal(BaseException):
 class Supervisor:
     def __init__(self, args):
         self.args = args
-        self.migration_set = args.migration_set
-        self.environments = (0, 1) if args.environment == "all" else (0,)
         self.docker = os.environ.get("HR_MIGRATION_DOCKER", "/usr/bin/docker")
         self.release = Path(args.release).resolve(strict=True)
         self.private = Path(args.private)
@@ -51,10 +49,6 @@ class Supervisor:
         self.at_rest_unresolved = False
         self.receipt_path = None
         self.receipt = {
-            "helper_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            "image": args.image if hasattr(args, "image") else None,
-            "migration_set": self.migration_set,
-            "requested_environment": args.environment,
             "status": "running",
             "stage": "validation",
             "environment": None,
@@ -151,8 +145,10 @@ class Supervisor:
             r"(?:sha256:[0-9a-f]{64}|[^\s]+@sha256:[0-9a-f]{64})", self.args.image
         ):
             raise DeploymentFailure("immutable_image_required")
-        for index in self.environments:
-            name = ("control-migrator-database-url", "preview-control-migrator-database-url")[index]
+        for name in (
+            "control-migrator-database-url",
+            "preview-control-migrator-database-url",
+        ):
             path = self.private / name
             info = path.lstat()
             if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600:
@@ -186,12 +182,6 @@ class Supervisor:
             self.at_rest_unresolved = True
             raise DeploymentFailure("at_rest_not_clean")
         root = self.release / "backend/control_migrations"
-        if self.migration_set == "root":
-            self.migrations = root
-            self.container_migrations = "/app/backend/control_migrations"
-            self.verify_root_ledger("ledger_before")
-            self.job_kind_preflight()
-            return
         checks = []
         for number, name in (
             (100, "100_attachment_erasure_worker_access.sql"),
@@ -206,89 +196,15 @@ class Supervisor:
             checksum = hashlib.sha256(path.read_bytes()).hexdigest()
             checks.append(f"(version={number} and sha256='{checksum}')")
         self.migrations = root / "hr_agent"
-        self.container_migrations = "/app/backend/control_migrations/hr_agent"
         if self.migrations.is_symlink() or not self.migrations.is_dir():
             raise DeploymentFailure("migration_directory_invalid")
-        for index in self.environments:
-            database = ("agent_platform_control", "agent_platform_control_preview")[index]
+        for database in ("agent_platform_control", "agent_platform_control_preview"):
             if self.admin(
                 "select count(*) from platform_control.schema_migrations where "
                 + " or ".join(checks),
                 database,
             ) != str(len(checks)):
                 raise DeploymentFailure("root_migration_gate_failed")
-
-    def root_checksums(self):
-        root = self.release / "backend/control_migrations"
-        expected = {}
-        for directory, baseline_only in ((root, False), (root / "hr_web", True)):
-            if directory.is_symlink() or not directory.is_dir():
-                raise DeploymentFailure("root_baseline_invalid")
-            for path in sorted(directory.iterdir()):
-                match = re.fullmatch(r"([0-9]{3})_[a-z0-9_]+\.sql", path.name)
-                if match is None:
-                    continue
-                version = int(match[1])
-                if (path.is_symlink() or not path.is_file() or version in expected
-                        or (baseline_only and not 89 <= version <= 95)):
-                    raise DeploymentFailure("root_ledger_invalid")
-                expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105}).issubset(expected):
-            raise DeploymentFailure("root_baseline_invalid")
-        return expected
-
-    def verify_root_ledger(self, field):
-        expected = self.root_checksums()
-        if field == "ledger_after" and expected != self.receipt.get("root_file_checksums"):
-            raise DeploymentFailure("root_ledger_invalid")
-        value = self.admin(
-            "select coalesce(json_agg(json_build_object('version',version,'sha256',sha256) "
-            "order by version),'[]'::json)::text from platform_control.schema_migrations",
-            "agent_platform_control",
-        )
-        try:
-            rows = json.loads(value)
-            if not isinstance(rows, list):
-                raise TypeError
-            actual = {}
-            for row in rows:
-                version, checksum = row["version"], row["sha256"]
-                if type(version) is not int or version in actual or expected.get(version) != checksum:
-                    raise ValueError
-                actual[version] = checksum
-        except (ValueError, KeyError, TypeError):
-            raise DeploymentFailure("root_ledger_invalid") from None
-        if not set(range(1, 96)).issubset(actual):
-            raise DeploymentFailure("root_baseline_invalid")
-        if field == "ledger_after" and actual != expected:
-            raise DeploymentFailure("root_ledger_invalid")
-        self.record(field, **{field: rows}, root_file_checksums=expected)
-
-    def job_kind_preflight(self):
-        # Host-reviewed companion; never invoke a release's arbitrary shell script.
-        script = Path(__file__).with_name("preflight-execution-job-kind.sh")
-        if script.is_symlink() or not script.is_file():
-            raise DeploymentFailure("job_kind_preflight_failed")
-        checksum = hashlib.sha256(script.read_bytes()).hexdigest()
-        self.record("job_kind_preflight_pending", job_kind_preflight={
-            "state": "pending", "script_sha256": checksum,
-        })
-        try:
-            result = subprocess.run(
-                ["/bin/bash", str(script), self.args.postgres, "agent_platform_control", "--baseline95"],
-                capture_output=True, text=True, check=False,
-                timeout=self.args.command_timeout, start_new_session=True,
-                env={**os.environ, "HR_MIGRATION_DOCKER": self.docker},
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            raise DeploymentFailure("job_kind_preflight_failed") from None
-        if result.returncode or result.stdout.strip() != (
-            "EXECUTION_JOB_KIND_PREFLIGHT_OK database=agent_platform_control state=classified"
-        ):
-            raise DeploymentFailure("job_kind_preflight_failed")
-        self.record("job_kind_preflight", job_kind_preflight={
-            "state": "classified", "script_sha256": checksum,
-        })
 
     def state(self):
         value = json.loads(
@@ -391,13 +307,13 @@ class Supervisor:
                 "-v",
                 f"{self.private / secret_name}:/run/control-secrets/{secret_name}:ro",
                 "-v",
-                f"{self.migrations}:{self.container_migrations}:ro",
+                f"{self.migrations}:/app/backend/control_migrations/hr_agent:ro",
                 "-e",
                 f"PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE=/run/control-secrets/{secret_name}",
                 "-e",
                 f"PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner{suffix}",
                 "-e",
-                f"PLATFORM_CONTROL_MIGRATION_DIR={self.container_migrations}",
+                "PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations/hr_agent",
                 self.args.image,
                 "python",
                 "-m",
@@ -421,8 +337,6 @@ class Supervisor:
             raise DeploymentFailure("migration_failed")
         if not self.cleanup():
             raise DeploymentFailure("cleanup_unverified")
-        if self.migration_set == "root":
-            self.verify_root_ledger("ledger_after")
 
     def on_signal(self, number, _frame):
         self.signal_number = number
@@ -433,7 +347,7 @@ class Supervisor:
         status, code = "failed", 1
         try:
             self.validate()
-            for index in self.environments:
+            for index in (0, 1):
                 if self.signal_number:
                     raise DeploymentSignal(self.signal_number)
                 self.migrate(index)
@@ -466,7 +380,7 @@ class Supervisor:
             if self.lock_descriptor is not None:
                 os.close(self.lock_descriptor)
         if not code:
-            print(f"HR_AGENT_MIGRATIONS_OK environments={len(self.environments)} cleanup=verified")
+            print("HR_AGENT_MIGRATIONS_OK environments=2 cleanup=verified")
         else:
             print("HR_AGENT_MIGRATIONS_FAILED", file=sys.stderr)
         return code
@@ -481,11 +395,7 @@ def main():
     parser.add_argument("--migration-timeout", type=float, default=900)
     parser.add_argument("--command-timeout", type=float, default=10)
     parser.add_argument("--receipt-dir")
-    parser.add_argument("--migration-set", choices=("hr", "root"), default="hr")
-    parser.add_argument("--environment", choices=("all", "production"), default="all")
     args = parser.parse_args()
-    if args.migration_set == "root" and args.environment != "production":
-        parser.error("root requires --environment production")
     if not (0 < args.migration_timeout <= 3600 and 0 < args.command_timeout <= 30):
         parser.error("invalid timeouts")
     try:

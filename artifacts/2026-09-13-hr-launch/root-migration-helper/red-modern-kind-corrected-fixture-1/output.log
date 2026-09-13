@@ -1,0 +1,16 @@
+F.F                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_modern_preflight_accepts_three_signed_completed_v5_still_queued _____
+backend/tests/test_hr_root_job_kind_preflight.py:36: in test_modern_preflight_accepts_three_signed_completed_v5_still_queued
+    helper.job_kind_preflight()
+artifacts/2026-09-13-hr-launch/root-migration-helper/red-modern-kind-1/source/deploy/cloud/hr_agent_migrate.py:281: in job_kind_preflight
+    raise DeploymentFailure("job_kind_preflight_failed")
+E   root_host_supervisor.DeploymentFailure: job_kind_preflight_failed
+_ test_modern_preflight_rejects_unknown_schema_or_v5_identity[constraint_drift] _
+backend/tests/test_hr_root_job_kind_preflight.py:51: in test_modern_preflight_rejects_unknown_schema_or_v5_identity
+    with pytest.raises(Exception, match='job_kind_preflight_failed'):
+E   Failed: DID NOT RAISE Exception
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_root_job_kind_preflight.py::test_modern_preflight_accepts_three_signed_completed_v5_still_queued
+FAILED backend/tests/test_hr_root_job_kind_preflight.py::test_modern_preflight_rejects_unknown_schema_or_v5_identity[constraint_drift]
+2 failed, 1 passed in 4.68s

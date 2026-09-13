@@ -51,8 +51,6 @@ class Supervisor:
         self.at_rest_unresolved = False
         self.receipt_path = None
         self.receipt = {
-            "helper_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            "image": args.image if hasattr(args, "image") else None,
             "migration_set": self.migration_set,
             "requested_environment": args.environment,
             "status": "running",
@@ -233,14 +231,12 @@ class Supervisor:
                         or (baseline_only and not 89 <= version <= 95)):
                     raise DeploymentFailure("root_ledger_invalid")
                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105}).issubset(expected):
+        if not set(range(1, 96)).issubset(expected):
             raise DeploymentFailure("root_baseline_invalid")
         return expected
 
     def verify_root_ledger(self, field):
         expected = self.root_checksums()
-        if field == "ledger_after" and expected != self.receipt.get("root_file_checksums"):
-            raise DeploymentFailure("root_ledger_invalid")
         value = self.admin(
             "select coalesce(json_agg(json_build_object('version',version,'sha256',sha256) "
             "order by version),'[]'::json)::text from platform_control.schema_migrations",
@@ -270,9 +266,6 @@ class Supervisor:
         if script.is_symlink() or not script.is_file():
             raise DeploymentFailure("job_kind_preflight_failed")
         checksum = hashlib.sha256(script.read_bytes()).hexdigest()
-        self.record("job_kind_preflight_pending", job_kind_preflight={
-            "state": "pending", "script_sha256": checksum,
-        })
         try:
             result = subprocess.run(
                 ["/bin/bash", str(script), self.args.postgres, "agent_platform_control", "--baseline95"],

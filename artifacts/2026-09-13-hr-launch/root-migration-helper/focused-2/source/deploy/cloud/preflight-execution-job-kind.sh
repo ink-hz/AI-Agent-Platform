@@ -6,8 +6,7 @@ fail() {
   exit 1
 }
 
-[[ $# -eq 2 || ( $# -eq 3 && "$3" == "--baseline95" ) ]] || fail
-baseline95="${3:-}"
+[[ $# -eq 2 ]] || fail
 postgres_container="$1"
 database_name="$2"
 [[ -n "$postgres_container" ]] || fail
@@ -41,33 +40,6 @@ case "$table_state" in
     exit 0
     ;;
   1:1:1)
-    if [[ "$baseline95" == "--baseline95" ]]; then
-      # This branch is called only after the host verifies all 001..095 hashes.
-      # 091 extends 042's CHECK; legacy bootstrap classification stays unchanged.
-      constraint_state="$("${psql_readonly[@]}" -c \
-        "select coalesce(bool_and(convalidated and pg_get_constraintdef(oid) =
-         'CHECK ((job_kind = ANY (ARRAY[''legacy_brain''::text, ''direct_agent''::text, ''metabot_local''::text, ''worker_direct_v5''::text])))'),false)
-         from pg_constraint where conrelid='platform_control.execution_jobs'::regclass
-         and conname='execution_jobs_job_kind_v42' and contype='c'")" || fail
-      [[ "$constraint_state" == "t" ]] || fail
-      invalid_count="$("${psql_readonly[@]}" -c \
-        "select count(*) from platform_control.execution_jobs j
-         where j.job_kind is null
-            or j.job_kind not in ('legacy_brain','direct_agent','metabot_local','worker_direct_v5')
-            or (j.job_kind='worker_direct_v5' and (
-              j.agent_id is distinct from 'hr-bot' or not exists (
-                select 1 from platform_control.direct_command_bindings b
-                join platform_control.turn_attempts a using(attempt_id)
-                join platform_control.conversation_turns t using(turn_id)
-                where b.job_id=j.job_id and a.transport_run_id=j.run_id
-                  and b.conversation_id=t.conversation_id
-                  and a.executor_kind='worker_direct' and t.execution_owner='worker_direct'
-              )
-            ))")" || fail
-      [[ "$invalid_count" == "0" ]] || fail
-      echo "EXECUTION_JOB_KIND_PREFLIGHT_OK database=$database_name state=classified"
-      exit 0
-    fi
     invalid_count="$("${psql_readonly[@]}" -c \
       "select count(*) from platform_control.execution_jobs
        where job_kind is null

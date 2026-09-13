@@ -1,0 +1,11 @@
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_modern_preflight_accepts_three_signed_completed_v5_still_queued _____
+backend/tests/test_hr_root_job_kind_preflight.py:34: in test_modern_preflight_accepts_three_signed_completed_v5_still_queued
+    helper.job_kind_preflight()
+deploy/cloud/hr_agent_migrate.py:281: in job_kind_preflight
+    raise DeploymentFailure("job_kind_preflight_failed")
+E   root_host_supervisor.DeploymentFailure: job_kind_preflight_failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_root_job_kind_preflight.py::test_modern_preflight_accepts_three_signed_completed_v5_still_queued
+1 failed, 2 passed in 4.61s

@@ -1,0 +1,76 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+_____ test_root_production_applies_only_root_and_reruns_with_exact_ledgers _____
+backend/tests/test_hr_root_migration_deployment.py:54: in test_root_production_applies_only_root_and_reruns_with_exact_ledgers
+    assert result.returncode == 0, result.stderr
+E   AssertionError: usage: hr_agent_migrate.py [-h] [--migration-timeout MIGRATION_TIMEOUT]
+E                                [--command-timeout COMMAND_TIMEOUT]
+E                                [--receipt-dir RECEIPT_DIR]
+E                                release private image postgres
+E     hr_agent_migrate.py: error: unrecognized arguments: --migration-set root --environment production
+E     
+E   assert 2 == 0
+E    +  where 2 = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python', '/Users/neo/Developer/w...e image postgres\nhr_agent_migrate.py: error: unrecognized arguments: --migration-set root --environment production\n').returncode
+____________ test_root_rejects_before_container_or_grant[missing95] ____________
+backend/tests/test_hr_root_migration_deployment.py:88: in test_root_rejects_before_container_or_grant
+    receipt = json.loads(next((tmp / 'receipts').glob('*.json')).read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+___________ test_root_rejects_before_container_or_grant[mismatch95] ____________
+backend/tests/test_hr_root_migration_deployment.py:88: in test_root_rejects_before_container_or_grant
+    receipt = json.loads(next((tmp / 'receipts').glob('*.json')).read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+___________ test_root_rejects_before_container_or_grant[mismatch100] ___________
+backend/tests/test_hr_root_migration_deployment.py:88: in test_root_rejects_before_container_or_grant
+    receipt = json.loads(next((tmp / 'receipts').glob('*.json')).read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+_________ test_root_rejects_before_container_or_grant[unknown_version] _________
+backend/tests/test_hr_root_migration_deployment.py:88: in test_root_rejects_before_container_or_grant
+    receipt = json.loads(next((tmp / 'receipts').glob('*.json')).read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+_______ test_root_rejects_before_container_or_grant[hr_already_applied] ________
+backend/tests/test_hr_root_migration_deployment.py:88: in test_root_rejects_before_container_or_grant
+    receipt = json.loads(next((tmp / 'receipts').glob('*.json')).read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+________ test_root_rejects_before_container_or_grant[missing_root_file] ________
+backend/tests/test_hr_root_migration_deployment.py:88: in test_root_rejects_before_container_or_grant
+    receipt = json.loads(next((tmp / 'receipts').glob('*.json')).read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+_________ test_root_rejects_before_container_or_grant[job_kind_schema] _________
+backend/tests/test_hr_root_migration_deployment.py:88: in test_root_rejects_before_container_or_grant
+    receipt = json.loads(next((tmp / 'receipts').glob('*.json')).read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+___ test_hr_explicit_production_needs_no_preview_and_checks_production_floor ___
+backend/tests/test_hr_root_migration_deployment.py:97: in test_hr_explicit_production_needs_no_preview_and_checks_production_floor
+    assert result.returncode == 0, result.stderr
+E   AssertionError: usage: hr_agent_migrate.py [-h] [--migration-timeout MIGRATION_TIMEOUT]
+E                                [--command-timeout COMMAND_TIMEOUT]
+E                                [--receipt-dir RECEIPT_DIR]
+E                                release private image postgres
+E     hr_agent_migrate.py: error: unrecognized arguments: --migration-set hr --environment production
+E     
+E   assert 2 == 0
+E    +  where 2 = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python', '/Users/neo/Developer/w...ate image postgres\nhr_agent_migrate.py: error: unrecognized arguments: --migration-set hr --environment production\n').returncode
+___________ test_root_without_explicit_production_rejected_before_io ___________
+backend/tests/test_hr_root_migration_deployment.py:106: in test_root_without_explicit_production_rejected_before_io
+    assert 'root requires --environment production' in result.stderr
+E   AssertionError: assert 'root requires --environment production' in 'usage: hr_agent_migrate.py [-h] [--migration-timeout MIGRATION_TIMEOUT]\n                           [--command-timeou...            release private image postgres\nhr_agent_migrate.py: error: unrecognized arguments: --migration-set root\n'
+E    +  where 'usage: hr_agent_migrate.py [-h] [--migration-timeout MIGRATION_TIMEOUT]\n                           [--command-timeou...            release private image postgres\nhr_agent_migrate.py: error: unrecognized arguments: --migration-set root\n' = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python', '/Users/neo/Developer/w...           release private image postgres\nhr_agent_migrate.py: error: unrecognized arguments: --migration-set root\n').stderr
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_production_applies_only_root_and_reruns_with_exact_ledgers
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_rejects_before_container_or_grant[missing95]
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_rejects_before_container_or_grant[mismatch95]
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_rejects_before_container_or_grant[mismatch100]
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_rejects_before_container_or_grant[unknown_version]
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_rejects_before_container_or_grant[hr_already_applied]
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_rejects_before_container_or_grant[missing_root_file]
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_rejects_before_container_or_grant[job_kind_schema]
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_hr_explicit_production_needs_no_preview_and_checks_production_floor
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_without_explicit_production_rejected_before_io
+10 failed in 9.95s

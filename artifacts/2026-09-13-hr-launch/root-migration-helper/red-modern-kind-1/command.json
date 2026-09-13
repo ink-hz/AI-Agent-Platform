@@ -1,0 +1,22 @@
+{
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_hr_root_job_kind_preflight.py",
+    "-q",
+    "--tb=short"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "head": "ce6c0f343c5aa8c9725cc599cfa80ee6e3eaacf7",
+  "source_sha256": {
+    "deploy/cloud/hr_agent_migrate.py": "4e826933e81e2716100f2cfbb1c408c76fd270356a4aa825f6e3ca383539b431",
+    "deploy/cloud/preflight-execution-job-kind.sh": "6769363397fa671412f8c5407e93aabb0fcc626201ee9e4404fb74f67c7fac25",
+    "backend/tests/test_hr_root_migration_deployment.py": "168ff1eb3a863160069fa3f48b9f4db255e7b602dd4f597a2bbc025355788537",
+    "backend/tests/test_hr_agent_migration_deployment.py": "11413e73992a6092af47ddd286cc1639baa3fceb388b3a54c8fecf74ee1fb57e"
+  },
+  "started": "2026-09-13T03:28:10.049987+00:00",
+  "exit_code": 1,
+  "ended": "2026-09-13T03:28:15.055175+00:00",
+  "source_unchanged": true
+}
