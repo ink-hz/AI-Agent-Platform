@@ -19,3 +19,14 @@
   .hr-position-directory .hr-pw-heading { flex-wrap: wrap; }
   .hr-position-directory .hr-pw-heading-actions { justify-content: space-between; }
 }
+.hr-pw-cloud-result{padding:20px;margin-top:12px;border:1px solid #ffffffce;border-radius:14px;background:linear-gradient(120deg,#ffffffbf,#edf7fc99)}
+.hr-pw-cloud-result h3{margin:8px 0 14px;font-size:17px}
+.hr-pw-cloud-result details>summary{cursor:pointer;color:#24596b;font-size:13px}
+.hr-pw-cloud-result>button{display:inline-flex;align-items:center;gap:7px;margin-top:14px;border:1px solid #a9c4d180;border-radius:10px;padding:9px 12px;background:#f8fcff;color:#27576b;cursor:pointer}
+.hr-pw-basis{display:flex;flex-wrap:wrap;gap:8px;padding:0;list-style:none}
+.hr-pw-basis li{padding:5px 9px;border-radius:7px;background:#e4eef4;color:#455f70;font-size:12px}
+.hr-pw-history{margin:30px 0;padding:18px 20px;border:1px solid #b2cad57d;border-radius:14px}
+.hr-pw-history>summary{cursor:pointer;font-weight:600}
+.hr-pw-history>article{padding:18px 0;border-top:1px solid #b2cad57d}
+.hr-pw-section time{display:block;margin-bottom:12px;color:#455f70;font-size:12px}
+.hr-pw-section>ul{line-height:1.9;color:#2f4858}
