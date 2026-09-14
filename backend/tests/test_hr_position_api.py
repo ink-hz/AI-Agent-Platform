@@ -257,66 +257,42 @@ def test_hr_routes_fail_closed_when_grant_is_denied_or_unavailable() -> None:
 
 
 def test_position_mutations_require_writable_identity_and_idempotency_uuid() -> None:
-    stale, service, _ = _client(stale=True)
-    current, _, _ = _client()
-    payload = {
-        "source_kind": "new_conversation",
-        "source_key": "conversation:new",
-        "source_conversation_id": None,
-        "title": "结构工程师",
-        "proposal": {},
-        "evidence": {"message_seq": 1},
-        "discovery_rule_version": "interactive-v1",
-    }
-
-    assert stale.post(
-        "/api/hr/position-drafts", json=payload,
-        headers={"Idempotency-Key": str(uuid4())},
-    ).status_code == 503
-    assert not service.calls
-    assert current.post("/api/hr/position-drafts", json=payload).status_code == 422
-    invalid = current.post(
-        "/api/hr/position-drafts", json={**payload, "external_ats": "beisen"},
-        headers={"Idempotency-Key": str(uuid4())},
-    )
+    stale, stale_service, _ = _client(stale=True)
+    current, service, _ = _client()
+    path = f"/api/hr/positions/{service.position_record.position_id}/materials/{uuid4()}"
+    assert stale.post(path, json={}, headers={"Idempotency-Key": str(uuid4())}).status_code == 503
+    assert stale_service.calls == []
+    assert current.post(path, json={}).status_code == 422
+    assert current.post(path, json={}, headers={"Idempotency-Key": "invalid"}).status_code == 422
+    invalid = current.post(path, json={"external_ats": "beisen"}, headers={"Idempotency-Key": str(uuid4())})
     assert invalid.status_code == 422
     assert invalid.json() == {"detail": "HR position request invalid"}
-
-    oversized = current.post(
-        "/api/hr/position-drafts",
-        json={**payload, "proposal": {"request": "x" * 131_073}},
-        headers={"Idempotency-Key": str(uuid4())},
-    )
-    assert oversized.status_code == 422
-    assert oversized.json() == {"detail": "HR position request invalid"}
-
-    oversized_evidence = current.post(
-        "/api/hr/position-drafts",
-        json={**payload, "evidence": {"excerpt": "中" * 22_000}},
-        headers={"Idempotency-Key": str(uuid4())},
-    )
-    assert oversized_evidence.status_code == 422
-    assert oversized_evidence.json() == {"detail": "HR position request invalid"}
+    assert service.calls == []
 
 
-def test_draft_commands_forward_versions_and_conversation_binding() -> None:
-    client, service, _ = _client()
-    request_id = str(uuid4())
-    draft_id = service.draft_record.draft_id
-    target_id = service.position_record.position_id
-
-    assert client.post(
-        f"/api/hr/position-drafts/{draft_id}/merge",
-        json={"target_position_id": str(target_id), "expected_row_version": 1},
-        headers={"Idempotency-Key": request_id},
-    ).status_code == 200
-    assert service.calls[-1][0] == "merge"
-    conversation_id = uuid4()
-    assert client.post(
-        f"/api/hr/positions/{target_id}/conversations/{conversation_id}",
-        json={}, headers={"Idempotency-Key": str(uuid4())},
-    ).status_code == 200
-    assert service.calls[-1][0] == "bind"
+def test_retired_position_commands_never_reach_the_service() -> None:
+    # These writes were removed in 7b041174. Keep their retirement explicit;
+    # new standard confirmations are covered through the cloud user HTTP API.
+    for secured in (False, True):
+        if secured:
+            client, service, headers = _secured_client()
+        else:
+            client, service, _ = _client()
+            headers = {"Idempotency-Key": str(uuid4())}
+        draft = service.draft_record.draft_id
+        position = service.position_record.position_id
+        paths = [
+            "/api/hr/position-drafts",
+            f"/api/hr/position-drafts/{draft}/confirm",
+            f"/api/hr/position-drafts/{draft}/merge",
+            f"/api/hr/position-drafts/{draft}/dismiss",
+            f"/api/hr/position-drafts/{draft}/versions/{service.draft_version.draft_version_id}/confirm",
+            f"/api/hr/positions/{position}/conversations/{uuid4()}",
+        ]
+        for index, path in enumerate(paths):
+            response = client.post(path, json={}, headers=headers)
+            assert response.status_code == (403 if secured else 405 if index == 0 else 404)
+        assert service.calls == []
 
 
 def test_conversation_position_package_is_owner_scoped_and_strictly_serialized() -> None:
@@ -348,67 +324,30 @@ def test_conversation_position_package_is_owner_scoped_and_strictly_serialized()
     assert response.headers["cache-control"] == "private, no-store"
 
 
-def test_position_package_confirmation_is_atomic_and_strictly_serialized() -> None:
-    client, service, owner_id = _client()
-    request_id = uuid4()
-
-    confirmed = client.post(
-        f"/api/hr/position-drafts/{service.draft_record.draft_id}"
-        f"/versions/{service.draft_version.draft_version_id}/confirm",
-        headers={
-            "Idempotency-Key": str(request_id),
-            "X-CSRF-Token": "csrf",
-        },
-        json={"expected_row_version": 2},
-    )
-
-    assert confirmed.status_code == 200
-    assert confirmed.json() == {
-        "position_id": str(service.position_record.position_id),
-        "context_version_id": str(
-            service.confirmed_package.context.context_version_id
-        ),
-        "conversation_id": str(service.conversation_id),
-    }
-    assert service.calls == [(
-        "confirm_package",
-        (
-            owner_id,
-            service.draft_record.draft_id,
-            service.draft_version.draft_version_id,
-            request_id,
-        ),
-        {"expected_row_version": 2},
-    )]
+def test_material_mutations_require_csrf_and_same_origin() -> None:
+    client, service, headers = _secured_client()
+    path = f"/api/hr/positions/{service.position_record.position_id}/materials/{uuid4()}"
+    for invalid_headers in (
+        {key: value for key, value in headers.items() if key != "X-CSRF-Token"},
+        {**headers, "X-CSRF-Token": "invalid"},
+        {**headers, "Origin": "https://foreign.example.test"},
+    ):
+        assert client.post(path, json={}, headers=invalid_headers).status_code == 403
+    assert service.calls == []
 
 
 def test_position_package_routes_conceal_absence_conflict_and_unavailability() -> None:
     client, service, _ = _client()
-    package_path = (
-        f"/api/hr/conversations/{service.conversation_id}/position-package"
-    )
-    confirm_path = (
-        f"/api/hr/position-drafts/{service.draft_record.draft_id}"
-        f"/versions/{service.draft_version.draft_version_id}/confirm"
-    )
-
-    service.error = HrNotFound("encrypted-content=secret")
-    missing = client.get(package_path)
-    service.error = HrConflict("raw database conflict")
-    conflict = client.post(
-        confirm_path,
-        headers={"Idempotency-Key": str(uuid4())},
-        json={"expected_row_version": 2},
-    )
-    service.error = HrUnavailable("artifact_locator=s3://secret")
-    unavailable = client.get(package_path)
-
-    assert missing.status_code == 404
-    assert missing.json() == {"detail": "HR position not found"}
-    assert conflict.status_code == 409
-    assert conflict.json() == {"detail": "HR position conflict"}
-    assert unavailable.status_code == 503
-    assert unavailable.json() == {"detail": "HR position unavailable"}
+    path = f"/api/hr/conversations/{service.conversation_id}/position-package"
+    for error, status, detail in (
+        (HrNotFound("encrypted-content=secret"), 404, "HR position not found"),
+        (HrConflict("raw database conflict"), 409, "HR position conflict"),
+        (HrUnavailable("artifact_locator=s3://secret"), 503, "HR position unavailable"),
+    ):
+        service.error = error
+        response = client.get(path)
+        assert response.status_code == status
+        assert response.json() == {"detail": detail}
 
 
 def test_conversation_without_a_position_package_returns_404() -> None:
@@ -420,64 +359,26 @@ def test_conversation_without_a_position_package_returns_404() -> None:
     assert missing.json() == {"detail": "HR position not found"}
 
 
-def test_position_package_routes_deny_unentitled_and_read_only_identities() -> None:
+def test_position_package_denies_unentitled_but_allows_read_only_history() -> None:
     denied, denied_service, _ = _client(authorization="denied")
-    stale, stale_service, _ = _client(stale=True)
-
-    cross_owner = denied.get(
-        f"/api/hr/conversations/{denied_service.conversation_id}/position-package"
-    )
-    read_only = stale.post(
-        f"/api/hr/position-drafts/{stale_service.draft_record.draft_id}"
-        f"/versions/{stale_service.draft_version.draft_version_id}/confirm",
-        headers={"Idempotency-Key": str(uuid4())},
-        json={"expected_row_version": 2},
-    )
-
-    assert cross_owner.status_code == 403
-    assert read_only.status_code == 503
-    assert denied_service.calls == stale_service.calls == []
+    stale, stale_service, owner_id = _client(stale=True)
+    assert denied.get(f"/api/hr/conversations/{denied_service.conversation_id}/position-package").status_code == 403
+    assert denied_service.calls == []
+    history = stale.get(f"/api/hr/conversations/{stale_service.conversation_id}/position-package")
+    assert history.status_code == 200
+    assert history.headers["cache-control"] == "private, no-store"
+    assert stale_service.calls == [("conversation_package", owner_id, stale_service.conversation_id)]
 
 
 def test_position_package_routes_reject_cross_owner_service_results() -> None:
     client, service, owner_id = _client()
     foreign_owner = uuid4()
-    service.draft_record = replace(
-        service.draft_record, owner_id=foreign_owner
-    )
-    service.draft_version = replace(
-        service.draft_version, owner_id=foreign_owner
-    )
-    foreign_position = replace(
-        service.confirmed_package.position, owner_id=foreign_owner
-    )
-    foreign_context = replace(
-        service.confirmed_package.context,
-        owner_id=foreign_owner,
-        created_by=foreign_owner,
-        confirmed_by=foreign_owner,
-    )
-    service.confirmed_package = ConfirmedPositionPackage(
-        foreign_position, foreign_context, service.conversation_id
-    )
-
-    package = client.get(
-        f"/api/hr/conversations/{service.conversation_id}/position-package"
-    )
-    assert service.calls == [
-        ("conversation_package", owner_id, service.conversation_id)
-    ]
-    confirmed = client.post(
-        f"/api/hr/position-drafts/{service.draft_record.draft_id}"
-        f"/versions/{service.draft_version.draft_version_id}/confirm",
-        headers={"Idempotency-Key": str(uuid4())},
-        json={"expected_row_version": 2},
-    )
-
-    assert package.status_code == confirmed.status_code == 403
-    assert package.json() == confirmed.json() == {
-        "detail": "HR position access denied"
-    }
+    service.draft_record = replace(service.draft_record, owner_id=foreign_owner)
+    service.draft_version = replace(service.draft_version, owner_id=foreign_owner)
+    package = client.get(f"/api/hr/conversations/{service.conversation_id}/position-package")
+    assert service.calls == [("conversation_package", owner_id, service.conversation_id)]
+    assert package.status_code == 403
+    assert package.json() == {"detail": "HR position access denied"}
 
 
 def test_position_material_promotion_and_removal_are_explicit_mutations() -> None:
@@ -512,80 +413,29 @@ def test_repository_failures_have_stable_concealed_http_projection() -> None:
         }[status]}
 
 
-def test_every_hr_route_passes_the_real_identity_security_middleware() -> None:
+def test_every_current_position_route_passes_the_real_identity_security_middleware() -> None:
     client, service, headers = _secured_client()
     position_id = service.position_record.position_id
-    draft_id = service.draft_record.draft_id
-    conversation_id = uuid4()
     attachment_id = uuid4()
-    proposal = {
-        "source_kind": "new_conversation",
-        "source_key": "conversation:secured",
-        "source_conversation_id": None,
-        "title": "结构工程师",
-        "proposal": {},
-        "evidence": {"message_seq": 1},
-        "discovery_rule_version": "interactive-v1",
-    }
-    version = {"expected_row_version": 1}
     requests = (
         client.get("/api/hr/positions"),
         client.get(f"/api/hr/positions/{position_id}"),
         client.get("/api/hr/position-drafts"),
-        client.get(
-            f"/api/hr/conversations/{service.conversation_id}/position-package"
-        ),
-        client.post("/api/hr/position-drafts", json=proposal, headers=headers),
-        client.post(
-            f"/api/hr/position-drafts/{draft_id}/confirm",
-            json=version, headers=headers,
-        ),
-        client.post(
-            f"/api/hr/position-drafts/{draft_id}/merge",
-            json={**version, "target_position_id": str(position_id)},
-            headers=headers,
-        ),
-        client.post(
-            f"/api/hr/position-drafts/{draft_id}/dismiss",
-            json=version, headers=headers,
-        ),
-        client.post(
-            f"/api/hr/position-drafts/{draft_id}"
-            f"/versions/{service.draft_version.draft_version_id}/confirm",
-            json={"expected_row_version": 2}, headers=headers,
-        ),
-        client.post(
-            f"/api/hr/positions/{position_id}/conversations/{conversation_id}",
-            json={}, headers=headers,
-        ),
-        client.post(
-            f"/api/hr/positions/{position_id}/materials/{attachment_id}",
-            json={}, headers=headers,
-        ),
-        client.delete(
-            f"/api/hr/positions/{position_id}/materials/{attachment_id}",
-            headers=headers,
-        ),
+        client.get(f"/api/hr/conversations/{service.conversation_id}/position-package"),
+        client.post(f"/api/hr/positions/{position_id}/materials/{attachment_id}", json={}, headers=headers),
+        client.delete(f"/api/hr/positions/{position_id}/materials/{attachment_id}", headers=headers),
     )
-
-    assert [response.status_code for response in requests] == [200] * 12
+    assert [response.status_code for response in requests] == [200] * 6
+    assert [call[0] for call in service.calls] == [
+        "list", "position", "drafts", "conversation_package", "promote_material", "remove_material",
+    ]
 
 
 def test_real_security_middleware_blocks_stale_hr_mutation_before_router() -> None:
     client, service, headers = _secured_client(stale=True)
     response = client.post(
-        "/api/hr/position-drafts",
-        json={
-            "source_kind": "new_conversation",
-            "source_key": "conversation:stale",
-            "source_conversation_id": None,
-            "title": "结构工程师",
-            "proposal": {},
-            "evidence": {},
-            "discovery_rule_version": "interactive-v1",
-        },
-        headers=headers,
+        f"/api/hr/positions/{service.position_record.position_id}/materials/{uuid4()}",
+        json={}, headers=headers,
     )
-
     assert response.status_code == 503
     assert service.calls == []
