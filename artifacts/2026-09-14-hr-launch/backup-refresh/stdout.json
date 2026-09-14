@@ -1,0 +1,34 @@
+{
+  "started_at": "2026-09-14T01:27:08.576750+00:00",
+  "deployment_id": "dc4b996ae61b4390aab3dc1e70ba6228",
+  "release": "394c9ecd96a292db4cd6c4a0ea0066a3acc3cd76",
+  "database_writes": false,
+  "restoration_performed": false,
+  "status": "completed",
+  "application_name": "hr_backup_dc4b996ae61b4390aab3dc1e70ba6228",
+  "private_backup_path": "/data/orbbec-agent-platform/private-backups/hr-cloud-dc4b996ae61b4390aab3dc1e70ba6228",
+  "files": {
+    "production.dump": {
+      "bytes": 292971781,
+      "sha256": "f0b7133f35210acf8580c9c5ce99a426d9faacac7983c3d70359148176821789"
+    },
+    "globals.sql": {
+      "bytes": 6458,
+      "sha256": "39a56c2a76e8d4c702a2327785bc6d4af9e1e22f4d7736eee751acacbc866d73"
+    },
+    "production-schema.sql": {
+      "bytes": 1450129,
+      "sha256": "4a20b66404e6297812ec14d4b1de84968d65cb37f666c06be46383d6728c4cb6"
+    },
+    "production-ledger.json": {
+      "bytes": 8732,
+      "sha256": "53a37cfcc9575a875725343481b1f814d7a8f8e45ef610dbd69d5ff0fbdd0ce8"
+    }
+  },
+  "archive_list_verified": true,
+  "ledger_count": 95,
+  "limitation": "Archive listing verified; no restore rehearsal. Global role backup is private. Preview database is not migrated or dumped.",
+  "backup_sessions_zero": true,
+  "finished_at": "2026-09-14T01:27:36.282058+00:00",
+  "cleanup_verified": true
+}

@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/docker exec -i 12ef0c782a5e458b9e52dbe40ffaa3aa877e07269ddea52051e93d258ebdbb0e psql -X -qAt -v ON_ERROR_STOP=1 -U platform_owner -d agent_platform_control"
+  ],
+  "started_at": 1789349332.885247,
+  "finished_at": 1789349335.073523,
+  "exit_code": 0,
+  "query_sha256": "4221ad93fd5aac8fee04c2c9a289d61fe15146d80f9421eae59e716cfb7a06c2"
+}

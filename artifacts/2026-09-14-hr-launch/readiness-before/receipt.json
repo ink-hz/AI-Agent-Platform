@@ -1,0 +1,22 @@
+{
+  "command": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "python3 -"
+  ],
+  "started_at": 1789349177.539646,
+  "finished_at": 1789349180.2845,
+  "exit_code": 0,
+  "source_sha256": "5f7471cac9fcd1620619f9ce9a34216b3ea5bddcafb6a49bca680c0c9c572ca3",
+  "stdout_sha256": "ee3bc3724c8bde40d1cf7bd4780b7ae13659e1ba55a419cbde0b161eb02fa623"
+}

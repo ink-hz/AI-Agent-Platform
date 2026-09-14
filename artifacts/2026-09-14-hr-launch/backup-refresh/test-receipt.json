@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "artifacts/2026-09-14-hr-launch/backup-refresh",
+    "-p",
+    "test_*.py"
+  ],
+  "started_at": 1789349395.658991,
+  "finished_at": 1789349395.748823,
+  "exit_code": 0,
+  "script_sha256": "57fe2b005d0bdb5950ea9d9b0ad0450c09ea5f13e238b296df1d85e44e18937c",
+  "test_sha256": "c3b8201df7325290a8863c6d2364e96a996793183f3228a9e38d4f1b6c38b4ec"
+}
